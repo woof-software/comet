@@ -57,7 +57,8 @@ const addresses = {
     WBTC: '0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f',
     USDT: '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9',
     USDC: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
-    USDC_E: '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8'
+    USDC_E: '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8',
+    ezETH: '0x2416092f143378750bb29b79eD961ab195CcEea5'
   }
 };
 
@@ -74,7 +75,8 @@ const liquidationThresholds = {
   },
   arbitrum: {
     'usdc.e': 10e6, 
-    usdc: 10e6
+    usdc: 10e6,
+    'weth-lrt': 1e18
   }
 };
 
@@ -110,6 +112,10 @@ export const flashLoanPools = {
       tokenAddress: addresses.arbitrum.USDC_E,
       poolFee: 100
     },
+    'weth-lrt': {
+      tokenAddress: addresses.arbitrum.WETH,
+      poolFee: 500
+    }
   }
 };
 
@@ -233,6 +239,13 @@ export function getPoolConfig(tokenAddress: string) {
         uniswapPoolFee: 500
       }
     },
+    [addresses.arbitrum.ezETH.toLowerCase()]: {
+      ...defaultPoolConfig,
+      ...{
+        exchange: Exchange.Balancer,
+        balancerPoolId: '0xb61371ab661b1acec81c699854d2f911070c059e000000000000000000000516'
+      }
+    }
   };
 
   const poolConfig = poolConfigs[tokenAddress.toLowerCase()];
@@ -260,7 +273,8 @@ function getMaxAmountToPurchase(tokenAddress: string): bigint {
     [addresses.arbitrum.ARB.toLowerCase()]: exp(500000, 18),
     [addresses.arbitrum.GMX.toLowerCase()]: exp(4000, 18),
     [addresses.arbitrum.WETH.toLowerCase()]: exp(2000, 18),
-    [addresses.arbitrum.WBTC.toLowerCase()]: exp(100, 8)
+    [addresses.arbitrum.WBTC.toLowerCase()]: exp(100, 8),
+    [addresses.arbitrum.ezETH.toLowerCase()]: exp(2000, 18)
   };
 
   const max = maxAmountsToPurchase[tokenAddress.toLowerCase()];

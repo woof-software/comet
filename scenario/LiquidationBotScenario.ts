@@ -155,6 +155,10 @@ for (let i = 0; i < MAX_ASSETS; i++) {
         ' == 500',
         // WBTC
         ' == 50'
+      ],
+      'weth-lrt': [
+        // ezETH
+        ' == 500'
       ]
     }
   };
@@ -284,7 +288,8 @@ for (let i = 0; i < MAX_ASSETS; i++) {
     },
     arbitrum: {
       'usdc.e': 10000000, 
-      usdc: 10000000
+      usdc: 10000000,
+      'weth-lrt': 5000
     }
   };
   const assetAmounts = {
@@ -340,6 +345,10 @@ for (let i = 0; i < MAX_ASSETS; i++) {
         ' == 5000',
         // WBTC
         ' == 300'
+      ],
+      'weth-lrt': [
+        // ezETH
+        ' == 500'
       ]
     }
   };
@@ -396,6 +405,10 @@ for (let i = 0; i < MAX_ASSETS; i++) {
         exp(500, 18),
         // WBTC
         exp(50, 8),
+      ],
+      'weth-lrt': [
+        // ezETH
+        exp(500, 18)
       ]
     }
   };

@@ -96,9 +96,17 @@ export const WHALES = {
     '0x167384319b41f7094e62f7506409eb38079abff8'  // WMATIC whale
   ],
   arbitrum: [
+    '0x0de802e3d6cc9145a150bbdc8da9f988a98c5202', // ezETH whale
+    '0xc3e5607cd4ca0d5fe51e09b60ed97a0ae6f874dd', // WETH whale
     '0xf89d7b9c864f589bbf53a82105107622b35eaa40', // USDC whale
     '0x7b7b957c284c2c227c980d6e2f804311947b84d0', // WBTC whale
-    '0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae', // COMP whale
+    '0x1c6b5795be43ddff8812b3e577ac752764635bc5', // COMP whales:
+    '0xdead767ba9f8072c986a4619c27ae46bcc226c13',	
+    '0xde5167c19a5286889752cb0f31a1c7f28a99fefb',
+    '0xdfa19e743421c394d904f5a113121c2227d2364b',
+    '0xee3273f6d29ddfff08ffd9d513cff314734f01a2',
+    '0x9e786a8fc88ee74b758b125071d45853356024c3',
+    '0xd93f76944e870900779c09ddf1c46275f9d8bf9b',
     '0xe68ee8a12c611fd043fb05d65e1548dc1383f2b9'  // native USDC whale
   ],
   base: [
