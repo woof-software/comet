@@ -4,7 +4,7 @@ import { migration } from '../../../../plugins/deployment_manager/Migration';
 import { exp, proposal } from '../../../../src/deploy';
 
 const PZETH_ADDRESS = '0x8c9532a60E0E7C6BbD2B2c1303F63aCE1c3E9811';
-const PZETH_PRICE_FEED_ADDRESS = '0x0B6c5C37215B27C944497D2d7011cBD366b0870A';
+const PZETH_PRICE_FEED_ADDRESS = '0x0d7697a15bce933cE8671Ba3D60ab062dA216C60';
 
 let newPriceFeed: string;
 
@@ -85,8 +85,7 @@ export default migration('1727258525_add_pzeth_collateral', {
   }, 
 
   async verify(deploymentManager: DeploymentManager) {
-    const { comet, configurator } = await deploymentManager.getContracts()
-    console.log(await comet.getUtilization());
+    const { comet, configurator } = await deploymentManager.getContracts();
 
     const pzETHAssetIndex = Number(await comet.numAssets()) - 1;
 
