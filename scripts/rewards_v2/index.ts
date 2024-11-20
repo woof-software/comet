@@ -1,13 +1,3 @@
-// 1. Collect all the users from the start of comet to start of campaign block
-// 2. Get current accrued values for all the users
-// 3. Generate input data for merkle tree
-// 4. Generate tree
-// 5. Save JSON
-
-// 6. Github workflow
-
-// 7. Verify with Dune Dashboard
-
 // To run script
 // yarn run rewards-v2 -- --network mainnet
 // Or use hardhat task

@@ -4,7 +4,7 @@ import { StandardMerkleTree } from '@openzeppelin/merkle-tree';
 import { paramString } from '../../plugins/import/import';
 import { get, getEtherscanApiKey, getEtherscanApiUrl } from '../../plugins/import/etherscan';
 import { TransferEvent } from '../../build/types/Comet';
-import { IncentivizationCampaignData } from './types';
+import { CollectDataPayload, IncentivizationCampaignData, SaveFilePayload } from './types';
 import { CometInterface } from '../../build/types';
 
 import {
@@ -27,8 +27,8 @@ interface FileData {
 }
 
 function findLastStartFinishPair(files: FileData[]) {
-  if(files.length === 0) {
-    return {start: null, finish: null};
+  if (files.length === 0) {
+    return { start: null, finish: null };
   }
   // sort files by timestamp
   files.sort((a, b) => a.timestamp - b.timestamp);
@@ -36,16 +36,16 @@ function findLastStartFinishPair(files: FileData[]) {
   // find latest finish file
   let finish: FileData | null = null;
   let start: FileData | null = null;
-  for(let i = files.length - 1; i >= 0; i--) {
+  for (let i = files.length - 1; i >= 0; i--) {
     const file = files[i];
     if (file.type === 'finish') {
       finish = file;
       break;
     }
   }
-  if(finish) {
+  if (finish) {
     // find latest start file before finish file
-    for(let i = files.indexOf(finish) - 1; i >= 0; i--) {
+    for (let i = files.indexOf(finish) - 1; i >= 0; i--) {
       const file = files[i];
       if (file.type === 'start') {
         start = file;
@@ -55,7 +55,7 @@ function findLastStartFinishPair(files: FileData[]) {
   }
   else {
     // find latest start file
-    for(let i = files.length - 1; i >= 0; i--) {
+    for (let i = files.length - 1; i >= 0; i--) {
       const file = files[i];
       if (file.type === 'start') {
         start = file;
@@ -63,7 +63,7 @@ function findLastStartFinishPair(files: FileData[]) {
       }
     }
   }
-  return {start, finish};
+  return { start, finish };
 }
 
 
@@ -73,11 +73,12 @@ export const getLatestStartAndFinishMerkleTreeForCampaign = async (
   hre: HardhatRuntimeEnvironment,
 ): Promise<{ startTree: StandardMerkleTree<string[]>, finishTree: StandardMerkleTree<string[]> }> => {
   const folderPath = `./campaigns/${network}-${deployment}/`;
+  // TODO - remove
   console.log(folderPath);
   // Ensure the directory exists
   await mkdir(folderPath, { recursive: true });
   let result: { start: FileData, finish: FileData };
-  try{
+  try {
     const files: FileData[] = readdirSync(folderPath).map(filename => {
       const [timestampStr, blockNumberStr, typeWithExtension] = filename.split('-');
       const type = typeWithExtension.replace('.json', '') as 'start' | 'finish'; // remove .json from type
@@ -89,9 +90,9 @@ export const getLatestStartAndFinishMerkleTreeForCampaign = async (
     });
     result = findLastStartFinishPair(files);
   }
-  catch(e) {
+  catch (e) {
     console.error('Error reading files from folder:', e);
-    result = {start: null, finish: null};
+    result = { start: null, finish: null };
   }
   const startFile = result?.start;
   const finishFile = result?.finish;
@@ -103,11 +104,11 @@ export const getLatestStartAndFinishMerkleTreeForCampaign = async (
     const currentBlock = await hre.ethers.provider.getBlock('latest');
     const previousBlockNumber = currentBlock.number - 1000;
     const previousBlock = await hre.ethers.provider.getBlock(previousBlockNumber);
-    
+
     await generateMerkleTreeForCampaign(network, deployment, previousBlockNumber, 'start', hre);
     startTimestamp = previousBlock.timestamp;
     startBlockNumber = previousBlockNumber;
-  }else{
+  } else {
     startTimestamp = startFile.timestamp;
     startBlockNumber = startFile.blockNumber;
   }
@@ -122,7 +123,7 @@ export const getLatestStartAndFinishMerkleTreeForCampaign = async (
     finishTimestamp = currentBlock.timestamp;
     finishBlockNumber = currentBlockNumber;
   }
-  else{
+  else {
     finishTimestamp = finishFile.timestamp;
     finishBlockNumber = finishFile.blockNumber;
   }
@@ -143,6 +144,73 @@ export const getLatestStartAndFinishMerkleTreeForCampaign = async (
   return { startTree, finishTree };
 };
 
+export const saveFile = async (data: SaveFilePayload) => {
+  const { generatedTimestamp, blockNumber, type, network, deployment, fileData } = data
+  const filename = `${generatedTimestamp}-${blockNumber}-${type}.json`;
+  const filePath = `./campaigns/${network}-${deployment}/${filename}`;
+
+  // Ensure the directory exists
+  const directory = path.dirname(filePath);
+  await mkdir(directory, { recursive: true });
+
+  await writeFile(filePath, JSON.stringify(fileData, null, 2), 'utf-8');
+}
+
+
+
+export const collectData = async (payload: CollectDataPayload) => {
+  const { blockNumber, network, deployment, dm, generatedTimestamp, type, hre } = payload
+  console.log(`Campaign block number ${blockNumber}`);
+  console.log(`Start fetching contracts for ${network}-${deployment} deployment`);
+
+  await dm.spider();
+
+  const contracts = await dm.contracts();
+  const comet = contracts.get('comet') as CometInterface;
+
+  const { blockNumber: cometDeployedBlockNumber, hash } = await getContractDeploymentData(network, comet.address);
+
+  console.log(`Comet address ${getEtherscanUrl(network)}/address/${comet.address}`);
+  console.log(`Comet deployed transaction ${getEtherscanUrl(network)}/trx/${hash}`);
+  console.log(`Comet deployed block ${cometDeployedBlockNumber}`);
+
+  const transferEvents = await getAllTransferEvents(comet, cometDeployedBlockNumber, blockNumber);
+  const users = getAllCometUsers(transferEvents);
+
+  console.log(`Transfer events count ${transferEvents.length}`);
+  console.log(`Transfer events unique addresses (both from and to) ${users.length}`);
+
+  const multicallAddress = multicallAddresses[network];
+  if (!multicallAddress) {
+    throw new Error(`Multicall is not supported by ${network} network`);
+  }
+
+  const { data } = await multicall(multicallAddress, comet.address, users, blockNumber, hre);
+
+  // TODO: is there any case, when 0x0...0 is not 0 and what will be if we set 0?
+  if (!data['0x0000000000000000000000000000000000000000']) {
+    data['0x0000000000000000000000000000000000000000'] = '0';
+  }
+
+  if (!data['0xffffffffffffffffffffffffffffffffffffffff']) {
+    data['0xffffffffffffffffffffffffffffffffffffffff'] = '0';
+  }
+
+  const sortedDataWithIndexes = Object.entries(data)
+    .sort((a, b) => a[0].localeCompare(b[0])) // Sort by address (key) in ascending order
+    .map(([address, accrued], index) => [address, index.toString(), accrued]);
+
+  const merklTree = generateMerkleTree(sortedDataWithIndexes);
+
+  const fileData = createCampaignFile(
+    sortedDataWithIndexes,
+    merklTree,
+    { network, market: deployment, blockNumber, generatedTimestamp, type, startBlock: cometDeployedBlockNumber }
+  );
+
+  return { fileData, merklTree }
+}
+
 export const generateMerkleTreeForCampaign = async (
   network: string,
   deployment: string,
@@ -151,6 +219,10 @@ export const generateMerkleTreeForCampaign = async (
   hre: HardhatRuntimeEnvironment
 ): Promise<StandardMerkleTree<string[]>> => {
   console.log(`Generating Merkle tree for ${type} of campaign with deployment: ${deployment}`);
+
+  if (!network) {
+    throw new Error('missing required env variable: NETWORK');
+  }
 
   if (!deployment) {
     throw new Error('missing required env variable: DEPLOYMENT');
@@ -177,62 +249,27 @@ export const generateMerkleTreeForCampaign = async (
     }
   );
 
-  console.log(`Campaign block number ${blockNumber}`);
-  console.log(`Start fetching contracts for ${network}-${deployment} deployment`);
-
-  await dm.spider();
-
-  const contracts = await dm.contracts();
-  const comet = contracts.get('comet') as CometInterface;
-
-  const { blockNumber: cometDeployedBlockNumber, hash } = await getContractDeploymentData(network, comet.address);
-
-  console.log(`Comet address ${getEtherscanUrl(network)}/address/${comet.address}`);
-  console.log(`Comet deployed transaction ${getEtherscanUrl(network)}/trx/${hash}`);
-  console.log(`Comet deployed block ${cometDeployedBlockNumber}`);
-
-  const transferEvents = await getAllTransferEvents(comet, cometDeployedBlockNumber, blockNumber);
-  const users = getAllCometUsers(transferEvents);
-
-  console.log(`Transfer events count ${transferEvents.length}`);
-  console.log(`Transfer events unique addresses (both from and to) ${users.length}`);
-
-  const multicallAddress = multicallAddresses[network];
-  if (!multicallAddress) {
-    console.error(`Multicall is not supported by ${network} network`);
-    process.exit(1);
+  const collectDataPayload: CollectDataPayload = {
+    blockNumber,
+    network,
+    deployment,
+    dm,
+    generatedTimestamp,
+    type,
+    hre,
   }
 
-  const { data } = await multicall(multicallAddress, comet.address, users, blockNumber, hre);
-
-  if (!data['0x0000000000000000000000000000000000000000']) {
-    data['0x0000000000000000000000000000000000000000'] = '0';
+  const { fileData, merklTree } = await collectData(collectDataPayload)
+  const savePayload: SaveFilePayload = {
+    generatedTimestamp,
+    blockNumber,
+    type,
+    network,
+    deployment,
+    fileData
   }
 
-  if (!data['0xffffffffffffffffffffffffffffffffffffffff']) {
-    data['0xffffffffffffffffffffffffffffffffffffffff'] = '0';
-  }
-
-  const sortedDataWithIndexes = Object.entries(data)
-    .sort((a, b) => a[0].localeCompare(b[0])) // Sort by address (key) in ascending order
-    .map(([address, accrued], index) => [address, index.toString(), accrued]);
-
-  const merklTree = generateMerkleTree(sortedDataWithIndexes);
-
-  const file = createCampaignFile(
-    sortedDataWithIndexes,
-    merklTree,
-    { network, market: deployment, blockNumber, generatedTimestamp, type }
-  );
-
-  const filename = `${generatedTimestamp}-${blockNumber}-${type}.json`;
-  const filePath = `./campaigns/${network}-${deployment}/${filename}`;
-
-  // Ensure the directory exists
-  const directory = path.dirname(filePath);
-  await mkdir(directory, { recursive: true });
-
-  await writeFile(filePath, JSON.stringify(file, null, 2), 'utf-8');
+  await saveFile(savePayload)
 
   console.log('Merkle tree successfully generated');
   return merklTree;
@@ -362,8 +399,7 @@ export const multicall = async (multicallAddress: string, cometAddress: string, 
     });
 
     if (!returnData || returnData.length !== chunk.length * 2) {
-      console.error('Incorrect multicall');
-      process.exit(1);
+      throw new Error('Incorrect multicall response');
     }
 
     // Decode results for this chunk
@@ -383,7 +419,7 @@ export const multicall = async (multicallAddress: string, cometAddress: string, 
   return response;
 };
 
-export const createCampaignFile = (data: string[][], tree: StandardMerkleTree<string[]>, conf: { network: string, market: string, type: 'start' | 'finish', blockNumber: number, generatedTimestamp: number }): IncentivizationCampaignData => {
+export const createCampaignFile = (data: string[][], tree: StandardMerkleTree<string[]>, conf: { network: string, market: string, type: 'start' | 'finish', blockNumber: number, generatedTimestamp: number, startBlock?: number }): IncentivizationCampaignData => {
   const file = {} as IncentivizationCampaignData;
 
   file.root = tree.root;
@@ -392,6 +428,7 @@ export const createCampaignFile = (data: string[][], tree: StandardMerkleTree<st
   file.type = conf.type;
   file.blockNumber = conf.blockNumber;
   file.generatedTimestamp = conf.generatedTimestamp;
+  file.startBlock = conf.startBlock || -1
 
   const payload = {};
 
