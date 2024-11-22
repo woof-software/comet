@@ -4,6 +4,7 @@
 // Verify, that all the current users' accrue value is less then real current accrue
 
 import hre from 'hardhat';
+import { ethers } from 'ethers'
 import fs from 'fs/promises'
 import { CollectDataPayload, IncentivizationCampaignData } from './types';
 import { generateMerkleTree, getMerklTreeProof, collectData } from './utils';
@@ -11,6 +12,10 @@ import { DeploymentManager } from '../../plugins/deployment_manager';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const F_ADDRESS = '0xffffffffffffffffffffffffffffffffffffffff'
+
+const setCustomProvider = (rpcUrl: string) => {
+    hre.ethers.provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+};
 
 const getCampaignData = async (fileName: string, network: string, deployment: string): Promise<IncentivizationCampaignData> => {
     if (!fileName.endsWith('.json')) {
@@ -109,41 +114,123 @@ const verifyCorrectProofGenerationAndRootHashGeneration = (data: Incentivization
 }
 
 // TODO collect the data using another RPCs and verify that the result is the same
-const verifyTheSameFileGenerationUsingDifferentRPCProviders = async (campaign: IncentivizationCampaignData, rpcs: string[]) => {
-    const { blockNumber, network, market, generatedTimestamp, type } = campaign
-    const dm = new DeploymentManager(
-        network,
-        market,
-        hre,
-        {
-            writeCacheToDisk: true,
-            verificationStrategy: 'eager',
-        }
-    );
+const verifyTheSameFileGenerationUsingDifferentRPCProviders = async (
+    campaign: IncentivizationCampaignData,
+    rpcs: string[]
+) => {
+    const { blockNumber, network, market, generatedTimestamp, type } = campaign;
+  
+    console.log(`Verifying data collection consistency across multiple RPCs...`);
+  
+    const baseRpc = rpcs[0];
+    setCustomProvider(baseRpc);
+  
+    const dmBaseline = new DeploymentManager(network, market, hre);
     const collectDataPayload: CollectDataPayload = {
-        blockNumber,
-        network,
-        deployment: market,
-        generatedTimestamp,
-        type,
-        dm,
-        hre,
+      blockNumber,
+      network,
+      deployment: market,
+      generatedTimestamp,
+      type,
+      dm: dmBaseline,
+      hre,
+    };
+    const baselineResult = await collectData(collectDataPayload);
+  
+    for (let i = 1; i < rpcs.length; i++) {
+      const rpc = rpcs[i];
+      console.log(`Switching to RPC: ${rpc}`);
+      setCustomProvider(rpc);
+  
+      const dm = new DeploymentManager(network, market, hre);
+      const payload = { ...collectDataPayload, dm };
+  
+      console.log(`Collecting data from RPC: ${rpc}`);
+      const result = await collectData(payload);
+  
+      console.log(`Comparing results with baseline RPC...`);
+
+      if (JSON.stringify(baselineResult.fileData) !== JSON.stringify(result.fileData)) {
+        throw new Error(`Data inconsistency detected between RPCs: ${baseRpc} and ${rpc}`);
+      }
+  
+      if (baselineResult.merklTree.root !== result.merklTree.root) {
+        throw new Error(`Merkle root mismatch detected between RPCs: ${baseRpc} and ${rpc}`);
+      }
+    }
+  
+    console.log(`All RPCs produced consistent results.`);
+  };
+
+  const validateUserAccrue = async (
+    userAddress: string,
+    campaign: IncentivizationCampaignData,
+  ): Promise<void> => {
+    const { data, blockNumber, root } = campaign;
+  
+    if (!data[userAddress]) {
+      throw new Error(`User ${userAddress} is not included in the campaign data.`);
+    }
+  
+    const recordedAccrue = data[userAddress].accrue;
+    console.log(`Recorded accrue for user ${userAddress}: ${recordedAccrue}`);
+  
+    const provider = hre.ethers.provider;
+    const cometContractAddress = '<COMET_CONTRACT_ADDRESS>';
+    const cometAbi = [
+      'function userBasic(address) view returns (int104 baseTrackingAccrued, uint64 baseTrackingIndex, uint64 baseBorrowIndex, uint16 rewardOwed, uint8 flags)',
+    ];
+    const comet = new ethers.Contract(cometContractAddress, cometAbi, provider);
+  
+    const [baseTrackingAccrued] = await comet.userBasic(userAddress, {
+      blockTag: blockNumber,
+    });
+    const actualAccrue = baseTrackingAccrued.toString();
+  
+    console.log(`Actual accrue for user ${userAddress} at block ${blockNumber}: ${actualAccrue}`);
+  
+    if (recordedAccrue !== actualAccrue) {
+      throw new Error(
+        `Data mismatch for user ${userAddress}. Recorded: ${recordedAccrue}, Actual: ${actualAccrue}`
+      );
     }
 
-    const { fileData, merklTree } = await collectData(collectDataPayload)
-}
+    const treeData = Object.entries(data).map(([address, { index, accrue }]) => [
+      address,
+      index.toString(),
+      accrue,
+    ]);
+    const tree = generateMerkleTree(treeData);
+    const proof = getMerklTreeProof(userAddress, tree);
+  
+    if (!proof) {
+      throw new Error(`Unable to generate Merkle proof for user ${userAddress}.`);
+    }
+  
+    console.log(`Validation successful for user ${userAddress}`);
+  };
 
 const main = async () => {
     const campaignName = '1730244663865-21074594-start.json'
     const campaign = await getCampaignData(campaignName, 'mainnet', 'usdt')
+    const rpcUrls = [] // TODO add rps
+    const userAddress = '0x1234567890abcdef1234567890abcdef12345678'; // todo change it
+
     logCommonCampaignData(campaign)
     verify0AndFAddressesInTheCampaign(campaign)
     verifyMerkleTreeIsSorted(campaign)
     verifyCorrectProofGenerationAndRootHashGeneration(campaign)
 
     // verify data fetching using another RPC providers
+    await verifyTheSameFileGenerationUsingDifferentRPCProviders(campaign, rpcUrls);
     // verify that the state of accrued values for all the users are less then 
     // the accrue values after the callStatic
+
+    try {
+        await validateUserAccrue(userAddress, campaign);
+    } catch (error) {
+        console.error(`Validation failed for user ${userAddress}:`, error.message);
+    }
 };
 
 main().then().catch(console.error);
