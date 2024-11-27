@@ -6,7 +6,7 @@ import '@nomiclabs/hardhat-ethers';
 import '@nomiclabs/hardhat-etherscan';
 import '@typechain/hardhat';
 import 'hardhat-chai-matchers';
-import 'hardhat-change-network';
+// import 'hardhat-change-network';
 import 'hardhat-contract-sizer';
 import 'hardhat-cover';
 import 'hardhat-gas-reporter';
@@ -64,6 +64,7 @@ const {
   LINEASCAN_KEY,
   OPTIMISMSCAN_KEY,
   INFURA_KEY,
+  ANKR_KEY,
   QUICKNODE_KEY,
   MNEMONIC = 'myth like bonus scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
@@ -91,6 +92,7 @@ export function requireEnv(varName, msg?: string): string {
   'ETHERSCAN_KEY',
   'SNOWTRACE_KEY',
   'INFURA_KEY',
+  'ANKR_KEY',
   'POLYGONSCAN_KEY',
   'ARBISCAN_KEY',
   'LINEASCAN_KEY',
@@ -107,11 +109,16 @@ interface NetworkConfig {
 }
 
 const networkConfigs: NetworkConfig[] = [
-  { network: 'mainnet', chainId: 1 },
-  { network: 'ropsten', chainId: 3 },
-  { network: 'rinkeby', chainId: 4 },
-  { network: 'goerli', chainId: 5 },
-  { network: 'sepolia', chainId: 11155111 },
+  { 
+    network: 'mainnet',
+    chainId: 1,
+    url: `https://rpc.ankr.com/eth/${ANKR_KEY}`
+  },
+  { 
+    network: 'sepolia',
+    chainId: 11155111,
+    url: `https://rpc.ankr.com/eth_sepolia/${ANKR_KEY}`
+  },
   {
     network: 'polygon',
     chainId: 137,
@@ -125,7 +132,7 @@ const networkConfigs: NetworkConfig[] = [
   {
     network: 'base',
     chainId: 8453,
-    url: `https://fluent-prettiest-scion.base-mainnet.quiknode.pro/${QUICKNODE_KEY}`,
+    url: `https://rpc.ankr.com/base/${ANKR_KEY}`,
   },
   {
     network: 'arbitrum',

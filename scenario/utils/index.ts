@@ -307,6 +307,17 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
   return true;
 }
 
+export async function isRewardsV2Supported(ctx: CometContext): Promise<boolean> {
+  const cometRewardsV2 = await ctx.getRewardsV2();
+  const comet = await ctx.getComet();
+  if (cometRewardsV2 == null) return false;
+
+  const campaignData = await cometRewardsV2.getCometCampaignsInfo(comet.address);
+  // if(campaignData[0].length === 0) return false;
+
+  return cometRewardsV2 !== null;
+}
+
 export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
 }
@@ -346,8 +357,8 @@ async function redeployRenzoOracle(dm: DeploymentManager){
     ]);
 
     const newOracle = await dm.deploy(
-      'stETH:Oracle',
-      'test/MockOracle.sol',
+      'renzo:Oracle',
+      'test/MockRenzoOracle.sol',
       [
         '0x86392dC19c0b719886221c78AB11eb8Cf5c52812',    // stETH / ETH oracle address
       ]

@@ -32,7 +32,7 @@ declare module 'hardhat/internal/core/runtime-environment' {
     waffle: any;
     ethers: typeof ethers & HardhatEthersHelpers;
     changeNetwork(newNetwork: string): void;
-    getProvider(newNetwork: string): EthereumProvider;
+    // getProvider(newNetwork: string): EthereumProvider;
   }
 }
 
