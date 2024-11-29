@@ -16,7 +16,6 @@ const amountPerSec = streamAmount * exp(1,14) / BigInt(streamDuration);
 
 let balanceBefore: bigint;
 
-
 export default migration('1732804028_pay_woof', {
   async prepare() {
     return {};
@@ -35,7 +34,6 @@ export default migration('1732804028_pay_woof', {
     const streamController = new Contract(
       STREAM_CONTROLLER,
       [
-        'function createStream(address token, address to, uint216 amountPerSec, uint256 duration) external',
         'function depositAndCreate(uint amountToDeposit, address to, uint216 amountPerSec) external',
       ],
       deploymentManager.hre.ethers.provider
@@ -44,7 +42,6 @@ export default migration('1732804028_pay_woof', {
     const vault = new Contract(
       VAULT,
       [
-        'function deposit(tuple(address asset,uint256 value)[] calldata) external',
         'function execute(tuple(address target, uint256 value, bytes data)) external',
       ],
       deploymentManager.hre.ethers.provider
@@ -151,8 +148,8 @@ export default migration('1732804028_pay_woof', {
     await (await stream.connect(signer2).withdraw(VAULT, WOOF, amountPerSec)).wait();
     const _balanceAfter = await USDC.balanceOf(WOOF);
     expectApproximately(
-      _balanceAfter.sub(_balanceBefore).toBigInt(),
       streamAmount,
+      _balanceAfter.sub(_balanceBefore).toBigInt(),
       1n
     );
   },
