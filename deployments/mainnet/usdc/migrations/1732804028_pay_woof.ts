@@ -7,7 +7,7 @@ import { expectApproximately } from '../../../../scenario/utils';
 
 const STREAM_CONTROLLER = '0x3E67cc2C7fFf86d9870dB9D02c43e789B52FB296';
 const VAULT = '0x8624f61Cc6e5A86790e173712AfDd480fa8b73Ba';
-const WOOF = '0x05ED81814BE2D9731c8906133236FFE9C62B013E';
+const WOOF = '0xd36025E1e77069aA991DC24f0E6287b4A35c89Ad';
 
 const upfrontAmount = exp(300_000, 6);
 const streamAmount  = exp(300_000, 6);
