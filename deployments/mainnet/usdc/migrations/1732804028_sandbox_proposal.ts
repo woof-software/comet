@@ -16,7 +16,7 @@ const amountPerSec = streamAmount * exp(1,14) / BigInt(streamDuration);
 
 let balanceBefore: bigint;
 
-export default migration('1732804028_pay_woof', {
+export default migration('1732804028_sandbox_proposal', {
   async prepare() {
     return {};
   },
@@ -73,37 +73,38 @@ export default migration('1732804028_pay_woof', {
     }));
 
     const mainnetActions = [
-      // 1. Withdraw the upfront and stream amount from Comet
+      // 1. Withdraw the upfront and stream amount from Comet that Aera owns to Timelock. 300K + 300K = 600K USDC
       {
         target: VAULT,
         signature: 'execute((address,uint256,bytes))',
         calldata: executeCometWithdrawCalldata,
       },
-      // 2. Approve to the vault
+      // 2. Transfer stream 300K amount to Aera vault
       {
         contract: USDC,
         signature: 'transfer(address,uint256)',
         args: [VAULT, streamAmount],
       },
+      // 3. Make vault to approve STREAM_CONTROLLER to use stream amount in the next step
       {
         target: VAULT,
         signature: 'execute((address,uint256,bytes))',
         calldata: executeApproveCalldata,
       },
-      // 3. Deposit and create the stream
+      // 3. Deposit stream amount and create stream over 6 month to WOOF
       {
         target: VAULT,
         signature: 'execute((address,uint256,bytes))',
         calldata: executeDepositAndCreateStreamCalldata,
       },
-      // 4. Transfer the upfront amount to the WOOF treasury
+      // 4. Transfer upfront 300K to WOOF
       {
         contract: USDC,
         signature: 'transfer(address,uint256)',
         args: [WOOF, upfrontAmount],
       },
     ];
-    const description = '';
+    const description = 'TODO';
     const txn = await deploymentManager.retry(async () =>
       trace(
         await governor.propose(...(await proposal(mainnetActions, description)))
