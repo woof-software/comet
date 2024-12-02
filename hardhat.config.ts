@@ -6,11 +6,9 @@ import '@nomiclabs/hardhat-ethers';
 import '@nomiclabs/hardhat-etherscan';
 import '@typechain/hardhat';
 import 'hardhat-chai-matchers';
-import 'hardhat-change-network';
 import 'hardhat-contract-sizer';
 import 'hardhat-cover';
 import 'hardhat-gas-reporter';
-import 'solidity-coverage';
 
 // Hardhat tasks
 import './tasks/deployment_manager/task.ts';
@@ -64,6 +62,7 @@ const {
   LINEASCAN_KEY,
   OPTIMISMSCAN_KEY,
   INFURA_KEY,
+  ANKR_KEY,
   QUICKNODE_KEY,
   MNEMONIC = 'myth like bonus scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
@@ -73,7 +72,7 @@ const {
   REMOTE_ACCOUNTS = ''
 } = process.env;
 
-function *deriveAccounts(pk: string, n: number = 10) {
+function* deriveAccounts(pk: string, n: number = 10) {
   for (let i = 0; i < n; i++)
     yield (BigInt('0x' + pk) + BigInt(i)).toString(16);
 }
@@ -91,6 +90,7 @@ export function requireEnv(varName, msg?: string): string {
   'ETHERSCAN_KEY',
   'SNOWTRACE_KEY',
   'INFURA_KEY',
+  'ANKR_KEY',
   'POLYGONSCAN_KEY',
   'ARBISCAN_KEY',
   'LINEASCAN_KEY',
@@ -107,11 +107,16 @@ interface NetworkConfig {
 }
 
 const networkConfigs: NetworkConfig[] = [
-  { network: 'mainnet', chainId: 1 },
-  { network: 'ropsten', chainId: 3 },
-  { network: 'rinkeby', chainId: 4 },
-  { network: 'goerli', chainId: 5 },
-  { network: 'sepolia', chainId: 11155111 },
+  { 
+    network: 'mainnet',
+    chainId: 1,
+    url: `https://rpc.ankr.com/eth/${ANKR_KEY}`
+  },
+  { 
+    network: 'sepolia',
+    chainId: 11155111,
+    url: `https://rpc.ankr.com/eth_sepolia/${ANKR_KEY}`
+  },
   {
     network: 'polygon',
     chainId: 137,
@@ -120,12 +125,12 @@ const networkConfigs: NetworkConfig[] = [
   {
     network: 'optimism',
     chainId: 10,
-    url: `https://optimism-mainnet.infura.io/v3/${INFURA_KEY}`,
+    url: `https://rpc.ankr.com/optimism/${ANKR_KEY}`,
   },
   {
     network: 'base',
     chainId: 8453,
-    url: `https://fluent-prettiest-scion.base-mainnet.quiknode.pro/${QUICKNODE_KEY}`,
+    url: `https://rpc.ankr.com/base/${ANKR_KEY}`,
   },
   {
     network: 'arbitrum',
@@ -189,7 +194,7 @@ function setupDefaultNetworkProviders(hardhatConfig: HardhatUserConfig) {
         getDefaultProviderURL(netConfig.network),
       gas: netConfig.gas || 'auto',
       gasPrice: netConfig.gasPrice || 'auto',
-      accounts: REMOTE_ACCOUNTS ? 'remote' : ( ETH_PK ? [...deriveAccounts(ETH_PK)] : { mnemonic: MNEMONIC } ),
+      accounts: REMOTE_ACCOUNTS ? 'remote' : (ETH_PK ? [...deriveAccounts(ETH_PK)] : { mnemonic: MNEMONIC }),
     };
   }
 }

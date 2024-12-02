@@ -134,6 +134,7 @@ export type RewardsV2Opts = {
   governor?: SignerWithAddress;
   configs?: [Comet, (FaucetToken | NonStandardFaucetFeeToken)[], Numeric[]?][];
   accountsPrepared?: [string, string][];
+  duration?: Numeric;
 };
 
 export type Rewards = {
@@ -444,6 +445,17 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     const baseToken = tokens[base];
     await wait(baseToken.allocateTo(comet.address, baseTokenBalance));
   }
+  const sortedSigners = users.slice(0, 3).sort((a, b) => {
+    const addressA = BigInt(a.address);
+    const addressB = BigInt(b.address);
+  
+    if (addressA > addressB) return 1;
+    if (addressA < addressB) return -1;
+    return 0;
+  });
+  users[0] = sortedSigners[0];
+  users[1] = sortedSigners[1];
+  users[2] = sortedSigners[2];
 
   return {
     opts,
@@ -683,7 +695,7 @@ export async function generateTree(accountsPrepared: [string, string][]) {
   return StandardMerkleTree.of(accountsIndexed, ['address', 'uint256', 'uint256']);
 }
 
-export async function getProof(address : string, tree) {
+export async function getProof(address : string, tree: StandardMerkleTree<[string, string, string]>) {
   for (const [i, v] of tree.entries()) {
     if (v[0] === address) {
       const proof = tree.getProof(i);
@@ -713,14 +725,14 @@ export async function makeRewardsV2(
   
   await rewardsV2.deployed();
   const tree = await generateTree(optsV2.accountsPrepared);
+  const duration = optsV2.duration || 604800; // 604800 = 7 days
   for (const [comet, tokens, multipliers] of configs) {
     if (multipliers === undefined) {
       const _tokens = [];
       for (const token of tokens) {
         _tokens.push(token.address);
       }
-
-      await wait(rewardsV2.setNewCampaign(comet.address, tree.root, _tokens, 604800));
+      await wait(rewardsV2.setNewCampaign(comet.address, tree.root, _tokens, duration));
     } else {
       if(tokens.length !== multipliers.length) throw new Error('Arrays length mismatch');
       let assets: TokenMultiplierStruct[] = [];
@@ -729,7 +741,7 @@ export async function makeRewardsV2(
         assets.push({ token: tokens[i].address, multiplier: multipliers[i].toString()});
       }
 
-      await wait(rewardsV2.setNewCampaignWithCustomTokenMultiplier(comet.address, tree.root, assets, 604800));
+      await wait(rewardsV2.setNewCampaignWithCustomTokenMultiplier(comet.address, tree.root, assets, duration));
     }
   }
 
@@ -793,7 +805,7 @@ export async function makeBulker(opts: BulkerOpts): Promise<BulkerInfo> {
 }
 export async function bumpTotalsCollateral(
   comet: CometHarnessInterface,
-  token: FaucetToken,
+  token: FaucetToken | NonStandardFaucetFeeToken,
   delta: bigint
 ): Promise<TotalsCollateralStructOutput> {
   const t0 = await comet.totalsCollateral(token.address);
