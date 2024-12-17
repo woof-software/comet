@@ -89,12 +89,16 @@ export const WHALES = {
     '0x2775b1c75658be0f640272ccb8c72ac986009e38',
     '0x1a9c8182c09f50c8318d769245bea52c32be35bc',
     '0x3c22ec75ea5D745c78fc84762F7F1E6D82a2c5BF',
+    '0x426c4966fC76Bf782A663203c023578B744e4C5E', // wUSDM whale
+    '0x88a1493366D48225fc3cEFbdae9eBb23E323Ade3', // USDe whale
+    '0x43594da5d6A03b2137a04DF5685805C676dEf7cB', // rsETH whale
     '0x3d9819210a31b4961b30ef54be2aed79b9c9cd3b'
   ],
   polygon: [
-    '0x2093b4281990a568c9d588b8bce3bfd7a1557ebd', // WETH whale
-    '0xd814b26554204245a30f8a42c289af582421bf04', // WBTC whale
-    '0x167384319b41f7094e62f7506409eb38079abff8'  // WMATIC whale
+    '0x62ac55b745F9B08F1a81DCbbE630277095Cf4Be1', // WETH whale
+    '0x078f358208685046a11C85e8ad32895DED33A249', // WBTC whale
+    '0x167384319B41F7094e62f7506409Eb38079AbfF8', // WMATIC whale
+    '0x9c2bd617b77961ee2c5e3038dFb0c822cb75d82a', // USDC whale
   ],
   arbitrum: [
     '0x8eb270e296023e9d92081fdf967ddd7878724424', // rETH whale
@@ -142,7 +146,14 @@ export const WHALES = {
     '0x2A82Ae142b2e62Cb7D10b55E323ACB1Cab663a26', // OP whale
     '0x8af3827a41c26c7f32c81e93bb66e837e0210d5c', // USDC whale
     '0xc45A479877e1e9Dfe9FcD4056c699575a1045dAA', // wstETH whale
-  ]
+  ],
+  mantle: [
+    '0x588846213A30fd36244e0ae0eBB2374516dA836C', // USDe whale
+    '0x88a1493366D48225fc3cEFbdae9eBb23E323Ade3', // mETH whale
+    '0x651C9D1F9da787688225f49d63ad1623ba89A8D5', // FBTC whale
+    '0xC455fE28a76da80022d4C35A37eB08FF405Eb78f', // FBTC whale
+    '0x524db930F0886CdE7B5FFFc920Aae85e98C2abfb', // FBTC whale
+  ],
 };
 
 export async function calldata(req: Promise<PopulatedTransaction>): Promise<string> {
