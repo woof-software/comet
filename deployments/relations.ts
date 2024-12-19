@@ -19,7 +19,15 @@ const relationConfigMap: RelationConfigMap = {
       },
       baseTokenPriceFeed: {
         field: async (comet) => comet.baseTokenPriceFeed(),
-        alias: async (_, { baseToken }) => `${await baseToken[0].symbol()}:priceFeed`,
+        alias: async (_, { baseToken }) => `${
+          await (async () => {
+            try {
+              return await baseToken[0].symbol();
+            }
+            catch (e) {
+              throw new Error('failed to get base token symbol ' + baseToken[0].address + ' ' + e);
+            }
+          })()}:priceFeed`,
       },
       assets: {
         field: async (comet) => {
@@ -31,7 +39,14 @@ const relationConfigMap: RelationConfigMap = {
             })
           );
         },
-        alias: async (token) => token.symbol(),
+        alias: async (token) => {
+          try {
+            return await token.symbol();
+          }
+          catch (e) {
+            throw new Error('failed to get asset symbol ' + token.address + ' ' + e);
+          }
+        }
       },
       assetPriceFeeds: {
         field: async (comet) => {
