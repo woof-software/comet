@@ -39,7 +39,7 @@ export function getConfigForScenario(ctx: CometContext) {
     config.transferAsset = 500;
     config.interestSeconds = 70;
   }
-  
+
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'wsteth') {
     config.liquidationBase = 10000;
     config.liquidationBase1 = 1000;
@@ -55,7 +55,7 @@ export function getConfigForScenario(ctx: CometContext) {
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'usds') {
     config.liquidationAsset = 100;
   }
-  
+
   if (ctx.world.base.network === 'base' && ctx.world.base.deployment === 'aero') {
     config.interestSeconds = 110;
   }
@@ -85,6 +85,21 @@ export function getConfigForScenario(ctx: CometContext) {
 
   if (ctx.world.base.network === 'sepolia' && ctx.world.base.deployment === 'usdc') {
     config.bulkerAsset1 = 10;
+  }
+
+  if (ctx.world.base.network === 'linea' && ctx.world.base.deployment === 'usdc') {
+    config.bulkerAsset = 500;
+    config.bulkerAsset1 = 500;
+  }
+
+  if (ctx.world.base.network === 'linea' && ctx.world.base.deployment === 'usdt') {
+    config.bulkerAsset = 500;
+    config.bulkerAsset1 = 500;
+  }
+
+  if (ctx.world.base.network === 'linea' && ctx.world.base.deployment === 'weyj') {
+    config.rewardsAsset = 1000;
+    config.rewardsBase = 100;
   }
 
   return config;

@@ -148,6 +148,16 @@ export const WHALES = {
     '0x524db930F0886CdE7B5FFFc920Aae85e98C2abfb', // FBTC whale
     '0xCd83CbBFCE149d141A5171C3D6a0F0fCCeE225Ab', // COMP whale
   ],
+  linea: [
+    '0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f', // ETH whale
+    '0x9be5e24F05bBAfC28Da814bD59284878b388a40f', // WBTC whale
+    '0xCeEd853798ff1c95cEB4dC48f68394eb7A86A782', // wstETH whale
+    '0x03dDD23943b3C698442C5f2841eae70058DbAb8B', // wstETH whale
+    '0x0180912F869065c7a44617Cd4c288bE6Bce5d192', // wstETH whale
+    '0x7160570BB153Edd0Ea1775EC2b2Ac9b65F1aB61B', // wstETH whale
+    '0x0684FC172a0B8e6A65cF4684eDb2082272fe9050', // ezETH whale
+    '0x3A0ee670EE34D889B52963bD20728dEcE4D9f8FE', // ezETH whale
+  ],
 };
 
 export async function calldata(req: Promise<PopulatedTransaction>): Promise<string> {
