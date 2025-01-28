@@ -61,10 +61,12 @@ export async function nonForkedHreForBase(base: ForkSpec): Promise<HardhatRuntim
   );
 }
 
-function getBlockRollback(base: ForkSpec){
-  if(base.blockNumber)
+function getBlockRollback(base: ForkSpec) {
+  if (base.blockNumber)
     return base.blockNumber;
-  else if(base.network === 'arbitrum'){
+  else if (base.network === 'linea')
+    return 1700;
+  else if (base.network === 'arbitrum') {
     return undefined;
   }
   else
@@ -86,9 +88,8 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
   const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
 
   // noNetwork otherwise
-  if(!base.blockNumber && baseNetwork.url)
-
-    base.blockNumber = await provider.getBlockNumber() - getBlockRollback(base); // arbitrary number of blocks to go back
+  if (!base.blockNumber && baseNetwork.url)
+    base.blockNumber = await provider.getBlockNumber() - getBlockRollback(base); // arbitrary number of blocks to go back, about 1 hour
   if (!baseNetwork) {
     throw new Error(`cannot find network config for network: ${base.network}`);
   }
