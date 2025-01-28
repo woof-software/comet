@@ -41,6 +41,7 @@ export default migration('1735299703_update_comet_to_support_more_collaterals', 
         'function name() external view returns (string)',
         'function symbol() external view returns (string)',
       ],
+
       await deploymentManager.getSigner()
     );
     const nameAERO = await extensionDelegateAERO.name();

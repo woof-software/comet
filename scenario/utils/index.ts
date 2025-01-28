@@ -332,8 +332,8 @@ export async function fetchLogs(
   }
 }
 
-async function redeployRenzoOracle(dm: DeploymentManager){
-  if(dm.network === 'mainnet') {
+async function redeployRenzoOracle(dm: DeploymentManager) {
+  if (dm.network === 'mainnet') {
     // renzo admin 	0xD1e6626310fD54Eceb5b9a51dA2eC329D6D4B68A
     const renzoOracle = new Contract(
       '0x5a12796f7e7EBbbc8a402667d266d2e65A814042',
@@ -342,7 +342,7 @@ async function redeployRenzoOracle(dm: DeploymentManager){
       ],
       dm.hre.ethers.provider
     );
-    
+
     const admin = await impersonateAddress(dm, '0xD1e6626310fD54Eceb5b9a51dA2eC329D6D4B68A');
     // set balance
     await dm.hre.ethers.provider.send('hardhat_setBalance', [
@@ -378,14 +378,14 @@ async function getProxyAdmin(dm: DeploymentManager, proxyAddress: string): Promi
   return adminAddress;
 }
 
-async function mockAllRedstoneOracles(dm: DeploymentManager){
+async function mockAllRedstoneOracles(dm: DeploymentManager) {
   const feeds = REDSTONE_FEEDS[dm.network];
   if (!Array.isArray(feeds)) {
     debug(`No redstone feeds found for network: ${dm.network}`);
     return;
   }
   for (const feed of feeds) {
-    try{
+    try {
       await dm.fromDep(`MockRedstoneOracle:${feed}`, dm.network, dm.deployment);
     }
     catch (_) {
@@ -394,7 +394,7 @@ async function mockAllRedstoneOracles(dm: DeploymentManager){
   }
 }
 
-async function mockRedstoneOracle(dm: DeploymentManager, feed: string){
+async function mockRedstoneOracle(dm: DeploymentManager, feed: string) {
   const feedContract = new Contract(
     feed,
     [
@@ -590,20 +590,20 @@ export async function createCrossChainProposal(context: CometContext, l2Proposal
       calldata.push(sendMessageToChildCalldata);
       break;
     }
-    // case 'linea-goerli': {
-    //   const sendMessageCalldata = utils.defaultAbiCoder.encode(
-    //     ['address', 'uint256', 'bytes'],
-    //     [bridgeReceiver.address, 0, l2ProposalData]
-    //   );
-    //   const lineaMessageService = await govDeploymentManager.getContractOrThrow(
-    //     'lineaMessageService'
-    //   );
-    //   targets.push(lineaMessageService.address);
-    //   values.push(0);
-    //   signatures.push('sendMessage(address,uint256,bytes)');
-    //   calldata.push(sendMessageCalldata);
-    //   break;
-    // }
+    case 'linea': {
+      const sendMessageCalldata = utils.defaultAbiCoder.encode(
+        ['address', 'uint256', 'bytes'],
+        [bridgeReceiver.address, 0, l2ProposalData]
+      );
+      const lineaMessageService = await govDeploymentManager.getContractOrThrow(
+        'lineaMessageService'
+      );
+      targets.push(lineaMessageService.address);
+      values.push(0);
+      signatures.push('sendMessage(address,uint256,bytes)');
+      calldata.push(sendMessageCalldata);
+      break;
+    }
     case 'optimism': {
       const sendMessageCalldata = utils.defaultAbiCoder.encode(
         ['address', 'bytes', 'uint32'],
