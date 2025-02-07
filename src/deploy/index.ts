@@ -63,6 +63,13 @@ export type Proposal = [
   string[], // calldatas
   string // description
 ];
+export type TestnetProposal = [
+  string[], // targets
+  BigNumberish[], // values
+  string[], // signatures
+  string[], // calldatas
+  string // description
+];
 
 // Note: this list could change over time
 // Ideally these wouldn't be hardcoded, but other solutions are much more complex, and slower
@@ -146,17 +153,44 @@ export const WHALES = {
     '0x651C9D1F9da787688225f49d63ad1623ba89A8D5', // FBTC whale
     '0xC455fE28a76da80022d4C35A37eB08FF405Eb78f', // FBTC whale
     '0x524db930F0886CdE7B5FFFc920Aae85e98C2abfb', // FBTC whale
-    '0x651C9D1F9da787688225f49d63ad1623ba89A8D5', // FBTC whale
     '0x72c7d27320e042417506e594697324dB5Fbf334C', // FBTC whale
     '0x3880233e78966eb13a9c2881d5f162d646633178', // FBTC whale
     '0x233493E9DC68e548AC27E4933A600A3A4682c0c3', // FBTC whale
     '0xCd83CbBFCE149d141A5171C3D6a0F0fCCeE225Ab', // COMP whale
+  ],
+  'unichain-sepolia': [
+    '0xd3A19CfC8b926f631C62d6D1213b51c27719Aa49', // USDC whale
+    '0xc8Da76f5A01a6531926fFc06398FE0Af2bb277d3', // WETH whale
   ],
 };
 
 export async function calldata(req: Promise<PopulatedTransaction>): Promise<string> {
   // Splice out the first 4 bytes (function selector) of the tx data
   return '0x' + (await req).data.slice(2 + 8);
+}
+
+export async function testnetProposal(actions: ProposalAction[], description: string): Promise<TestnetProposal> {
+  const targets = [],
+    values = [],
+    signatures = [],
+    calldatas = [];
+  for (const action of actions) {
+    if (action['contract']) {
+      const { contract, value, signature, args } = action as ContractAction;
+      targets.push(contract.address);
+      values.push(value ?? 0);
+      signatures.push(signature);
+      calldatas.push(await calldata(contract.populateTransaction[signature](...args)));
+    } else {
+      const { target, value, signature, calldata } = action as TargetAction;
+      targets.push(target);
+      values.push(value ?? 0);
+      signatures.push(signature);
+      calldatas.push(calldata);
+    }
+  }
+  return [targets, values, signatures, calldatas, description];
+  
 }
 
 export async function proposal(actions: ProposalAction[], description: string): Promise<Proposal> {

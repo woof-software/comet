@@ -39,6 +39,7 @@ import optimismRelationConfigMap from './deployments/optimism/usdc/relations';
 import optimismUsdtRelationConfigMap from './deployments/optimism/usdt/relations';
 import optimismWethRelationConfigMap from './deployments/optimism/weth/relations';
 import mantleRelationConfigMap from './deployments/mantle/usde/relations';
+import unichainRelationConfigMap from './deployments/unichain-sepolia/weth/relations';
 import scrollRelationConfigMap from './deployments/scroll/usdc/relations';
 
 task('accounts', 'Prints the list of accounts', async (taskArgs, hre) => {
@@ -132,6 +133,11 @@ const networkConfigs: NetworkConfig[] = [
     // url: `https://rpc.mantle.xyz`,
   },
   {
+    network: 'unichain-sepolia',
+    chainId: 1301,
+    url: `https://sepolia.unichain.org`,
+  },
+  {
     network: 'base',
     chainId: 8453,
     url: `https://rpc.ankr.com/base/${ANKR_KEY}`,
@@ -217,9 +223,10 @@ const config: HardhatUserConfig = {
         : { mnemonic: MNEMONIC, accountsBalance: (10n ** 36n).toString() },
       // this should only be relied upon for test harnesses and coverage (which does not use viaIR flag)
       allowUnlimitedContractSize: true,
-      hardfork: 'cancun',
+      hardfork: networkConfigs.some(({ chainId }) => chainId === 1) ? 'cancun' : 'shanghai',
       chains: networkConfigs.reduce((acc, { chainId }) => {
         if (chainId === 1) return acc;
+        if (chainId === 1301) return acc;
         acc[chainId] = {
           hardforkHistory: {
             berlin: 1,
@@ -283,6 +290,19 @@ const config: HardhatUserConfig = {
         }
       },
       {
+        network: 'unichain-sepolia',
+        chainId: 1301,
+        urls: {
+          // apiURL: 'https://rpc.mantle.xyz',
+          // links for scenarios
+          apiURL: 'https://unichain-sepolia.blockscout.com/api',
+          browserURL: 'https://unichain-sepolia.blockscout.com/'
+          // links for deployment
+          // apiURL: 'https://api.mantlescan.xyz/api',
+          // browserURL: 'https://mantlescan.xyz/'
+        }
+      },
+      {
         network: 'mantle',
         chainId: 5000,
         urls: {
@@ -340,6 +360,9 @@ const config: HardhatUserConfig = {
       },
       'mantle': {
         'usde': mantleRelationConfigMap
+      },
+      'unichain-sepolia': {
+        'weth': unichainRelationConfigMap
       },
       'scroll': {
         usdc: scrollRelationConfigMap
@@ -478,6 +501,12 @@ const config: HardhatUserConfig = {
         network: 'mantle',
         deployment: 'usde',
         auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'unichain-sepolia-weth',
+        network: 'unichain-sepolia',
+        deployment: 'weth',
+        auxiliaryBase: 'sepolia-usdc'
       },
       {
         name: 'scroll-usdc',

@@ -71,6 +71,21 @@ export async function isBridgeProposal(
       ];
       return targets.some(t => bridgeContracts.includes(t));
     }
+    case 'unichain-sepolia': {
+      const governor = await governanceDeploymentManager.getContractOrThrow('governor');
+      const unichainSepoliaL1CrossDomainMessenger = await governanceDeploymentManager.getContractOrThrow(
+        'unichainSepoliaL1CrossDomainMessenger'
+      );
+      const unichainSepoliaL1StandardBridge = await governanceDeploymentManager.getContractOrThrow(
+        'unichainSepoliaL1StandardBridge'
+      );
+      const { targets } = await governor.getActions(openProposal.id);
+      const bridgeContracts = [
+        unichainSepoliaL1CrossDomainMessenger.address,
+        unichainSepoliaL1StandardBridge.address
+      ];
+      return targets.some(t => bridgeContracts.includes(t));
+    }
     case 'scroll': {
       const scrollMessenger = await governanceDeploymentManager.getContractOrThrow(
         'scrollMessenger'
