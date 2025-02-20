@@ -9,10 +9,19 @@ const SKY_USD_PRICE_FEED_ADDRESS = '0xee10fE5E7aa92dd7b136597449c3d5813cFC5F18';
 
 export default migration('1739941370_add_sky_as_collateral', {
   async prepare(deploymentManager: DeploymentManager) {
-    return {};
-  },
 
-  async enact(deploymentManager: DeploymentManager, _) {
+    const skyUsdScalingPriceFeed = await deploymentManager.deploy(
+      'SKY:priceFeed',
+      'pricefeeds/ScalingPriceFeed.sol',
+      [
+        SKY_USD_PRICE_FEED_ADDRESS, // SKY / USD price feed
+        8,
+      ]
+    )
+
+    return { skyUsdScalingPriceFeed: skyUsdScalingPriceFeed.address };
+  },
+  async enact(deploymentManager: DeploymentManager, _, { skyUsdScalingPriceFeed }) {
     const trace = deploymentManager.tracer();
 
     const SKY = await deploymentManager.existing(
@@ -24,7 +33,7 @@ export default migration('1739941370_add_sky_as_collateral', {
 
     const skyPricefeed = await deploymentManager.existing(
       'SKY:priceFeed',
-      SKY_USD_PRICE_FEED_ADDRESS,
+      skyUsdScalingPriceFeed,
       'mainnet'
     );
 
