@@ -40,6 +40,7 @@ import optimismUsdtRelationConfigMap from './deployments/optimism/usdt/relations
 import optimismWethRelationConfigMap from './deployments/optimism/weth/relations';
 import mantleRelationConfigMap from './deployments/mantle/usde/relations';
 import scrollRelationConfigMap from './deployments/scroll/usdc/relations';
+import roninRelationConfigMap from './deployments/ronin/usdc/relations';
 
 task('accounts', 'Prints the list of accounts', async (taskArgs, hre) => {
   for (const account of await hre.ethers.getSigners()) console.log(account.address);
@@ -58,6 +59,7 @@ const {
   MANTLESCAN_KEY,
   SCROLLSCAN_KEY,
   ANKR_KEY,
+  TENDERLY_KEY_RONIN,
   MNEMONIC = 'myth like bonus scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
@@ -112,6 +114,11 @@ const networkConfigs: NetworkConfig[] = [
     network: 'sepolia',
     chainId: 11155111,
     url: `https://rpc.ankr.com/eth_sepolia/${ANKR_KEY}`,
+  },
+  {
+    network: 'ronin',
+    chainId: 2020,
+    url: `https://ronin.gateway.tenderly.co/${TENDERLY_KEY_RONIN}`,
   },
   {
     network: 'polygon',
@@ -224,6 +231,8 @@ const config: HardhatUserConfig = {
           hardforkHistory: {
             berlin: 1,
             london: 2,
+            shanghai: 3,
+            cancun: 4,
           },
         };
         return acc;
@@ -294,6 +303,14 @@ const config: HardhatUserConfig = {
           // apiURL: 'https://api.mantlescan.xyz/api',
           // browserURL: 'https://mantlescan.xyz/'
         }
+      },
+      {
+        network: 'ronin',
+        chainId: 2020,
+        urls: {
+          apiURL: 'https://explorer-kintsugi.roninchain.com/v2/2020',
+          browserURL: 'https://app.roninchain.com'
+        }
       }
     ]
   },
@@ -343,6 +360,9 @@ const config: HardhatUserConfig = {
       },
       'scroll': {
         usdc: scrollRelationConfigMap
+      },
+      'ronin': {
+        usdc: roninRelationConfigMap
       }
     },
   },
@@ -482,6 +502,12 @@ const config: HardhatUserConfig = {
       {
         name: 'scroll-usdc',
         network: 'scroll',
+        deployment: 'usdc',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'ronin',
+        network: 'ronin',
         deployment: 'usdc',
         auxiliaryBase: 'mainnet'
       }
