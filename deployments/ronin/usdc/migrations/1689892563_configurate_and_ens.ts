@@ -21,6 +21,7 @@ const ENSRegistryAddress = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e';
 const ENSSubdomainLabel = 'v3-additional-grants';
 const ENSSubdomain = `${ENSSubdomainLabel}.${ENSName}`;
 const ENSTextRecordKey = 'v3-official-markets';
+const USDCAmountToBridge = exp(1, 6);
 
 export default migration("1707394874_configurate_and_ens", {
   prepare: async (deploymentManager: DeploymentManager) => {
@@ -60,7 +61,6 @@ export default migration("1707394874_configurate_and_ens", {
       [configurator.address, comet.address]
     );
 
-
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ["address[]", "uint256[]", "string[]", "bytes[]"],
       [
@@ -77,7 +77,6 @@ export default migration("1707394874_configurate_and_ens", {
       ]
     );
 
-    const USDCAmountToBridge = exp(1, 6);
 
     const ENSResolver = await govDeploymentManager.existing(
       'ENSResolver',
@@ -229,16 +228,16 @@ export default migration("1707394874_configurate_and_ens", {
     // );
     // expect(stateChanges).to.deep.equal({
     //   WRON: {
-    //     supplyCap: exp(2500000, 18)
+    //     supplyCap: exp(1000000, 18)
     //   },
-    //   USDC: {
-    //     supplyCap: exp(800000, 6)
+    //   WETH: {
+    //     supplyCap: exp(110, 18)
     //   },
     //   AXS: {
-    //     supplyCap: exp(250000, 18)
+    //     supplyCap: exp(150000, 18)
     //   }
-    //   baseTrackingSupplySpeed: exp(4 / 86400, 15, 18), // 46296296296
-    //   baseTrackingBorrowSpeed: exp(4 / 86400, 15, 18), // 46296296296
+    //   baseTrackingSupplySpeed: 0,
+    //   baseTrackingBorrowSpeed: 0
     // });
 
     // const config = await rewards.rewardConfig(comet.address);
