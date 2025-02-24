@@ -15,15 +15,12 @@ import { forkedHreForBase } from '../../../../plugins/scenario/utils/hreForBase'
 
 const destinationChainSelector = "6916147374840168594";
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
-//const Comp = "0x514910771AF9Ca656af840dff83E8264EcF986CA";
-//const CompL2 = "0x3902228D6A3d2Dc44731fD9d45FeE6a61c722D0b";
 const ENSName = 'compound-community-licenses.eth';
 const ENSResolverAddress = '0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41';
 const ENSRegistryAddress = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e';
 const ENSSubdomainLabel = 'v3-additional-grants';
 const ENSSubdomain = `${ENSSubdomainLabel}.${ENSName}`;
 const ENSTextRecordKey = 'v3-official-markets';
-//const whale = '0xF977814e90dA44bFA03b6295A0616a897441aceC';
 
 export default migration("1707394874_configurate_and_ens", {
   prepare: async (deploymentManager: DeploymentManager) => {
@@ -63,40 +60,23 @@ export default migration("1707394874_configurate_and_ens", {
       [configurator.address, comet.address]
     );
 
-    // const setRewardConfigCalldata = utils.defaultAbiCoder.encode(
-    //   ["address", "address"],
-    //   [comet.address, CompL2]
-    // );
-
-    // const sweepTokenCalldataComp = utils.defaultAbiCoder.encode(
-    //   ["address", "address"],
-    //   [rewards.address, CompL2]
-    // );
 
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ["address[]", "uint256[]", "string[]", "bytes[]"],
       [
-        // [configurator.address, cometAdmin.address, rewards.address, bridgeReceiver.address],
         [configurator.address, cometAdmin.address],
-        //[0, 0, 0, 0],
         [0, 0],
         [
           "setConfiguration(address,(address,address,address,address,address,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint104,uint104,uint104,(address,address,uint8,uint64,uint64,uint64,uint128)[]))",
           "deployAndUpgradeTo(address,address)",
-        // "setRewardConfig(address,address)",
-        // "sweepToken(address,address)"
         ],
         [
           setConfigurationCalldata,
           deployAndUpgradeToCalldata,
-          // setRewardConfigCalldata,
-          // sweepTokenCalldataComp
         ],
       ]
     );
 
-
-    //const COMPAmountToBridge = exp(1, 18);
     const USDCAmountToBridge = exp(1, 6);
 
     const ENSResolver = await govDeploymentManager.existing(
@@ -117,22 +97,6 @@ export default migration("1707394874_configurate_and_ens", {
     } else {
       officialMarketsJSON[chainId] = [newMarketObject];
     }
-
-    // await govDeploymentManager.hre.network.provider.request({
-    //   method: 'hardhat_impersonateAccount',
-    //   params: [whale],
-    // });
-
-
-
-    // const whaleSigner = await govDeploymentManager.getSigner(whale);
-
-    // const tx = await whaleSigner.sendTransaction({
-    //   to: Comp,
-    //   data: COMP.interface.encodeFunctionData('transfer', [timelock.address, COMPAmountToBridge]),
-    // });
-
-    //await tx.wait();
 
     const actions = [
       {
@@ -163,12 +127,7 @@ export default migration("1707394874_configurate_and_ens", {
             [
               utils.defaultAbiCoder.encode(['address'], [bridgeReceiver.address]),
               l2ProposalData,
-              [
-                // [
-                //   Comp,
-                //   COMPAmountToBridge
-                // ]
-              ],
+              [],
               ethers.constants.AddressZero,
               "0x"
             ]
@@ -198,61 +157,6 @@ export default migration("1707394874_configurate_and_ens", {
       method: 'hardhat_setBalance',
       params: [timelock.address, '0x56bc75e2d63100000'],
     })
-
-
-    const timelockSigner = await govDeploymentManager.getSigner(timelock.address);  
-
-    // await timelockSigner.sendTransaction(
-    //   {
-    //     to: USDC,
-    //     data: ethers.utils.id("approve(address,uint256)").slice(0, 10) + utils.defaultAbiCoder.encode(
-    //       ["address", "uint256"],
-    //       [l1CCIPRouter.address, USDCAmountToBridge]
-    //     ).slice(2),
-    //   }
-    // );
-
-    // await timelockSigner.sendTransaction(
-    //   {
-    //     to: roninl1NativeBridge.address,
-    //     data: ethers.utils.id("requestDepositFor((address,address,(uint8,uint256,uint256)))").slice(0, 10) + utils.defaultAbiCoder.encode(
-    //       ["(address,address,(uint8,uint256,uint256))"],
-    //       [
-    //         [
-    //           comet.address,
-    //           USDC,
-    //           [0, 0, USDCAmountToBridge],
-    //         ]
-    //       ]
-    //     ).slice(2),
-    //   }
-    // );
-
-
-    // await timelockSigner.sendTransaction(
-    //   {
-    //     to: l1CCIPRouter.address,
-    //     data: ethers.utils.id("ccipSend(uint64,(bytes,bytes,(address,uint256)[],address,bytes))").slice(0, 10) + utils.defaultAbiCoder.encode(
-    //       ["uint64", "(bytes,bytes,(address,uint256)[],address,bytes)"],
-    //       [
-    //         destinationChainSelector,
-    //         [
-    //           utils.defaultAbiCoder.encode(['address'], [bridgeReceiver.address]),
-    //           l2ProposalData,
-    //           [
-    //             // [
-    //             //   Comp,
-    //             //   COMPAmountToBridge
-    //             // ]
-    //           ],
-    //           ethers.constants.AddressZero,
-    //           "0x"
-    //         ]
-    //       ]
-    //     ).slice(2),
-    //     value: utils.parseEther("0.5")
-    //   }
-    // );
 
     const txn = await governor.propose(...(await proposal(actions, description)))
     const event = (await txn.wait()).events.find((event) => event.event === "ProposalCreated");
