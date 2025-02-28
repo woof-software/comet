@@ -31,6 +31,7 @@ import arbitrumBridgedUsdcRelationConfigMap from './deployments/arbitrum/usdc.e/
 import arbitrumNativeUsdcRelationConfigMap from './deployments/arbitrum/usdc/relations';
 import arbitrumWETHRelationConfigMap from './deployments/arbitrum/weth/relations';
 import arbitrumUsdtRelationConfigMap from './deployments/arbitrum/usdt/relations';
+import arbitrumUsdsRelationConfigMap from './deployments/arbitrum/usds/relations';
 import baseUsdbcRelationConfigMap from './deployments/base/usdbc/relations';
 import baseWethRelationConfigMap from './deployments/base/weth/relations';
 import baseUsdcRelationConfigMap from './deployments/base/usdc/relations';
@@ -219,11 +220,13 @@ const config: HardhatUserConfig = {
       allowUnlimitedContractSize: true,
       hardfork: 'cancun',
       chains: networkConfigs.reduce((acc, { chainId }) => {
-        if (chainId === 1) return acc;
+        if (chainId === 1 || chainId === 42161) return acc;
         acc[chainId] = {
           hardforkHistory: {
             berlin: 1,
             london: 2,
+            shanghai: 3,
+            cancun: 4,
           },
         };
         return acc;
@@ -325,7 +328,8 @@ const config: HardhatUserConfig = {
         'usdc.e': arbitrumBridgedUsdcRelationConfigMap,
         usdc: arbitrumNativeUsdcRelationConfigMap,
         usdt: arbitrumUsdtRelationConfigMap,
-        weth: arbitrumWETHRelationConfigMap
+        weth: arbitrumWETHRelationConfigMap,
+        usds: arbitrumUsdsRelationConfigMap,
       },
       'base': {
         usdbc: baseUsdbcRelationConfigMap,
@@ -429,6 +433,12 @@ const config: HardhatUserConfig = {
         name: 'arbitrum-weth',
         network: 'arbitrum',
         deployment: 'weth',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'arbitrum-usds',
+        network: 'arbitrum',
+        deployment: 'usds',
         auxiliaryBase: 'mainnet'
       },
       {

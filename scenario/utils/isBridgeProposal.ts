@@ -13,8 +13,16 @@ export async function isBridgeProposal(
       const l1GatewayRouter = await governanceDeploymentManager.getContractOrThrow(
         'arbitrumL1GatewayRouter'
       );
+      const USDSGateway = await governanceDeploymentManager.getContractOrThrow(
+        'arbitrumUSDSGateway'
+      );
       const targets = openProposal.targets;
-      return targets.includes(inbox.address) || targets.includes(l1GatewayRouter.address);
+      const bridgeContracts = [
+        inbox.address,
+        l1GatewayRouter.address,
+        USDSGateway.address
+      ];
+      return targets.some(t => bridgeContracts.includes(t));
     }
     case 'polygon': {
       const {
