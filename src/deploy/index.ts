@@ -1,5 +1,5 @@
 import { AssetConfigStruct } from '../../build/types/Comet';
-import { BigNumberish, Contract, PopulatedTransaction } from 'ethers';
+import { BigNumberish, Contract, PopulatedTransaction, utils } from 'ethers';
 
 export { cloneGov, deployNetworkComet as deployComet, sameAddress } from './Network';
 export { getConfiguration, getConfigurationStruct } from './NetworkConfiguration';
@@ -60,6 +60,13 @@ export type ProposalAction = ContractAction | TargetAction;
 export type Proposal = [
   string[], // targets
   BigNumberish[], // values
+  string[], // calldatas
+  string // description
+];
+
+export type TestnetProposal = [
+  string[], // targets
+  BigNumberish[], // values
   string[], // signatures
   string[], // calldatas
   string // description
@@ -94,6 +101,9 @@ export const WHALES = {
     '0x43594da5d6A03b2137a04DF5685805C676dEf7cB', // rsETH whale
     '0x3d9819210a31b4961b30ef54be2aed79b9c9cd3b',
     '0x0B925eD163218f6662a35e0f0371Ac234f9E9371', // wstETH whale
+    '0x3b3501f6778Bfc56526cF2aC33b78b2fDBE4bc73', // solvBTC.BBN whale
+    '0x8bc93498b861fd98277c3b51d240e7E56E48F23c', // solvBTC.BBN whale
+    '0xD5cf704dC17403343965b4F9cd4D7B5e9b20CC52', // solvBTC.BBN whale
   ],
   polygon: [
     '0xF977814e90dA44bFA03b6295A0616a897441aceC', // USDT whale
@@ -139,6 +149,7 @@ export const WHALES = {
     '0x2A82Ae142b2e62Cb7D10b55E323ACB1Cab663a26', // OP whale
     '0x8af3827a41c26c7f32c81e93bb66e837e0210d5c', // USDC whale
     '0xc45A479877e1e9Dfe9FcD4056c699575a1045dAA', // wstETH whale
+    '0x6e57181D6b4b7c138a6F956AD16DAF4f27FC5E04', // COMP whale
   ],
   mantle: [
     '0x588846213A30fd36244e0ae0eBB2374516dA836C', // USDe whale
@@ -146,7 +157,21 @@ export const WHALES = {
     '0x651C9D1F9da787688225f49d63ad1623ba89A8D5', // FBTC whale
     '0xC455fE28a76da80022d4C35A37eB08FF405Eb78f', // FBTC whale
     '0x524db930F0886CdE7B5FFFc920Aae85e98C2abfb', // FBTC whale
+    '0x72c7d27320e042417506e594697324dB5Fbf334C', // FBTC whale
+    '0x3880233e78966eb13a9c2881d5f162d646633178', // FBTC whale
+    '0x233493E9DC68e548AC27E4933A600A3A4682c0c3', // FBTC whale
     '0xCd83CbBFCE149d141A5171C3D6a0F0fCCeE225Ab', // COMP whale
+  ],
+  linea: [
+    '0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f', // ETH whale
+    '0x9be5e24F05bBAfC28Da814bD59284878b388a40f', // WBTC whale
+    '0xCeEd853798ff1c95cEB4dC48f68394eb7A86A782', // wstETH whale
+    '0x03dDD23943b3C698442C5f2841eae70058DbAb8B', // wstETH whale
+    '0x0180912F869065c7a44617Cd4c288bE6Bce5d192', // wstETH whale
+    '0x7160570BB153Edd0Ea1775EC2b2Ac9b65F1aB61B', // wstETH whale
+    '0x0684FC172a0B8e6A65cF4684eDb2082272fe9050', // ezETH whale
+    '0x3A0ee670EE34D889B52963bD20728dEcE4D9f8FE', // ezETH whale
+    '0x6a72F4F191720c411Cd1fF6A5EA8DeDEC3A64771', // USDT whale
   ],
 };
 
@@ -158,6 +183,26 @@ export async function calldata(req: Promise<PopulatedTransaction>): Promise<stri
 export async function proposal(actions: ProposalAction[], description: string): Promise<Proposal> {
   const targets = [],
     values = [],
+    calldatas = [];
+  for (const action of actions) {
+    if (action['contract']) {
+      const { contract, value, signature, args } = action as ContractAction;
+      targets.push(contract.address);
+      values.push(value ?? 0);
+      calldatas.push(utils.id(signature).slice(0, 10) + (await calldata(contract.populateTransaction[signature](...args))).slice(2));
+    } else {
+      const { target, value, signature, calldata } = action as TargetAction;
+      targets.push(target);
+      values.push(value ?? 0);
+      calldatas.push(utils.id(signature).slice(0, 10) + calldata.slice(2));
+    }
+  }
+  return [targets, values, calldatas, description];
+}
+
+export async function testnetProposal(actions: ProposalAction[], description: string): Promise<TestnetProposal> {
+  const targets = [],
+    values = [],
     signatures = [],
     calldatas = [];
   for (const action of actions) {
@@ -165,14 +210,12 @@ export async function proposal(actions: ProposalAction[], description: string): 
       const { contract, value, signature, args } = action as ContractAction;
       targets.push(contract.address);
       values.push(value ?? 0);
-      signatures.push(signature);
-      calldatas.push(await calldata(contract.populateTransaction[signature](...args)));
+      calldatas.push(utils.id(signature).slice(0, 10) + (await calldata(contract.populateTransaction[signature](...args))).slice(2));
     } else {
       const { target, value, signature, calldata } = action as TargetAction;
       targets.push(target);
       values.push(value ?? 0);
-      signatures.push(signature);
-      calldatas.push(calldata);
+      calldatas.push(utils.id(signature).slice(0, 10) + calldata.slice(2));
     }
   }
   return [targets, values, signatures, calldatas, description];
