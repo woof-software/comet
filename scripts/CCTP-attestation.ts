@@ -3,7 +3,8 @@
  Example: 
  DEPLOYMENT=usdc BURN_TXN_HASH=<burn_txn_hash> SOURCE_NETWORK=sepolia DEST_NETWORK=arbitrum-sepolia ETH_PK=<private_key> npx hardhat run scripts/CCTP-attestation.ts
 */
-import hre from 'hardhat';
+import { nonForkedHreForBase } from '../plugins/scenario/utils/hreForBase';
+
 import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager';
 import { requireEnv } from '../hardhat.config';
 
@@ -12,8 +13,9 @@ async function main() {
   const BURN_TXN_HASH = requireEnv('BURN_TXN_HASH');
   const SOURCE_NETWORK = requireEnv('SOURCE_NETWORK');
   const DEST_NETWORK = requireEnv('DEST_NETWORK');
-  await hre.changeNetwork(SOURCE_NETWORK);
-  const src_dm = new DeploymentManager(SOURCE_NETWORK, DEPLOYMENT, hre, {
+  
+  const hreSRC = await nonForkedHreForBase({ name: SOURCE_NETWORK, network: SOURCE_NETWORK, deployment: '' });
+  const src_dm = new DeploymentManager(SOURCE_NETWORK, DEPLOYMENT, hreSRC, {
     writeCacheToDisk: true
   });
 
@@ -29,6 +31,8 @@ async function main() {
     console.log(`Polling... ${circleAttestationApiHost}/attestations/${messageHash}`);
     const response = await fetch(`${circleAttestationApiHost}/attestations/${messageHash}`);
     attestationResponse = await response.json();
+    // attestationResponse = { status: 'complete', attestation: '0xe98af27614d419950026763b66eb4e21fc37afb9c95e42b058c42ceb6579537739a391864676aa1c5316f9c8dedafcc7c54b26d2c6be0e63bb0a333dcbc17c0c1b21c71e36c98119cf0898671e895d7aa72ef8f12c046aa07f7be35814595658512420a98a1a2b154e3a757e58d4fbf98cd6d5d98f5338a62aee51752008b7effd1b'};
+
     console.log(`Response: ${JSON.stringify(attestationResponse)}`);
     await new Promise(r => setTimeout(r, 2000));
   }
@@ -38,23 +42,14 @@ async function main() {
   console.log(`receivingMessageBytes: ${messageBytes}`);
   console.log(`signature: ${attestationResponse.attestation}`);
   console.log(`----------------------------`);
-  await hre.changeNetwork(DEST_NETWORK);
-  const dest_dm = new DeploymentManager(DEST_NETWORK, DEPLOYMENT, hre, {
-    writeCacheToDisk: true
-  });
-
-  const CCTPMessageTransmitter = await dest_dm.getContractOrThrow('CCTPMessageTransmitter');
-  const signer = await dest_dm.getSigner();
-  const transactionRequest = await signer.populateTransaction({
-    to: CCTPMessageTransmitter.address,
-    from: signer.address,
-    data: CCTPMessageTransmitter.interface.encodeFunctionData('receiveMessage', [messageBytes, attestationResponse.attestation]),
-    gasPrice: Math.ceil(1.3 * (await hre.ethers.provider.getGasPrice()).toNumber())
-  });
-
-  const mintTxn = await signer.sendTransaction(transactionRequest);
-
-  console.log(`Mint completed, transaction hash: ${mintTxn.hash}`);
+  /*
+    const transactionRequest = await signer.populateTransaction({
+      to: CCTPMessageTransmitter.address,
+      from: signer.address,
+      data: CCTPMessageTransmitter.interface.encodeFunctionData('receiveMessage', [messageBytes, attestationResponse.attestation]),
+      gasPrice: Math.ceil(1.3 * (await hre.ethers.provider.getGasPrice()).toNumber())
+    });
+  */
 }
 
 main()
