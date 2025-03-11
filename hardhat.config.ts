@@ -42,6 +42,7 @@ import optimismUsdtRelationConfigMap from './deployments/optimism/usdt/relations
 import optimismWethRelationConfigMap from './deployments/optimism/weth/relations';
 import mantleRelationConfigMap from './deployments/mantle/usde/relations';
 import scrollRelationConfigMap from './deployments/scroll/usdc/relations';
+import lineaRelationConfigMap from './deployments/linea/usdc/relations';
 
 task('accounts', 'Prints the list of accounts', async (taskArgs, hre) => {
   for (const account of await hre.ethers.getSigners()) console.log(account.address);
@@ -65,7 +66,8 @@ const {
   NETWORK_PROVIDER = '',
   GOV_NETWORK_PROVIDER = '',
   GOV_NETWORK = '',
-  REMOTE_ACCOUNTS = ''
+  REMOTE_ACCOUNTS = '',
+  LINEASCAN_KEY = '',
 } = process.env;
 
 function* deriveAccounts(pk: string, n: number = 10) {
@@ -92,7 +94,8 @@ export function requireEnv(varName, msg?: string): string {
   'LINEASCAN_KEY',
   'OPTIMISMSCAN_KEY',
   'MANTLESCAN_KEY',
-  'SCROLLSCAN_KEY'
+  'SCROLLSCAN_KEY',
+  'LINEASCAN_KEY',
 ].map((v) => requireEnv(v));
 
 // Networks
@@ -156,8 +159,13 @@ const networkConfigs: NetworkConfig[] = [
   {
     network: 'scroll',
     chainId: 534352,
-    url: 'https://rpc.scroll.io',
-  }
+    url: `https://rpc.ankr.com/scroll/${ANKR_KEY}`,
+  },
+  {
+    network: 'linea',
+    chainId: 59144,
+    url: `https://rpc.ankr.com/linea/${ANKR_KEY}`,
+  },
 ];
 
 function getDefaultProviderURL(network: string) {
@@ -256,6 +264,7 @@ const config: HardhatUserConfig = {
       mantle: MANTLESCAN_KEY,
       // Scroll
       'scroll': SCROLLSCAN_KEY,
+      linea: LINEASCAN_KEY
     },
     customChains: [
       {
@@ -296,7 +305,15 @@ const config: HardhatUserConfig = {
           // apiURL: 'https://api.mantlescan.xyz/api',
           // browserURL: 'https://mantlescan.xyz/'
         }
-      }
+      },
+      {
+        network: 'linea',
+        chainId: 59144,
+        urls: {
+          apiURL: 'https://api.lineascan.build/api',
+          browserURL: 'https://lineascan.build/'
+        }
+      },
     ]
   },
 
@@ -347,7 +364,10 @@ const config: HardhatUserConfig = {
       },
       'scroll': {
         usdc: scrollRelationConfigMap
-      }
+      },
+      linea: {
+        usdc: lineaRelationConfigMap
+      },
     },
   },
 
@@ -492,6 +512,12 @@ const config: HardhatUserConfig = {
         name: 'mantle-usde',
         network: 'mantle',
         deployment: 'usde',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'linea-usdc',
+        network: 'linea',
+        deployment: 'usdc',
         auxiliaryBase: 'mainnet'
       },
       {
