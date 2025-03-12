@@ -6,20 +6,13 @@ import { Contract } from 'ethers';
 
 const STREAM_CONTROLLER = '0x3b109aa111BdF11B30350CdfAd7e9Cf091421Aa4';
 const VAULT = '0x8624f61Cc6e5A86790e173712AfDd480fa8b73Ba';
-/*
-[
-[0x3E67cc2C7fFf86d9870dB9D02c43e789B52FB296,0x986b5E1e1755e3C2440e960477f25201B0a8bbD4,false]
-[0x4dDB1bb1Ed2749995e8e490AE2Ac4EDaa4738AB8,0x1B39Ee86Ec5979ba5C322b826B3ECb8C79991699,false]
-]
-*/
 
-const RECEIVER_UPFRONT = '0xd36025E1e77069aA991DC24f0E6287b4A35c89Ad';
-const RECEIVER_STREAM = '0x3f6a5e8C632c9EBC97a39d62F9AEf0A426aafa58';
+const RECEIVER = '0xc10785fB7b1adD4fD521A27d0d55c5561EEf0940';
 
-const upfrontAmount = exp(50_000, 18);
-const streamAmount  = exp(100_000, 18);
+const upfrontAmount = exp(50_000, 18);  // can be changed
+const streamAmount  = exp(100_000, 18); // can be changed
 const streamDuration = 60 * 60 * 24 * 30 * 9; // 9 months
-const amountPerSec = streamAmount * exp(1,14) / BigInt(streamDuration);
+const amountPerSec = streamAmount * exp(1, 2) / BigInt(streamDuration);
 
 let balanceBefore: bigint;
 
@@ -30,17 +23,18 @@ export default migration('1741784455_withdraw_comp_from_vault', {
   async enact(deploymentManager: DeploymentManager) {
     const trace = deploymentManager.tracer();
     const {
+      timelock,
       governor,
       comptrollerV2,
       COMP
     } = await deploymentManager.getContracts();
 
-    balanceBefore = (await COMP.balanceOf(RECEIVER_UPFRONT)).toBigInt();
+    balanceBefore = (await COMP.balanceOf(RECEIVER)).toBigInt();
 
     const streamController = new Contract(
       STREAM_CONTROLLER,
       [
-        'function createStream(address token, address to, uint216 amountPerSec, uint256 duration) external',
+        'function depositAndCreate(address token, uint256 amountToDeposit, address to, uint216 amountPerSec, uint256 duration) external',
       ],
       deploymentManager.hre.ethers.provider
     );
@@ -53,8 +47,18 @@ export default migration('1741784455_withdraw_comp_from_vault', {
       deploymentManager.hre.ethers.provider
     );
 
+    const approveCalldata = (
+      await COMP.populateTransaction.approve(STREAM_CONTROLLER, streamAmount)
+    ).data;
+
+    const executeApproveCalldata = await calldata(vault.populateTransaction.execute({
+      target: COMP.address,
+      value: 0,
+      data: approveCalldata
+    }));
+
     const createStreamCalldata = (
-      await streamController.populateTransaction.createStream(COMP.address, RECEIVER_STREAM, amountPerSec, streamDuration)
+      await streamController.populateTransaction.depositAndCreate(COMP.address, streamAmount, RECEIVER, amountPerSec, streamDuration)
     ).data;
     console.log('createStreamCalldata', createStreamCalldata);
 
@@ -63,20 +67,33 @@ export default migration('1741784455_withdraw_comp_from_vault', {
       value: 0,
       data: createStreamCalldata
     }));
+
     const mainnetActions = [
       // 1. Withdraw the upfront amount from Comptroller to receiver
       {
         contract: comptrollerV2,
         signature: '_grantComp(address,uint256)',
-        args: [RECEIVER_UPFRONT, upfrontAmount],
+        args: [RECEIVER, upfrontAmount],
       },
       // 2. Withdraw the stream amount from Comptroller to vault
       {
         contract: comptrollerV2,
         signature: '_grantComp(address,uint256)',
+        args: [timelock.address, streamAmount],
+      },
+      // 3. Withdraw the stream amount from Comptroller to vault
+      {
+        contract: COMP,
+        signature: 'transfer(address,uint256)',
         args: [VAULT, streamAmount],
       },
-      // 3. Deposit and create the stream
+      // 4. Approve the stream controller to spend the stream amount
+      {
+        target: VAULT,
+        signature: 'execute((address,uint256,bytes))',
+        calldata: executeApproveCalldata,
+      },
+      // 5. Deposit and create the stream
       {
         target: VAULT,
         signature: 'execute((address,uint256,bytes))',
@@ -102,30 +119,20 @@ export default migration('1741784455_withdraw_comp_from_vault', {
   async verify(deploymentManager: DeploymentManager) {
     const { COMP } = await deploymentManager.getContracts();
 
-    expect((await COMP.balanceOf(RECEIVER_UPFRONT)).sub(balanceBefore)).to.equal(upfrontAmount);
+    expect((await COMP.balanceOf(RECEIVER)).sub(balanceBefore)).to.equal(upfrontAmount);
     // const stream = new Contract(
-    //   STREAM_CONTROLLER,
+    //   '0x4dDB1bb1Ed2749995e8e490AE2Ac4EDaa4738AB8',
     //   [
     //     'function withdraw(address from, address to, uint216 amountPerSec) external',
     //   ],
     //   deploymentManager.hre.ethers.provider
     // );
-
-    // await deploymentManager.hre.network.provider.request({
-    //   method: 'hardhat_impersonateAccount',
-    //   params: [RECEIVER_STREAM]
-    // });
-    // const signer2 = await deploymentManager.hre.ethers.provider.getSigner(RECEIVER_STREAM);
-    // await deploymentManager.hre.network.provider.send('hardhat_setBalance', [
-    //   RECEIVER_STREAM,
-    //   deploymentManager.hre.ethers.utils.hexStripZeros(deploymentManager.hre.ethers.utils.parseEther('100').toHexString()),
-    // ]);
     // await deploymentManager.hre.network.provider.send('evm_increaseTime', [streamDuration]);
     // await deploymentManager.hre.network.provider.send('evm_mine'); // ensure block is mined
 
-    // const _balanceBefore = await COMP.balanceOf(RECEIVER_STREAM);
-    // await (await stream.connect(signer2).withdraw(COMP.address, RECEIVER_STREAM, amountPerSec)).wait();
-    // const _balanceAfter = await COMP.balanceOf(RECEIVER_STREAM);
+    // const _balanceBefore = await COMP.balanceOf(RECEIVER);
+    // await (await stream.connect(signer).withdraw(STREAM_CONTROLLER, RECEIVER, amountPerSec)).wait();
+    // const _balanceAfter = await COMP.balanceOf(RECEIVER);
     // expect(streamAmount).to.equal(_balanceAfter.sub(_balanceBefore).toBigInt());
   },
 });
