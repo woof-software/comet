@@ -25,6 +25,7 @@ import mainnetWethRelationConfigMap from './deployments/mainnet/weth/relations';
 import mainnetUsdtRelationConfigMap from './deployments/mainnet/usdt/relations';
 import mainnetWstETHRelationConfigMap from './deployments/mainnet/wsteth/relations';
 import mainnetUsdsRelationConfigMap from './deployments/mainnet/usds/relations';
+import mainnetWbtcRelationConfigMap from './deployments/mainnet/wbtc/relations';
 import polygonRelationConfigMap from './deployments/polygon/usdc/relations';
 import polygonUsdtRelationConfigMap from './deployments/polygon/usdt/relations';
 import arbitrumBridgedUsdcRelationConfigMap from './deployments/arbitrum/usdc.e/relations';
@@ -35,11 +36,13 @@ import baseUsdbcRelationConfigMap from './deployments/base/usdbc/relations';
 import baseWethRelationConfigMap from './deployments/base/weth/relations';
 import baseUsdcRelationConfigMap from './deployments/base/usdc/relations';
 import baseAeroRelationConfigMap from './deployments/base/aero/relations';
+import baseUSDSRelationConfigMap from './deployments/base/usds/relations';
 import optimismRelationConfigMap from './deployments/optimism/usdc/relations';
 import optimismUsdtRelationConfigMap from './deployments/optimism/usdt/relations';
 import optimismWethRelationConfigMap from './deployments/optimism/weth/relations';
 import mantleRelationConfigMap from './deployments/mantle/usde/relations';
 import scrollRelationConfigMap from './deployments/scroll/usdc/relations';
+import sonicRelationConfigMap from './deployments/sonic/usdc.e/relations';
 
 task('accounts', 'Prints the list of accounts', async (taskArgs, hre) => {
   for (const account of await hre.ethers.getSigners()) console.log(account.address);
@@ -63,7 +66,8 @@ const {
   NETWORK_PROVIDER = '',
   GOV_NETWORK_PROVIDER = '',
   GOV_NETWORK = '',
-  REMOTE_ACCOUNTS = ''
+  REMOTE_ACCOUNTS = '',
+  SONICSCAN_KEY = '',
 } = process.env;
 
 function* deriveAccounts(pk: string, n: number = 10) {
@@ -90,7 +94,8 @@ export function requireEnv(varName, msg?: string): string {
   'LINEASCAN_KEY',
   'OPTIMISMSCAN_KEY',
   'MANTLESCAN_KEY',
-  'SCROLLSCAN_KEY'
+  'SCROLLSCAN_KEY',
+  'SONICSCAN_KEY',
 ].map((v) => requireEnv(v));
 
 // Networks
@@ -117,6 +122,11 @@ const networkConfigs: NetworkConfig[] = [
     network: 'polygon',
     chainId: 137,
     url: `https://rpc.ankr.com/polygon/${ANKR_KEY}`,
+  },
+  {
+    network: 'sonic',
+    chainId: 146,
+    url: `https://rpc.ankr.com/sonic_mainnet/${ANKR_KEY}`,
   },
   {
     network: 'optimism',
@@ -173,7 +183,7 @@ function setupDefaultNetworkProviders(hardhatConfig: HardhatUserConfig) {
         getDefaultProviderURL(netConfig.network),
       gas: netConfig.gas || 'auto',
       gasPrice: netConfig.gasPrice || 'auto',
-      accounts: REMOTE_ACCOUNTS ? 'remote' : (ETH_PK ? [...deriveAccounts(ETH_PK)] : { mnemonic: MNEMONIC }),
+      accounts: REMOTE_ACCOUNTS ? 'remote' : (ETH_PK ? [ETH_PK] : { mnemonic: MNEMONIC }),
     };
   }
 }
@@ -254,6 +264,7 @@ const config: HardhatUserConfig = {
       mantle: MANTLESCAN_KEY,
       // Scroll
       'scroll': SCROLLSCAN_KEY,
+      sonic: SONICSCAN_KEY,
     },
     customChains: [
       {
@@ -294,6 +305,14 @@ const config: HardhatUserConfig = {
           // apiURL: 'https://api.mantlescan.xyz/api',
           // browserURL: 'https://mantlescan.xyz/'
         }
+      },
+      {
+        network: 'sonic',
+        chainId: 146,
+        urls: {
+          apiURL: 'https://api.sonicscan.org/api',
+          browserURL: 'https://sonicscan.org/'
+        }
       }
     ]
   },
@@ -316,6 +335,7 @@ const config: HardhatUserConfig = {
         usdt: mainnetUsdtRelationConfigMap,
         wsteth: mainnetWstETHRelationConfigMap,
         usds: mainnetUsdsRelationConfigMap,
+        wbtc: mainnetWbtcRelationConfigMap,
       },
       polygon: {
         usdc: polygonRelationConfigMap,
@@ -331,7 +351,8 @@ const config: HardhatUserConfig = {
         usdbc: baseUsdbcRelationConfigMap,
         weth: baseWethRelationConfigMap,
         usdc: baseUsdcRelationConfigMap,
-        aero: baseAeroRelationConfigMap
+        aero: baseAeroRelationConfigMap,
+        usds: baseUSDSRelationConfigMap
       },
       optimism: {
         usdc: optimismRelationConfigMap,
@@ -343,6 +364,9 @@ const config: HardhatUserConfig = {
       },
       'scroll': {
         usdc: scrollRelationConfigMap
+      },
+      'sonic': {
+        'usdc.e': sonicRelationConfigMap
       }
     },
   },
@@ -374,6 +398,11 @@ const config: HardhatUserConfig = {
         name: 'mainnet-usds',
         network: 'mainnet',
         deployment: 'usds'
+      },
+      {
+        name: 'mainnet-wbtc',
+        network: 'mainnet',
+        deployment: 'wbtc'
       },
       {
         name: 'development',
@@ -456,6 +485,12 @@ const config: HardhatUserConfig = {
         auxiliaryBase: 'mainnet'
       },
       {
+        name: 'base-usds',
+        network: 'base',
+        deployment: 'usds',
+        auxiliaryBase: 'mainnet'
+      },
+      {
         name: 'optimism-usdc',
         network: 'optimism',
         deployment: 'usdc',
@@ -477,6 +512,12 @@ const config: HardhatUserConfig = {
         name: 'mantle-usde',
         network: 'mantle',
         deployment: 'usde',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'sonic-usdc.e',
+        network: 'sonic',
+        deployment: 'usdc.e',
         auxiliaryBase: 'mainnet'
       },
       {
