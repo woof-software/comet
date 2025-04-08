@@ -55,17 +55,26 @@ export async function nonForkedHreForBase(base: ForkSpec): Promise<HardhatRuntim
       }
     },
     ctx.tasksDSL.getTaskDefinitions(),
-    ctx.extendersManager.getExtenders(),
-    ctx.experimentalHardhatNetworkMessageTraceHooks,
+    ctx.environment.scopes,
+    ctx.environmentExtenders,
     userConfig
   );
 }
 
-function getBlockRollback(base: ForkSpec){
-  if(base.blockNumber)
+function getBlockRollback(base: ForkSpec) {
+  if (base.blockNumber)
     return base.blockNumber;
-  else if(base.network === 'arbitrum'){
+  else if (base.network === 'arbitrum') {
     return undefined;
+  }
+  else if (base.network === 'unichain') {
+    return 0;
+  }
+  else if (base.network === 'base') {
+    return 200;
+  }
+  else if(base.network === 'mainnet'){
+    return 50;
   }
   else
     return 280;
@@ -86,9 +95,15 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
   const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
 
   // noNetwork otherwise
-  if(!base.blockNumber && baseNetwork.url)
-
+  if (!base.blockNumber && baseNetwork.url && getBlockRollback(base) !== undefined)
     base.blockNumber = await provider.getBlockNumber() - getBlockRollback(base); // arbitrary number of blocks to go back
+
+  if (getBlockRollback(base) === 0) {
+    const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
+    const block = await provider.getBlockNumber();
+    base.blockNumber = block - 1;
+  }
+
   if (!baseNetwork) {
     throw new Error(`cannot find network config for network: ${base.network}`);
   }
@@ -116,13 +131,12 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
       },
     },
   };
-
   return new Environment(
     forkedConfig,
     hardhatArguments,
     ctx.tasksDSL.getTaskDefinitions(),
-    ctx.extendersManager.getExtenders(),
-    ctx.experimentalHardhatNetworkMessageTraceHooks,
+    ctx.environment.scopes,
+    ctx.environmentExtenders,
     userConfig
   );
 }
