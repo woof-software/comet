@@ -7,6 +7,7 @@ import relayOptimismMessage from './relayOptimismMessage';
 import relayMantleMessage from './relayMantleMessage';
 import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMessage';
 import relayScrollMessage from './relayScrollMessage';
+import relaySonicMessage from './relaySonicMessage';
 
 export default async function relayMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -79,6 +80,12 @@ export default async function relayMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         startingBlockNumber
+      );
+      break;
+    case 'sonic':
+      await relaySonicMessage(
+        governanceDeploymentManager,
+        bridgeDeploymentManager
       );
       break;
     default:

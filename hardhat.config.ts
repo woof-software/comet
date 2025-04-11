@@ -43,6 +43,7 @@ import optimismWethRelationConfigMap from './deployments/optimism/weth/relations
 import mantleRelationConfigMap from './deployments/mantle/usde/relations';
 import unichainRelationConfigMap from './deployments/unichain/usdc/relations';
 import scrollRelationConfigMap from './deployments/scroll/usdc/relations';
+import sonicRelationConfigMap from './deployments/sonic/usdc.e/relations';
 
 task('accounts', 'Prints the list of accounts', async (taskArgs, hre) => {
   for (const account of await hre.ethers.getSigners()) console.log(account.address);
@@ -67,7 +68,8 @@ const {
   GOV_NETWORK_PROVIDER = '',
   GOV_NETWORK = '',
   UNICHAIN_QUICKNODE_KEY = '',
-  REMOTE_ACCOUNTS = ''
+  REMOTE_ACCOUNTS = '',
+  SONICSCAN_KEY = '',
 } = process.env;
 
 function* deriveAccounts(pk: string, n: number = 10) {
@@ -95,7 +97,8 @@ export function requireEnv(varName, msg?: string): string {
   'OPTIMISMSCAN_KEY',
   'MANTLESCAN_KEY',
   'UNICHAIN_QUICKNODE_KEY',
-  'SCROLLSCAN_KEY'
+  'SCROLLSCAN_KEY',
+  'SONICSCAN_KEY',
 ].map((v) => requireEnv(v));
 
 // Networks
@@ -122,6 +125,11 @@ const networkConfigs: NetworkConfig[] = [
     network: 'polygon',
     chainId: 137,
     url: `https://rpc.ankr.com/polygon/${ANKR_KEY}`,
+  },
+  {
+    network: 'sonic',
+    chainId: 146,
+    url: `https://rpc.ankr.com/sonic_mainnet/${ANKR_KEY}`,
   },
   {
     network: 'optimism',
@@ -266,6 +274,7 @@ const config: HardhatUserConfig = {
       unichain: ETHERSCAN_KEY,
       // Scroll
       'scroll': SCROLLSCAN_KEY,
+      sonic: SONICSCAN_KEY,
     },
     customChains: [
       {
@@ -313,6 +322,14 @@ const config: HardhatUserConfig = {
           // links for deployment
           // apiURL: 'https://api.mantlescan.xyz/api',
           // browserURL: 'https://mantlescan.xyz/'
+        }
+      },
+      {
+        network: 'sonic',
+        chainId: 146,
+        urls: {
+          apiURL: 'https://api.sonicscan.org/api',
+          browserURL: 'https://sonicscan.org/'
         }
       }
     ]
@@ -368,6 +385,9 @@ const config: HardhatUserConfig = {
       },
       'scroll': {
         usdc: scrollRelationConfigMap
+      },
+      'sonic': {
+        'usdc.e': sonicRelationConfigMap
       }
     },
   },
@@ -519,6 +539,12 @@ const config: HardhatUserConfig = {
         name: 'unichain-usdc',
         network: 'unichain',
         deployment: 'usdc',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'sonic-usdc.e',
+        network: 'sonic',
+        deployment: 'usdc.e',
         auxiliaryBase: 'mainnet'
       },
       {
