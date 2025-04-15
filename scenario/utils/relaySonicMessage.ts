@@ -77,17 +77,20 @@ export default async function relaySonicMessage(
       openBridgedProposals.push({ id, eta });
       console.log(`[CCIP L2] Queued proposal: id=${id.toString()}, eta=${eta.toString()}`);
     }
+  }
 
-    for (const proposal of openBridgedProposals) {
-      const { id, eta } = proposal;
-      await setNextBlockTimestamp(bridgeDeploymentManager, eta.toNumber() + 1);
-      await setNextBaseFeeToZero(bridgeDeploymentManager);
+  for (const proposal of openBridgedProposals) {
+    const { id, eta } = proposal;
+    const currentBlock = await bridgeDeploymentManager.hre.ethers.provider.getBlock('latest');
+    const currentTimestamp = currentBlock.timestamp;
+    const etaTimestamp = eta.toNumber() > currentTimestamp ? eta.toNumber() : currentTimestamp;
+    await setNextBlockTimestamp(bridgeDeploymentManager, etaTimestamp + 1);
+    await setNextBaseFeeToZero(bridgeDeploymentManager);
 
-      const signer = await bridgeDeploymentManager.getSigner();
-      const nonce = await bridgeDeploymentManager.hre.ethers.provider.getTransactionCount(signer.address);
-      
-      await bridgeReceiver.connect(signer).executeProposal(id, { gasPrice: 0, nonce });
-      console.log(`[CCIP L2] Executed bridged proposal ${id.toString()}`);
-    }
+    const signer = await bridgeDeploymentManager.getSigner();
+    const nonce = await bridgeDeploymentManager.hre.ethers.provider.getTransactionCount(signer.address);
+    
+    await bridgeReceiver.connect(signer).executeProposal(id, { gasPrice: 0, nonce });
+    console.log(`[CCIP L2] Executed bridged proposal ${id.toString()}`);
   }
 }

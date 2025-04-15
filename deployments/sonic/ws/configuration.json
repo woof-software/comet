@@ -1,0 +1,37 @@
+{
+    "name": "Compound wS",
+    "symbol": "cWSv3",
+    "baseToken": "wS",
+    "baseTokenAddress": "0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38",
+    "baseTokenPriceFeed": "0xc76dFb89fF298145b417d221B2c747d84952e01d",
+    "borrowMin": "100e18",
+    "storeFrontPriceFactor": 0.7,
+    "targetReserves": "50_000_000e18",
+    "pauseGuardian": "0xCfd9277402f19632330cBbB8Fa6CeaDE03e028B0",
+    "rates": {
+      "borrowBase": 0.01,
+      "borrowSlopeLow": 0.017647,
+      "borrowKink": 0.85,
+      "borrowSlopeHigh": 1.5,
+      "supplyBase": 0,
+      "supplySlopeLow": 0.0225,
+      "supplyKink": 0.85,
+      "supplySlopeHigh": 1.339
+    },
+    "tracking": {
+      "indexScale": "1e15",
+      "baseSupplySpeed": "0e0",
+      "baseBorrowSpeed": "0e0",
+      "baseMinForRewards": "1000e18"
+    },
+    "assets": {
+      "stS": {
+        "address": "0xE5DA20F15420aD15DE0fa650600aFc998bbE3955",
+        "decimals": "18",
+        "borrowCF": 0.8,
+        "liquidateCF": 0.85,
+        "liquidationFactor": 0.9,
+        "supplyCap": "0e18"
+      }
+    }
+}

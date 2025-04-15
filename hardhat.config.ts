@@ -44,6 +44,8 @@ import mantleRelationConfigMap from './deployments/mantle/usde/relations';
 import unichainRelationConfigMap from './deployments/unichain/usdc/relations';
 import scrollRelationConfigMap from './deployments/scroll/usdc/relations';
 import sonicRelationConfigMap from './deployments/sonic/usdc.e/relations';
+import sonicUSDTRelationConfigMap from './deployments/sonic/usdt/relations';
+import sonicWSRelationConfigMap from './deployments/sonic/ws/relations';
 
 task('accounts', 'Prints the list of accounts', async (taskArgs, hre) => {
   for (const account of await hre.ethers.getSigners()) console.log(account.address);
@@ -387,7 +389,9 @@ const config: HardhatUserConfig = {
         usdc: scrollRelationConfigMap
       },
       'sonic': {
-        'usdc.e': sonicRelationConfigMap
+        'usdc.e': sonicRelationConfigMap,
+        'usdt': sonicUSDTRelationConfigMap,
+        'ws': sonicWSRelationConfigMap
       }
     },
   },
@@ -545,6 +549,18 @@ const config: HardhatUserConfig = {
         name: 'sonic-usdc.e',
         network: 'sonic',
         deployment: 'usdc.e',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'sonic-usdt',
+        network: 'sonic',
+        deployment: 'usdt',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'sonic-ws',
+        network: 'sonic',
+        deployment: 'ws',
         auxiliaryBase: 'mainnet'
       },
       {
