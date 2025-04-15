@@ -64,7 +64,7 @@ export default migration('1744125028_update_teth_price_feed', {
       },
     ];
 
-    const description = 'DESCRIPTION';
+    const description = '# Update tETH price feed on WETH Mainnet market\n\n## Proposal summary\n\nUpdate price feed for tETH on WETH Mainnet from tETH / wstETH -> ETH / wstETH to tETH / wstETH -> wstETH / ETH.\n\n';
     const txn = await deploymentManager.retry(async () =>
       trace(
         await governor.propose(...(await proposal(mainnetActions, description)))
