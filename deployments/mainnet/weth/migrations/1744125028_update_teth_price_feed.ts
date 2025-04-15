@@ -19,7 +19,8 @@ export default migration('1744125028_update_teth_price_feed', {
         _wstETHToETHPriceFeed.address, // wstETH / ETH price feed 
         8,                             // decimals
         'tETH / ETH price feed'        // description
-      ]
+      ],
+      true
     );
     return { tETHPriceFeedAddress: tETHMultiplicativePriceFeed.address };
   },
