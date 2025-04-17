@@ -5,6 +5,7 @@ import { proposal } from '../../../../src/deploy';
 
 const TETH_ADDRESS = '0xD11c452fc99cF405034ee446803b6F6c1F6d5ED8';
 const TETH_TO_WSTETH_PRICE_FEED = '0x7B2Fb2c667af80Bccc0B2556378352dFDE2be914';
+const NEW_TETH_PRICE_FEED = '0x7783a5c7656d75ed1144379c25142B7e43Da5F5E';
 
 let newPriceFeedAddress: string;
 
@@ -35,13 +36,8 @@ export default migration('1744125028_update_teth_price_feed', {
       'mainnet',
       'contracts/ERC20.sol:ERC20'
     );
-    const tETHPriceFeed = await deploymentManager.existing(
-      'tETH:priceFeed',
-      tETHPriceFeedAddress,
-      'mainnet'
-    );
 
-    newPriceFeedAddress = tETHPriceFeedAddress;
+    newPriceFeedAddress = NEW_TETH_PRICE_FEED;
 
     const {
       governor,
@@ -55,7 +51,7 @@ export default migration('1744125028_update_teth_price_feed', {
       {
         contract: configurator,
         signature: 'updateAssetPriceFeed(address,address,address)',
-        args: [comet.address, tETH.address, tETHPriceFeed.address],
+        args: [comet.address, tETH.address, NEW_TETH_PRICE_FEED],
       },
       // 2. Deploy and upgrade to a new version of Comet
       {
