@@ -85,7 +85,7 @@ export default migration('1739941365_add_sky_as_collateral', {
   },
 
   async enacted(deploymentManager: DeploymentManager): Promise<boolean> {
-    return false;
+    return true;
   },
 
   async verify(deploymentManager: DeploymentManager) {
