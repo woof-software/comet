@@ -127,7 +127,7 @@ export default migration('1746137720_update_caps', {
     ];
 
     // the description has speeds. speeds will be set up on on-chain proposal
-    const description = 'DESCRIPTION';
+    const description = '# [Gauntlet] Supply Cap Recommendations (04/28/25) pushed by WOOF!\n\nSimple Summary\n\n## Note\n\nThis proposal is proposed by WOOF! due to Gauntlet reaching the maximum number of active proposals using their delegated wallets. Live proposals by Gauntlet:\n\n- [Proposal 433](https://www.tally.xyz/gov/compound/proposal/433?govId=eip155:1:0x309a862bbC1A00e45506cB8A802D1ff10004c8C0)\n\n- [Proposal 434](https://www.tally.xyz/gov/compound/proposal/434?govId=eip155:1:0x309a862bbC1A00e45506cB8A802D1ff10004c8C0)\n\n## Simple Summary\n\nGauntlet recommends the following risk recommendations to the protocol:\n\n- Increase Mainnet V3 USDT Comet’s weETH Supply Cap from 12,000 to 18,000\n\n- Increase Mainnet V3 WETH Comet’s tETH Supply cap from 4,000 to 10,000\n\n- Increase Unichain V3 USDC Comet’s WETH Supply cap from 50 to 5,000\n\n- Increase Unichain V3 USDC Comet’s UNI Supply cap from 7,000 to 100k\n\n## Motivation\n\nSee full analysis below:\n\n[[Gauntlet] - Supply Cap Recommendations](https://www.comp.xyz/t/gauntlet-supply-cap-recommendation-proposals/5886/29)\n\n## Specification\n\nThe proposal updates the parameters by using the respective methods on the Configurator.';
     const txn = await govDeploymentManager.retry(async () => {
       return trace(await governor.propose(...(await proposal(actions, description))));
     }
