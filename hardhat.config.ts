@@ -32,6 +32,7 @@ import arbitrumBridgedUsdcRelationConfigMap from './deployments/arbitrum/usdc.e/
 import arbitrumNativeUsdcRelationConfigMap from './deployments/arbitrum/usdc/relations';
 import arbitrumWETHRelationConfigMap from './deployments/arbitrum/weth/relations';
 import arbitrumUsdtRelationConfigMap from './deployments/arbitrum/usdt/relations';
+import arbitrumUsdsRelationConfigMap from './deployments/arbitrum/usds/relations';
 import baseUsdbcRelationConfigMap from './deployments/base/usdbc/relations';
 import baseWethRelationConfigMap from './deployments/base/weth/relations';
 import baseUsdcRelationConfigMap from './deployments/base/usdc/relations';
@@ -62,7 +63,7 @@ const {
   MANTLESCAN_KEY,
   SCROLLSCAN_KEY,
   ANKR_KEY,
-  //TENDERLY_KEY_RONIN,
+  //_TENDERLY_KEY_RONIN,
   MNEMONIC = 'myth like bonus scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
@@ -123,7 +124,7 @@ const networkConfigs: NetworkConfig[] = [
   {
     network: 'ronin',
     chainId: 2020,
-    //url: `https://ronin.gateway.tenderly.co/${TENDERLY_KEY_RONIN}`,
+    //url: `https://ronin.gateway.tenderly.co/${_TENDERLY_KEY_RONIN}`,
     url: 'https://ronin.lgns.net/rpc',
   },
   {
@@ -243,6 +244,17 @@ const config: HardhatUserConfig = {
             hardforkHistory: {
               berlin: 1,
               london: 2,
+            }
+          };
+          return acc;
+        }
+        if (chainId === 42161) {
+          acc[chainId] = {
+            hardforkHistory: {
+              berlin: 1,
+              london: 2,
+              shanghai: 3,
+              // cancun: 4,
             }
           };
           return acc;
@@ -372,7 +384,8 @@ const config: HardhatUserConfig = {
         'usdc.e': arbitrumBridgedUsdcRelationConfigMap,
         usdc: arbitrumNativeUsdcRelationConfigMap,
         usdt: arbitrumUsdtRelationConfigMap,
-        weth: arbitrumWETHRelationConfigMap
+        weth: arbitrumWETHRelationConfigMap,
+        usds: arbitrumUsdsRelationConfigMap
       },
       'base': {
         usdbc: baseUsdbcRelationConfigMap,
@@ -488,6 +501,12 @@ const config: HardhatUserConfig = {
         name: 'arbitrum-weth',
         network: 'arbitrum',
         deployment: 'weth',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'arbitrum-usds',
+        network: 'arbitrum',
+        deployment: 'usds',
         auxiliaryBase: 'mainnet'
       },
       {
