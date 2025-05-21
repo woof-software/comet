@@ -42,6 +42,7 @@ import optimismUsdtRelationConfigMap from './deployments/optimism/usdt/relations
 import optimismWethRelationConfigMap from './deployments/optimism/weth/relations';
 import mantleRelationConfigMap from './deployments/mantle/usde/relations';
 import unichainRelationConfigMap from './deployments/unichain/usdc/relations';
+import unichainWETHRelationConfigMap from './deployments/unichain/weth/relations';
 import scrollRelationConfigMap from './deployments/scroll/usdc/relations';
 import roninRelationConfigMap from './deployments/ronin/weth/relations';
 
@@ -62,7 +63,7 @@ const {
   MANTLESCAN_KEY,
   SCROLLSCAN_KEY,
   ANKR_KEY,
-  //TENDERLY_KEY_RONIN,
+  //_TENDERLY_KEY_RONIN,
   MNEMONIC = 'myth like bonus scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
@@ -123,7 +124,7 @@ const networkConfigs: NetworkConfig[] = [
   {
     network: 'ronin',
     chainId: 2020,
-    //url: `https://ronin.gateway.tenderly.co/${TENDERLY_KEY_RONIN}`,
+    //url: `https://ronin.gateway.tenderly.co/${_TENDERLY_KEY_RONIN}`,
     url: 'https://ronin.lgns.net/rpc',
   },
   {
@@ -172,7 +173,7 @@ const networkConfigs: NetworkConfig[] = [
   {
     network: 'scroll',
     chainId: 534352,
-    url: 'https://rpc.scroll.io',
+    url: `https://rpc.ankr.com/scroll/${ANKR_KEY}`,
   }
 ];
 
@@ -237,6 +238,15 @@ const config: HardhatUserConfig = {
       allowUnlimitedContractSize: true,
       //hardfork: 'london',
       chains: networkConfigs.reduce((acc, { chainId }) => {
+        if (chainId === 1337) {
+          acc[chainId] = {
+            hardforkHistory: {
+              berlin: 1,
+              london: 2,
+            }
+          };
+          return acc;
+        }
         if (chainId === 1) return acc;
         if (chainId === 2020) {
           acc[chainId] = {
@@ -390,7 +400,8 @@ const config: HardhatUserConfig = {
         'usde': mantleRelationConfigMap
       },
       'unichain': {
-        'usdc': unichainRelationConfigMap
+        'usdc': unichainRelationConfigMap,
+        'weth': unichainWETHRelationConfigMap
       },
       'scroll': {
         usdc: scrollRelationConfigMap
@@ -548,6 +559,12 @@ const config: HardhatUserConfig = {
         name: 'unichain-usdc',
         network: 'unichain',
         deployment: 'usdc',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'unichain-weth',
+        network: 'unichain',
+        deployment: 'weth',
         auxiliaryBase: 'mainnet'
       },
       {

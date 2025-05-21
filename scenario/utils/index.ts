@@ -312,6 +312,13 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
   return true;
 }
 
+export async function isRewardsV2Supported(ctx: CometContext): Promise<boolean> {
+  const cometRewardsV2 = await ctx.getRewardsV2();
+  if (cometRewardsV2 == null) return false;
+
+  return cometRewardsV2 !== null;
+}
+
 export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
 }
@@ -538,6 +545,9 @@ const REDSTONE_FEEDS = {
     '0xD15862FC3D5407A03B696548b6902D6464A69b8c', // USDC / ETH
     '0xc44be6D00307c3565FDf753e852Fc003036cBc13', // BTC / USD
     '0xf1454949C6dEdfb500ae63Aa6c784Aa1Dde08A6c', // UNI / USD
+    '0x24c8964338Deb5204B096039147B8e8C3AEa42Cc', // wstETH / ETH
+    '0xBf3bA2b090188B40eF83145Be0e9F30C6ca63689', // weETH / ETH
+    '0xa0f2EF6ceC437a4e5F6127d6C51E1B0d3A746911', // ezETH / ETH
   ],
 };
 
@@ -645,8 +655,15 @@ export async function executeOpenProposal(
   // Execute proposal (maybe, w/ gas limit so we see if exec reverts, not a gas estimation error)
   if (await governor.state(id) == ProposalState.Queued) {
     const block = await dm.hre.ethers.provider.getBlock('latest');
-    const eta = await governor.proposalEta(id);
-
+    const eta = await (async () => {
+      try {
+        return await governor.proposalEta(id);
+      }
+      catch (err) {
+        const proposal = await governor.proposals(id);
+        return proposal.eta;
+      }
+    })();
     await setNextBlockTimestamp(dm, Math.max(block.timestamp, eta.toNumber()) + 1);
     await setNextBaseFeeToZero(dm);
     await updateCCIPStats(dm);
@@ -671,9 +688,9 @@ async function testnetPropose(
   const governor = await dm.getContractOrThrow('governor');
   const testnetGovernor = new Contract(
     governor.address, [
-    'function propose(address[] memory targets, uint256[] memory values, string[] memory signatures, bytes[] memory calldatas, string memory description) external returns (uint256 proposalId)',
-    'event ProposalCreated(uint256 proposalId, address proposer, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 startBlock, uint256 endBlock, string description)'
-  ], governor.signer
+      'function propose(address[] memory targets, uint256[] memory values, string[] memory signatures, bytes[] memory calldatas, string memory description) external returns (uint256 proposalId)',
+      'event ProposalCreated(uint256 proposalId, address proposer, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 startBlock, uint256 endBlock, string description)'
+    ], governor.signer
   );
 
   return testnetGovernor.connect(proposer).propose(
