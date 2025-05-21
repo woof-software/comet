@@ -162,6 +162,18 @@ export const WHALES = {
     '0x233493E9DC68e548AC27E4933A600A3A4682c0c3', // FBTC whale
     '0xCd83CbBFCE149d141A5171C3D6a0F0fCCeE225Ab', // COMP whale
   ],
+  linea: [
+    '0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f', // ETH whale
+    '0x9be5e24F05bBAfC28Da814bD59284878b388a40f', // WBTC whale
+    '0xCeEd853798ff1c95cEB4dC48f68394eb7A86A782', // wstETH whale
+    '0x03dDD23943b3C698442C5f2841eae70058DbAb8B', // wstETH whale
+    '0x0180912F869065c7a44617Cd4c288bE6Bce5d192', // wstETH whale
+    '0x7160570BB153Edd0Ea1775EC2b2Ac9b65F1aB61B', // wstETH whale
+    '0x0684FC172a0B8e6A65cF4684eDb2082272fe9050', // ezETH whale
+    '0x3A0ee670EE34D889B52963bD20728dEcE4D9f8FE', // ezETH whale
+    '0x6a72F4F191720c411Cd1fF6A5EA8DeDEC3A64771', // USDT whale
+    '0x2c7118c4C88B9841FCF839074c26Ae8f035f2921', // COMP whale
+  ],
   'unichain': [
     '0x4200000000000000000000000000000000000006', // WETH whale
   ],
@@ -189,6 +201,7 @@ export async function calldata(req: Promise<PopulatedTransaction>): Promise<stri
 export async function testnetProposal(actions: ProposalAction[], description: string): Promise<TestnetProposal> {
   const targets = [],
     values = [],
+    signatures = [],
     calldatas = [];
   for (const action of actions) {
     if (action['contract']) {
@@ -228,3 +241,4 @@ export async function proposal(actions: ProposalAction[], description: string): 
 
   return [targets, values, calldatas, description];
 }
+
