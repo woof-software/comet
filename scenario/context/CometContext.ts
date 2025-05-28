@@ -1,4 +1,4 @@
-import { BigNumber, BigNumberish } from 'ethers';
+import { BigNumber, BigNumberish, Contract } from 'ethers';
 import { Loader, World, debug } from '../../plugins/scenario';
 import { Migration } from '../../plugins/deployment_manager';
 import {
@@ -26,9 +26,10 @@ import {
   IGovernorBravo,
   CometRewards,
   Fauceteer,
-  BaseBulker,
+  BaseBulkerWithRewardsV2Support,
   BaseBridgeReceiver,
   ERC20,
+  CometRewardsV2,
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
@@ -57,7 +58,8 @@ export interface CometProperties {
   timelock: SimpleTimelock;
   governor: IGovernorBravo;
   rewards: CometRewards;
-  bulker: BaseBulker;
+  rewardsV2: CometRewardsV2;
+  bulker: BaseBulkerWithRewardsV2Support;
   bridgeReceiver: BaseBridgeReceiver;
 }
 
@@ -74,7 +76,7 @@ export class CometContext {
   }
 
   async getCompWhales(): Promise<string[]> {
-    const useMainnetComp = ['mainnet', 'polygon', 'arbitrum', 'base', 'optimism'].includes(this.world.base.network);
+    const useMainnetComp = ['mainnet', 'polygon', 'arbitrum', 'base', 'optimism', 'scroll', 'mantle', 'ronin', 'unichain'].includes(this.world.base.network);
     return COMP_WHALES[useMainnetComp ? 'mainnet' : 'testnet'];
   }
 
@@ -118,13 +120,17 @@ export class CometContext {
     return this.world.deploymentManager.contract('rewards');
   }
 
+  async getRewardsV2(): Promise<CometRewardsV2> {
+    return this.world.deploymentManager.contract('rewardsV2');
+  }
+
   async getRewardToken(): Promise<ERC20> {
     const signer = await this.world.deploymentManager.getSigner();
     const { token } = await this.getRewardConfig();
     return ERC20__factory.connect(token, signer);
   }
 
-  async getBulker(): Promise<BaseBulker> {
+  async getBulker(): Promise<BaseBulkerWithRewardsV2Support> {
     return this.world.deploymentManager.contract('bulker');
   }
 
@@ -142,7 +148,7 @@ export class CometContext {
     return configurator.getConfiguration(comet.address);
   }
 
-  async getRewardConfig(): Promise<{token: string, rescaleFactor: BigNumber, shouldUpscale: boolean}> {
+  async getRewardConfig(): Promise<{ token: string, rescaleFactor: BigNumber, shouldUpscale: boolean }> {
     const comet = await this.getComet();
     const rewards = await this.getRewards();
     return await rewards.rewardConfig(comet.address);
@@ -151,11 +157,25 @@ export class CometContext {
   async upgrade(configOverrides: ProtocolConfiguration): Promise<CometContext> {
     const { world } = this;
 
-    const oldComet = await this.getComet();
-    const admin = await world.impersonateAddress(await oldComet.governor(), { value: 20n ** 18n });
+    const currentComet = await this.getComet();
+    const admin = await world.impersonateAddress(await currentComet.governor(), { value: 20n ** 18n });
+    const oldComet = new Contract(currentComet.address,
+      [
+        'function governor() view returns (address)',
+        'function assetList() view returns (address)',
+        'function assetListFactory() view returns (address)'
+      ], admin);
 
     const deploySpec = { cometMain: true, cometExt: true };
-    const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, admin);
+    let withAssetList = false;
+    try {
+      await oldComet.assetList();
+      withAssetList = true;
+    }
+    catch (e) {
+      withAssetList = false;
+    }
+    const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, withAssetList, admin);
 
     await this.world.deploymentManager.spider(deployed);
     await this.setAssets();
@@ -396,6 +416,7 @@ async function getContextProperties(context: CometContext): Promise<CometPropert
     timelock: await context.getTimelock(),
     governor: await context.getGovernor(),
     rewards: await context.getRewards(),
+    rewardsV2: await context.getRewardsV2(),
     bulker: await context.getBulker(),
     bridgeReceiver: await context.getBridgeReceiver()
   };
