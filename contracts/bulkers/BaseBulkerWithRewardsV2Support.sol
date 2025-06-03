@@ -6,14 +6,19 @@ import "../IERC20NonStandard.sol";
 import "../IWETH9.sol";
 
 /**
- * @dev Interface for claiming rewards from the CometRewards contract
+ * @dev Interface for claiming rewards from the CometRewards (V1) contract
  */
-interface IClaimableV2 {
+interface IClaimableV1 {
     // v1
     function claim(address comet, address src, bool shouldAccrue) external;
 
     function claimTo(address comet, address src, address to, bool shouldAccrue) external;
+}
 
+/**
+ * @dev Interface for claiming rewards from the CometRewards (V2) contract
+ */
+interface IClaimableV2 {
     // v2
     struct Proofs {
         uint256 startIndex;
@@ -80,7 +85,6 @@ interface IClaimableV2 {
  * @dev Note: Only intended to be used on EVM chains that have a native token and wrapped native token that implements the IWETH interface
  */
 contract BaseBulkerWithRewardsV2Support {
-    address public x;
     /** Custom events **/
 
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
@@ -113,11 +117,11 @@ contract BaseBulkerWithRewardsV2Support {
     /// @notice The action for claiming rewards from the Comet rewards contract
     bytes32 public constant ACTION_CLAIM_REWARD = "ACTION_CLAIM_REWARD";
 
-    /// @notice The action for claiming rewards from the Comet rewards contract (v2)
+    /// @notice The action for claiming rewards from the Comet rewards contract (v2) for existing members
     bytes32 public constant ACTION_CLAIM_REWARD_V2 = "ACTION_CLAIM_REWARD_V2";
 
-    /// @notice The action for claiming rewards from the Comet rewards contract (v2) with a new member
-    /// @dev Shortened to 32 symbols due to the 32 byte limit of the bytes32 type
+    /// @notice The action for claiming rewards from the Comet rewards contract (v2) for a new member
+    /// @dev Shortened to under 32 symbols due to the 32 byte limit of the bytes32 type
     bytes32 public constant ACTION_CLAIM_REWARD_V2_NEW_MEMBER = "ACTION_CLAIM_V2_NEW_MEMBER";
 
     /** Custom errors **/
@@ -328,11 +332,11 @@ contract BaseBulkerWithRewardsV2Support {
      * @notice Claims rewards for a user
      */
     function claimReward(address comet, address rewards, address src, bool shouldAccrue) internal {
-        IClaimableV2(rewards).claim(comet, src, shouldAccrue);
+        IClaimableV1(rewards).claim(comet, src, shouldAccrue);
     }
 
     /**
-     * @notice Claims rewards from the Comet rewards contract (v2)
+     * @notice Claims rewards from the Comet rewards contract (v2) for existing members
      */
     function claimRewardV2(address comet, address rewards, uint256 campaignId, address src, bool shouldAccrue, IClaimableV2.Proofs memory proofs) internal {
         IClaimableV2(rewards).claim(comet, campaignId, src, shouldAccrue, proofs);
