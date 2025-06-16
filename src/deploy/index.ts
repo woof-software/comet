@@ -198,14 +198,12 @@ export async function testnetProposal(actions: ProposalAction[], description: st
       const { contract, value, signature, args } = action as ContractAction;
       targets.push(contract.address);
       values.push(value ?? 0);
-      signatures.push(signature);
-      calldatas.push(await calldata(contract.populateTransaction[signature](...args)));
+      calldatas.push(utils.id(signature).slice(0, 10) + (await calldata(contract.populateTransaction[signature](...args))).slice(2));
     } else {
       const { target, value, signature, calldata } = action as TargetAction;
       targets.push(target);
       values.push(value ?? 0);
-      signatures.push(signature);
-      calldatas.push(calldata);
+      calldatas.push(utils.id(signature).slice(0, 10) + calldata.slice(2));
     }
   }
 

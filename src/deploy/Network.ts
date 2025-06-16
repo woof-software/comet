@@ -140,7 +140,7 @@ export async function deployNetworkComet(
       'assetListFactory',
       'AssetListFactory.sol',
       [],
-      maybeForce()
+      maybeForce(deploySpec.cometExt)
     );
     cometExt = await deploymentManager.deploy(
       'comet:implementation:implementation',
