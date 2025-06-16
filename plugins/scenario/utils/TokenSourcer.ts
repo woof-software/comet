@@ -90,9 +90,6 @@ async function removeTokens(
 }
 
 const mintableByBridgeConfig = {
-  optimism: [
-    '0x7e7d4467112689329f7E06571eD0E8CbAd4910eE'
-  ],
   unichain: [
     '0x927b51f251480a681271180da4de28d44ec4afb8',
     '0x8f187aa05619a017077f5308904739877ce9ea21',
@@ -112,6 +109,10 @@ async function addTokens(
   MAX_SEARCH_BLOCKS = 40000,
   BLOCK_SPAN = 2048
 ) {
+
+  if(dm.network === 'ronin') {
+    MAX_SEARCH_BLOCKS = 500;
+  }
   // XXX we should really take min of current balance and amount and transfer that much
   let ethers = dm.hre.ethers;
   block = block ?? (await ethers.provider.getBlockNumber());

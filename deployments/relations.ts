@@ -17,6 +17,19 @@ const relationConfigMap: RelationConfigMap = {
       baseToken: {
         alias: async (token) => token.symbol(),
       },
+      'cometExt': {
+        field: async (comet) => comet.extensionDelegate(),
+      },
+      'assetListFactory': {
+        field: async (cometExt) => {
+          try {
+            return cometExt.assetListFactory();
+          }
+          catch (e) {
+            return '0x0000000000000000000000000000000000000000';
+          }
+        },
+      },
       baseTokenPriceFeed: {
         field: async (comet) => comet.baseTokenPriceFeed(),
         alias: async (_, { baseToken }) => `${await baseToken[0].symbol()}:priceFeed`,
@@ -106,7 +119,10 @@ const relationConfigMap: RelationConfigMap = {
     },
     relations: {
       COMP: {
-        field: async (governor) => governor.token(),
+        field: async (governor) => {
+          if (governor.address === '0x309a862bbC1A00e45506cB8A802D1ff10004c8C0') return governor.token();
+          return governor.comp();
+        },
       }
     }
   },
