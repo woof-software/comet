@@ -15,7 +15,7 @@ export const multicallAddresses: MulticallAddressesConfig = {
 export const transferEventsFetchSettings: TransferEventsFetchSettings = {
   mainnet: { delaySeconds: 5, chunkSize: 100000 },
   arbitrum: { delaySeconds: 5, chunkSize: 500000 },
-  base: { delaySeconds: 5, chunkSize: 200000 },
+  base: { delaySeconds: 5, chunkSize: 400000 },
   polygon: { delaySeconds: 5, chunkSize: 200000 },
   optimism: { delaySeconds: 5, chunkSize: 200000 },
   mantle: { delaySeconds: 5, chunkSize: 100000 },

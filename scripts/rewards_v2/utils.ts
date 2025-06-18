@@ -154,10 +154,10 @@ export const generateMerkleTreeForCampaign = async (
     }
   );
 
+  await dm.spider();
+
   console.log(`Campaign block number ${blockNumber}`);
   console.log(`Start fetching contracts for ${network}-${deployment} deployment`);
-
-  await dm.spider();
 
   const contracts = await dm.contracts();
   const comet = contracts.get('comet') as CometInterface;
@@ -390,6 +390,7 @@ export const createCampaignFile = (data: string[][], tree: StandardMerkleTree<st
 export const getAllTransferEvents = async (comet: CometInterface, startBlock: number, endBlock: number, dm: DeploymentManager, chunkSize: number = 100000, delaySeconds: number = 5) => {
   let allEvents: any[] = [];
 
+  console.log(`Fetching transfer events from block ${startBlock} to ${endBlock} in chunks of ${chunkSize} with a delay of ${delaySeconds} seconds`);
   for (let fromBlock = startBlock; fromBlock < endBlock; fromBlock += chunkSize) {
     const toBlock = Math.min(fromBlock + chunkSize - 1, endBlock);
     try {
