@@ -65,7 +65,7 @@ const {
   SCROLLSCAN_KEY,
   ANKR_KEY,
   _TENDERLY_KEY_RONIN,
-  MNEMONIC = 'myth like bonus scare over problem client lizard pioneer submit female collect',
+  MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
   GOV_NETWORK_PROVIDER = '',
@@ -175,7 +175,12 @@ const networkConfigs: NetworkConfig[] = [
     network: 'scroll',
     chainId: 534352,
     url: 'https://rpc.scroll.io',
-  }
+  },
+  {
+    network: 'linea',
+    chainId: 59144,
+    url: `https://rpc.ankr.com/linea/${ANKR_KEY}`,
+  },
 ];
 
 function getDefaultProviderURL(network: string) {
@@ -333,6 +338,14 @@ const config: HardhatUserConfig = {
           // links for deployment
           // apiURL: 'https://api.mantlescan.xyz/api',
           // browserURL: 'https://mantlescan.xyz/'
+        }
+      },
+      {
+        network: 'linea',
+        chainId: 59144,
+        urls: {
+          apiURL: 'https://api.lineascan.build/api',
+          browserURL: 'https://lineascan.build/'
         }
       },
       {
@@ -564,6 +577,24 @@ const config: HardhatUserConfig = {
         name: 'scroll-usdc',
         network: 'scroll',
         deployment: 'usdc',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'linea-usdc',
+        network: 'linea',
+        deployment: 'usdc',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'linea-usdt',
+        network: 'linea',
+        deployment: 'usdt',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'linea-weth',
+        network: 'linea',
+        deployment: 'weth',
         auxiliaryBase: 'mainnet'
       },
       {
