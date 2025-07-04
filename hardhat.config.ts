@@ -32,6 +32,7 @@ import arbitrumBridgedUsdcRelationConfigMap from './deployments/arbitrum/usdc.e/
 import arbitrumNativeUsdcRelationConfigMap from './deployments/arbitrum/usdc/relations';
 import arbitrumWETHRelationConfigMap from './deployments/arbitrum/weth/relations';
 import arbitrumUsdtRelationConfigMap from './deployments/arbitrum/usdt/relations';
+import arbitrumUsdsRelationConfigMap from './deployments/arbitrum/usds/relations';
 import baseUsdbcRelationConfigMap from './deployments/base/usdbc/relations';
 import baseWethRelationConfigMap from './deployments/base/weth/relations';
 import baseUsdcRelationConfigMap from './deployments/base/usdc/relations';
@@ -58,14 +59,13 @@ const {
   ETHERSCAN_KEY,
   SNOWTRACE_KEY,
   POLYGONSCAN_KEY,
-  ARBISCAN_KEY,
   BASESCAN_KEY,
   OPTIMISMSCAN_KEY,
   MANTLESCAN_KEY,
   SCROLLSCAN_KEY,
   ANKR_KEY,
   _TENDERLY_KEY_RONIN,
-  MNEMONIC = 'myth like bonus scare over problem client lizard pioneer submit female collect',
+  MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
   GOV_NETWORK_PROVIDER = '',
@@ -94,8 +94,6 @@ export function requireEnv(varName, msg?: string): string {
   'INFURA_KEY',
   'ANKR_KEY',
   'POLYGONSCAN_KEY',
-  'ARBISCAN_KEY',
-  'LINEASCAN_KEY',
   'OPTIMISMSCAN_KEY',
   'MANTLESCAN_KEY',
   'UNICHAIN_QUICKNODE_KEY',
@@ -111,7 +109,7 @@ interface NetworkConfig {
   gasPrice?: number | 'auto';
 }
 
-const networkConfigs: NetworkConfig[] = [
+export const networkConfigs: NetworkConfig[] = [
   {
     network: 'mainnet',
     chainId: 1,
@@ -249,6 +247,17 @@ const config: HardhatUserConfig = {
           };
           return acc;
         }
+        if (chainId === 42161) {
+          acc[chainId] = {
+            hardforkHistory: {
+              berlin: 1,
+              london: 2,
+              shanghai: 3,
+              // cancun: 4,
+            }
+          };
+          return acc;
+        }
         acc[chainId] = {
           hardforkHistory: {
             berlin: 1,
@@ -274,9 +283,9 @@ const config: HardhatUserConfig = {
       // Polygon
       polygon: POLYGONSCAN_KEY,
       // Arbitrum
-      arbitrumOne: ARBISCAN_KEY,
-      arbitrumTestnet: ARBISCAN_KEY,
-      arbitrum: ARBISCAN_KEY,
+      arbitrumOne: ETHERSCAN_KEY,
+      arbitrumTestnet: ETHERSCAN_KEY,
+      arbitrum: ETHERSCAN_KEY,
       // Base
       base: BASESCAN_KEY,
       // optimism: OPTIMISMSCAN_KEY,
@@ -374,7 +383,8 @@ const config: HardhatUserConfig = {
         'usdc.e': arbitrumBridgedUsdcRelationConfigMap,
         usdc: arbitrumNativeUsdcRelationConfigMap,
         usdt: arbitrumUsdtRelationConfigMap,
-        weth: arbitrumWETHRelationConfigMap
+        weth: arbitrumWETHRelationConfigMap,
+        usds: arbitrumUsdsRelationConfigMap
       },
       'base': {
         usdbc: baseUsdbcRelationConfigMap,
@@ -492,6 +502,12 @@ const config: HardhatUserConfig = {
         name: 'arbitrum-weth',
         network: 'arbitrum',
         deployment: 'weth',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'arbitrum-usds',
+        network: 'arbitrum',
+        deployment: 'usds',
         auxiliaryBase: 'mainnet'
       },
       {
