@@ -2,8 +2,9 @@ import 'dotenv/config';
 
 import { HardhatUserConfig, task } from 'hardhat/config';
 import '@compound-finance/hardhat-import';
-import '@nomiclabs/hardhat-ethers';
 import '@nomiclabs/hardhat-etherscan';
+import '@tenderly/hardhat-tenderly';
+import '@nomiclabs/hardhat-ethers';
 import '@typechain/hardhat';
 import 'hardhat-chai-matchers';
 import 'hardhat-change-network';
@@ -58,14 +59,13 @@ const {
   ETHERSCAN_KEY,
   SNOWTRACE_KEY,
   POLYGONSCAN_KEY,
-  ARBISCAN_KEY,
   BASESCAN_KEY,
   OPTIMISMSCAN_KEY,
   MANTLESCAN_KEY,
   SCROLLSCAN_KEY,
   ANKR_KEY,
   _TENDERLY_KEY_RONIN,
-  MNEMONIC = 'myth like bonus scare over problem client lizard pioneer submit female collect',
+  MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
   GOV_NETWORK_PROVIDER = '',
@@ -94,8 +94,6 @@ export function requireEnv(varName, msg?: string): string {
   'INFURA_KEY',
   'ANKR_KEY',
   'POLYGONSCAN_KEY',
-  'ARBISCAN_KEY',
-  'LINEASCAN_KEY',
   'OPTIMISMSCAN_KEY',
   'MANTLESCAN_KEY',
   'UNICHAIN_QUICKNODE_KEY',
@@ -111,7 +109,7 @@ interface NetworkConfig {
   gasPrice?: number | 'auto';
 }
 
-const networkConfigs: NetworkConfig[] = [
+export const networkConfigs: NetworkConfig[] = [
   {
     network: 'mainnet',
     chainId: 1,
@@ -187,7 +185,7 @@ function setupDefaultNetworkProviders(hardhatConfig: HardhatUserConfig) {
     hardhatConfig.networks[netConfig.network] = {
       chainId: netConfig.chainId,
       url:
-        (netConfig.network === GOV_NETWORK ? GOV_NETWORK_PROVIDER : undefined) ||
+        (netConfig.network === GOV_NETWORK ? GOV_NETWORK_PROVIDER || undefined : undefined) ||
         NETWORK_PROVIDER ||
         netConfig.url ||
         getDefaultProviderURL(netConfig.network),
@@ -273,10 +271,6 @@ const config: HardhatUserConfig = {
       avalancheFujiTestnet: SNOWTRACE_KEY,
       // Polygon
       polygon: POLYGONSCAN_KEY,
-      // Arbitrum
-      arbitrumOne: ARBISCAN_KEY,
-      arbitrumTestnet: ARBISCAN_KEY,
-      arbitrum: ARBISCAN_KEY,
       // Base
       base: BASESCAN_KEY,
       // optimism: OPTIMISMSCAN_KEY,
@@ -579,6 +573,13 @@ const config: HardhatUserConfig = {
         auxiliaryBase: 'mainnet'
       },
     ],
+  },
+
+  tenderly: {
+    project: 'comet',
+    username: process.env.TENDERLY_USERNAME || '',
+    accessKey: process.env.TENDERLY_ACCESS_KEY || '',
+    privateVerification: false,
   },
 
   mocha: {
