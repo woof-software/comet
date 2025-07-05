@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { networkConfigs } from '../../hardhat.config';
 
 export interface Result {
   status: string;
@@ -6,28 +7,41 @@ export interface Result {
   result: string;
 }
 
+// Updated because of Etherscan V2 update. Not tested and could lead to issues
 export function getEtherscanApiUrl(network: string): string {
-  let host = {
-    rinkeby: 'api-rinkeby.etherscan.io',
-    ropsten: 'api-ropsten.etherscan.io',
-    sepolia: 'api-sepolia.etherscan.io',
-    mainnet: 'api.etherscan.io',
-    fuji: 'api-testnet.snowtrace.io',
-    avalanche: 'api.snowtrace.io',
-    polygon: 'api.polygonscan.com',
-    arbitrum: 'api.arbiscan.io',
-    base: 'api.basescan.org',
-    optimism: 'api-optimistic.etherscan.io',
-    mantle: 'api.mantlescan.xyz',
-    'ronin': 'explorer-kintsugi.roninchain.com/v2/2020',
-    scroll: 'api.scrollscan.com'
-  }[network];
+  // let host = {
+  //   rinkeby: 'api-rinkeby.etherscan.io',
+  //   ropsten: 'api-ropsten.etherscan.io',
+  //   sepolia: 'api-sepolia.etherscan.io',
+  //   mainnet: 'api.etherscan.io',
+  //   fuji: 'api-testnet.snowtrace.io',
+  //   avalanche: 'api.snowtrace.io',
+  //   polygon: 'api.polygonscan.com',
+  //   arbitrum: 'api.arbiscan.io',
+  //   base: 'api.basescan.org',
+  //   optimism: 'api-optimistic.etherscan.io',
+  //   mantle: 'api.mantlescan.xyz',
+  //   'ronin': 'explorer-kintsugi.roninchain.com/v2/2020',
+  //   scroll: 'api.scrollscan.com'
+  // }[network];
 
-  if (!host) {
+  // if (!host) {
+  //   throw new Error(`Unknown etherscan API host for network ${network}`);
+  // }
+
+  const chainId = networkConfigs.find(config => config.network.toLowerCase() === network.toLowerCase())?.chainId;
+
+  if (!chainId) {
     throw new Error(`Unknown etherscan API host for network ${network}`);
   }
 
-  return `https://${host}/api`;
+  if (network === 'avalanche') {
+    return `https://api.snowtrace.io/api`;
+  } else if (network === 'fuji') {
+    return `https://api-testnet.snowtrace.io/api`;
+  }
+
+  return `https://api.etherscan.io/v2/api?chainid=${chainId}`;
 }
 
 export function getEtherscanUrl(network: string): string {
@@ -43,6 +57,7 @@ export function getEtherscanUrl(network: string): string {
     base: 'basescan.org',
     optimism: 'optimistic.etherscan.io',
     mantle: 'mantlescan.xyz',
+    linea: 'lineascan.build',
     'ronin': 'explorer-kintsugi.roninchain.com/v2/2020',
     scroll: 'scrollscan.com'
   }[network];
@@ -67,6 +82,7 @@ export function getEtherscanApiKey(network: string): string {
     base: process.env.BASESCAN_KEY,
     optimism: process.env.OPTIMISMSCAN_KEY,
     mantle: process.env.MANTLESCAN_KEY,
+    linea: process.env.ETHERSCAN_KEY,
     scroll: process.env.SCROLLSCAN_KEY
   }[network];
 

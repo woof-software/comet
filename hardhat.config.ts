@@ -46,6 +46,9 @@ import unichainWETHRelationConfigMap from './deployments/unichain/weth/relations
 import scrollRelationConfigMap from './deployments/scroll/usdc/relations';
 import roninRelationConfigMap from './deployments/ronin/weth/relations';
 import roninWronRelationConfigMap from './deployments/ronin/wron/relations';
+import lineaUsdcRelationConfigMap from './deployments/linea/usdc/relations';
+import lineaUsdtRelationConfigMap from './deployments/linea/usdt/relations';
+import lineaWethRelationConfigMap from './deployments/linea/weth/relations';
 
 task('accounts', 'Prints the list of accounts', async (taskArgs, hre) => {
   for (const account of await hre.ethers.getSigners()) console.log(account.address);
@@ -65,7 +68,7 @@ const {
   SCROLLSCAN_KEY,
   ANKR_KEY,
   _TENDERLY_KEY_RONIN,
-  MNEMONIC = 'myth like bonus scare over problem client lizard pioneer submit female collect',
+  MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
   GOV_NETWORK_PROVIDER = '',
@@ -95,7 +98,6 @@ export function requireEnv(varName, msg?: string): string {
   'ANKR_KEY',
   'POLYGONSCAN_KEY',
   'ARBISCAN_KEY',
-  'LINEASCAN_KEY',
   'OPTIMISMSCAN_KEY',
   'MANTLESCAN_KEY',
   'UNICHAIN_QUICKNODE_KEY',
@@ -111,7 +113,7 @@ interface NetworkConfig {
   gasPrice?: number | 'auto';
 }
 
-const networkConfigs: NetworkConfig[] = [
+export const networkConfigs: NetworkConfig[] = [
   {
     network: 'mainnet',
     chainId: 1,
@@ -175,7 +177,12 @@ const networkConfigs: NetworkConfig[] = [
     network: 'scroll',
     chainId: 534352,
     url: 'https://rpc.scroll.io',
-  }
+  },
+  {
+    network: 'linea',
+    chainId: 59144,
+    url: `https://rpc.ankr.com/linea/${ANKR_KEY}`,
+  },
 ];
 
 function getDefaultProviderURL(network: string) {
@@ -240,6 +247,15 @@ const config: HardhatUserConfig = {
       //hardfork: 'london',
       chains: networkConfigs.reduce((acc, { chainId }) => {
         if (chainId === 1) return acc;
+        if (chainId === 59144) {
+          acc[chainId] = {
+            hardforkHistory: {
+              berlin: 1,
+              london: 2,
+            }
+          };
+          return acc;
+        }
         if (chainId === 2020) {
           acc[chainId] = {
             hardforkHistory: {
@@ -286,6 +302,7 @@ const config: HardhatUserConfig = {
       unichain: ETHERSCAN_KEY,
       // Scroll
       'scroll': SCROLLSCAN_KEY,
+      linea: ETHERSCAN_KEY,
     },
     customChains: [
       {
@@ -333,6 +350,14 @@ const config: HardhatUserConfig = {
           // links for deployment
           // apiURL: 'https://api.mantlescan.xyz/api',
           // browserURL: 'https://mantlescan.xyz/'
+        }
+      },
+      {
+        network: 'linea',
+        chainId: 59144,
+        urls: {
+          apiURL: 'https://api.lineascan.build/api',
+          browserURL: 'https://lineascan.build/'
         }
       },
       {
@@ -401,7 +426,12 @@ const config: HardhatUserConfig = {
       'ronin': {
         weth: roninRelationConfigMap,
         wron: roninWronRelationConfigMap
-      }
+      },
+      'linea': {
+        usdc: lineaUsdcRelationConfigMap,
+        usdt: lineaUsdtRelationConfigMap,
+        weth: lineaWethRelationConfigMap
+      },
     },
   },
 
@@ -564,6 +594,24 @@ const config: HardhatUserConfig = {
         name: 'scroll-usdc',
         network: 'scroll',
         deployment: 'usdc',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'linea-usdc',
+        network: 'linea',
+        deployment: 'usdc',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'linea-usdt',
+        network: 'linea',
+        deployment: 'usdt',
+        auxiliaryBase: 'mainnet'
+      },
+      {
+        name: 'linea-weth',
+        network: 'linea',
+        deployment: 'weth',
         auxiliaryBase: 'mainnet'
       },
       {
