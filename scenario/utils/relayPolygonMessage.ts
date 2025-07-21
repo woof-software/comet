@@ -6,7 +6,7 @@ import { Contract, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 
-function isTenderlyLog(log: any): log is { raw: { topics: string[]; data: string } } {
+function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
   return !!log?.raw?.topics && !!log?.raw?.data;
 }
 
@@ -68,7 +68,7 @@ export default async function relayPolygonMessage(
   let stateSyncedEvents: Log[] = [];
 
   if (tenderlyLogs) {
-    const topic = stateSender.interface.getEventTopic("StateSynced");
+    const topic = stateSender.interface.getEventTopic('StateSynced');
     const tenderlyEvents = tenderlyLogs.filter(
       log => log.raw?.topics?.[0] === topic && log.raw?.address?.toLowerCase() === stateSender.address.toLowerCase()
     );

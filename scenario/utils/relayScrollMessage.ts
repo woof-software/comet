@@ -16,7 +16,7 @@ function applyL1ToL2Alias(address: string) {
   return `0x${(BigInt(address) + offset).toString(16)}`;
 }
 
-function isTenderlyLog(log: any): log is { raw: { topics: string[]; data: string } } {
+function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
   return !!log?.raw?.topics && !!log?.raw?.data;
 }
 
@@ -170,10 +170,10 @@ export default async function relayScrollMessage(
     } else if (target === bridgeReceiver.address) {
       // Cross-chain message passing
       const proposalCreatedEvent = relayMessageTxn.events.find(event => event.address.toLowerCase() === bridgeReceiver.address.toLowerCase());
-        const { args: { id, eta } } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+      const { args: { id, eta } } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
 
       // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
-        openBridgedProposals.push({ id, eta });
+      openBridgedProposals.push({ id, eta });
     } else {
       throw new Error(`[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Unrecognized target for cross-chain message`);
     }
@@ -196,7 +196,7 @@ export default async function relayScrollMessage(
         signer.address
       );
     } else {
-        await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
+      await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
       console.log(
         `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Executed bridged proposal ${id}`
       );

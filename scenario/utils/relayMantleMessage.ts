@@ -10,7 +10,7 @@ function applyL1ToL2Alias(address: string) {
   return `0x${(BigInt(address) + offset).toString(16)}`;
 }
 
-function isTenderlyLog(log: any): log is { raw: { topics: string[]; data: string } } {
+function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
   return !!log?.raw?.topics && !!log?.raw?.data;
 }
 
@@ -50,11 +50,11 @@ export default async function relayMantleMessage(
   }
 
   for (let sentMessageEvent of sentMessageEvents) {
-    const { args: { target, sender, message, messageNonce, gasLimit } } = isTenderlyLog(sentMessageEvent)
+    const { args: { target, sender, message, messageNonce } } = isTenderlyLog(sentMessageEvent)
       ? mantleL1CrossDomainMessenger.interface.parseLog({
-          topics: sentMessageEvent.raw.topics,
-          data: sentMessageEvent.raw.data
-        })
+        topics: sentMessageEvent.raw.topics,
+        data: sentMessageEvent.raw.data
+      })
       : mantleL1CrossDomainMessenger.interface.parseLog(sentMessageEvent);
 
     const aliasedSigner = await impersonateAddress(
@@ -67,7 +67,7 @@ export default async function relayMantleMessage(
     let relayMessageTxn;
     if (tenderlyLogs) {
       const callData = l2CrossDomainMessenger.interface.encodeFunctionData(
-        "relayMessage",
+        'relayMessage',
         [messageNonce, sender, target, 0, 0, message]
       );
       bridgeDeploymentManager.stashRelayMessage(
@@ -129,10 +129,10 @@ export default async function relayMantleMessage(
     } else if (target === bridgeReceiver.address) {
       // Cross-chain message passing
       const proposalCreatedEvent = relayMessageTxn.events.find(event => event.address === bridgeReceiver.address);
-        const { args: { id, eta } } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+      const { args: { id, eta } } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
 
       // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
-        openBridgedProposals.push({ id, eta });
+      openBridgedProposals.push({ id, eta });
     } else {
       throw new Error(`[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Unrecognized target for cross-chain message`);
     }
@@ -149,7 +149,7 @@ export default async function relayMantleMessage(
 
     if (tenderlyLogs) {
       const callData = bridgeReceiver.interface.encodeFunctionData(
-        "executeProposal",
+        'executeProposal',
         [id]
       );
       const signer = await bridgeDeploymentManager.getSigner();
