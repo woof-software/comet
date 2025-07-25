@@ -87,6 +87,10 @@ abstract contract CometMainInterface is CometCore {
     function isBorrowCollateralized(address account) virtual public view returns (bool);
     function isLiquidatable(address account) virtual public view returns (bool);
 
+    // Add new view functions for partial liquidation
+    function getLHF(address account) virtual public view returns (uint);
+    function getTargetHF(address account) virtual public view returns (uint);
+
     function totalSupply() virtual external view returns (uint256);
     function totalBorrow() virtual external view returns (uint256);
     function balanceOf(address owner) virtual public view returns (uint256);

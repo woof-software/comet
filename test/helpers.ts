@@ -92,6 +92,7 @@ export type ProtocolOpts = {
   baseBorrowMin?: Numeric;
   targetReserves?: Numeric;
   baseTokenBalance?: Numeric;
+  storefrontCoefficient?: Numeric;
 };
 
 export type Protocol = {
@@ -310,6 +311,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    storefrontCoefficient: dfn(opts.storefrontCoefficient, ONE),
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
       if (symbol != base && _i <= 12) {
         acc.push({
@@ -462,6 +464,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    storefrontCoefficient: dfn(opts.storefrontCoefficient, ONE),
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
       if (symbol != base) {
         acc.push({
