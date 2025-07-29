@@ -68,6 +68,15 @@
       "liquidateCF": 0.7,
       "liquidationFactor": 0.8,
       "supplyCap": "100_000e18"
+    },
+    "TBTC": {
+      "address": "0x6c84a8f1c29108f47a79964b5fe888d4f4d0de40",
+      "priceFeed": "0xE808488e8627F6531bA79a13A9E0271B39abEb1C",
+      "decimals": "18",
+      "borrowCF": 0.8,
+      "liquidateCF": 0.85,
+      "liquidationFactor": 0.90,
+      "supplyCap": "80e18"
     }
   }
 }
