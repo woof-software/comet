@@ -24,7 +24,7 @@ export default migration('1723551633_add_tbtc_as_collateral', {
         8, // decimals
       ]
     );
-    console.log('FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', _tBTCPriceFeed.address);
+    
     return { tBTCPriceFeedAddress: _tBTCPriceFeed.address };
   },
 
