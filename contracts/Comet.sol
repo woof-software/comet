@@ -645,6 +645,107 @@ contract Comet is CometMainInterface {
     }
 
     /**
+     * @notice Check if an account has bad debt (debt > liquidation collateral value)
+     * @param account The address to check
+     * @return Whether the account has bad debt
+     */
+    function isBadDebt(address account) override public view returns (bool) {
+        int104 principal = userBasic[account].principal;
+        if (principal >= 0) return false; 
+
+        uint256 debt = uint256(uint104(-principal)) * getPrice(baseTokenPriceFeed) / baseScale;
+
+        uint256 sumLCF = 0;
+        uint16 assetsIn = userBasic[account].assetsIn;
+        for (uint8 i = 0; i < numAssets; ) {
+            if (isInAsset(assetsIn, i)) {
+                AssetInfo memory asset = getAssetInfo(i);
+                uint128 balance = userCollateral[account][asset.asset].balance;
+                if (balance == 0) {
+                    unchecked { i++; }
+                    continue;
+                }
+                uint256 value = mulPrice(balance, getPrice(asset.priceFeed), asset.scale);
+                sumLCF += mulFactor(value, asset.liquidationFactor);
+            }
+            unchecked { i++; }
+        }
+        return debt > sumLCF;
+    }
+
+    /**
+     * @notice Calculate the minimal debt that should be liquidated for an account
+     * @param account The address to calculate minimal debt for
+     * @return The minimal debt amount in base units
+     */
+    function getMinimalDebt(address account) override public view returns (uint256) {
+        int104 principal = userBasic[account].principal;
+        if (principal >= 0) return 0;
+
+        uint256 debtBase = borrowBalanceOf(account);
+        uint256 basePrice = getPrice(baseTokenPriceFeed);
+        uint256 debtValue = debtBase * basePrice / baseScale;
+
+        uint16 assetsIn = userBasic[account].assetsIn;
+        uint256 totalCollateralCF = 0;
+        uint256 totalCollateralLF = 0;
+
+        for (uint8 i = 0; i < numAssets; i++) {
+            if (!isInAsset(assetsIn, i)) continue;
+
+            AssetInfo memory asset = getAssetInfo(i);
+            uint128 balance = userCollateral[account][asset.asset].balance;
+            if (balance == 0) continue;
+
+            uint256 price = getPrice(asset.priceFeed);
+            uint256 collateralValue = uint256(balance) * price / asset.scale;
+
+            totalCollateralCF += (collateralValue * asset.borrowCollateralFactor) / FACTOR_SCALE;
+            totalCollateralLF += (collateralValue * asset.liquidationFactor) / FACTOR_SCALE;
+        }
+
+        if (debtValue > totalCollateralLF) {
+            return debtBase;
+        }
+
+        if (totalCollateralCF == 0) {
+            return debtBase;
+        }
+
+        uint256 lhf = (totalCollateralLF * FACTOR_SCALE) / debtValue;
+
+        uint256 targetHF = (lhf * storefrontCoefficient) / FACTOR_SCALE;
+
+        uint256 targetDebtValue = (totalCollateralCF * targetHF) / FACTOR_SCALE;
+
+        if (targetDebtValue >= debtValue) {
+            return 0;
+        }
+
+        uint256 minimalDebtValue = debtValue - targetDebtValue;
+        uint256 minimalDebtBase = minimalDebtValue * baseScale / basePrice;
+
+        return minimalDebtBase;
+    }
+
+    /**
+     * @notice Check if an account can be partially liquidated
+     * @param account The address to check
+     * @return Whether the account can be partially liquidated
+     */
+    function isPartiallyLiquidatable(address account) override public view returns (bool) {
+        if (isBadDebt(account)) return false;
+        
+        int104 principal = userBasic[account].principal;
+        if (principal >= 0) return false;
+
+        uint256 minimalDebt = getMinimalDebt(account);
+        uint256 fullDebt = borrowBalanceOf(account);
+
+        return minimalDebt > 0 && minimalDebt < fullDebt;
+    }
+
+    /**
      * @dev The change in principal broken into repay and supply amounts
      */
     function repayAndSupplyAmount(int104 oldPrincipal, int104 newPrincipal) internal pure returns (uint104, uint104) {
