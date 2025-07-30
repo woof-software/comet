@@ -8,7 +8,7 @@ import "./CometCore.sol";
  * @notice An efficient monolithic money market protocol
  * @author Compound
  */
-abstract contract CometMainInterface is CometCore {
+abstract contract CometPartialAbsorbInterface is CometCore {
     error Absurd();
     error AlreadyInitialized();
     error BadAsset();
@@ -86,6 +86,13 @@ abstract contract CometMainInterface is CometCore {
 
     function isBorrowCollateralized(address account) virtual public view returns (bool);
     function isLiquidatable(address account) virtual public view returns (bool);
+
+    // Add new view functions for partial liquidation
+    function getLHF(address account) virtual public view returns (uint);
+    function getTargetHF(address account) virtual public view returns (uint);
+    function isBadDebt(address account) virtual public view returns (bool);
+    function getMinimalDebt(address account) virtual public view returns (uint256);
+    function isPartiallyLiquidatable(address account) virtual public view returns (bool);
 
     function totalSupply() virtual external view returns (uint256);
     function totalBorrow() virtual external view returns (uint256);

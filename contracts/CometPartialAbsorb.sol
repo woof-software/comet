@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import "./CometMainInterface.sol";
+import "./CometPartialAbsorbInterface.sol";
 import "./IERC20NonStandard.sol";
 import "./IPriceFeed.sol";
-import "./IAssetListFactory.sol";
-import "./IAssetListFactoryHolder.sol";
-import "./IAssetList.sol";
 
 /**
  * @title Compound's Comet Contract
  * @notice An efficient monolithic money market protocol
  * @author Compound
  */
-contract CometWithExtendedAssetList is CometMainInterface {
+contract CometPartialAbsorb is CometPartialAbsorbInterface {
     /** General configuration constants **/
 
     /// @notice The admin of the protocol
@@ -94,6 +91,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
     /// @notice The minimum base token reserves which must be held before collateral is hodled
     uint public override immutable targetReserves;
 
+    /// @notice The storefront coefficient for partial liquidation target health factor
+    uint public immutable storefrontCoefficient;
+
     /// @notice The number of decimals for wrapped base token
     uint8 public override immutable decimals;
 
@@ -102,11 +102,33 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
     /// @notice Factor to divide by when accruing rewards in order to preserve 6 decimals (i.e. baseScale / 1e6)
     uint internal immutable accrualDescaleFactor;
-    
-    /// @notice The address of the asset list
-    address immutable public assetList;
 
-    uint8 internal constant MAX_ASSETS_FOR_ASSET_LIST = 24;
+    /** Collateral asset configuration (packed) **/
+
+    uint256 internal immutable asset00_a;
+    uint256 internal immutable asset00_b;
+    uint256 internal immutable asset01_a;
+    uint256 internal immutable asset01_b;
+    uint256 internal immutable asset02_a;
+    uint256 internal immutable asset02_b;
+    uint256 internal immutable asset03_a;
+    uint256 internal immutable asset03_b;
+    uint256 internal immutable asset04_a;
+    uint256 internal immutable asset04_b;
+    uint256 internal immutable asset05_a;
+    uint256 internal immutable asset05_b;
+    uint256 internal immutable asset06_a;
+    uint256 internal immutable asset06_b;
+    uint256 internal immutable asset07_a;
+    uint256 internal immutable asset07_b;
+    uint256 internal immutable asset08_a;
+    uint256 internal immutable asset08_b;
+    uint256 internal immutable asset09_a;
+    uint256 internal immutable asset09_b;
+    uint256 internal immutable asset10_a;
+    uint256 internal immutable asset10_b;
+    uint256 internal immutable asset11_a;
+    uint256 internal immutable asset11_b;
 
     /**
      * @notice Construct a new protocol instance
@@ -117,7 +139,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         uint8 decimals_ = IERC20NonStandard(config.baseToken).decimals();
         if (decimals_ > MAX_BASE_DECIMALS) revert BadDecimals();
         if (config.storeFrontPriceFactor > FACTOR_SCALE) revert BadDiscount();
-        if (config.assetConfigs.length > MAX_ASSETS_FOR_ASSET_LIST) revert TooManyAssets();
+        if (config.assetConfigs.length > MAX_ASSETS) revert TooManyAssets();
         if (config.baseMinForRewards == 0) revert BadMinimum();
         if (IPriceFeed(config.baseTokenPriceFeed).decimals() != PRICE_FEED_DECIMALS) revert BadDecimals();
 
@@ -142,6 +164,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
             baseBorrowMin = config.baseBorrowMin;
             targetReserves = config.targetReserves;
+            storefrontCoefficient = config.storefrontCoefficient;
         }
 
         // Set interest rate model configs
@@ -159,7 +182,18 @@ contract CometWithExtendedAssetList is CometMainInterface {
         // Set asset info
         numAssets = uint8(config.assetConfigs.length);
 
-        assetList = IAssetListFactory(IAssetListFactoryHolder(extensionDelegate).assetListFactory()).createAssetList(config.assetConfigs);
+        (asset00_a, asset00_b) = getPackedAssetInternal(config.assetConfigs, 0);
+        (asset01_a, asset01_b) = getPackedAssetInternal(config.assetConfigs, 1);
+        (asset02_a, asset02_b) = getPackedAssetInternal(config.assetConfigs, 2);
+        (asset03_a, asset03_b) = getPackedAssetInternal(config.assetConfigs, 3);
+        (asset04_a, asset04_b) = getPackedAssetInternal(config.assetConfigs, 4);
+        (asset05_a, asset05_b) = getPackedAssetInternal(config.assetConfigs, 5);
+        (asset06_a, asset06_b) = getPackedAssetInternal(config.assetConfigs, 6);
+        (asset07_a, asset07_b) = getPackedAssetInternal(config.assetConfigs, 7);
+        (asset08_a, asset08_b) = getPackedAssetInternal(config.assetConfigs, 8);
+        (asset09_a, asset09_b) = getPackedAssetInternal(config.assetConfigs, 9);
+        (asset10_a, asset10_b) = getPackedAssetInternal(config.assetConfigs, 10);
+        (asset11_a, asset11_b) = getPackedAssetInternal(config.assetConfigs, 11);
     }
 
     /**
@@ -218,12 +252,131 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /**
+     * @dev Checks and gets the packed asset info for storage
+     */
+    function getPackedAssetInternal(AssetConfig[] memory assetConfigs, uint i) internal view returns (uint256, uint256) {
+        AssetConfig memory assetConfig;
+        if (i < assetConfigs.length) {
+            assembly {
+                assetConfig := mload(add(add(assetConfigs, 0x20), mul(i, 0x20)))
+            }
+        } else {
+            return (0, 0);
+        }
+        address asset = assetConfig.asset;
+        address priceFeed = assetConfig.priceFeed;
+        uint8 decimals_ = assetConfig.decimals;
+
+        // Short-circuit if asset is nil
+        if (asset == address(0)) {
+            return (0, 0);
+        }
+
+        // Sanity check price feed and asset decimals
+        if (IPriceFeed(priceFeed).decimals() != PRICE_FEED_DECIMALS) revert BadDecimals();
+        if (IERC20NonStandard(asset).decimals() != decimals_) revert BadDecimals();
+
+        // Ensure collateral factors are within range
+        if (assetConfig.borrowCollateralFactor >= assetConfig.liquidateCollateralFactor) revert BorrowCFTooLarge();
+        if (assetConfig.liquidateCollateralFactor > MAX_COLLATERAL_FACTOR) revert LiquidateCFTooLarge();
+
+        unchecked {
+            // Keep 4 decimals for each factor
+            uint64 descale = FACTOR_SCALE / 1e4;
+            uint16 borrowCollateralFactor = uint16(assetConfig.borrowCollateralFactor / descale);
+            uint16 liquidateCollateralFactor = uint16(assetConfig.liquidateCollateralFactor / descale);
+            uint16 liquidationFactor = uint16(assetConfig.liquidationFactor / descale);
+
+            // Be nice and check descaled values are still within range
+            if (borrowCollateralFactor >= liquidateCollateralFactor) revert BorrowCFTooLarge();
+
+            // Keep whole units of asset for supply cap
+            uint64 supplyCap = uint64(assetConfig.supplyCap / (10 ** decimals_));
+
+            uint256 word_a = (uint160(asset) << 0 |
+                              uint256(borrowCollateralFactor) << 160 |
+                              uint256(liquidateCollateralFactor) << 176 |
+                              uint256(liquidationFactor) << 192);
+            uint256 word_b = (uint160(priceFeed) << 0 |
+                              uint256(decimals_) << 160 |
+                              uint256(supplyCap) << 168);
+
+            return (word_a, word_b);
+        }
+    }
+
+    /**
      * @notice Get the i-th asset info, according to the order they were passed in originally
      * @param i The index of the asset info to get
      * @return The asset info object
      */
     function getAssetInfo(uint8 i) override public view returns (AssetInfo memory) {
-        return IAssetList(assetList).getAssetInfo(i);
+        if (i >= numAssets) revert BadAsset();
+
+        uint256 word_a;
+        uint256 word_b;
+
+        if (i == 0) {
+            word_a = asset00_a;
+            word_b = asset00_b;
+        } else if (i == 1) {
+            word_a = asset01_a;
+            word_b = asset01_b;
+        } else if (i == 2) {
+            word_a = asset02_a;
+            word_b = asset02_b;
+        } else if (i == 3) {
+            word_a = asset03_a;
+            word_b = asset03_b;
+        } else if (i == 4) {
+            word_a = asset04_a;
+            word_b = asset04_b;
+        } else if (i == 5) {
+            word_a = asset05_a;
+            word_b = asset05_b;
+        } else if (i == 6) {
+            word_a = asset06_a;
+            word_b = asset06_b;
+        } else if (i == 7) {
+            word_a = asset07_a;
+            word_b = asset07_b;
+        } else if (i == 8) {
+            word_a = asset08_a;
+            word_b = asset08_b;
+        } else if (i == 9) {
+            word_a = asset09_a;
+            word_b = asset09_b;
+        } else if (i == 10) {
+            word_a = asset10_a;
+            word_b = asset10_b;
+        } else if (i == 11) {
+            word_a = asset11_a;
+            word_b = asset11_b;
+        } else {
+            revert Absurd();
+        }
+
+        address asset = address(uint160(word_a & type(uint160).max));
+        uint64 rescale = FACTOR_SCALE / 1e4;
+        uint64 borrowCollateralFactor = uint64(((word_a >> 160) & type(uint16).max) * rescale);
+        uint64 liquidateCollateralFactor = uint64(((word_a >> 176) & type(uint16).max) * rescale);
+        uint64 liquidationFactor = uint64(((word_a >> 192) & type(uint16).max) * rescale);
+
+        address priceFeed = address(uint160(word_b & type(uint160).max));
+        uint8 decimals_ = uint8(((word_b >> 160) & type(uint8).max));
+        uint64 scale = uint64(10 ** decimals_);
+        uint128 supplyCap = uint128(((word_b >> 168) & type(uint64).max) * scale);
+
+        return AssetInfo({
+            offset: i,
+            asset: asset,
+            priceFeed: priceFeed,
+            scale: scale,
+            borrowCollateralFactor: borrowCollateralFactor,
+            liquidateCollateralFactor: liquidateCollateralFactor,
+            liquidationFactor: liquidationFactor,
+            supplyCap: supplyCap
+         });
     }
 
     /**
@@ -380,7 +533,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
         }
 
         uint16 assetsIn = userBasic[account].assetsIn;
-        uint8 _reserved = userBasic[account]._reserved;
         int liquidity = signedMulPrice(
             presentValue(principal),
             getPrice(baseTokenPriceFeed),
@@ -388,7 +540,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         );
 
         for (uint8 i = 0; i < numAssets; ) {
-            if (isInAsset(assetsIn, i, _reserved)) {
+            if (isInAsset(assetsIn, i)) {
                 if (liquidity >= 0) {
                     return true;
                 }
@@ -423,7 +575,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
         }
 
         uint16 assetsIn = userBasic[account].assetsIn;
-        uint8 _reserved = userBasic[account]._reserved;
         int liquidity = signedMulPrice(
             presentValue(principal),
             getPrice(baseTokenPriceFeed),
@@ -431,7 +582,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         );
 
         for (uint8 i = 0; i < numAssets; ) {
-            if (isInAsset(assetsIn, i, _reserved)) {
+            if (isInAsset(assetsIn, i)) {
                 if (liquidity >= 0) {
                     return false;
                 }
@@ -452,7 +603,146 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
         return liquidity < 0;
     }
+ /**
+     * @notice Calculate the Liquidation Health Factor (LHF) for an account
+     * @param account The address to check
+     * @return The LHF (scaled by 1e18)
+     */
+    function getLHF(address account) override public view returns (uint) {
+        int104 principal = userBasic[account].principal;
+        if (principal >= 0) return 0; // No debt, so LHF is 0
 
+        uint256 debt = uint256(uint104(-principal)) * getPrice(baseTokenPriceFeed) / baseScale; // debt in base asset value
+
+        uint256 sumLCF = 0;
+        uint16 assetsIn = userBasic[account].assetsIn;
+        for (uint8 i = 0; i < numAssets; ) {
+            if (isInAsset(assetsIn, i)) {
+                AssetInfo memory asset = getAssetInfo(i);
+                uint128 balance = userCollateral[account][asset.asset].balance;
+                if (balance == 0) {
+                    unchecked { i++; }
+                    continue;
+                }
+                uint256 value = mulPrice(balance, getPrice(asset.priceFeed), asset.scale);
+                sumLCF += mulFactor(value, asset.liquidateCollateralFactor);
+            }
+            unchecked { i++; }
+        }
+        if (sumLCF == 0) return 0;
+        return (sumLCF * FACTOR_SCALE) / debt;
+    }
+
+    /**
+     * @notice Calculate target Health Factor for partial liquidation
+     * @param account The address to calculate target HF for
+     * @return Target HF value (scaled by 1e18)
+     */
+    function getTargetHF(address account) override public view returns (uint) {
+        uint lhf = getLHF(account);
+        return (lhf * storefrontCoefficient) / FACTOR_SCALE;
+    }
+
+    /**
+     * @notice Check if an account has bad debt (debt > liquidation collateral value)
+     * @param account The address to check
+     * @return Whether the account has bad debt
+     */
+    function isBadDebt(address account) override public view returns (bool) {
+        int104 principal = userBasic[account].principal;
+        if (principal >= 0) return false; 
+
+        uint256 debt = uint256(uint104(-principal)) * getPrice(baseTokenPriceFeed) / baseScale;
+
+        uint256 sumLCF = 0;
+        uint16 assetsIn = userBasic[account].assetsIn;
+        for (uint8 i = 0; i < numAssets; ) {
+            if (isInAsset(assetsIn, i)) {
+                AssetInfo memory asset = getAssetInfo(i);
+                uint128 balance = userCollateral[account][asset.asset].balance;
+                if (balance == 0) {
+                    unchecked { i++; }
+                    continue;
+                }
+                uint256 value = mulPrice(balance, getPrice(asset.priceFeed), asset.scale);
+                sumLCF += mulFactor(value, asset.liquidationFactor);
+            }
+            unchecked { i++; }
+        }
+        return debt > sumLCF;
+    }
+
+    /**
+     * @notice Calculate the minimal debt that should be liquidated for an account
+     * @param account The address to calculate minimal debt for
+     * @return The minimal debt amount in base units
+     */
+    function getMinimalDebt(address account) override public view returns (uint256) {
+        int104 principal = userBasic[account].principal;
+        if (principal >= 0) return 0;
+
+        uint256 debtBase = borrowBalanceOf(account);
+        uint256 basePrice = getPrice(baseTokenPriceFeed);
+        uint256 debtValue = debtBase * basePrice / baseScale;
+
+        uint16 assetsIn = userBasic[account].assetsIn;
+        uint256 totalCollateralCF = 0;
+        uint256 totalCollateralLF = 0;
+
+        for (uint8 i = 0; i < numAssets; i++) {
+            if (!isInAsset(assetsIn, i)) continue;
+
+            AssetInfo memory asset = getAssetInfo(i);
+            uint128 balance = userCollateral[account][asset.asset].balance;
+            if (balance == 0) continue;
+
+            uint256 price = getPrice(asset.priceFeed);
+            uint256 collateralValue = uint256(balance) * price / asset.scale;
+
+            totalCollateralCF += (collateralValue * asset.borrowCollateralFactor) / FACTOR_SCALE;
+            totalCollateralLF += (collateralValue * asset.liquidationFactor) / FACTOR_SCALE;
+        }
+
+        if (debtValue > totalCollateralLF) {
+            return debtBase;
+        }
+
+        if (totalCollateralCF == 0) {
+            return debtBase;
+        }
+
+        uint256 lhf = (totalCollateralLF * FACTOR_SCALE) / debtValue;
+
+        uint256 targetHF = (lhf * storefrontCoefficient) / FACTOR_SCALE;
+
+        uint256 targetDebtValue = (totalCollateralCF * targetHF) / FACTOR_SCALE;
+
+        if (targetDebtValue >= debtValue) {
+            return 0;
+        }
+
+        uint256 minimalDebtValue = debtValue - targetDebtValue;
+        uint256 minimalDebtBase = minimalDebtValue * baseScale / basePrice;
+
+        return minimalDebtBase;
+    }
+
+    /**
+     * @notice Check if an account can be partially liquidated
+     * @param account The address to check
+     * @return Whether the account can be partially liquidated
+     */
+    function isPartiallyLiquidatable(address account) override public view returns (bool) {
+        if (isBadDebt(account)) return false;
+        
+        int104 principal = userBasic[account].principal;
+        if (principal >= 0) return false;
+
+        uint256 minimalDebt = getMinimalDebt(account);
+        uint256 fullDebt = borrowBalanceOf(account);
+
+        return minimalDebt > 0 && minimalDebt < fullDebt;
+    }
     /**
      * @dev The change in principal broken into repay and supply amounts
      */
@@ -585,17 +875,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
     /**
      * @dev Whether user has a non-zero balance of an asset, given assetsIn flags
-     * @dev _reserved is used to check bits 16-23 of assetsIn
      */
-    function isInAsset(uint16 assetsIn, uint8 assetOffset, uint8 _reserved) internal pure returns (bool) {
-        if (assetOffset < 16) {
-            // check bit in assetsIn (for bits 0-15)
-            return (assetsIn & (uint16(1) << assetOffset)) != 0;
-        } else if (assetOffset < 24) {
-            // check bit in reserved (for bits 16-23)
-            return (_reserved & (uint8(1) << (assetOffset - 16))) != 0;
-        }
-        return false; // if assetOffset >= 24 (should not happen)
+    function isInAsset(uint16 assetsIn, uint8 assetOffset) internal pure returns (bool) {
+        return (assetsIn & (uint16(1) << assetOffset) != 0);
     }
 
     /**
@@ -609,22 +891,10 @@ contract CometWithExtendedAssetList is CometMainInterface {
     ) internal {
         if (initialUserBalance == 0 && finalUserBalance != 0) {
             // set bit for asset
-            if (assetInfo.offset < 16) {
-                // set bit in assetsIn for bits 0-15
-                userBasic[account].assetsIn |= (uint16(1) << assetInfo.offset);
-            } else if (assetInfo.offset < 24) {
-                // set bit in _reserved for bits 16-23
-                userBasic[account]._reserved |= (uint8(1) << (assetInfo.offset - 16));
-            }
+            userBasic[account].assetsIn |= (uint16(1) << assetInfo.offset);
         } else if (initialUserBalance != 0 && finalUserBalance == 0) {
             // clear bit for asset
-            if (assetInfo.offset < 16) {
-                // clear bit in assetsIn for bits 0-15
-                userBasic[account].assetsIn &= ~(uint16(1) << assetInfo.offset);
-            } else if (assetInfo.offset < 24) {
-                // clear bit in _reserved for bits 16-23
-                userBasic[account]._reserved &= ~(uint8(1) << (assetInfo.offset - 16));
-            }
+            userBasic[account].assetsIn &= ~(uint16(1) << assetInfo.offset);
         }
     }
 
@@ -1060,13 +1330,12 @@ contract CometWithExtendedAssetList is CometMainInterface {
         int104 oldPrincipal = accountUser.principal;
         int256 oldBalance = presentValue(oldPrincipal);
         uint16 assetsIn = accountUser.assetsIn;
-        uint8 _reserved = accountUser._reserved;
 
         uint256 basePrice = getPrice(baseTokenPriceFeed);
         uint256 deltaValue = 0;
 
         for (uint8 i = 0; i < numAssets; ) {
-            if (isInAsset(assetsIn, i, _reserved)) {
+            if (isInAsset(assetsIn, i)) {
                 AssetInfo memory assetInfo = getAssetInfo(i);
                 address asset = assetInfo.asset;
                 uint128 seizeAmount = userCollateral[account][asset].balance;
@@ -1093,7 +1362,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
         // reset assetsIn
         userBasic[account].assetsIn = 0;
-        userBasic[account]._reserved = 0;
 
         (uint104 repayAmount, uint104 supplyAmount) = repayAndSupplyAmount(oldPrincipal, newPrincipal);
 

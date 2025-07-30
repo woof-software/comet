@@ -226,7 +226,10 @@ export async function fastForward(seconds: number, ethers_ = ethers): Promise<Bl
   return block;
 }
 
-export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
+export async function makeProtocol(
+  opts: ProtocolOpts = {}, 
+  contractType: 'CometHarness' | 'CometHarnessPartially' = 'CometHarness'
+): Promise<Protocol> {
   const signers = await ethers.getSigners();
 
   const assets = opts.assets || defaultAssets();
@@ -289,7 +292,14 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     await extensionDelegate.deployed();
   }
 
-  const CometFactory = (await ethers.getContractFactory('CometHarness')) as CometHarness__factory;
+  // Выбираем фабрику в зависимости от типа контракта
+  let CometFactory;
+  if (contractType === 'CometHarnessPartially') {
+    CometFactory = (await ethers.getContractFactory('CometHarnessPartially')) as any;
+  } else {
+    CometFactory = (await ethers.getContractFactory('CometHarness')) as CometHarness__factory;
+  }
+
   const config = {
     governor: governor.address,
     pauseGuardian: pauseGuardian.address,
@@ -367,6 +377,14 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     await wait(baseToken.allocateTo(comet.address, baseTokenBalance));
   }
 
+  // Возвращаем правильный тип контракта в зависимости от contractType
+  let cometContract;
+  if (contractType === 'CometHarnessPartially') {
+    cometContract = await ethers.getContractAt('CometHarnessPartially', comet.address) as any;
+  } else {
+    cometContract = await ethers.getContractAt('CometHarnessInterface', comet.address) as Comet;
+  }
+
   return {
     opts,
     governor,
@@ -375,7 +393,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     users,
     base,
     reward,
-    comet: await ethers.getContractAt('CometHarnessInterface', comet.address) as Comet,
+    comet: cometContract,
     cometWithExtendedAssetList: await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address) as CometWithExtendedAssetList,
     assetListFactory: assetListFactory,
     tokens,

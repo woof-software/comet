@@ -100,9 +100,6 @@ contract Comet is CometMainInterface {
     /// @notice Factor to divide by when accruing rewards in order to preserve 6 decimals (i.e. baseScale / 1e6)
     uint internal immutable accrualDescaleFactor;
 
-    /// @notice The coefficient (scaled by 1e18) to determine the target health factor as a percentage of LHF (e.g., 0.98e18 for 98%)
-    uint256 public immutable storefrontCoefficient;
-
     /** Collateral asset configuration (packed) **/
 
     uint256 internal immutable asset00_a;
@@ -151,7 +148,6 @@ contract Comet is CometMainInterface {
             baseTokenPriceFeed = config.baseTokenPriceFeed;
             extensionDelegate = config.extensionDelegate;
             storeFrontPriceFactor = config.storeFrontPriceFactor;
-            storefrontCoefficient = config.storefrontCoefficient; // Add this to Configuration struct
 
             decimals = decimals_;
             baseScale = uint64(10 ** decimals_);
@@ -602,147 +598,6 @@ contract Comet is CometMainInterface {
         }
 
         return liquidity < 0;
-    }
-
-    /**
-     * @notice Calculate the Liquidation Health Factor (LHF) for an account
-     * @param account The address to check
-     * @return The LHF (scaled by 1e18)
-     */
-    function getLHF(address account) override public view returns (uint) {
-        int104 principal = userBasic[account].principal;
-        if (principal >= 0) return 0; // No debt, so LHF is 0
-
-        uint256 debt = uint256(uint104(-principal)) * getPrice(baseTokenPriceFeed) / baseScale; // debt in base asset value
-
-        uint256 sumLCF = 0;
-        uint16 assetsIn = userBasic[account].assetsIn;
-        for (uint8 i = 0; i < numAssets; ) {
-            if (isInAsset(assetsIn, i)) {
-                AssetInfo memory asset = getAssetInfo(i);
-                uint128 balance = userCollateral[account][asset.asset].balance;
-                if (balance == 0) {
-                    unchecked { i++; }
-                    continue;
-                }
-                uint256 value = mulPrice(balance, getPrice(asset.priceFeed), asset.scale);
-                sumLCF += mulFactor(value, asset.liquidateCollateralFactor);
-            }
-            unchecked { i++; }
-        }
-        if (sumLCF == 0) return 0;
-        return (sumLCF * FACTOR_SCALE) / debt;
-    }
-
-    /**
-     * @notice Calculate target Health Factor for partial liquidation
-     * @param account The address to calculate target HF for
-     * @return Target HF value (scaled by 1e18)
-     */
-    function getTargetHF(address account) override public view returns (uint) {
-        uint lhf = getLHF(account);
-        return (lhf * storefrontCoefficient) / FACTOR_SCALE;
-    }
-
-    /**
-     * @notice Check if an account has bad debt (debt > liquidation collateral value)
-     * @param account The address to check
-     * @return Whether the account has bad debt
-     */
-    function isBadDebt(address account) override public view returns (bool) {
-        int104 principal = userBasic[account].principal;
-        if (principal >= 0) return false; 
-
-        uint256 debt = uint256(uint104(-principal)) * getPrice(baseTokenPriceFeed) / baseScale;
-
-        uint256 sumLCF = 0;
-        uint16 assetsIn = userBasic[account].assetsIn;
-        for (uint8 i = 0; i < numAssets; ) {
-            if (isInAsset(assetsIn, i)) {
-                AssetInfo memory asset = getAssetInfo(i);
-                uint128 balance = userCollateral[account][asset.asset].balance;
-                if (balance == 0) {
-                    unchecked { i++; }
-                    continue;
-                }
-                uint256 value = mulPrice(balance, getPrice(asset.priceFeed), asset.scale);
-                sumLCF += mulFactor(value, asset.liquidationFactor);
-            }
-            unchecked { i++; }
-        }
-        return debt > sumLCF;
-    }
-
-    /**
-     * @notice Calculate the minimal debt that should be liquidated for an account
-     * @param account The address to calculate minimal debt for
-     * @return The minimal debt amount in base units
-     */
-    function getMinimalDebt(address account) override public view returns (uint256) {
-        int104 principal = userBasic[account].principal;
-        if (principal >= 0) return 0;
-
-        uint256 debtBase = borrowBalanceOf(account);
-        uint256 basePrice = getPrice(baseTokenPriceFeed);
-        uint256 debtValue = debtBase * basePrice / baseScale;
-
-        uint16 assetsIn = userBasic[account].assetsIn;
-        uint256 totalCollateralCF = 0;
-        uint256 totalCollateralLF = 0;
-
-        for (uint8 i = 0; i < numAssets; i++) {
-            if (!isInAsset(assetsIn, i)) continue;
-
-            AssetInfo memory asset = getAssetInfo(i);
-            uint128 balance = userCollateral[account][asset.asset].balance;
-            if (balance == 0) continue;
-
-            uint256 price = getPrice(asset.priceFeed);
-            uint256 collateralValue = uint256(balance) * price / asset.scale;
-
-            totalCollateralCF += (collateralValue * asset.borrowCollateralFactor) / FACTOR_SCALE;
-            totalCollateralLF += (collateralValue * asset.liquidationFactor) / FACTOR_SCALE;
-        }
-
-        if (debtValue > totalCollateralLF) {
-            return debtBase;
-        }
-
-        if (totalCollateralCF == 0) {
-            return debtBase;
-        }
-
-        uint256 lhf = (totalCollateralLF * FACTOR_SCALE) / debtValue;
-
-        uint256 targetHF = (lhf * storefrontCoefficient) / FACTOR_SCALE;
-
-        uint256 targetDebtValue = (totalCollateralCF * targetHF) / FACTOR_SCALE;
-
-        if (targetDebtValue >= debtValue) {
-            return 0;
-        }
-
-        uint256 minimalDebtValue = debtValue - targetDebtValue;
-        uint256 minimalDebtBase = minimalDebtValue * baseScale / basePrice;
-
-        return minimalDebtBase;
-    }
-
-    /**
-     * @notice Check if an account can be partially liquidated
-     * @param account The address to check
-     * @return Whether the account can be partially liquidated
-     */
-    function isPartiallyLiquidatable(address account) override public view returns (bool) {
-        if (isBadDebt(account)) return false;
-        
-        int104 principal = userBasic[account].principal;
-        if (principal >= 0) return false;
-
-        uint256 minimalDebt = getMinimalDebt(account);
-        uint256 fullDebt = borrowBalanceOf(account);
-
-        return minimalDebt > 0 && minimalDebt < fullDebt;
     }
 
     /**
