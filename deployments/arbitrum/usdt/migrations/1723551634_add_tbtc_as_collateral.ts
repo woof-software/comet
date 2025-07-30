@@ -8,7 +8,7 @@ import {
 } from '../../../../scenario/utils/arbitrumUtils';
 import { ethers } from 'ethers';
 
-const TBTC_ADDRESS = '0x6c84a8f1c29108f47a79964b5fe888d4f4d0de40';
+const TBTC_ADDRESS = '0x6c84a8f1c29108F47a79964b5Fe888D4f4D0dE40';
 const TBTC_TO_USD_PRICE_FEED_ADDRESS =
   '0xE808488e8627F6531bA79a13A9E0271B39abEb1C';
 
@@ -171,7 +171,7 @@ export default migration('1723551634_add_tbtc_as_collateral', {
       borrowCollateralFactor: exp(0.8, 18),
       liquidateCollateralFactor: exp(0.85, 18),
       liquidationFactor: exp(0.9, 18),
-      supplyCap: exp(500, 18),
+      supplyCap: exp(80, 18),
     };
 
     // 1. & 2. Compare tBTC asset config with Comet and Configurator asset info
