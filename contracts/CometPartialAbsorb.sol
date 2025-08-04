@@ -524,6 +524,16 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
      * @notice Check whether an account has enough collateral to borrow
      * @param account The address to check
      * @return Whether the account is minimally collateralized enough to borrow
+     * 
+     * Based on formula (1) from documentation:
+     * HF = (principal + interest) * base_asset_price / Σ(collateral_balance_i * collateral_price_i * collateral_factor_i)
+     * 
+     * Where:
+     * - HF (Health Factor) is the ratio between debt and collateral value
+     * - If HF >= 1, the account is collateralized enough to borrow
+     * - If HF < 1, the account cannot borrow more
+     * 
+     * This function calculates HF and returns true if HF >= 1 (account can borrow)
      */
     function isBorrowCollateralized(address account) override public view returns (bool) {
         int104 principal = userBasic[account].principal;
@@ -566,6 +576,16 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
      * @notice Check whether an account has enough collateral to not be liquidated
      * @param account The address to check
      * @return Whether the account is minimally collateralized enough to not be liquidated
+     * 
+     * Based on formula (2) from documentation:
+     * LF = (principal + interest) * base_asset_price / Σ(collateral_balance_i * collateral_price_i * collateral_liquidation_factor_i)
+     * 
+     * Where:
+     * - LF (Liquidation Factor) is the ratio between debt and collateral value
+     * - If LF >= 1, the account is liquidatable
+     * - If LF < 1, the account is safe from liquidation
+     * 
+     * This function calculates LF and returns true if LF >= 1 (account can be liquidated)
      */
     function isLiquidatable(address account) override public view returns (bool) {
         int104 principal = userBasic[account].principal;
@@ -603,19 +623,34 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
 
         return liquidity < 0;
     }
- /**
-     * @notice Calculate the Liquidation Health Factor (LHF) for an account
-     * @param account The address to check
-     * @return The LHF (scaled by 1e18)
+
+    /**
+     * @notice Calculate liquidation health factor (LHF) for an account
+     * @param account Address to check
+     * @return LHF (scaled by 1e18)
+     * 
+     * Simplified formula:
+     * LHF = Sum_of_collaterals_with_penalty / Debt
+     * 
+     * Where:
+     * - Sum_of_collaterals_with_penalty = Σ(Collateral_amount * Price * Liquidation_factor)
+     * - Liquidation_factor = 1 - Liquidation_penalty (e.g., 0.95 for 5% penalty)
+     * - Debt = Principal_debt * Base_asset_price
+     * 
+     * LHF shows how many times collateral exceeds debt considering liquidation penalty
+     * If LHF >= 1, account can be liquidated
      */
     function getLHF(address account) override public view returns (uint) {
         int104 principal = userBasic[account].principal;
-        if (principal >= 0) return 0; // No debt, so LHF is 0
+        if (principal >= 0) return 0; // No debt, LHF = 0
 
-        uint256 debt = uint256(uint104(-principal)) * getPrice(baseTokenPriceFeed) / baseScale; // debt in base asset value
+        // Convert debt to base asset value
+        uint256 debt = uint256(uint104(-principal)) * getPrice(baseTokenPriceFeed) / baseScale;
 
         uint256 sumLCF = 0;
         uint16 assetsIn = userBasic[account].assetsIn;
+        
+        // Iterate through all user assets
         for (uint8 i = 0; i < numAssets; ) {
             if (isInAsset(assetsIn, i)) {
                 AssetInfo memory asset = getAssetInfo(i);
@@ -624,19 +659,34 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
                     unchecked { i++; }
                     continue;
                 }
+                
+                // Calculate collateral value in base asset
                 uint256 value = mulPrice(balance, getPrice(asset.priceFeed), asset.scale);
+                
+                // Add value considering liquidation penalty
                 sumLCF += mulFactor(value, asset.liquidateCollateralFactor);
             }
             unchecked { i++; }
         }
+        
         if (sumLCF == 0) return 0;
         return (sumLCF * FACTOR_SCALE) / debt;
     }
 
     /**
-     * @notice Calculate target Health Factor for partial liquidation
-     * @param account The address to calculate target HF for
-     * @return Target HF value (scaled by 1e18)
+     * @notice Calculate target health factor for partial liquidation
+     * @param account Address to calculate target HF for
+     * @return Target HF (scaled by 1e18)
+     * 
+     * Simplified formula:
+     * Target_HF = LHF * Storefront_coefficient
+     * 
+     * Where:
+     * - Storefront_coefficient = Percentage_after_liquidation (e.g., 98% = 0.98)
+     * - LHF = liquidation health factor
+     * 
+     * Target HF shows the minimum health factor that should be
+     * achieved after partial liquidation
      */
     function getTargetHF(address account) override public view returns (uint) {
         uint lhf = getLHF(account);
@@ -644,18 +694,31 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
     }
 
     /**
-     * @notice Check if an account has bad debt (debt > liquidation collateral value)
-     * @param account The address to check
-     * @return Whether the account has bad debt
+     * @notice Check if account has bad debt (debt > collateral value with penalty)
+     * @param account Address to check
+     * @return Whether account has bad debt
+     * 
+     * Simplified formula:
+     * Bad_debt = Debt > Sum_of_collaterals_with_penalty
+     * 
+     * Where:
+     * - Debt = Principal_debt * Base_asset_price
+     * - Sum_of_collaterals_with_penalty = Σ(Collateral_amount * Price * Liquidation_factor)
+     * 
+     * If debt is greater than value of all collaterals considering liquidation penalty,
+     * then this is bad debt that cannot be fully covered
      */
     function isBadDebt(address account) override public view returns (bool) {
         int104 principal = userBasic[account].principal;
-        if (principal >= 0) return false; 
+        if (principal >= 0) return false; // No debt
 
+        // Convert debt to base asset value
         uint256 debt = uint256(uint104(-principal)) * getPrice(baseTokenPriceFeed) / baseScale;
 
         uint256 sumLCF = 0;
         uint16 assetsIn = userBasic[account].assetsIn;
+        
+        // Iterate through all user assets
         for (uint8 i = 0; i < numAssets; ) {
             if (isInAsset(assetsIn, i)) {
                 AssetInfo memory asset = getAssetInfo(i);
@@ -664,31 +727,48 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
                     unchecked { i++; }
                     continue;
                 }
+                
+                // Calculate collateral value in base asset
                 uint256 value = mulPrice(balance, getPrice(asset.priceFeed), asset.scale);
+                
+                // Add value considering liquidation penalty
                 sumLCF += mulFactor(value, asset.liquidationFactor);
             }
             unchecked { i++; }
         }
-        return debt > sumLCF;
+        
+        return debt > sumLCF; // Check if debt exceeds collateral value
     }
 
     /**
-     * @notice Calculate the minimal debt that should be liquidated for an account
-     * @param account The address to calculate minimal debt for
-     * @return The minimal debt amount in base units
+     * @notice Calculate minimum debt that should be repaid for an account
+     * @param account Address to calculate minimum debt for
+     * @return Minimum debt in base units
+     * 
+     * Simplified formula:
+     * Minimum_debt = Current_debt - (Sum_of_collaterals * Collateral_factor * Target_HF)
+     * 
+     * Where:
+     * - Target_HF = LHF * Storefront_coefficient
+     * - Collateral_factor = Collateral_percentage (e.g., 80% = 0.8)
+     * 
+     * This function calculates minimum debt that needs to be repaid to
+     * bring account to target health factor
      */
     function getMinimalDebt(address account) override public view returns (uint256) {
         int104 principal = userBasic[account].principal;
-        if (principal >= 0) return 0;
+        if (principal >= 0) return 0; // No debt
 
+        // Get current debt and its value
         uint256 debtBase = borrowBalanceOf(account);
         uint256 basePrice = getPrice(baseTokenPriceFeed);
         uint256 debtValue = debtBase * basePrice / baseScale;
 
         uint16 assetsIn = userBasic[account].assetsIn;
-        uint256 totalCollateralCF = 0;
-        uint256 totalCollateralLF = 0;
+        uint256 totalCollateralCF = 0; // Sum of collaterals with collateral factor
+        uint256 totalCollateralLF = 0; // Sum of collaterals with liquidation factor
 
+        // Iterate through all user assets
         for (uint8 i = 0; i < numAssets; i++) {
             if (!isInAsset(assetsIn, i)) continue;
 
@@ -696,31 +776,38 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
             uint128 balance = userCollateral[account][asset.asset].balance;
             if (balance == 0) continue;
 
+            // Calculate collateral value in base asset
             uint256 price = getPrice(asset.priceFeed);
             uint256 collateralValue = uint256(balance) * price / asset.scale;
 
+            // Add to sums with corresponding factors
             totalCollateralCF += (collateralValue * asset.borrowCollateralFactor) / FACTOR_SCALE;
             totalCollateralLF += (collateralValue * asset.liquidationFactor) / FACTOR_SCALE;
         }
 
+        // If debt is greater than collateral value with penalty - this is bad debt
         if (debtValue > totalCollateralLF) {
-            return debtBase;
+            return debtBase; // Need to repay all debt
         }
 
+        // If no collaterals
         if (totalCollateralCF == 0) {
             return debtBase;
         }
 
+        // Calculate LHF and target HF
         uint256 lhf = (totalCollateralLF * FACTOR_SCALE) / debtValue;
-
         uint256 targetHF = (lhf * storefrontCoefficient) / FACTOR_SCALE;
 
+        // Calculate target debt after liquidation
         uint256 targetDebtValue = (totalCollateralCF * targetHF) / FACTOR_SCALE;
 
+        // If target debt is greater than current - liquidation not needed
         if (targetDebtValue >= debtValue) {
             return 0;
         }
 
+        // Calculate minimum debt to repay
         uint256 minimalDebtValue = debtValue - targetDebtValue;
         uint256 minimalDebtBase = minimalDebtValue * baseScale / basePrice;
 
@@ -728,21 +815,27 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
     }
 
     /**
-     * @notice Check if an account can be partially liquidated
-     * @param account The address to check
-     * @return Whether the account can be partially liquidated
+     * @notice Check if account can be partially liquidated
+     * @param account Address to check
+     * @return Whether account can be partially liquidated
+     * 
+     * Conditions for partial liquidation:
+     * 1. Account has debt (principal < 0)
+     * 2. Minimum debt to repay > 0
+     * 3. Minimum debt < full debt (partial liquidation possible)
+     * 
+     * This ensures that partial liquidation will bring account to target HF
      */
     function isPartiallyLiquidatable(address account) override public view returns (bool) {
-        if (isBadDebt(account)) return false;
-        
         int104 principal = userBasic[account].principal;
-        if (principal >= 0) return false;
+        if (principal >= 0) return false; // No debt
 
         uint256 minimalDebt = getMinimalDebt(account);
         uint256 fullDebt = borrowBalanceOf(account);
 
         return minimalDebt > 0 && minimalDebt < fullDebt;
     }
+
     /**
      * @dev The change in principal broken into repay and supply amounts
      */
@@ -1381,7 +1474,7 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
 
     /**
      * @notice Buy collateral from the protocol using base tokens, increasing protocol reserves
-       A minimum collateral amount should be specified to indicate the maximum slippage acceptable for the buyer.
+    A minimum collateral amount should be specified to indicate the maximum slippage acceptable for the buyer.
      * @param asset The asset to buy
      * @param minAmount The minimum amount of collateral tokens that should be received by the buyer
      * @param baseAmount The amount of base tokens used to buy the collateral
@@ -1507,7 +1600,7 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
     /**
      * @notice Fallback to calling the extension delegate for everything else
      */
-    fallback() external payable {
+    fallback() external {
         address delegate = extensionDelegate;
         assembly {
             calldatacopy(0, 0, calldatasize())
