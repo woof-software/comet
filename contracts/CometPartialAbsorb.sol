@@ -759,6 +759,11 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
         int104 principal = userBasic[account].principal;
         if (principal >= 0) return 0; // No debt
 
+        // Check if account has bad debt
+        if (isBadDebt(account)) {
+            return borrowBalanceOf(account); // Need to repay all debt
+        }
+
         // Get current debt and its value
         uint256 debtBase = borrowBalanceOf(account);
         uint256 basePrice = getPrice(baseTokenPriceFeed);
@@ -766,7 +771,6 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
 
         uint16 assetsIn = userBasic[account].assetsIn;
         uint256 totalCollateralCF = 0; // Sum of collaterals with collateral factor
-        uint256 totalCollateralLF = 0; // Sum of collaterals with liquidation factor
 
         // Iterate through all user assets
         for (uint8 i = 0; i < numAssets; i++) {
@@ -780,14 +784,8 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
             uint256 price = getPrice(asset.priceFeed);
             uint256 collateralValue = uint256(balance) * price / asset.scale;
 
-            // Add to sums with corresponding factors
+            // Add to sum with collateral factor
             totalCollateralCF += (collateralValue * asset.borrowCollateralFactor) / FACTOR_SCALE;
-            totalCollateralLF += (collateralValue * asset.liquidationFactor) / FACTOR_SCALE;
-        }
-
-        // If debt is greater than collateral value with penalty - this is bad debt
-        if (debtValue > totalCollateralLF) {
-            return debtBase; // Need to repay all debt
         }
 
         // If no collaterals
@@ -795,9 +793,8 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
             return debtBase;
         }
 
-        // Calculate LHF and target HF
-        uint256 lhf = (totalCollateralLF * FACTOR_SCALE) / debtValue;
-        uint256 targetHF = (lhf * storefrontCoefficient) / FACTOR_SCALE;
+        // Use getTargetHF function instead of manual calculation
+        uint256 targetHF = getTargetHF(account);
 
         // Calculate target debt after liquidation
         uint256 targetDebtValue = (totalCollateralCF * targetHF) / FACTOR_SCALE;
@@ -1471,7 +1468,6 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
             emit Transfer(address(0), account, presentValueSupply(baseSupplyIndex, unsigned104(newPrincipal)));
         }
     }
-
     /**
      * @notice Buy collateral from the protocol using base tokens, increasing protocol reserves
     A minimum collateral amount should be specified to indicate the maximum slippage acceptable for the buyer.
