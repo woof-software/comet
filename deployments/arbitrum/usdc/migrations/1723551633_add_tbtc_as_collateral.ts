@@ -16,22 +16,11 @@ let newPriceFeed: string;
 
 export default migration('1723551633_add_tbtc_as_collateral', {
   async prepare(deploymentManager: DeploymentManager) {
-    const _tBTCPriceFeed = await deploymentManager.deploy(
-      'tBTC:priceFeed',
-      'pricefeeds/ScalingPriceFeed.sol',
-      [
-        TBTC_TO_USD_PRICE_FEED_ADDRESS, // BTC / USD price feed
-        8, // decimals
-      ]
-    );
-
-    return { tBTCPriceFeedAddress: _tBTCPriceFeed.address };
   },
 
   enact: async (
     deploymentManager: DeploymentManager,
-    govDeploymentManager: DeploymentManager,
-    { tBTCPriceFeedAddress }
+    govDeploymentManager: DeploymentManager
   ) => {
     const trace = deploymentManager.tracer();
     const {
@@ -45,10 +34,10 @@ export default migration('1723551633_add_tbtc_as_collateral', {
     const { arbitrumInbox, timelock, governor } =
       await govDeploymentManager.getContracts();
 
-    newPriceFeed = tBTCPriceFeedAddress;
+    newPriceFeed = TBTC_TO_USD_PRICE_FEED_ADDRESS;
 
     const tBTC = await deploymentManager.existing(
-      'tBtc',
+      'tBTC',
       TBTC_ADDRESS,
       'arbitrum',
       'contracts/ERC20.sol:ERC20'
@@ -56,7 +45,7 @@ export default migration('1723551633_add_tbtc_as_collateral', {
 
     const tBTCPriceFeed = await deploymentManager.existing(
       'tBTC:priceFeed',
-      tBTCPriceFeedAddress,
+      TBTC_TO_USD_PRICE_FEED_ADDRESS,
       'arbitrum'
     );
 
@@ -135,7 +124,7 @@ export default migration('1723551633_add_tbtc_as_collateral', {
     ];
 
     const description =
-      '# Add tBTC as collateral into cUSDCv3 on Arbitrum\n\n## Proposal summary\n\nCompound Growth Program [AlphaGrowth] proposes to add tBTC into cUSDCv3 on Arbitrum network. This proposal takes the governance steps recommended and necessary to update a Compound III USDC market on Arbitrum. Simulations have confirmed the market’s readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario). The new parameters include setting the risk parameters based off of the [recommendations from Gauntlet](https://www.comp.xyz/t/gauntlet-tbtc-recommendations-across-comets-12-6-24/6036).\n\nFurther detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/1007) and [forum discussion](https://www.comp.xyz/t/gauntlet-tbtc-recommendations-across-comets-12-6-24/6036).\n\n\n## Proposal Actions\n\nThe first proposal action adds tBTC to the USDC Comet on Arbitrum. This sends the encoded `addAsset` and `deployAndUpgradeTo` calls across the bridge to the governance receiver on Arbitrum.';
+      '# Add tBTC as collateral into cUSDCv3 on Arbitrum\n\n## Proposal summary\n\nWOOF! proposes to add tBTC into cUSDCv3 on Arbitrum network. This proposal takes the governance steps recommended and necessary to update a Compound III USDC market on Arbitrum. Simulations have confirmed the market’s readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario). The new parameters include setting the risk parameters based off of the [recommendations from Gauntlet](https://www.comp.xyz/t/gauntlet-tbtc-recommendations-across-comets-12-6-24/6036).\n\nFurther detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/1007) and [forum discussion](https://www.comp.xyz/t/gauntlet-tbtc-recommendations-across-comets-12-6-24/6036).\n\n\n## Proposal Actions\n\nThe first proposal action adds tBTC to the USDC Comet on Arbitrum. This sends the encoded `addAsset` and `deployAndUpgradeTo` calls across the bridge to the governance receiver on Arbitrum.';
     const txn = await govDeploymentManager.retry(async () =>
       trace(
         await governor.propose(...(await proposal(mainnetActions, description)))
