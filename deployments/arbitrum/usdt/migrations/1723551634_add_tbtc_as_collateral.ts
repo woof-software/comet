@@ -15,7 +15,9 @@ const TBTC_TO_USD_PRICE_FEED_ADDRESS =
 let newPriceFeed: string;
 
 export default migration('1723551634_add_tbtc_as_collateral', {
-  async prepare(deploymentManager: DeploymentManager) {},
+  async prepare(deploymentManager: DeploymentManager) {
+    return {};
+  },
 
   enact: async (
     deploymentManager: DeploymentManager,
