@@ -75,6 +75,7 @@ abstract contract CometPartialAbsorbInterface is CometCore {
     function withdrawReserves(address to, uint amount) virtual external;
 
     function absorb(address absorber, address[] calldata accounts) virtual external;
+    function absorbPartial(address absorber, address account) virtual external;
     function buyCollateral(address asset, uint minAmount, uint baseAmount, address recipient) virtual external;
     function quoteCollateral(address asset, uint baseAmount) virtual public view returns (uint);
 
@@ -93,6 +94,7 @@ abstract contract CometPartialAbsorbInterface is CometCore {
     function isBadDebt(address account) virtual public view returns (bool);
     function getMinimalDebt(address account) virtual public view returns (uint256);
     function isPartiallyLiquidatable(address account) virtual public view returns (bool);
+    function collateralForMinimalDebt(address account) virtual public view returns (address[] memory assets, uint256[] memory amounts);
 
     function totalSupply() virtual external view returns (uint256);
     function totalBorrow() virtual external view returns (uint256);

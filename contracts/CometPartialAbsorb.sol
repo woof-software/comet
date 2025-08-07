@@ -745,15 +745,16 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
      * @param account Address to calculate minimum debt for
      * @return Minimum debt in base units
      * 
-     * Simplified formula:
-     * Minimum_debt = Current_debt - (Sum_of_collaterals * Collateral_factor * Target_HF)
+     * Improved formula based on RFC formula (13):
+     * Δdebt = debt - (Σ(collateral_i * CF_i) * targetHF)
      * 
      * Where:
-     * - Target_HF = LHF * Storefront_coefficient
-     * - Collateral_factor = Collateral_percentage (e.g., 80% = 0.8)
+     * - targetHF = LHF * storefrontCoefficient
+     * - CF_i = borrowCollateralFactor for asset i
      * 
-     * This function calculates minimum debt that needs to be repaid to
-     * bring account to target health factor
+     * This function ensures that after partial liquidation:
+     * - HF <= targetHF (account is healthy enough)
+     * - LF < 1 (account is not liquidatable)
      */
     function getMinimalDebt(address account) override public view returns (uint256) {
         int104 principal = userBasic[account].principal;
@@ -793,10 +794,10 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
             return debtBase;
         }
 
-        // Use getTargetHF function instead of manual calculation
+        // Calculate target HF
         uint256 targetHF = getTargetHF(account);
 
-        // Calculate target debt after liquidation
+        // Calculate target debt after liquidation using RFC formula (13)
         uint256 targetDebtValue = (totalCollateralCF * targetHF) / FACTOR_SCALE;
 
         // If target debt is greater than current - liquidation not needed
@@ -807,6 +808,12 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
         // Calculate minimum debt to repay
         uint256 minimalDebtValue = debtValue - targetDebtValue;
         uint256 minimalDebtBase = minimalDebtValue * baseScale / basePrice;
+
+        // Check for dust position - if remaining debt would be too small
+        uint256 remainingDebt = debtBase - minimalDebtBase;
+        if (remainingDebt > 0 && remainingDebt < baseBorrowMin) {
+            return debtBase; // Liquidate everything to avoid dust
+        }
 
         return minimalDebtBase;
     }
@@ -831,6 +838,84 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
         uint256 fullDebt = borrowBalanceOf(account);
 
         return minimalDebt > 0 && minimalDebt < fullDebt;
+    }
+
+    /**
+     * @notice Calculate which collaterals and amounts will be seized during partial liquidation
+     * @param account Address to calculate collateral breakdown for
+     * @return assets Array of asset addresses that will be seized
+     * @return amounts Array of amounts that will be seized (in asset units)
+     * 
+     * This function simulates the partial liquidation process to determine
+     * exactly which collaterals and how much will be seized to repay minimal debt
+     */
+    function collateralForMinimalDebt(address account) override public view returns (address[] memory assets, uint256[] memory amounts) {
+        int104 principal = userBasic[account].principal;
+        if (principal >= 0) {
+            // No debt - return empty arrays
+            return (new address[](0), new uint256[](0));
+        }
+
+        uint256 debtToRepay = getMinimalDebt(account);
+        if (debtToRepay == 0) {
+            // No liquidation needed - return empty arrays
+            return (new address[](0), new uint256[](0));
+        }
+
+        // Initialize arrays with maximum possible size
+        address[] memory tempAssets = new address[](numAssets);
+        uint256[] memory tempAmounts = new uint256[](numAssets);
+        uint256 assetCount = 0;
+
+        // Convert debt to value
+        uint256 basePrice = getPrice(baseTokenPriceFeed);
+        uint256 debtValue = debtToRepay * basePrice / baseScale;
+        uint256 remainingDebtValue = debtValue;
+
+        uint16 assetsIn = userBasic[account].assetsIn;
+
+        // Simulate the seizure process
+        for (uint8 i = 0; i < numAssets && remainingDebtValue > 0; i++) {
+            if (!isInAsset(assetsIn, i)) continue;
+
+            AssetInfo memory assetInfo = getAssetInfo(i);
+            address asset = assetInfo.asset;
+            uint128 balance = userCollateral[account][asset].balance;
+
+            if (balance > 0) {
+                // Calculate collateral value in base asset
+                uint256 collateralValue = mulPrice(balance, getPrice(assetInfo.priceFeed), assetInfo.scale);
+
+                // Calculate penalized value (with liquidation factor)
+                uint256 penalizedValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
+
+                // Calculate how much to seize
+                uint256 seizeValue = remainingDebtValue > penalizedValue ? penalizedValue : remainingDebtValue;
+
+                // Convert back to asset amount
+                uint256 seizeAmount = divPrice(seizeValue, getPrice(assetInfo.priceFeed), assetInfo.scale);
+                if (seizeAmount > balance) seizeAmount = balance;
+
+                if (seizeAmount > 0) {
+                    tempAssets[assetCount] = asset;
+                    tempAmounts[assetCount] = seizeAmount;
+                    assetCount++;
+
+                    remainingDebtValue -= seizeValue;
+                }
+            }
+        }
+
+        // Create properly sized arrays
+        assets = new address[](assetCount);
+        amounts = new uint256[](assetCount);
+
+        for (uint256 i = 0; i < assetCount; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+        }
+
+        return (assets, amounts);
     }
 
     /**
@@ -1468,6 +1553,177 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
             emit Transfer(address(0), account, presentValueSupply(baseSupplyIndex, unsigned104(newPrincipal)));
         }
     }
+
+    /**
+     * @notice Partial liquidation of account - debt repayment and collateral seizure
+     * @param absorber Address performing partial liquidation
+     * @param account Account for partial liquidation
+     * 
+     * Logic:
+     * 1. Check if account can be partially liquidated
+     * 2. Calculate minimum debt to repay
+     * 3. Seize collateral proportionally to cover debt
+     * 4. Update user and protocol balances
+     * 
+     * Simplified formula:
+     * Debt_to_repay = Current_debt - (Collateral_value * Collateral_factor * Target_HF)
+     * 
+     * Where:
+     * - Target_HF = LHF * Store_factor (usually 98%)
+     * - LHF = Sum(Collateral_value * Liquidation_factor) / Debt
+     */
+    function absorbPartial(address absorber, address account) override external {
+        if (isAbsorbPaused()) revert Paused();
+
+        accrueInternal();
+        
+        // Check if partial liquidation is possible
+        if (!isPartiallyLiquidatable(account)) revert NotLiquidatable();
+        if (isBadDebt(account)) revert NotLiquidatable();
+
+        // Calculate debt amount to repay (minimum debt)
+        uint256 debtToRepay = getMinimalDebt(account);
+        if (debtToRepay == 0) revert NotLiquidatable();
+        
+        absorbPartialInternal(absorber, account, debtToRepay);
+    }
+
+    /**
+     * @dev Internal function for performing partial liquidation
+     * 
+     * Algorithm:
+     * 1. Get current user balance
+     * 2. Convert debt to base asset value
+     * 3. Iterate through all user collateral
+     * 4. For each collateral calculate how much to seize
+     * 5. Update balances and protocol
+     * 
+     * Simplified collateral seizure formula:
+     * Seize_value = min(Debt_remaining, Collateral_value * Liquidation_factor)
+     * Seize_amount = Seize_value / Asset_price
+     * 
+     * Where:
+     * - Liquidation_factor = 1 - Liquidation_penalty (e.g., 0.95 for 5% penalty)
+     * - Debt_remaining decreases after each seizure
+     */
+    function absorbPartialInternal(address absorber, address account, uint256 debtToRepay) internal {
+        // Get user data
+        UserBasic memory accountUser = userBasic[account];
+        int104 oldPrincipal = accountUser.principal;
+        int256 oldBalance = presentValue(oldPrincipal); // Current user balance
+        uint16 assetsIn = accountUser.assetsIn;
+
+        // Convert debt to base asset value
+        uint256 basePrice = getPrice(baseTokenPriceFeed);
+        uint256 debtValue = debtToRepay * basePrice / baseScale;
+        uint256 totalRepaidValue = 0;
+
+        // Seize collateral from all assets
+        totalRepaidValue = seizeCollateral(absorber, account, assetsIn, debtValue);
+
+        // Check if part of debt was repaid
+        if (totalRepaidValue == 0) {
+            revert("No collateral seized to repay debt.");
+        }
+
+        // Update user's base balance
+        uint256 repaidBalance = divPrice(totalRepaidValue, basePrice, uint64(baseScale));
+        int256 newBalance;
+        unchecked {
+            newBalance = oldBalance + int256(repaidBalance); // Increase balance by repaid amount
+        }
+        int104 newPrincipal = principalValue(newBalance);
+        updateBasePrincipal(account, accountUser, newPrincipal);
+
+        // Update protocol totals
+        (uint104 repayAmount, uint104 supplyAmount) = repayAndSupplyAmount(oldPrincipal, newPrincipal);
+        unchecked {
+            totalSupplyBase += supplyAmount; // Increase total supply
+            totalBorrowBase -= repayAmount;  // Decrease total debt
+        }
+
+        // Log debt repayment
+        uint256 valueOfBasePaidOut = mulPrice(repaidBalance, basePrice, uint64(baseScale));
+        emit AbsorbDebt(absorber, account, repaidBalance, valueOfBasePaidOut);
+
+        // If user has remaining positive balance, emit transfer event
+        if (newPrincipal > 0) {
+            emit Transfer(address(0), account, presentValueSupply(baseSupplyIndex, unsigned104(newPrincipal)));
+        }
+    }
+
+    function seizeCollateral(address absorber, address account, uint16 assetsIn, uint256 debtValue) internal returns (uint256 totalRepaidValue) {
+        // Exit function if debt is already repaid
+        if (debtValue == 0) {
+            return 0;
+        }
+
+        for (uint8 i = 0; i < numAssets; ) {
+            if (isInAsset(assetsIn, i)) {
+                AssetInfo memory assetInfo = getAssetInfo(i);
+                address asset = assetInfo.asset;
+                uint128 balance = userCollateral[account][asset].balance;
+
+                if (balance > 0 && debtValue > 0) {
+                    // Calculate collateral value in base asset
+                    uint256 collateralValue = mulPrice(balance, getPrice(assetInfo.priceFeed), assetInfo.scale);
+
+                    // Calculate collateral value with liquidation penalty
+                    uint256 penalizedValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
+
+                    // Seize only part of collateral to cover debt
+                    uint256 seizeValue = debtValue > penalizedValue ? penalizedValue : debtValue;
+
+                    // Convert seized collateral value back to token amount
+                    uint256 seizeAmount = divPrice(seizeValue, getPrice(assetInfo.priceFeed), assetInfo.scale);
+                    if (seizeAmount > balance) seizeAmount = balance;
+
+                    // Update user balance
+                    uint128 newBalance;
+                    unchecked {
+                        newBalance = balance - uint128(seizeAmount);
+                        userCollateral[account][asset].balance = newBalance;
+                    }
+
+                    // Update assetsIn if balance became 0
+                    if (newBalance == 0) {
+                        assetsIn &= ~(uint16(1) << i);
+                    }
+
+                    // Update protocol total collateral
+                    if (totalsCollateral[asset].totalSupplyAsset >= uint128(seizeAmount)) {
+                        unchecked {
+                            totalsCollateral[asset].totalSupplyAsset -= uint128(seizeAmount);
+                        }
+                    } else {
+                        totalsCollateral[asset].totalSupplyAsset = 0;
+                    }
+
+                    // Decrease remaining debt and accumulate repaid value
+                    unchecked {
+                        debtValue -= seizeValue;
+                        totalRepaidValue += seizeValue;
+                    }
+
+                    // Calculate seized collateral value for event
+                    uint256 seizedValue = mulPrice(seizeAmount, getPrice(assetInfo.priceFeed), assetInfo.scale);
+
+                    // Log collateral seizure event with correct value
+                    emit AbsorbCollateral(absorber, account, asset, uint128(seizeAmount), seizedValue);
+                }
+            }
+            unchecked { i++; }
+        }
+
+        // Update assetsIn in userBasic if changed
+        if (assetsIn != userBasic[account].assetsIn) {
+            userBasic[account].assetsIn = assetsIn;
+        }
+
+        // If debt was fully repaid, return total seized value
+        return totalRepaidValue;
+    }
+
     /**
      * @notice Buy collateral from the protocol using base tokens, increasing protocol reserves
     A minimum collateral amount should be specified to indicate the maximum slippage acceptable for the buyer.
