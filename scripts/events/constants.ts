@@ -13,7 +13,7 @@ export const multicallAddresses: MulticallAddressesConfig = {
 };
 
 export const eventsFetchSettings: EventsFetchSettings = {
-  mainnet: { delaySeconds: 5, chunkSize: 100000 },
+  mainnet: { delaySeconds: 2, chunkSize: 10000 },
   arbitrum: { delaySeconds: 5, chunkSize: 500000 },
   base: { delaySeconds: 5, chunkSize: 200000 },
   polygon: { delaySeconds: 5, chunkSize: 200000 },

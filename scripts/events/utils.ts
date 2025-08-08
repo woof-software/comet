@@ -1,25 +1,8 @@
-import { BigNumber } from 'ethers';
-import { StandardMerkleTree } from '@openzeppelin/merkle-tree';
-
 import { paramString } from '../../plugins/import/import';
 import { get, getEtherscanApiKey, getEtherscanApiUrl } from '../../plugins/import/etherscan';
-import { TransferEvent } from '../../build/types/Comet';
-import { IncentivizationCampaignData } from './types';
 import { CometInterface } from '../../build/types';
 
-import {
-  mkdir,
-  writeFile,
-  readFile,
-} from 'fs/promises';
-import { readdirSync } from 'fs';
-import path from 'path';
 import { DeploymentManager } from '../../plugins/deployment_manager';
-import { getEtherscanUrl } from '../../plugins/import/etherscan';
-import { multicallAddresses, eventsFetchSettings } from './constants';
-import { CampaignType } from './types';
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
-import { ethers } from 'ethers';
 import { delay } from '@nomiclabs/hardhat-etherscan/dist/src/etherscan/EtherscanService';
 
 export const getAllEvents = async (comet: CometInterface, startBlock: number, endBlock: number, dm: DeploymentManager, chunkSize: number = 100000, delaySeconds: number = 5) => {
@@ -41,7 +24,10 @@ export const getAllEvents = async (comet: CometInterface, startBlock: number, en
       }, 30);
       // now check if there are empty arrays and flatten the result
       allEvents = allEvents.concat(events.filter(eventArray => eventArray.length > 0).flat());
-      console.log(`Fetched events from block ${fromBlock} to ${toBlock}`);
+
+      const progress = ((toBlock - startBlock) / (endBlock - startBlock) * 100).toFixed(1);
+      console.log(`Fetched events from block ${fromBlock} to ${toBlock} (${progress}%)`);
+
       await delay(delaySeconds * 1000);
     } catch (error) {
       throw new Error(`Error fetching events from block ${fromBlock} to ${toBlock}: ${error}`);
@@ -63,7 +49,7 @@ export const getContractDeploymentData = async (network: string, address: string
     sort: 'asc',
     apikey: getEtherscanApiKey(network)
   };
-  const url = `${getEtherscanApiUrl(network)}?${paramString(params)}`;
+  const url = `${getEtherscanApiUrl(network)}&${paramString(params)}`;
   const result = await get(url, {});
   const firstTransaction = result.result[0];
 
