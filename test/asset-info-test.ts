@@ -96,6 +96,7 @@ describe('asset info', function () {
       borrowPerYearInterestRateSlopeLow: 0,
       borrowPerYearInterestRateSlopeHigh: 0,
       storeFrontPriceFactor: 8,
+      storefrontCoefficient: exp(0.8, 18),
       trackingIndexScale: 0,
       baseTrackingSupplySpeed: 0,
       baseTrackingBorrowSpeed: 0,

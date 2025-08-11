@@ -247,7 +247,7 @@ describe('bulker', function () {
 
     expect(await comet.borrowBalanceOf(alice.address)).to.be.equal(0);
     expect(await ethers.provider.getBalance(bulker.address)).to.be.equal(0); // check extra ETH has been refunded to user
-    expect(aliceBalanceAfter.sub(aliceBalanceBefore)).to.be.equal(-borrowBalanceOf.toBigInt() - getGasUsed(txn));
+    expect(aliceBalanceAfter.sub(aliceBalanceBefore)).to.be.equal(-(borrowBalanceOf.toBigInt() + getGasUsed(txn)));
   });
 
   it('supplyNativeToken with max collateral should revert', async () => {

@@ -1497,10 +1497,22 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
 
     /**
      * @dev Transfer user's collateral and debt to the protocol itself.
+     * Automatically chooses between partial and full liquidation based on account state.
      */
     function absorbInternal(address absorber, address account) internal {
         if (!isLiquidatable(account)) revert NotLiquidatable();
 
+        // Check if partial liquidation is possible and preferred
+        if (isPartiallyLiquidatable(account) && !isBadDebt(account)) {
+            uint256 debtToRepay = getMinimalDebt(account);
+            if (debtToRepay > 0) {
+                // Perform partial liquidation
+                absorbPartialInternal(absorber, account, debtToRepay);
+                return;
+            }
+        }
+
+        // Fall back to full liquidation
         UserBasic memory accountUser = userBasic[account];
         int104 oldPrincipal = accountUser.principal;
         int256 oldBalance = presentValue(oldPrincipal);
@@ -1552,40 +1564,6 @@ contract CometPartialAbsorb is CometPartialAbsorbInterface {
         if (newPrincipal > 0) {
             emit Transfer(address(0), account, presentValueSupply(baseSupplyIndex, unsigned104(newPrincipal)));
         }
-    }
-
-    /**
-     * @notice Partial liquidation of account - debt repayment and collateral seizure
-     * @param absorber Address performing partial liquidation
-     * @param account Account for partial liquidation
-     * 
-     * Logic:
-     * 1. Check if account can be partially liquidated
-     * 2. Calculate minimum debt to repay
-     * 3. Seize collateral proportionally to cover debt
-     * 4. Update user and protocol balances
-     * 
-     * Simplified formula:
-     * Debt_to_repay = Current_debt - (Collateral_value * Collateral_factor * Target_HF)
-     * 
-     * Where:
-     * - Target_HF = LHF * Store_factor (usually 98%)
-     * - LHF = Sum(Collateral_value * Liquidation_factor) / Debt
-     */
-    function absorbPartial(address absorber, address account) override external {
-        if (isAbsorbPaused()) revert Paused();
-
-        accrueInternal();
-        
-        // Check if partial liquidation is possible
-        if (!isPartiallyLiquidatable(account)) revert NotLiquidatable();
-        if (isBadDebt(account)) revert NotLiquidatable();
-
-        // Calculate debt amount to repay (minimum debt)
-        uint256 debtToRepay = getMinimalDebt(account);
-        if (debtToRepay == 0) revert NotLiquidatable();
-        
-        absorbPartialInternal(absorber, account, debtToRepay);
     }
 
     /**

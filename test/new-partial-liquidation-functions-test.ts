@@ -6,7 +6,7 @@ import {
 } from './helpers';
 import { BigNumber } from 'ethers';
 
-const FACTOR_SCALE = BigNumber.from('1000000000000000000');
+const _FACTOR_SCALE = BigNumber.from('1000000000000000000');
 
 describe('isPartiallyLiquidatable Tests', function () {
   it('returns true for account that can be partially liquidated', async () => {
