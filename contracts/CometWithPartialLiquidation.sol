@@ -1081,8 +1081,8 @@ contract CometWithPartialLiquidation is CometMainInterface {
             unchecked { ++i; }
         }
 
-        if (sumCF == 0) return 0; // нет залога — LHF не определён
-        return (sumLCF * FACTOR_SCALE) / sumCF; // формула (15)
+        if (sumCF == 0) return 0;
+        return (sumLCF * FACTOR_SCALE) / sumCF;
     }
 
 
