@@ -1061,39 +1061,30 @@ contract CometWithPartialLiquidation is CometMainInterface {
      * @param account The account to check
      * @return The liquidation health factor
      */
-    function getLHF(address account) public view returns (uint) {
-        int104 principal = userBasic[account].principal;
-        if (principal >= 0) return 0; // No debt, LHF = 0
+        function getLHF(address account) public view returns (uint) {
+    uint16 assetsIn = userBasic[account].assetsIn;
+    uint8 _reserved = userBasic[account]._reserved;
 
-        // Convert debt to base asset value
-        uint256 debt = uint256(uint104(-principal)) * getPrice(baseTokenPriceFeed) / baseScale;
+    uint256 sumLCF = 0; // Σ(value_i * liquidation_factor_i)
+    uint256 sumCF  = 0; // Σ(value_i * collateral_factor_i)
 
-        uint256 sumLCF = 0;
-        uint16 assetsIn = userBasic[account].assetsIn;
-        uint8 _reserved = userBasic[account]._reserved;
-        
-        // Iterate through all user assets
         for (uint8 i = 0; i < numAssets; ) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 AssetInfo memory asset = getAssetInfo(i);
-                uint128 balance = userCollateral[account][asset.asset].balance;
-                if (balance == 0) {
-                    unchecked { i++; }
-                    continue;
+                uint128 bal = userCollateral[account][asset.asset].balance;
+                if (bal > 0) {
+                    uint256 value = mulPrice(bal, getPrice(asset.priceFeed), asset.scale);
+                    sumLCF += mulFactor(value, asset.liquidateCollateralFactor);
+                    sumCF  += mulFactor(value, asset.borrowCollateralFactor);
                 }
-                
-                // Calculate collateral value in base asset
-                uint256 value = mulPrice(balance, getPrice(asset.priceFeed), asset.scale);
-                
-                // Add value considering liquidation penalty
-                sumLCF += mulFactor(value, asset.liquidateCollateralFactor);
             }
-            unchecked { i++; }
+            unchecked { ++i; }
         }
-        
-        if (sumLCF == 0) return 0;
-        return (sumLCF * FACTOR_SCALE) / debt;
+
+        if (sumCF == 0) return 0; // нет залога — LHF не определён
+        return (sumLCF * FACTOR_SCALE) / sumCF; // формула (15)
     }
+
 
     /**
      * @notice Calculate target health factor for partial liquidation
