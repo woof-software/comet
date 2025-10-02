@@ -9,6 +9,8 @@ import "./IAssetListFactoryHolder.sol";
 import "./IHealthFactorHolder.sol";
 import "./IAssetList.sol";
 
+import "hardhat/console.sol";
+
 /**
  * @title Compound's Comet Contract
  * @notice An efficient monolithic money market protocol
@@ -129,6 +131,8 @@ contract CometWithPartialLiquidation is CometMainInterface {
             baseToken = config.baseToken;
             baseTokenPriceFeed = config.baseTokenPriceFeed;
             extensionDelegate = config.extensionDelegate;
+            console.log("extensionDelegate", extensionDelegate);
+            console.log("address(this)", address(this));
             storeFrontPriceFactor = config.storeFrontPriceFactor;
 
             decimals = decimals_;
@@ -428,8 +432,15 @@ contract CometWithPartialLiquidation is CometMainInterface {
             getPrice(baseTokenPriceFeed),
             uint64(baseScale)
         );
+        console.log("debt");
+        console.logInt(debt);
+        console.log("getLiquidity");
+        console.log(_getLiquidity(account, true));
+        console.log("debt + getLiquidity");
+        console.logInt(debt + int(_getLiquidity(account, true)));
         return (debt + int(_getLiquidity(account, true)) < 0);
     }
+
     function _getLiquidity(address account, bool liquidation) internal view returns (uint256) {
         uint16 assetsIn = userBasic[account].assetsIn;
         uint8 _reserved = userBasic[account]._reserved;
@@ -1048,17 +1059,28 @@ contract CometWithPartialLiquidation is CometMainInterface {
         points.approxSpend += safe128(gasUsed * block.basefee);
         liquidatorPoints[absorber] = points;
     }
-
+    struct LiquidationData {
+        uint256 seizeAmount;
+        uint256 collateralValue;
+        uint256 collaterizationValue;
+        uint256 collaterizationValue2;
+        uint256 totalCollaterizedValue;
+        uint256 totalCollaterizedValue2;
+        uint256 seizedValue;
+        uint256 expectedHF;
+        uint256 currentHF;
+        bool calculation;
+    }
+    
     /**
      * @dev Transfer user's collateral and debt to the protocol itself.
      */
     function absorbInternal(address absorber, address account) internal {
+        console.log("absorbInternal", absorber, account);
         if (!isLiquidatable(account)) revert NotLiquidatable();
         UserBasic memory accountUser = userBasic[account];
         int104 oldPrincipal = accountUser.principal;
         int256 oldBalance = presentValue(oldPrincipal);
-        uint16 assetsIn = accountUser.assetsIn;
-        uint8 _reserved = accountUser._reserved;
         uint256 basePrice = getPrice(baseTokenPriceFeed);
         /// debt value - scaled by price
         int debt = signedMulPrice(
@@ -1067,62 +1089,131 @@ contract CometWithPartialLiquidation is CometMainInterface {
             uint64(baseScale)
         );
 
-        uint256 deltaValue = 0;
+        uint256 deltaValue;
         uint256 targetHF = IHealthFactorHolder(extensionDelegate).targetHealthFactor(address(this));
-        uint256 currentHF = 0;
-        uint256 totalCollaterizedValue = _getLiquidity(account, false); // sum of colalteral value * price * BF
 
-        for (uint8 i = 0; i < numAssets; ) {
-            if (isInAsset(assetsIn, i, _reserved)) {
-                AssetInfo memory assetInfo = getAssetInfo(i);
-                address asset = assetInfo.asset;
-                uint256 seizeAmount = userCollateral[account][asset].balance;
-                uint256 collateralValue = mulPrice(seizeAmount, getPrice(assetInfo.priceFeed), assetInfo.scale);
-                uint256 collaterizationValue = mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
-                uint256 seizedValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
-                uint256 expectedHF = ((uint256(-debt) - deltaValue - seizedValue) * FACTOR_SCALE) / (totalCollaterizedValue - collaterizationValue);
-                if (expectedHF >= targetHF) { // we need to seize only part of collateral
-                    /// target HF = (debt - delta * LF) / (collateral value - delta) * CF
-                    /// =>
-                    /// delta = (debt - THF * CF* collateral value) / (CF * THF - LF)
-                    seizedValue = ((uint256(-debt) - deltaValue) - mulFactor(targetHF, collaterizationValue)) / (mulFactor(assetInfo.borrowCollateralFactor, targetHF) - assetInfo.liquidationFactor);
-                    seizeAmount = divPrice(seizedValue, getPrice(assetInfo.priceFeed), assetInfo.scale);
-                    currentHF = targetHF;
-                } else {
-                    currentHF = expectedHF;
-                }
-                
-                deltaValue += seizedValue;
-                totalCollaterizedValue -= collaterizationValue;
-                emit AbsorbCollateral(absorber, account, asset, seizeAmount, seizedValue);
-                userCollateral[account][asset].balance -= uint128(seizeAmount);
-                totalsCollateral[asset].totalSupplyAsset -= uint128(seizeAmount);
-                
-                if (currentHF >= targetHF) break;
+        LiquidationData memory liquidationData;
+        liquidationData.totalCollaterizedValue = _getLiquidity(account, false); // sum of colalteral value * price * BF
+        AssetInfo memory assetInfo;
+        
+        for(uint8 i; i < numAssets; ) {
+            if (isInAsset(accountUser.assetsIn, i, accountUser._reserved)) {
+                assetInfo = getAssetInfo(i);
+                liquidationData.totalCollaterizedValue2 += mulFactor(
+                    mulPrice(userCollateral[account][assetInfo.asset].balance, getPrice(assetInfo.priceFeed), assetInfo.scale), 
+                    assetInfo.liquidationFactor
+                );
             }
             unchecked {
                 ++i;
             }
         }
-        uint256 deltaBalance = divPrice(deltaValue, basePrice, uint64(baseScale));
-        int256 newBalance = oldBalance + signed256(deltaBalance);
+        // If the total collaterized value is greater than the debt, we need to seize only part of the collateral
+        for (uint8 i; i < numAssets; ) {
+            if (isInAsset(accountUser.assetsIn, i, accountUser._reserved)) {
+                assetInfo = getAssetInfo(i);
+                console.log("assetInfo.asset", assetInfo.asset);
+                console.log("assetInfo.borrowCollateralFactor", assetInfo.borrowCollateralFactor);
+                console.log("assetInfo.liquidationFactor", assetInfo.liquidationFactor);
+                console.log("assetInfo.priceFeed", assetInfo.priceFeed);
+                console.log("assetInfo.scale", assetInfo.scale);
+                liquidationData.seizeAmount = userCollateral[account][assetInfo.asset].balance;
+                console.log("seizeAmount", liquidationData.seizeAmount);
+                liquidationData.collateralValue = mulPrice(liquidationData.seizeAmount, getPrice(assetInfo.priceFeed), assetInfo.scale);
+                console.log("collateralValue", mulPrice(liquidationData.seizeAmount, getPrice(assetInfo.priceFeed), assetInfo.scale));
+                liquidationData.collaterizationValue = mulFactor(
+                    mulPrice(liquidationData.seizeAmount, getPrice(assetInfo.priceFeed), assetInfo.scale), 
+                    assetInfo.borrowCollateralFactor
+                );
+                liquidationData.collaterizationValue2 = mulFactor(
+                    mulPrice(liquidationData.seizeAmount, getPrice(assetInfo.priceFeed), assetInfo.scale), 
+                    assetInfo.liquidateCollateralFactor
+                );
+                console.log("collaterizationValue2", liquidationData.collaterizationValue2);
+                console.log("collaterizationValue", liquidationData.collaterizationValue);
+                console.log("seizedValue * assetInfo.liquidationFactor", mulFactor(liquidationData.collateralValue, assetInfo.liquidationFactor));
+                liquidationData.seizedValue = mulFactor(liquidationData.collateralValue, assetInfo.liquidationFactor);
+                console.log("seizedValue", liquidationData.seizedValue);
+                console.log("totalCollaterizedValue", liquidationData.totalCollaterizedValue);     
+                console.log("totalCollaterizedValue2", liquidationData.totalCollaterizedValue2);
+                console.log("uint256(-debt) - deltaValue", uint256(-debt) - deltaValue);
+                console.log("deltaValue", deltaValue);
+                console.log("---------------------------------------------");
+
+                console.log("expectedHF", liquidationData.expectedHF);
+                if (liquidationData.totalCollaterizedValue == liquidationData.collaterizationValue && liquidationData.totalCollaterizedValue2 > uint256(-debt) - deltaValue) {
+                    console.log("totalCollaterizedValue == collaterizationValue");
+                    liquidationData.calculation = true;
+                } else if (liquidationData.totalCollaterizedValue > liquidationData.collaterizationValue) {
+                    console.log("totalCollaterizedValue != collaterizationValue");
+                    liquidationData.expectedHF = ((liquidationData.totalCollaterizedValue - liquidationData.collaterizationValue) * FACTOR_SCALE) / (uint256(-debt) - deltaValue - liquidationData.seizedValue);
+                } else if (liquidationData.totalCollaterizedValue > uint256(-debt) - deltaValue) {
+                    liquidationData.calculation = true;
+                } 
+                else {
+                    console.log("full liquidation of collateral");
+                    liquidationData.expectedHF = 0;
+                }
+                
+                console.log("expectedHF", liquidationData.expectedHF);
+                if (liquidationData.expectedHF >= targetHF || liquidationData.calculation) { // we need to seize only part of collateral
+                    /// target HF = (collateral value - delta * CF) / (debt - delta * LF)
+                    /// =>
+                    /// delta = (collateral value - debt * THF) / (LF * THF - CF)
+                    console.log("assetInfo.borrowCollateralFactor", assetInfo.borrowCollateralFactor);
+                    console.log("(mulFactor(assetInfo.liquidationFactor, targetHF) - assetInfo.borrowCollateralFactor)", (mulFactor(assetInfo.liquidationFactor, targetHF) - assetInfo.borrowCollateralFactor));
+                    console.log("mulFactor(liquidationData.totalCollaterizedValue2, targetHF)", mulFactor(liquidationData.totalCollaterizedValue2, targetHF));
+                    // console.log("liquidationData.totalCollaterizedValue - mulFactor(uint256(-debt) - deltaValue, targetHF)", liquidationData.totalCollaterizedValue - mulFactor(uint256(-debt) - deltaValue, targetHF));
+                    // liquidationData.seizedValue = (mulFactor(liquidationData.totalCollaterizedValue2, targetHF) - (uint256(-debt) - deltaValue)) * FACTOR_SCALE / (mulFactor(assetInfo.liquidationFactor, targetHF) - assetInfo.borrowCollateralFactor);
+                    // liquidationData.seizedValue = (mulFactor(uint256(-debt) - deltaValue, targetHF) - liquidationData.totalCollaterizedValue) * FACTOR_SCALE / (mulFactor(assetInfo.liquidationFactor, targetHF) - assetInfo.borrowCollateralFactor);
+                    // liquidationData.seizedValue = (uint256(-debt) - deltaValue - mulFactor(liquidationData.totalCollaterizedValue, targetHF)) * FACTOR_SCALE / (mulFactor(assetInfo.liquidationFactor, targetHF) - assetInfo.borrowCollateralFactor);
+                    liquidationData.seizedValue = (liquidationData.totalCollaterizedValue2 - mulFactor(uint256(-debt) - deltaValue, targetHF)) * FACTOR_SCALE / (mulFactor(assetInfo.liquidationFactor, targetHF) - assetInfo.borrowCollateralFactor);
+                    liquidationData.seizeAmount = divPrice(liquidationData.seizedValue, getPrice(assetInfo.priceFeed), assetInfo.scale);
+                    liquidationData.currentHF = targetHF;
+                    liquidationData.calculation = false;
+                } else {
+                    liquidationData.currentHF = liquidationData.expectedHF;
+                }
+            
+                console.log("deltaValue", deltaValue);
+                console.log("targetHF", targetHF);
+                console.log("liquidationData.seizedValue", liquidationData.seizedValue);
+                deltaValue += liquidationData.seizedValue;
+                // console.log("totalCollaterizedValue", totalCollaterizedValue);
+                liquidationData.totalCollaterizedValue -= liquidationData.collaterizationValue;
+                liquidationData.totalCollaterizedValue2 -= liquidationData.collaterizationValue2;
+                emit AbsorbCollateral(absorber, account, assetInfo.asset, liquidationData.seizeAmount, liquidationData.seizedValue);
+                userCollateral[account][assetInfo.asset].balance -= uint128(liquidationData.seizeAmount);
+                totalsCollateral[assetInfo.asset].totalSupplyAsset -= uint128(liquidationData.seizeAmount);
+                
+                if (liquidationData.currentHF >= targetHF) break;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        
+        console.log("deltaValue", deltaValue);
+        int256 newBalance = oldBalance + signed256(divPrice(deltaValue, basePrice, uint64(baseScale)));
         // New balance can be negative, but only if target health factor is reached
-        if (newBalance < 0 && currentHF < targetHF) {
+        if (newBalance < 0 && liquidationData.currentHF < targetHF) {
             newBalance = 0;
         }
         int104 newPrincipal = principalValue(newBalance);
         /// @dev rewards should be updated with previous principal
         updateBasePrincipal(account, accountUser, newPrincipal);
         // reset assetsIn
-        userBasic[account].assetsIn = 0;
+        // userBasic[account].assetsIn = 0;
         (uint104 repayAmount, uint104 supplyAmount) = repayAndSupplyAmount(oldPrincipal, newPrincipal);
         // Reserves are decreased by increasing total supply and decreasing borrows
-        //  the amount of debt repaid by reserves is `newBalance - oldBalance`
+        // the amount of debt repaid by reserves is `newBalance - oldBalance`
         totalSupplyBase += supplyAmount;
         totalBorrowBase -= repayAmount;
         uint256 basePaidOut = unsigned256(newBalance - oldBalance);
         uint256 valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, uint64(baseScale));
+        
         emit AbsorbDebt(absorber, account, basePaidOut, valueOfBasePaidOut);
+        
         if (newPrincipal > 0) {
             emit Transfer(address(0), account, presentValueSupply(baseSupplyIndex, unsigned104(newPrincipal)));
         }

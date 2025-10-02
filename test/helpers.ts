@@ -43,6 +43,8 @@ import {
   CometFactoryWithPartialLiquidation__factory,
   CometHarnessPartialLiquidation__factory,
   CometHarnessInterfacePartialLiquidation,
+  SimpleHealthFactorHolder__factory,
+  SimpleHealthFactorHolder,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
@@ -365,15 +367,19 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   // Deploy CometHarnessPartialLiquidation
   // For CometHarnessPartialLiquidation, we need a simple health factor holder as extensionDelegate
   let extensionDelegatePartialLiquidation = opts.extensionDelegate;
+  console.log("extensionDelegatePartialLiquidation", extensionDelegatePartialLiquidation);
+  let simpleHealthFactorHolder: SimpleHealthFactorHolder;
   if (extensionDelegatePartialLiquidation === undefined) {
-    const SimpleHealthFactorHolder = await ethers.getContractFactory('SimpleHealthFactorHolder');
-    const simpleHealthFactorHolder = await SimpleHealthFactorHolder.deploy();
+    const SimpleHealthFactorHolder: SimpleHealthFactorHolder__factory = await ethers.getContractFactory('SimpleHealthFactorHolder') as SimpleHealthFactorHolder__factory;
+    simpleHealthFactorHolder = await SimpleHealthFactorHolder.deploy() as SimpleHealthFactorHolder;
     await simpleHealthFactorHolder.deployed();
-    await simpleHealthFactorHolder.setTargetHealthFactor(comet.address, exp(1.05, 18));
-    const CometExtPartialLiquidationFactory = (await ethers.getContractFactory('CometExtPartialLiquidation')) as any;
+    console.log("comet", comet.address);
+    const CometExtPartialLiquidationFactory = (await ethers.getContractFactory('CometExtPartialLiquidation')) as CometExtPartialLiquidation__factory;
     extensionDelegatePartialLiquidation = await CometExtPartialLiquidationFactory.deploy({ name32, symbol32 }, assetListFactory.address, simpleHealthFactorHolder.address);
     await extensionDelegatePartialLiquidation.deployed();
+    console.log("extensionDelegatePartialLiquidation", extensionDelegatePartialLiquidation.address);
   }
+  console.log("extensionDelegatePartialLiquidation", extensionDelegatePartialLiquidation.address);
 
   // Create config for CometHarnessPartialLiquidation with correct extensionDelegate
   const configPartialLiquidation = {
@@ -387,16 +393,21 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
 
   if (opts.start) await ethers.provider.send('evm_setNextBlockTimestamp', [opts.start]);
   await comet.initializeStorage();
-
+  
   await cometWithExtendedAssetList.initializeStorage();
   await cometWithPartialLiquidation.initializeStorage();
+
+  if (opts.extensionDelegate === undefined) {
+    await simpleHealthFactorHolder.setTargetHealthFactor(cometWithPartialLiquidation.address, exp(1.05, 18));
+  }
 
   const baseTokenBalance = opts.baseTokenBalance;
   if (baseTokenBalance) {
     const baseToken = tokens[base];
-    await wait(baseToken.allocateTo(comet.address, baseTokenBalance));
+    await wait(baseToken.allocateTo(cometWithPartialLiquidation.address, baseTokenBalance));
   }
 
+  console.log("comet extensionDelegate", await cometWithPartialLiquidation.extensionDelegate());
   return {
     opts,
     governor,
