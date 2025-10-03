@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
 import { migration } from '../../../../plugins/deployment_manager/Migration';
-import { exp, proposal } from '../../../../src/deploy';
+import { proposal } from '../../../../src/deploy';
 import { ethers, utils } from 'ethers';
 
 const VERSION_CONTROLLER_ADDRESS = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
@@ -9,7 +9,7 @@ const COMET_DEVELOPER_ADDRESS = '0x1234567890123456789012345678901234567890';
 const PRICE_FEED_DEVELOPER_ADDRESS = '0x2345678901234567890123456789012345678901';
 
 
-export default migration('1759391945_assign_new_developer', {
+export default migration('1759391945_assign_new_developer_for_bytecode_repo', {
   async prepare() {
     return {};
   },
