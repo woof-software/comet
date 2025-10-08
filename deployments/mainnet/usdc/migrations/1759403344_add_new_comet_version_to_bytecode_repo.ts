@@ -6,7 +6,7 @@ import { ethers } from 'ethers';
 
 const COMET_FACTORY_ADDRESS = '0x1234567890123456789012345678901234567890';
 
-export default migration('1759392318_add_new_chain_to_bytecode_repo', {
+export default migration('1759403344_add_new_comet_version_to_bytecode_repo', {
   async prepare() {
     return {};
   },
