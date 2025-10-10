@@ -2,17 +2,19 @@ import { scenario } from './context/CometContext';
 import { expectRevertCustom } from './utils';
 import { expect } from 'chai';
 
+const BORROW_COLLATERAL_FACTOR = 0.9e18;
+const LIQUIDATE_COLLATERAL_FACTOR = 1e18;
+const LIQUIDATION_FACTOR = 0.95e18;
+const SUPPLY_CAP = 1000000e8;
+
 scenario('upgrade governor', {}, async ({ comet, configurator, timelock, actors }, context) => {
   const { admin, albert } = actors;
-
   expect(await comet.governor()).to.equal(timelock.address);
   expect((await configurator.getConfiguration(comet.address)).governor).to.equal(timelock.address);
-
   await context.setNextBaseFeeToZero();
   await configurator.connect(admin.signer).setGovernor(comet.address, albert.address, { gasPrice: 0 });
   await context.setNextBaseFeeToZero();
   await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
-
   expect(await comet.governor()).to.equal(albert.address);
   expect((await configurator.getConfiguration(comet.address)).governor).to.be.equal(albert.address);
 });
@@ -33,10 +35,10 @@ scenario('add assets', {}, async ({ comet, configurator, actors }, context) => {
     asset: newAsset.asset,
     priceFeed: newAsset.priceFeed,
     decimals: newAssetDecimals.toString(),
-    borrowCollateralFactor: (0.9e18).toString(),
-    liquidateCollateralFactor: (1e18).toString(),
-    liquidationFactor: (0.95e18).toString(),
-    supplyCap: (1000000e8).toString(),
+    borrowCollateralFactor: BORROW_COLLATERAL_FACTOR.toString(),
+    liquidateCollateralFactor: LIQUIDATE_COLLATERAL_FACTOR.toString(),
+    liquidationFactor: LIQUIDATION_FACTOR.toString(),
+    supplyCap: SUPPLY_CAP.toString(),
   };
   await context.setNextBaseFeeToZero();
   await configurator.connect(admin.signer).addAsset(comet.address, newAssetConfig, { gasPrice: 0 });
@@ -67,7 +69,6 @@ scenario(
 scenario.skip('reverts if proxy is not upgraded by ProxyAdmin', {}, async () => {
   // XXX
 });
-
 
 scenario.skip('fallbacks to implementation if called by non-admin', {}, async () => {
   // XXX

@@ -7,6 +7,20 @@ import { CometInterface, OnChainLiquidator } from '../build/types';
 import { getPoolConfig, flashLoanPools } from '../scripts/liquidation_bot/liquidateUnderwaterBorrowers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
+const TARGET_RESERVES = 20_000;
+const TARGET_RESERVES_DECIMALS = 18;
+const BORROW_CAPACITY_UTILIZATION = 90n;
+const HUNDRED_PERCENT = 100n;
+const FUDGE_FACTOR_TIME = 60n * 10n;
+const EXPECTED_COLLATERAL_RESERVES_THRESHOLD = 1;
+const FLASH_LOAN_AMOUNT = 10e6;
+const WBTC_DECIMALS = 8;
+const STANDARD_DECIMALS = 18;
+const PARTIAL_LIQUIDATION_SCALE_MULTIPLIER = 10n;
+const LIQUIDATION_THRESHOLD_MULTIPLIER = 1_000_000;
+const ABSORB_EVENT_INDEX = 3;
+const ABSORB_WITHOUT_BUYING_EVENT_INDEX = 4;
+
 interface LiquidationAddresses {
   balancerVault: string;
   uniswapRouter: string;
@@ -166,7 +180,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
     `LiquidationBot > liquidates an underwater position of $asset${i} with no maxAmountToPurchase`,
     {
       upgrade: {
-        targetReserves: exp(20_000, 18)
+        targetReserves: exp(TARGET_RESERVES, TARGET_RESERVES_DECIMALS)
       },
       filter: async (ctx) => await isValidAssetIndex(ctx, i) && matchesDeployment(ctx, [{ network: 'mainnet' }, { network: 'polygon' }, { network: 'arbitrum' }]) && canBeLiquidatedByBot(ctx, i),
       tokenBalances: async (ctx) => (
@@ -216,7 +230,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       const { asset: collateralAssetAddress, scale } = await comet.getAssetInfo(i);
 
       const borrowCapacity = await borrowCapacityForAsset(comet, albert, i);
-      const borrowAmount = (borrowCapacity.mul(90n)).div(100n);
+      const borrowAmount = (borrowCapacity.mul(BORROW_CAPACITY_UTILIZATION)).div(HUNDRED_PERCENT);
 
       const initialRecipientBalance = await betty.getErc20Balance(baseToken);
       const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
@@ -232,14 +246,14 @@ for (let i = 0; i < MAX_ASSETS; i++) {
         await timeUntilUnderwater({
           comet,
           actor: albert,
-          fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
+          fudgeFactor: FUDGE_FACTOR_TIME
         })
       );
 
       // define after increasing time, since increasing time alters reserves
       const initialReserves = (await comet.getReserves()).toBigInt();
 
-      await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue
+      await comet.connect(betty.signer).accrueAccount(albert.address);
 
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
       expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0);
@@ -252,7 +266,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
         [ethers.constants.MaxUint256],
         flashLoanPool.tokenAddress,
         flashLoanPool.poolFee,
-        10e6
+        FLASH_LOAN_AMOUNT
       );
 
       // confirm that Albert position has been abosrbed
@@ -268,7 +282,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       expect(await comet.getReserves()).to.be.above(initialReserves);
 
       // confirm is not holding a significant amount of the collateral asset
-      expect(await comet.getCollateralReserves(collateralAssetAddress)).to.be.below(scale);
+      expect(await comet.getCollateralReserves(collateralAssetAddress)).to.be.below(scale.mul(EXPECTED_COLLATERAL_RESERVES_THRESHOLD));
 
       // check that recipient balance increased
       expect(await betty.getErc20Balance(baseToken)).to.be.greaterThan(Number(initialRecipientBalance));
@@ -363,67 +377,67 @@ for (let i = 0; i < MAX_ASSETS; i++) {
     mainnet: {
       usdc: [
         // COMP
-        exp(500, 18),
+        exp(500, STANDARD_DECIMALS),
         // WBTC
-        exp(120, 8),
+        exp(120, WBTC_DECIMALS),
         // WETH9
-        exp(5000, 18),
+        exp(5000, STANDARD_DECIMALS),
         // UNI:
-        exp(150000, 18),
+        exp(150000, STANDARD_DECIMALS),
         // LINK
-        exp(150000, 18)
+        exp(150000, STANDARD_DECIMALS)
       ],
       weth: [
         // CB_ETH
-        exp(750, 18),
+        exp(750, STANDARD_DECIMALS),
         // WST_ETH
-        exp(2000, 18)
+        exp(2000, STANDARD_DECIMALS)
       ]
     },
     polygon: {
       usdc: [
         // WETH
-        exp(400, 18),
+        exp(400, STANDARD_DECIMALS),
         // WBTC
-        exp(20, 8),
+        exp(20, WBTC_DECIMALS),
         // WMATIC
-        exp(5000, 18),
+        exp(5000, STANDARD_DECIMALS),
         // MATICX
-        exp(5, 18)
+        exp(5, STANDARD_DECIMALS)
       ]
     },
     arbitrum: {
       'usdc.e': [
         // ARB
-        exp(300000, 18),
+        exp(300000, STANDARD_DECIMALS),
         // GMX
-        exp(3000, 18),
+        exp(3000, STANDARD_DECIMALS),
         // WETH
-        exp(500, 18),
+        exp(500, STANDARD_DECIMALS),
         // WBTC
-        exp(50, 8),
+        exp(50, WBTC_DECIMALS),
       ],
       usdc: [
         // ARB
-        exp(300000, 18),
+        exp(300000, STANDARD_DECIMALS),
         // GMX
-        exp(3000, 18),
+        exp(3000, STANDARD_DECIMALS),
         // WETH
-        exp(500, 18),
+        exp(500, STANDARD_DECIMALS),
         // WBTC
-        exp(50, 8),
+        exp(50, WBTC_DECIMALS),
       ],
       usdt: [
         // ARB
-        exp(300000, 18),
+        exp(300000, STANDARD_DECIMALS),
         // WETH
-        exp(500, 18),
+        exp(500, STANDARD_DECIMALS),
         // wstETH
-        exp(500, 18),
+        exp(500, STANDARD_DECIMALS),
         // WBTC
-        exp(50, 8),
+        exp(50, WBTC_DECIMALS),
         // GMX
-        exp(3000, 18)
+        exp(3000, STANDARD_DECIMALS)
       ]
     }
   };
@@ -432,7 +446,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
     `LiquidationBot > partially liquidates large position of $asset${i}, by setting maxAmountToPurchase`,
     {
       upgrade: {
-        targetReserves: exp(20_000, 18)
+        targetReserves: exp(TARGET_RESERVES, TARGET_RESERVES_DECIMALS)
       },
       filter: async (ctx) => await isValidAssetIndex(ctx, i) && matchesDeployment(ctx, [{ network: 'mainnet' }, { network: 'polygon' }, { network: 'arbitrum' }]) && canBeLiquidatedByBot(ctx, i),
       tokenBalances: async (ctx) => (
@@ -485,7 +499,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
 
       const borrowCapacity = await borrowCapacityForAsset(comet, albert, i);
-      const borrowAmount = (borrowCapacity.mul(90n)).div(100n);
+      const borrowAmount = (borrowCapacity.mul(BORROW_CAPACITY_UTILIZATION)).div(HUNDRED_PERCENT);
 
       await albert.withdrawAsset({
         asset: baseToken,
@@ -496,11 +510,11 @@ for (let i = 0; i < MAX_ASSETS; i++) {
         await timeUntilUnderwater({
           comet,
           actor: albert,
-          fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
+          fudgeFactor: FUDGE_FACTOR_TIME
         })
       );
 
-      await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue
+      await comet.connect(betty.signer).accrueAccount(albert.address);
 
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
       expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0);
@@ -513,7 +527,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
         [maxAmountsToPurchase[network][deployment][i]],
         flashLoanPool.tokenAddress,
         flashLoanPool.poolFee,
-        10e6
+        FLASH_LOAN_AMOUNT
       );
 
       // confirm that Albert position has been abosrbed
@@ -527,7 +541,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 
       // confirm that protocol was only partially liquidated; it should still
       // hold a significant amount of the asset
-      expect(await comet.getCollateralReserves(collateralAssetAddress)).to.be.above(scale.mul(10));
+      expect(await comet.getCollateralReserves(collateralAssetAddress)).to.be.above(scale.mul(PARTIAL_LIQUIDATION_SCALE_MULTIPLIER));
 
       // check that recipient balance increased
       expect(await betty.getErc20Balance(baseToken)).to.be.greaterThan(Number(initialRecipientBalance));
@@ -588,7 +602,7 @@ scenario(
     const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
 
     const borrowCapacity = await borrowCapacityForAsset(comet, albert, 0);
-    const borrowAmount = (borrowCapacity.mul(getConfigForScenario(_context).liquidationDenominator)).div(100n);
+    const borrowAmount = (borrowCapacity.mul(getConfigForScenario(_context).liquidationDenominator)).div(HUNDRED_PERCENT);
 
     await albert.withdrawAsset({
       asset: baseToken,
@@ -599,13 +613,13 @@ scenario(
       await timeUntilUnderwater({
         comet,
         actor: albert,
-        fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
+        fudgeFactor: FUDGE_FACTOR_TIME
       })
     );
 
     const initialReserves = (await comet.getReserves()).toBigInt();
 
-    await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue
+    await comet.connect(betty.signer).accrueAccount(albert.address);
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
     expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0);
@@ -618,10 +632,10 @@ scenario(
       [ethers.constants.MaxUint256],
       flashLoanPool.tokenAddress,
       flashLoanPool.poolFee,
-      scale.mul(1_000_000) // liquidation threshold of 1M units of base asset
+      scale.mul(LIQUIDATION_THRESHOLD_MULTIPLIER)
     ));
 
-    expect(event(tx, 3)).to.deep.equal({
+    expect(event(tx, ABSORB_EVENT_INDEX)).to.deep.equal({
       Absorb: {
         initiator: betty.address,
         accounts: [albert.address]
@@ -633,7 +647,7 @@ scenario(
     expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.eq(0);
 
     // confirm that collateral was not purchased
-    expect(event(tx, 4)).to.deep.equal({
+    expect(event(tx, ABSORB_WITHOUT_BUYING_EVENT_INDEX)).to.deep.equal({
       AbsorbWithoutBuyingCollateral: {}
     });
 
@@ -702,8 +716,8 @@ scenario(
     const initialRecipientBalance = await betty.getErc20Balance(baseToken);
     const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
 
-    const borrowCapacity = await borrowCapacityForAsset(comet, albert, 0);
-    const borrowAmount = (borrowCapacity.mul(getConfigForScenario(_context).liquidationDenominator)).div(100n);
+    const borrowCapacity = await borrowCapacityForAsset(comet, albert,  0);
+    const borrowAmount = (borrowCapacity.mul(getConfigForScenario(_context).liquidationDenominator)).div(HUNDRED_PERCENT);
 
     await albert.withdrawAsset({
       asset: baseToken,
@@ -714,13 +728,13 @@ scenario(
       await timeUntilUnderwater({
         comet,
         actor: albert,
-        fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
+        fudgeFactor: FUDGE_FACTOR_TIME
       })
     );
 
     const initialReserves = (await comet.getReserves()).toBigInt();
 
-    await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue
+    await comet.connect(betty.signer).accrueAccount(albert.address);
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
     expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0);
@@ -733,10 +747,10 @@ scenario(
       [0],
       flashLoanPool.tokenAddress,
       flashLoanPool.poolFee,
-      10e6
+      FLASH_LOAN_AMOUNT
     ));
 
-    expect(event(tx, 3)).to.deep.equal({
+    expect(event(tx, ABSORB_EVENT_INDEX)).to.deep.equal({
       Absorb: {
         initiator: betty.address,
         accounts: [albert.address]
@@ -748,7 +762,7 @@ scenario(
     expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.eq(0);
 
     // confirm that collateral was not purchased
-    expect(event(tx, 4)).to.deep.equal({
+    expect(event(tx, ABSORB_WITHOUT_BUYING_EVENT_INDEX)).to.deep.equal({
       AbsorbWithoutBuyingCollateral: {}
     });
 
@@ -776,10 +790,10 @@ scenario(
   };
   const assetAmounts = {
     mainnet: {
-      usdc: ' == 5000', // COMP
-      weth: ' == 3400', // CB_ETH
-      usdt: ' == 5000', // COMP
-      usds: ' == 850',   // WETH
+      usdc: ' == 5000',
+      weth: ' == 3400',
+      usdt: ' == 5000',
+      usds: ' == 850',
     },
   };
 
@@ -787,7 +801,7 @@ scenario(
     `LiquidationBot > reverts when price slippage is too high`,
     {
       upgrade: {
-        targetReserves: exp(20_000, 18)
+        targetReserves: exp(TARGET_RESERVES, TARGET_RESERVES_DECIMALS)
       },
       filter: async (ctx) => matchesDeployment(ctx, [{ network: 'mainnet' }]) && !matchesDeployment(ctx, [{deployment: 'wsteth'}, {deployment: 'usds'}, {deployment: 'wbtc'}]),
       tokenBalances: async (ctx) => (
@@ -840,7 +854,7 @@ scenario(
       const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
 
       const borrowCapacity = await borrowCapacityForAsset(comet, albert, 0);
-      const borrowAmount = (borrowCapacity.mul(getConfigForScenario(_context).liquidationNumerator)).div(100n);
+      const borrowAmount = (borrowCapacity.mul(getConfigForScenario(_context).liquidationNumerator)).div(HUNDRED_PERCENT);
 
       await albert.withdrawAsset({
         asset: baseToken,
@@ -851,11 +865,11 @@ scenario(
         await timeUntilUnderwater({
           comet,
           actor: albert,
-          fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
+          fudgeFactor: FUDGE_FACTOR_TIME
         })
       );
 
-      await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue
+      await comet.connect(betty.signer).accrueAccount(albert.address);
 
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
       expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0);
@@ -869,7 +883,7 @@ scenario(
           [ethers.constants.MaxUint256],
           flashLoanPool.tokenAddress,
           flashLoanPool.poolFee,
-          10e6
+          FLASH_LOAN_AMOUNT
         )
       ).to.be.revertedWithCustomError(liquidator, 'InsufficientAmountOut');
 
