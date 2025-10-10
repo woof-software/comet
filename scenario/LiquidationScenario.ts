@@ -255,7 +255,7 @@ scenario(
 // permission was set up in the initialize() function. There is currently no way to update this
 // permission in Comet, so a new function (e.g. `approveCometPermission`) needs to be created
 // to allow governance to modify which addresses can withdraw assets from Comet's Comet balance.
-scenario.skip(
+scenario(
   'Comet#liquidation > governor can withdraw collateral after successful liquidation',
   {
     cometBalances: {
