@@ -5,6 +5,14 @@ import { expectBase, isRewardSupported, isBulkerSupported, getExpectedBaseBalanc
 import { exp } from '../test/helpers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
+const ETH_SUPPLY_AMOUNT = 0.01;
+const ETH_WITHDRAW_AMOUNT = 0.005;
+const STANDARD_DECIMALS = 18;
+const TIME_INCREMENT_ONE_DAY = 86400;
+const AUTHORIZATION_ENABLED = true;
+const WETH_BORROW_BASE = 5n;
+const WETH_TRANSFER_BASE = 2n;
+
 async function hasNativeAsCollateral(ctx: CometContext): Promise<boolean> {
   const comet = await ctx.getComet();
   const bulker = await ctx.getBulker();
@@ -50,31 +58,22 @@ scenario(
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseScale = (await comet.baseScale()).toBigInt();
-    // if asset 0 is native token we took asset 1
     const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
     const collateralScale = scaleBN.toBigInt();
     const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
     const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
-    const toSupplyWron = exp(0.01, 18);
-    const toWithdrawWron = exp(0.005, 18);
+    const toSupplyWron = exp(ETH_SUPPLY_AMOUNT, STANDARD_DECIMALS);
+    const toWithdrawWron = exp(ETH_WITHDRAW_AMOUNT, STANDARD_DECIMALS);
 
-    // Approvals
     await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await albert.allow(bulker.address, AUTHORIZATION_ENABLED);
 
-    // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
     expect(await comet.balanceOf(albert.address)).to.be.equal(0n);
 
-    // Albert's actions:
-    // 1. Supplies 3000 units of collateral
-    // 2. Borrows 1000 base
-    // 3. Transfers 500 base to Betty
-    // 4. Supplies 0.01 RON
-    // 5. Withdraws 0.005 RON
     const supplyAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, collateralAsset.address, toSupplyCollateral]);
     const withdrawAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, baseAsset.address, toBorrowBase]);
     const transferAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, betty.address, baseAsset.address, toTransferBase]);
@@ -100,7 +99,6 @@ scenario(
 
     const txn = await albert.invoke({ actions, calldata }, { value: toSupplyWron });
 
-    // Final expectations
     const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
     const baseTransferred = getExpectedBaseBalance(toTransferBase, baseIndexScale, baseSupplyIndex);
@@ -110,11 +108,10 @@ scenario(
     expectBase((await comet.balanceOf(betty.address)).toBigInt(), baseTransferred);
     expectBase((await comet.borrowBalanceOf(albert.address)).toBigInt(), toBorrowBase + toTransferBase - toWithdrawWron);
 
-    return txn; // return txn to measure gas
+    return txn;
   }
 );
 
-// XXX properly handle cases where asset0 is WETH
 scenario(
   'Comet#bulker > (non-WETH base) all non-reward actions in one txn',
   {
@@ -151,12 +148,12 @@ scenario(
     const toSupplyCollateral = BigInt(asset0 === wrappedNativeToken ? getConfigForScenario(context).bulkerAsset1 : getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
     const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
-    const toSupplyEth = exp(0.01, 18);
-    const toWithdrawEth = exp(0.005, 18);
+    const toSupplyEth = exp(ETH_SUPPLY_AMOUNT, STANDARD_DECIMALS);
+    const toWithdrawEth = exp(ETH_WITHDRAW_AMOUNT, STANDARD_DECIMALS);
 
     // Approvals
     await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await albert.allow(bulker.address, AUTHORIZATION_ENABLED);
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
@@ -240,24 +237,16 @@ scenario(
     const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
     const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
-    const toSupplyEth = exp(0.01, 18);
-    const toWithdrawEth = exp(0.005, 18);
+    const toSupplyEth = exp(ETH_SUPPLY_AMOUNT, STANDARD_DECIMALS);
+    const toWithdrawEth = exp(ETH_WITHDRAW_AMOUNT, STANDARD_DECIMALS);
 
-    // Approvals
     await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await albert.allow(bulker.address, AUTHORIZATION_ENABLED);
 
-    // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
     expect(await comet.balanceOf(albert.address)).to.be.equal(0n);
 
-    // Albert's actions:
-    // 1. Supplies 3000 units of collateral
-    // 2. Borrows 1500 base
-    // 3. Transfers 500 base to Betty
-    // 4. Supplies 0.01 ETH
-    // 5. Withdraws 0.005 ETH
     const supplyAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, collateralAsset.address, toSupplyCollateral]);
     const withdrawAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, baseAsset.address, toBorrowBase]);
     const transferAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, betty.address, baseAsset.address, toTransferBase]);
@@ -326,18 +315,18 @@ scenario(
     const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
     const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
-    const toSupplyEth = exp(0.01, 18);
-    const toWithdrawEth = exp(0.005, 18);
+    const toSupplyEth = exp(ETH_SUPPLY_AMOUNT, STANDARD_DECIMALS);
+    const toWithdrawEth = exp(ETH_WITHDRAW_AMOUNT, STANDARD_DECIMALS);
 
     // Approvals
     await baseAsset.approve(albert, comet.address);
     await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await albert.allow(bulker.address, AUTHORIZATION_ENABLED);
 
     // Accrue some rewards to Albert, then transfer away Albert's supplied base
     await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: toSupplyBase });
-    await world.increaseTime(86400); // fast forward a day
-    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 }); // transfer all base away
+    await world.increaseTime(TIME_INCREMENT_ONE_DAY);
+    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 });
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
@@ -438,18 +427,18 @@ scenario(
     const toSupplyCollateral = BigInt(asset0 === wrappedNativeToken ? getConfigForScenario(context).bulkerAsset1 : getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
     const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
-    const toSupplyEth = exp(0.01, 18);
-    const toWithdrawEth = exp(0.005, 18);
+    const toSupplyEth = exp(ETH_SUPPLY_AMOUNT, STANDARD_DECIMALS);
+    const toWithdrawEth = exp(ETH_WITHDRAW_AMOUNT, STANDARD_DECIMALS);
 
     // Approvals
     await baseAsset.approve(albert, comet.address);
     await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await albert.allow(bulker.address, AUTHORIZATION_ENABLED);
 
     // Accrue some rewards to Albert, then transfer away Albert's supplied base
     await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: toSupplyBase });
-    await world.increaseTime(86400); // fast forward a day
-    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 }); // transfer all base away
+    await world.increaseTime(TIME_INCREMENT_ONE_DAY);
+    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 });
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
@@ -539,7 +528,6 @@ scenario(
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseScale = (await comet.baseScale()).toBigInt();
-    // if asset 0 is native token we took asset 1
     const { asset: asset0, scale: scale0 } = await comet.getAssetInfo(0);
     const { asset: asset1, scale: scale1 } = await comet.getAssetInfo(1);
     const { asset: collateralAssetAddress, scale: scaleBN } = asset0 === wrappedNativeToken ? { asset: asset1, scale: scale1 } : { asset: asset0, scale: scale0 };
@@ -550,18 +538,17 @@ scenario(
     const toSupplyCollateral = BigInt(asset0 === wrappedNativeToken ? getConfigForScenario(context).bulkerAsset1 : getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
     const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
-    const toSupplyEth = exp(0.01, 18);
-    const toWithdrawEth = exp(0.005, 18);
+    const toSupplyEth = exp(ETH_SUPPLY_AMOUNT, STANDARD_DECIMALS);
+    const toWithdrawEth = exp(ETH_WITHDRAW_AMOUNT, STANDARD_DECIMALS);
 
-    // Approvals
     await baseAsset.approve(albert, comet.address);
     await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await albert.allow(bulker.address, AUTHORIZATION_ENABLED);
 
     // Accrue some rewards to Albert, then transfer away Albert's supplied base
     await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: toSupplyBase });
-    await world.increaseTime(86400); // fast forward a day
-    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 }); // transfer all base away
+    await world.increaseTime(TIME_INCREMENT_ONE_DAY);
+    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 });
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
@@ -653,20 +640,20 @@ scenario(
     const [rewardTokenAddress] = await rewards.rewardConfig(comet.address);
     const toSupplyBase = BigInt(getConfigForScenario(context).bulkerBase1) * baseScale;
     const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset2) * collateralScale;
-    const toBorrowBase = 5n * baseScale;
-    const toTransferBase = 2n * baseScale;
-    const toSupplyEth = exp(0.01, 18);
-    const toWithdrawEth = exp(0.005, 18);
+    const toBorrowBase = WETH_BORROW_BASE * baseScale;
+    const toTransferBase = WETH_TRANSFER_BASE * baseScale;
+    const toSupplyEth = exp(ETH_SUPPLY_AMOUNT, STANDARD_DECIMALS);
+    const toWithdrawEth = exp(ETH_WITHDRAW_AMOUNT, STANDARD_DECIMALS);
 
     // Approvals
     await baseAsset.approve(albert, comet.address);
     await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await albert.allow(bulker.address, AUTHORIZATION_ENABLED);
 
     // Accrue some rewards to Albert, then transfer away Albert's supplied base
     await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: toSupplyBase });
-    await world.increaseTime(86400); // fast forward a day
-    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 }); // transfer all base away
+    await world.increaseTime(TIME_INCREMENT_ONE_DAY);
+    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 });
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);

@@ -6,6 +6,13 @@ import { calldata } from '../src/deploy';
 import { isBridgedDeployment, matchesDeployment, createCrossChainProposal } from './utils';
 import { ArbitrumBridgeReceiver } from '../build/types';
 
+const DELAY_MULTIPLIER = 2;
+const SECONDS_PER_DAY = 24 * 60 * 60;
+const TIMELOCK_DELAY_DAYS = 2;
+const TIMELOCK_GRACE_PERIOD_DAYS = 14;
+const TIMELOCK_MIN_DELAY_DAYS = 2;
+const TIMELOCK_MAX_DELAY_DAYS = 30;
+
 // This is a generic scenario that runs for all L2s and sidechains
 scenario(
   'execute cross-chain governance proposal',
@@ -14,7 +21,7 @@ scenario(
   },
   async ({ comet, timelock, bridgeReceiver }, context) => {
     const currentTimelockDelay = await timelock.delay();
-    const newTimelockDelay = currentTimelockDelay.mul(2);
+    const newTimelockDelay = currentTimelockDelay.mul(DELAY_MULTIPLIER);
 
     // Cross-chain proposal to change L2 timelock's delay and pause L2 Comet actions
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
@@ -62,16 +69,15 @@ scenario(
     );
 
     // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
     const newLocalTimelock = await dm.deploy(
       'newTimelock',
       'vendor/Timelock.sol',
       [
-        newBridgeReceiver.address, // admin
-        2 * secondsPerDay,         // delay
-        14 * secondsPerDay,        // grace period
-        2 * secondsPerDay,         // minimum delay
-        30 * secondsPerDay         // maxiumum delay
+        newBridgeReceiver.address,              // admin
+        TIMELOCK_DELAY_DAYS * SECONDS_PER_DAY,         // delay
+        TIMELOCK_GRACE_PERIOD_DAYS * SECONDS_PER_DAY,        // grace period
+        TIMELOCK_MIN_DELAY_DAYS * SECONDS_PER_DAY,         // minimum delay
+        TIMELOCK_MAX_DELAY_DAYS * SECONDS_PER_DAY         // maxiumum delay
       ]
     );
 
@@ -124,7 +130,7 @@ scenario(
 
     // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
     const currentTimelockDelay = await newLocalTimelock.delay();
-    const newTimelockDelay = currentTimelockDelay.mul(2);
+    const newTimelockDelay = currentTimelockDelay.mul(DELAY_MULTIPLIER);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
     const pauseCalldata = await calldata(comet.populateTransaction.pause(true, true, true, true, true));
@@ -172,16 +178,15 @@ scenario(
     );
 
     // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
     const newLocalTimelock = await dm.deploy(
       'newTimelock',
       'vendor/Timelock.sol',
       [
-        newBridgeReceiver.address, // admin
-        2 * secondsPerDay,         // delay
-        14 * secondsPerDay,        // grace period
-        2 * secondsPerDay,         // minimum delay
-        30 * secondsPerDay         // maxiumum delay
+        newBridgeReceiver.address,              // admin
+        TIMELOCK_DELAY_DAYS * SECONDS_PER_DAY,         // delay
+        TIMELOCK_GRACE_PERIOD_DAYS * SECONDS_PER_DAY,        // grace period
+        TIMELOCK_MIN_DELAY_DAYS * SECONDS_PER_DAY,         // minimum delay
+        TIMELOCK_MAX_DELAY_DAYS * SECONDS_PER_DAY         // maxiumum delay
       ]
     );
 
@@ -234,7 +239,7 @@ scenario(
 
     // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
     const currentTimelockDelay = await newLocalTimelock.delay();
-    const newTimelockDelay = currentTimelockDelay.mul(2);
+    const newTimelockDelay = currentTimelockDelay.mul(DELAY_MULTIPLIER);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
     const pauseCalldata = await calldata(comet.populateTransaction.pause(true, true, true, true, true));
@@ -294,13 +299,12 @@ scenario.skip(
     );
 
     // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
     const newLocalTimelock = await dm.deploy('newTimelock', 'vendor/Timelock.sol', [
       newBridgeReceiver.address, // admin
-      2 * secondsPerDay, // delay
-      14 * secondsPerDay, // grace period
-      2 * secondsPerDay, // minimum delay
-      30 * secondsPerDay // maxiumum delay
+      TIMELOCK_DELAY_DAYS * SECONDS_PER_DAY, // delay
+      TIMELOCK_GRACE_PERIOD_DAYS * SECONDS_PER_DAY, // grace period
+      TIMELOCK_MIN_DELAY_DAYS * SECONDS_PER_DAY, // minimum delay
+      TIMELOCK_MAX_DELAY_DAYS * SECONDS_PER_DAY // maxiumum delay
     ]);
 
     // Initialize new LineaBridgeReceiver
@@ -353,7 +357,7 @@ scenario.skip(
 
     // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
     const currentTimelockDelay = await newLocalTimelock.delay();
-    const newTimelockDelay = currentTimelockDelay.mul(2);
+    const newTimelockDelay = currentTimelockDelay.mul(DELAY_MULTIPLIER);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
     const pauseCalldata = await calldata(
@@ -415,13 +419,12 @@ scenario(
     );
 
     // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
     const newLocalTimelock = await dm.deploy('newTimelock', 'vendor/Timelock.sol', [
       newBridgeReceiver.address, // admin
-      2 * secondsPerDay, // delay
-      14 * secondsPerDay, // grace period
-      2 * secondsPerDay, // minimum delay
-      30 * secondsPerDay // maxiumum delay
+      TIMELOCK_DELAY_DAYS * SECONDS_PER_DAY, // delay
+      TIMELOCK_GRACE_PERIOD_DAYS * SECONDS_PER_DAY, // grace period
+      TIMELOCK_MIN_DELAY_DAYS * SECONDS_PER_DAY, // minimum delay
+      TIMELOCK_MAX_DELAY_DAYS * SECONDS_PER_DAY // maxiumum delay
     ]);
 
     // Initialize new ScrollBridgeReceiver
@@ -474,7 +477,7 @@ scenario(
 
     // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
     const currentTimelockDelay = await newLocalTimelock.delay();
-    const newTimelockDelay = currentTimelockDelay.mul(2);
+    const newTimelockDelay = currentTimelockDelay.mul(DELAY_MULTIPLIER);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
     const pauseCalldata = await calldata(

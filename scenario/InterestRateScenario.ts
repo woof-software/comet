@@ -4,6 +4,23 @@ import { annualize, defactor, exp } from '../test/helpers';
 import { BigNumber } from 'ethers';
 import { FuzzType } from './constraints/Fuzzing';
 
+const UTILIZATION_TOLERANCE = 0.00001;
+const SUPPLY_KINK = 0.8;
+const SUPPLY_RATE_SLOPE_LOW = 0.04;
+const SUPPLY_RATE_SLOPE_HIGH = 0.4;
+const BORROW_KINK = 0.8;
+const BORROW_RATE_BASE = 0.01;
+const BORROW_RATE_SLOPE_LOW = 0.05;
+const BORROW_RATE_SLOPE_HIGH = 0.3;
+const UTILIZATION_BELOW_KINK = 0.5;
+const UTILIZATION_ABOVE_KINK = 0.85;
+const EXPECTED_SUPPLY_RATE_BELOW_KINK = 0.02;
+const EXPECTED_BORROW_RATE_BELOW_KINK = 0.035;
+const EXPECTED_SUPPLY_RATE_ABOVE_KINK = 0.052;
+const EXPECTED_BORROW_RATE_ABOVE_KINK = 0.065;
+const RATE_TOLERANCE = 0.001;
+const MAX_BORROW_RATE = 1e18;
+
 function calculateInterestRate(
   utilization: BigNumber,
   kink: BigNumber,
@@ -55,7 +72,7 @@ scenario(
     const actualUtilization = await comet.getUtilization();
     const expectedUtilization = calculateUtilization(totalSupplyBase, totalBorrowBase, baseSupplyIndex, baseBorrowIndex);
 
-    expect(defactor(actualUtilization)).to.be.approximately(defactor(expectedUtilization), 0.00001);
+    expect(defactor(actualUtilization)).to.be.approximately(defactor(expectedUtilization), UTILIZATION_TOLERANCE);
     expect(await comet.getSupplyRate(actualUtilization)).to.equal(
       calculateInterestRate(
         actualUtilization,
@@ -81,22 +98,22 @@ scenario(
   'Comet#interestRate > below kink rates using hypothetical configuration constants',
   {
     upgrade: {
-      supplyKink: exp(0.8, 18),
+      supplyKink: exp(SUPPLY_KINK, 18),
       supplyPerYearInterestRateBase: exp(0, 18),
-      supplyPerYearInterestRateSlopeLow: exp(0.04, 18),
-      supplyPerYearInterestRateSlopeHigh: exp(0.4, 18),
-      borrowKink: exp(0.8, 18),
-      borrowPerYearInterestRateBase: exp(0.01, 18),
-      borrowPerYearInterestRateSlopeLow: exp(0.05, 18),
-      borrowPerYearInterestRateSlopeHigh: exp(0.3, 18),
+      supplyPerYearInterestRateSlopeLow: exp(SUPPLY_RATE_SLOPE_LOW, 18),
+      supplyPerYearInterestRateSlopeHigh: exp(SUPPLY_RATE_SLOPE_HIGH, 18),
+      borrowKink: exp(BORROW_KINK, 18),
+      borrowPerYearInterestRateBase: exp(BORROW_RATE_BASE, 18),
+      borrowPerYearInterestRateSlopeLow: exp(BORROW_RATE_SLOPE_LOW, 18),
+      borrowPerYearInterestRateSlopeHigh: exp(BORROW_RATE_SLOPE_HIGH, 18),
     },
-    utilization: 0.5,
+    utilization: UTILIZATION_BELOW_KINK,
   },
   async ({ comet }) => {
     const utilization = await comet.getUtilization();
-    expect(defactor(utilization)).to.be.approximately(0.5, 0.00001);
-    expect(annualize(await comet.getSupplyRate(utilization))).to.be.approximately(0.02, 0.001);
-    expect(annualize(await comet.getBorrowRate(utilization))).to.be.approximately(0.035, 0.001);
+    expect(defactor(utilization)).to.be.approximately(UTILIZATION_BELOW_KINK, UTILIZATION_TOLERANCE);
+    expect(annualize(await comet.getSupplyRate(utilization))).to.be.approximately(EXPECTED_SUPPLY_RATE_BELOW_KINK, RATE_TOLERANCE);
+    expect(annualize(await comet.getBorrowRate(utilization))).to.be.approximately(EXPECTED_BORROW_RATE_BELOW_KINK, RATE_TOLERANCE);
   }
 );
 
@@ -104,22 +121,22 @@ scenario(
   'Comet#interestRate > above kink rates using hypothetical configuration constants',
   {
     upgrade: {
-      supplyKink: exp(0.8, 18),
+      supplyKink: exp(SUPPLY_KINK, 18),
       supplyPerYearInterestRateBase: exp(0, 18),
-      supplyPerYearInterestRateSlopeLow: exp(0.04, 18),
-      supplyPerYearInterestRateSlopeHigh: exp(0.4, 18),
-      borrowKink: exp(0.8, 18),
-      borrowPerYearInterestRateBase: exp(0.01, 18),
-      borrowPerYearInterestRateSlopeLow: exp(0.05, 18),
-      borrowPerYearInterestRateSlopeHigh: exp(0.3, 18),
+      supplyPerYearInterestRateSlopeLow: exp(SUPPLY_RATE_SLOPE_LOW, 18),
+      supplyPerYearInterestRateSlopeHigh: exp(SUPPLY_RATE_SLOPE_HIGH, 18),
+      borrowKink: exp(BORROW_KINK, 18),
+      borrowPerYearInterestRateBase: exp(BORROW_RATE_BASE, 18),
+      borrowPerYearInterestRateSlopeLow: exp(BORROW_RATE_SLOPE_LOW, 18),
+      borrowPerYearInterestRateSlopeHigh: exp(BORROW_RATE_SLOPE_HIGH, 18),
     },
-    utilization: 0.85,
+    utilization: UTILIZATION_ABOVE_KINK,
   },
   async ({ comet }) => {
     const utilization = await comet.getUtilization();
-    expect(defactor(utilization)).to.be.approximately(0.85, 0.00001);
-    expect(annualize(await comet.getSupplyRate(utilization))).to.be.approximately(0.052, 0.001);
-    expect(annualize(await comet.getBorrowRate(utilization))).to.be.approximately(0.065, 0.001);
+    expect(defactor(utilization)).to.be.approximately(UTILIZATION_ABOVE_KINK, UTILIZATION_TOLERANCE);
+    expect(annualize(await comet.getSupplyRate(utilization))).to.be.approximately(EXPECTED_SUPPLY_RATE_ABOVE_KINK, RATE_TOLERANCE);
+    expect(annualize(await comet.getBorrowRate(utilization))).to.be.approximately(EXPECTED_BORROW_RATE_ABOVE_KINK, RATE_TOLERANCE);
   }
 );
 
@@ -129,7 +146,7 @@ scenario(
     upgrade: {
       // TODO: Read types directly from Solidity?
       supplyPerYearInterestRateBase: { type: FuzzType.UINT64 },
-      borrowPerYearInterestRateBase: { type: FuzzType.UINT64, max: (1e18).toString() /* 100% */ },
+      borrowPerYearInterestRateBase: { type: FuzzType.UINT64, max: MAX_BORROW_RATE.toString() /* 100% */ },
     }
   },
   async ({ comet }) => {
@@ -147,7 +164,7 @@ scenario(
     const actualUtilization = await comet.getUtilization();
     const expectedUtilization = calculateUtilization(totalSupplyBase, totalBorrowBase, baseSupplyIndex, baseBorrowIndex);
 
-    expect(defactor(actualUtilization)).to.be.approximately(defactor(expectedUtilization), 0.00001);
+    expect(defactor(actualUtilization)).to.be.approximately(defactor(expectedUtilization), UTILIZATION_TOLERANCE);
     expect(await comet.getSupplyRate(actualUtilization)).to.equal(
       calculateInterestRate(
         actualUtilization,
@@ -173,10 +190,10 @@ scenario(
 // XXX this test seems too fickle
 scenario.skip(
   'Comet#interestRate > when utilization is 50%',
-  { utilization: 0.5 },
+  { utilization: UTILIZATION_BELOW_KINK },
   async ({ comet }, context) => {
     const utilization = await comet.getUtilization();
-    expect(defactor(utilization)).to.be.approximately(0.5, 0.00001);
+    expect(defactor(utilization)).to.be.approximately(UTILIZATION_BELOW_KINK, UTILIZATION_TOLERANCE);
 
     // Note: this is dependent on the `deployments/fuji/configuration.json` variables
     // TODO: Consider if there's a better way to test the live curve.
@@ -185,12 +202,12 @@ scenario.skip(
       // utilization = 50%
       // ( 1% + 2% * 50% ) * 50% * (100% - 10%)
       // ( 1% + 1% ) * 50% * 90% -> 1% * 90% = 0.9%
-      expect(annualize(await comet.getSupplyRate(utilization))).to.be.approximately(0.009, 0.001);
+      expect(annualize(await comet.getSupplyRate(utilization))).to.be.approximately(0.009, RATE_TOLERANCE);
 
       // interestRateBase + interestRateSlopeLow * utilization
       // utilization = 50%
       // ( 1% + 2% * 50% )
-      expect(annualize(await comet.getBorrowRate(utilization))).to.be.approximately(0.02, 0.001);
+      expect(annualize(await comet.getBorrowRate(utilization))).to.be.approximately(0.02, RATE_TOLERANCE);
     }
   }
 );

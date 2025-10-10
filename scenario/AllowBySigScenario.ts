@@ -2,6 +2,14 @@ import { scenario } from './context/CometContext';
 import { expectRevertCustom } from './utils';
 import { expect } from 'chai';
 
+const EXPIRY_OFFSET_SHORT = 10;
+const EXPIRY_OFFSET_LONG = 1_000;
+const EXPIRY_OFFSET_VERY_LONG = 10000;
+const EXPIRY_OFFSET_ALTERED = 100;
+const EXPIRY_PAST_OFFSET = 1;
+const INVALID_V_VALUE = 26;
+const MAX_S_VALUE_PLUS_ONE = '0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A1';
+
 scenario(
   'Comet#allowBySig > allows a user to authorize a manager by signature',
   {},
@@ -12,8 +20,7 @@ scenario(
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + 1_000;
-
+    const expiry = (await world.timestamp()) + EXPIRY_OFFSET_LONG;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -21,7 +28,6 @@ scenario(
       expiry,
       chainId: await world.chainId(),
     });
-
     const txn = await betty.allowBySig({
       owner: albert.address,
       manager: betty.address,
@@ -46,13 +52,10 @@ scenario(
   { },
   async ({ comet, actors }, context, world) => {
     const { albert, betty, charles } = actors;
-
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
-
-    await context.mineBlocks(1); // note: in case init took a while
+    await context.mineBlocks(1);  // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + 10;
-
+    const expiry = (await world.timestamp()) + EXPIRY_OFFSET_SHORT;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -80,13 +83,10 @@ scenario(
   { },
   async ({ comet, actors }, context, world) => {
     const { albert, betty, charles } = actors;
-
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
-
-    await context.mineBlocks(1); // note: in case init took a while
+    await context.mineBlocks(1);  // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + 10;
-
+    const expiry = (await world.timestamp()) + EXPIRY_OFFSET_SHORT;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -94,11 +94,10 @@ scenario(
       expiry,
       chainId: await world.chainId(),
     });
-
     await expectRevertCustom(
       betty.allowBySig({
         owner: albert.address,
-        manager: charles.address, // altered manager
+        manager: charles.address,
         isAllowed: true,
         nonce,
         expiry,
@@ -119,8 +118,7 @@ scenario(
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + 10;
-
+    const expiry = (await world.timestamp()) + EXPIRY_OFFSET_SHORT;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -153,8 +151,7 @@ scenario(
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + 10;
-
+    const expiry = (await world.timestamp()) + EXPIRY_OFFSET_SHORT;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -168,7 +165,7 @@ scenario(
         owner: albert.address,
         manager: betty.address,
         isAllowed: true,
-        nonce: nonce.add(1), // altered nonce
+        nonce: nonce.add(1),
         expiry,
         signature,
       }),
@@ -182,13 +179,11 @@ scenario(
   { },
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
-
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + 10;
-
+    const expiry = (await world.timestamp()) + EXPIRY_OFFSET_SHORT;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -196,14 +191,13 @@ scenario(
       expiry,
       chainId: await world.chainId(),
     });
-
     await expectRevertCustom(
       betty.allowBySig({
         owner: albert.address,
         manager: betty.address,
         isAllowed: true,
         nonce,
-        expiry: expiry + 100, // altered expiry
+        expiry: expiry + EXPIRY_OFFSET_ALTERED,
         signature,
       }),
       'BadSignatory()'
@@ -218,12 +212,10 @@ scenario(
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
-
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const invalidNonce = nonce.add(1);
-    const expiry = (await world.timestamp()) + 10;
-
+    const expiry = (await world.timestamp()) + EXPIRY_OFFSET_SHORT;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -251,14 +243,10 @@ scenario(
   { },
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
-
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
-
-    // await context.mineBlocks(1); // note: in case init took a while
     await context.world.deploymentManager.hre.network.provider.send('evm_mine', []);
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + 10000;
-
+    const expiry = (await world.timestamp()) + EXPIRY_OFFSET_VERY_LONG;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -299,11 +287,9 @@ scenario(
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
-
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const invalidExpiry = (await world.timestamp()) - 1;
-
+    const invalidExpiry = (await world.timestamp()) - EXPIRY_PAST_OFFSET;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -336,8 +322,7 @@ scenario(
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + 10;
-
+    const expiry = (await world.timestamp()) + EXPIRY_OFFSET_SHORT;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -345,9 +330,7 @@ scenario(
       expiry,
       chainId: await world.chainId(),
     });
-
-    signature.v = 26;
-
+    signature.v = INVALID_V_VALUE;
     await expectRevertCustom(
       betty.allowBySig({
         owner: albert.address,
@@ -372,8 +355,7 @@ scenario(
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + 10;
-
+    const expiry = (await world.timestamp()) + EXPIRY_OFFSET_SHORT;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -381,10 +363,7 @@ scenario(
       expiry,
       chainId: await world.chainId(),
     });
-
-    // 1 greater than the max value of s
-    signature.s = '0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A1';
-
+    signature.s = MAX_S_VALUE_PLUS_ONE;
     await expectRevertCustom(
       betty.allowBySig({
         owner: albert.address,
