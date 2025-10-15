@@ -2,12 +2,6 @@ import { scenario } from './context/CometContext';
 import { exp } from '../test/helpers';
 import { expect } from 'chai';
 
-// Constants
-const ETH_DECIMALS = 18;
-const DAI_DECIMALS = 18;
-const USDC_DECIMALS = 18;
-const WBTC_DECIMALS = 8;
-
 const ETH_REPAY_AMOUNT = 2;
 const ETH_BORROW_AMOUNT = 1;
 const ETH_FINAL_REPAY_AMOUNT = 1;
@@ -51,11 +45,11 @@ scenario.skip(
     const whale = await world.impersonateAddress(CETH_WHALE_ADDRESS);
     const cETH = await dm.existing('cETH', CETH_ADDRESS);
     const borrowBefore = await cETH.callStatic.borrowBalanceCurrent(whale.address);
-    await cETH.connect(whale).repayBorrow({value: exp(ETH_REPAY_AMOUNT, ETH_DECIMALS)});
-    await cETH.connect(whale).borrow(exp(ETH_BORROW_AMOUNT, ETH_DECIMALS));
-    await cETH.connect(whale).repayBorrow({value: exp(ETH_FINAL_REPAY_AMOUNT, ETH_DECIMALS)});
+    await cETH.connect(whale).repayBorrow({value: exp(ETH_REPAY_AMOUNT, 18)});
+    await cETH.connect(whale).borrow(exp(ETH_BORROW_AMOUNT, 18));
+    await cETH.connect(whale).repayBorrow({value: exp(ETH_FINAL_REPAY_AMOUNT, 18)});
     const borrowAfter = await cETH.callStatic.borrowBalanceCurrent(whale.address);
-    expect(borrowAfter.toBigInt() - borrowBefore.toBigInt()).to.be.lt(exp(BORROW_TOLERANCE, ETH_DECIMALS));
+    expect(borrowAfter.toBigInt() - borrowBefore.toBigInt()).to.be.lt(exp(BORROW_TOLERANCE, 18));
   }
 );
 
@@ -67,9 +61,9 @@ scenario.skip(
     const whale = await world.impersonateAddress(DAI_WHALE_ADDRESS);
     const DAI = await dm.existing('DAI', DAI_ADDRESS);
     const cDAI = await dm.existing('cDAI', CDAI_ADDRESS);
-    await DAI.connect(whale).approve(cDAI.address, exp(DAI_MINT_REDEEM_AMOUNT, DAI_DECIMALS));
-    await cDAI.connect(whale).mint(exp(DAI_MINT_REDEEM_AMOUNT, DAI_DECIMALS));
-    await cDAI.connect(whale).redeemUnderlying(exp(DAI_MINT_REDEEM_AMOUNT, DAI_DECIMALS));
+    await DAI.connect(whale).approve(cDAI.address, exp(DAI_MINT_REDEEM_AMOUNT, 18));
+    await cDAI.connect(whale).mint(exp(DAI_MINT_REDEEM_AMOUNT, 18));
+    await cDAI.connect(whale).redeemUnderlying(exp(DAI_MINT_REDEEM_AMOUNT, 818));
   }
 );
 
@@ -81,9 +75,9 @@ scenario.skip(
     const whale = await world.impersonateAddress(USDC_WHALE_ADDRESS);
     const USDC = await dm.existing('USDC', USDC_ADDRESS);
     const cUSDC = await dm.existing('cUSDC', CUSDC_ADDRESS);
-    await USDC.connect(whale).approve(cUSDC.address, exp(USDC_MINT_REDEEM_AMOUNT, USDC_DECIMALS));
-    await cUSDC.connect(whale).mint(exp(USDC_MINT_REDEEM_AMOUNT, USDC_DECIMALS));
-    await cUSDC.connect(whale).redeemUnderlying(exp(USDC_MINT_REDEEM_AMOUNT, USDC_DECIMALS));
+    await USDC.connect(whale).approve(cUSDC.address, exp(USDC_MINT_REDEEM_AMOUNT, 18));
+    await cUSDC.connect(whale).mint(exp(USDC_MINT_REDEEM_AMOUNT, 18));
+    await cUSDC.connect(whale).redeemUnderlying(exp(USDC_MINT_REDEEM_AMOUNT, 18));
   }
 );
 
@@ -97,11 +91,11 @@ scenario.skip(
     const WBTC = await dm.existing('WBTC', WBTC_ADDRESS);
     const cWBTC2 = await dm.existing('cWBTC2', CWBTC2_ADDRESS);
     const borrowBefore = await cWBTC2.callStatic.borrowBalanceCurrent(borrower.address);
-    await WBTC.connect(whale).approve(cWBTC2.address, exp(WBTC_APPROVE_AMOUNT, WBTC_DECIMALS));
-    await cWBTC2.connect(whale).repayBorrowBehalf(borrower.address, exp(WBTC_REPAY_BEHALF_AMOUNT, WBTC_DECIMALS));
-    await cWBTC2.connect(borrower).borrow(exp(WBTC_BORROW_AMOUNT, WBTC_DECIMALS));
-    await cWBTC2.connect(borrower).repayBorrow(exp(WBTC_REPAY_AMOUNT, WBTC_DECIMALS));
+    await WBTC.connect(whale).approve(cWBTC2.address, exp(WBTC_APPROVE_AMOUNT, 8));
+    await cWBTC2.connect(whale).repayBorrowBehalf(borrower.address, exp(WBTC_REPAY_BEHALF_AMOUNT, 8));
+    await cWBTC2.connect(borrower).borrow(exp(WBTC_BORROW_AMOUNT, 8));
+    await cWBTC2.connect(borrower).repayBorrow(exp(WBTC_REPAY_AMOUNT, 8));
     const borrowAfter = await cWBTC2.callStatic.borrowBalanceCurrent(borrower.address);
-    expect(borrowAfter.toBigInt() - borrowBefore.toBigInt()).to.be.lt(exp(BORROW_TOLERANCE, ETH_DECIMALS));
+    expect(borrowAfter.toBigInt() - borrowBefore.toBigInt()).to.be.lt(exp(BORROW_TOLERANCE, 18));
   }
 );
