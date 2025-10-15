@@ -5,6 +5,7 @@ import { exp } from '../test/helpers';
 import { calldata } from '../src/deploy';
 import { impersonateAddress } from '../plugins/scenario/utils';
 import { createCrossChainProposal, matchesDeployment } from './utils';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 const MATICX_ADDRESS = '0xfa68FB4628DFF1028CFEc22b4162FCcd0d45efb6';
 const MATICX_PRICE_FEED_ADDRESS = '0x5d37E4b374E6907de8Fc7fb33EE3b0af403C7403';
@@ -32,6 +33,7 @@ scenario(
   ) => {
     const { albert } = actors;
     const dm = context.world.deploymentManager;
+    const config = getConfigForScenario(context);
     const maticx = await dm.existing(
       'MaticX',
       MATICX_ADDRESS,
@@ -51,11 +53,13 @@ scenario(
     );
     await dm.hre.ethers.provider.send('hardhat_setBalance', [
       maticxWhaleSigner.address,
-      dm.hre.ethers.utils.hexStripZeros(dm.hre.ethers.utils.parseUnits('100', 'ether').toHexString()),
+      dm.hre.ethers.utils.hexStripZeros(
+        dm.hre.ethers.utils.parseUnits('100', 'ether').toHexString()
+      ),
     ]);
     await maticx
       .connect(maticxWhaleSigner)
-      .transfer(albert.address, exp(9000, 18).toString());
+      .transfer(albert.address, exp(config.maticx.supplyAmount, 18).toString());
 
     // Execute a governance proposal to:
     // 1. Add new asset via Configurator
@@ -64,10 +68,10 @@ scenario(
       asset: maticx.address,
       priceFeed: maticxPricefeed.address,
       decimals: await maticx.decimals(),
-      borrowCollateralFactor: exp(0.55, 18),
-      liquidateCollateralFactor: exp(0.60, 18),
-      liquidationFactor: exp(0.93, 18),
-      supplyCap: exp(6_000_000, 18),
+      borrowCollateralFactor: exp(config.maticx.borrowCollateralFactor, 18),
+      liquidateCollateralFactor: exp(config.maticx.liquidateCollateralFactor, 18),
+      liquidationFactor: exp(config.maticx.liquidationFactor, 18),
+      supplyCap: exp(config.maticx.supplyCap, 18),
     };
 
     const addAssetCalldata = await calldata(
@@ -92,11 +96,10 @@ scenario(
 
     await createCrossChainProposal(context, l2ProposalData, bridgeReceiver);
 
-
     // Try to supply new token and borrow base
     const baseAssetAddress = await comet.baseToken();
-    const borrowAmount = 1000n * (await comet.baseScale()).toBigInt();
-    const supplyAmount = exp(9000, 18);
+    const borrowAmount = BigInt(config.maticx.baseBorrowMultiplier) * (await comet.baseScale()).toBigInt();
+    const supplyAmount = exp(config.maticx.supplyAmount, 18);
 
     await maticx
       .connect(albert.signer)
@@ -110,6 +113,6 @@ scenario(
     expect(await albert.getCometCollateralBalance(maticx.address)).to.be.equal(
       supplyAmount
     );
-    expect(await albert.getCometBaseBalance()).to.be.closeTo(-borrowAmount, 1n);
+    expect(await albert.getCometBaseBalance()).to.be.closeTo(-borrowAmount, config.maticx.balanceTolerance);
   }
 );
