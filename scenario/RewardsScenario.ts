@@ -7,21 +7,6 @@ import { CometRewards, ERC20__factory } from '../build/types';
 import {World} from '../plugins/scenario';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
-const BASE_SUPPLY_AMOUNT = 100n;
-const TIME_INCREMENT_ONE_DAY = 86400;
-const MIN_TIME_DELTA = 86400;
-const ALBERT_BASE_DIVISOR = 10n;
-const COMP_REWARDS_AMOUNT = 100;
-const MULTIPLIER_SCALE = exp(1, 18);
-
-const MULTIPLIERS = [
-  exp(55, 18),
-  exp(10, 18),
-  exp(1, 18),
-  exp(0.01, 18),
-  exp(0.00355, 18)
-];
-
 function calculateRewardsOwed(
   userBalance: bigint,
   totalBalance: bigint,
@@ -44,6 +29,7 @@ scenario(
     },
   },
   async ({ comet, rewards, actors }, context, world) => {
+    const config = getConfigForScenario(context);
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
@@ -58,7 +44,7 @@ scenario(
     const rewardScale = exp(1, await rewardToken.decimals());
 
     await baseAsset.approve(albert, comet.address);
-    await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: BASE_SUPPLY_AMOUNT * baseScale });
+    await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: config.rewardsScenario.baseSupplyAmount * baseScale });
 
     expect(await rewardToken.balanceOf(albert.address)).to.be.equal(0n);
 
@@ -66,7 +52,7 @@ scenario(
     const albertBalance = await albert.getCometBaseBalance();
     const totalSupplyBalance = (await comet.totalSupply()).toBigInt();
 
-    await world.increaseTime(TIME_INCREMENT_ONE_DAY);
+    await world.increaseTime(config.rewardsScenario.timeIncrementOneDay);
     const preTxnTimestamp = await world.timestamp();
 
     const rewardsOwedBefore = (await rewards.callStatic.getRewardOwed(comet.address, albert.address)).owed.toBigInt();
@@ -88,7 +74,7 @@ scenario(
       expectedRewardsReceived = calculateRewardsOwed(albertBalance, totalSupplyBalance, supplySpeed, timestampDelta + timeElapsed, trackingIndexScale, rewardScale, rescaleFactor.toBigInt());
     }
 
-    expect(timestampDelta).to.be.greaterThanOrEqual(MIN_TIME_DELTA);
+    expect(timestampDelta).to.be.greaterThanOrEqual(config.rewardsScenario.minTimeDelta);
     expect(rewardsOwedBefore).to.be.equal(expectedRewardsOwed);
     expect(await rewardToken.balanceOf(albert.address)).to.be.equal(expectedRewardsReceived);
     expect(rewardsOwedAfter).to.be.equal(0n);
@@ -106,6 +92,7 @@ scenario(
     },
   },
   async ({ comet, rewards, actors }, context, world) => {
+    const config = getConfigForScenario(context);
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
@@ -121,7 +108,7 @@ scenario(
 
     await albert.allow(betty, true);
     await baseAsset.approve(albert, comet.address);
-    await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: BASE_SUPPLY_AMOUNT * baseScale });
+    await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: config.rewardsScenario.baseSupplyAmount * baseScale });
 
     expect(await rewardToken.balanceOf(albert.address)).to.be.equal(0n);
 
@@ -129,7 +116,7 @@ scenario(
     const albertBalance = await albert.getCometBaseBalance();
     const totalSupplyBalance = (await comet.totalSupply()).toBigInt();
 
-    await world.increaseTime(TIME_INCREMENT_ONE_DAY);
+    await world.increaseTime(config.rewardsScenario.timeIncrementOneDay);
     const preTxnTimestamp = await world.timestamp();
 
     const rewardsOwedBefore = (await rewards.callStatic.getRewardOwed(comet.address, albert.address)).owed.toBigInt();
@@ -151,7 +138,7 @@ scenario(
       expectedRewardsReceived = calculateRewardsOwed(albertBalance, totalSupplyBalance, supplySpeed, timestampDelta + timeElapsed, trackingIndexScale, rewardScale, rescaleFactor.toBigInt());
     }
 
-    expect(timestampDelta).to.be.greaterThanOrEqual(MIN_TIME_DELTA);
+    expect(timestampDelta).to.be.greaterThanOrEqual(config.rewardsScenario.minTimeDelta);
     expect(rewardsOwedBefore).to.be.equal(expectedRewardsOwed);
     expect(await rewardToken.balanceOf(betty.address)).to.be.equal(expectedRewardsReceived);
     expect(rewardsOwedAfter).to.be.equal(0n);
@@ -166,20 +153,21 @@ scenario(
     filter: async (ctx) => await isRewardSupported(ctx),
     tokenBalances: async (ctx) => (
       {
-        albert: { $asset0: ` == ${getConfigForScenario(ctx).rewardsAsset}` },
-        $comet: { $base: ` >= ${getConfigForScenario(ctx).rewardsBase} ` }
+        albert: { $asset0: `== ${getConfigForScenario(ctx).rewards.assetAmount}` },
+        $comet: { $base: `>= ${getConfigForScenario(ctx).rewards.baseAmount}` }
       }
     )
   },
   async ({ comet, rewards, actors }, context, world) => {
+    const config = getConfigForScenario(context);
     const { albert } = actors;
     const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
     const scale = scaleBN.toBigInt();
-    const toSupply = BigInt(getConfigForScenario(context).rewardsAsset) * scale;
+    const toSupply = BigInt(config.rewards.assetAmount) * scale;
     const baseAssetAddress = await comet.baseToken();
     const baseScale = (await comet.baseScale()).toBigInt();
-    const toBorrow = BigInt(getConfigForScenario(context).rewardsBase) * baseScale;
+    const toBorrow = BigInt(config.rewards.baseAmount) * baseScale;
 
     const { rescaleFactor } = await context.getRewardConfig();
     const rewardToken = await context.getRewardToken();
@@ -195,7 +183,7 @@ scenario(
     const albertBalance = await albert.getCometBaseBalance();
     const totalBorrowBalance = (await comet.totalBorrow()).toBigInt();
 
-    await world.increaseTime(TIME_INCREMENT_ONE_DAY);
+    await world.increaseTime(config.rewardsScenario.timeIncrementOneDay);
     const preTxnTimestamp = await world.timestamp();
 
     const rewardsOwedBefore = (await rewards.callStatic.getRewardOwed(comet.address, albert.address)).owed.toBigInt();
@@ -217,7 +205,7 @@ scenario(
       expectedRewardsReceived = calculateRewardsOwed(-albertBalance, totalBorrowBalance, borrowSpeed, timestampDelta + timeElapsed, trackingIndexScale, rewardScale, rescaleFactor.toBigInt());
     }
 
-    expect(timestampDelta).to.be.greaterThanOrEqual(MIN_TIME_DELTA);
+    expect(timestampDelta).to.be.greaterThanOrEqual(config.rewardsScenario.minTimeDelta);
     expect(rewardsOwedBefore).to.be.equal(expectedRewardsOwed);
     expect(await rewardToken.balanceOf(albert.address)).to.be.equal(expectedRewardsReceived);
     expect(rewardsOwedAfter).to.be.equal(0n);
@@ -226,25 +214,27 @@ scenario(
   }
 );
 
-for (let i = 0; i < MULTIPLIERS.length; i++) {
+for (let i = 0; i < 5; i++) {
   scenario(
-    `Comet#rewards > can claim supply rewards on scaling rewards contract with multiplier of ${MULTIPLIERS[i]}`,
+    `Comet#rewards > can claim supply rewards on scaling rewards contract with multiplier ${i}`,
     {
       filter: async (ctx) => await isRewardSupported(ctx),
       tokenBalances: async (ctx) => (
         {
           albert: {
-            $base:  ` ==${getConfigForScenario(ctx).rewardsBase}`
+            $base: `== ${getConfigForScenario(ctx).rewards.baseAmount}`
           }
         }),
     },
     async (properties, context, world) => {
-      return await testScalingReward(properties, context, world, MULTIPLIERS[i]);
+      const config = getConfigForScenario(context);
+      return await testScalingReward(properties, context, world, config.rewardsScenario.multipliers[i]);
     }
   );
 }
 
 async function testScalingReward(properties: CometProperties, context: CometContext, world: World, multiplier: bigint): Promise<void | ContractReceipt> {
+  const config = getConfigForScenario(context);
   const { comet, actors, rewards } = properties;
   const { albert } = actors;
   const baseAssetAddress = await comet.baseToken();
@@ -265,11 +255,11 @@ async function testScalingReward(properties: CometProperties, context: CometCont
     [albert.address]
   );
   await newRewards.connect(albert.signer).setRewardConfigWithMultiplier(comet.address, rewardTokenAddress, multiplier);
-  await context.sourceTokens(exp(COMP_REWARDS_AMOUNT, rewardDecimals), rewardTokenAddress, newRewards.address);
+  await context.sourceTokens(exp(config.rewardsScenario.compRewardsAmount, rewardDecimals), rewardTokenAddress, newRewards.address);
 
   const albertBaseBalance = await baseAsset.balanceOf(albert.address);
   await baseAsset.approve(albert, comet.address);
-  await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: albertBaseBalance / ALBERT_BASE_DIVISOR });
+  await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: albertBaseBalance / config.rewardsScenario.albertBaseDivisor });
 
   expect(await rewardToken.balanceOf(albert.address)).to.be.equal(0n);
 
@@ -277,7 +267,7 @@ async function testScalingReward(properties: CometProperties, context: CometCont
   const albertBalance = await albert.getCometBaseBalance();
   const totalSupplyBalance = (await comet.totalSupply()).toBigInt();
 
-  await world.increaseTime(TIME_INCREMENT_ONE_DAY);
+  await world.increaseTime(config.rewardsScenario.timeIncrementOneDay);
   const preTxnTimestamp = await world.timestamp();
 
   const newRewardsOwedBefore = (await newRewards.callStatic.getRewardOwed(comet.address, albert.address)).owed.toBigInt();
@@ -299,9 +289,9 @@ async function testScalingReward(properties: CometProperties, context: CometCont
     expectedRewardsReceivedWithoutMultiplier = calculateRewardsOwed(albertBalance, totalSupplyBalance, supplySpeed, timestampDelta + timeElapsed, trackingIndexScale, rewardScale, rescaleFactorWithoutMultiplier.toBigInt());
   }
 
-  expect(timestampDelta).to.be.greaterThanOrEqual(MIN_TIME_DELTA);
-  expect(newRewardsOwedBefore).to.be.equal(expectedRewardsOwedWithoutMultiplier * multiplier / MULTIPLIER_SCALE);
-  expect(await rewardToken.balanceOf(albert.address)).to.be.equal(expectedRewardsReceivedWithoutMultiplier * multiplier / MULTIPLIER_SCALE);
+  expect(timestampDelta).to.be.greaterThanOrEqual(config.rewardsScenario.minTimeDelta);
+  expect(newRewardsOwedBefore).to.be.equal(expectedRewardsOwedWithoutMultiplier * multiplier / config.rewardsScenario.multiplierScale);
+  expect(await rewardToken.balanceOf(albert.address)).to.be.equal(expectedRewardsReceivedWithoutMultiplier * multiplier / config.rewardsScenario.multiplierScale);
   expect(newRewardsOwedAfter).to.be.equal(0n);
 
   return txn;

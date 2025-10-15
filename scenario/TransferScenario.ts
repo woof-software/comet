@@ -6,12 +6,7 @@ import { getConfigForScenario } from './utils/scenarioHelper';
 
 // Constants
 const TRANSFER_DIVISOR = 2n;
-const BASE_BALANCE_TRANSFER = 100n;
 const COLLATERAL_TRANSFER_AMOUNT = 50n;
-const BASE_BALANCE_LARGE = 1000n;
-const COLLATERAL_BALANCE_SMALL = 50n;
-const COLLATERAL_BALANCE_TINY = 0.000001;
-const BORROW_AMOUNT_LARGE = -1000n;
 const TRANSFER_MULTIPLIER_NUM = 25n;
 const TRANSFER_MULTIPLIER_DENOM = 10n;
 const TRANSFER_RESULT_NUM = 15n;
@@ -36,11 +31,11 @@ async function testTransferCollateral(context: CometContext, assetNum: number): 
   const collateralAsset = context.getAssetByAddress(assetAddress);
 
   // Albert transfers 50 units of collateral to Betty
-  const toTransfer = scale.toBigInt() * BigInt(getConfigForScenario(context).supplyCollateral) / TRANSFER_DIVISOR;
+  const toTransfer = scale.toBigInt() * BigInt(getConfigForScenario(context).supply.collateralAmount) / TRANSFER_DIVISOR;
   const txn = await albert.transferAsset({ dst: betty.address, asset: collateralAsset.address, amount: toTransfer });
 
-  expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(scale.mul(BigInt(getConfigForScenario(context).supplyCollateral) / TRANSFER_DIVISOR));
-  expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(scale.mul(BigInt(getConfigForScenario(context).supplyCollateral) / TRANSFER_DIVISOR));
+  expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(scale.mul(BigInt(getConfigForScenario(context).supply.collateralAmount) / TRANSFER_DIVISOR));
+  expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(scale.mul(BigInt(getConfigForScenario(context).supply.collateralAmount) / TRANSFER_DIVISOR));
 
   return txn;
 }
@@ -54,11 +49,11 @@ async function testTransferFromCollateral(context: CometContext, assetNum: numbe
   await albert.allow(charles, AUTHORIZATION_ENABLED);
 
   // Charles transfers 50 units of collateral from Albert to Betty
-  const toTransfer = scale.toBigInt() * BigInt(getConfigForScenario(context).supplyCollateral) / TRANSFER_DIVISOR;
+  const toTransfer = scale.toBigInt() * BigInt(getConfigForScenario(context).supply.collateralAmount) / TRANSFER_DIVISOR;
   const txn = await charles.transferAssetFrom({ src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: toTransfer });
 
-  expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(scale.mul(BigInt(getConfigForScenario(context).supplyCollateral) / TRANSFER_DIVISOR));
-  expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(scale.mul(BigInt(getConfigForScenario(context).supplyCollateral) / TRANSFER_DIVISOR));
+  expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(scale.mul(BigInt(getConfigForScenario(context).supply.collateralAmount) / TRANSFER_DIVISOR));
+  expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(scale.mul(BigInt(getConfigForScenario(context).supply.collateralAmount) / TRANSFER_DIVISOR));
 
   return txn;
 }
@@ -67,10 +62,10 @@ for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#transfer > collateral asset ${i}, enough balance`,
     {
-      filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx).transferCollateral),
+      filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx).transfer.collateralAmount),
       cometBalances: async (ctx) =>  (
         {
-          albert: { [`$asset${i}`]: getConfigForScenario(ctx).transferCollateral }
+          albert: { [`$asset${i}`]: getConfigForScenario(ctx).transfer.collateralAmount }
         }
       ),
     },
@@ -84,10 +79,10 @@ for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#transferFrom > collateral asset ${i}, enough balance`,
     {
-      filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx).transferCollateral),
+      filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx).transfer.collateralAmount),
       cometBalances: async (ctx) =>  (
         {
-          albert: { [`$asset${i}`]: getConfigForScenario(ctx).transferCollateral }
+          albert: { [`$asset${i}`]: getConfigForScenario(ctx).transfer.collateralAmount }
         }
       ),
     },
@@ -100,9 +95,9 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 scenario(
   'Comet#transfer > base asset, enough balance',
   {
-    cometBalances: {
-      albert: { $base: BASE_BALANCE_TRANSFER },
-    },
+    cometBalances: async (ctx) => ({
+      albert: { $base: getConfigForScenario(ctx).transfer.baseBalanceTransfer },
+    }),
   },
   async ({ comet, actors }, context) => {
     const { albert, betty } = actors;
@@ -124,9 +119,9 @@ scenario(
 scenario(
   'Comet#transfer > base asset, total and user balances are summed up properly',
   {
-    cometBalances: {
-      albert: { $base: BASE_BALANCE_TRANSFER },
-    },
+    cometBalances: async (ctx) => ({
+      albert: { $base: getConfigForScenario(ctx).transfer.baseBalanceTransfer },
+    }),
   },
   async ({ comet, actors }, context) => {
     const { albert, betty } = actors;
@@ -163,9 +158,9 @@ scenario(
   {
     cometBalances: async (ctx) =>  (
       {
-        albert: { $base: getConfigForScenario(ctx).transferBase, $asset0: getConfigForScenario(ctx).transferAsset1 },
-        betty: { $base: -getConfigForScenario(ctx).transferBase },
-        charles: { $base: getConfigForScenario(ctx).transferBase },
+        albert: { $base: getConfigForScenario(ctx).transfer.baseAmount, $asset0: getConfigForScenario(ctx).transfer.alternateAsset },
+        betty: { $base: -getConfigForScenario(ctx).transfer.baseAmount },
+        charles: { $base: getConfigForScenario(ctx).transfer.baseAmount },
       }
     ),
   },
@@ -179,23 +174,23 @@ scenario(
 
     expectApproximately(
       await albert.getCometBaseBalance(),
-      BigInt(getConfigForScenario(context).transferBase) * scale,
-      getInterest(BigInt(getConfigForScenario(context).transferBase) * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE
+      BigInt(getConfigForScenario(context).transfer.baseAmount) * scale,
+      getInterest(BigInt(getConfigForScenario(context).transfer.baseAmount) * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE
     );
 
     expectApproximately(
       await betty.getCometBaseBalance(),
-      -BigInt(getConfigForScenario(context).transferBase) * scale,
-      getInterest(BigInt(getConfigForScenario(context).transferBase) * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE
+      -BigInt(getConfigForScenario(context).transfer.baseAmount) * scale,
+      getInterest(BigInt(getConfigForScenario(context).transfer.baseAmount) * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE
     );
 
     // Albert with positive balance transfers to Betty with negative balance
-    const toTransfer = BigInt(getConfigForScenario(context).transferBase) * TRANSFER_MULTIPLIER_NUM / TRANSFER_MULTIPLIER_DENOM * scale;
+    const toTransfer = BigInt(getConfigForScenario(context).transfer.baseAmount) * TRANSFER_MULTIPLIER_NUM / TRANSFER_MULTIPLIER_DENOM * scale;
     const txn = await albert.transferAsset({ dst: betty.address, asset: baseAsset.address, amount: toTransfer });
 
     // Albert ends with negative balance and Betty with positive balance
-    expectApproximately(await albert.getCometBaseBalance(), -BigInt(getConfigForScenario(context).transferBase) * TRANSFER_RESULT_NUM / TRANSFER_RESULT_DENOM * scale, getInterest(BigInt(getConfigForScenario(context).transferBase) * TRANSFER_RESULT_NUM / TRANSFER_RESULT_DENOM * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE_LARGE);
-    expectApproximately(await betty.getCometBaseBalance(), BigInt(getConfigForScenario(context).transferBase) * TRANSFER_RESULT_NUM / TRANSFER_RESULT_DENOM * scale, getInterest(BigInt(getConfigForScenario(context).transferBase) * TRANSFER_RESULT_NUM / TRANSFER_RESULT_DENOM * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE_LARGE);
+    expectApproximately(await albert.getCometBaseBalance(), -BigInt(getConfigForScenario(context).transfer.baseAmount) * TRANSFER_RESULT_NUM / TRANSFER_RESULT_DENOM * scale, getInterest(BigInt(getConfigForScenario(context).transfer.baseAmount) * TRANSFER_RESULT_NUM / TRANSFER_RESULT_DENOM * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE_LARGE);
+    expectApproximately(await betty.getCometBaseBalance(), BigInt(getConfigForScenario(context).transfer.baseAmount) * TRANSFER_RESULT_NUM / TRANSFER_RESULT_DENOM * scale, getInterest(BigInt(getConfigForScenario(context).transfer.baseAmount) * TRANSFER_RESULT_NUM / TRANSFER_RESULT_DENOM * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE_LARGE);
 
     return txn;
   }
@@ -204,11 +199,11 @@ scenario(
 scenario(
   'Comet#transferFrom > withdraw to repay',
   {
-    cometBalances: {
-      albert: { $base: BASE_BALANCE_LARGE, $asset0: COLLATERAL_BALANCE_SMALL },
-      betty: { $base: BORROW_AMOUNT_LARGE },
-      charles: { $base: BASE_BALANCE_LARGE },
-    },
+    cometBalances: async (ctx) => ({
+      albert: { $base: getConfigForScenario(ctx).transfer.baseBalanceLarge, $asset0: getConfigForScenario(ctx).transfer.collateralBalanceSmall },
+      betty: { $base: getConfigForScenario(ctx).transfer.borrowAmountLarge },
+      charles: { $base: getConfigForScenario(ctx).transfer.baseBalanceLarge },
+    }),
   },
   async ({ comet, actors }, context) => {
     const { albert, betty } = actors;
@@ -217,9 +212,10 @@ scenario(
     const scale = (await comet.baseScale()).toBigInt();
     const utilization = await comet.getUtilization();
     const borrowRate = (await comet.getBorrowRate(utilization)).toBigInt();
+    const config = getConfigForScenario(context);
 
-    expectApproximately(await albert.getCometBaseBalance(), BASE_BALANCE_LARGE * scale, getInterest(BASE_BALANCE_LARGE * scale, borrowRate, BigInt(getConfigForScenario(context).interestSeconds)) + INTEREST_TOLERANCE);
-    expectApproximately(await betty.getCometBaseBalance(), BORROW_AMOUNT_LARGE * scale, getInterest(BASE_BALANCE_LARGE * scale, borrowRate, BigInt(getConfigForScenario(context).interestSeconds)) + INTEREST_TOLERANCE);
+    expectApproximately(await albert.getCometBaseBalance(), BigInt(config.transfer.baseBalanceLarge) * scale, getInterest(BigInt(config.transfer.baseBalanceLarge) * scale, borrowRate, BigInt(config.timing.interestSeconds)) + INTEREST_TOLERANCE);
+    expectApproximately(await betty.getCometBaseBalance(), BigInt(config.transfer.borrowAmountLarge) * scale, getInterest(BigInt(config.transfer.baseBalanceLarge) * scale, borrowRate, BigInt(config.timing.interestSeconds)) + INTEREST_TOLERANCE);
 
     await albert.allow(betty, AUTHORIZATION_ENABLED);
 
@@ -227,8 +223,8 @@ scenario(
     const toTransfer = TRANSFER_AMOUNT_NEAR_MAX * scale;
     const txn = await betty.transferAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: toTransfer });
 
-    expectApproximately(await albert.getCometBaseBalance(), REMAINING_BALANCE * scale, getInterest(BASE_BALANCE_LARGE * scale, borrowRate, BigInt(getConfigForScenario(context).interestSeconds)) + INTEREST_TOLERANCE);
-    expectApproximately(await betty.getCometBaseBalance(), -REMAINING_BALANCE * scale, getInterest(BASE_BALANCE_LARGE * scale, borrowRate, BigInt(getConfigForScenario(context).interestSeconds)) + INTEREST_TOLERANCE);
+    expectApproximately(await albert.getCometBaseBalance(), REMAINING_BALANCE * scale, getInterest(BigInt(config.transfer.baseBalanceLarge) * scale, borrowRate, BigInt(config.timing.interestSeconds)) + INTEREST_TOLERANCE);
+    expectApproximately(await betty.getCometBaseBalance(), -REMAINING_BALANCE * scale, getInterest(BigInt(config.transfer.baseBalanceLarge) * scale, borrowRate, BigInt(config.timing.interestSeconds)) + INTEREST_TOLERANCE);
 
     return txn;
   }
@@ -237,11 +233,11 @@ scenario(
 scenario(
   'Comet#transfer base reverts if undercollateralized',
   {
-    cometBalances: {
-      albert: { $base: BASE_BALANCE_LARGE, $asset0: COLLATERAL_BALANCE_TINY },
-      betty: { $base: BORROW_AMOUNT_LARGE },
-      charles: { $base: BASE_BALANCE_LARGE },
-    },
+    cometBalances: async (ctx) => ({
+      albert: { $base: getConfigForScenario(ctx).transfer.baseBalanceLarge, $asset0: getConfigForScenario(ctx).transfer.collateralBalanceTiny },
+      betty: { $base: getConfigForScenario(ctx).transfer.borrowAmountLarge },
+      charles: { $base: getConfigForScenario(ctx).transfer.baseBalanceLarge },
+    }),
   },
   async ({ comet, actors }, context) => {
     const { albert, betty } = actors;
@@ -250,9 +246,10 @@ scenario(
     const scale = (await comet.baseScale()).toBigInt();
     const utilization = await comet.getUtilization();
     const borrowRate = (await comet.getBorrowRate(utilization)).toBigInt();
+    const config = getConfigForScenario(context);
 
-    expectApproximately(await albert.getCometBaseBalance(), BASE_BALANCE_LARGE * scale, getInterest(BASE_BALANCE_LARGE * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE);
-    expectApproximately(await betty.getCometBaseBalance(), BORROW_AMOUNT_LARGE * scale, getInterest(BASE_BALANCE_LARGE * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE);
+    expectApproximately(await albert.getCometBaseBalance(), BigInt(config.transfer.baseBalanceLarge) * scale, getInterest(BigInt(config.transfer.baseBalanceLarge) * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE);
+    expectApproximately(await betty.getCometBaseBalance(), BigInt(config.transfer.borrowAmountLarge) * scale, getInterest(BigInt(config.transfer.baseBalanceLarge) * scale, borrowRate, INTEREST_TIME_SECONDS) + INTEREST_TOLERANCE);
 
     // Albert with positive balance transfers to Betty with negative balance
     const toTransfer = TRANSFER_OVER_LIMIT * scale;
@@ -270,11 +267,11 @@ scenario(
 scenario(
   'Comet#transferFrom base reverts if undercollateralized',
   {
-    cometBalances: {
-      albert: { $base: BASE_BALANCE_LARGE, $asset0: COLLATERAL_BALANCE_TINY },
-      betty: { $base: BORROW_AMOUNT_LARGE },
-      charles: { $base: BASE_BALANCE_LARGE },
-    },
+    cometBalances: async (ctx) => ({
+      albert: { $base: getConfigForScenario(ctx).transfer.baseBalanceLarge, $asset0: getConfigForScenario(ctx).transfer.collateralBalanceTiny },
+      betty: { $base: getConfigForScenario(ctx).transfer.borrowAmountLarge },
+      charles: { $base: getConfigForScenario(ctx).transfer.baseBalanceLarge },
+    }),
   },
   async ({ comet, actors }, context) => {
     const { albert, betty } = actors;
@@ -283,9 +280,10 @@ scenario(
     const scale = (await comet.baseScale()).toBigInt();
     const utilization = await comet.getUtilization();
     const borrowRate = (await comet.getBorrowRate(utilization)).toBigInt();
+    const config = getConfigForScenario(context);
 
-    expectApproximately(await albert.getCometBaseBalance(), BASE_BALANCE_LARGE * scale, getInterest(BASE_BALANCE_LARGE * scale, borrowRate, BigInt(getConfigForScenario(context).interestSeconds)) + INTEREST_TOLERANCE);
-    expectApproximately(await betty.getCometBaseBalance(), BORROW_AMOUNT_LARGE * scale, getInterest(BASE_BALANCE_LARGE * scale, borrowRate, BigInt(getConfigForScenario(context).interestSeconds)) + INTEREST_TOLERANCE);
+    expectApproximately(await albert.getCometBaseBalance(), BigInt(config.transfer.baseBalanceLarge) * scale, getInterest(BigInt(config.transfer.baseBalanceLarge) * scale, borrowRate, BigInt(config.timing.interestSeconds)) + INTEREST_TOLERANCE);
+    expectApproximately(await betty.getCometBaseBalance(), BigInt(config.transfer.borrowAmountLarge) * scale, getInterest(BigInt(config.transfer.baseBalanceLarge) * scale, borrowRate, BigInt(config.timing.interestSeconds)) + INTEREST_TOLERANCE);
 
     await albert.allow(betty, AUTHORIZATION_ENABLED);
 
@@ -309,8 +307,8 @@ scenario(
     cometBalances: async (ctx) =>  (
       {
         albert: {
-          $base: -getConfigForScenario(ctx).transferBase,
-          $asset0: `== ${getConfigForScenario(ctx).transferAsset}`
+          $base: -getConfigForScenario(ctx).transfer.baseAmount,
+          $asset0: `== ${getConfigForScenario(ctx).transfer.assetAmount}`
         },
         betty: { $asset0: 0 },
       }
@@ -327,7 +325,7 @@ scenario(
       albert.transferAsset({
         dst: betty.address,
         asset: collateralAsset.address,
-        amount: BigInt(getConfigForScenario(context).transferAsset) * scale,
+        amount: BigInt(getConfigForScenario(context).transfer.assetAmount) * scale,
       }),
       'NotCollateralized()'
     );
@@ -340,8 +338,8 @@ scenario(
     cometBalances: async (ctx) =>  (
       {
         albert: {
-          $base: -getConfigForScenario(ctx).transferBase,
-          $asset0: `== ${getConfigForScenario(ctx).transferAsset}`
+          $base: -getConfigForScenario(ctx).transfer.baseAmount,
+          $asset0: `== ${getConfigForScenario(ctx).transfer.assetAmount}`
         },
         betty: { $asset0: 0 },
       }
@@ -361,7 +359,7 @@ scenario(
         src: albert.address,
         dst: betty.address,
         asset: collateralAsset.address,
-        amount: BigInt(getConfigForScenario(context).transferAsset) * scale,
+        amount: BigInt(getConfigForScenario(context).transfer.assetAmount) * scale,
       }),
       'NotCollateralized()'
     );

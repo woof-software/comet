@@ -5,21 +5,13 @@ import { exp } from '../test/helpers';
 import { calldata } from '../src/deploy';
 import { impersonateAddress } from '../plugins/scenario/utils';
 import { createCrossChainProposal, matchesDeployment } from './utils';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 const MATICX_ADDRESS = '0xfa68FB4628DFF1028CFEc22b4162FCcd0d45efb6';
 const MATICX_PRICE_FEED_ADDRESS = '0x5d37E4b374E6907de8Fc7fb33EE3b0af403C7403';
 const MATICX_WHALES = {
   polygon: ['0x80cA0d8C38d2e2BcbaB66aA1648Bd1C7160500FE'],
 };
-
-const WHALE_ETH_BALANCE = '100';
-const MATICX_SUPPLY_AMOUNT = 9000;
-const BASE_BORROW_MULTIPLIER = 1000n;
-const BALANCE_TOLERANCE = 1n;
-const BORROW_COLLATERAL_FACTOR = 0.55;
-const LIQUIDATE_COLLATERAL_FACTOR = 0.60;
-const LIQUIDATION_FACTOR = 0.93;
-const MATICX_SUPPLY_CAP = 6_000_000;
 
 // TODO: add ability to run ad hoc scenarios against a single migration, to avoid needing the scenario to do all this setup of
 // listing an asset
@@ -41,6 +33,7 @@ scenario(
   ) => {
     const { albert } = actors;
     const dm = context.world.deploymentManager;
+    const config = getConfigForScenario(context);
     const maticx = await dm.existing(
       'MaticX',
       MATICX_ADDRESS,
@@ -61,12 +54,12 @@ scenario(
     await dm.hre.ethers.provider.send('hardhat_setBalance', [
       maticxWhaleSigner.address,
       dm.hre.ethers.utils.hexStripZeros(
-        dm.hre.ethers.utils.parseUnits(WHALE_ETH_BALANCE, 'ether').toHexString()
+        dm.hre.ethers.utils.parseUnits('100', 'ether').toHexString()
       ),
     ]);
     await maticx
       .connect(maticxWhaleSigner)
-      .transfer(albert.address, exp(MATICX_SUPPLY_AMOUNT, 18).toString());
+      .transfer(albert.address, exp(config.maticx.supplyAmount, 18).toString());
 
     // Execute a governance proposal to:
     // 1. Add new asset via Configurator
@@ -75,10 +68,10 @@ scenario(
       asset: maticx.address,
       priceFeed: maticxPricefeed.address,
       decimals: await maticx.decimals(),
-      borrowCollateralFactor: exp(BORROW_COLLATERAL_FACTOR, 18),
-      liquidateCollateralFactor: exp(LIQUIDATE_COLLATERAL_FACTOR, 18),
-      liquidationFactor: exp(LIQUIDATION_FACTOR, 18),
-      supplyCap: exp(MATICX_SUPPLY_CAP, 18),
+      borrowCollateralFactor: exp(config.maticx.borrowCollateralFactor, 18),
+      liquidateCollateralFactor: exp(config.maticx.liquidateCollateralFactor, 18),
+      liquidationFactor: exp(config.maticx.liquidationFactor, 18),
+      supplyCap: exp(config.maticx.supplyCap, 18),
     };
 
     const addAssetCalldata = await calldata(
@@ -105,8 +98,8 @@ scenario(
 
     // Try to supply new token and borrow base
     const baseAssetAddress = await comet.baseToken();
-    const borrowAmount = BASE_BORROW_MULTIPLIER * (await comet.baseScale()).toBigInt();
-    const supplyAmount = exp(MATICX_SUPPLY_AMOUNT, 18);
+    const borrowAmount = BigInt(config.maticx.baseBorrowMultiplier) * (await comet.baseScale()).toBigInt();
+    const supplyAmount = exp(config.maticx.supplyAmount, 18);
 
     await maticx
       .connect(albert.signer)
@@ -120,6 +113,6 @@ scenario(
     expect(await albert.getCometCollateralBalance(maticx.address)).to.be.equal(
       supplyAmount
     );
-    expect(await albert.getCometBaseBalance()).to.be.closeTo(-borrowAmount, BALANCE_TOLERANCE);
+    expect(await albert.getCometBaseBalance()).to.be.closeTo(-borrowAmount, config.maticx.balanceTolerance);
   }
 );

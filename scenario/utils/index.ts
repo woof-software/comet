@@ -38,6 +38,7 @@ import path from 'path';
 
 export const MAX_ASSETS = 24;
 export const UINT256_MAX = 2n ** 256n - 1n;
+export const UINT32_MAX = 2n ** 32n - 1n;
 
 export interface ComparativeAmount {
   val: number;

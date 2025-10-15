@@ -9,25 +9,13 @@ import {
 } from '../build/types';
 import { exp } from '../test/helpers';
 import { expectApproximately, isBulkerSupported, matchesDeployment } from './utils';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 const MAINNET_WSTETH_ADDRESS = '0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0';
 const MAINNET_STETH_ADDRESS = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84';
-const STETH_SUPPLY_AMOUNT = 0.1;
-const STANDARD_DECIMALS = 18;
-const STETH_BALANCE_TOLERANCE = 2n;
-const WSTETH_BALANCE_TOLERANCE = 1n;
-const STETH_WITHDRAWAL_TOLERANCE = 3n;
-const WSTETH_WITHDRAWAL_TOLERANCE = 1n;
-const MAX_STETH_WITHDRAWAL_TOLERANCE = 2n;
-const WSTETH_SUPPLY_CAP_SMALL = 1;
-const WSTETH_SUPPLY_CAP_MEDIUM = 2;
-const WSTETH_TOKEN_BALANCE = 2;
-const WSTETH_COMET_BALANCE = 5;
-const WSTETH_COMET_POSITION = 1;
-const SOURCE_TOKEN_BUFFER = 3n;
-const INVALID_ASSET_INDEX = -1;
 
 async function getWstETHIndex(context: any): Promise<number> {
+  const config = getConfigForScenario(context);
   const comet = await context.getComet();
   const totalAssets = await comet.numAssets();
   for (let i = 0; i < totalAssets; i++) {
@@ -36,11 +24,12 @@ async function getWstETHIndex(context: any): Promise<number> {
       return i;
     }
   }
-  return INVALID_ASSET_INDEX;
+  return config.mainnetBulker.invalidAssetIndex;
 }
 
 async function hasWstETH(context: any): Promise<boolean> {
-  return (await getWstETHIndex(context) > INVALID_ASSET_INDEX);
+  const config = getConfigForScenario(context);
+  return (await getWstETHIndex(context) > config.mainnetBulker.invalidAssetIndex);
 }
 
 scenario(
@@ -49,7 +38,7 @@ scenario(
     filter: async (ctx) => await hasWstETH(ctx) && await isBulkerSupported(ctx) && matchesDeployment(ctx, [{ network: 'mainnet' }]),
     supplyCaps: async (ctx) => (
       {
-        [`$asset${await getWstETHIndex(ctx)}`]: WSTETH_SUPPLY_CAP_SMALL,
+        [`$asset${await getWstETHIndex(ctx)}`]: getConfigForScenario(ctx).wsteth.supplyCapSmall,
       }
     ),
     tokenBalances: async (ctx) => (
@@ -59,14 +48,15 @@ scenario(
     ),
   },
   async ({ comet, actors, bulker }, context) => {
+    const config = getConfigForScenario(context);
     const { albert } = actors;
 
     const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
     const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
 
-    const toSupplyStEth = exp(STETH_SUPPLY_AMOUNT, STANDARD_DECIMALS);
+    const toSupplyStEth = exp(config.mainnetBulker.stethSupplyAmount, 18);
 
-    await context.sourceTokens(toSupplyStEth + SOURCE_TOKEN_BUFFER, new CometAsset(stETH), albert);
+    await context.sourceTokens(toSupplyStEth + config.mainnetBulker.sourceTokenBuffer, new CometAsset(stETH), albert);
 
     expect(await stETH.balanceOf(albert.address)).to.be.greaterThanOrEqual(toSupplyStEth);
 
@@ -81,11 +71,11 @@ scenario(
 
     await albert.invoke({ actions, calldata });
 
-    expectApproximately((await stETH.balanceOf(albert.address)).toBigInt(), 0n, STETH_BALANCE_TOLERANCE);
+    expectApproximately((await stETH.balanceOf(albert.address)).toBigInt(), 0n, config.mainnetBulker.stethBalanceTolerance);
     expectApproximately(
       (await comet.collateralBalanceOf(albert.address, wstETH.address)).toBigInt(),
       (await wstETH.getWstETHByStETH(toSupplyStEth)).toBigInt(),
-      WSTETH_BALANCE_TOLERANCE
+      config.mainnetBulker.wstethBalanceTolerance
     );
   }
 );
@@ -96,22 +86,23 @@ scenario(
     filter: async (ctx) => await hasWstETH(ctx) && await isBulkerSupported(ctx) && matchesDeployment(ctx, [{ network: 'mainnet' }]),
     supplyCaps: async (ctx) => (
       {
-        [`$asset${await getWstETHIndex(ctx)}`]: WSTETH_SUPPLY_CAP_MEDIUM,
+        [`$asset${await getWstETHIndex(ctx)}`]: getConfigForScenario(ctx).wsteth.supplyCapMedium,
       }
     ),
     tokenBalances: async (ctx) => (
       {
-        albert: { [`$asset${await getWstETHIndex(ctx)}`]: WSTETH_TOKEN_BALANCE },
-        $comet: { [`$asset${await getWstETHIndex(ctx)}`]: WSTETH_COMET_BALANCE },
+        albert: { [`$asset${await getWstETHIndex(ctx)}`]: getConfigForScenario(ctx).wsteth.tokenBalance },
+        $comet: { [`$asset${await getWstETHIndex(ctx)}`]: getConfigForScenario(ctx).wsteth.cometBalance },
       }
     ),
     cometBalances: async (ctx) => (
       {
-        albert: { [`$asset${await getWstETHIndex(ctx)}`]: WSTETH_COMET_POSITION }
+        albert: { [`$asset${await getWstETHIndex(ctx)}`]: getConfigForScenario(ctx).wsteth.cometPosition }
       }
     )
   },
   async ({ comet, actors, bulker }, context) => {
+    const config = getConfigForScenario(context);
     const { albert } = actors;
 
     const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
@@ -119,7 +110,7 @@ scenario(
 
     await albert.allow(bulker.address, true);
 
-    const toWithdrawStEth = (await wstETH.getStETHByWstETH(exp(WSTETH_COMET_POSITION, STANDARD_DECIMALS))).toBigInt();
+    const toWithdrawStEth = (await wstETH.getStETHByWstETH(exp(config.wsteth.cometPosition, 18))).toBigInt();
     const withdrawStEthCalldata = utils.defaultAbiCoder.encode(
       ['address', 'address', 'uint'],
       [comet.address, albert.address, toWithdrawStEth]
@@ -132,12 +123,12 @@ scenario(
     expectApproximately(
       (await stETH.balanceOf(albert.address)).toBigInt(),
       toWithdrawStEth,
-      STETH_WITHDRAWAL_TOLERANCE
+      config.mainnetBulker.stethWithdrawalTolerance
     );
     expectApproximately(
       (await comet.collateralBalanceOf(albert.address, wstETH.address)).toBigInt(),
       0n,
-      WSTETH_WITHDRAWAL_TOLERANCE
+      config.mainnetBulker.wstethWithdrawalTolerance
     );
   }
 );
@@ -148,22 +139,23 @@ scenario(
     filter: async (ctx) => await hasWstETH(ctx) && await isBulkerSupported(ctx) && matchesDeployment(ctx, [{ network: 'mainnet' }]),
     supplyCaps: async (ctx) => (
       {
-        [`$asset${await getWstETHIndex(ctx)}`]: WSTETH_SUPPLY_CAP_MEDIUM,
+        [`$asset${await getWstETHIndex(ctx)}`]: getConfigForScenario(ctx).wsteth.supplyCapMedium,
       }
     ),
     tokenBalances: async (ctx) => (
       {
-        albert: { [`$asset${await getWstETHIndex(ctx)}`]: WSTETH_TOKEN_BALANCE },
-        $comet: { [`$asset${await getWstETHIndex(ctx)}`]: WSTETH_COMET_BALANCE },
+        albert: { [`$asset${await getWstETHIndex(ctx)}`]: getConfigForScenario(ctx).wsteth.tokenBalance },
+        $comet: { [`$asset${await getWstETHIndex(ctx)}`]: getConfigForScenario(ctx).wsteth.cometBalance },
       }
     ),
     cometBalances: async (ctx) => (
       {
-        albert: { [`$asset${await getWstETHIndex(ctx)}`]: WSTETH_COMET_POSITION }
+        albert: { [`$asset${await getWstETHIndex(ctx)}`]: getConfigForScenario(ctx).wsteth.cometPosition }
       }
     )
   },
   async ({ comet, actors, bulker }, context) => {
+    const config = getConfigForScenario(context);
     const { albert } = actors;
 
     const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
@@ -182,8 +174,8 @@ scenario(
 
     expectApproximately(
       (await stETH.balanceOf(albert.address)).toBigInt(),
-      (await wstETH.getStETHByWstETH(exp(WSTETH_COMET_POSITION, STANDARD_DECIMALS))).toBigInt(),
-      MAX_STETH_WITHDRAWAL_TOLERANCE
+      (await wstETH.getStETHByWstETH(exp(config.wsteth.cometPosition, 18))).toBigInt(),
+      config.mainnetBulker.maxStethWithdrawalTolerance
     );
     expect(await comet.collateralBalanceOf(albert.address, wstETH.address)).to.be.equal(0n);
   }
@@ -194,12 +186,13 @@ scenario(
   {
     filter: async (ctx) => await hasWstETH(ctx) && await isBulkerSupported(ctx) && matchesDeployment(ctx, [{ network: 'mainnet' }]),
   },
-  async ({ comet, actors }) => {
+  async ({ comet, actors }, context) => {
+    const config = getConfigForScenario(context);
     const { betty } = actors;
 
     const supplyGalacticCreditsCalldata = utils.defaultAbiCoder.encode(
       ['address', 'address', 'uint'],
-      [comet.address, betty.address, exp(WSTETH_COMET_POSITION, STANDARD_DECIMALS)]
+      [comet.address, betty.address, exp(config.wsteth.cometPosition, 189)]
     );
     const calldata = [supplyGalacticCreditsCalldata];
     const actions = [

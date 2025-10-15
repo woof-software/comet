@@ -4,23 +4,11 @@ import { BigNumberish, constants, utils } from 'ethers';
 import { exp } from '../test/helpers';
 import { FaucetToken } from '../build/types';
 import { calldata } from '../src/deploy';
-import { expectBase, isBridgedDeployment } from './utils';
-
-const UINT32_MAX = 2 ** 32 - 1;
-const NEW_FUNCTION_EXPECTED_VALUE = 101n;
-const MIN_BASE_BALANCE = '>= 1000';
-const BASE_PRICE = 1;
-const DOGECOIN_TOTAL_SUPPLY = 1_000_000;
-const DOGECOIN_DECIMALS = 8;
-const DOGECOIN_PRICE = 1_000;
-const DOGECOIN_ALLOCATE_AMOUNT = 100;
-const BORROW_COLLATERAL_FACTOR = 0.8;
-const LIQUIDATE_COLLATERAL_FACTOR = 0.85;
-const LIQUIDATION_FACTOR = 0.95;
-const DOGECOIN_SUPPLY_CAP = 1_000;
-const BASE_BORROW_MULTIPLIER = 1000n;
+import { expectBase, isBridgedDeployment, UINT32_MAX } from './utils';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => {
+  
   // For this scenario, we will be using the value of LiquidatorPoints.numAbsorbs for address ZERO to test that initialize has been called
   expect((await comet.liquidatorPoints(constants.AddressZero)).numAbsorbs).to.be.equal(0);
 
@@ -46,7 +34,7 @@ scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => 
   expect((await comet.liquidatorPoints(constants.AddressZero)).numAbsorbs).to.be.equal(UINT32_MAX);
 });
 
-scenario('upgrade Comet implementation and initialize using deployUpgradeToAndCall', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => {
+scenario('upgrade Comet implementation and initialize using deployUpgradeToAndCall', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => { 
   // For this scenario, we will be using the value of LiquidatorPoints.numAbsorbs for address ZERO to test that initialize has been called
   expect((await comet.liquidatorPoints(constants.AddressZero)).numAbsorbs).to.be.equal(0);
 
@@ -79,6 +67,7 @@ scenario('upgrade Comet implementation and initialize using deployUpgradeToAndCa
 });
 
 scenario('upgrade Comet implementation and call new function', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin, actors }, context) => {
+  const config = getConfigForScenario(context);
   const { signer } = actors;
 
   // Deploy new version of Comet Factory
@@ -100,20 +89,27 @@ scenario('upgrade Comet implementation and call new function', {filter: async (c
 
   // Call new functions on Comet
   await modifiedComet.initialize(constants.AddressZero);
-  expect(await modifiedComet.newFunction()).to.be.equal(NEW_FUNCTION_EXPECTED_VALUE);
+  expect(await modifiedComet.newFunction()).to.be.equal(config.governance.newFunctionExpectedValue);
 });
 
 scenario('add new asset',
   {
     filter: async (ctx) => !isBridgedDeployment(ctx),
-    tokenBalances: {
-      $comet: { $base: MIN_BASE_BALANCE },
+    tokenBalances: async (ctx) => {
+      const config = getConfigForScenario(ctx);
+      return {
+        $comet: { $base: config.governance.minBaseBalance },
+      };
     },
-    prices: {
-      $base: BASE_PRICE
+    prices: async (ctx) => {
+      const config = getConfigForScenario(ctx);
+      return {
+        $base: config.governance.basePrice
+      };
     }
   },
   async ({ comet, configurator, proxyAdmin, actors }, context) => {
+    const config = getConfigForScenario(context);
     const { albert } = actors;
 
     // Deploy new token and pricefeed
@@ -121,18 +117,18 @@ scenario('add new asset',
     const dogecoin = await dm.deploy<FaucetToken, [string, string, BigNumberish, string]>(
       'DOGE',
       'test/FaucetToken.sol',
-      [exp(DOGECOIN_TOTAL_SUPPLY, DOGECOIN_DECIMALS).toString(), 'Dogecoin', DOGECOIN_DECIMALS, 'DOGE'],
+      [exp(config.dogecoin.totalSupply, config.dogecoin.decimals).toString(), 'Dogecoin', config.dogecoin.decimals, 'DOGE'],
       true
     );
     const dogecoinPricefeed = await dm.deploy(
       'DOGE:priceFeed',
       'test/SimplePriceFeed.sol',
-      [exp(DOGECOIN_PRICE, DOGECOIN_DECIMALS).toString(), DOGECOIN_DECIMALS],
+      [exp(config.dogecoin.price, config.dogecoin.decimals).toString(), config.dogecoin.decimals],
       true
     );
 
     // Allocate some tokens to Albert
-    await dogecoin.allocateTo(albert.address, exp(DOGECOIN_ALLOCATE_AMOUNT, DOGECOIN_DECIMALS));
+    await dogecoin.allocateTo(albert.address, exp(config.dogecoin.allocateAmount, config.dogecoin.decimals));
 
     // Execute a governance proposal to:
     // 1. Add new asset via Configurator
@@ -141,10 +137,10 @@ scenario('add new asset',
       asset: dogecoin.address,
       priceFeed: dogecoinPricefeed.address,
       decimals: await dogecoin.decimals(),
-      borrowCollateralFactor: exp(BORROW_COLLATERAL_FACTOR, DOGECOIN_DECIMALS),
-      liquidateCollateralFactor: exp(LIQUIDATE_COLLATERAL_FACTOR, DOGECOIN_DECIMALS),
-      liquidationFactor: exp(LIQUIDATION_FACTOR, DOGECOIN_DECIMALS),
-      supplyCap: exp(DOGECOIN_SUPPLY_CAP, DOGECOIN_DECIMALS),
+      borrowCollateralFactor: exp(config.dogecoin.borrowCollateralFactor, 18),
+      liquidateCollateralFactor: exp(config.dogecoin.liquidateCollateralFactor, 18),
+      liquidationFactor: exp(config.dogecoin.liquidationFactor, 18),
+      supplyCap: exp(config.dogecoin.supplyCap, config.dogecoin.decimals),
     };
 
     const addAssetCalldata = await calldata(configurator.populateTransaction.addAsset(comet.address, newAssetConfig));
@@ -158,11 +154,11 @@ scenario('add new asset',
 
     // Try to supply new token and borrow base
     const baseAssetAddress = await comet.baseToken();
-    const borrowAmount = BASE_BORROW_MULTIPLIER * (await comet.baseScale()).toBigInt();
-    await dogecoin.connect(albert.signer).approve(comet.address, exp(DOGECOIN_ALLOCATE_AMOUNT, DOGECOIN_DECIMALS));
-    await albert.supplyAsset({ asset: dogecoin.address, amount: exp(DOGECOIN_ALLOCATE_AMOUNT, DOGECOIN_DECIMALS) });
+    const borrowAmount = config.governance.baseBorrowMultiplier * (await comet.baseScale()).toBigInt();
+    await dogecoin.connect(albert.signer).approve(comet.address, exp(config.dogecoin.allocateAmount, config.dogecoin.decimals));
+    await albert.supplyAsset({ asset: dogecoin.address, amount: exp(config.dogecoin.allocateAmount, config.dogecoin.decimals) });
     await albert.withdrawAsset({ asset: baseAssetAddress, amount: borrowAmount });
 
-    expect(await albert.getCometCollateralBalance(dogecoin.address)).to.be.equal(exp(DOGECOIN_ALLOCATE_AMOUNT, DOGECOIN_DECIMALS));
+    expect(await albert.getCometCollateralBalance(dogecoin.address)).to.be.equal(exp(config.dogecoin.allocateAmount, config.dogecoin.decimals));
     expectBase(await albert.getCometBaseBalance(), -borrowAmount);
   });
