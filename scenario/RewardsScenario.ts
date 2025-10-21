@@ -44,7 +44,7 @@ scenario(
     const rewardScale = exp(1, await rewardToken.decimals());
 
     await baseAsset.approve(albert, comet.address);
-    await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: config.rewardsScenario.baseSupplyAmount * baseScale });
+    await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: config.rewards.baseSupplyAmount * baseScale });
 
     expect(await rewardToken.balanceOf(albert.address)).to.be.equal(0n);
 
@@ -52,7 +52,7 @@ scenario(
     const albertBalance = await albert.getCometBaseBalance();
     const totalSupplyBalance = (await comet.totalSupply()).toBigInt();
 
-    await world.increaseTime(config.rewardsScenario.timeIncrementOneDay);
+    await world.increaseTime(Number(config.common.timing.oneDay));
     const preTxnTimestamp = await world.timestamp();
 
     const rewardsOwedBefore = (await rewards.callStatic.getRewardOwed(comet.address, albert.address)).owed.toBigInt();
@@ -74,7 +74,7 @@ scenario(
       expectedRewardsReceived = calculateRewardsOwed(albertBalance, totalSupplyBalance, supplySpeed, timestampDelta + timeElapsed, trackingIndexScale, rewardScale, rescaleFactor.toBigInt());
     }
 
-    expect(timestampDelta).to.be.greaterThanOrEqual(config.rewardsScenario.minTimeDelta);
+    expect(timestampDelta).to.be.greaterThanOrEqual(config.rewards.minTimeDelta);
     expect(rewardsOwedBefore).to.be.equal(expectedRewardsOwed);
     expect(await rewardToken.balanceOf(albert.address)).to.be.equal(expectedRewardsReceived);
     expect(rewardsOwedAfter).to.be.equal(0n);
@@ -108,7 +108,7 @@ scenario(
 
     await albert.allow(betty, true);
     await baseAsset.approve(albert, comet.address);
-    await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: config.rewardsScenario.baseSupplyAmount * baseScale });
+    await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: config.rewards.baseSupplyAmount * baseScale });
 
     expect(await rewardToken.balanceOf(albert.address)).to.be.equal(0n);
 
@@ -116,7 +116,7 @@ scenario(
     const albertBalance = await albert.getCometBaseBalance();
     const totalSupplyBalance = (await comet.totalSupply()).toBigInt();
 
-    await world.increaseTime(config.rewardsScenario.timeIncrementOneDay);
+    await world.increaseTime(Number(config.common.timing.oneDay));
     const preTxnTimestamp = await world.timestamp();
 
     const rewardsOwedBefore = (await rewards.callStatic.getRewardOwed(comet.address, albert.address)).owed.toBigInt();
@@ -138,7 +138,7 @@ scenario(
       expectedRewardsReceived = calculateRewardsOwed(albertBalance, totalSupplyBalance, supplySpeed, timestampDelta + timeElapsed, trackingIndexScale, rewardScale, rescaleFactor.toBigInt());
     }
 
-    expect(timestampDelta).to.be.greaterThanOrEqual(config.rewardsScenario.minTimeDelta);
+    expect(timestampDelta).to.be.greaterThanOrEqual(config.rewards.minTimeDelta);
     expect(rewardsOwedBefore).to.be.equal(expectedRewardsOwed);
     expect(await rewardToken.balanceOf(betty.address)).to.be.equal(expectedRewardsReceived);
     expect(rewardsOwedAfter).to.be.equal(0n);
@@ -183,7 +183,7 @@ scenario(
     const albertBalance = await albert.getCometBaseBalance();
     const totalBorrowBalance = (await comet.totalBorrow()).toBigInt();
 
-    await world.increaseTime(config.rewardsScenario.timeIncrementOneDay);
+    await world.increaseTime(Number(config.common.timing.oneDay));
     const preTxnTimestamp = await world.timestamp();
 
     const rewardsOwedBefore = (await rewards.callStatic.getRewardOwed(comet.address, albert.address)).owed.toBigInt();
@@ -205,7 +205,7 @@ scenario(
       expectedRewardsReceived = calculateRewardsOwed(-albertBalance, totalBorrowBalance, borrowSpeed, timestampDelta + timeElapsed, trackingIndexScale, rewardScale, rescaleFactor.toBigInt());
     }
 
-    expect(timestampDelta).to.be.greaterThanOrEqual(config.rewardsScenario.minTimeDelta);
+    expect(timestampDelta).to.be.greaterThanOrEqual(config.rewards.minTimeDelta);
     expect(rewardsOwedBefore).to.be.equal(expectedRewardsOwed);
     expect(await rewardToken.balanceOf(albert.address)).to.be.equal(expectedRewardsReceived);
     expect(rewardsOwedAfter).to.be.equal(0n);
@@ -228,7 +228,7 @@ for (let i = 0; i < 5; i++) {
     },
     async (properties, context, world) => {
       const config = getConfigForScenario(context);
-      return await testScalingReward(properties, context, world, config.rewardsScenario.multipliers[i]);
+      return await testScalingReward(properties, context, world, config.rewards.multipliers[i]);
     }
   );
 }
@@ -255,11 +255,11 @@ async function testScalingReward(properties: CometProperties, context: CometCont
     [albert.address]
   );
   await newRewards.connect(albert.signer).setRewardConfigWithMultiplier(comet.address, rewardTokenAddress, multiplier);
-  await context.sourceTokens(exp(config.rewardsScenario.compRewardsAmount, rewardDecimals), rewardTokenAddress, newRewards.address);
+  await context.sourceTokens(exp(Number(config.rewards.compRewardsAmount), rewardDecimals), rewardTokenAddress, newRewards.address);
 
   const albertBaseBalance = await baseAsset.balanceOf(albert.address);
   await baseAsset.approve(albert, comet.address);
-  await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: albertBaseBalance / config.rewardsScenario.albertBaseDivisor });
+  await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: albertBaseBalance / config.rewards.albertBaseDivisor });
 
   expect(await rewardToken.balanceOf(albert.address)).to.be.equal(0n);
 
@@ -267,7 +267,7 @@ async function testScalingReward(properties: CometProperties, context: CometCont
   const albertBalance = await albert.getCometBaseBalance();
   const totalSupplyBalance = (await comet.totalSupply()).toBigInt();
 
-  await world.increaseTime(config.rewardsScenario.timeIncrementOneDay);
+  await world.increaseTime(Number(config.common.timing.oneDay));
   const preTxnTimestamp = await world.timestamp();
 
   const newRewardsOwedBefore = (await newRewards.callStatic.getRewardOwed(comet.address, albert.address)).owed.toBigInt();
@@ -289,9 +289,9 @@ async function testScalingReward(properties: CometProperties, context: CometCont
     expectedRewardsReceivedWithoutMultiplier = calculateRewardsOwed(albertBalance, totalSupplyBalance, supplySpeed, timestampDelta + timeElapsed, trackingIndexScale, rewardScale, rescaleFactorWithoutMultiplier.toBigInt());
   }
 
-  expect(timestampDelta).to.be.greaterThanOrEqual(config.rewardsScenario.minTimeDelta);
-  expect(newRewardsOwedBefore).to.be.equal(expectedRewardsOwedWithoutMultiplier * multiplier / config.rewardsScenario.multiplierScale);
-  expect(await rewardToken.balanceOf(albert.address)).to.be.equal(expectedRewardsReceivedWithoutMultiplier * multiplier / config.rewardsScenario.multiplierScale);
+  expect(timestampDelta).to.be.greaterThanOrEqual(config.rewards.minTimeDelta);
+  expect(newRewardsOwedBefore).to.be.equal(expectedRewardsOwedWithoutMultiplier * multiplier / config.rewards.multiplierScale);
+  expect(await rewardToken.balanceOf(albert.address)).to.be.equal(expectedRewardsReceivedWithoutMultiplier * multiplier / config.rewards.multiplierScale);
   expect(newRewardsOwedAfter).to.be.equal(0n);
 
   return txn;

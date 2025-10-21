@@ -1,7 +1,6 @@
 import { scenario } from './context/CometContext';
 import { expect } from 'chai';
 import { utils } from 'ethers';
-import { exp } from '../test/helpers';
 import { calldata } from '../src/deploy';
 import { impersonateAddress } from '../plugins/scenario/utils';
 import { createCrossChainProposal, matchesDeployment } from './utils';
@@ -34,6 +33,7 @@ scenario(
     const { albert } = actors;
     const dm = context.world.deploymentManager;
     const config = getConfigForScenario(context);
+    
     const maticx = await dm.existing(
       'MaticX',
       MATICX_ADDRESS,
@@ -57,9 +57,11 @@ scenario(
         dm.hre.ethers.utils.parseUnits('100', 'ether').toHexString()
       ),
     ]);
+    
+    // Transfer MaticX to Albert - using config value
     await maticx
       .connect(maticxWhaleSigner)
-      .transfer(albert.address, exp(config.maticx.supplyAmount, 18).toString());
+      .transfer(albert.address, config.assets.maticx.supplyAmount.toString());
 
     // Execute a governance proposal to:
     // 1. Add new asset via Configurator
@@ -68,10 +70,10 @@ scenario(
       asset: maticx.address,
       priceFeed: maticxPricefeed.address,
       decimals: await maticx.decimals(),
-      borrowCollateralFactor: exp(config.maticx.borrowCollateralFactor, 18),
-      liquidateCollateralFactor: exp(config.maticx.liquidateCollateralFactor, 18),
-      liquidationFactor: exp(config.maticx.liquidationFactor, 18),
-      supplyCap: exp(config.maticx.supplyCap, 18),
+      borrowCollateralFactor: config.assets.maticx.borrowCollateralFactor,
+      liquidateCollateralFactor: config.assets.maticx.liquidateCollateralFactor,
+      liquidationFactor: config.assets.maticx.liquidationFactor,
+      supplyCap: config.assets.maticx.supplyCap,
     };
 
     const addAssetCalldata = await calldata(
@@ -98,8 +100,8 @@ scenario(
 
     // Try to supply new token and borrow base
     const baseAssetAddress = await comet.baseToken();
-    const borrowAmount = BigInt(config.maticx.baseBorrowMultiplier) * (await comet.baseScale()).toBigInt();
-    const supplyAmount = exp(config.maticx.supplyAmount, 18);
+    const borrowAmount = config.assets.maticx.baseBorrowMultiplier * (await comet.baseScale()).toBigInt();
+    const supplyAmount = config.assets.maticx.supplyAmount;
 
     await maticx
       .connect(albert.signer)
@@ -113,6 +115,9 @@ scenario(
     expect(await albert.getCometCollateralBalance(maticx.address)).to.be.equal(
       supplyAmount
     );
-    expect(await albert.getCometBaseBalance()).to.be.closeTo(-borrowAmount, config.maticx.balanceTolerance);
+    expect(await albert.getCometBaseBalance()).to.be.closeTo(
+      -borrowAmount, 
+      config.assets.maticx.balanceTolerance
+    );
   }
 );

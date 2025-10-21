@@ -1,21 +1,6 @@
 import { scenario } from './context/CometContext';
-import { exp } from '../test/helpers';
 import { expect } from 'chai';
-
-const ETH_REPAY_AMOUNT = 2;
-const ETH_BORROW_AMOUNT = 1;
-const ETH_FINAL_REPAY_AMOUNT = 1;
-
-const DAI_MINT_REDEEM_AMOUNT = 1000;
-
-const USDC_MINT_REDEEM_AMOUNT = 20_000;
-
-const WBTC_APPROVE_AMOUNT = 1;
-const WBTC_REPAY_BEHALF_AMOUNT = 0.1;
-const WBTC_BORROW_AMOUNT = 0.2;
-const WBTC_REPAY_AMOUNT = 0.2;
-
-const BORROW_TOLERANCE = 1.6e-6;
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 // Ethereum addresses
 const CETH_WHALE_ADDRESS = '0xeb312f4921aebbe99facacfe92f22b942cbd7599';
@@ -41,15 +26,16 @@ scenario.skip(
   'Compound v2 > allows a user to repay, borrow, repay cETH',
   {},
   async (_, context, world) => {
+    const config = getConfigForScenario(context);
     const dm = context.world.deploymentManager;
     const whale = await world.impersonateAddress(CETH_WHALE_ADDRESS);
     const cETH = await dm.existing('cETH', CETH_ADDRESS);
     const borrowBefore = await cETH.callStatic.borrowBalanceCurrent(whale.address);
-    await cETH.connect(whale).repayBorrow({value: exp(ETH_REPAY_AMOUNT, 18)});
-    await cETH.connect(whale).borrow(exp(ETH_BORROW_AMOUNT, 18));
-    await cETH.connect(whale).repayBorrow({value: exp(ETH_FINAL_REPAY_AMOUNT, 18)});
+    await cETH.connect(whale).repayBorrow({value: config.compoundV2.eth.repayAmount,});
+    await cETH.connect(whale).borrow(config.compoundV2.eth.borrowAmount);
+    await cETH.connect(whale).repayBorrow({value: config.compoundV2.eth.finalRepayAmount});
     const borrowAfter = await cETH.callStatic.borrowBalanceCurrent(whale.address);
-    expect(borrowAfter.toBigInt() - borrowBefore.toBigInt()).to.be.lt(exp(BORROW_TOLERANCE, 18));
+    expect(borrowAfter.toBigInt() - borrowBefore.toBigInt()).to.be.lt(config.compoundV2.borrowTolerance);
   }
 );
 
@@ -57,13 +43,14 @@ scenario.skip(
   'Compound v2 > allows a user to mint & redeem cDAI',
   {},
   async (_, context, world) => {
+    const config = getConfigForScenario(context);
     const dm = context.world.deploymentManager;
     const whale = await world.impersonateAddress(DAI_WHALE_ADDRESS);
     const DAI = await dm.existing('DAI', DAI_ADDRESS);
     const cDAI = await dm.existing('cDAI', CDAI_ADDRESS);
-    await DAI.connect(whale).approve(cDAI.address, exp(DAI_MINT_REDEEM_AMOUNT, 18));
-    await cDAI.connect(whale).mint(exp(DAI_MINT_REDEEM_AMOUNT, 18));
-    await cDAI.connect(whale).redeemUnderlying(exp(DAI_MINT_REDEEM_AMOUNT, 818));
+    await DAI.connect(whale).approve(cDAI.address, config.compoundV2.dai.mintRedeemAmount);
+    await cDAI.connect(whale).mint(config.compoundV2.dai.mintRedeemAmount);
+    await cDAI.connect(whale).redeemUnderlying(config.compoundV2.dai.mintRedeemAmount);
   }
 );
 
@@ -71,13 +58,14 @@ scenario.skip(
   'Compound v2 > allows a user to mint & redeem cUSDC',
   {},
   async (_, context, world) => {
+    const config = getConfigForScenario(context);
     const dm = context.world.deploymentManager;
     const whale = await world.impersonateAddress(USDC_WHALE_ADDRESS);
     const USDC = await dm.existing('USDC', USDC_ADDRESS);
     const cUSDC = await dm.existing('cUSDC', CUSDC_ADDRESS);
-    await USDC.connect(whale).approve(cUSDC.address, exp(USDC_MINT_REDEEM_AMOUNT, 18));
-    await cUSDC.connect(whale).mint(exp(USDC_MINT_REDEEM_AMOUNT, 18));
-    await cUSDC.connect(whale).redeemUnderlying(exp(USDC_MINT_REDEEM_AMOUNT, 18));
+    await USDC.connect(whale).approve(cUSDC.address, config.compoundV2.usdc.mintRedeemAmount);
+    await cUSDC.connect(whale).mint(config.compoundV2.usdc.mintRedeemAmount);
+    await cUSDC.connect(whale).redeemUnderlying(config.compoundV2.usdc.mintRedeemAmount);
   }
 );
 
@@ -85,17 +73,18 @@ scenario.skip(
   'Compound v2 > allows a user to repay, borrow, repay cWBTC2',
   {},
   async (_, context, world) => {
+    const config = getConfigForScenario(context);
     const dm = context.world.deploymentManager;
     const borrower = await world.impersonateAddress(WBTC_BORROWER_ADDRESS);
     const whale = await world.impersonateAddress(WBTC_WHALE_ADDRESS);
     const WBTC = await dm.existing('WBTC', WBTC_ADDRESS);
     const cWBTC2 = await dm.existing('cWBTC2', CWBTC2_ADDRESS);
     const borrowBefore = await cWBTC2.callStatic.borrowBalanceCurrent(borrower.address);
-    await WBTC.connect(whale).approve(cWBTC2.address, exp(WBTC_APPROVE_AMOUNT, 8));
-    await cWBTC2.connect(whale).repayBorrowBehalf(borrower.address, exp(WBTC_REPAY_BEHALF_AMOUNT, 8));
-    await cWBTC2.connect(borrower).borrow(exp(WBTC_BORROW_AMOUNT, 8));
-    await cWBTC2.connect(borrower).repayBorrow(exp(WBTC_REPAY_AMOUNT, 8));
+    await WBTC.connect(whale).approve(cWBTC2.address, config.compoundV2.wbtc.approveAmount);
+    await cWBTC2.connect(whale).repayBorrowBehalf(borrower.address, config.compoundV2.wbtc.repayBehalfAmount);
+    await cWBTC2.connect(borrower).borrow(config.compoundV2.wbtc.borrowAmount);
+    await cWBTC2.connect(borrower).repayBorrow(config.compoundV2.wbtc.repayAmount);
     const borrowAfter = await cWBTC2.callStatic.borrowBalanceCurrent(borrower.address);
-    expect(borrowAfter.toBigInt() - borrowBefore.toBigInt()).to.be.lt(exp(BORROW_TOLERANCE, 18));
+    expect(borrowAfter.toBigInt() - borrowBefore.toBigInt()).to.be.lt(config.compoundV2.borrowTolerance);
   }
 );

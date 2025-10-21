@@ -98,13 +98,13 @@ scenario('add new asset',
     tokenBalances: async (ctx) => {
       const config = getConfigForScenario(ctx);
       return {
-        $comet: { $base: config.governance.minBaseBalance },
+        $comet: { $base: `>=${config.governance.minBaseBalance}` },
       };
     },
     prices: async (ctx) => {
       const config = getConfigForScenario(ctx);
       return {
-        $base: config.governance.basePrice
+        $base: Number(config.governance.basePrice)
       };
     }
   },
@@ -117,18 +117,18 @@ scenario('add new asset',
     const dogecoin = await dm.deploy<FaucetToken, [string, string, BigNumberish, string]>(
       'DOGE',
       'test/FaucetToken.sol',
-      [exp(config.dogecoin.totalSupply, config.dogecoin.decimals).toString(), 'Dogecoin', config.dogecoin.decimals, 'DOGE'],
+      [exp(Number(config.assets.dogecoin.totalSupply), Number(config.assets.dogecoin.decimals)).toString(), 'Dogecoin', Number(config.assets.dogecoin.decimals), 'DOGE'],
       true
     );
     const dogecoinPricefeed = await dm.deploy(
       'DOGE:priceFeed',
       'test/SimplePriceFeed.sol',
-      [exp(config.dogecoin.price, config.dogecoin.decimals).toString(), config.dogecoin.decimals],
+      [exp(Number(config.assets.dogecoin.price), Number(config.assets.dogecoin.decimals)).toString(), Number(config.assets.dogecoin.decimals)],
       true
     );
 
     // Allocate some tokens to Albert
-    await dogecoin.allocateTo(albert.address, exp(config.dogecoin.allocateAmount, config.dogecoin.decimals));
+    await dogecoin.allocateTo(albert.address, exp(Number(config.assets.dogecoin.allocateAmount), Number(config.assets.dogecoin.decimals)));
 
     // Execute a governance proposal to:
     // 1. Add new asset via Configurator
@@ -137,10 +137,10 @@ scenario('add new asset',
       asset: dogecoin.address,
       priceFeed: dogecoinPricefeed.address,
       decimals: await dogecoin.decimals(),
-      borrowCollateralFactor: exp(config.dogecoin.borrowCollateralFactor, 18),
-      liquidateCollateralFactor: exp(config.dogecoin.liquidateCollateralFactor, 18),
-      liquidationFactor: exp(config.dogecoin.liquidationFactor, 18),
-      supplyCap: exp(config.dogecoin.supplyCap, config.dogecoin.decimals),
+      borrowCollateralFactor: config.assets.dogecoin.borrowCollateralFactor,
+      liquidateCollateralFactor: config.assets.dogecoin.liquidateCollateralFactor,
+      liquidationFactor: config.assets.dogecoin.liquidationFactor,
+      supplyCap: exp(Number(config.assets.dogecoin.supplyCap), Number(config.assets.dogecoin.decimals)),
     };
 
     const addAssetCalldata = await calldata(configurator.populateTransaction.addAsset(comet.address, newAssetConfig));
@@ -155,10 +155,10 @@ scenario('add new asset',
     // Try to supply new token and borrow base
     const baseAssetAddress = await comet.baseToken();
     const borrowAmount = config.governance.baseBorrowMultiplier * (await comet.baseScale()).toBigInt();
-    await dogecoin.connect(albert.signer).approve(comet.address, exp(config.dogecoin.allocateAmount, config.dogecoin.decimals));
-    await albert.supplyAsset({ asset: dogecoin.address, amount: exp(config.dogecoin.allocateAmount, config.dogecoin.decimals) });
+    await dogecoin.connect(albert.signer).approve(comet.address, exp(Number(config.assets.dogecoin.allocateAmount), Number(config.assets.dogecoin.decimals)));
+    await albert.supplyAsset({ asset: dogecoin.address, amount: exp(Number(config.assets.dogecoin.allocateAmount), Number(config.assets.dogecoin.decimals)) });
     await albert.withdrawAsset({ asset: baseAssetAddress, amount: borrowAmount });
 
-    expect(await albert.getCometCollateralBalance(dogecoin.address)).to.be.equal(exp(config.dogecoin.allocateAmount, config.dogecoin.decimals));
+    expect(await albert.getCometCollateralBalance(dogecoin.address)).to.be.equal(exp(Number(config.assets.dogecoin.allocateAmount), Number(config.assets.dogecoin.decimals)));
     expectBase(await albert.getCometBaseBalance(), -borrowAmount);
   });
