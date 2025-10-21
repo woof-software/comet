@@ -6,7 +6,7 @@ import { getConfigForScenario } from './utils/scenarioHelper';
 scenario(
   'Comet#withdrawReserves > governor withdraws reserves',
   {
-    reserves: await (async (ctx) => { return `>= ${getConfigForScenario(ctx).withdraw.baseAmount * 10}`; })(),
+    reserves: ((ctx) => { return `>= ${getConfigForScenario(ctx).withdraw.baseAmount * 10n}`; })(),
     tokenBalances: {
       albert: { $base: `== 0` },
     },

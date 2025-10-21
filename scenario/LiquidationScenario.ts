@@ -10,12 +10,12 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidation.standardBase
+          $base: getConfigForScenario(ctx).liquidation.base.standard
         }
       }),
     cometBalances: async (ctx) => ({
-      albert: { $base: -getConfigForScenario(ctx).liquidation.standardBase },
-      betty: { $base: getConfigForScenario(ctx).liquidation.standardBase }
+      albert: { $base: -getConfigForScenario(ctx).liquidation.base.standard },
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
     }),
   },
   async ({ comet, actors }, context, world) => {
@@ -27,7 +27,7 @@ scenario(
     const timeBeforeLiquidation = await timeUntilUnderwater({
       comet,
       actor: albert,
-      fudgeFactor: config.liquidationScenario.fudgeFactorLong
+      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
     });
 
     while(!(await comet.isLiquidatable(albert.address))) {
@@ -35,7 +35,7 @@ scenario(
       await world.increaseTime(timeBeforeLiquidation);
     }
 
-    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(config.liquidation.standardBase) / 100n * baseScale.toBigInt() }); // force accrue
+    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(config.liquidation.base.standard) / 100n * baseScale.toBigInt() }); // force accrue
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
   }
@@ -45,14 +45,14 @@ scenario(
   'Comet#liquidation > allows liquidation of underwater positions with token fees',
   {
     tokenBalances: async (ctx) => ({
-      $comet: { $base: getConfigForScenario(ctx).liquidation.mediumBase }
+      $comet: { $base: getConfigForScenario(ctx).liquidation.base.medium }
     }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.mediumBase,
-        $asset0: getConfigForScenario(ctx).liquidation.tinyAsset
+        $base: -getConfigForScenario(ctx).liquidation.base.medium,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.tiny
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.smallAsset }
+      betty: { $base: getConfigForScenario(ctx).liquidation.asset.small }
     }),
     filter: async (ctx) => matchesDeployment(ctx, [{ network: 'mainnet', deployment: 'usdt' }]),
   },
@@ -79,7 +79,7 @@ scenario(
       await timeUntilUnderwater({
         comet,
         actor: albert,
-        fudgeFactor: config.liquidationScenario.fudgeFactorShort
+        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
       })
     );
 
@@ -111,12 +111,12 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidation.standardBase
+          $base: getConfigForScenario(ctx).liquidation.base.standard
         }
       }),
     cometBalances: async (ctx) => ({
-      albert: { $base: -getConfigForScenario(ctx).liquidation.standardBase },
-      betty: { $base: getConfigForScenario(ctx).liquidation.standardBase }
+      albert: { $base: -getConfigForScenario(ctx).liquidation.base.standard },
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
     }),
     pause: {
       absorbPaused: true,
@@ -132,7 +132,7 @@ scenario(
       await timeUntilUnderwater({
         comet,
         actor: albert,
-        fudgeFactor: config.liquidationScenario.fudgeFactorShort
+        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
       })
     );
 
@@ -151,15 +151,15 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidation.standardBase
+          $base: getConfigForScenario(ctx).liquidation.base.standard
         }
       }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.standardBase,
-        $asset0: getConfigForScenario(ctx).liquidation.standardAsset
+        $base: -getConfigForScenario(ctx).liquidation.base.standard,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.standard
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.standardBase }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
     }),
   },
   async ({ comet, actors }, context, world) => {
@@ -169,7 +169,7 @@ scenario(
     const timeBeforeLiquidation = await timeUntilUnderwater({
       comet,
       actor: albert,
-      fudgeFactor: config.liquidationScenario.fudgeFactorLong
+      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
     });
 
     while(!(await comet.isLiquidatable(albert.address))) {
@@ -206,13 +206,13 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidation.standardBase
+          $base: getConfigForScenario(ctx).liquidation.base.standard
         }
       }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.standardBase,
-        $asset0: getConfigForScenario(ctx).liquidation.standardAsset
+        $base: -getConfigForScenario(ctx).liquidation.base.standard,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.standard
       }
     }),
   },
@@ -224,7 +224,7 @@ scenario(
       Math.round(await timeUntilUnderwater({
         comet,
         actor: albert,
-      }) * config.liquidationScenario.timeAdjustmentMultiplier)
+      }) * Number(config.liquidationBot.scenario.timeAdjustmentMultiplier))
     );
 
     const ab0 = await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
@@ -240,8 +240,8 @@ scenario(
   {
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.standardBase,
-        $asset0: getConfigForScenario(ctx).liquidation.tinyAsset
+        $base: -getConfigForScenario(ctx).liquidation.base.standard,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.tiny
       },
     }),
   },
@@ -254,7 +254,7 @@ scenario(
       await timeUntilUnderwater({
         comet,
         actor: albert,
-        fudgeFactor: config.liquidationScenario.fudgeFactorShort
+        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
       })
     );
 
@@ -281,8 +281,8 @@ scenario(
       world.base.network
     );
     
-    const withdrawAmount = reserves.gt(scale.div(config.liquidationScenario.collateralDivisor)) 
-      ? scale.toBigInt() / config.liquidationScenario.collateralDivisor 
+    const withdrawAmount = reserves.gt(scale.div(config.liquidationBot.scenario.collateralDivisor)) 
+      ? scale.toBigInt() / config.liquidationBot.scenario.collateralDivisor 
       : reserves;
 
     await asset0Contract
@@ -299,17 +299,17 @@ scenario(
   {
     tokenBalances: async (ctx) => ({
       $comet: {
-        $base: getConfigForScenario(ctx).liquidation.standardBase
+        $base: getConfigForScenario(ctx).liquidation.base.standard
       }
     }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.standardBase,
-        $asset0: getConfigForScenario(ctx).liquidation.standardAsset,
-        $asset1: getConfigForScenario(ctx).liquidation.smallAsset,
-        $asset2: getConfigForScenario(ctx).liquidation.tinyAsset
+        $base: -getConfigForScenario(ctx).liquidation.base.standard,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.standard,
+        $asset1: getConfigForScenario(ctx).liquidation.asset.small,
+        $asset2: getConfigForScenario(ctx).liquidation.asset.tiny
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.standardBase }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
     }),
   },
   async ({ comet, actors }, context, world) => {
@@ -320,7 +320,7 @@ scenario(
     const timeBeforeLiquidation = await timeUntilUnderwater({
       comet,
       actor: albert,
-      fudgeFactor: config.liquidationScenario.fudgeFactorLong
+      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
     });
 
     while(!(await comet.isLiquidatable(albert.address))) {
@@ -354,14 +354,14 @@ scenario(
   {
     tokenBalances: async (ctx) => ({
       $comet: {
-        $base: getConfigForScenario(ctx).liquidation.standardBase
+        $base: getConfigForScenario(ctx).liquidation.base.standard
       }
     }),
     cometBalances: async (ctx) => ({
       albert: {
-        $asset0: getConfigForScenario(ctx).liquidation.standardAsset
+        $asset0: getConfigForScenario(ctx).liquidation.asset.standard
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.standardBase }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
     }),
   },
   async ({ comet, actors }, context, world) => {
@@ -379,7 +379,7 @@ scenario(
 
     const collateralValue = userCollateral.mul(price).div(scale);
     const borrowCapacity = collateralValue.mul(borrowCollateralFactor).mul(baseScale).div(factorScale).div(priceScale);
-    const borrowAmount = borrowCapacity.mul(config.liquidationScenario.borrowCapacityUtilizationHigh).div(100n);
+    const borrowAmount = borrowCapacity.mul(config.liquidationBot.scenario.borrowCapacityUtilizationHigh).div(100n);
 
     await albert.withdrawAsset({
       asset: baseToken,
@@ -390,7 +390,7 @@ scenario(
       await timeUntilUnderwater({
         comet,
         actor: albert,
-        fudgeFactor: config.liquidationScenario.fudgeFactorShort
+        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
       })
     );
 
@@ -410,14 +410,14 @@ scenario(
   'Comet#liquidation > small position liquidation',
   {
     tokenBalances: async (ctx) => ({
-      $comet: { $base: getConfigForScenario(ctx).liquidation.standardBase * 10 }
+      $comet: { $base: getConfigForScenario(ctx).liquidation.base.standard * 10n }
     }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.standardBase * 10,
-        $asset0: getConfigForScenario(ctx).liquidation.tinyAsset
+        $base: -getConfigForScenario(ctx).liquidation.base.standard * 10n,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.tiny
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.tinyBase }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.tiny }
     }),
   },
   async ({ comet, actors }, context, world) => {
@@ -427,7 +427,7 @@ scenario(
     const timeBeforeLiquidation = await timeUntilUnderwater({
       comet,
       actor: albert,
-      fudgeFactor: config.liquidationScenario.fudgeFactorLong
+      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
     });
     
     while(!(await comet.isLiquidatable(albert.address))) {
@@ -465,73 +465,22 @@ scenario(
   }
 );
 
-scenario(
-  `LiquidationBot > absorbs, but does not attempt to purchase collateral when maxAmountToPurchase=0`,
-  {
-    filter: async (ctx) => matchesDeployment(ctx, [{ network: 'mainnet' }, { network: 'polygon' }, { network: 'arbitrum' }]),
-    tokenBalances: async (ctx) => (
-      {
-        $comet: { $base: getConfigForScenario(ctx).liquidation.standardBase },
-      }
-    ),
-    cometBalances: async (ctx) => (
-      {
-        albert: {
-          $asset0: `== ${getConfigForScenario(ctx).liquidation.standardAsset}`,
-        },
-        betty: { $base: getConfigForScenario(ctx).liquidation.mediumBase },
-      }
-    )
-  },
-  async ({ comet, actors }, context, world) => {
-    const config = getConfigForScenario(context);
-    const { albert, betty } = actors;
-
-    const timeBeforeLiquidation = await timeUntilUnderwater({
-      comet,
-      actor: albert,
-      fudgeFactor: config.liquidationScenario.fudgeFactorLong
-    });
-
-    while(!(await comet.isLiquidatable(albert.address))) {
-      await comet.accrueAccount(albert.address);
-      await world.increaseTime(timeBeforeLiquidation);
-    }
-
-    const lp0 = await comet.liquidatorPoints(betty.address);
-    const numAssets = await comet.numAssets();
-
-    expect(await comet.isLiquidatable(albert.address)).to.be.true;
-
-    await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
-
-    const lp1 = await comet.liquidatorPoints(betty.address);
-
-    expect(lp1.numAbsorbs).to.eq(lp0.numAbsorbs + 1);
-    expect(await comet.isLiquidatable(albert.address)).to.be.false;
-
-    for (let i = 0; i < numAssets; i++) {
-      const { asset } = await comet.getAssetInfo(i);
-      expect(await comet.collateralBalanceOf(albert.address, asset)).to.eq(0);
-    }
-  }
-);
 
 scenario(
   'Comet#liquidation > multiple liquidators absorb different positions',
   {
     tokenBalances: async (ctx) => ({
       $comet: {
-        $base: getConfigForScenario(ctx).liquidation.standardBase * 2
+        $base: getConfigForScenario(ctx).liquidation.base.standard * 2n
       }
     }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.standardBase,
-        $asset0: getConfigForScenario(ctx).liquidation.standardAsset
+        $base: -getConfigForScenario(ctx).liquidation.base.standard,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.standard
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.standardBase },
-      charles: { $base: getConfigForScenario(ctx).liquidation.standardBase }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard },
+      charles: { $base: getConfigForScenario(ctx).liquidation.base.standard }
     }),
   },
   async ({ comet, actors }, context, world) => {
@@ -543,7 +492,7 @@ scenario(
       await timeUntilUnderwater({
         comet,
         actor: albert,
-        fudgeFactor: config.liquidationScenario.fudgeFactorShort
+        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
       })
     );
 
