@@ -230,14 +230,10 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @dev Determine index of asset that matches given address
      */
     function getAssetInfoByAddress(address asset) override public view returns (AssetInfo memory) {
-        return getAssetInfo(getAssetIndex(asset));
-    }
-
-    function getAssetIndex(address asset) internal view returns (uint8) {
         for (uint8 i = 0; i < numAssets; ) {
             AssetInfo memory assetInfo = getAssetInfo(i);
             if (assetInfo.asset == asset) {
-                return i;
+                return assetInfo;
             }
             unchecked { i++; }
         }
@@ -561,7 +557,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     function isCollateralAssetWithdrawPaused(uint24 assetIndex)  public view returns (bool) {
-        return toBool(uint8(collateralsWithdrawPauseFlags & (uint24(1) << assetIndex)));
+        return (collateralsWithdrawPauseFlags & (uint24(1) << assetIndex)) != 0;
     }
 
     function isCollateralWithdrawPaused() public view returns (bool) {
@@ -577,7 +573,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     function isCollateralAssetSupplyPaused(uint24 assetIndex) public view returns (bool) {
-        return toBool(uint8(collateralsSupplyPauseFlags & (uint24(1) << assetIndex)));
+        return (collateralsSupplyPauseFlags & (uint24(1) << assetIndex)) != 0;
     }
 
     function isLendersTransferPaused() public view returns (bool) {
@@ -589,7 +585,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     function isCollateralAssetTransferPaused(uint24 assetIndex) public view returns (bool) {
-        return toBool(uint8(collateralsTransferPauseFlags & (uint24(1) << assetIndex)));
+        return (collateralsTransferPauseFlags & (uint24(1) << assetIndex)) != 0;
     }
 
     function isCollateralTransferPaused() public view returns (bool) {
