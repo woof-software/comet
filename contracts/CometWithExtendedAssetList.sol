@@ -230,10 +230,14 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @dev Determine index of asset that matches given address
      */
     function getAssetInfoByAddress(address asset) override public view returns (AssetInfo memory) {
+        return getAssetInfo(getAssetIndex(asset));
+    }
+
+    function getAssetIndex(address asset) internal view returns (uint8) {
         for (uint8 i = 0; i < numAssets; ) {
             AssetInfo memory assetInfo = getAssetInfo(i);
             if (assetInfo.asset == asset) {
-                return assetInfo;
+                return i;
             }
             unchecked { i++; }
         }
@@ -548,6 +552,50 @@ contract CometWithExtendedAssetList is CometMainInterface {
         return toBool(pauseFlags & (uint8(1) << PAUSE_BUY_OFFSET));
     }
 
+    function isLendersWithdrawPaused() public view returns (bool) {
+        return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_LENDERS_WITHDRAW_OFFSET)));
+    }
+
+    function isBorrowersWithdrawPaused() public view returns (bool) {
+        return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_BORROWERS_WITHDRAW_OFFSET)));
+    }
+
+    function isCollateralAssetWithdrawPaused(uint24 assetIndex)  public view returns (bool) {
+        return toBool(uint8(collateralsWithdrawPauseFlags & (uint24(1) << assetIndex)));
+    }
+
+    function isCollateralWithdrawPaused() public view returns (bool) {
+        return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_COLLATERALS_WITHDRAW_OFFSET)));
+    }
+
+    function isCollateralSupplyPaused() public view returns (bool) {
+        return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_COLLATERAL_SUPPLY_OFFSET)));
+    }
+
+    function isBaseSupplyPaused() public view returns (bool) {
+        return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_BASE_SUPPLY_OFFSET)));
+    }
+
+    function isCollateralAssetSupplyPaused(uint24 assetIndex) public view returns (bool) {
+        return toBool(uint8(collateralsSupplyPauseFlags & (uint24(1) << assetIndex)));
+    }
+
+    function isLendersTransferPaused() public view returns (bool) {
+        return toBool(uint8((extendedPauseFlags & (uint24(1) << PAUSE_LENDERS_TRANSFER_OFFSET))));
+    }
+
+    function isBorrowersTransferPaused() public view returns (bool) {
+        return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_BORROWERS_TRANSFER_OFFSET)));
+    }
+
+    function isCollateralAssetTransferPaused(uint24 assetIndex) public view returns (bool) {
+        return toBool(uint8(collateralsTransferPauseFlags & (uint24(1) << assetIndex)));
+    }
+
+    function isCollateralTransferPaused() public view returns (bool) {
+        return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_COLLATERALS_TRANSFER_OFFSET)));
+    }
+
     /**
      * @dev Multiply a number by a factor
      */
@@ -739,11 +787,13 @@ contract CometWithExtendedAssetList is CometMainInterface {
         if (!hasPermission(from, operator)) revert Unauthorized();
 
         if (asset == baseToken) {
+            if (isBaseSupplyPaused()) revert BaseSupplyPaused();
             if (amount == type(uint256).max) {
                 amount = borrowBalanceOf(dst);
             }
             return supplyBase(from, dst, amount);
         } else {
+            if (isCollateralSupplyPaused()) revert CollateralSupplyPaused();
             return supplyCollateral(from, dst, asset, safe128(amount));
         }
     }
@@ -782,6 +832,10 @@ contract CometWithExtendedAssetList is CometMainInterface {
         amount = safe128(doTransferIn(asset, from, amount));
 
         AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
+        uint8 offset = assetInfo.offset;
+
+        if (isCollateralAssetSupplyPaused(offset)) revert CollateralAssetSupplyPaused(offset);
+
         TotalsCollateral memory totals = totalsCollateral[asset];
         totals.totalSupplyAsset += amount;
         if (totals.totalSupplyAsset > assetInfo.supplyCap) revert SupplyCapExceeded();
@@ -856,6 +910,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
             }
             return transferBase(src, dst, amount);
         } else {
+            if (isCollateralTransferPaused()) revert CollateralTransferPaused();
             return transferCollateral(src, dst, asset, safe128(amount));
         }
     }
@@ -887,8 +942,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
         updateBasePrincipal(dst, dstUser, dstPrincipalNew);
 
         if (srcBalance < 0) {
+            if (isBorrowersTransferPaused()) revert BorrowersTransferPaused();
             if (uint256(-srcBalance) < baseBorrowMin) revert BorrowTooSmall();
             if (!isBorrowCollateralized(src)) revert NotCollateralized();
+        } else {
+            if (isLendersTransferPaused()) revert LendersTransferPaused();
         }
 
         if (withdrawAmount > 0) {
@@ -913,6 +971,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
         userCollateral[dst][asset].balance = dstCollateralNew;
 
         AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
+        uint8 offset = assetInfo.offset;
+
+        if (isCollateralAssetTransferPaused(offset)) revert CollateralAssetTransferPaused(offset);
         updateAssetsIn(src, assetInfo, srcCollateral, srcCollateralNew);
         updateAssetsIn(dst, assetInfo, dstCollateral, dstCollateralNew);
 
@@ -966,6 +1027,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
             }
             return withdrawBase(src, to, amount);
         } else {
+            if (isCollateralWithdrawPaused()) revert CollateralWithdrawPaused();
             return withdrawCollateral(src, to, asset, safe128(amount));
         }
     }
@@ -989,8 +1051,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
         updateBasePrincipal(src, srcUser, srcPrincipalNew);
 
         if (srcBalance < 0) {
+            if (isBorrowersWithdrawPaused()) revert BorrowersWithdrawPaused();
             if (uint256(-srcBalance) < baseBorrowMin) revert BorrowTooSmall();
             if (!isBorrowCollateralized(src)) revert NotCollateralized();
+        } else {
+            if (isLendersWithdrawPaused()) revert LendersWithdrawPaused();
         }
 
         doTransferOut(baseToken, to, amount);
@@ -1013,6 +1078,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
         userCollateral[src][asset].balance = srcCollateralNew;
 
         AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
+        uint8 offset = assetInfo.offset;
+        if (isCollateralAssetWithdrawPaused(offset)) revert CollateralAssetWithdrawPaused(offset);
+
         updateAssetsIn(src, assetInfo, srcCollateral, srcCollateralNew);
 
         // Note: no accrue interest, BorrowCF < LiquidationCF covers small changes

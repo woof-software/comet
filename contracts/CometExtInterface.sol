@@ -15,9 +15,28 @@ abstract contract CometExtInterface is CometCore {
     error InvalidValueS();
     error InvalidValueV();
     error SignatureExpired();
+    error OnlyPauseGuardianOrGovernor();
+    error OffsetStatusAlreadySet(uint24 offset, bool status);
+    error CollateralAssetOffsetStatusAlreadySet(uint24 offset, uint24 assetIndex, bool status);
+    error InvalidAssetIndex();
 
     function allow(address manager, bool isAllowed) virtual external;
     function allowBySig(address owner, address manager, bool isAllowed, uint256 nonce, uint256 expiry, uint8 v, bytes32 r, bytes32 s) virtual external;
+
+    // Pause control functions
+    function pauseLendersWithdraw(bool paused) virtual external;
+    function pauseBorrowersWithdraw(bool paused) virtual external;
+    function pauseCollateralWithdraw(bool paused) virtual external;
+    function pauseCollateralAssetWithdraw(uint24 assetIndex, bool paused) virtual external;
+
+    function pauseCollateralSupply(bool paused) virtual external;
+    function pauseBaseSupply(bool paused) virtual external;
+    function pauseCollateralAssetSupply(uint24 assetIndex, bool paused) virtual external;
+
+    function pauseLendersTransfer(bool paused) virtual external;
+    function pauseBorrowersTransfer(bool paused) virtual external;
+    function pauseCollateralTransfer(bool paused) virtual external;
+    function pauseCollateralAssetTransfer(uint24 assetIndex, bool paused) virtual external;
 
     function collateralBalanceOf(address account, address asset) virtual external view returns (uint128);
     function baseTrackingAccrued(address account) virtual external view returns (uint64);
@@ -65,4 +84,16 @@ abstract contract CometExtInterface is CometCore {
     function allowance(address owner, address spender) virtual external view returns (uint256);
 
     event Approval(address indexed owner, address indexed spender, uint256 amount);
+    event LendersWithdrawPauseAction(bool lendersWithdrawPaused);
+    event BorrowersWithdrawPauseAction(bool borrowersWithdrawPaused);
+    event CollateralWithdrawPauseAction(bool collateralWithdrawPaused);
+    event CollateralAssetWithdrawPauseAction(uint24 assetIndex, bool collateralAssetWithdrawPaused);
+    event CollateralSupplyPauseAction(bool collateralSupplyPaused);
+    event CollateralAssetSupplyPauseAction(uint24 assetIndex, bool collateralAssetSupplyPaused);
+    event LendersSupplyPauseAction(bool lendersSupplyPaused);
+    event BorrowersSupplyPauseAction(bool borrowersSupplyPaused);
+    event LendersTransferPauseAction(bool lendersTransferPaused);
+    event BorrowersTransferPauseAction(bool borrowersTransferPaused);
+    event CollateralTransferPauseAction(bool collateralTransferPaused);
+    event CollateralAssetTransferPauseAction(uint24 assetIndex, bool collateralAssetTransferPaused);
 }

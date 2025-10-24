@@ -2,6 +2,7 @@
 pragma solidity 0.8.15;
 
 import "./CometExtInterface.sol";
+import "./CometMainInterface.sol";
 
 contract CometExt is CometExtInterface {
     /** Public constants **/
@@ -28,6 +29,18 @@ contract CometExt is CometExtInterface {
 
     /// @dev The ERC20 symbol for wrapped base token
     bytes32 internal immutable symbol32;
+
+    modifier onlyGovernorOrPauseGuardian() {
+        if (msg.sender != CometMainInterface(address(this)).governor() && 
+        msg.sender != CometMainInterface(address(this)).pauseGuardian()) 
+            revert OnlyPauseGuardianOrGovernor();
+        _;
+    }
+
+    modifier isValidAssetIndex(uint24 assetIndex) {
+        if (assetIndex > CometMainInterface(address(this)).numAssets()) revert InvalidAssetIndex();
+        _;
+    }
 
     /**
      * @notice Construct a new protocol instance
@@ -204,5 +217,105 @@ contract CometExt is CometExtInterface {
         if (nonce != userNonce[signatory]++) revert BadNonce();
         if (block.timestamp >= expiry) revert SignatureExpired();
         allowInternal(signatory, manager, isAllowed_);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             PAUSE CONTROL
+    //////////////////////////////////////////////////////////////*/
+
+    function setPauseFlag(uint24 offset, bool paused) internal {
+        paused ? extendedPauseFlags |= (uint24(1) << offset) : extendedPauseFlags &= ~(uint24(1) << offset);
+    }
+
+    function currentPauseOffsetStatus(uint24 offset) internal view returns (bool) {
+        return toBool(uint8(extendedPauseFlags & (uint24(1) << offset)));
+    }
+
+    function pauseLendersWithdraw(bool paused) override external onlyGovernorOrPauseGuardian {
+        if (currentPauseOffsetStatus(PAUSE_LENDERS_WITHDRAW_OFFSET) == paused) revert OffsetStatusAlreadySet(PAUSE_LENDERS_WITHDRAW_OFFSET, paused);
+
+        setPauseFlag(PAUSE_LENDERS_WITHDRAW_OFFSET, paused);
+
+        emit LendersWithdrawPauseAction(paused);
+    }
+
+    function pauseBorrowersWithdraw(bool paused) override external onlyGovernorOrPauseGuardian {
+        if (currentPauseOffsetStatus(PAUSE_BORROWERS_WITHDRAW_OFFSET) == paused) revert OffsetStatusAlreadySet(PAUSE_BORROWERS_WITHDRAW_OFFSET, paused);
+
+        setPauseFlag(PAUSE_BORROWERS_WITHDRAW_OFFSET, paused);
+
+        emit BorrowersWithdrawPauseAction(paused);
+    }
+
+    function pauseCollateralWithdraw(bool paused) override external onlyGovernorOrPauseGuardian {
+        if (currentPauseOffsetStatus(PAUSE_COLLATERALS_WITHDRAW_OFFSET) == paused) revert OffsetStatusAlreadySet(PAUSE_COLLATERALS_WITHDRAW_OFFSET, paused);
+
+        setPauseFlag(PAUSE_COLLATERALS_WITHDRAW_OFFSET, paused);
+
+        emit CollateralWithdrawPauseAction(paused);
+    }
+
+    function pauseCollateralAssetWithdraw(uint24 assetIndex, bool paused) override external onlyGovernorOrPauseGuardian isValidAssetIndex(assetIndex) {
+        if (toBool(uint8(collateralsWithdrawPauseFlags & (uint24(1) << assetIndex))) == paused) revert CollateralAssetOffsetStatusAlreadySet(collateralsWithdrawPauseFlags, assetIndex, paused);
+
+        paused ? collateralsWithdrawPauseFlags |= (uint24(1) << assetIndex) : collateralsWithdrawPauseFlags &= ~(uint24(1) << assetIndex);
+
+        emit CollateralAssetWithdrawPauseAction(assetIndex, paused);
+    }
+
+    function pauseCollateralSupply(bool paused) override external onlyGovernorOrPauseGuardian {
+        if (currentPauseOffsetStatus(PAUSE_COLLATERAL_SUPPLY_OFFSET) == paused) revert OffsetStatusAlreadySet(PAUSE_COLLATERAL_SUPPLY_OFFSET, paused);
+
+        setPauseFlag(PAUSE_COLLATERAL_SUPPLY_OFFSET, paused);
+        
+        emit LendersSupplyPauseAction(paused);
+    }
+
+    function pauseBaseSupply(bool paused) override external onlyGovernorOrPauseGuardian {
+        if (currentPauseOffsetStatus(PAUSE_BASE_SUPPLY_OFFSET) == paused) revert OffsetStatusAlreadySet(PAUSE_BASE_SUPPLY_OFFSET, paused);
+
+        setPauseFlag(PAUSE_BASE_SUPPLY_OFFSET, paused);
+
+        emit BorrowersSupplyPauseAction(paused);
+    }
+
+    function pauseCollateralAssetSupply(uint24 assetIndex, bool paused) override external onlyGovernorOrPauseGuardian isValidAssetIndex(assetIndex) {
+        if (toBool(uint8(collateralsSupplyPauseFlags & (uint24(1) << assetIndex))) == paused) revert CollateralAssetOffsetStatusAlreadySet(collateralsSupplyPauseFlags, assetIndex, paused);
+
+        paused ? collateralsSupplyPauseFlags |= (uint24(1) << assetIndex) : collateralsSupplyPauseFlags &= ~(uint24(1) << assetIndex);
+
+        emit CollateralAssetSupplyPauseAction(assetIndex, paused);
+    }
+
+    function pauseLendersTransfer(bool paused) override external onlyGovernorOrPauseGuardian {
+        if (currentPauseOffsetStatus(PAUSE_LENDERS_TRANSFER_OFFSET) == paused) revert OffsetStatusAlreadySet(PAUSE_LENDERS_TRANSFER_OFFSET, paused);
+
+        setPauseFlag(PAUSE_LENDERS_TRANSFER_OFFSET, paused);
+
+        emit LendersTransferPauseAction(paused);
+    }
+
+    function pauseBorrowersTransfer(bool paused) override external onlyGovernorOrPauseGuardian {
+        if (currentPauseOffsetStatus(PAUSE_BORROWERS_TRANSFER_OFFSET) == paused) revert OffsetStatusAlreadySet(PAUSE_BORROWERS_TRANSFER_OFFSET, paused);
+
+        setPauseFlag(PAUSE_BORROWERS_TRANSFER_OFFSET, paused);
+
+        emit BorrowersTransferPauseAction(paused);
+    }
+
+    function pauseCollateralTransfer(bool paused) override external onlyGovernorOrPauseGuardian {
+        if (currentPauseOffsetStatus(PAUSE_COLLATERALS_TRANSFER_OFFSET) == paused) revert OffsetStatusAlreadySet(PAUSE_COLLATERALS_TRANSFER_OFFSET, paused);
+
+        setPauseFlag(PAUSE_COLLATERALS_TRANSFER_OFFSET, paused);
+
+        emit CollateralTransferPauseAction(paused);
+    }
+
+    function pauseCollateralAssetTransfer(uint24 assetIndex, bool paused) override external onlyGovernorOrPauseGuardian isValidAssetIndex(assetIndex) {
+        if (toBool(uint8(collateralsTransferPauseFlags & (uint24(1) << assetIndex))) == paused) revert CollateralAssetOffsetStatusAlreadySet(collateralsTransferPauseFlags, assetIndex, paused);
+
+        paused ? collateralsTransferPauseFlags |= (uint24(1) << assetIndex) : collateralsTransferPauseFlags &= ~(uint24(1) << assetIndex);
+
+        emit CollateralAssetTransferPauseAction(assetIndex, paused);
     }
 }
