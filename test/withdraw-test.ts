@@ -393,6 +393,201 @@ describe('withdrawTo', function () {
     expect(await baseBalanceOf(comet, alice.address)).to.eq(BigInt(-1e6));
     expect(await USDC.balanceOf(bob.address)).to.eq(1e6);
   });
+
+  it('reverts if collateral withdraw is paused', async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob],
+    } = protocol;
+    const { COMP } = tokens;
+    const amount = 7;
+
+    await COMP.allocateTo(bob.address, amount);
+    await COMP.connect(bob).approve(cometWithExtendedAssetList.address, amount);
+    await cometWithExtendedAssetList.connect(bob).supply(COMP.address, amount);
+
+    expect(
+      await cometWithExtendedAssetList.collateralBalanceOf(
+        bob.address,
+        COMP.address
+      )
+    ).to.be.equal(amount);
+
+    // Pause collateral withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralWithdraw(true);
+    expect(await cometWithExtendedAssetList.isCollateralWithdrawPaused()).to.be
+      .true;
+
+    await expect(
+      cometWithExtendedAssetList
+        .connect(bob)
+        .withdrawTo(alice.address, COMP.address, amount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'CollateralWithdrawPaused'
+    );
+  });
+
+  it('reverts if borrower withdraw is paused', async () => {
+    const protocol = await makeProtocol({
+      base: 'USDC',
+      baseBorrowMin: 1,
+      assets: {
+        USDC: { decimals: 6, initialPrice: 1 },
+        WETH: { decimals: 18, initialPrice: 4000 },
+      },
+    });
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob],
+    } = protocol;
+    const { USDC, WETH } = tokens;
+
+    const wethAmount = exp(100, 18);
+    const borrowAmount = exp(1, 6);
+
+    // Supply some USDC
+    await USDC.allocateTo(bob.address, borrowAmount);
+    await USDC.connect(bob).approve(
+      cometWithExtendedAssetList.address,
+      borrowAmount
+    );
+    await cometWithExtendedAssetList
+      .connect(bob)
+      .supply(USDC.address, borrowAmount);
+
+    // Set up alice as a borrower (negative balance)
+    await WETH.allocateTo(alice.address, wethAmount);
+    await WETH.connect(alice).approve(
+      cometWithExtendedAssetList.address,
+      wethAmount
+    );
+    await cometWithExtendedAssetList
+      .connect(alice)
+      .supply(WETH.address, wethAmount);
+
+    // Borrow some USDC
+    await cometWithExtendedAssetList
+      .connect(alice)
+      .withdraw(USDC.address, borrowAmount);
+
+    // Check that alice is a borrower
+    const userBasic = await cometWithExtendedAssetList.userBasic(alice.address);
+    expect(userBasic.principal).to.be.lessThan(0);
+
+    // Pause borrowers withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseBorrowersWithdraw(true);
+    expect(await cometWithExtendedAssetList.isBorrowersWithdrawPaused()).to.be
+      .true;
+
+    await expect(
+      cometWithExtendedAssetList
+        .connect(alice)
+        .withdrawTo(bob.address, USDC.address, borrowAmount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'BorrowersWithdrawPaused'
+    );
+  });
+
+  it('reverts if lender withdraw is paused', async () => {
+    const protocol = await makeProtocol({ base: 'USDC' });
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob],
+    } = protocol;
+    const { USDC } = tokens;
+
+    const amount = 100e6;
+
+    await USDC.allocateTo(alice.address, amount);
+    await USDC.connect(alice).approve(
+      cometWithExtendedAssetList.address,
+      amount
+    );
+    await cometWithExtendedAssetList
+      .connect(alice)
+      .supply(USDC.address, amount);
+
+    expect(
+      await cometWithExtendedAssetList.balanceOf(alice.address)
+    ).to.be.equal(amount);
+
+    // Pause lenders withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseLendersWithdraw(true);
+    expect(await cometWithExtendedAssetList.isLendersWithdrawPaused()).to.be
+      .true;
+
+    await expect(
+      cometWithExtendedAssetList
+        .connect(alice)
+        .withdrawTo(bob.address, USDC.address, amount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'LendersWithdrawPaused'
+    );
+  });
+
+  it('reverts if specific collateral withdraw is paused', async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob],
+    } = protocol;
+    const { COMP } = tokens;
+    const amount = 7;
+
+    await COMP.allocateTo(bob.address, amount);
+    await COMP.connect(bob).approve(cometWithExtendedAssetList.address, amount);
+    await cometWithExtendedAssetList.connect(bob).supply(COMP.address, amount);
+
+    expect(
+      await cometWithExtendedAssetList.collateralBalanceOf(
+        bob.address,
+        COMP.address
+      )
+    ).to.be.equal(amount);
+
+    // Get the asset index for COMP
+    const assetInfo = await cometWithExtendedAssetList.getAssetInfoByAddress(
+      COMP.address
+    );
+    const assetIndex = assetInfo.offset;
+
+    // Pause specific collateral asset withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralAssetWithdraw(assetIndex, true);
+    expect(
+      await cometWithExtendedAssetList.isCollateralAssetWithdrawPaused(
+        assetIndex
+      )
+    ).to.be.true;
+
+    await expect(
+      cometWithExtendedAssetList
+        .connect(bob)
+        .withdrawTo(alice.address, COMP.address, amount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'CollateralAssetWithdrawPaused'
+    );
+  });
 });
 
 describe('withdraw', function () {
@@ -472,6 +667,192 @@ describe('withdraw', function () {
     await expect(
       comet.connect(alice).withdraw(WETH.address, exp(1, 18))
     ).to.be.revertedWith("custom error 'NotCollateralized()'");
+  });
+
+  it('reverts if collateral withdraw is paused', async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice],
+    } = protocol;
+    const { COMP } = tokens;
+    const amount = 7;
+
+    await COMP.allocateTo(alice.address, amount);
+    await COMP.connect(alice).approve(cometWithExtendedAssetList.address, amount);
+    await cometWithExtendedAssetList.connect(alice).supply(COMP.address, amount);
+
+    expect(
+      await cometWithExtendedAssetList.collateralBalanceOf(
+        alice.address,
+        COMP.address
+      )
+    ).to.be.equal(amount);
+
+    // Pause collateral withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralWithdraw(true);
+    expect(await cometWithExtendedAssetList.isCollateralWithdrawPaused()).to.be
+      .true;
+
+    await expect(
+      cometWithExtendedAssetList
+        .connect(alice)
+        .withdraw(COMP.address, amount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'CollateralWithdrawPaused'
+    );
+  });
+
+  it('reverts if borrower withdraw is paused', async () => {
+    const protocol = await makeProtocol({
+      base: 'USDC',
+      baseBorrowMin: 1,
+      assets: {
+        USDC: { decimals: 6, initialPrice: 1 },
+        WETH: { decimals: 18, initialPrice: 4000 },
+      },
+    });
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob],
+    } = protocol;
+    const { USDC, WETH } = tokens;
+
+    const wethAmount = exp(100, 18);
+    const borrowAmount = exp(1, 6);
+
+    // Supply some USDC
+    await USDC.allocateTo(bob.address, borrowAmount);
+    await USDC.connect(bob).approve(
+      cometWithExtendedAssetList.address,
+      borrowAmount
+    );
+    await cometWithExtendedAssetList
+      .connect(bob)
+      .supply(USDC.address, borrowAmount);
+
+    // Set up alice as a borrower (negative balance)
+    await WETH.allocateTo(alice.address, wethAmount);
+    await WETH.connect(alice).approve(
+      cometWithExtendedAssetList.address,
+      wethAmount
+    );
+    await cometWithExtendedAssetList
+      .connect(alice)
+      .supply(WETH.address, wethAmount);
+
+    // Pause borrowers withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseBorrowersWithdraw(true);
+    expect(await cometWithExtendedAssetList.isBorrowersWithdrawPaused()).to.be
+      .true;
+
+    await expect(
+      cometWithExtendedAssetList
+        .connect(alice)
+        .withdraw(USDC.address, borrowAmount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'BorrowersWithdrawPaused'
+    );
+  });
+
+  it('reverts if lender withdraw is paused', async () => {
+    const protocol = await makeProtocol({ base: 'USDC' });
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice],
+    } = protocol;
+    const { USDC } = tokens;
+
+    const amount = 100e6;
+
+    await USDC.allocateTo(alice.address, amount);
+    await USDC.connect(alice).approve(
+      cometWithExtendedAssetList.address,
+      amount
+    );
+    await cometWithExtendedAssetList
+      .connect(alice)
+      .supply(USDC.address, amount);
+
+    expect(
+      await cometWithExtendedAssetList.balanceOf(alice.address)
+    ).to.be.equal(amount);
+
+    // Pause lenders withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseLendersWithdraw(true);
+    expect(await cometWithExtendedAssetList.isLendersWithdrawPaused()).to.be
+      .true;
+
+    await expect(
+      cometWithExtendedAssetList
+        .connect(alice)
+        .withdraw(USDC.address, amount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'LendersWithdrawPaused'
+    );
+  });
+
+  it('reverts if specific collateral withdraw is paused', async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice],
+    } = protocol;
+    const { COMP } = tokens;
+    const amount = 7;
+
+    await COMP.allocateTo(alice.address, amount);
+    await COMP.connect(alice).approve(cometWithExtendedAssetList.address, amount);
+    await cometWithExtendedAssetList.connect(alice).supply(COMP.address, amount);
+
+    expect(
+      await cometWithExtendedAssetList.collateralBalanceOf(
+        alice.address,
+        COMP.address
+      )
+    ).to.be.equal(amount);
+
+    // Get the asset index for COMP
+    const assetInfo = await cometWithExtendedAssetList.getAssetInfoByAddress(
+      COMP.address
+    );
+    const assetIndex = assetInfo.offset;
+
+    // Pause specific collateral asset withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralAssetWithdraw(assetIndex, true);
+    expect(
+      await cometWithExtendedAssetList.isCollateralAssetWithdrawPaused(
+        assetIndex
+      )
+    ).to.be.true;
+
+    await expect(
+      cometWithExtendedAssetList
+        .connect(alice)
+        .withdraw(COMP.address, amount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'CollateralAssetWithdrawPaused'
+    );
   });
 
   describe('reentrancy', function () {
@@ -631,5 +1012,197 @@ describe('withdrawFrom', function () {
 
     await wait(cometAsB.allow(charlie.address, true));
     await expect(cometAsC.withdrawFrom(bob.address, alice.address, COMP.address, 7)).to.be.revertedWith("custom error 'Paused()'");
+  });
+
+  it('reverts if collateral withdraw is paused', async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob, charlie],
+    } = protocol;
+    const { COMP } = tokens;
+    const amount = 7;
+
+    await COMP.allocateTo(bob.address, amount);
+    await COMP.connect(bob).approve(cometWithExtendedAssetList.address, amount);
+    await cometWithExtendedAssetList.connect(bob).supply(COMP.address, amount);
+
+    expect(
+      await cometWithExtendedAssetList.collateralBalanceOf(
+        bob.address,
+        COMP.address
+      )
+    ).to.be.equal(amount);
+
+    // Pause collateral withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralWithdraw(true);
+    expect(await cometWithExtendedAssetList.isCollateralWithdrawPaused()).to.be
+      .true;
+
+    await cometWithExtendedAssetList.connect(bob).allow(charlie.address, true);
+    await expect(
+      cometWithExtendedAssetList
+        .connect(charlie)
+        .withdrawFrom(bob.address, alice.address, COMP.address, amount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'CollateralWithdrawPaused'
+    );
+  });
+
+  it('reverts if borrower withdraw is paused', async () => {
+    const protocol = await makeProtocol({
+      base: 'USDC',
+      baseBorrowMin: 1,
+      assets: {
+        USDC: { decimals: 6, initialPrice: 1 },
+        WETH: { decimals: 18, initialPrice: 4000 },
+      },
+    });
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob, charlie],
+    } = protocol;
+    const { USDC, WETH } = tokens;
+
+    const wethAmount = exp(100, 18);
+    const borrowAmount = exp(1, 6);
+
+    // Supply some USDC
+    await USDC.allocateTo(bob.address, borrowAmount);
+    await USDC.connect(bob).approve(
+      cometWithExtendedAssetList.address,
+      borrowAmount
+    );
+    await cometWithExtendedAssetList
+      .connect(bob)
+      .supply(USDC.address, borrowAmount);
+
+    // Set up alice as a borrower (negative balance)
+    await WETH.allocateTo(alice.address, wethAmount);
+    await WETH.connect(alice).approve(
+      cometWithExtendedAssetList.address,
+      wethAmount
+    );
+    await cometWithExtendedAssetList
+      .connect(alice)
+      .supply(WETH.address, wethAmount);
+
+    // Pause borrowers withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseBorrowersWithdraw(true);
+    expect(await cometWithExtendedAssetList.isBorrowersWithdrawPaused()).to.be
+      .true;
+
+    await cometWithExtendedAssetList.connect(alice).allow(charlie.address, true);
+    await expect(
+      cometWithExtendedAssetList
+        .connect(charlie)
+        .withdrawFrom(alice.address, bob.address, USDC.address, borrowAmount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'BorrowersWithdrawPaused'
+    );
+  });
+
+  it('reverts if lender withdraw is paused', async () => {
+    const protocol = await makeProtocol({ base: 'USDC' });
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob, charlie],
+    } = protocol;
+    const { USDC } = tokens;
+
+    const amount = 50e6;
+    await USDC.allocateTo(alice.address, amount);
+    await USDC.connect(alice).approve(
+      cometWithExtendedAssetList.address,
+      amount
+    );
+    await cometWithExtendedAssetList
+      .connect(alice)
+      .supply(USDC.address, amount);
+
+    // Check alice's balance and principal to make sure she is a lender
+    expect(
+      await cometWithExtendedAssetList.balanceOf(alice.address)
+    ).to.be.equal(amount);
+    const userBasic = await cometWithExtendedAssetList.userBasic(alice.address);
+    expect(userBasic.principal).to.be.greaterThanOrEqual(0);
+
+    // Pause lenders withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseLendersWithdraw(true);
+    expect(await cometWithExtendedAssetList.isLendersWithdrawPaused()).to.be
+      .true;
+
+    await cometWithExtendedAssetList.connect(alice).allow(charlie.address, true);
+    await expect(
+      cometWithExtendedAssetList
+        .connect(charlie)
+        .withdrawFrom(alice.address, bob.address, USDC.address, amount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'LendersWithdrawPaused'
+    );
+  });
+
+  it('reverts if specific collateral withdraw is paused', async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob, charlie],
+    } = protocol;
+    const { COMP } = tokens;
+    const amount = 7;
+
+    await COMP.allocateTo(bob.address, amount);
+    await COMP.connect(bob).approve(cometWithExtendedAssetList.address, amount);
+    await cometWithExtendedAssetList.connect(bob).supply(COMP.address, amount);
+
+    expect(
+      await cometWithExtendedAssetList.collateralBalanceOf(
+        bob.address,
+        COMP.address
+      )
+    ).to.be.equal(amount);
+
+    // Get the asset index for COMP
+    const assetInfo = await cometWithExtendedAssetList.getAssetInfoByAddress(
+      COMP.address
+    );
+    const assetIndex = assetInfo.offset;
+
+    // Pause specific collateral asset withdraw
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralAssetWithdraw(assetIndex, true);
+    expect(
+      await cometWithExtendedAssetList.isCollateralAssetWithdrawPaused(
+        assetIndex
+      )
+    ).to.be.true;
+
+    await cometWithExtendedAssetList.connect(bob).allow(charlie.address, true);
+    await expect(
+      cometWithExtendedAssetList
+        .connect(charlie)
+        .withdrawFrom(bob.address, alice.address, COMP.address, amount)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'CollateralAssetWithdrawPaused'
+    );
   });
 });

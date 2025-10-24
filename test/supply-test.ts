@@ -392,6 +392,102 @@ describe('supplyTo', function () {
     await expect(cometAsB.supplyTo(alice.address, USDC.address, 1)).to.be.revertedWith("custom error 'Paused()'");
   });
 
+  it('reverts if base supply is paused', async () => {
+    const protocol = await makeProtocol({ base: 'USDC' });
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob],
+    } = protocol;
+    const { USDC } = tokens;
+
+    await USDC.allocateTo(bob.address, 100e6);
+    const baseAsB = USDC.connect(bob);
+    const cometAsB = cometWithExtendedAssetList.connect(bob);
+
+    // Pause base supply
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseBaseSupply(true);
+    expect(await cometWithExtendedAssetList.isBaseSupplyPaused()).to.be.true;
+
+    await baseAsB.approve(cometWithExtendedAssetList.address, 100e6);
+    await expect(
+      cometAsB.supplyTo(alice.address, USDC.address, 100e6)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'BaseSupplyPaused'
+    );
+  });
+
+  it('reverts if collateral supply is paused', async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob],
+    } = protocol;
+    const { COMP } = tokens;
+
+    await COMP.allocateTo(bob.address, 8e8);
+    const baseAsB = COMP.connect(bob);
+    const cometAsB = cometWithExtendedAssetList.connect(bob);
+
+    // Pause collateral supply
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralSupply(true);
+    expect(await cometWithExtendedAssetList.isCollateralSupplyPaused()).to.be
+      .true;
+
+    await baseAsB.approve(cometWithExtendedAssetList.address, 8e8);
+    await expect(
+      cometAsB.supplyTo(alice.address, COMP.address, 8e8)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'CollateralSupplyPaused'
+    );
+  });
+
+  it('reverts if specific collateral asset supply is paused', async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob],
+    } = protocol;
+    const { COMP } = tokens;
+
+    await COMP.allocateTo(bob.address, 8e8);
+    const baseAsB = COMP.connect(bob);
+    const cometAsB = cometWithExtendedAssetList.connect(bob);
+
+    // Get asset index for COMP
+    const assetInfo = await cometWithExtendedAssetList.getAssetInfoByAddress(
+      COMP.address
+    );
+    const assetIndex = assetInfo.offset;
+
+    // Pause specific collateral asset supply
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralAssetSupply(assetIndex, true);
+    expect(
+      await cometWithExtendedAssetList.isCollateralAssetSupplyPaused(assetIndex)
+    ).to.be.true;
+
+    await baseAsB.approve(cometWithExtendedAssetList.address, 8e8);
+    await expect(
+      cometAsB.supplyTo(alice.address, COMP.address, 8e8)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'CollateralAssetSupplyPaused'
+    );
+  });
+
   it('reverts if supply max for a collateral asset', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
     const { comet, tokens, users: [alice, bob] } = protocol;
@@ -601,6 +697,102 @@ describe('supply', function () {
     await wait(baseAsB.approve(comet.address, 100e6));
     await expect(cometAsB.supply(USDC.address, 100e6)).to.be.revertedWith("custom error 'Paused()'");
   });
+
+  it('reverts if base supply is paused', async () => {
+    const protocol = await makeProtocol({ base: 'USDC' });
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [bob],
+    } = protocol;
+    const { USDC } = tokens;
+
+    await USDC.allocateTo(bob.address, 100e6);
+    const baseAsB = USDC.connect(bob);
+    const cometAsB = cometWithExtendedAssetList.connect(bob);
+
+    // Pause base supply
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseBaseSupply(true);
+    expect(await cometWithExtendedAssetList.isBaseSupplyPaused()).to.be.true;
+
+    await baseAsB.approve(cometWithExtendedAssetList.address, 100e6);
+    await expect(
+      cometAsB.supply(USDC.address, 100e6)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'BaseSupplyPaused'
+    );
+  });
+
+  it('reverts if collateral supply is paused', async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [bob],
+    } = protocol;
+    const { COMP } = tokens;
+
+    await COMP.allocateTo(bob.address, 8e8);
+    const baseAsB = COMP.connect(bob);
+    const cometAsB = cometWithExtendedAssetList.connect(bob);
+
+    // Pause collateral supply
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralSupply(true);
+    expect(await cometWithExtendedAssetList.isCollateralSupplyPaused()).to.be
+      .true;
+
+    await baseAsB.approve(cometWithExtendedAssetList.address, 8e8);
+    await expect(
+      cometAsB.supply(COMP.address, 8e8)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'CollateralSupplyPaused'
+    );
+  });
+
+  it('reverts if specific collateral asset supply is paused', async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [bob],
+    } = protocol;
+    const { COMP } = tokens;
+
+    await COMP.allocateTo(bob.address, 8e8);
+    const baseAsB = COMP.connect(bob);
+    const cometAsB = cometWithExtendedAssetList.connect(bob);
+
+    // Get asset index for COMP
+    const assetInfo = await cometWithExtendedAssetList.getAssetInfoByAddress(
+      COMP.address
+    );
+    const assetIndex = assetInfo.offset;
+
+    // Pause specific collateral asset supply
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralAssetSupply(assetIndex, true);
+    expect(
+      await cometWithExtendedAssetList.isCollateralAssetSupplyPaused(assetIndex)
+    ).to.be.true;
+
+    await baseAsB.approve(cometWithExtendedAssetList.address, 8e8);
+    await expect(
+      cometAsB.supply(COMP.address, 8e8)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'CollateralAssetSupplyPaused'
+    );
+  });
 });
 
 describe('supplyFrom', function () {
@@ -661,5 +853,107 @@ describe('supplyFrom', function () {
     await wait(baseAsB.approve(comet.address, 7));
     await wait(cometAsB.allow(charlie.address, true));
     await expect(cometAsC.supplyFrom(bob.address, alice.address, COMP.address, 7)).to.be.revertedWith("custom error 'Paused()'");
+  });
+
+  it("reverts if base supply is paused", async () => {
+    const protocol = await makeProtocol({ base: "USDC" });
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob, charlie],
+    } = protocol;
+    const { USDC } = tokens;
+
+    await USDC.allocateTo(bob.address, 100e6);
+    const baseAsB = USDC.connect(bob);
+    const cometAsB = cometWithExtendedAssetList.connect(bob);
+    const cometAsC = cometWithExtendedAssetList.connect(charlie);
+
+    // Pause base supply
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseBaseSupply(true);
+    expect(await cometWithExtendedAssetList.isBaseSupplyPaused()).to.be.true;
+
+    await baseAsB.approve(cometWithExtendedAssetList.address, 100e6);
+    await cometAsB.allow(charlie.address, true);
+    await expect(
+      cometAsC.supplyFrom(bob.address, alice.address, USDC.address, 100e6)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      "BaseSupplyPaused"
+    );
+  });
+
+  it("reverts if collateral supply is paused", async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob, charlie],
+    } = protocol;
+    const { COMP } = tokens;
+
+    await COMP.allocateTo(bob.address, 7);
+    const baseAsB = COMP.connect(bob);
+    const cometAsB = cometWithExtendedAssetList.connect(bob);
+    const cometAsC = cometWithExtendedAssetList.connect(charlie);
+
+    // Pause collateral supply
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralSupply(true);
+    expect(await cometWithExtendedAssetList.isCollateralSupplyPaused()).to.be
+      .true;
+
+    await baseAsB.approve(cometWithExtendedAssetList.address, 7);
+    await cometAsB.allow(charlie.address, true);
+    await expect(
+      cometAsC.supplyFrom(bob.address, alice.address, COMP.address, 7)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      "CollateralSupplyPaused"
+    );
+  });
+
+  it("reverts if specific collateral asset supply is paused", async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob, charlie],
+    } = protocol;
+    const { COMP } = tokens;
+
+    await COMP.allocateTo(bob.address, 7);
+    const baseAsB = COMP.connect(bob);
+    const cometAsB = cometWithExtendedAssetList.connect(bob);
+    const cometAsC = cometWithExtendedAssetList.connect(charlie);
+
+    // Get asset index for COMP
+    const assetInfo = await cometWithExtendedAssetList.getAssetInfoByAddress(
+      COMP.address
+    );
+    const assetIndex = assetInfo.offset;
+
+    // Pause specific collateral asset supply
+    await cometWithExtendedAssetList
+      .connect(pauseGuardian)
+      .pauseCollateralAssetSupply(assetIndex, true);
+    expect(
+      await cometWithExtendedAssetList.isCollateralAssetSupplyPaused(assetIndex)
+    ).to.be.true;
+
+    await baseAsB.approve(cometWithExtendedAssetList.address, 7);
+    await cometAsB.allow(charlie.address, true);
+    await expect(
+      cometAsC.supplyFrom(bob.address, alice.address, COMP.address, 7)
+    ).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      "CollateralAssetSupplyPaused"
+    );
   });
 });
