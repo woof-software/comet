@@ -38,7 +38,7 @@ contract CometExt is CometExtInterface {
     }
 
     modifier isValidAssetIndex(uint24 assetIndex) {
-        if (assetIndex > CometMainInterface(address(this)).numAssets()) revert InvalidAssetIndex();
+        if (assetIndex >= CometMainInterface(address(this)).numAssets()) revert InvalidAssetIndex();
         _;
     }
 
