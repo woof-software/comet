@@ -34,6 +34,20 @@ abstract contract CometMainInterface is CometCore {
     error TransferOutFailed();
     error Unauthorized();
 
+    error BaseSupplyPaused();
+    error CollateralSupplyPaused();
+    error CollateralAssetSupplyPaused(uint24 assetIndex);
+
+    error BorrowersTransferPaused();
+    error LendersTransferPaused();
+    error CollateralTransferPaused();
+    error CollateralAssetTransferPaused(uint24 assetIndex);
+
+    error BorrowersWithdrawPaused();
+    error LendersWithdrawPaused();
+    error CollateralWithdrawPaused();
+    error CollateralAssetWithdrawPaused(uint24 assetIndex);
+
     event Supply(address indexed from, address indexed dst, uint amount);
     event Transfer(address indexed from, address indexed to, uint amount);
     event Withdraw(address indexed src, address indexed to, uint amount);

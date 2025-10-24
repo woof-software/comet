@@ -73,4 +73,9 @@ contract CometStorage {
 
     /// @notice Mapping of magic liquidator points
     mapping(address => LiquidatorPoints) public liquidatorPoints;
+
+    uint24 public extendedPauseFlags;
+    uint24 public collateralsWithdrawPauseFlags;
+    uint24 public collateralsSupplyPauseFlags;
+    uint24 public collateralsTransferPauseFlags;
 }
