@@ -4,7 +4,7 @@ import { takeSnapshot } from '@nomicfoundation/hardhat-network-helpers';
 import type { SnapshotRestorer } from '@nomicfoundation/hardhat-network-helpers';
 import { CometExt, CometHarnessInterfaceExtendedAssetList } from 'build/types';
 
-describe.only('Extended Pause Functionality', function () {
+describe('Extended Pause Functionality', function () {
   let snapshot: SnapshotRestorer;
 
   let comet: CometHarnessInterfaceExtendedAssetList;
