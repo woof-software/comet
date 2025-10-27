@@ -548,46 +548,82 @@ contract CometWithExtendedAssetList is CometMainInterface {
         return toBool(pauseFlags & (uint8(1) << PAUSE_BUY_OFFSET));
     }
 
+    /**
+     * @return Whether or not lenders withdraw actions are paused
+     */
     function isLendersWithdrawPaused() public view returns (bool) {
         return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_LENDERS_WITHDRAW_OFFSET)));
     }
 
+    /**
+     * @return Whether or not borrowers withdraw actions are paused
+     */
     function isBorrowersWithdrawPaused() public view returns (bool) {
         return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_BORROWERS_WITHDRAW_OFFSET)));
     }
 
+    /**
+     * @param assetIndex The index of the asset (offset)
+     * @return Whether or not collateral asset withdraw actions are paused
+     */
     function isCollateralAssetWithdrawPaused(uint24 assetIndex)  public view returns (bool) {
         return (collateralsWithdrawPauseFlags & (uint24(1) << assetIndex)) != 0;
     }
 
+    /**
+     * @return Whether or not collateral withdraw actions are paused
+     */
     function isCollateralWithdrawPaused() public view returns (bool) {
         return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_COLLATERALS_WITHDRAW_OFFSET)));
     }
 
+    /**
+     * @return Whether or not collateral supply actions are paused
+     */
     function isCollateralSupplyPaused() public view returns (bool) {
         return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_COLLATERAL_SUPPLY_OFFSET)));
     }
 
+    /**
+     * @return Whether or not base supply actions are paused
+     */
     function isBaseSupplyPaused() public view returns (bool) {
         return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_BASE_SUPPLY_OFFSET)));
     }
 
+    /**
+     * @param assetIndex The index of the asset (offset)
+     * @return Whether or not collateral asset supply actions are paused
+     */
     function isCollateralAssetSupplyPaused(uint24 assetIndex) public view returns (bool) {
         return (collateralsSupplyPauseFlags & (uint24(1) << assetIndex)) != 0;
     }
 
+    /**
+     * @return Whether or not lenders transfer actions are paused
+     */
     function isLendersTransferPaused() public view returns (bool) {
         return toBool(uint8((extendedPauseFlags & (uint24(1) << PAUSE_LENDERS_TRANSFER_OFFSET))));
     }
 
+    /**
+     * @return Whether or not borrowers transfer actions are paused
+     */
     function isBorrowersTransferPaused() public view returns (bool) {
         return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_BORROWERS_TRANSFER_OFFSET)));
     }
 
+    /**
+     * @param assetIndex The index of the asset (offset)
+     * @return Whether or not collateral asset transfer actions are paused
+     */
     function isCollateralAssetTransferPaused(uint24 assetIndex) public view returns (bool) {
         return (collateralsTransferPauseFlags & (uint24(1) << assetIndex)) != 0;
     }
 
+    /**
+     * @return Whether or not collateral transfer actions are paused
+     */
     function isCollateralTransferPaused() public view returns (bool) {
         return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_COLLATERALS_TRANSFER_OFFSET)));
     }
