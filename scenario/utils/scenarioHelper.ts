@@ -33,11 +33,8 @@ function createDefaultConfig(): ScenarioConfig {
     configurator: configuratorConfig,
     liquidationBot: liquidationBotConfig,
     mainnetBulker: mainnetBulkerConfig,
-    pauseGuardian: {},
-    withdrawReserves: {},
     compoundV2: v2Config,
-    assets: assetsConfig,
-    comet: {},
+    assets: assetsConfig
   };
 }
 
