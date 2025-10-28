@@ -130,9 +130,7 @@ describe("Extended pause upgrade test", function () {
     // Deploy new implementation using configurator
     const deployTx = await configurator.connect(governor).deploy(COMET_ADDRESS);
     const deployReceipt = await deployTx.wait();
-    const deployEvent = deployReceipt.events.find(
-      (e) => e.event === "CometDeployed"
-    );
+    const deployEvent = deployReceipt.events.find((e) => e.event === "CometDeployed");
     newImpl = deployEvent.args.newComet;
 
     upgradeTx = await proxyAdmin.connect(governor).upgrade(COMET_ADDRESS, newImpl);
