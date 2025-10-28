@@ -8,6 +8,5 @@ export const mainnetBulkerConfig: MainnetBulkerConfig = {
   stethWithdrawalTolerance: 3n,
   wstethWithdrawalTolerance: 1n,
   maxStethWithdrawalTolerance: 2n,
-  sourceTokenBuffer: 3n,
-  invalidAssetIndex: -1n,
+  sourceTokenBuffer: 3n
 };

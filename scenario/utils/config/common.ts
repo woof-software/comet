@@ -22,18 +22,16 @@ export const commonConfig: CommonConfig = {
 
   amounts: {
     base: {
-      tiny: 1n,
+      tiny: exp(0.000001, 18),
       small: 2n,
       standard: 1000n,
       large: 10000n,
-      hundred: 100n,
     },
     collateral: {
       tiny: 1n,
       small: 50n,
       standard: 100n,
-      large: 5000n,
-      hundred: 100n,
+      large: 5000n
     },
   },
 };

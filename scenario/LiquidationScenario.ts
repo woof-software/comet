@@ -1,5 +1,5 @@
 import { scenario } from './context/CometContext';
-import { ethers, expect } from '../test/helpers';
+import { ethers, expect, defactor } from '../test/helpers';
 import { expectRevertCustom, timeUntilUnderwater } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
@@ -224,7 +224,7 @@ scenario(
       Math.round(await timeUntilUnderwater({
         comet,
         actor: albert,
-      }) * Number(config.liquidationBot.scenario.timeAdjustmentMultiplier))
+      }) * config.liquidation.timeMultiplier)
     );
 
     const ab0 = await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
@@ -241,7 +241,7 @@ scenario(
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidation.base.standard,
-        $asset0: getConfigForScenario(ctx).liquidation.asset.tiny
+        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.tiny)
       },
     }),
   },
@@ -305,9 +305,9 @@ scenario(
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidation.base.standard,
-        $asset0: getConfigForScenario(ctx).liquidation.asset.standard,
-        $asset1: getConfigForScenario(ctx).liquidation.asset.small,
-        $asset2: getConfigForScenario(ctx).liquidation.asset.tiny
+        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.standard),
+        $asset1: defactor(getConfigForScenario(ctx).liquidation.asset.small),
+        $asset2: defactor(getConfigForScenario(ctx).liquidation.asset.tiny)
       },
       betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
     }),
@@ -415,7 +415,7 @@ scenario(
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidation.base.standard * 10n,
-        $asset0: getConfigForScenario(ctx).liquidation.asset.tiny
+        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.tiny)
       },
       betty: { $base: getConfigForScenario(ctx).liquidation.base.tiny }
     }),
@@ -477,7 +477,7 @@ scenario(
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidation.base.standard,
-        $asset0: getConfigForScenario(ctx).liquidation.asset.standard
+        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.standard)
       },
       betty: { $base: getConfigForScenario(ctx).liquidation.base.standard },
       charles: { $base: getConfigForScenario(ctx).liquidation.base.standard }
