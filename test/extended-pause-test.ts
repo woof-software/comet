@@ -1,25 +1,24 @@
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
-import { expect, event, makeProtocol, wait } from "./helpers";
+import { expect, makeProtocol } from "./helpers";
 import { takeSnapshot } from "@nomicfoundation/hardhat-network-helpers";
 import { CometExt, CometHarnessInterfaceExtendedAssetList } from "build/types";
 import type { SnapshotRestorer } from "@nomicfoundation/hardhat-network-helpers";
-import { ContractTransaction } from "ethers";
 
-describe.only("Extended Pause Functionality", function () {
+describe("Extended Pause Functionality", function () {
+  // Snapshot
   let snapshot: SnapshotRestorer;
 
+  // Contracts
   let comet: CometHarnessInterfaceExtendedAssetList;
   let cometExt: CometExt;
 
+  // Signers
   let governor: SignerWithAddress;
   let pauseGuardian: SignerWithAddress;
-  let users: SignerWithAddress[];
+  let users: SignerWithAddress[] = [];
 
+  // Constants
   const assetIndex = 0;
-
-  // Transactions
-  // let pauseLendersWithdrawByGovernorTx: Promise<ContractTransaction>;
-  // let pauseLendersWithdrawByPauseGuardianTx: Promise<ContractTransaction>;
 
   before(async function () {
     const assets = {
