@@ -8,8 +8,8 @@ export const liquidationConfig: LiquidationConfig = {
     small: exp(0.5, 18),
     standard: 200n,
     medium: 1000n,
-    hundred: 100n,
     large: 5000n,
   },
+  timeMultiplier: 1.001,
   factors: { denominator: 90n, alternateDenominator: 100n, numerator: 90n },
 };

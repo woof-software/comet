@@ -117,7 +117,7 @@ scenario('add new asset',
     const dogecoin = await dm.deploy<FaucetToken, [string, string, BigNumberish, string]>(
       'DOGE',
       'test/FaucetToken.sol',
-      [exp(Number(config.assets.dogecoin.totalSupply), Number(config.assets.dogecoin.decimals)).toString(), 'Dogecoin', Number(config.assets.dogecoin.decimals), 'DOGE'],
+      [exp(Number(config.assets.dogecoin.supplyAmount), Number(config.assets.dogecoin.decimals)).toString(), 'Dogecoin', Number(config.assets.dogecoin.decimals), 'DOGE'],
       true
     );
     const dogecoinPricefeed = await dm.deploy(

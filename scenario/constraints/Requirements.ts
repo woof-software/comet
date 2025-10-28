@@ -6,7 +6,7 @@ export interface Requirements {
     supplyCaps?: object; // Supply cap constraint
     cometBalances?: object; // Comet balance constraint
     tokenBalances?: object; // Token balance constraint
-    utilization?: number; // Utilization constraint
+    utilization?: ((context) => number); // Utilization constraint
     prices?: object; // Price constraint
     reserves?: number | string; // Reserves constraint
 }

@@ -1,8 +1,9 @@
-import { exp } from '../../../test/helpers';
+
 import { LiquidationBotConfig } from './types';
+import { exp } from '../../../test/helpers';
 
 export const liquidationBotConfig: LiquidationBotConfig = {
-  targetReserves: 20_000n,
+  targetReserves: exp(20_000, 18),
   borrowCapacityUtilization: 90n,
   fudgeFactorTime: 60n * 10n,
   expectedCollateralReservesThreshold: 1n,
@@ -15,7 +16,6 @@ export const liquidationBotConfig: LiquidationBotConfig = {
     fudgeFactorLong: 6000n * 6000n,
     fudgeFactorShort: 60n * 10n,
     borrowCapacityUtilizationHigh: 90n,
-    collateralDivisor: 1000n,
-    timeAdjustmentMultiplier: exp(1.001, 18),
+    collateralDivisor: 1000n
   },
 };

@@ -84,6 +84,7 @@ scenario(
   {
     upgrade: async (ctx) => {
       const config = getConfigForScenario(ctx);
+
       return {
         supplyKink: config.interestRate.supply.kink,
         supplyPerYearInterestRateBase: exp(0, 18),
@@ -95,12 +96,13 @@ scenario(
         borrowPerYearInterestRateSlopeHigh: config.interestRate.borrow.slopeHigh,
       };
     },
-    utilization: ((ctx) => defactor(getConfigForScenario(ctx).interestRate.expected.utilizationBelowKink))()
+    utilization: (ctx) => defactor(getConfigForScenario(ctx).interestRate.expected.utilizationBelowKink)
 
   },
   async ({ comet }, context) => {
     const config = getConfigForScenario(context);
     const utilization = await comet.getUtilization();
+    
     expect(defactor(utilization)).to.be.approximately(defactor(config.interestRate.expected.utilizationBelowKink), defactor(config.interestRate.utilizationTolerance));
     expect(annualize(await comet.getSupplyRate(utilization))).to.be.approximately(defactor(config.interestRate.expected.supplyRateBelowKink), defactor(config.interestRate.rateTolerance));
     expect(annualize(await comet.getBorrowRate(utilization))).to.be.approximately(defactor(config.interestRate.expected.borrowRateBelowKink), defactor(config.interestRate.rateTolerance));
@@ -123,7 +125,7 @@ scenario(
         borrowPerYearInterestRateSlopeHigh: config.interestRate.borrow.slopeHigh,
       };
     },
-    utilization: ((ctx) => defactor(getConfigForScenario(ctx).interestRate.expected.utilizationAboveKink))()
+    utilization: (ctx) => defactor(getConfigForScenario(ctx).interestRate.expected.utilizationAboveKink)
   },
   async ({ comet }, context) => {
     const config = getConfigForScenario(context);
@@ -140,7 +142,6 @@ scenario(
     upgrade: async (ctx) => {
       const config = getConfigForScenario(ctx);
       return {
-        // TODO: Read types directly from Solidity?
         supplyPerYearInterestRateBase: { type: FuzzType.UINT64 },
         borrowPerYearInterestRateBase: { type: FuzzType.UINT64, max: config.interestRate.borrow.max.toString() /* 100% */ },
       };
@@ -189,7 +190,7 @@ scenario(
 scenario.skip(
   'Comet#interestRate > when utilization is 50%',
   { 
-    utilization: ((ctx) => defactor(getConfigForScenario(ctx).interestRate.expected.utilizationBelowKink))()
+    utilization: (ctx) => defactor(getConfigForScenario(ctx).interestRate.expected.utilizationBelowKink)
   },
   async ({ comet }, context) => {
     const config = getConfigForScenario(context);

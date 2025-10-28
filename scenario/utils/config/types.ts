@@ -15,8 +15,8 @@ export interface CommonConfig {
       interestSeconds: bigint;
     };
     amounts: {
-      base: { tiny: bigint, small: bigint, standard: bigint, large: bigint, hundred: bigint };
-      collateral: { tiny: bigint, small: bigint, standard: bigint, large: bigint, hundred: bigint };
+      base: { tiny: bigint, small: bigint, standard: bigint, large: bigint };
+      collateral: { tiny: bigint, small: bigint, standard: bigint, large: bigint };
     };
   }
   
@@ -24,12 +24,8 @@ export interface TransferConfig {
     baseAmount: bigint;
     assetAmount: bigint;
     collateralAmount: bigint;
-    baseBalanceLarge: bigint;
-    borrowAmountLarge: bigint;
-    collateralBalanceSmall: bigint;
     multiplier: { num: bigint, denom: bigint };
     result: { num: bigint, denom: bigint };
-    amountNearMax: bigint;
     remainingBalance: bigint;
     overLimit: bigint;
     principalToleranceValues: bigint[];
@@ -58,7 +54,7 @@ export interface SupplyConfig {
     usdtRemainingDebt: bigint;
     ethBalanceForGas: bigint;
     interestTimeFactor: { short: bigint, long: bigint };
-    minBorrow: string;
+    minBorrow: number;
   }
   
 export interface BulkerConfig {
@@ -77,10 +73,10 @@ export interface LiquidationConfig {
       small: bigint;
       standard: bigint;
       medium: bigint;
-      hundred: bigint;
       large: bigint;
     };
     factors: { denominator: bigint, alternateDenominator: bigint, numerator: bigint };
+    timeMultiplier: number;
   }
   
 export interface RewardsConfig {
@@ -157,7 +153,6 @@ export interface LiquidationBotConfig {
       fudgeFactorShort: bigint;
       borrowCapacityUtilizationHigh: bigint;
       collateralDivisor: bigint;
-      timeAdjustmentMultiplier: bigint;
     };
   }
   
@@ -169,16 +164,9 @@ export interface MainnetBulkerConfig {
     wstethWithdrawalTolerance: bigint;
     maxStethWithdrawalTolerance: bigint;
     sourceTokenBuffer: bigint;
-    invalidAssetIndex: bigint;
   }
   
-export interface PauseGuardianConfig {
-    // Add pause guardian specific config if needed
-  }
-  
-export interface WithdrawReservesConfig {
-    // Add withdraw reserves specific config if needed
-  }
+
   
 export interface V2Config {
     eth: { repayAmount: bigint, borrowAmount: bigint, finalRepayAmount: bigint };
@@ -202,28 +190,25 @@ export interface AssetsConfig {
     };
     maticx: {
       supplyAmount: bigint;
-      baseBorrowMultiplier: bigint;
       supplyCap: bigint;
-      balanceTolerance: bigint;
       borrowCollateralFactor: bigint;
       liquidateCollateralFactor: bigint;
       liquidationFactor: bigint;
+      baseBorrowMultiplier: bigint;
+      balanceTolerance: bigint;
     };
     dogecoin: {
-      totalSupply: bigint;
+      supplyAmount: bigint;
+      supplyCap: bigint;
+      borrowCollateralFactor: bigint;
+      liquidateCollateralFactor: bigint;
+      liquidationFactor: bigint;
       decimals: bigint;
       price: bigint;
       allocateAmount: bigint;
-      borrowCollateralFactor: bigint;
-      liquidateCollateralFactor: bigint;
-      liquidationFactor: bigint;
-      supplyCap: bigint;
     };
   }
   
-export interface CometConfig {
-    // Add general Comet test config if needed
-  }
   
 export interface ScenarioConfig {
     common: CommonConfig;
@@ -239,10 +224,7 @@ export interface ScenarioConfig {
     configurator: ConfiguratorConfig;
     liquidationBot: LiquidationBotConfig;
     mainnetBulker: MainnetBulkerConfig;
-    pauseGuardian: PauseGuardianConfig;
-    withdrawReserves: WithdrawReservesConfig;
     compoundV2: V2Config;
     assets: AssetsConfig;
-    comet: CometConfig;
   }
   

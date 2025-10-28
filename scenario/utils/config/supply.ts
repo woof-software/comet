@@ -16,5 +16,5 @@ export const supplyConfig: SupplyConfig = {
   usdtRemainingDebt: -1n,
   ethBalanceForGas: 100n,
   interestTimeFactor: { short: 1n, long: 4n },
-  minBorrow: '<= -1000',
+  minBorrow: -1000
 };

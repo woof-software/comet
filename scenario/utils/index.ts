@@ -199,6 +199,17 @@ export function optionalNumber(o: object, key: string): number | undefined {
   return value;
 }
 
+export function optionalCall(o: object, key: string, ctx: CometContext): any | undefined {
+  let func: unknown = o[key];
+  if (func === undefined) {
+    return undefined;
+  }
+  if (typeof func !== 'function') {
+    throw new Error(`[requirement ${key} required to be function type]`);
+  }
+  return func(ctx);
+}
+
 export function* subsets<T>(array: T[], offset = 0): Generator<T[]> {
   while (offset < array.length) {
     const first = array[offset++];

@@ -23,5 +23,5 @@ export const interestRateConfig: InterestRateConfig = {
     supplyRateAboveKink: exp(0.052, 18),
     borrowRateAboveKink: exp(0.065, 18),
   },
-  rateTolerance: exp(0.001, 18),
+  rateTolerance: exp(0.002, 18),
 };

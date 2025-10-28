@@ -307,7 +307,7 @@ scenario(
     await baseAsset.approve(albert, comet.address);
     await albert.allow(betty, true);
 
-    const txn = await betty.supplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: config.supply.baseSupplySmall * scale });
+    const txn = await betty.supplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: config.supply.baseSupplyAmount * scale });
 
     const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
@@ -374,7 +374,7 @@ scenario(
       albert: { $base: getConfigForScenario(ctx).supply.baseBalance }
     }),
     cometBalances: async (ctx) => ({
-      albert: { $base: -getConfigForScenario(ctx).supply.minBorrow }
+      betty: { $base: `<=${getConfigForScenario(ctx).supply.minBorrow}`}
     })
   },
   async ({ comet, actors }, context) => {
@@ -383,15 +383,11 @@ scenario(
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const scale = (await comet.baseScale()).toBigInt();
-
     await baseAsset.approve(albert, comet.address);
     await albert.allow(betty, true);
-
     const txn = await betty.supplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: UINT256_MAX });
-
     expect(await baseAsset.balanceOf(albert.address)).to.be.lessThan(config.supply.baseBalance * scale);
     expectBase(await betty.getCometBaseBalance(), 0n);
-
     return txn;
   }
 );

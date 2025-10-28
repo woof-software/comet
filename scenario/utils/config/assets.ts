@@ -3,9 +3,9 @@ import { AssetsConfig } from './types';
 
 export const assetsConfig: AssetsConfig = {
   wsteth: {
-    supplyCap: { small: 1n, medium: 2n },
+    supplyCap: { small: exp(1, 18), medium: exp(2, 18) },
     tokenBalance: 2n,
-    cometBalance: 5n,
+    cometBalance: 50n,
     cometPosition: 1n,
   },
   maticx: {
@@ -18,7 +18,7 @@ export const assetsConfig: AssetsConfig = {
     liquidationFactor: exp(0.93, 18),
   },
   dogecoin: {
-    totalSupply: 1_000_000n,
+    supplyAmount: 1_000_000n,
     decimals: 8n,
     price: 1_000n,
     allocateAmount: 100n,
