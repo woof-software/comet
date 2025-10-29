@@ -3,8 +3,9 @@ import { expect, makeProtocol } from "./helpers";
 import { takeSnapshot } from "@nomicfoundation/hardhat-network-helpers";
 import { CometExt, CometHarnessInterfaceExtendedAssetList } from "build/types";
 import type { SnapshotRestorer } from "@nomicfoundation/hardhat-network-helpers";
+import { ContractTransaction } from "ethers";
 
-describe("Extended Pause Functionality", function () {
+describe("extended pause functionality", function () {
   // Snapshot
   let snapshot: SnapshotRestorer;
 
@@ -19,6 +20,8 @@ describe("Extended Pause Functionality", function () {
 
   // Constants
   const assetIndex = 0;
+
+  let maxAssets: number;
 
   before(async function () {
     const assets = {
@@ -35,25 +38,25 @@ describe("Extended Pause Functionality", function () {
     pauseGuardian = protocol.pauseGuardian;
     users = protocol.users;
 
+    maxAssets = await comet.maxAssets();
+
     snapshot = await takeSnapshot();
   });
 
-  describe("Withdraw Pause Functions", function () {
+  describe("withdraw pause functions", function () {
     describe("pauseLendersWithdraw", function () {
       describe("happy cases", function () {
-        it("is false by default", async function () {
-          expect(await comet.isLendersWithdrawPaused()).to.be.false;
-        });
+        let pauseLendersWithdrawTx: ContractTransaction;
 
         it("allows governor to call pauseLendersWithdraw", async function () {
-          await expect(cometExt.connect(governor).pauseLendersWithdraw(true)).to
-            .not.be.reverted;
-
-          await snapshot.restore();
+          pauseLendersWithdrawTx = await cometExt
+            .connect(governor)
+            .pauseLendersWithdraw(true);
+          await expect(pauseLendersWithdrawTx).to.not.be.reverted;
         });
 
         it("emits LendersWithdrawPauseAction event when pausing by governor", async function () {
-          expect(await cometExt.connect(governor).pauseLendersWithdraw(true))
+          expect(pauseLendersWithdrawTx)
             .to.emit(cometExt, "LendersWithdrawPauseAction")
             .withArgs(true);
         });
@@ -63,27 +66,25 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause", async function () {
-          await cometExt.connect(governor).pauseLendersWithdraw(false);
+          await expect(cometExt.connect(governor).pauseLendersWithdraw(false))
+            .to.emit(cometExt, "LendersWithdrawPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when pausing by governor", async function () {
           expect(await comet.isLendersWithdrawPaused()).to.be.false;
-
-          await snapshot.restore();
         });
 
         it("allows pause guardian to call pauseLendersWithdraw", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseLendersWithdraw(true)
-          ).to.not.be.reverted;
+          pauseLendersWithdrawTx = await cometExt
+            .connect(pauseGuardian)
+            .pauseLendersWithdraw(true);
 
-          await snapshot.restore();
+          await expect(pauseLendersWithdrawTx).to.not.be.reverted;
         });
 
         it("emits LendersWithdrawPauseAction event when pausing by pause guardian", async function () {
-          expect(
-            await cometExt.connect(pauseGuardian).pauseLendersWithdraw(true)
-          )
+          expect(pauseLendersWithdrawTx)
             .to.emit(cometExt, "LendersWithdrawPauseAction")
             .withArgs(true);
         });
@@ -93,13 +94,15 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows pause guardian to unpause", async function () {
-          await cometExt.connect(pauseGuardian).pauseLendersWithdraw(false);
+          await expect(
+            cometExt.connect(pauseGuardian).pauseLendersWithdraw(false)
+          )
+            .to.emit(cometExt, "LendersWithdrawPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when pausing by pause guardian", async function () {
           expect(await comet.isLendersWithdrawPaused()).to.be.false;
-
-          await snapshot.restore();
         });
       });
 
@@ -113,9 +116,15 @@ describe("Extended Pause Functionality", function () {
           );
         });
 
-        it("reverts duplicate status setting", async function () {
+        it("reverts duplicate status setting (governor)", async function () {
           await expect(
             cometExt.connect(governor).pauseLendersWithdraw(false)
+          ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
+        });
+
+        it("reverts duplicate status setting (pause guardian)", async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseLendersWithdraw(false)
           ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
         });
       });
@@ -123,19 +132,17 @@ describe("Extended Pause Functionality", function () {
 
     describe("pauseBorrowersWithdraw", function () {
       describe("happy cases", function () {
-        it("is false by default", async function () {
-          expect(await comet.isBorrowersWithdrawPaused()).to.be.false;
-        });
+        let pauseBorrowersWithdrawTx: ContractTransaction;
 
         it("allows governor to call pauseBorrowersWithdraw", async function () {
-          await expect(cometExt.connect(governor).pauseBorrowersWithdraw(true))
-            .to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseBorrowersWithdrawTx = await cometExt
+            .connect(governor)
+            .pauseBorrowersWithdraw(true);
+          await expect(pauseBorrowersWithdrawTx).to.not.be.reverted;
         });
 
         it("emits BorrowersWithdrawPauseAction event when pausing by governor", async function () {
-          await expect(cometExt.connect(governor).pauseBorrowersWithdraw(true))
+          expect(pauseBorrowersWithdrawTx)
             .to.emit(cometExt, "BorrowersWithdrawPauseAction")
             .withArgs(true);
         });
@@ -145,27 +152,24 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause", async function () {
-          await cometExt.connect(governor).pauseBorrowersWithdraw(false);
+          await expect(cometExt.connect(governor).pauseBorrowersWithdraw(false))
+            .to.emit(cometExt, "BorrowersWithdrawPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isBorrowersWithdrawPaused()).to.be.false;
-
-          await snapshot.restore();
         });
 
         it("allows pause guardian to call pauseBorrowersWithdraw", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseBorrowersWithdraw(true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseBorrowersWithdrawTx = await cometExt
+            .connect(pauseGuardian)
+            .pauseBorrowersWithdraw(true);
+          await expect(pauseBorrowersWithdrawTx).to.not.be.reverted;
         });
 
         it("emits BorrowersWithdrawPauseAction event when pausing by pause guardian", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseBorrowersWithdraw(true)
-          )
+          expect(pauseBorrowersWithdrawTx)
             .to.emit(cometExt, "BorrowersWithdrawPauseAction")
             .withArgs(true);
         });
@@ -175,13 +179,15 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows pause guardian to unpause", async function () {
-          await cometExt.connect(pauseGuardian).pauseBorrowersWithdraw(false);
+          await expect(
+            cometExt.connect(pauseGuardian).pauseBorrowersWithdraw(false)
+          )
+            .to.emit(cometExt, "BorrowersWithdrawPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by pause guardian", async function () {
           expect(await comet.isBorrowersWithdrawPaused()).to.be.false;
-
-          await snapshot.restore();
         });
       });
 
@@ -195,9 +201,15 @@ describe("Extended Pause Functionality", function () {
           );
         });
 
-        it("reverts duplicate status setting", async function () {
+        it("reverts duplicate status setting (governor)", async function () {
           await expect(
             cometExt.connect(governor).pauseBorrowersWithdraw(false)
+          ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
+        });
+
+        it("reverts duplicate status setting (pause guardian)", async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseBorrowersWithdraw(false)
           ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
         });
       });
@@ -205,19 +217,17 @@ describe("Extended Pause Functionality", function () {
 
     describe("pauseCollateralWithdraw", function () {
       describe("happy cases", function () {
-        it("is false by default", async function () {
-          expect(await comet.isCollateralWithdrawPaused()).to.be.false;
-        });
+        let pauseCollateralWithdrawTx: ContractTransaction;
 
         it("allows governor to call pauseCollateralWithdraw", async function () {
-          await expect(cometExt.connect(governor).pauseCollateralWithdraw(true))
-            .to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralWithdrawTx = await cometExt
+            .connect(governor)
+            .pauseCollateralWithdraw(true);
+          await expect(pauseCollateralWithdrawTx).to.not.be.reverted;
         });
 
         it("emits CollateralWithdrawPauseAction event when pausing by governor", async function () {
-          await expect(cometExt.connect(governor).pauseCollateralWithdraw(true))
+          expect(pauseCollateralWithdrawTx)
             .to.emit(cometExt, "CollateralWithdrawPauseAction")
             .withArgs(true);
         });
@@ -227,27 +237,26 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause", async function () {
-          await cometExt.connect(governor).pauseCollateralWithdraw(false);
+          await expect(
+            cometExt.connect(governor).pauseCollateralWithdraw(false)
+          )
+            .to.emit(cometExt, "CollateralWithdrawPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isCollateralWithdrawPaused()).to.be.false;
-
-          await snapshot.restore();
         });
 
         it("allows pause guardian to call pauseCollateralWithdraw", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseCollateralWithdraw(true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralWithdrawTx = await cometExt
+            .connect(pauseGuardian)
+            .pauseCollateralWithdraw(true);
+          await expect(pauseCollateralWithdrawTx).to.not.be.reverted;
         });
 
         it("emits CollateralWithdrawPauseAction event when pausing by pause guardian", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseCollateralWithdraw(true)
-          )
+          expect(pauseCollateralWithdrawTx)
             .to.emit(cometExt, "CollateralWithdrawPauseAction")
             .withArgs(true);
         });
@@ -257,13 +266,15 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause after pause guardian", async function () {
-          await cometExt.connect(governor).pauseCollateralWithdraw(false);
+          await expect(
+            cometExt.connect(governor).pauseCollateralWithdraw(false)
+          )
+            .to.emit(cometExt, "CollateralWithdrawPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isCollateralWithdrawPaused()).to.be.false;
-
-          await snapshot.restore();
         });
       });
 
@@ -277,9 +288,15 @@ describe("Extended Pause Functionality", function () {
           );
         });
 
-        it("reverts duplicate status setting", async function () {
+        it("reverts duplicate status setting (governor)", async function () {
           await expect(
             cometExt.connect(governor).pauseCollateralWithdraw(false)
+          ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
+        });
+
+        it("reverts duplicate status setting (pause guardian)", async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseCollateralWithdraw(false)
           ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
         });
       });
@@ -287,27 +304,17 @@ describe("Extended Pause Functionality", function () {
 
     describe("pauseCollateralAssetWithdraw", function () {
       describe("happy cases", function () {
-        it("is false by default", async function () {
-          expect(await comet.isCollateralAssetWithdrawPaused(assetIndex)).to.be
-            .false;
-        });
+        let pauseCollateralAssetWithdrawTx: ContractTransaction;
 
         it("allows governor to call pauseCollateralAssetWithdraw", async function () {
-          await expect(
-            cometExt
-              .connect(governor)
-              .pauseCollateralAssetWithdraw(assetIndex, true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralAssetWithdrawTx = await cometExt
+            .connect(governor)
+            .pauseCollateralAssetWithdraw(assetIndex, true);
+          await expect(pauseCollateralAssetWithdrawTx).to.not.be.reverted;
         });
 
         it("emits CollateralAssetWithdrawPauseAction event when pausing by governor", async function () {
-          await expect(
-            cometExt
-              .connect(governor)
-              .pauseCollateralAssetWithdraw(assetIndex, true)
-          )
+          expect(pauseCollateralAssetWithdrawTx)
             .to.emit(cometExt, "CollateralAssetWithdrawPauseAction")
             .withArgs(assetIndex, true);
         });
@@ -318,34 +325,29 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause", async function () {
-          await cometExt
-            .connect(governor)
-            .pauseCollateralAssetWithdraw(assetIndex, false);
+          await expect(
+            cometExt
+              .connect(governor)
+              .pauseCollateralAssetWithdraw(assetIndex, false)
+          )
+            .to.emit(cometExt, "CollateralAssetWithdrawPauseAction")
+            .withArgs(assetIndex, false);
         });
 
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isCollateralAssetWithdrawPaused(assetIndex)).to.be
             .false;
-
-          await snapshot.restore();
         });
 
         it("allows pause guardian to call pauseCollateralAssetWithdraw", async function () {
-          await expect(
-            cometExt
-              .connect(pauseGuardian)
-              .pauseCollateralAssetWithdraw(assetIndex, true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralAssetWithdrawTx = await cometExt
+            .connect(pauseGuardian)
+            .pauseCollateralAssetWithdraw(assetIndex, true);
+          await expect(pauseCollateralAssetWithdrawTx).to.not.be.reverted;
         });
 
         it("emits CollateralAssetWithdrawPauseAction event when pausing by pause guardian", async function () {
-          await expect(
-            cometExt
-              .connect(pauseGuardian)
-              .pauseCollateralAssetWithdraw(assetIndex, true)
-          )
+          expect(pauseCollateralAssetWithdrawTx)
             .to.emit(cometExt, "CollateralAssetWithdrawPauseAction")
             .withArgs(assetIndex, true);
         });
@@ -356,9 +358,13 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause after pause guardian", async function () {
-          await cometExt
-            .connect(governor)
-            .pauseCollateralAssetWithdraw(assetIndex, false);
+          await expect(
+            cometExt
+              .connect(governor)
+              .pauseCollateralAssetWithdraw(assetIndex, false)
+          )
+            .to.emit(cometExt, "CollateralAssetWithdrawPauseAction")
+            .withArgs(assetIndex, false);
         });
 
         it("sets to false when unpausing by governor", async function () {
@@ -368,27 +374,37 @@ describe("Extended Pause Functionality", function () {
           await snapshot.restore();
         });
 
-        it("handles multiple asset indices independently", async function () {
-          await cometExt
-            .connect(governor)
-            .pauseCollateralAssetWithdraw(0, true);
-          expect(await comet.isCollateralAssetWithdrawPaused(0)).to.be.true;
-          expect(await comet.isCollateralAssetWithdrawPaused(1)).to.be.false;
+        for (let i = 1; i <= 24; i++) {
+          it(`allows to call pauseCollateralAssetWithdraw for asset ${i} with ${i} collaterals`, async function () {
+            // Create collaterals: ASSET0, ASSET1, ..., ASSET{i-1}
+            const collaterals = Object.fromEntries(
+              Array.from({ length: i }, (_, j) => [`ASSET${j}`, {}])
+            );
 
-          await cometExt
-            .connect(governor)
-            .pauseCollateralAssetWithdraw(1, true);
-          expect(await comet.isCollateralAssetWithdrawPaused(0)).to.be.true;
-          expect(await comet.isCollateralAssetWithdrawPaused(1)).to.be.true;
+            // Create protocol with USDC (base token) + i collaterals
+            const protocol = await makeProtocol({
+              assets: { USDC: {}, ...collaterals },
+            });
 
-          await cometExt
-            .connect(governor)
-            .pauseCollateralAssetWithdraw(0, false);
-          expect(await comet.isCollateralAssetWithdrawPaused(0)).to.be.false;
-          expect(await comet.isCollateralAssetWithdrawPaused(1)).to.be.true;
+            const comet = protocol.cometWithExtendedAssetList;
+            const cometExt = comet.attach(comet.address) as CometExt;
+            const governor = protocol.governor;
+            const assetIndex = i - 1;
 
-          await snapshot.restore();
-        });
+            // Verify we have i collaterals
+            const numAssets = await comet.numAssets();
+            expect(numAssets).to.be.equal(i);
+
+            // Pause the collateral at index i
+            await cometExt
+              .connect(governor)
+              .pauseCollateralAssetWithdraw(assetIndex, true);
+
+            // Verify that the asset at index i is paused
+            expect(await comet.isCollateralAssetWithdrawPaused(assetIndex)).to
+              .be.true;
+          });
+        }
       });
 
       describe("revert cases", function () {
@@ -403,10 +419,21 @@ describe("Extended Pause Functionality", function () {
           );
         });
 
-        it("reverts duplicate status setting", async function () {
+        it("reverts duplicate status setting (governor)", async function () {
           await expect(
             cometExt
               .connect(governor)
+              .pauseCollateralAssetWithdraw(assetIndex, false)
+          ).to.be.revertedWithCustomError(
+            cometExt,
+            "CollateralAssetOffsetStatusAlreadySet"
+          );
+        });
+
+        it("reverts duplicate status setting (pause guardian)", async function () {
+          await expect(
+            cometExt
+              .connect(pauseGuardian)
               .pauseCollateralAssetWithdraw(assetIndex, false)
           ).to.be.revertedWithCustomError(
             cometExt,
@@ -425,22 +452,20 @@ describe("Extended Pause Functionality", function () {
     });
   });
 
-  describe("Supply Pause Functions", function () {
+  describe("supply pause functions", function () {
     describe("pauseCollateralSupply", function () {
       describe("happy cases", function () {
-        it("is false by default", async function () {
-          expect(await comet.isCollateralSupplyPaused()).to.be.false;
-        });
+        let pauseCollateralSupplyTx: ContractTransaction;
 
         it("allows governor to call pauseCollateralSupply", async function () {
-          await expect(cometExt.connect(governor).pauseCollateralSupply(true))
-            .to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralSupplyTx = await cometExt
+            .connect(governor)
+            .pauseCollateralSupply(true);
+          await expect(pauseCollateralSupplyTx).to.not.be.reverted;
         });
 
         it("emits LendersSupplyPauseAction event when pausing by governor", async function () {
-          await expect(cometExt.connect(governor).pauseCollateralSupply(true))
+          expect(pauseCollateralSupplyTx)
             .to.emit(cometExt, "LendersSupplyPauseAction")
             .withArgs(true);
         });
@@ -450,27 +475,24 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause", async function () {
-          await cometExt.connect(governor).pauseCollateralSupply(false);
+          await expect(cometExt.connect(governor).pauseCollateralSupply(false))
+            .to.emit(cometExt, "LendersSupplyPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isCollateralSupplyPaused()).to.be.false;
-
-          await snapshot.restore();
         });
 
         it("allows pause guardian to call pauseCollateralSupply", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseCollateralSupply(true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralSupplyTx = await cometExt
+            .connect(pauseGuardian)
+            .pauseCollateralSupply(true);
+          await expect(pauseCollateralSupplyTx).to.not.be.reverted;
         });
 
         it("emits LendersSupplyPauseAction event when pausing by pause guardian", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseCollateralSupply(true)
-          )
+          expect(pauseCollateralSupplyTx)
             .to.emit(cometExt, "LendersSupplyPauseAction")
             .withArgs(true);
         });
@@ -480,13 +502,15 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows pause guardian to unpause", async function () {
-          await cometExt.connect(pauseGuardian).pauseCollateralSupply(false);
+          await expect(
+            cometExt.connect(pauseGuardian).pauseCollateralSupply(false)
+          )
+            .to.emit(cometExt, "LendersSupplyPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by pause guardian", async function () {
           expect(await comet.isCollateralSupplyPaused()).to.be.false;
-
-          await snapshot.restore();
         });
       });
 
@@ -500,9 +524,15 @@ describe("Extended Pause Functionality", function () {
           );
         });
 
-        it("reverts duplicate status setting", async function () {
+        it("reverts duplicate status setting (governor)", async function () {
           await expect(
             cometExt.connect(governor).pauseCollateralSupply(false)
+          ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
+        });
+
+        it("reverts duplicate status setting (pause guardian)", async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseCollateralSupply(false)
           ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
         });
       });
@@ -510,19 +540,17 @@ describe("Extended Pause Functionality", function () {
 
     describe("pauseBaseSupply", function () {
       describe("happy cases", function () {
-        it("is false by default", async function () {
-          expect(await comet.isBaseSupplyPaused()).to.be.false;
-        });
+        let pauseBaseSupplyTx: ContractTransaction;
 
         it("allows governor to call pauseBaseSupply", async function () {
-          await expect(cometExt.connect(governor).pauseBaseSupply(true)).to.not
-            .be.reverted;
-
-          await snapshot.restore();
+          pauseBaseSupplyTx = await cometExt
+            .connect(governor)
+            .pauseBaseSupply(true);
+          await expect(pauseBaseSupplyTx).to.not.be.reverted;
         });
 
         it("emits BorrowersSupplyPauseAction event when pausing by governor", async function () {
-          await expect(cometExt.connect(governor).pauseBaseSupply(true))
+          expect(pauseBaseSupplyTx)
             .to.emit(cometExt, "BorrowersSupplyPauseAction")
             .withArgs(true);
         });
@@ -532,24 +560,24 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause", async function () {
-          await cometExt.connect(governor).pauseBaseSupply(false);
+          await expect(cometExt.connect(governor).pauseBaseSupply(false))
+            .to.emit(cometExt, "BorrowersSupplyPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isBaseSupplyPaused()).to.be.false;
-
-          await snapshot.restore();
         });
 
         it("allows pause guardian to call pauseBaseSupply", async function () {
-          await expect(cometExt.connect(pauseGuardian).pauseBaseSupply(true)).to
-            .not.be.reverted;
-
-          await snapshot.restore();
+          pauseBaseSupplyTx = await cometExt
+            .connect(pauseGuardian)
+            .pauseBaseSupply(true);
+          await expect(pauseBaseSupplyTx).to.not.be.reverted;
         });
 
         it("emits BorrowersSupplyPauseAction event when pausing by pause guardian", async function () {
-          await expect(cometExt.connect(pauseGuardian).pauseBaseSupply(true))
+          expect(pauseBaseSupplyTx)
             .to.emit(cometExt, "BorrowersSupplyPauseAction")
             .withArgs(true);
         });
@@ -559,13 +587,13 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows pause guardian to unpause", async function () {
-          await cometExt.connect(pauseGuardian).pauseBaseSupply(false);
+          await expect(cometExt.connect(pauseGuardian).pauseBaseSupply(false))
+            .to.emit(cometExt, "BorrowersSupplyPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by pause guardian", async function () {
           expect(await comet.isBaseSupplyPaused()).to.be.false;
-
-          await snapshot.restore();
         });
       });
 
@@ -579,9 +607,15 @@ describe("Extended Pause Functionality", function () {
           );
         });
 
-        it("reverts duplicate status setting", async function () {
+        it("reverts duplicate status setting (governor)", async function () {
           await expect(
             cometExt.connect(governor).pauseBaseSupply(false)
+          ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
+        });
+
+        it("reverts duplicate status setting (pause guardian)", async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseBaseSupply(false)
           ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
         });
       });
@@ -589,27 +623,17 @@ describe("Extended Pause Functionality", function () {
 
     describe("pauseCollateralAssetSupply", function () {
       describe("happy cases", function () {
-        it("is false by default", async function () {
-          expect(await comet.isCollateralAssetSupplyPaused(assetIndex)).to.be
-            .false;
-        });
+        let pauseCollateralAssetSupplyTx: ContractTransaction;
 
         it("allows governor to call pauseCollateralAssetSupply", async function () {
-          await expect(
-            cometExt
-              .connect(governor)
-              .pauseCollateralAssetSupply(assetIndex, true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralAssetSupplyTx = await cometExt
+            .connect(governor)
+            .pauseCollateralAssetSupply(assetIndex, true);
+          await expect(pauseCollateralAssetSupplyTx).to.not.be.reverted;
         });
 
         it("emits CollateralAssetSupplyPauseAction event when pausing by governor", async function () {
-          await expect(
-            cometExt
-              .connect(governor)
-              .pauseCollateralAssetSupply(assetIndex, true)
-          )
+          expect(pauseCollateralAssetSupplyTx)
             .to.emit(cometExt, "CollateralAssetSupplyPauseAction")
             .withArgs(assetIndex, true);
         });
@@ -620,34 +644,29 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause", async function () {
-          await cometExt
-            .connect(governor)
-            .pauseCollateralAssetSupply(assetIndex, false);
+          await expect(
+            cometExt
+              .connect(governor)
+              .pauseCollateralAssetSupply(assetIndex, false)
+          )
+            .to.emit(cometExt, "CollateralAssetSupplyPauseAction")
+            .withArgs(assetIndex, false);
         });
 
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isCollateralAssetSupplyPaused(assetIndex)).to.be
             .false;
-
-          await snapshot.restore();
         });
 
         it("allows pause guardian to call pauseCollateralAssetSupply", async function () {
-          await expect(
-            cometExt
-              .connect(pauseGuardian)
-              .pauseCollateralAssetSupply(assetIndex, true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralAssetSupplyTx = await cometExt
+            .connect(pauseGuardian)
+            .pauseCollateralAssetSupply(assetIndex, true);
+          await expect(pauseCollateralAssetSupplyTx).to.not.be.reverted;
         });
 
         it("emits CollateralAssetSupplyPauseAction event when pausing by pause guardian", async function () {
-          await expect(
-            cometExt
-              .connect(pauseGuardian)
-              .pauseCollateralAssetSupply(assetIndex, true)
-          )
+          expect(pauseCollateralAssetSupplyTx)
             .to.emit(cometExt, "CollateralAssetSupplyPauseAction")
             .withArgs(assetIndex, true);
         });
@@ -657,34 +676,50 @@ describe("Extended Pause Functionality", function () {
             .true;
         });
 
-        it("allows governor to unpause after pause guardian", async function () {
-          await cometExt
-            .connect(governor)
-            .pauseCollateralAssetSupply(assetIndex, false);
+        it("allows pause guardian to unpause", async function () {
+          await expect(
+            cometExt
+              .connect(pauseGuardian)
+              .pauseCollateralAssetSupply(assetIndex, false)
+          )
+            .to.emit(cometExt, "CollateralAssetSupplyPauseAction")
+            .withArgs(assetIndex, false);
         });
 
-        it("sets to false when unpausing by governor", async function () {
+        it("sets to false when unpausing by pause guardian", async function () {
           expect(await comet.isCollateralAssetSupplyPaused(assetIndex)).to.be
             .false;
-
-          await snapshot.restore();
         });
 
-        it("handles multiple asset indices independently", async function () {
-          await cometExt.connect(governor).pauseCollateralAssetSupply(0, true);
-          expect(await comet.isCollateralAssetSupplyPaused(0)).to.be.true;
-          expect(await comet.isCollateralAssetSupplyPaused(1)).to.be.false;
+        for (let i = 1; i <= 24; i++) {
+          it(`allows to call pauseCollateralAssetSupply for asset ${i} with ${i} collaterals`, async function () {
+            const collaterals = Object.fromEntries(
+              Array.from({ length: i }, (_, j) => [`ASSET${j}`, {}])
+            );
 
-          await cometExt.connect(governor).pauseCollateralAssetSupply(1, true);
-          expect(await comet.isCollateralAssetSupplyPaused(0)).to.be.true;
-          expect(await comet.isCollateralAssetSupplyPaused(1)).to.be.true;
+            const protocol = await makeProtocol({
+              assets: { USDC: {}, ...collaterals },
+            });
 
-          await cometExt.connect(governor).pauseCollateralAssetSupply(0, false);
-          expect(await comet.isCollateralAssetSupplyPaused(0)).to.be.false;
-          expect(await comet.isCollateralAssetSupplyPaused(1)).to.be.true;
+            const comet = protocol.cometWithExtendedAssetList;
+            const cometExt = comet.attach(comet.address) as CometExt;
+            const governor = protocol.governor;
+            const assetIndex = i - 1;
 
-          await snapshot.restore();
-        });
+            // Verify we have i collaterals
+            const numAssets = await comet.numAssets();
+            expect(numAssets).to.be.equal(i);
+
+            // Pause the collateral at index i
+            await cometExt
+              .connect(governor)
+              .pauseCollateralAssetSupply(assetIndex, true);
+
+            // Verify that the asset at index i is paused
+            expect(await comet.isCollateralAssetSupplyPaused(assetIndex)).to.be
+              .true;
+          });
+        }
       });
 
       describe("revert cases", function () {
@@ -699,10 +734,21 @@ describe("Extended Pause Functionality", function () {
           );
         });
 
-        it("reverts duplicate status setting", async function () {
+        it("reverts duplicate status setting (governor)", async function () {
           await expect(
             cometExt
               .connect(governor)
+              .pauseCollateralAssetSupply(assetIndex, false)
+          ).to.be.revertedWithCustomError(
+            cometExt,
+            "CollateralAssetOffsetStatusAlreadySet"
+          );
+        });
+
+        it("reverts duplicate status setting (pause guardian)", async function () {
+          await expect(
+            cometExt
+              .connect(pauseGuardian)
               .pauseCollateralAssetSupply(assetIndex, false)
           ).to.be.revertedWithCustomError(
             cometExt,
@@ -721,22 +767,20 @@ describe("Extended Pause Functionality", function () {
     });
   });
 
-  describe("Transfer Pause Functions", function () {
+  describe("transfer pause functions", function () {
     describe("pauseLendersTransfer", function () {
       describe("happy cases", function () {
-        it("is false by default", async function () {
-          expect(await comet.isLendersTransferPaused()).to.be.false;
-        });
+        let pauseLendersTransferTx: ContractTransaction;
 
         it("allows governor to call pauseLendersTransfer", async function () {
-          await expect(cometExt.connect(governor).pauseLendersTransfer(true)).to
-            .not.be.reverted;
-
-          await snapshot.restore();
+          pauseLendersTransferTx = await cometExt
+            .connect(governor)
+            .pauseLendersTransfer(true);
+          await expect(pauseLendersTransferTx).to.not.be.reverted;
         });
 
         it("emits LendersTransferPauseAction event when pausing by governor", async function () {
-          await expect(cometExt.connect(governor).pauseLendersTransfer(true))
+          expect(pauseLendersTransferTx)
             .to.emit(cometExt, "LendersTransferPauseAction")
             .withArgs(true);
         });
@@ -746,27 +790,24 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause", async function () {
-          await cometExt.connect(governor).pauseLendersTransfer(false);
+          await expect(cometExt.connect(governor).pauseLendersTransfer(false))
+            .to.emit(cometExt, "LendersTransferPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isLendersTransferPaused()).to.be.false;
-
-          await snapshot.restore();
         });
 
         it("allows pause guardian to call pauseLendersTransfer", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseLendersTransfer(true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseLendersTransferTx = await cometExt
+            .connect(pauseGuardian)
+            .pauseLendersTransfer(true);
+          await expect(pauseLendersTransferTx).to.not.be.reverted;
         });
 
         it("emits LendersTransferPauseAction event when pausing by pause guardian", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseLendersTransfer(true)
-          )
+          expect(pauseLendersTransferTx)
             .to.emit(cometExt, "LendersTransferPauseAction")
             .withArgs(true);
         });
@@ -776,13 +817,15 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows pause guardian to unpause", async function () {
-          await cometExt.connect(pauseGuardian).pauseLendersTransfer(false);
+          await expect(
+            cometExt.connect(pauseGuardian).pauseLendersTransfer(false)
+          )
+            .to.emit(cometExt, "LendersTransferPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by pause guardian", async function () {
           expect(await comet.isLendersTransferPaused()).to.be.false;
-
-          await snapshot.restore();
         });
       });
 
@@ -796,9 +839,15 @@ describe("Extended Pause Functionality", function () {
           );
         });
 
-        it("reverts duplicate status setting", async function () {
+        it("reverts duplicate status setting (governor)", async function () {
           await expect(
             cometExt.connect(governor).pauseLendersTransfer(false)
+          ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
+        });
+
+        it("reverts duplicate status setting (pause guardian)", async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseLendersTransfer(false)
           ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
         });
       });
@@ -806,19 +855,17 @@ describe("Extended Pause Functionality", function () {
 
     describe("pauseBorrowersTransfer", function () {
       describe("happy cases", function () {
-        it("is false by default", async function () {
-          expect(await comet.isBorrowersTransferPaused()).to.be.false;
-        });
+        let pauseBorrowersTransferTx: ContractTransaction;
 
         it("allows governor to call pauseBorrowersTransfer", async function () {
-          await expect(cometExt.connect(governor).pauseBorrowersTransfer(true))
-            .to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseBorrowersTransferTx = await cometExt
+            .connect(governor)
+            .pauseBorrowersTransfer(true);
+          await expect(pauseBorrowersTransferTx).to.not.be.reverted;
         });
 
         it("emits BorrowersTransferPauseAction event when pausing by governor", async function () {
-          await expect(cometExt.connect(governor).pauseBorrowersTransfer(true))
+          expect(pauseBorrowersTransferTx)
             .to.emit(cometExt, "BorrowersTransferPauseAction")
             .withArgs(true);
         });
@@ -828,27 +875,24 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause", async function () {
-          await cometExt.connect(governor).pauseBorrowersTransfer(false);
+          await expect(cometExt.connect(governor).pauseBorrowersTransfer(false))
+            .to.emit(cometExt, "BorrowersTransferPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isBorrowersTransferPaused()).to.be.false;
-
-          await snapshot.restore();
         });
 
         it("allows pause guardian to call pauseBorrowersTransfer", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseBorrowersTransfer(true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseBorrowersTransferTx = await cometExt
+            .connect(pauseGuardian)
+            .pauseBorrowersTransfer(true);
+          await expect(pauseBorrowersTransferTx).to.not.be.reverted;
         });
 
         it("emits BorrowersTransferPauseAction event when pausing by pause guardian", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseBorrowersTransfer(true)
-          )
+          expect(pauseBorrowersTransferTx)
             .to.emit(cometExt, "BorrowersTransferPauseAction")
             .withArgs(true);
         });
@@ -858,13 +902,15 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows pause guardian to unpause", async function () {
-          await cometExt.connect(pauseGuardian).pauseBorrowersTransfer(false);
+          await expect(
+            cometExt.connect(pauseGuardian).pauseBorrowersTransfer(false)
+          )
+            .to.emit(cometExt, "BorrowersTransferPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by pause guardian", async function () {
           expect(await comet.isBorrowersTransferPaused()).to.be.false;
-
-          await snapshot.restore();
         });
       });
 
@@ -878,9 +924,15 @@ describe("Extended Pause Functionality", function () {
           );
         });
 
-        it("reverts duplicate status setting", async function () {
+        it("reverts duplicate status setting (governor)", async function () {
           await expect(
             cometExt.connect(governor).pauseBorrowersTransfer(false)
+          ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
+        });
+
+        it("reverts duplicate status setting (pause guardian)", async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseBorrowersTransfer(false)
           ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
         });
       });
@@ -888,19 +940,17 @@ describe("Extended Pause Functionality", function () {
 
     describe("pauseCollateralTransfer", function () {
       describe("happy cases", function () {
-        it("is false by default", async function () {
-          expect(await comet.isCollateralTransferPaused()).to.be.false;
-        });
+        let pauseCollateralTransferTx: ContractTransaction;
 
         it("allows governor to call pauseCollateralTransfer", async function () {
-          await expect(cometExt.connect(governor).pauseCollateralTransfer(true))
-            .to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralTransferTx = await cometExt
+            .connect(governor)
+            .pauseCollateralTransfer(true);
+          await expect(pauseCollateralTransferTx).to.not.be.reverted;
         });
 
         it("emits CollateralTransferPauseAction event when pausing by governor", async function () {
-          await expect(cometExt.connect(governor).pauseCollateralTransfer(true))
+          expect(pauseCollateralTransferTx)
             .to.emit(cometExt, "CollateralTransferPauseAction")
             .withArgs(true);
         });
@@ -910,27 +960,26 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause", async function () {
-          await cometExt.connect(governor).pauseCollateralTransfer(false);
+          await expect(
+            cometExt.connect(governor).pauseCollateralTransfer(false)
+          )
+            .to.emit(cometExt, "CollateralTransferPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isCollateralTransferPaused()).to.be.false;
-
-          await snapshot.restore();
         });
 
         it("allows pause guardian to call pauseCollateralTransfer", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseCollateralTransfer(true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralTransferTx = await cometExt
+            .connect(pauseGuardian)
+            .pauseCollateralTransfer(true);
+          await expect(pauseCollateralTransferTx).to.not.be.reverted;
         });
 
         it("emits CollateralTransferPauseAction event when pausing by pause guardian", async function () {
-          await expect(
-            cometExt.connect(pauseGuardian).pauseCollateralTransfer(true)
-          )
+          expect(pauseCollateralTransferTx)
             .to.emit(cometExt, "CollateralTransferPauseAction")
             .withArgs(true);
         });
@@ -940,13 +989,15 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows pause guardian to unpause", async function () {
-          await cometExt.connect(pauseGuardian).pauseCollateralTransfer(false);
+          await expect(
+            cometExt.connect(pauseGuardian).pauseCollateralTransfer(false)
+          )
+            .to.emit(cometExt, "CollateralTransferPauseAction")
+            .withArgs(false);
         });
 
         it("sets to false when unpausing by pause guardian", async function () {
           expect(await comet.isCollateralTransferPaused()).to.be.false;
-
-          await snapshot.restore();
         });
       });
 
@@ -960,9 +1011,15 @@ describe("Extended Pause Functionality", function () {
           );
         });
 
-        it("reverts duplicate status setting", async function () {
+        it("reverts duplicate status setting (governor)", async function () {
           await expect(
             cometExt.connect(governor).pauseCollateralTransfer(false)
+          ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
+        });
+
+        it("reverts duplicate status setting (pause guardian)", async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseCollateralTransfer(false)
           ).to.be.revertedWithCustomError(cometExt, "OffsetStatusAlreadySet");
         });
       });
@@ -970,27 +1027,17 @@ describe("Extended Pause Functionality", function () {
 
     describe("pauseCollateralAssetTransfer", function () {
       describe("happy cases", function () {
-        it("is false by default", async function () {
-          expect(await comet.isCollateralAssetTransferPaused(assetIndex)).to.be
-            .false;
-        });
+        let pauseCollateralAssetTransferTx: ContractTransaction;
 
         it("allows governor to call pauseCollateralAssetTransfer", async function () {
-          await expect(
-            cometExt
-              .connect(governor)
-              .pauseCollateralAssetTransfer(assetIndex, true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralAssetTransferTx = await cometExt
+            .connect(governor)
+            .pauseCollateralAssetTransfer(assetIndex, true);
+          await expect(pauseCollateralAssetTransferTx).to.not.be.reverted;
         });
 
         it("emits CollateralAssetTransferPauseAction event when pausing by governor", async function () {
-          await expect(
-            cometExt
-              .connect(governor)
-              .pauseCollateralAssetTransfer(assetIndex, true)
-          )
+          expect(pauseCollateralAssetTransferTx)
             .to.emit(cometExt, "CollateralAssetTransferPauseAction")
             .withArgs(assetIndex, true);
         });
@@ -1001,34 +1048,29 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows governor to unpause", async function () {
-          await cometExt
-            .connect(governor)
-            .pauseCollateralAssetTransfer(assetIndex, false);
+          await expect(
+            cometExt
+              .connect(governor)
+              .pauseCollateralAssetTransfer(assetIndex, false)
+          )
+            .to.emit(cometExt, "CollateralAssetTransferPauseAction")
+            .withArgs(assetIndex, false);
         });
 
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isCollateralAssetTransferPaused(assetIndex)).to.be
             .false;
-
-          await snapshot.restore();
         });
 
         it("allows pause guardian to call pauseCollateralAssetTransfer", async function () {
-          await expect(
-            cometExt
-              .connect(pauseGuardian)
-              .pauseCollateralAssetTransfer(assetIndex, true)
-          ).to.not.be.reverted;
-
-          await snapshot.restore();
+          pauseCollateralAssetTransferTx = await cometExt
+            .connect(pauseGuardian)
+            .pauseCollateralAssetTransfer(assetIndex, true);
+          await expect(pauseCollateralAssetTransferTx).to.not.be.reverted;
         });
 
         it("emits CollateralAssetTransferPauseAction event when pausing by pause guardian", async function () {
-          await expect(
-            cometExt
-              .connect(pauseGuardian)
-              .pauseCollateralAssetTransfer(assetIndex, true)
-          )
+          expect(pauseCollateralAssetTransferTx)
             .to.emit(cometExt, "CollateralAssetTransferPauseAction")
             .withArgs(assetIndex, true);
         });
@@ -1039,39 +1081,49 @@ describe("Extended Pause Functionality", function () {
         });
 
         it("allows pause guardian to unpause", async function () {
-          await cometExt
-            .connect(pauseGuardian)
-            .pauseCollateralAssetTransfer(assetIndex, false);
+          await expect(
+            cometExt
+              .connect(pauseGuardian)
+              .pauseCollateralAssetTransfer(assetIndex, false)
+          )
+            .to.emit(cometExt, "CollateralAssetTransferPauseAction")
+            .withArgs(assetIndex, false);
         });
 
         it("sets to false when unpausing by pause guardian", async function () {
           expect(await comet.isCollateralAssetTransferPaused(assetIndex)).to.be
             .false;
-
-          await snapshot.restore();
         });
 
-        it("handles multiple asset indices independently", async function () {
-          await cometExt
-            .connect(governor)
-            .pauseCollateralAssetTransfer(0, true);
-          expect(await comet.isCollateralAssetTransferPaused(0)).to.be.true;
-          expect(await comet.isCollateralAssetTransferPaused(1)).to.be.false;
+        for (let i = 1; i <= 24; i++) {
+          it(`allows to call pauseCollateralAssetTransfer for asset ${i} with ${i} collaterals`, async function () {
+            const collaterals = Object.fromEntries(
+              Array.from({ length: i }, (_, j) => [`ASSET${j}`, {}])
+            );
 
-          await cometExt
-            .connect(governor)
-            .pauseCollateralAssetTransfer(1, true);
-          expect(await comet.isCollateralAssetTransferPaused(0)).to.be.true;
-          expect(await comet.isCollateralAssetTransferPaused(1)).to.be.true;
+            const protocol = await makeProtocol({
+              assets: { USDC: {}, ...collaterals },
+            });
 
-          await cometExt
-            .connect(governor)
-            .pauseCollateralAssetTransfer(0, false);
-          expect(await comet.isCollateralAssetTransferPaused(0)).to.be.false;
-          expect(await comet.isCollateralAssetTransferPaused(1)).to.be.true;
+            const comet = protocol.cometWithExtendedAssetList;
+            const cometExt = comet.attach(comet.address) as CometExt;
+            const governor = protocol.governor;
+            const assetIndex = i - 1;
 
-          await snapshot.restore();
-        });
+            // Verify we have i collaterals
+            const numAssets = await comet.numAssets();
+            expect(numAssets).to.be.equal(i);
+
+            // Pause the collateral at index i
+            await cometExt
+              .connect(governor)
+              .pauseCollateralAssetTransfer(assetIndex, true);
+
+            // Verify that the asset at index i is paused
+            expect(await comet.isCollateralAssetTransferPaused(assetIndex)).to
+              .be.true;
+          });
+        }
       });
 
       describe("revert cases", function () {
@@ -1086,10 +1138,21 @@ describe("Extended Pause Functionality", function () {
           );
         });
 
-        it("reverts duplicate status setting", async function () {
+        it("reverts duplicate status setting (governor)", async function () {
           await expect(
             cometExt
               .connect(governor)
+              .pauseCollateralAssetTransfer(assetIndex, false)
+          ).to.be.revertedWithCustomError(
+            cometExt,
+            "CollateralAssetOffsetStatusAlreadySet"
+          );
+        });
+
+        it("reverts duplicate status setting (pause guardian)", async function () {
+          await expect(
+            cometExt
+              .connect(pauseGuardian)
               .pauseCollateralAssetTransfer(assetIndex, false)
           ).to.be.revertedWithCustomError(
             cometExt,
@@ -1105,250 +1168,6 @@ describe("Extended Pause Functionality", function () {
           ).to.be.revertedWithCustomError(cometExt, "InvalidAssetIndex");
         });
       });
-    });
-  });
-
-  describe("isValidAssetIndex", function () {
-    it("should work with 3 collaterals - set pauses for all assets", async function () {
-      // Create a new comet with 3 collaterals
-      const assets = {
-        USDC: {},
-        ASSET1: {},
-        ASSET2: {},
-        ASSET3: {},
-      };
-
-      const protocol = await makeProtocol({ assets });
-      const comet = protocol.cometWithExtendedAssetList;
-      const cometExt = comet.attach(comet.address) as CometExt;
-      const governor = protocol.governor;
-
-      const numAssets = await comet.numAssets();
-
-      for (let i = 0; i < numAssets; i++) {
-        await cometExt.connect(governor).pauseCollateralAssetWithdraw(i, true);
-        await cometExt.connect(governor).pauseCollateralAssetSupply(i, true);
-        await cometExt.connect(governor).pauseCollateralAssetTransfer(i, true);
-      }
-
-      // Verify the pause states are set correctly
-      for (let i = 0; i < numAssets; i++) {
-        expect(await comet.isCollateralAssetWithdrawPaused(i)).to.be.true;
-        expect(await comet.isCollateralAssetSupplyPaused(i)).to.be.true;
-        expect(await comet.isCollateralAssetTransferPaused(i)).to.be.true;
-      }
-    });
-
-    it("should work with 5 collaterals - set pauses for all assets", async function () {
-      // Create a new comet with 5 collaterals
-      const assets = {
-        USDC: {},
-        ASSET1: {},
-        ASSET2: {},
-        ASSET3: {},
-        ASSET4: {},
-        ASSET5: {},
-      };
-
-      const protocol = await makeProtocol({ assets });
-      const comet = protocol.cometWithExtendedAssetList;
-      const cometExt = comet.attach(comet.address) as CometExt;
-      const governor = protocol.governor;
-
-      const numAssets = await comet.numAssets();
-
-      for (let i = 0; i < numAssets; i++) {
-        await cometExt.connect(governor).pauseCollateralAssetWithdraw(i, true);
-        await cometExt.connect(governor).pauseCollateralAssetSupply(i, true);
-        await cometExt.connect(governor).pauseCollateralAssetTransfer(i, true);
-      }
-
-      // Verify the pause states are set correctly
-      for (let i = 0; i < numAssets; i++) {
-        expect(await comet.isCollateralAssetWithdrawPaused(i)).to.be.true;
-        expect(await comet.isCollateralAssetSupplyPaused(i)).to.be.true;
-        expect(await comet.isCollateralAssetTransferPaused(i)).to.be.true;
-      }
-    });
-
-    it("should work with 10 collaterals - set pauses for all assets", async function () {
-      // Create a new comet with 10 collaterals
-      const assets = {
-        USDC: {},
-        ASSET1: {},
-        ASSET2: {},
-        ASSET3: {},
-        ASSET4: {},
-        ASSET5: {},
-        ASSET6: {},
-        ASSET7: {},
-        ASSET8: {},
-        ASSET9: {},
-      };
-
-      const protocol = await makeProtocol({ assets });
-      const comet = protocol.cometWithExtendedAssetList;
-      const cometExt = comet.attach(comet.address) as CometExt;
-      const governor = protocol.governor;
-
-      const numAssets = await comet.numAssets();
-
-      for (let i = 0; i < numAssets; i++) {
-        await cometExt.connect(governor).pauseCollateralAssetWithdraw(i, true);
-        await cometExt.connect(governor).pauseCollateralAssetSupply(i, true);
-        await cometExt.connect(governor).pauseCollateralAssetTransfer(i, true);
-      }
-
-      for (let i = 0; i < numAssets; i++) {
-        expect(await comet.isCollateralAssetWithdrawPaused(i)).to.be.true;
-        expect(await comet.isCollateralAssetSupplyPaused(i)).to.be.true;
-        expect(await comet.isCollateralAssetTransferPaused(i)).to.be.true;
-      }
-    });
-
-    it("should revert with InvalidAssetIndex for asset index numAssets+1 with 3 collaterals", async function () {
-      // Create a new comet with 3 collaterals
-      const assets = {
-        USDC: {},
-        ASSET1: {},
-        ASSET2: {},
-        ASSET3: {},
-      };
-
-      const protocol = await makeProtocol({ assets });
-      const comet = protocol.cometWithExtendedAssetList;
-      const cometExt = comet.attach(comet.address) as CometExt;
-      const governor = protocol.governor;
-
-      const numAssets = await comet.numAssets();
-
-      await expect(
-        cometExt
-          .connect(governor)
-          .pauseCollateralAssetSupply(numAssets + 1, true)
-      ).to.be.revertedWithCustomError(cometExt, "InvalidAssetIndex");
-      await expect(
-        cometExt
-          .connect(governor)
-          .pauseCollateralAssetTransfer(numAssets + 1, true)
-      ).to.be.revertedWithCustomError(cometExt, "InvalidAssetIndex");
-      await expect(
-        cometExt
-          .connect(governor)
-          .pauseCollateralAssetWithdraw(numAssets + 1, true)
-      ).to.be.revertedWithCustomError(cometExt, "InvalidAssetIndex");
-    });
-
-    it("should revert with InvalidAssetIndex for asset index numAssets+1 with 5 collaterals", async function () {
-      // Create a new comet with 5 collaterals
-      const assets = {
-        USDC: {},
-        ASSET1: {},
-        ASSET2: {},
-        ASSET3: {},
-        ASSET4: {},
-        ASSET5: {},
-      };
-      const protocol = await makeProtocol({ assets });
-      const comet = protocol.cometWithExtendedAssetList;
-      const cometExt = comet.attach(comet.address) as CometExt;
-      const governor = protocol.governor;
-
-      const numAssets = await comet.numAssets();
-
-      await expect(
-        cometExt
-          .connect(governor)
-          .pauseCollateralAssetSupply(numAssets + 1, true)
-      ).to.be.revertedWithCustomError(cometExt, "InvalidAssetIndex");
-      await expect(
-        cometExt
-          .connect(governor)
-          .pauseCollateralAssetTransfer(numAssets + 1, true)
-      ).to.be.revertedWithCustomError(cometExt, "InvalidAssetIndex");
-      await expect(
-        cometExt
-          .connect(governor)
-          .pauseCollateralAssetWithdraw(numAssets + 1, true)
-      ).to.be.revertedWithCustomError(cometExt, "InvalidAssetIndex");
-    });
-
-    it("should revert with InvalidAssetIndex for asset index numAssets+1 with 10 collaterals", async function () {
-      // Create a new comet with 10 collaterals
-      const assets = {
-        USDC: {},
-        ASSET1: {},
-        ASSET2: {},
-        ASSET3: {},
-        ASSET4: {},
-        ASSET5: {},
-        ASSET6: {},
-        ASSET7: {},
-        ASSET8: {},
-        ASSET9: {},
-        ASSET10: {},
-      };
-      const protocol = await makeProtocol({ assets });
-      const comet = protocol.cometWithExtendedAssetList;
-      const cometExt = comet.attach(comet.address) as CometExt;
-      const governor = protocol.governor;
-
-      const numAssets = await comet.numAssets();
-
-      await expect(
-        cometExt
-          .connect(governor)
-          .pauseCollateralAssetSupply(numAssets + 1, true)
-      ).to.be.revertedWithCustomError(cometExt, "InvalidAssetIndex");
-      await expect(
-        cometExt
-          .connect(governor)
-          .pauseCollateralAssetTransfer(numAssets + 1, true)
-      ).to.be.revertedWithCustomError(cometExt, "InvalidAssetIndex");
-      await expect(
-        cometExt
-          .connect(governor)
-          .pauseCollateralAssetWithdraw(numAssets + 1, true)
-      ).to.be.revertedWithCustomError(cometExt, "InvalidAssetIndex");
-    });
-  });
-
-  describe("Edge cases", function () {
-    it("should allow setting multiple pause flags simultaneously", async function () {
-      // Set multiple pause flags
-      await cometExt.connect(governor).pauseLendersWithdraw(true);
-      await cometExt.connect(governor).pauseBorrowersWithdraw(true);
-      await cometExt.connect(governor).pauseCollateralSupply(true);
-      await cometExt.connect(governor).pauseBaseSupply(true);
-      await cometExt.connect(governor).pauseLendersTransfer(true);
-      await cometExt.connect(governor).pauseBorrowersTransfer(true);
-
-      // Verify all are set
-      expect(await comet.isLendersWithdrawPaused()).to.be.true;
-      expect(await comet.isBorrowersWithdrawPaused()).to.be.true;
-      expect(await comet.isCollateralSupplyPaused()).to.be.true;
-      expect(await comet.isBaseSupplyPaused()).to.be.true;
-      expect(await comet.isLendersTransferPaused()).to.be.true;
-      expect(await comet.isBorrowersTransferPaused()).to.be.true;
-
-      await snapshot.restore();
-    });
-
-    it("should allow toggling pause flags multiple times", async function () {
-      // Toggle multiple times
-      await cometExt.connect(governor).pauseLendersWithdraw(true);
-      expect(await comet.isLendersWithdrawPaused()).to.be.true;
-
-      await cometExt.connect(governor).pauseLendersWithdraw(false);
-      expect(await comet.isLendersWithdrawPaused()).to.be.false;
-
-      await cometExt.connect(governor).pauseLendersWithdraw(true);
-      expect(await comet.isLendersWithdrawPaused()).to.be.true;
-
-      await cometExt.connect(governor).pauseLendersWithdraw(false);
-      expect(await comet.isLendersWithdrawPaused()).to.be.false;
-
-      await snapshot.restore();
     });
   });
 });

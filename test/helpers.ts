@@ -683,7 +683,7 @@ export function getGasUsed(tx: TransactionResponseExt): bigint {
                           FORK SETUP
 //////////////////////////////////////////////////////////////*/
 
-export async function setupFork(blockNumber?: number) {
+export async function setupFork(blockNumber?: number, jsonRpcUrl?: string) {
   const mainnetConfig = hre.config.networks.mainnet as any;
 
   await hre.network.provider.request({
@@ -691,7 +691,7 @@ export async function setupFork(blockNumber?: number) {
     params: [
       {
         forking: {
-          jsonRpcUrl: mainnetConfig.url,
+          jsonRpcUrl: jsonRpcUrl ?? mainnetConfig.url,
           blockNumber: blockNumber ?? undefined,
         },
       },

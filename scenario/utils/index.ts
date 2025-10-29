@@ -32,9 +32,10 @@ import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
-export { mineBlocks, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
+
+export * from './hreUtils';
 
 export const MAX_ASSETS = 24;
 export const UINT256_MAX = 2n ** 256n - 1n;

@@ -1,11 +1,9 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils';
+import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, fundAdminAccount } from './utils';
 import { ContractReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { CometExt } from '../build/types';
-import { World } from 'plugins/scenario';
-import CometActor from './context/CometActor';
 
 async function testWithdrawCollateral(context: CometContext, assetNum: number): Promise<void | ContractReceipt> {
   const comet = await context.getComet();
@@ -45,13 +43,6 @@ async function testWithdrawFromCollateral(context: CometContext, assetNum: numbe
   expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(0n);
 
   return txn; // return txn to measure gas
-}
-
-async function fundAdminAccount(world: World, admin: CometActor) {
-  await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
-    admin.address,
-    world.deploymentManager.hre.ethers.utils.hexStripZeros(world.deploymentManager.hre.ethers.utils.parseEther('100').toHexString()),
-  ]);
 }
 
 for (let i = 0; i < MAX_ASSETS; i++) {
@@ -538,45 +529,46 @@ scenario(
   }
 );
 
-scenario(
-  'Comet#withdrawFrom reverts when specific collateral asset is paused',
-  {
-    filter: async (ctx) => await isValidAssetIndex(ctx, 1),
-    cometBalances: async (ctx) => (
-      {
-        albert: { 
-          $asset0: getConfigForScenario(ctx).withdrawCollateral,
+for (let i = 0; i < MAX_ASSETS; i++) {
+  scenario(
+    `Comet#withdrawFrom reverts when collateral asset ${i} withdraw is paused`,
+    {
+      filter: async (ctx) => await isValidAssetIndex(ctx, i),
+      cometBalances: async (ctx) => (
+        {
+          albert: { 
+            [`$asset${i}`]: getConfigForScenario(ctx).withdrawCollateral,
+          }
         }
-      }
-    ),
-  },
-  async ({ comet, actors }, context, world) => {
-    const { albert, betty, admin } = actors;
-    const { asset: asset0Address, scale: scale0BN } = await comet.getAssetInfo(0);
-    const collateralAsset0 = context.getAssetByAddress(asset0Address);
-    const scale0 = scale0BN.toBigInt();
+      ),
+    },
+    async ({ comet, actors }, context, world) => {
+      const { albert, betty, admin } = actors;
+      const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(i);
+      const collateralAsset = context.getAssetByAddress(assetAddress);
+      const scale = scaleBN.toBigInt();
 
-    await albert.allow(betty, true);
+      await albert.allow(betty, true);
 
-    // Fund admin account for gas fees
-    await fundAdminAccount(world, admin);
+      // Fund admin account for gas fees
+      await fundAdminAccount(world, admin);
 
-    // Pause only asset0 withdraw
-    const cometExt = comet.attach(comet.address) as CometExt;
-    await cometExt.connect(admin.signer).pauseCollateralAssetWithdraw(0, true);
+      // Pause specific collateral asset withdraw at index i
+      const cometExt = comet.attach(comet.address) as CometExt;
+      await cometExt.connect(admin.signer).pauseCollateralAssetWithdraw(i, true);
 
-    // Asset0 withdraw should revert
-    await expectRevertCustom(
-      betty.withdrawAssetFrom({
-        src: albert.address,
-        dst: betty.address,
-        asset: collateralAsset0.address,
-        amount: BigInt(getConfigForScenario(context).withdrawCollateral) * scale0
-      }),
-      'CollateralAssetWithdrawPaused(0)'
-    );
-  }
-);
+      await expectRevertCustom(
+        betty.withdrawAssetFrom({
+          src: albert.address,
+          dst: betty.address,
+          asset: collateralAsset.address,
+          amount: BigInt(getConfigForScenario(context).withdrawCollateral) * scale
+        }),
+        `CollateralAssetWithdrawPaused(${i})`
+      );
+    }
+  );
+}
 
 scenario(
   'Comet#withdraw base reverts if position is undercollateralized',

@@ -1,8 +1,19 @@
-import { baseBalanceOf, ethers, event, expect, exp, makeProtocol, portfolio, setTotalsBasic, wait, fastForward } from './helpers';
+import {
+  baseBalanceOf,
+  ethers,
+  event,
+  expect,
+  exp,
+  makeProtocol,
+  portfolio,
+  setTotalsBasic,
+  wait,
+  fastForward,
+} from "./helpers";
 
-describe('transfer', function () {
-  it('transfers base from sender if the asset is base', async () => {
-    const protocol = await makeProtocol({ base: 'USDC' });
+describe("transfer", function () {
+  it("transfers base from sender if the asset is base", async () => {
+    const protocol = await makeProtocol({ base: "USDC" });
     const {
       comet,
       tokens,
@@ -16,7 +27,9 @@ describe('transfer', function () {
     const t0 = await comet.totalsBasic();
     const p0 = await portfolio(protocol, alice.address);
     const q0 = await portfolio(protocol, bob.address);
-    const s0 = await wait(cometAsB.transferAsset(alice.address, USDC.address, 100e6));
+    const s0 = await wait(
+      cometAsB.transferAsset(alice.address, USDC.address, 100e6)
+    );
     const t1 = await comet.totalsBasic();
     const p1 = await portfolio(protocol, alice.address);
     const q1 = await portfolio(protocol, bob.address);
@@ -26,27 +39,47 @@ describe('transfer', function () {
         from: bob.address,
         to: ethers.constants.AddressZero,
         amount: BigInt(100e6),
-      }
+      },
     });
     expect(event(s0, 1)).to.be.deep.equal({
       Transfer: {
         from: ethers.constants.AddressZero,
         to: alice.address,
         amount: BigInt(100e6),
-      }
+      },
     });
 
-    expect(p0.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(q0.internal).to.be.deep.equal({ USDC: exp(100, 6), COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(p1.internal).to.be.deep.equal({ USDC: exp(100, 6), COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(q1.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
+    expect(p0.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(q0.internal).to.be.deep.equal({
+      USDC: exp(100, 6),
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(p1.internal).to.be.deep.equal({
+      USDC: exp(100, 6),
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(q1.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
     expect(t1.totalSupplyBase).to.be.equal(t0.totalSupplyBase);
     expect(t1.totalBorrowBase).to.be.equal(t0.totalBorrowBase);
     expect(Number(s0.receipt.gasUsed)).to.be.lessThan(90000);
   });
 
-  it('does not emit Transfer if 0 mint/burn', async () => {
-    const protocol = await makeProtocol({ base: 'USDC' });
+  it("does not emit Transfer if 0 mint/burn", async () => {
+    const protocol = await makeProtocol({ base: "USDC" });
     const {
       comet,
       tokens,
@@ -63,14 +96,20 @@ describe('transfer', function () {
 
     const cometAsB = comet.connect(bob);
 
-    const s0 = await wait(cometAsB.transferAsset(alice.address, USDC.address, 100e6));
+    const s0 = await wait(
+      cometAsB.transferAsset(alice.address, USDC.address, 100e6)
+    );
 
-    expect(s0.receipt['events'].length).to.be.equal(0);
+    expect(s0.receipt["events"].length).to.be.equal(0);
   });
 
-  it('transfers max base balance (including accrued) from sender if the asset is base', async () => {
-    const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+  it("transfers max base balance (including accrued) from sender if the asset is base", async () => {
+    const protocol = await makeProtocol({ base: "USDC" });
+    const {
+      comet,
+      tokens,
+      users: [alice, bob],
+    } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(comet.address, 100e6);
@@ -83,13 +122,21 @@ describe('transfer', function () {
 
     // Fast forward to accrue some interest
     await fastForward(86400);
-    await ethers.provider.send('evm_mine', []);
+    await ethers.provider.send("evm_mine", []);
 
     const t0 = await comet.totalsBasic();
     const a0 = await portfolio(protocol, alice.address);
     const b0 = await portfolio(protocol, bob.address);
-    const bobAccruedBalance = (await comet.callStatic.balanceOf(bob.address)).toBigInt();
-    const s0 = await wait(cometAsB.transferAsset(alice.address, USDC.address, ethers.constants.MaxUint256));
+    const bobAccruedBalance = (
+      await comet.callStatic.balanceOf(bob.address)
+    ).toBigInt();
+    const s0 = await wait(
+      cometAsB.transferAsset(
+        alice.address,
+        USDC.address,
+        ethers.constants.MaxUint256
+      )
+    );
     const t1 = await comet.totalsBasic();
     const a1 = await portfolio(protocol, alice.address);
     const b1 = await portfolio(protocol, bob.address);
@@ -100,29 +147,53 @@ describe('transfer', function () {
         from: bob.address,
         to: ethers.constants.AddressZero,
         amount: bobAccruedBalance,
-      }
+      },
     });
     expect(event(s0, 1)).to.be.deep.equal({
       Transfer: {
         from: ethers.constants.AddressZero,
         to: alice.address,
         amount: bobAccruedBalance - 1n,
-      }
+      },
     });
 
     // Hitting the rounding down behavior in this specific case (which is favorable to the protocol)
-    expect(a0.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(b0.internal).to.be.deep.equal({ USDC: bobAccruedBalance, COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(a1.internal).to.be.deep.equal({ USDC: bobAccruedBalance - 1n, COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(b1.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
+    expect(a0.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(b0.internal).to.be.deep.equal({
+      USDC: bobAccruedBalance,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(a1.internal).to.be.deep.equal({
+      USDC: bobAccruedBalance - 1n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(b1.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
     expect(t1.totalSupplyBase).to.be.equal(t0.totalSupplyBase.sub(1));
     expect(t1.totalBorrowBase).to.be.equal(t0.totalBorrowBase);
     expect(Number(s0.receipt.gasUsed)).to.be.lessThan(105000);
   });
 
-  it('transfer max base should transfer 0 if user has a borrow position', async () => {
-    const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+  it("transfer max base should transfer 0 if user has a borrow position", async () => {
+    const protocol = await makeProtocol({ base: "USDC" });
+    const {
+      comet,
+      tokens,
+      users: [alice, bob],
+    } = protocol;
     const { USDC, WETH } = tokens;
 
     await comet.setBasePrincipal(bob.address, -100e6);
@@ -132,22 +203,48 @@ describe('transfer', function () {
     const t0 = await comet.totalsBasic();
     const a0 = await portfolio(protocol, alice.address);
     const b0 = await portfolio(protocol, bob.address);
-    const s0 = await wait(cometAsB.transferAsset(alice.address, USDC.address, ethers.constants.MaxUint256));
+    const s0 = await wait(
+      cometAsB.transferAsset(
+        alice.address,
+        USDC.address,
+        ethers.constants.MaxUint256
+      )
+    );
     const t1 = await comet.totalsBasic();
     const a1 = await portfolio(protocol, alice.address);
     const b1 = await portfolio(protocol, bob.address);
 
-    expect(s0.receipt['events'].length).to.be.equal(0);
-    expect(a0.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(b0.internal).to.be.deep.equal({ USDC: exp(-100, 6), COMP: 0n, WETH: exp(1, 18), WBTC: 0n });
-    expect(a1.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(b1.internal).to.be.deep.equal({ USDC: exp(-100, 6), COMP: 0n, WETH: exp(1, 18), WBTC: 0n });
+    expect(s0.receipt["events"].length).to.be.equal(0);
+    expect(a0.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(b0.internal).to.be.deep.equal({
+      USDC: exp(-100, 6),
+      COMP: 0n,
+      WETH: exp(1, 18),
+      WBTC: 0n,
+    });
+    expect(a1.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(b1.internal).to.be.deep.equal({
+      USDC: exp(-100, 6),
+      COMP: 0n,
+      WETH: exp(1, 18),
+      WBTC: 0n,
+    });
     expect(t1.totalSupplyBase).to.be.equal(t0.totalSupplyBase);
     expect(t1.totalBorrowBase).to.be.equal(t0.totalBorrowBase);
     expect(Number(s0.receipt.gasUsed)).to.be.lessThan(105000);
   });
 
-  it('transfers collateral from sender if the asset is collateral', async () => {
+  it("transfers collateral from sender if the asset is collateral", async () => {
     const protocol = await makeProtocol();
     const {
       comet,
@@ -156,13 +253,19 @@ describe('transfer', function () {
     } = protocol;
     const { COMP } = tokens;
 
-    const _i0 = await comet.setCollateralBalance(bob.address, COMP.address, 8e8);
+    const _i0 = await comet.setCollateralBalance(
+      bob.address,
+      COMP.address,
+      8e8
+    );
     const cometAsB = comet.connect(bob);
 
     const t0 = await comet.totalsCollateral(COMP.address);
     const p0 = await portfolio(protocol, alice.address);
     const q0 = await portfolio(protocol, bob.address);
-    const s0 = await wait(cometAsB.transferAsset(alice.address, COMP.address, 8e8));
+    const s0 = await wait(
+      cometAsB.transferAsset(alice.address, COMP.address, 8e8)
+    );
     const t1 = await comet.totalsCollateral(COMP.address);
     const p1 = await portfolio(protocol, alice.address);
     const q1 = await portfolio(protocol, bob.address);
@@ -173,20 +276,44 @@ describe('transfer', function () {
         to: alice.address,
         asset: COMP.address,
         amount: BigInt(8e8),
-      }
+      },
     });
 
-    expect(p0.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(q0.internal).to.be.deep.equal({ USDC: 0n, COMP: exp(8, 8), WETH: 0n, WBTC: 0n });
-    expect(p1.internal).to.be.deep.equal({ USDC: 0n, COMP: exp(8, 8), WETH: 0n, WBTC: 0n });
-    expect(q1.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
+    expect(p0.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(q0.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: exp(8, 8),
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(p1.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: exp(8, 8),
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(q1.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
     expect(t1.totalSupplyAsset).to.be.equal(t0.totalSupplyAsset);
     expect(Number(s0.receipt.gasUsed)).to.be.lessThan(95000);
   });
 
-  it('calculates base principal correctly', async () => {
-    const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+  it("calculates base principal correctly", async () => {
+    const protocol = await makeProtocol({ base: "USDC" });
+    const {
+      comet,
+      tokens,
+      users: [alice, bob],
+    } = protocol;
     const { USDC } = tokens;
 
     await comet.setBasePrincipal(bob.address, 50e6); // 100e6 in present value
@@ -204,15 +331,35 @@ describe('transfer', function () {
     const alice1 = await portfolio(protocol, alice.address);
     const bob1 = await portfolio(protocol, bob.address);
 
-    expect(alice0.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(bob0.internal).to.be.deep.equal({ USDC: exp(100, 6), COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(alice1.internal).to.be.deep.equal({ USDC: exp(100, 6), COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(bob1.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
+    expect(alice0.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(bob0.internal).to.be.deep.equal({
+      USDC: exp(100, 6),
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(alice1.internal).to.be.deep.equal({
+      USDC: exp(100, 6),
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(bob1.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
     expect(totals1.totalSupplyBase).to.be.equal(totals0.totalSupplyBase);
     expect(totals1.totalBorrowBase).to.be.equal(totals0.totalBorrowBase);
   });
 
-  it('reverts if the asset is neither collateral nor base', async () => {
+  it("reverts if the asset is neither collateral nor base", async () => {
     const protocol = await makeProtocol();
     const {
       comet,
@@ -222,36 +369,60 @@ describe('transfer', function () {
 
     const cometAsB = comet.connect(bob);
 
-    await expect(cometAsB.transferAsset(alice.address, USUP.address, 1)).to.be.reverted;
+    await expect(cometAsB.transferAsset(alice.address, USUP.address, 1)).to.be
+      .reverted;
   });
 
-  it('reverts if transfer is paused', async () => {
-    const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, pauseGuardian, users: [alice, bob] } = protocol;
+  it("reverts if transfer is paused", async () => {
+    const protocol = await makeProtocol({ base: "USDC" });
+    const {
+      comet,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob],
+    } = protocol;
     const { USDC } = tokens;
 
     const cometAsB = comet.connect(bob);
 
     // Pause transfer
-    await wait(comet.connect(pauseGuardian).pause(false, true, false, false, false));
+    await wait(
+      comet.connect(pauseGuardian).pause(false, true, false, false, false)
+    );
     expect(await comet.isTransferPaused()).to.be.true;
 
-    await expect(cometAsB.transferAsset(alice.address, USDC.address, 1)).to.be.revertedWith("custom error 'Paused()'");
+    await expect(
+      cometAsB.transferAsset(alice.address, USDC.address, 1)
+    ).to.be.revertedWith("custom error 'Paused()'");
   });
 
-  it('reverts if transfer max for a collateral asset', async () => {
-    const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+  it("reverts if transfer max for a collateral asset", async () => {
+    const protocol = await makeProtocol({ base: "USDC" });
+    const {
+      comet,
+      tokens,
+      users: [alice, bob],
+    } = protocol;
     const { COMP } = tokens;
 
     await COMP.allocateTo(bob.address, 100e6);
     const cometAsB = comet.connect(bob);
 
-    await expect(cometAsB.transferAsset(alice.address, COMP.address, ethers.constants.MaxUint256)).to.be.revertedWith("custom error 'InvalidUInt128()'");
+    await expect(
+      cometAsB.transferAsset(
+        alice.address,
+        COMP.address,
+        ethers.constants.MaxUint256
+      )
+    ).to.be.revertedWith("custom error 'InvalidUInt128()'");
   });
 
-  it('borrows base if collateralized', async () => {
-    const { comet, tokens, users: [alice, bob] } = await makeProtocol();
+  it("borrows base if collateralized", async () => {
+    const {
+      comet,
+      tokens,
+      users: [alice, bob],
+    } = await makeProtocol();
     const { WETH, USDC } = tokens;
 
     await comet.setCollateralBalance(alice.address, WETH.address, exp(1, 18));
@@ -266,7 +437,7 @@ describe('transfer', function () {
     expect(await baseBalanceOf(comet, alice.address)).to.eq(BigInt(-100e6));
   });
 
-  it('cant borrow less than the minimum', async () => {
+  it("cant borrow less than the minimum", async () => {
     const protocol = await makeProtocol();
     const {
       comet,
@@ -278,17 +449,17 @@ describe('transfer', function () {
     const cometAsB = comet.connect(bob);
 
     const amount = (await comet.baseBorrowMin()).sub(1);
-    await expect(cometAsB.transferAsset(alice.address, USDC.address, amount)).to.be.revertedWith(
-      "custom error 'BorrowTooSmall()'"
-    );
+    await expect(
+      cometAsB.transferAsset(alice.address, USDC.address, amount)
+    ).to.be.revertedWith("custom error 'BorrowTooSmall()'");
   });
 
-  it('reverts on self-transfer of base token', async () => {
+  it("reverts on self-transfer of base token", async () => {
     const {
       comet,
       tokens,
       users: [alice],
-    } = await makeProtocol({ base: 'USDC' });
+    } = await makeProtocol({ base: "USDC" });
     const { USDC } = tokens;
 
     await expect(
@@ -296,7 +467,7 @@ describe('transfer', function () {
     ).to.be.revertedWith("custom error 'NoSelfTransfer()'");
   });
 
-  it('reverts on self-transfer of collateral', async () => {
+  it("reverts on self-transfer of collateral", async () => {
     const {
       comet,
       tokens,
@@ -309,8 +480,12 @@ describe('transfer', function () {
     ).to.be.revertedWith("custom error 'NoSelfTransfer()'");
   });
 
-  it('reverts if transferring base results in an under collateralized borrow', async () => {
-    const { comet, tokens, users: [alice, bob] } = await makeProtocol();
+  it("reverts if transferring base results in an under collateralized borrow", async () => {
+    const {
+      comet,
+      tokens,
+      users: [alice, bob],
+    } = await makeProtocol();
     const { USDC } = tokens;
 
     await expect(
@@ -318,8 +493,12 @@ describe('transfer', function () {
     ).to.be.revertedWith("custom error 'NotCollateralized()'");
   });
 
-  it('reverts if transferring collateral results in an under collateralized borrow', async () => {
-    const { comet, tokens, users: [alice, bob] } = await makeProtocol();
+  it("reverts if transferring collateral results in an under collateralized borrow", async () => {
+    const {
+      comet,
+      tokens,
+      users: [alice, bob],
+    } = await makeProtocol();
     const { WETH } = tokens;
 
     // user has a borrow, but with collateral to cover
@@ -332,7 +511,7 @@ describe('transfer', function () {
     ).to.be.revertedWith("custom error 'NotCollateralized()'");
   });
 
-  it('reverts if collateral transfer paused', async () => {
+  it("reverts if collateral transfer paused", async () => {
     const protocol = await makeProtocol();
     const {
       cometWithExtendedAssetList,
@@ -361,53 +540,68 @@ describe('transfer', function () {
         .transferAsset(alice.address, COMP.address, amount)
     ).to.be.revertedWithCustomError(
       cometWithExtendedAssetList,
-      'CollateralTransferPaused'
+      "CollateralTransferPaused"
     );
   });
 
-  it('reverts if specific collateral is on pause', async () => {
-    const protocol = await makeProtocol();
-    const {
-      cometWithExtendedAssetList,
-      tokens,
-      pauseGuardian,
-      users: [alice, bob],
-    } = protocol;
-    const { COMP } = tokens;
-    const amount = 7;
+  for (let i = 1; i <= 24; i++) {
+    it(`transfer reverts if collateral asset ${i} transfer is paused`, async () => {
+      // Create collaterals: ASSET0, ASSET1, ..., ASSET{i-1}
+      const collaterals = Object.fromEntries(
+        Array.from({ length: i }, (_, j) => [`ASSET${j}`, {}])
+      );
+      // Create protocol with USDC (base token) + i collaterals
+      const protocol = await makeProtocol({
+        assets: { USDC: {}, ...collaterals },
+      });
+      const {
+        cometWithExtendedAssetList,
+        tokens,
+        pauseGuardian,
+        users: [alice, bob],
+      } = protocol;
 
-    await COMP.allocateTo(bob.address, amount);
-    await COMP.connect(bob).approve(cometWithExtendedAssetList.address, amount);
-    await cometWithExtendedAssetList.connect(bob).supply(COMP.address, amount);
+      // Verify we have i collaterals
+      const numAssets = await cometWithExtendedAssetList.numAssets();
+      expect(numAssets).to.be.equal(i);
 
-    // Get the asset index for COMP
-    const assetInfo = await cometWithExtendedAssetList.getAssetInfoByAddress(
-      COMP.address
-    );
-    const assetIndex = assetInfo.offset;
+      // Get the asset at index i-1
+      const assetIndex = i - 1;
+      const assetToken = tokens[`ASSET${assetIndex}`];
+      const amount = 7;
 
-    // Pause specific collateral asset transfer
-    await cometWithExtendedAssetList
-      .connect(pauseGuardian)
-      .pauseCollateralAssetTransfer(assetIndex, true);
-    expect(
-      await cometWithExtendedAssetList.isCollateralAssetTransferPaused(
-        assetIndex
-      )
-    ).to.be.true;
-
-    await expect(
-      cometWithExtendedAssetList
+      // Supply the asset first
+      await assetToken.allocateTo(bob.address, amount);
+      await assetToken
         .connect(bob)
-        .transferAsset(alice.address, COMP.address, amount)
-    ).to.be.revertedWithCustomError(
-      cometWithExtendedAssetList,
-      'CollateralAssetTransferPaused'
-    );
-  });
+        .approve(cometWithExtendedAssetList.address, amount);
+      await cometWithExtendedAssetList
+        .connect(bob)
+        .supply(assetToken.address, amount);
 
-  it('reverts if lenders transfer is paused', async () => {
-    const protocol = await makeProtocol({ base: 'USDC' });
+      // Pause specific collateral asset transfer at index assetIndex
+      await cometWithExtendedAssetList
+        .connect(pauseGuardian)
+        .pauseCollateralAssetTransfer(assetIndex, true);
+      expect(
+        await cometWithExtendedAssetList.isCollateralAssetTransferPaused(
+          assetIndex
+        )
+      ).to.be.true;
+
+      await expect(
+        cometWithExtendedAssetList
+          .connect(bob)
+          .transferAsset(alice.address, assetToken.address, amount)
+      ).to.be.revertedWithCustomError(
+        cometWithExtendedAssetList,
+        "CollateralAssetTransferPaused"
+      );
+    });
+  }
+
+  it("reverts if lenders transfer is paused", async () => {
+    const protocol = await makeProtocol({ base: "USDC" });
     const {
       cometWithExtendedAssetList,
       tokens,
@@ -444,13 +638,13 @@ describe('transfer', function () {
         .transferAsset(bob.address, USDC.address, amount)
     ).to.be.revertedWithCustomError(
       cometWithExtendedAssetList,
-      'LendersTransferPaused'
+      "LendersTransferPaused"
     );
   });
 
-  it('reverts if borrower transfer is paused', async () => {
+  it("reverts if borrower transfer is paused", async () => {
     const protocol = await makeProtocol({
-      base: 'USDC',
+      base: "USDC",
       baseBorrowMin: 1,
       assets: {
         USDC: { decimals: 6, initialPrice: 1 },
@@ -511,13 +705,13 @@ describe('transfer', function () {
         .transferAsset(bob.address, USDC.address, borrowAmount)
     ).to.be.revertedWithCustomError(
       cometWithExtendedAssetList,
-      'BorrowersTransferPaused'
+      "BorrowersTransferPaused"
     );
   });
 });
 
-describe('transferFrom', function () {
-  it('transfers from src if specified and sender has permission', async () => {
+describe("transferFrom", function () {
+  it("transfers from src if specified and sender has permission", async () => {
     const protocol = await makeProtocol();
     const {
       comet,
@@ -533,17 +727,39 @@ describe('transferFrom', function () {
     const _a1 = await wait(cometAsB.allow(charlie.address, true));
     const p0 = await portfolio(protocol, alice.address);
     const q0 = await portfolio(protocol, bob.address);
-    const _s0 = await wait(cometAsC.transferAssetFrom(bob.address, alice.address, COMP.address, 7));
+    const _s0 = await wait(
+      cometAsC.transferAssetFrom(bob.address, alice.address, COMP.address, 7)
+    );
     const p1 = await portfolio(protocol, alice.address);
     const q1 = await portfolio(protocol, bob.address);
 
-    expect(p0.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
-    expect(q0.internal).to.be.deep.equal({ USDC: 0n, COMP: 7n, WETH: 0n, WBTC: 0n });
-    expect(p1.internal).to.be.deep.equal({ USDC: 0n, COMP: 7n, WETH: 0n, WBTC: 0n });
-    expect(q1.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
+    expect(p0.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(q0.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 7n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(p1.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 7n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
+    expect(q1.internal).to.be.deep.equal({
+      USDC: 0n,
+      COMP: 0n,
+      WETH: 0n,
+      WBTC: 0n,
+    });
   });
 
-  it('reverts if src is specified and sender does not have permission', async () => {
+  it("reverts if src is specified and sender does not have permission", async () => {
     const protocol = await makeProtocol();
     const {
       comet,
@@ -560,22 +776,24 @@ describe('transferFrom', function () {
     ).to.be.revertedWith("custom error 'Unauthorized()'");
   });
 
-  it('reverts on transfer of base token from address to itself', async () => {
+  it("reverts on transfer of base token from address to itself", async () => {
     const {
       comet,
       tokens,
       users: [alice, bob],
-    } = await makeProtocol({ base: 'USDC' });
+    } = await makeProtocol({ base: "USDC" });
     const { USDC } = tokens;
 
     await comet.connect(bob).allow(alice.address, true);
 
     await expect(
-      comet.connect(alice).transferAssetFrom(bob.address, bob.address, USDC.address, 100)
+      comet
+        .connect(alice)
+        .transferAssetFrom(bob.address, bob.address, USDC.address, 100)
     ).to.be.revertedWith("custom error 'NoSelfTransfer()'");
   });
 
-  it('reverts on transfer of collateral from address to itself', async () => {
+  it("reverts on transfer of collateral from address to itself", async () => {
     const {
       comet,
       tokens,
@@ -586,13 +804,20 @@ describe('transferFrom', function () {
     await comet.connect(bob).allow(alice.address, true);
 
     await expect(
-      comet.connect(alice).transferAssetFrom(bob.address, bob.address, COMP.address, 100)
+      comet
+        .connect(alice)
+        .transferAssetFrom(bob.address, bob.address, COMP.address, 100)
     ).to.be.revertedWith("custom error 'NoSelfTransfer()'");
   });
 
-  it('reverts if transfer is paused', async () => {
+  it("reverts if transfer is paused", async () => {
     const protocol = await makeProtocol();
-    const { comet, tokens, pauseGuardian, users: [alice, bob, charlie] } = protocol;
+    const {
+      comet,
+      tokens,
+      pauseGuardian,
+      users: [alice, bob, charlie],
+    } = protocol;
     const { COMP } = tokens;
 
     await comet.setCollateralBalance(bob.address, COMP.address, 7);
@@ -600,14 +825,18 @@ describe('transferFrom', function () {
     const cometAsC = comet.connect(charlie);
 
     // Pause transfer
-    await wait(comet.connect(pauseGuardian).pause(false, true, false, false, false));
+    await wait(
+      comet.connect(pauseGuardian).pause(false, true, false, false, false)
+    );
     expect(await comet.isTransferPaused()).to.be.true;
 
     await wait(cometAsB.allow(charlie.address, true));
-    await expect(cometAsC.transferAssetFrom(bob.address, alice.address, COMP.address, 7)).to.be.revertedWith("custom error 'Paused()'");
+    await expect(
+      cometAsC.transferAssetFrom(bob.address, alice.address, COMP.address, 7)
+    ).to.be.revertedWith("custom error 'Paused()'");
   });
 
-  it('reverts if collateral transfer paused', async () => {
+  it("reverts if collateral transfer paused", async () => {
     const protocol = await makeProtocol();
     const {
       cometWithExtendedAssetList,
@@ -643,60 +872,83 @@ describe('transferFrom', function () {
         .transferAssetFrom(bob.address, alice.address, COMP.address, 7)
     ).to.be.revertedWithCustomError(
       cometWithExtendedAssetList,
-      'CollateralTransferPaused'
+      "CollateralTransferPaused"
     );
   });
 
-  it('reverts if specific collateral is on pause', async () => {
-    const protocol = await makeProtocol();
-    const {
-      comet,
-      cometWithExtendedAssetList,
-      tokens,
-      pauseGuardian,
-      users: [alice, bob, charlie],
-    } = protocol;
-    const { COMP } = tokens;
-    const amount = 7;
+  for (let i = 1; i <= 24; i++) {
+    it(`transferFrom reverts if collateral asset ${i} transfer is paused`, async () => {
+      // Create collaterals: ASSET0, ASSET1, ..., ASSET{i-1}
+      const collaterals = Object.fromEntries(
+        Array.from({ length: i }, (_, j) => [`ASSET${j}`, {}])
+      );
+      // Create protocol with USDC (base token) + i collaterals
+      const protocol = await makeProtocol({
+        assets: { USDC: {}, ...collaterals },
+      });
+      const {
+        cometWithExtendedAssetList,
+        tokens,
+        pauseGuardian,
+        users: [alice, bob, charlie],
+      } = protocol;
 
-    await COMP.allocateTo(bob.address, amount);
-    await COMP.connect(bob).approve(cometWithExtendedAssetList.address, amount);
-    await cometWithExtendedAssetList.connect(bob).supply(COMP.address, amount);
+      // Verify we have i collaterals
+      const numAssets = await cometWithExtendedAssetList.numAssets();
+      expect(numAssets).to.be.equal(i);
 
-    expect(
-      await cometWithExtendedAssetList.collateralBalanceOf(
-        bob.address,
-        COMP.address
-      )
-    ).to.be.equal(amount);
+      // Get the asset at index i-1
+      const assetIndex = i - 1;
+      const assetToken = tokens[`ASSET${assetIndex}`];
+      const amount = 7;
 
-    // Get the asset index for COMP
-    const assetInfo = await comet.getAssetInfoByAddress(COMP.address);
-    const assetIndex = assetInfo.offset;
+      // Supply the asset first
+      await assetToken.allocateTo(bob.address, amount);
+      await assetToken
+        .connect(bob)
+        .approve(cometWithExtendedAssetList.address, amount);
+      await cometWithExtendedAssetList
+        .connect(bob)
+        .supply(assetToken.address, amount);
 
-    // Pause specific collateral asset transfer
-    await cometWithExtendedAssetList
-      .connect(pauseGuardian)
-      .pauseCollateralAssetTransfer(assetIndex, true);
-    expect(
-      await cometWithExtendedAssetList.isCollateralAssetTransferPaused(
-        assetIndex
-      )
-    ).to.be.true;
+      expect(
+        await cometWithExtendedAssetList.collateralBalanceOf(
+          bob.address,
+          assetToken.address
+        )
+      ).to.be.equal(amount);
 
-    await cometWithExtendedAssetList.connect(bob).allow(charlie.address, true);
-    await expect(
-      cometWithExtendedAssetList
-        .connect(charlie)
-        .transferAssetFrom(bob.address, alice.address, COMP.address, amount)
-    ).to.be.revertedWithCustomError(
-      cometWithExtendedAssetList,
-      'CollateralAssetTransferPaused'
-    );
-  });
+      // Pause specific collateral asset transfer at index assetIndex
+      await cometWithExtendedAssetList
+        .connect(pauseGuardian)
+        .pauseCollateralAssetTransfer(assetIndex, true);
+      expect(
+        await cometWithExtendedAssetList.isCollateralAssetTransferPaused(
+          assetIndex
+        )
+      ).to.be.true;
 
-  it('reverts if lenders transfer is paused', async () => {
-    const protocol = await makeProtocol({ base: 'USDC' });
+      await cometWithExtendedAssetList
+        .connect(bob)
+        .allow(charlie.address, true);
+      await expect(
+        cometWithExtendedAssetList
+          .connect(charlie)
+          .transferAssetFrom(
+            bob.address,
+            alice.address,
+            assetToken.address,
+            amount
+          )
+      ).to.be.revertedWithCustomError(
+        cometWithExtendedAssetList,
+        "CollateralAssetTransferPaused"
+      );
+    });
+  }
+
+  it("reverts if lenders transfer is paused", async () => {
+    const protocol = await makeProtocol({ base: "USDC" });
     const {
       cometWithExtendedAssetList,
       tokens,
@@ -735,13 +987,13 @@ describe('transferFrom', function () {
         .transferAsset(bob.address, USDC.address, 50e6)
     ).to.be.revertedWithCustomError(
       cometWithExtendedAssetList,
-      'LendersTransferPaused'
+      "LendersTransferPaused"
     );
   });
 
-  it('reverts if borrower transfer is paused', async () => {
+  it("reverts if borrower transfer is paused", async () => {
     const protocol = await makeProtocol({
-      base: 'USDC',
+      base: "USDC",
       baseBorrowMin: 1,
       assets: {
         USDC: { decimals: 6, initialPrice: 1 },
@@ -801,7 +1053,7 @@ describe('transferFrom', function () {
         .transferAsset(bob.address, USDC.address, 50e6)
     ).to.be.revertedWithCustomError(
       cometWithExtendedAssetList,
-      'BorrowersTransferPaused'
+      "BorrowersTransferPaused"
     );
   });
 });

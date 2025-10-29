@@ -1,21 +1,12 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectBase, expectRevertCustom, expectRevertMatches, getExpectedBaseBalance, getInterest, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, UINT256_MAX } from './utils';
+import { expectApproximately, expectBase, expectRevertCustom, expectRevertMatches, getExpectedBaseBalance, getInterest, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, UINT256_MAX, fundAdminAccount } from './utils';
 import { ContractReceipt } from 'ethers';
 import { matchesDeployment } from './utils';
 import { exp } from '../test/helpers';
 import { ethers } from 'hardhat';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { CometExt } from '../build/types';
-import { World } from 'plugins/scenario';
-import CometActor from './context/CometActor';
-
-async function fundAdminAccount(world: World, admin: CometActor) {
-  await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
-    admin.address,
-    world.deploymentManager.hre.ethers.utils.hexStripZeros(world.deploymentManager.hre.ethers.utils.parseEther('100').toHexString()),
-  ]);
-}
 
 // XXX introduce a SupplyCapConstraint to separately test the happy path and revert path instead
 // of testing them conditionally
@@ -771,37 +762,42 @@ scenario(
   }
 );
 
-scenario(
-  'Comet#supply reverts when specific collateral asset supply is paused',
-  {
-    filter: async (ctx) => await isValidAssetIndex(ctx, 0),
-    tokenBalances: {
-      albert: { $asset0: 100 }
+for (let i = 0; i < MAX_ASSETS; i++) {
+  scenario(
+    `Comet#supply reverts when collateral asset ${i} supply is paused`,
+    {
+      filter: async (ctx) => await isValidAssetIndex(ctx, i),
+      tokenBalances: async (ctx) => (
+        {
+          albert: { [`$asset${i}`]: 100 }
+        }
+      ),
     },
-  },
-  async ({ comet, actors }, context, world) => {
-    const { albert, admin } = actors;
-    const { asset: asset0Address, scale: scale0BN } = await comet.getAssetInfo(0);
-    const collateralAsset0 = context.getAssetByAddress(asset0Address);
-    const scale0 = scale0BN.toBigInt();
+    async ({ comet, actors }, context, world) => {
+      const { albert, admin } = actors;
 
-    // Fund admin account for gas fees
-    await fundAdminAccount(world, admin);
+      // Fund admin account for gas fees
+      await fundAdminAccount(world, admin);
 
-    // Pause specific collateral asset supply
-    const cometExt = comet.attach(comet.address) as CometExt;
-    await cometExt.connect(admin.signer).pauseCollateralAssetSupply(0, true);
+      const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(i);
+      const collateralAsset = context.getAssetByAddress(assetAddress);
+      const scale = scaleBN.toBigInt();
 
-    await collateralAsset0.approve(albert, comet.address);
-    await expectRevertCustom(
-      albert.supplyAsset({
-        asset: collateralAsset0.address,
-        amount: 100n * scale0,
-      }),
-      'CollateralAssetSupplyPaused(0)'
-    );
-  }
-);
+      // Pause specific collateral asset supply at index i
+      const cometExt = comet.attach(comet.address) as CometExt;
+      await cometExt.connect(admin.signer).pauseCollateralAssetSupply(i, true);
+
+      await collateralAsset.approve(albert, comet.address);
+      await expectRevertCustom(
+        albert.supplyAsset({
+          asset: collateralAsset.address,
+          amount: 100n * scale,
+        }),
+        `CollateralAssetSupplyPaused(${i})`
+      );
+    }
+  );
+}
 
 scenario(
   'Comet#supplyTo reverts when base supply is paused',

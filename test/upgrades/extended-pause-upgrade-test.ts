@@ -4,7 +4,6 @@ import { setupFork } from "../helpers";
 import {
   impersonateAccount,
   setBalance,
-  takeSnapshot
 } from "@nomicfoundation/hardhat-network-helpers";
 import {
   CometExtAssetList__factory,
@@ -15,13 +14,10 @@ import {
   CometExtAssetList,
 } from "build/types";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
-import { ContractTransaction } from "ethers";
-import type { SnapshotRestorer } from "@nomicfoundation/hardhat-network-helpers";
+import { BigNumber } from "ethers";
+import { TotalsBasicStructOutput } from "build/types/CometExtAssetList";
 
-describe("Extended pause upgrade test", function () {
-  // Snapshot
-  let snapshot: SnapshotRestorer;
-
+describe("extended pause upgrade test", function () {
   // Constants
   const FORK_BLOCK_NUMBER = 23655019;
   const COMET_ADDRESS = "0xc3d688B66703497DAA19211EEdff47f25384cdc3";
@@ -46,8 +42,26 @@ describe("Extended pause upgrade test", function () {
   let originalImpl: string;
   let newImpl: string;
 
-  // Transactions
-  let upgradeTx: ContractTransaction;
+  // Extension delegate storage snapshot
+  let assetListFactoryBefore: string;
+  let maxAssetsBefore: number;
+  let versionBefore: string;
+  let nameBefore: string;
+  let symbolBefore: string;
+  let baseAccrualScaleBefore: BigNumber;
+  let baseIndexScaleBefore: BigNumber;
+  let factorScaleBefore: BigNumber;
+  let priceScaleBefore: BigNumber;
+
+  // Immutable or constants snapshot
+  let governorBefore: string;
+  let pauseGuardianBefore: string;
+  let baseTokenBefore: string;
+  let baseTokenPriceFeedBefore: string;
+  let supplyKinkBefore: BigNumber;
+
+  // Storage snapshot
+  let totalsBasicBefore: TotalsBasicStructOutput;
 
   before(async function () {
     // Setup mainnet fork
@@ -132,47 +146,43 @@ describe("Extended pause upgrade test", function () {
     const deployReceipt = await deployTx.wait();
     const deployEvent = deployReceipt.events.find((e) => e.event === "CometDeployed");
     newImpl = deployEvent.args.newComet;
-
-    upgradeTx = await proxyAdmin.connect(governor).upgrade(COMET_ADDRESS, newImpl);
+    expect(newImpl).to.not.equal(ethers.constants.AddressZero);
+    expect(newImpl).to.not.equal(originalImpl);
 
     cometExt = await ethers.getContractAt("CometExtAssetList", COMET_ADDRESS) as CometExtAssetList;
 
-    snapshot = await takeSnapshot()
-  });
+    // Extension delegate storage snapshot
+    assetListFactoryBefore = await cometExt.assetListFactory();
+    maxAssetsBefore = await cometExt.maxAssets();
+    versionBefore = await cometExt.version();
+    nameBefore = await cometExt.name();
+    symbolBefore = await cometExt.symbol();
+    baseAccrualScaleBefore = await cometExt.baseAccrualScale();
+    baseIndexScaleBefore = await cometExt.baseIndexScale();
+    factorScaleBefore = await cometExt.factorScale();
+    priceScaleBefore = await cometExt.priceScale();
 
-  it('verify new deployed comet implementation', async function () {
-    expect(newImpl).to.not.equal(ethers.constants.AddressZero);
-    expect(newImpl).to.not.equal(originalImpl);
+    // Immutable or constants snapshot
+    governorBefore = await comet.governor();
+    pauseGuardianBefore = await comet.pauseGuardian();
+    baseTokenBefore = await comet.baseToken();
+    baseTokenPriceFeedBefore = await comet.baseTokenPriceFeed();
+    supplyKinkBefore = await comet.supplyKink();
+
+    // Storage snapshot
+    totalsBasicBefore = await cometExt.totalsBasic();
   });
 
   it('should upgrade proxy to new implementation by governor', async function () {
-    await upgradeTx.wait();
-    
-    await snapshot.restore();
+    await proxyAdmin.connect(governor).upgrade(COMET_ADDRESS, newImpl);
   });
 
   it('should update comet and comet extension delegate implementations', async function () {
-    await upgradeTx.wait();
-
     expect(await comet.extensionDelegate()).to.equal(newCometExt.address);
     expect(await proxyAdmin.getProxyImplementation(COMET_ADDRESS)).to.equal(newImpl);
-
-    await snapshot.restore();
   });
 
   it('should save comet extension storage safely after upgrade', async function () {
-    const assetListFactoryBefore = await cometExt.assetListFactory();
-    const maxAssetsBefore = await cometExt.maxAssets();
-    const versionBefore = await cometExt.version();
-    const nameBefore = await cometExt.name();
-    const symbolBefore = await cometExt.symbol();
-    const baseAccrualScaleBefore = await cometExt.baseAccrualScale();
-    const baseIndexScaleBefore = await cometExt.baseIndexScale();
-    const factorScaleBefore = await cometExt.factorScale();
-    const priceScaleBefore = await cometExt.priceScale();
-
-    await upgradeTx.wait();
-
     expect(await cometExt.assetListFactory()).to.equal(assetListFactoryBefore);
     expect(await cometExt.maxAssets()).to.equal(maxAssetsBefore);
     expect(await cometExt.version()).to.equal(versionBefore);
@@ -182,41 +192,19 @@ describe("Extended pause upgrade test", function () {
     expect(await cometExt.baseIndexScale()).to.equal(baseIndexScaleBefore);
     expect(await cometExt.factorScale()).to.equal(factorScaleBefore);
     expect(await cometExt.priceScale()).to.equal(priceScaleBefore);
-
-    await snapshot.restore();
   });
 
   it('should save comet storage safely after upgrade', async function () {
-    // Immutable or constants 
-    const governorBefore = await comet.governor();
-    const pauseGuardianBefore = await comet.pauseGuardian();
-    const baseTokenBefore = await comet.baseToken();
-    const baseTokenPriceFeedBefore = await comet.baseTokenPriceFeed();
-    const extensionDelegateBefore = await comet.extensionDelegate();
-    const supplyKinkBefore = await comet.supplyKink();
-
-    // Storage
-    const totalsBasicBefore = await cometExt.totalsBasic();
-
-    // Upgrade
-    await upgradeTx.wait();
-
-    // Check
     expect(await comet.governor()).to.equal(governorBefore);
     expect(await comet.pauseGuardian()).to.equal(pauseGuardianBefore);
     expect(await comet.baseToken()).to.equal(baseTokenBefore);
     expect(await comet.baseTokenPriceFeed()).to.equal(baseTokenPriceFeedBefore);
-    expect(await comet.extensionDelegate()).to.equal(extensionDelegateBefore);
+    expect(await comet.extensionDelegate()).to.equal(newCometExt.address);
     expect(await comet.supplyKink()).to.equal(supplyKinkBefore);
     expect(await cometExt.totalsBasic()).to.deep.equal(totalsBasicBefore);
-
-    await snapshot.restore();
   });
 
   it('should allow to call extended pause functions after upgrade', async function () {
-    // Upgrade
-    await upgradeTx.wait();
-
     // Call extended pause functions
     await cometExt.connect(governor).pauseLendersWithdraw(true);
     await cometExt.connect(governor).pauseBorrowersWithdraw(true);

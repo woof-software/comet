@@ -1,11 +1,9 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectBase, expectRevertCustom, getInterest, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils';
+import { expectApproximately, expectBase, expectRevertCustom, getInterest, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, fundAdminAccount } from './utils';
 import { ContractReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { CometExt } from '../build/types';
-import { World } from 'plugins/scenario';
-import CometActor from './context/CometActor';
 
 async function testTransferCollateral(context: CometContext, assetNum: number): Promise<void | ContractReceipt> {
   const comet = await context.getComet();
@@ -39,13 +37,6 @@ async function testTransferFromCollateral(context: CometContext, assetNum: numbe
   expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(scale.mul(BigInt(getConfigForScenario(context).supplyCollateral) / 2n));
 
   return txn; // return txn to measure gas
-}
-
-async function fundAdminAccount(world: World, admin: CometActor) {
-  await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
-    admin.address,
-    world.deploymentManager.hre.ethers.utils.hexStripZeros(world.deploymentManager.hre.ethers.utils.parseEther('100').toHexString()),
-  ]);
 }
 
 for (let i = 0; i < MAX_ASSETS; i++) {
@@ -767,45 +758,43 @@ scenario(
   }
 );
 
-scenario(
-  'Comet#transferFrom reverts when specific collateral asset is paused',
-  {
-    filter: async (ctx) => await isValidAssetIndex(ctx, 1),
-    cometBalances: async (ctx) => (
-      {
-        albert: { 
-          $asset0: getConfigForScenario(ctx).transferCollateral,
+for (let i = 0; i < MAX_ASSETS; i++) {
+  scenario(
+    `Comet#transfer reverts when collateral asset ${i} transfer is paused`,
+    {
+      filter: async (ctx) => await isValidAssetIndex(ctx, i),
+      cometBalances: async (ctx) => (
+        {
+          albert: { 
+            [`$asset${i}`]: getConfigForScenario(ctx).transferCollateral
+          }
         }
-      }
-    ),
-  },
-  async ({ comet, actors }, context, world) => {
-    const { albert, betty, charles, admin } = actors;
-    const { asset: asset0Address, scale: scale0BN } = await comet.getAssetInfo(0);
-    const collateralAsset0 = context.getAssetByAddress(asset0Address);
-    const scale0 = scale0BN.toBigInt();
+      ),
+    },
+    async ({ comet, actors }, context, world) => {
+      const { albert, admin } = actors;
+      const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(i);
+      const collateralAsset = context.getAssetByAddress(assetAddress);
+      const scale = scaleBN.toBigInt();
 
-    await albert.allow(betty, true);
+      // Fund admin account for gas fees
+      await fundAdminAccount(world, admin);
 
-    // Fund admin account for gas fees
-    await fundAdminAccount(world, admin);
+      // Pause specific collateral asset transfer at index i
+      const cometExt = comet.attach(comet.address) as CometExt;
+      await cometExt.connect(admin.signer).pauseCollateralAssetTransfer(i, true);
 
-    // Pause only asset0 transfer
-    const cometExt = comet.attach(comet.address) as CometExt;
-    await cometExt.connect(admin.signer).pauseCollateralAssetTransfer(0, true);
-
-    // Asset0 transfer should revert
-    await expectRevertCustom(
-      betty.transferAssetFrom({
-        src: albert.address,
-        dst: charles.address,
-        asset: collateralAsset0.address,
-        amount: BigInt(getConfigForScenario(context).transferCollateral) * scale0
-      }),
-      'CollateralAssetTransferPaused(0)'
-    );
-  }
-);
+      await expectRevertCustom(
+        albert.transferAsset({
+          dst: actors.betty.address,
+          asset: collateralAsset.address,
+          amount: BigInt(getConfigForScenario(context).transferCollateral) * scale
+        }),
+        `CollateralAssetTransferPaused(${i})`
+      );
+    }
+  );
+}
 
 scenario(
   'Comet#transfer reverts if borrow is less than minimum borrow',
