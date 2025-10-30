@@ -262,6 +262,16 @@ scenario(
     const { admin, albert, betty } = actors;
     const { asset: asset0Address, scale } = await comet.getAssetInfo(0);
 
+
+    const proposer = await context.getProposer();
+
+
+
+    await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
+      proposer.address,
+      world.deploymentManager.hre.ethers.utils.hexStripZeros(world.deploymentManager.hre.ethers.utils.parseEther('1').toHexString()),
+    ]);
+
     await world.increaseTime(
       await timeUntilUnderwater({
         comet,
