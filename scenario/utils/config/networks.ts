@@ -72,6 +72,10 @@ export function applyNetworkOverrides(
   if (network === 'arbitrum') {
     if (deployment === 'usdc' || deployment === 'usdt') {
       config.withdraw.assetAmount = 3500n;
+      config.bulker.base.borrow = 100n;
+      config.bulker.asset.borrow = 50n;
+      config.withdraw.baseAmount = 100n;    
+      config.transfer.baseAmount = 100n;
     }
 
     if (deployment === 'usdc.e') {

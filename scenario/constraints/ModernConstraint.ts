@@ -16,7 +16,6 @@ export class ModernConstraint<T extends CometContext, R extends Requirements> im
     
     for (const req of fuzzed) {
       if (req.upgrade) {
-        console.log(req.upgrade);
         solutions.push(async function solution(ctx: T): Promise<T> {
           const current = await ctx.getConfiguration();
           const upgrade = Object.assign({}, current, req.upgrade);

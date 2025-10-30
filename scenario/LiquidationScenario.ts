@@ -1,6 +1,6 @@
 import { scenario } from './context/CometContext';
 import { ethers, expect, defactor } from '../test/helpers';
-import { expectRevertCustom, timeUntilUnderwater } from './utils';
+import { createCrossChainProposal, expectRevertCustom, timeUntilUnderwater } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -257,7 +257,7 @@ scenario(
       },
     }),
   },
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors, bridgeReceiver }, context, world) => {
     const config = getConfigForScenario(context);
     const { admin, albert, betty } = actors;
     const { asset: asset0Address, scale } = await comet.getAssetInfo(0);
@@ -273,26 +273,39 @@ scenario(
     await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
 
     const reserves = await comet.getCollateralReserves(asset0Address);
-    console.log('Collateral reserves available:', reserves.toString());
 
     const approveThisCalldata = ethers.utils.defaultAbiCoder.encode(
       ['address', 'address', 'uint256'],
       [admin.address, asset0Address, ethers.constants.MaxUint256]
     );
-    
-    await context.fastGovernanceExecute(
-      [comet.address],
-      [0],
-      ['approveThis(address,address,uint256)'],
-      [approveThisCalldata]
-    );
+
+    if ('mainnet' === world.base.network){
+      await context.fastGovernanceExecute(
+        [comet.address],
+        [0],
+        ['approveThis(address,address,uint256)'],
+        [approveThisCalldata]
+      );
+    } else {
+      const l2ProposalData = ethers.utils.defaultAbiCoder.encode(
+        ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
+        [
+          [comet.address],
+          [0],
+          ['approveThis(address,address,uint256)'],
+          [approveThisCalldata]
+        ]
+      );
+      await createCrossChainProposal(context, l2ProposalData, bridgeReceiver);
+    }
 
     const asset0Contract = await world.deploymentManager.existing(
       'asset0',
       asset0Address,
-      world.base.network
+      world.base.network,
+      'contracts/IERC20.sol:IERC20'
     );
-    
+
     const withdrawAmount = reserves.gt(scale.div(config.liquidationBot.scenario.collateralDivisor)) 
       ? scale.toBigInt() / config.liquidationBot.scenario.collateralDivisor 
       : reserves;
