@@ -261,7 +261,7 @@ scenario(
     const config = getConfigForScenario(context);
     const { admin, albert, betty } = actors;
     const { asset: asset0Address, scale } = await comet.getAssetInfo(0);
-    
+
     await world.increaseTime(
       await timeUntilUnderwater({
         comet,
@@ -279,7 +279,7 @@ scenario(
       [admin.address, asset0Address, ethers.constants.MaxUint256]
     );
 
-    if ('mainnet' === world.base.network){
+    if ('mainnet' === world.base.network || 'sepolia' === world.base.network) {
       await context.fastGovernanceExecute(
         [comet.address],
         [0],
