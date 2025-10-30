@@ -1,13 +1,14 @@
 import { scenario } from './context/CometContext';
 import { expectRevertCustom } from './utils';
 import { expect } from 'chai';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 scenario(
   'Comet#withdrawReserves > governor withdraws reserves',
   {
-    reserves: '>= 10000',
+    reserves: ((ctx) => { return `>= ${getConfigForScenario(ctx).withdraw.baseAmount * 10n}`; })(),
     tokenBalances: {
-      albert: { $base: '== 0' },
+      albert: { $base: `== 0` },
     },
   },
   async ({ comet, timelock, actors }, context) => {
@@ -20,7 +21,7 @@ scenario(
 
     expect(await comet.governor()).to.equal(timelock.address);
 
-    const toWithdrawAmount = 10n * scale;
+    const toWithdrawAmount = BigInt(getConfigForScenario(context).withdraw.baseAmount) / 100n * scale;
     await context.setNextBaseFeeToZero();
     const txn = await admin.withdrawReserves(albert.address, toWithdrawAmount, { gasPrice: 0 });
 
@@ -34,13 +35,16 @@ scenario(
 scenario(
   'Comet#withdrawReserves > reverts if not called by governor',
   {
-    tokenBalances: {
-      $comet: { $base: 100 },
-    },
+    tokenBalances: async (ctx) => ({
+      $comet: { $base: getConfigForScenario(ctx).supply.collateralAmount },
+    }),
   },
-  async ({ actors }) => {
+  async ({ actors }, context) => {
     const { albert } = actors;
-    await expectRevertCustom(albert.withdrawReserves(albert.address, 10), 'Unauthorized()');
+    await expectRevertCustom(
+      albert.withdrawReserves(albert.address, BigInt(getConfigForScenario(context).supply.collateralAmount) / 10n), 
+      'Unauthorized()'
+    );
   }
 );
 
@@ -48,18 +52,20 @@ scenario(
 scenario(
   'Comet#withdrawReserves > reverts if not enough reserves are owned by protocol',
   {
-    tokenBalances: {
-      $comet: { $base: '== 100' },
-    },
+    tokenBalances: async (ctx) => ({
+      $comet: { $base: `== ${getConfigForScenario(ctx).supply.collateralAmount}` },
+    }),
   },
   async ({ comet, actors }, context) => {
     const { admin, albert } = actors;
-
     const scale = (await comet.baseScale()).toBigInt();
-
     await context.setNextBaseFeeToZero();
     await expectRevertCustom(
-      admin.withdrawReserves(albert.address, 1001n * scale, { gasPrice: 0 }),
+      admin.withdrawReserves(
+        albert.address, 
+        BigInt(getConfigForScenario(context).supply.collateralAmount) * 10n * scale, 
+        { gasPrice: 0 }
+      ),
       'InsufficientReserves()'
     );
   }
