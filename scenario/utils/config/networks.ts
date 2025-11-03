@@ -65,8 +65,14 @@ export function applyNetworkOverrides(
     }
   }
 
-  if (network === 'optimism' && deployment === 'weth') {
-    config.liquidation.base.standard = 1000n;
+  if (network === 'optimism') {
+    if (deployment === 'usdc' || deployment === 'usdt') {
+      config.withdraw.alternateAsset = 3000n;
+    }
+    
+    if (deployment === 'weth') {
+      config.liquidation.base.standard = 1000n;
+    }
   }
 
   if (network === 'arbitrum') {
@@ -80,6 +86,7 @@ export function applyNetworkOverrides(
 
     if (deployment === 'usdc.e') {
       config.withdraw.assetAmount = 7000n;
+      config.withdraw.alternateAsset = 10000n;
       config.bulker.asset.standard = 10000n;
       config.bulker.asset.alternate = 10000n;
       config.transfer.assetAmount = 10000n;

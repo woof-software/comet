@@ -279,7 +279,9 @@ scenario(
       [admin.address, asset0Address, ethers.constants.MaxUint256]
     );
 
-    if ('mainnet' === world.base.network || 'sepolia' === world.base.network) {
+    const l1Networks = ['mainnet', 'sepolia', 'developement'];
+
+    if (l1Networks.includes(world.base.network)) {
       await context.fastGovernanceExecute(
         [comet.address],
         [0],
