@@ -387,21 +387,31 @@ contract CometWithExtendedAssetList is CometMainInterface {
             uint64(baseScale)
         );
 
+        AssetInfo memory asset;
+        uint256 newAmount;
+        uint64 borrowCollateralFactor;
         for (uint8 i = 0; i < numAssets; ) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 if (liquidity >= 0) {
                     return true;
                 }
 
-                AssetInfo memory asset = getAssetInfo(i);
-                uint newAmount = mulPrice(
+                asset = getAssetInfo(i);
+                borrowCollateralFactor = asset.borrowCollateralFactor;
+
+                if (borrowCollateralFactor == 0) { 
+                    unchecked { i++; } 
+                    continue; 
+                }
+
+                newAmount = mulPrice(
                     userCollateral[account][asset.asset].balance,
                     getPrice(asset.priceFeed),
                     asset.scale
                 );
                 liquidity += signed256(mulFactor(
                     newAmount,
-                    asset.borrowCollateralFactor
+                    borrowCollateralFactor
                 ));
             }
             unchecked { i++; }
@@ -430,21 +440,31 @@ contract CometWithExtendedAssetList is CometMainInterface {
             uint64(baseScale)
         );
 
+        AssetInfo memory asset;
+        uint256 newAmount;
+        uint64 liquidateCollateralFactor;
         for (uint8 i = 0; i < numAssets; ) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 if (liquidity >= 0) {
                     return false;
                 }
 
-                AssetInfo memory asset = getAssetInfo(i);
-                uint newAmount = mulPrice(
+                asset = getAssetInfo(i);
+                liquidateCollateralFactor = asset.liquidateCollateralFactor;
+                
+                if (liquidateCollateralFactor == 0) { 
+                    unchecked { i++; } 
+                    continue; 
+                }
+
+                newAmount = mulPrice(
                     userCollateral[account][asset.asset].balance,
                     getPrice(asset.priceFeed),
                     asset.scale
                 );
                 liquidity += signed256(mulFactor(
                     newAmount,
-                    asset.liquidateCollateralFactor
+                    liquidateCollateralFactor
                 ));
             }
             unchecked { i++; }
@@ -1061,20 +1081,31 @@ contract CometWithExtendedAssetList is CometMainInterface {
         int256 oldBalance = presentValue(oldPrincipal);
         uint16 assetsIn = accountUser.assetsIn;
         uint8 _reserved = accountUser._reserved;
-
         uint256 basePrice = getPrice(baseTokenPriceFeed);
-        uint256 deltaValue = 0;
 
-        for (uint8 i = 0; i < numAssets; ) {
+        AssetInfo memory assetInfo;
+        uint256 deltaValue;
+        address asset;
+        uint128 seizeAmount;
+        uint256 value;
+        uint64 liquidationFactor;
+        for (uint8 i; i < numAssets; ) {
             if (isInAsset(assetsIn, i, _reserved)) {
-                AssetInfo memory assetInfo = getAssetInfo(i);
-                address asset = assetInfo.asset;
-                uint128 seizeAmount = userCollateral[account][asset].balance;
+                assetInfo = getAssetInfo(i);
+
+                liquidationFactor = assetInfo.liquidationFactor;
+                if (liquidationFactor == 0) {
+                    unchecked { i++; }
+                    continue;
+                }
+
+                asset = assetInfo.asset;
+                seizeAmount = userCollateral[account][asset].balance;
                 userCollateral[account][asset].balance = 0;
                 totalsCollateral[asset].totalSupplyAsset -= seizeAmount;
 
-                uint256 value = mulPrice(seizeAmount, getPrice(assetInfo.priceFeed), assetInfo.scale);
-                deltaValue += mulFactor(value, assetInfo.liquidationFactor);
+                value = mulPrice(seizeAmount, getPrice(assetInfo.priceFeed), assetInfo.scale);
+                deltaValue += mulFactor(value, liquidationFactor);
 
                 emit AbsorbCollateral(absorber, account, asset, seizeAmount, value);
             }
@@ -1149,15 +1180,20 @@ contract CometWithExtendedAssetList is CometMainInterface {
     function quoteCollateral(address asset, uint baseAmount) override public view returns (uint) {
         AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
         uint256 assetPrice = getPrice(assetInfo.priceFeed);
-        // Store front discount is derived from the collateral asset's liquidationFactor and storeFrontPriceFactor
-        // discount = storeFrontPriceFactor * (1e18 - liquidationFactor)
-        uint256 discountFactor = mulFactor(storeFrontPriceFactor, FACTOR_SCALE - assetInfo.liquidationFactor);
-        uint256 assetPriceDiscounted = mulFactor(assetPrice, FACTOR_SCALE - discountFactor);
+
+        // If liquidation factor is not zero, calculate the discount
+        if (assetInfo.liquidationFactor != 0) {
+            // Store front discount is derived from the collateral asset's liquidationFactor and storeFrontPriceFactor
+            // discount = storeFrontPriceFactor * (1e18 - liquidationFactor)
+            uint256 discountFactor = mulFactor(storeFrontPriceFactor, FACTOR_SCALE - assetInfo.liquidationFactor);
+            assetPrice = mulFactor(assetPrice, FACTOR_SCALE - discountFactor);
+        }
+
         uint256 basePrice = getPrice(baseTokenPriceFeed);
         // # of collateral assets
         // = (TotalValueOfBaseAmount / DiscountedPriceOfCollateralAsset) * assetScale
-        // = ((basePrice * baseAmount / baseScale) / assetPriceDiscounted) * assetScale
-        return basePrice * baseAmount * assetInfo.scale / assetPriceDiscounted / baseScale;
+        // = ((basePrice * baseAmount / baseScale) / assetPrice) * assetScale
+        return basePrice * baseAmount * assetInfo.scale / assetPrice / baseScale;
     }
 
     /**
