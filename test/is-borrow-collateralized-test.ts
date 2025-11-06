@@ -3,7 +3,7 @@ import {
   Configurator,
   IERC20,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
-} from "build/types";
+} from 'build/types';
 import {
   expect,
   exp,
@@ -12,12 +12,12 @@ import {
   ethers,
   updateAssetBorrowCollateralFactor,
   getLiquidity,
-} from "./helpers";
-import { BigNumber } from "ethers";
+} from './helpers';
+import { BigNumber } from 'ethers';
 
-describe("isBorrowCollateralized", function () {
-  it("defaults to true", async () => {
-    const protocol = await makeProtocol({ base: "USDC" });
+describe('isBorrowCollateralized', function () {
+  it('defaults to true', async () => {
+    const protocol = await makeProtocol({ base: 'USDC' });
     const {
       comet,
       users: [alice],
@@ -26,28 +26,28 @@ describe("isBorrowCollateralized", function () {
     expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
   });
 
-  it("is true when user is owed principal", async () => {
+  it('is true when user is owed principal', async () => {
     const {
       comet,
       users: [alice],
-    } = await makeProtocol({ base: "USDC" });
+    } = await makeProtocol({ base: 'USDC' });
     await comet.setBasePrincipal(alice.address, 1_000_000);
 
     expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
   });
 
-  it("is false when user owes principal", async () => {
+  it('is false when user owes principal', async () => {
     const {
       comet,
       users: [alice],
-    } = await makeProtocol({ base: "USDC" });
+    } = await makeProtocol({ base: 'USDC' });
 
     await comet.setBasePrincipal(alice.address, -1_000_000);
 
     expect(await comet.isBorrowCollateralized(alice.address)).to.be.false;
   });
 
-  it("is true when value of collateral is greater than principal owed", async () => {
+  it('is true when value of collateral is greater than principal owed', async () => {
     const {
       comet,
       tokens,
@@ -72,7 +72,7 @@ describe("isBorrowCollateralized", function () {
     expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
   });
 
-  it("takes borrow collateral factor into account when valuing collateral", async () => {
+  it('takes borrow collateral factor into account when valuing collateral', async () => {
     const {
       comet,
       tokens,
@@ -99,7 +99,7 @@ describe("isBorrowCollateralized", function () {
     expect(await comet.isBorrowCollateralized(alice.address)).to.be.false;
   });
 
-  it("changes when the underlying asset price changes", async () => {
+  it('changes when the underlying asset price changes', async () => {
     const {
       comet,
       tokens,
@@ -136,7 +136,7 @@ describe("isBorrowCollateralized", function () {
     expect(await comet.isBorrowCollateralized(alice.address)).to.be.false;
   });
 
-  describe("isBorrowCollateralized semantics across borrowCollateralFactor values", function () {
+  describe('isBorrowCollateralized semantics across borrowCollateralFactor values', function () {
     // Configurator and protocol
     let configurator: Configurator;
     let configuratorProxyAddress: string;
@@ -182,7 +182,7 @@ describe("isBorrowCollateralized", function () {
 
       baseSymbol = cfg.base;
       baseToken = cfg.tokens[baseSymbol];
-      compToken = cfg.tokens["COMP"];
+      compToken = cfg.tokens['COMP'];
       alice = cfg.users[0];
 
       // Supply collateral and borrow base
@@ -203,7 +203,7 @@ describe("isBorrowCollateralized", function () {
         .true;
     });
 
-    it("liquidity calculation includes collateral with positive borrowCF", async () => {
+    it('liquidity calculation includes collateral with positive borrowCF', async () => {
       const liquidity = await getLiquidity(
         cometAsProxy,
         compToken,
@@ -212,7 +212,7 @@ describe("isBorrowCollateralized", function () {
       expect(liquidity).to.be.greaterThan(0);
     });
 
-    it("borrowCF can be updated to 0", async () => {
+    it('borrowCF can be updated to 0', async () => {
       const configuratorAsProxy = configurator.attach(configuratorProxyAddress);
 
       // Governance: set COMP borrowCF to 0 and upgrade
@@ -231,7 +231,7 @@ describe("isBorrowCollateralized", function () {
       ).to.equal(0);
     });
 
-    it("liquidity calculation excludes collateral with zero borrowCF", async () => {
+    it('liquidity calculation excludes collateral with zero borrowCF', async () => {
       const liquidity = await getLiquidity(
         cometAsProxy as any,
         compToken,
@@ -240,13 +240,13 @@ describe("isBorrowCollateralized", function () {
       expect(liquidity).to.eq(0);
     });
 
-    it("collateralization becomes false when borrowCF is set to 0", async () => {
+    it('collateralization becomes false when borrowCF is set to 0', async () => {
       expect(await cometAsProxy.isBorrowCollateralized(alice.address)).to.be
         .false;
     });
   });
 
-  it("isBorrowCollateralized with mixed borrow factors counts only positive CF assets", async () => {
+  it('isBorrowCollateralized with mixed borrow factors counts only positive CF assets', async () => {
     /**
      * This test verifies that when some assets have
      * borrowCollateralFactor set to 0, they contribute zero liquidity and
@@ -276,7 +276,6 @@ describe("isBorrowCollateralized", function () {
       tokens,
       users,
       base,
-      priceFeeds,
     } = await makeConfigurator({
       assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals },
     });
@@ -291,7 +290,7 @@ describe("isBorrowCollateralized", function () {
 
     // Supply equal collateral in all 5 assets
     const supplyAmount = exp(1, 18);
-    const symbols = ["ASSET0", "ASSET1", "ASSET2", "ASSET3", "ASSET4"];
+    const symbols = ['ASSET0', 'ASSET1', 'ASSET2', 'ASSET3', 'ASSET4'];
     for (const sym of symbols) {
       const token = tokens[sym];
       await token.allocateTo(underwater.address, supplyAmount);
@@ -316,7 +315,7 @@ describe("isBorrowCollateralized", function () {
       .true;
 
     // Zero borrowCF for three assets: ASSET1, ASSET3, ASSET4
-    const zeroBcfSymbols = ["ASSET1", "ASSET3", "ASSET4"];
+    const zeroBcfSymbols = ['ASSET1', 'ASSET3', 'ASSET4'];
     for (const sym of zeroBcfSymbols) {
       await updateAssetBorrowCollateralFactor(
         configuratorAsProxy,
@@ -343,7 +342,7 @@ describe("isBorrowCollateralized", function () {
     for (const sym of zeroBcfSymbols) {
       expect(liquidityByAsset[sym].eq(0)).to.be.true;
     }
-    for (const sym of ["ASSET0", "ASSET2"]) {
+    for (const sym of ['ASSET0', 'ASSET2']) {
       expect(liquidityByAsset[sym].gt(0)).to.be.true;
     }
 
@@ -394,11 +393,11 @@ describe("isBorrowCollateralized", function () {
 
       // Upgrade proxy to extended asset list implementation to support many assets
       const CometExtAssetList = await (
-        await ethers.getContractFactory("CometExtAssetList")
+        await ethers.getContractFactory('CometExtAssetList')
       ).deploy(
         {
-          name32: ethers.utils.formatBytes32String("Compound Comet"),
-          symbol32: ethers.utils.formatBytes32String("BASE"),
+          name32: ethers.utils.formatBytes32String('Compound Comet'),
+          symbol32: ethers.utils.formatBytes32String('BASE'),
         },
         assetListFactory.address
       );
@@ -408,7 +407,7 @@ describe("isBorrowCollateralized", function () {
         CometExtAssetList.address
       );
       const CometFactoryWithExtendedAssetList = await (
-        await ethers.getContractFactory("CometFactoryWithExtendedAssetList")
+        await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
       ).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
       await configuratorAsProxy.setFactory(

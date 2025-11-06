@@ -1,4 +1,4 @@
-import { ContractTransaction, BigNumber } from "ethers";
+import { ContractTransaction, BigNumber } from 'ethers';
 import {
   event,
   expect,
@@ -15,8 +15,8 @@ import {
   makeConfigurator,
   takeSnapshot,
   SnapshotRestorer,
-} from "./helpers";
-import { ethers } from "./helpers";
+} from './helpers';
+import { ethers } from './helpers';
 import {
   CometProxyAdmin,
   CometWithExtendedAssetList,
@@ -25,11 +25,11 @@ import {
   FaucetToken,
   NonStandardFaucetFeeToken,
   SimplePriceFeed,
-} from "build/types";
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+} from 'build/types';
+import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
-describe("absorb", function () {
-  it("reverts if total borrows underflows", async () => {
+describe('absorb', function () {
+  it('reverts if total borrows underflows', async () => {
     const {
       cometWithExtendedAssetList,
       users: [absorber, underwater],
@@ -42,11 +42,11 @@ describe("absorb", function () {
     await expect(
       cometWithExtendedAssetList.absorb(absorber.address, [underwater.address])
     ).to.be.revertedWith(
-      "code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)"
+      'code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)'
     );
   });
 
-  it("absorbs 1 account and pays out the absorber", async () => {
+  it('absorbs 1 account and pays out the absorber', async () => {
     const params = {
       supplyInterestRateBase: 0,
       supplyInterestRateSlopeLow: 0,
@@ -166,7 +166,7 @@ describe("absorb", function () {
     expect(lU1.numAbsorbed).to.be.equal(0);
     expect(lU1.approxSpend).to.be.equal(0);
 
-    const [_, usdcPrice] = await priceFeeds["USDC"].latestRoundData();
+    const [_, usdcPrice] = await priceFeeds['USDC'].latestRoundData();
     const baseScale = await cometWithExtendedAssetList.baseScale();
     expect(event(a0, 0)).to.be.deep.equal({
       AbsorbDebt: {
@@ -178,7 +178,7 @@ describe("absorb", function () {
     });
   });
 
-  it("absorbs 2 accounts and pays out the absorber", async () => {
+  it('absorbs 2 accounts and pays out the absorber', async () => {
     const params = {
       supplyInterestRateBase: 0,
       supplyInterestRateSlopeLow: 0,
@@ -341,7 +341,7 @@ describe("absorb", function () {
       a0.receipt.gasUsed.mul(a0.receipt.effectiveGasPrice)
     );
 
-    const [_, usdcPrice] = await priceFeeds["USDC"].latestRoundData();
+    const [_, usdcPrice] = await priceFeeds['USDC'].latestRoundData();
     const baseScale = await cometWithExtendedAssetList.baseScale();
     expect(event(a0, 0)).to.be.deep.equal({
       AbsorbDebt: {
@@ -361,7 +361,7 @@ describe("absorb", function () {
     });
   });
 
-  it("absorbs 3 accounts with collateral and pays out the absorber", async () => {
+  it('absorbs 3 accounts with collateral and pays out the absorber', async () => {
     const params = {
       supplyInterestRateBase: 0,
       supplyInterestRateSlopeLow: 0,
@@ -671,10 +671,10 @@ describe("absorb", function () {
       a0.receipt.gasUsed.mul(a0.receipt.effectiveGasPrice)
     );
 
-    const [_a, usdcPrice] = await priceFeeds["USDC"].latestRoundData();
-    const [_b, compPrice] = await priceFeeds["COMP"].latestRoundData();
-    const [_c, wbtcPrice] = await priceFeeds["WBTC"].latestRoundData();
-    const [_d, wethPrice] = await priceFeeds["WETH"].latestRoundData();
+    const [_a, usdcPrice] = await priceFeeds['USDC'].latestRoundData();
+    const [_b, compPrice] = await priceFeeds['COMP'].latestRoundData();
+    const [_c, wbtcPrice] = await priceFeeds['WBTC'].latestRoundData();
+    const [_d, wethPrice] = await priceFeeds['WETH'].latestRoundData();
     const baseScale = await cometWithExtendedAssetList.baseScale();
     const compScale = exp(1, await COMP.decimals());
     const wbtcScale = exp(1, await WBTC.decimals());
@@ -762,7 +762,7 @@ describe("absorb", function () {
     });
   });
 
-  it("absorbs an account with more than enough collateral to still cover debt", async () => {
+  it('absorbs an account with more than enough collateral to still cover debt', async () => {
     const params = {
       supplyInterestRateBase: 0,
       supplyInterestRateSlopeLow: 0,
@@ -941,10 +941,10 @@ describe("absorb", function () {
       a0.receipt.gasUsed.mul(a0.receipt.effectiveGasPrice)
     );
 
-    const [_a, usdcPrice] = await priceFeeds["USDC"].latestRoundData();
-    const [_b, compPrice] = await priceFeeds["COMP"].latestRoundData();
-    const [_c, wbtcPrice] = await priceFeeds["WBTC"].latestRoundData();
-    const [_d, wethPrice] = await priceFeeds["WETH"].latestRoundData();
+    const [_a, usdcPrice] = await priceFeeds['USDC'].latestRoundData();
+    const [_b, compPrice] = await priceFeeds['COMP'].latestRoundData();
+    const [_c, wbtcPrice] = await priceFeeds['WBTC'].latestRoundData();
+    const [_d, wethPrice] = await priceFeeds['WETH'].latestRoundData();
     const baseScale = await cometWithExtendedAssetList.baseScale();
     const compScale = exp(1, await COMP.decimals());
     const wbtcScale = exp(1, await WBTC.decimals());
@@ -997,7 +997,7 @@ describe("absorb", function () {
     });
   });
 
-  it("reverts if an account is not underwater", async () => {
+  it('reverts if an account is not underwater', async () => {
     const {
       cometWithExtendedAssetList,
       users: [alice, bob],
@@ -1011,11 +1011,11 @@ describe("absorb", function () {
     ).to.be.revertedWith("custom error 'NotLiquidatable()'");
   });
 
-  it.skip("reverts if collateral asset value overflows base balance", async () => {
+  it.skip('reverts if collateral asset value overflows base balance', async () => {
     // XXX
   });
 
-  it("reverts if absorb is paused", async () => {
+  it('reverts if absorb is paused', async () => {
     const protocol = await makeProtocol();
     const {
       cometWithExtendedAssetList,
@@ -1038,7 +1038,7 @@ describe("absorb", function () {
     ).to.be.revertedWith("custom error 'Paused()'");
   });
 
-  it("updates assetsIn for liquidated account", async () => {
+  it('updates assetsIn for liquidated account', async () => {
     const {
       cometWithExtendedAssetList,
       users: [absorber, underwater],
@@ -1087,7 +1087,7 @@ describe("absorb", function () {
       .be.empty;
   });
 
-  it("updates assetsIn for liquidated account in 24 assets", async () => {
+  it('updates assetsIn for liquidated account in 24 assets', async () => {
     const protocol = await makeProtocol({
       assets: {
         // 24 assets
@@ -1132,7 +1132,7 @@ describe("absorb", function () {
           decimals: 6,
         },
       },
-      reward: "COMP",
+      reward: 'COMP',
     });
     const {
       cometWithExtendedAssetList: comet,
@@ -1186,7 +1186,7 @@ describe("absorb", function () {
     expect(await comet.getAssetList(underwater.address)).to.be.empty;
   });
 
-  describe("absorb semantics across liquidationFactor values", function () {
+  describe('absorb semantics across liquidationFactor values', function () {
     // Snapshot
     let snapshot: SnapshotRestorer;
 
@@ -1221,7 +1221,7 @@ describe("absorb", function () {
 
     before(async () => {
       const configuratorAndProtocol = await makeConfigurator({
-        base: "USDC",
+        base: 'USDC',
         storeFrontPriceFactor: exp(0.8, 18),
         assets: {
           USDC: { initial: 1e6, decimals: 6, initialPrice: 1 },
@@ -1295,8 +1295,8 @@ describe("absorb", function () {
       snapshot = await takeSnapshot();
     });
 
-    describe("liquidation factor > 0", function () {
-      it("absorbs undercollateralized account", async () => {
+    describe('liquidation factor > 0', function () {
+      it('absorbs undercollateralized account', async () => {
         liquidationTx = await cometAsProxy
           .connect(bob)
           .absorb(bob.address, [alice.address]);
@@ -1304,7 +1304,7 @@ describe("absorb", function () {
         expect(liquidationTx).to.not.be.reverted;
       });
 
-      it("emits AbsorbCollateral event", async () => {
+      it('emits AbsorbCollateral event', async () => {
         const assetInfo = await cometAsProxy.getAssetInfoByAddress(
           compToken.address
         );
@@ -1316,7 +1316,7 @@ describe("absorb", function () {
         );
 
         expect(liquidationTx)
-          .to.emit(cometAsProxy, "AbsorbCollateral")
+          .to.emit(cometAsProxy, 'AbsorbCollateral')
           .withArgs(
             bob.address,
             alice.address,
@@ -1326,13 +1326,13 @@ describe("absorb", function () {
           );
       });
 
-      it("reduces totalsCollateral totalSupplyAsset for seized asset", async () => {
+      it('reduces totalsCollateral totalSupplyAsset for seized asset', async () => {
         // This relies on the prior absorption in this describe
         const totals = await cometAsProxy.totalsCollateral(compToken.address);
         expect(totals.totalSupplyAsset).to.equal(0);
       });
 
-      it("sets user collateral balance to 0", async () => {
+      it('sets user collateral balance to 0', async () => {
         expect(
           (await cometAsProxy.userCollateral(alice.address, compToken.address))
             .balance
@@ -1342,8 +1342,8 @@ describe("absorb", function () {
       });
     });
 
-    describe("liquidation factor = 0", function () {
-      it("liquidation factor can be updated to 0", async () => {
+    describe('liquidation factor = 0', function () {
+      it('liquidation factor can be updated to 0', async () => {
         const configuratorAsProxy = configurator.attach(
           configuratorProxy.address
         );
@@ -1351,11 +1351,11 @@ describe("absorb", function () {
         // Ensure upgrades use CometWithExtendedAssetList implementation (match quote-collateral tests)
         // 1) update extension delegate to the AssetList-aware extension
         const CometExtAssetList = await (
-          await ethers.getContractFactory("CometExtAssetList")
+          await ethers.getContractFactory('CometExtAssetList')
         ).deploy(
           {
-            name32: ethers.utils.formatBytes32String("Compound Comet"),
-            symbol32: ethers.utils.formatBytes32String("BASE"),
+            name32: ethers.utils.formatBytes32String('Compound Comet'),
+            symbol32: ethers.utils.formatBytes32String('BASE'),
           },
           assetListFactoryAddress
         );
@@ -1366,7 +1366,7 @@ describe("absorb", function () {
         );
         // 2) switch factory to CometFactoryWithExtendedAssetList
         const CometFactoryWithExtendedAssetList = await (
-          await ethers.getContractFactory("CometFactoryWithExtendedAssetList")
+          await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
         ).deploy();
         await CometFactoryWithExtendedAssetList.deployed();
         await configuratorAsProxy.setFactory(
@@ -1391,7 +1391,7 @@ describe("absorb", function () {
         ).to.equal(0);
       });
 
-      it("absorbs undercollateralized account with 0 liquidation factor on asset", async () => {
+      it('absorbs undercollateralized account with 0 liquidation factor on asset', async () => {
         liquidationTx = await cometAsProxy
           .connect(bob)
           .absorb(bob.address, [alice.address]);
@@ -1399,18 +1399,18 @@ describe("absorb", function () {
         expect(liquidationTx).to.not.be.reverted;
       });
 
-      it("does not emit AbsorbCollateral event", async () => {
-        expect(liquidationTx).to.not.emit(cometAsProxy, "AbsorbCollateral");
+      it('does not emit AbsorbCollateral event', async () => {
+        expect(liquidationTx).to.not.emit(cometAsProxy, 'AbsorbCollateral');
       });
 
-      it("does not affect user collateral balance", async () => {
+      it('does not affect user collateral balance', async () => {
         expect(
           (await cometAsProxy.userCollateral(alice.address, compToken.address))
             .balance
         ).to.equal(userCollateralBeforeAbsorption);
       });
 
-      it("does not affect totalsCollateral totalSupplyAsset", async () => {
+      it('does not affect totalsCollateral totalSupplyAsset', async () => {
         expect(
           (await cometAsProxy.totalsCollateral(compToken.address))
             .totalSupplyAsset
@@ -1468,11 +1468,11 @@ describe("absorb", function () {
 
       // Deploy CometExtAssetList
       const CometExtAssetList = await (
-        await ethers.getContractFactory("CometExtAssetList")
+        await ethers.getContractFactory('CometExtAssetList')
       ).deploy(
         {
-          name32: ethers.utils.formatBytes32String("Compound Comet"),
-          symbol32: ethers.utils.formatBytes32String("BASE"),
+          name32: ethers.utils.formatBytes32String('Compound Comet'),
+          symbol32: ethers.utils.formatBytes32String('BASE'),
         },
         assetListFactory.address
       );
@@ -1486,7 +1486,7 @@ describe("absorb", function () {
 
       // Deploy CometFactoryWithExtendedAssetList
       const CometFactoryWithExtendedAssetList = await (
-        await ethers.getContractFactory("CometFactoryWithExtendedAssetList")
+        await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
       ).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
 
@@ -1577,7 +1577,7 @@ describe("absorb", function () {
     });
   }
 
-  it("absorbs with mixed liquidation factors and skips zeroed assets", async () => {
+  it('absorbs with mixed liquidation factors and skips zeroed assets', async () => {
     /**
      * This test checks that when there are five collateral assets with mixed liquidation factors,
      * the absorb function only seizes (liquidates) those assets whose liquidationFactor is nonzero,
@@ -1627,11 +1627,11 @@ describe("absorb", function () {
 
     // Deploy CometExtAssetList
     const CometExtAssetList = await (
-      await ethers.getContractFactory("CometExtAssetList")
+      await ethers.getContractFactory('CometExtAssetList')
     ).deploy(
       {
-        name32: ethers.utils.formatBytes32String("Compound Comet"),
-        symbol32: ethers.utils.formatBytes32String("BASE"),
+        name32: ethers.utils.formatBytes32String('Compound Comet'),
+        symbol32: ethers.utils.formatBytes32String('BASE'),
       },
       assetListFactory.address
     );
@@ -1645,7 +1645,7 @@ describe("absorb", function () {
 
     // Deploy CometFactoryWithExtendedAssetList
     const CometFactoryWithExtendedAssetList = await (
-      await ethers.getContractFactory("CometFactoryWithExtendedAssetList")
+      await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
     ).deploy();
     await CometFactoryWithExtendedAssetList.deployed();
 
@@ -1663,7 +1663,7 @@ describe("absorb", function () {
 
     // Step 2: Supply, borrow, and make liquidatable
     const supplyAmount = exp(1, 18);
-    const targetSymbols = ["ASSET0", "ASSET1", "ASSET2", "ASSET3", "ASSET4"];
+    const targetSymbols = ['ASSET0', 'ASSET1', 'ASSET2', 'ASSET3', 'ASSET4'];
     for (const sym of targetSymbols) {
       const token = tokens[sym];
       await token.allocateTo(underwater.address, supplyAmount);
@@ -1689,7 +1689,7 @@ describe("absorb", function () {
     expect(await cometAsProxy.isLiquidatable(underwater.address)).to.be.true;
 
     // Step 3: Update liquidationFactor to 0 for three assets (ASSET1, ASSET3, ASSET4)
-    const zeroLfSymbols = ["ASSET1", "ASSET3", "ASSET4"];
+    const zeroLfSymbols = ['ASSET1', 'ASSET3', 'ASSET4'];
     for (const sym of zeroLfSymbols) {
       await configuratorAsProxy.updateAssetLiquidationFactor(
         cometProxy.address,
@@ -1709,7 +1709,7 @@ describe("absorb", function () {
     // - Should be skipped (unchanged): ASSET1, ASSET3, ASSET4
     const userBefore: Record<string, BigNumber> = {} as any;
     const totalsBefore: Record<string, BigNumber> = {} as any;
-    for (const sym of ["ASSET0", "ASSET1", "ASSET2", "ASSET3", "ASSET4"]) {
+    for (const sym of ['ASSET0', 'ASSET1', 'ASSET2', 'ASSET3', 'ASSET4']) {
       userBefore[sym] = (
         await cometAsProxy.userCollateral(
           underwater.address,
@@ -1729,7 +1729,7 @@ describe("absorb", function () {
       .absorb(absorber.address, [underwater.address]);
 
     // Verify skipped assets remain unchanged
-    for (const sym of ["ASSET1", "ASSET3", "ASSET4"]) {
+    for (const sym of ['ASSET1', 'ASSET3', 'ASSET4']) {
       expect(
         (
           await cometAsProxy.userCollateral(
@@ -1745,7 +1745,7 @@ describe("absorb", function () {
     }
 
     // Verify seized assets set user balance to 0 and reduce totals
-    for (const sym of ["ASSET0", "ASSET2"]) {
+    for (const sym of ['ASSET0', 'ASSET2']) {
       expect(
         (
           await cometAsProxy.userCollateral(

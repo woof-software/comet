@@ -5,7 +5,7 @@ import {
   ConfiguratorProxy,
   FaucetToken,
   NonStandardFaucetFeeToken,
-} from "build/types";
+} from 'build/types';
 import {
   expect,
   exp,
@@ -14,14 +14,14 @@ import {
   factorScale,
   mulFactor,
   ethers,
-} from "./helpers";
-import { BigNumber } from "ethers";
-import { AssetInfoStructOutput } from "build/types/CometWithExtendedAssetList";
+} from './helpers';
+import { BigNumber } from 'ethers';
+import { AssetInfoStructOutput } from 'build/types/CometWithExtendedAssetList';
 
-describe("quoteCollateral", function () {
-  it("quotes the collateral correctly for a positive base amount", async () => {
+describe('quoteCollateral', function () {
+  it('quotes the collateral correctly for a positive base amount', async () => {
     const protocol = await makeProtocol({
-      base: "USDC",
+      base: 'USDC',
       storeFrontPriceFactor: exp(0.5, 18),
       targetReserves: 100,
       assets: {
@@ -56,9 +56,9 @@ describe("quoteCollateral", function () {
     expect(q0).to.be.equal(exp(1.25, 18));
   });
 
-  it("quotes the collateral correctly for a zero base amount", async () => {
+  it('quotes the collateral correctly for a zero base amount', async () => {
     const protocol = await makeProtocol({
-      base: "USDC",
+      base: 'USDC',
       targetReserves: 100,
       assets: {
         USDC: {
@@ -82,9 +82,9 @@ describe("quoteCollateral", function () {
     expect(q0).to.be.equal(0n);
   });
 
-  it("quotes the collateral at market price when storeFrontPriceFactor is 0%", async () => {
+  it('quotes the collateral at market price when storeFrontPriceFactor is 0%', async () => {
     const protocol = await makeProtocol({
-      base: "USDC",
+      base: 'USDC',
       storeFrontPriceFactor: exp(0, 18),
       targetReserves: 100,
       assets: {
@@ -120,9 +120,9 @@ describe("quoteCollateral", function () {
   });
 
   // Should fail before PR 303
-  it("properly calculates price without truncating integer during intermediate calculations", async () => {
+  it('properly calculates price without truncating integer during intermediate calculations', async () => {
     const protocol = await makeProtocol({
-      base: "USDC",
+      base: 'USDC',
       storeFrontPriceFactor: exp(0.5, 18),
       targetReserves: 100,
       assets: {
@@ -151,9 +151,9 @@ describe("quoteCollateral", function () {
     expect(q0).to.be.equal(exp(100, 18));
   });
 
-  it("does not overflow for large amounts", async () => {
+  it('does not overflow for large amounts', async () => {
     const protocol = await makeProtocol({
-      base: "USDC",
+      base: 'USDC',
       storeFrontPriceFactor: exp(0.8, 18),
       targetReserves: 100,
       assets: {
@@ -182,7 +182,7 @@ describe("quoteCollateral", function () {
     expect(q0).to.be.equal(exp(6.25, 12 + 18));
   });
 
-  describe("without discount", function () {
+  describe('without discount', function () {
     let comet: CometWithExtendedAssetList;
     let configurator: Configurator;
     let configuratorProxy: ConfiguratorProxy;
@@ -203,7 +203,7 @@ describe("quoteCollateral", function () {
 
     before(async () => {
       const configuratorAndProtocol = await makeConfigurator({
-        base: "USDC",
+        base: 'USDC',
         storeFrontPriceFactor: exp(0.8, 18),
         assets: {
           USDC: { initial: 1e6, decimals: 6, initialPrice: 1 },
@@ -237,7 +237,7 @@ describe("quoteCollateral", function () {
       baseScale = await comet.baseScale();
     });
 
-    it("quotes with discount if liquidationFactor > 0", async () => {
+    it('quotes with discount if liquidationFactor > 0', async () => {
       // Ensure liquidationFactor is not zero (discount present)
       expect(assetInfo.liquidationFactor).to.not.eq(0);
 
@@ -247,7 +247,7 @@ describe("quoteCollateral", function () {
       );
     });
 
-    it("computes expected discount and matches contract value", async () => {
+    it('computes expected discount and matches contract value', async () => {
       // discount = storeFrontPriceFactor * (1e18 - liquidationFactor)
       const discountFactor = mulFactor(
         await comet.storeFrontPriceFactor(),
@@ -268,7 +268,7 @@ describe("quoteCollateral", function () {
       expect(quoteWithoutDiscount).to.eq(expectedQuoteWithoutDiscount);
     });
 
-    it("update liquidationFactor to 0 to remove discount", async () => {
+    it('update liquidationFactor to 0 to remove discount', async () => {
       const configuratorAsProxy = configurator.attach(
         configuratorProxy.address
       );
@@ -281,11 +281,11 @@ describe("quoteCollateral", function () {
       // Ensure upgrades use CometWithExtendedAssetList implementation
       // 1) update extension delegate to the AssetList-aware extension
       const CometExtAssetList = await (
-        await ethers.getContractFactory("CometExtAssetList")
+        await ethers.getContractFactory('CometExtAssetList')
       ).deploy(
         {
-          name32: ethers.utils.formatBytes32String("Compound Comet"),
-          symbol32: ethers.utils.formatBytes32String("BASE"),
+          name32: ethers.utils.formatBytes32String('Compound Comet'),
+          symbol32: ethers.utils.formatBytes32String('BASE'),
         },
         assetListFactoryAddress
       );
@@ -297,7 +297,7 @@ describe("quoteCollateral", function () {
 
       // 2) switch factory to CometFactoryWithExtendedAssetList
       const CometFactoryWithExtendedAssetList = await (
-        await ethers.getContractFactory("CometFactoryWithExtendedAssetList")
+        await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
       ).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
       await configuratorAsProxy.setFactory(
@@ -318,7 +318,7 @@ describe("quoteCollateral", function () {
       expect(assetInfo.liquidationFactor).to.eq(0);
     });
 
-    it("quotes with discount if liquidationFactor = 0", async () => {
+    it('quotes with discount if liquidationFactor = 0', async () => {
       quoteWithoutDiscount = await comet.quoteCollateral(
         quoteCollateralToken.address,
         QUOTE_AMOUNT

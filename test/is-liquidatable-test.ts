@@ -1,22 +1,17 @@
 import {
-  CometFactoryWithExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList,
-  CometWithExtendedAssetList,
   IERC20,
-} from "build/types";
+} from 'build/types';
 import {
   expect,
   exp,
   makeProtocol,
   makeConfigurator,
   ethers,
-  updateAssetBorrowCollateralFactor,
   updateAssetLiquidateCollateralFactor,
-  factorScale,
-  getLiquidity,
   getLiquidityWithLiquidateCF,
-} from "./helpers";
-import { BigNumber } from "ethers";
+} from './helpers';
+import { BigNumber } from 'ethers';
 
 /*
 Prices are set in terms of the base token (USDC with 6 decimals, by default):
@@ -28,8 +23,8 @@ decimals, by default)
 
 */
 
-describe("isLiquidatable", function () {
-  it("defaults to false", async () => {
+describe('isLiquidatable', function () {
+  it('defaults to false', async () => {
     const protocol = await makeProtocol();
     const {
       comet,
@@ -39,7 +34,7 @@ describe("isLiquidatable", function () {
     expect(await comet.isLiquidatable(alice.address)).to.be.false;
   });
 
-  it("is false when user is owed principal", async () => {
+  it('is false when user is owed principal', async () => {
     const {
       comet,
       users: [alice],
@@ -49,7 +44,7 @@ describe("isLiquidatable", function () {
     expect(await comet.isLiquidatable(alice.address)).to.be.false;
   });
 
-  it("is true when user owes principal", async () => {
+  it('is true when user owes principal', async () => {
     const {
       comet,
       users: [alice],
@@ -59,7 +54,7 @@ describe("isLiquidatable", function () {
     expect(await comet.isLiquidatable(alice.address)).to.be.true;
   });
 
-  it("is false when collateral can cover the borrowed principal", async () => {
+  it('is false when collateral can cover the borrowed principal', async () => {
     const {
       comet,
       tokens,
@@ -88,7 +83,7 @@ describe("isLiquidatable", function () {
     expect(await comet.isLiquidatable(alice.address)).to.be.false;
   });
 
-  it("is true when the collateral cannot cover the borrowed principal", async () => {
+  it('is true when the collateral cannot cover the borrowed principal', async () => {
     const {
       comet,
       tokens,
@@ -117,7 +112,7 @@ describe("isLiquidatable", function () {
     expect(await comet.isLiquidatable(alice.address)).to.be.true;
   });
 
-  it("takes liquidateCollateralFactor into account when comparing principal to collateral", async () => {
+  it('takes liquidateCollateralFactor into account when comparing principal to collateral', async () => {
     const {
       comet,
       tokens,
@@ -148,7 +143,7 @@ describe("isLiquidatable", function () {
     expect(await comet.isLiquidatable(alice.address)).to.be.true;
   });
 
-  it("changes when the underlying asset price changes", async () => {
+  it('changes when the underlying asset price changes', async () => {
     const {
       comet,
       tokens,
@@ -189,7 +184,7 @@ describe("isLiquidatable", function () {
     expect(await comet.isLiquidatable(alice.address)).to.be.true;
   });
 
-  describe("isLiquidatable semantics across liquidateCollateralFactor values", function () {
+  describe('isLiquidatable semantics across liquidateCollateralFactor values', function () {
     // Configurator and protocol
     let configurator: any;
     let configuratorProxyAddress: string;
@@ -234,7 +229,7 @@ describe("isLiquidatable", function () {
 
       baseSymbol = cfg.base;
       baseToken = cfg.tokens[baseSymbol];
-      compToken = cfg.tokens["COMP"];
+      compToken = cfg.tokens['COMP'];
       alice = cfg.users[0];
       governor = cfg.governor;
 
@@ -242,11 +237,11 @@ describe("isLiquidatable", function () {
       const assetListFactory = cfg.assetListFactory;
       const configuratorAsProxy = configurator.attach(configuratorProxyAddress);
       const CometExtAssetList = await (
-        await ethers.getContractFactory("CometExtAssetList")
+        await ethers.getContractFactory('CometExtAssetList')
       ).deploy(
         {
-          name32: ethers.utils.formatBytes32String("Compound Comet"),
-          symbol32: ethers.utils.formatBytes32String("BASE"),
+          name32: ethers.utils.formatBytes32String('Compound Comet'),
+          symbol32: ethers.utils.formatBytes32String('BASE'),
         },
         assetListFactory.address
       );
@@ -256,7 +251,7 @@ describe("isLiquidatable", function () {
         CometExtAssetList.address
       );
       const CometFactoryWithExtendedAssetList = await (
-        await ethers.getContractFactory("CometFactoryWithExtendedAssetList")
+        await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
       ).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
       await configuratorAsProxy.setFactory(
@@ -285,7 +280,7 @@ describe("isLiquidatable", function () {
       expect(await cometAsProxy.isLiquidatable(alice.address)).to.be.false;
     });
 
-    it("liquidity calculation includes collateral with positive liquidateCF", async () => {
+    it('liquidity calculation includes collateral with positive liquidateCF', async () => {
       const liquidity = await getLiquidityWithLiquidateCF(
         cometAsProxy,
         compToken,
@@ -294,7 +289,7 @@ describe("isLiquidatable", function () {
       expect(liquidity).to.be.greaterThan(0);
     });
 
-    it("liquidateCF can be updated to 0", async () => {
+    it('liquidateCF can be updated to 0', async () => {
       const configuratorAsProxy = configurator.attach(configuratorProxyAddress);
 
       // Governance: set COMP liquidateCF to 0 and upgrade
@@ -314,7 +309,7 @@ describe("isLiquidatable", function () {
       ).to.equal(0);
     });
 
-    it("liquidity calculation excludes collateral with zero liquidateCF", async () => {
+    it('liquidity calculation excludes collateral with zero liquidateCF', async () => {
       const liquidity = await getLiquidityWithLiquidateCF(
         cometAsProxy,
         compToken,
@@ -323,12 +318,12 @@ describe("isLiquidatable", function () {
       expect(liquidity).to.equal(0);
     });
 
-    it("position becomes liquidatable when liquidateCF is set to 0", async () => {
+    it('position becomes liquidatable when liquidateCF is set to 0', async () => {
       expect(await cometAsProxy.isLiquidatable(alice.address)).to.be.true;
     });
   });
 
-  it("isLiquidatable with mixed liquidate factors counts only positive CF assets", async () => {
+  it('isLiquidatable with mixed liquidate factors counts only positive CF assets', async () => {
     // Create 5 collaterals: ASSET0..ASSET4 with explicit liquidateCF
     const collaterals = Object.fromEntries(
       Array.from({ length: 5 }, (_, j) => [
@@ -368,11 +363,11 @@ describe("isLiquidatable", function () {
 
     // Upgrade proxy to extended asset list implementation to support many assets before updating CF
     const CometExtAssetList = await (
-      await ethers.getContractFactory("CometExtAssetList")
+      await ethers.getContractFactory('CometExtAssetList')
     ).deploy(
       {
-        name32: ethers.utils.formatBytes32String("Compound Comet"),
-        symbol32: ethers.utils.formatBytes32String("BASE"),
+        name32: ethers.utils.formatBytes32String('Compound Comet'),
+        symbol32: ethers.utils.formatBytes32String('BASE'),
       },
       assetListFactory.address
     );
@@ -382,7 +377,7 @@ describe("isLiquidatable", function () {
       CometExtAssetList.address
     );
     const CometFactoryWithExtendedAssetList = await (
-      await ethers.getContractFactory("CometFactoryWithExtendedAssetList")
+      await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
     ).deploy();
     await CometFactoryWithExtendedAssetList.deployed();
     await configuratorAsProxy.setFactory(
@@ -396,7 +391,7 @@ describe("isLiquidatable", function () {
 
     // Supply equal collateral in all 5 assets
     const supplyAmount = exp(1, 18);
-    const symbols = ["ASSET0", "ASSET1", "ASSET2", "ASSET3", "ASSET4"];
+    const symbols = ['ASSET0', 'ASSET1', 'ASSET2', 'ASSET3', 'ASSET4'];
     for (const sym of symbols) {
       const token = tokens[sym];
       await token.allocateTo(underwater.address, supplyAmount);
@@ -420,7 +415,7 @@ describe("isLiquidatable", function () {
     expect(await cometAsProxy.isLiquidatable(underwater.address)).to.be.false;
 
     // Zero liquidateCF for three assets: ASSET1, ASSET3, ASSET4
-    const zeroLcfSymbols = ["ASSET1", "ASSET3", "ASSET4"];
+    const zeroLcfSymbols = ['ASSET1', 'ASSET3', 'ASSET4'];
     for (const sym of zeroLcfSymbols) {
       await updateAssetLiquidateCollateralFactor(
         configuratorAsProxy,
@@ -448,7 +443,7 @@ describe("isLiquidatable", function () {
     for (const sym of zeroLcfSymbols) {
       expect(liquidityByAsset[sym].eq(0)).to.be.true;
     }
-    for (const sym of ["ASSET0", "ASSET2"]) {
+    for (const sym of ['ASSET0', 'ASSET2']) {
       expect(liquidityByAsset[sym].gt(0)).to.be.true;
     }
 
@@ -498,11 +493,11 @@ describe("isLiquidatable", function () {
 
       // Upgrade proxy to extended asset list implementation to support many assets
       const CometExtAssetList = await (
-        await ethers.getContractFactory("CometExtAssetList")
+        await ethers.getContractFactory('CometExtAssetList')
       ).deploy(
         {
-          name32: ethers.utils.formatBytes32String("Compound Comet"),
-          symbol32: ethers.utils.formatBytes32String("BASE"),
+          name32: ethers.utils.formatBytes32String('Compound Comet'),
+          symbol32: ethers.utils.formatBytes32String('BASE'),
         },
         assetListFactory.address
       );
@@ -512,7 +507,7 @@ describe("isLiquidatable", function () {
         CometExtAssetList.address
       );
       const CometFactoryWithExtendedAssetList = await (
-        await ethers.getContractFactory("CometFactoryWithExtendedAssetList")
+        await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
       ).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
       await configuratorAsProxy.setFactory(

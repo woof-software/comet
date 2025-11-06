@@ -1,8 +1,8 @@
-import hre from "hardhat";
-import { ethers } from "hardhat";
-import { expect } from "chai";
-import { Block } from "@ethersproject/abstract-provider";
-import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import hre from 'hardhat';
+import { ethers } from 'hardhat';
+import { expect } from 'chai';
+import { Block } from '@ethersproject/abstract-provider';
+import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import {
   BaseBulker,
   BaseBulker__factory,
@@ -38,20 +38,20 @@ import {
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
   IERC20,
-} from "../build/types";
-import { BigNumber, BigNumberish } from "ethers";
+} from '../build/types';
+import { BigNumber } from 'ethers';
 import {
   TransactionReceipt,
   TransactionResponse,
-} from "@ethersproject/abstract-provider";
+} from '@ethersproject/abstract-provider';
 import {
   TotalsBasicStructOutput,
   TotalsCollateralStructOutput,
-} from "../build/types/CometHarness";
+} from '../build/types/CometHarness';
 
 // Snapshot
-export { takeSnapshot } from "@nomicfoundation/hardhat-network-helpers";
-export type { SnapshotRestorer } from "@nomicfoundation/hardhat-network-helpers";
+export { takeSnapshot } from '@nomicfoundation/hardhat-network-helpers';
+export type { SnapshotRestorer } from '@nomicfoundation/hardhat-network-helpers';
 
 export { Comet, ethers, expect, hre };
 
@@ -196,7 +196,7 @@ export function mulFactor(n: BigNumber, factor: BigNumber): BigNumber {
 }
 
 function toBigInt(f: bigint | BigNumber): bigint {
-  if (typeof f === "bigint") {
+  if (typeof f === 'bigint') {
     return f;
   } else {
     return f.toBigInt();
@@ -223,7 +223,7 @@ export function defaultAssets(overrides = {}, perAssetOverrides = {}) {
         initialPrice: 175,
       },
       overrides,
-      perAssetOverrides["COMP"] || {}
+      perAssetOverrides['COMP'] || {}
     ),
     USDC: Object.assign(
       {
@@ -231,7 +231,7 @@ export function defaultAssets(overrides = {}, perAssetOverrides = {}) {
         decimals: 6,
       },
       overrides,
-      perAssetOverrides["USDC"] || {}
+      perAssetOverrides['USDC'] || {}
     ),
     WETH: Object.assign(
       {
@@ -240,7 +240,7 @@ export function defaultAssets(overrides = {}, perAssetOverrides = {}) {
         initialPrice: 3000,
       },
       overrides,
-      perAssetOverrides["WETH"] || {}
+      perAssetOverrides['WETH'] || {}
     ),
     WBTC: Object.assign(
       {
@@ -249,7 +249,7 @@ export function defaultAssets(overrides = {}, perAssetOverrides = {}) {
         initialPrice: 41000,
       },
       overrides,
-      perAssetOverrides["WBTC"] || {}
+      perAssetOverrides['WBTC'] || {}
     ),
   };
 }
@@ -270,7 +270,7 @@ export async function fastForward(
   ethers_ = ethers
 ): Promise<Block> {
   const block = await getBlock();
-  await ethers_.provider.send("evm_setNextBlockTimestamp", [
+  await ethers_.provider.send('evm_setNextBlockTimestamp', [
     block.timestamp + seconds,
   ]);
   return block;
@@ -282,7 +282,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const assets = opts.assets || defaultAssets();
   let priceFeeds = {};
   const PriceFeedFactory = (await ethers.getContractFactory(
-    "SimplePriceFeed"
+    'SimplePriceFeed'
   )) as SimplePriceFeed__factory;
   for (const asset in assets) {
     const initialPrice = exp(assets[asset].initialPrice || 1, 8);
@@ -296,14 +296,14 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   }
 
   const name32 = ethers.utils.formatBytes32String(
-    opts.name || "Compound Comet"
+    opts.name || 'Compound Comet'
   );
-  const symbol32 = ethers.utils.formatBytes32String(opts.symbol || "📈BASE");
+  const symbol32 = ethers.utils.formatBytes32String(opts.symbol || '📈BASE');
   const governor = opts.governor || signers[0];
   const pauseGuardian = opts.pauseGuardian || signers[1];
   const users = signers.slice(2); // guaranteed to not be governor or pause guardian
-  const base = opts.base || "USDC";
-  const reward = opts.reward || "COMP";
+  const base = opts.base || 'USDC';
+  const reward = opts.reward || 'COMP';
   const supplyKink = dfn(opts.supplyKink, exp(0.8, 18));
   const supplyPerYearInterestRateBase = dfn(
     opts.supplyInterestRateBase,
@@ -348,7 +348,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const targetReserves = dfn(opts.targetReserves, 0);
 
   const FaucetFactory = (await ethers.getContractFactory(
-    "FaucetToken"
+    'FaucetToken'
   )) as FaucetToken__factory;
   const tokens = {};
   for (const symbol in assets) {
@@ -369,13 +369,13 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
 
   const unsupportedToken = await FaucetFactory.deploy(
     1e6,
-    "Unsupported Token",
+    'Unsupported Token',
     6,
-    "USUP"
+    'USUP'
   );
 
   const AssetListFactory = (await ethers.getContractFactory(
-    "AssetListFactory"
+    'AssetListFactory'
   )) as AssetListFactory__factory;
   const assetListFactory = await AssetListFactory.deploy();
   await assetListFactory.deployed();
@@ -383,14 +383,14 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   let extensionDelegate = opts.extensionDelegate;
   if (extensionDelegate === undefined) {
     const CometExtFactory = (await ethers.getContractFactory(
-      "CometExt"
+      'CometExt'
     )) as CometExt__factory;
     extensionDelegate = await CometExtFactory.deploy({ name32, symbol32 });
     await extensionDelegate.deployed();
   }
 
   const CometFactory = (await ethers.getContractFactory(
-    "CometHarness"
+    'CometHarness'
   )) as CometHarness__factory;
   const config = {
     governor: governor.address,
@@ -451,7 +451,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   let extensionDelegateAssetList = opts.extensionDelegate;
   if (extensionDelegateAssetList === undefined) {
     const CometExtFactory = (await ethers.getContractFactory(
-      "CometExtAssetList"
+      'CometExtAssetList'
     )) as CometExtAssetList__factory;
     extensionDelegateAssetList = await CometExtFactory.deploy(
       { name32, symbol32 },
@@ -461,7 +461,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   }
   config.extensionDelegate = extensionDelegateAssetList.address;
   const CometFactoryWithExtendedAssetList = (await ethers.getContractFactory(
-    "CometHarnessExtendedAssetList"
+    'CometHarnessExtendedAssetList'
   )) as CometHarnessExtendedAssetList__factory;
 
   const cometWithExtendedAssetList =
@@ -469,7 +469,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   await cometWithExtendedAssetList.deployed();
 
   if (opts.start)
-    await ethers.provider.send("evm_setNextBlockTimestamp", [opts.start]);
+    await ethers.provider.send('evm_setNextBlockTimestamp', [opts.start]);
   await comet.initializeStorage();
 
   await cometWithExtendedAssetList.initializeStorage();
@@ -489,11 +489,11 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     base,
     reward,
     comet: (await ethers.getContractAt(
-      "CometHarnessInterface",
+      'CometHarnessInterface',
       comet.address
     )) as Comet,
     cometWithExtendedAssetList: (await ethers.getContractAt(
-      "CometHarnessInterfaceExtendedAssetList",
+      'CometHarnessInterfaceExtendedAssetList',
       cometWithExtendedAssetList.address
     )) as CometWithExtendedAssetList,
     assetListFactory: assetListFactory,
@@ -526,14 +526,14 @@ export async function makeConfigurator(
 
   // Deploy ProxyAdmin
   const ProxyAdmin = (await ethers.getContractFactory(
-    "CometProxyAdmin"
+    'CometProxyAdmin'
   )) as CometProxyAdmin__factory;
   const proxyAdmin = await ProxyAdmin.connect(governor).deploy();
   await proxyAdmin.deployed();
 
   // Deploy Comet proxy
   const CometProxy = (await ethers.getContractFactory(
-    "TransparentUpgradeableProxy"
+    'TransparentUpgradeableProxy'
   )) as TransparentUpgradeableProxy__factory;
   const cometProxy = await CometProxy.deploy(
     comet.address,
@@ -581,14 +581,14 @@ export async function makeConfigurator(
 
   // Deploy CometFactory
   const CometFactoryFactory = (await ethers.getContractFactory(
-    "CometFactory"
+    'CometFactory'
   )) as CometFactory__factory;
   const cometFactory = await CometFactoryFactory.deploy();
   await cometFactory.deployed();
 
   // Deploy Configurator
   const ConfiguratorFactory = (await ethers.getContractFactory(
-    "Configurator"
+    'Configurator'
   )) as Configurator__factory;
   const configurator = await ConfiguratorFactory.deploy();
   await configurator.deployed();
@@ -634,7 +634,7 @@ export async function makeConfigurator(
     await configurator.populateTransaction.initialize(governor.address)
   ).data;
   const ConfiguratorProxy = (await ethers.getContractFactory(
-    "ConfiguratorProxy"
+    'ConfiguratorProxy'
   )) as ConfiguratorProxy__factory;
   const configuratorProxy = await ConfiguratorProxy.deploy(
     configurator.address,
@@ -680,7 +680,7 @@ export async function makeRewards(opts: RewardsOpts = {}): Promise<Rewards> {
   const configs = opts.configs || [];
 
   const RewardsFactory = (await ethers.getContractFactory(
-    "CometRewards"
+    'CometRewards'
   )) as CometRewards__factory;
   const rewards = await RewardsFactory.deploy(governor.address);
   await rewards.deployed();
@@ -712,7 +712,7 @@ export async function makeBulker(opts: BulkerOpts): Promise<BulkerInfo> {
   const weth = opts.weth;
 
   const BulkerFactory = (await ethers.getContractFactory(
-    "BaseBulker"
+    'BaseBulker'
   )) as BaseBulker__factory;
   const bulker = await BulkerFactory.deploy(admin.address, weth);
   await bulker.deployed();
