@@ -118,7 +118,11 @@ export class UtilizationConstraint<T extends CometContext, R extends Requirement
 
             const collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice;
             let collateralNeeded = (collateralWeiPerUnitBase * toBorrowBase) / baseScale;
-            collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor.toBigInt(); // adjust for borrowCollateralFactor
+            if(borrowCollateralFactor.toBigInt() != 0n) {
+              collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor.toBigInt(); // adjust for borrowCollateralFactor
+            } else {
+              continue;
+            }
             collateralNeeded = (collateralNeeded * 11n) / 10n; // add fudge factor
 
             try {

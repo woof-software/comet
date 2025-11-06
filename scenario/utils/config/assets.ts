@@ -9,9 +9,9 @@ export const assetsConfig: AssetsConfig = {
     cometPosition: 1n,
   },
   maticx: {
-    supplyAmount: 9000n,
+    supplyAmount: exp(9000, 18),
     baseBorrowMultiplier: 1000n,
-    supplyCap: 6_000_000n,
+    supplyCap: exp(6_000_000, 18),
     balanceTolerance: 1n,
     borrowCollateralFactor: exp(0.55, 18),
     liquidateCollateralFactor: exp(0.60, 18),

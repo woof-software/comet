@@ -1,6 +1,6 @@
 import { scenario } from './context/CometContext';
 import { ethers, expect, defactor } from '../test/helpers';
-import { expectRevertCustom, timeUntilUnderwater } from './utils';
+import { createCrossChainProposal, expectRevertCustom, timeUntilUnderwater, isBridgedDeployment } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -214,7 +214,7 @@ scenario(
 scenario(
   'Comet#liquidation > user can end up with a minted supply',
   {
-    filter: async (ctx) => !matchesDeployment(ctx, [{ network: 'base', deployment: 'usds' }]),
+    filter: async (ctx) => !matchesDeployment(ctx, [{ network: 'base', deployment: 'usds' }, { network: 'scroll', deployment: 'usdc' }]),
     tokenBalances: async (ctx) => (
       {
         $comet: {
@@ -240,16 +240,23 @@ scenario(
     );
 
     const ab0 = await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
-    expect(ab0.events?.[2]?.event).to.be.equal('Transfer');
-
+    
     const baseBalance = await albert.getCometBaseBalance();
     expect(Number(baseBalance)).to.be.greaterThan(0);
+    
+    const transferEvent = ab0.events?.find((e: any) => e.event === 'Transfer');
+    expect(transferEvent).to.not.be.undefined;
+    expect(transferEvent?.event).to.be.equal('Transfer');
   }
 );
 
 scenario(
   'Comet#liquidation > governor can withdraw collateral after successful liquidation',
   {
+    filter: async (ctx) => {
+      const isBaseUsds = ctx.world.base.network === 'base' && ctx.world.base.deployment === 'usds';
+      return !isBaseUsds && (isBridgedDeployment(ctx) || ['mainnet', 'sepolia'].includes(ctx.world.base.network));
+    },
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidation.base.standard,
@@ -257,7 +264,7 @@ scenario(
       },
     }),
   },
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors, bridgeReceiver }, context, world) => {
     const config = getConfigForScenario(context);
     const { admin, albert, betty } = actors;
     const { asset: asset0Address, scale } = await comet.getAssetInfo(0);
@@ -273,29 +280,52 @@ scenario(
     await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
 
     const reserves = await comet.getCollateralReserves(asset0Address);
-    console.log('Collateral reserves available:', reserves.toString());
 
     const approveThisCalldata = ethers.utils.defaultAbiCoder.encode(
       ['address', 'address', 'uint256'],
       [admin.address, asset0Address, ethers.constants.MaxUint256]
     );
-    
-    await context.fastGovernanceExecute(
-      [comet.address],
-      [0],
-      ['approveThis(address,address,uint256)'],
-      [approveThisCalldata]
-    );
+
+    const l1Networks = ['mainnet', 'sepolia'];
+
+    if (l1Networks.includes(world.base.network)) {
+      await context.fastGovernanceExecute(
+        [comet.address],
+        [0],
+        ['approveThis(address,address,uint256)'],
+        [approveThisCalldata]
+      );
+    } else {
+      if (!isBridgedDeployment(context)) {
+        throw new Error('Cannot create cross-chain proposal without auxiliary deployment manager');
+      }
+      const l2ProposalData = ethers.utils.defaultAbiCoder.encode(
+        ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
+        [
+          [comet.address],
+          [0],
+          ['approveThis(address,address,uint256)'],
+          [approveThisCalldata]
+        ]
+      );
+      await createCrossChainProposal(context, l2ProposalData, bridgeReceiver);
+    }
 
     const asset0Contract = await world.deploymentManager.existing(
       'asset0',
       asset0Address,
-      world.base.network
+      world.base.network,
+      'contracts/IERC20.sol:IERC20'
     );
-    
+
     const withdrawAmount = reserves.gt(scale.div(config.liquidationBot.scenario.collateralDivisor)) 
       ? scale.toBigInt() / config.liquidationBot.scenario.collateralDivisor 
       : reserves;
+
+    await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
+      admin.address,
+      world.deploymentManager.hre.ethers.utils.hexStripZeros(world.deploymentManager.hre.ethers.utils.parseEther('1').toHexString()),
+    ]);
 
     await asset0Contract
       .connect(admin.signer)

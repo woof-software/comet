@@ -279,9 +279,9 @@ export default async function relayLineaMessage(
   return openBridgedProposals;
 }
 
-// Helper to fetch logs in chunks of 10,000 blocks
+// Helper to fetch logs in chunks
 async function fetchLogsInChunks(provider: any, filter: any, fromBlock: number, toBlock: number, address: string) {
-  const chunkSize = 10000;
+  const chunkSize = 1000;
   let logs: Log[] = [];
   for (let start = fromBlock; start <= toBlock; start += chunkSize) {
     const end = Math.min(start + chunkSize - 1, toBlock);
