@@ -2,7 +2,7 @@ import { ethers, event, expect, exp, makeProtocol, portfolio, ReentryAttack, set
   takeSnapshot, MAX_ASSETS, } from './helpers';
 import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken,CometHarnessInterfaceExtendedAssetList,FaucetToken } from '../build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-describe.only("supply", function () {
+describe("supply functionality", function () {
   // Snapshot
   let snapshot: SnapshotRestorer;
 
@@ -52,6 +52,8 @@ describe.only("supply", function () {
   });
 
   describe("supplyTo", function () {
+    this.afterAll(async () => await snapshot.restore());
+
     it('supplies base from sender if the asset is base', async () => {
       const protocol = await makeProtocol({ base: 'USDC' });
       const { comet, tokens, users: [alice, bob] } = protocol;
@@ -470,7 +472,7 @@ describe.only("supply", function () {
       );
     });
 
-    for (let i = 1; i <= 24; i++) {
+    for (let i = 1; i <= MAX_ASSETS; i++) {
       it(`supplyTo reverts if collateral asset ${i} supply is paused`, async () => {
         // Get the asset at index i-1
         const assetIndex = i - 1;
@@ -508,8 +510,6 @@ describe.only("supply", function () {
           cometWithExtendedAssetListMaxAssets,
           "CollateralAssetSupplyPaused"
         );
-
-        await snapshot.restore();
       });
     }
 
@@ -684,6 +684,8 @@ describe.only("supply", function () {
   });
 
   describe("supply", function () {
+    this.afterAll(async () => await snapshot.restore());
+
     it('supplies to sender by default', async () => {
       const protocol = await makeProtocol({ base: 'USDC' });
       const { comet, tokens, users: [bob] } = protocol;
@@ -767,7 +769,7 @@ describe.only("supply", function () {
       );
     });
 
-    for (let i = 1; i <= 24; i++) {
+    for (let i = 1; i <= MAX_ASSETS; i++) {
       it(`supply reverts if collateral asset ${i} supply is paused`, async () => {
         // Get the asset at index i-1
         const assetIndex = i - 1;
@@ -801,13 +803,13 @@ describe.only("supply", function () {
           cometWithExtendedAssetListMaxAssets,
           "CollateralAssetSupplyPaused"
         );
-
-        await snapshot.restore();
       });
     }
   });
 
   describe("supplyFrom", function () {
+    this.afterAll(async () => await snapshot.restore());
+    
     it('supplies from `from` if specified and sender has permission', async () => {
       const protocol = await makeProtocol();
       const { comet, tokens, users: [alice, bob, charlie] } = protocol;
@@ -923,7 +925,7 @@ describe.only("supply", function () {
       );
     });
 
-    for (let i = 1; i <= 24; i++) {
+    for (let i = 1; i <= MAX_ASSETS; i++) {
       it(`supplyFrom reverts if collateral asset ${i} supply is paused`, async () => {
         // Get the asset at index i-1
         const assetIndex = i - 1;
