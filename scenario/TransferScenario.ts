@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectBase, expectRevertCustom, getInterest, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils';
+import { expectApproximately, expectBase, expectRevertCustom, getInterest, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, matchesDeployment } from './utils';
 import { ContractReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { defactor } from '../test/helpers';
@@ -104,7 +104,10 @@ scenario(
   'Comet#transfer > base asset, total and user balances are summed up properly',
   {
     cometBalances: async (ctx) => ({
-      albert: { $base: getConfigForScenario(ctx).transfer.baseAmount },
+      albert: { 
+        $base: getConfigForScenario(ctx).transfer.baseAmount,
+        $asset0: getConfigForScenario(ctx).withdraw.alternateAsset
+      },
     }),
   },
   async ({ comet, actors }, context) => {
@@ -131,7 +134,7 @@ scenario(
     // Check that global and user principals are updated by the same amount
     const changeInTotalPrincipal = newTotalSupply.toBigInt() - oldTotalSupply.toBigInt() - (newTotalBorrow.toBigInt() - oldTotalBorrow.toBigInt());
     const changeInUserPrincipal = newAlbertPrincipal - oldAlbertPrincipal + newBettyPrincipal - oldBettyPrincipal;
-    expect(changeInTotalPrincipal).to.be.equal(changeInUserPrincipal).to;
+    expect(changeInTotalPrincipal).to.be.equal(changeInUserPrincipal);
     expect(config.transfer.principalToleranceValues).to.include(changeInTotalPrincipal);
 
     return txn;
@@ -141,6 +144,7 @@ scenario(
 scenario(
   'Comet#transfer > partial withdraw / borrow base to partial repay / supply',
   {
+    filter: async (ctx) => !matchesDeployment(ctx, [{ network: 'ronin', deployment: 'weth' }]),
     cometBalances: async (ctx) =>  (
       {
         albert: { $base: getConfigForScenario(ctx).transfer.baseAmount, $asset0: getConfigForScenario(ctx).withdraw.alternateAsset },

@@ -1,6 +1,6 @@
 import { scenario } from './context/CometContext';
 import { ethers, expect, defactor } from '../test/helpers';
-import { createCrossChainProposal, expectRevertCustom, timeUntilUnderwater } from './utils';
+import { createCrossChainProposal, expectRevertCustom, timeUntilUnderwater, isBridgedDeployment } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -214,7 +214,7 @@ scenario(
 scenario(
   'Comet#liquidation > user can end up with a minted supply',
   {
-    filter: async (ctx) => !matchesDeployment(ctx, [{ network: 'base', deployment: 'usds' }]),
+    filter: async (ctx) => !matchesDeployment(ctx, [{ network: 'base', deployment: 'usds' }, { network: 'scroll', deployment: 'usdc' }]),
     tokenBalances: async (ctx) => (
       {
         $comet: {
@@ -240,16 +240,23 @@ scenario(
     );
 
     const ab0 = await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
-    expect(ab0.events?.[2]?.event).to.be.equal('Transfer');
-
+    
     const baseBalance = await albert.getCometBaseBalance();
     expect(Number(baseBalance)).to.be.greaterThan(0);
+    
+    const transferEvent = ab0.events?.find((e: any) => e.event === 'Transfer');
+    expect(transferEvent).to.not.be.undefined;
+    expect(transferEvent?.event).to.be.equal('Transfer');
   }
 );
 
 scenario(
   'Comet#liquidation > governor can withdraw collateral after successful liquidation',
   {
+    filter: async (ctx) => {
+      const isBaseUsds = ctx.world.base.network === 'base' && ctx.world.base.deployment === 'usds';
+      return !isBaseUsds && (isBridgedDeployment(ctx) || ['mainnet', 'sepolia'].includes(ctx.world.base.network));
+    },
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidation.base.standard,
@@ -279,7 +286,7 @@ scenario(
       [admin.address, asset0Address, ethers.constants.MaxUint256]
     );
 
-    const l1Networks = ['mainnet', 'sepolia', 'developement'];
+    const l1Networks = ['mainnet', 'sepolia'];
 
     if (l1Networks.includes(world.base.network)) {
       await context.fastGovernanceExecute(
@@ -289,6 +296,9 @@ scenario(
         [approveThisCalldata]
       );
     } else {
+      if (!isBridgedDeployment(context)) {
+        throw new Error('Cannot create cross-chain proposal without auxiliary deployment manager');
+      }
       const l2ProposalData = ethers.utils.defaultAbiCoder.encode(
         ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
         [

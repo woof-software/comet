@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils';
+import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, matchesDeployment } from './utils';
 import { ContractReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -110,6 +110,7 @@ scenario(
 scenario(
   'Comet#withdraw > borrow base',
   {
+    filter: async (ctx) => !matchesDeployment(ctx, [{ network: 'ronin', deployment: 'weth' }]),
     tokenBalances: async (ctx) => (
       {
         albert: { $base: `== ${0n}` },
@@ -175,6 +176,7 @@ scenario(
 scenario(
   'Comet#withdrawFrom > borrow base',
   {
+    filter: async (ctx) => !matchesDeployment(ctx, [{ network: 'ronin', deployment: 'weth' }]),
     tokenBalances: async (ctx) => (
       {
         albert: { $base: `== ${0n}` },

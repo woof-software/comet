@@ -30,6 +30,8 @@ export function applyNetworkOverrides(
       config.withdraw.baseAmount = 100n;
       config.withdraw.assetAmount = 200n;
       config.common.timing.interestSeconds = 70n;
+      config.common.amounts.base.large = 1000n;
+      config.common.amounts.collateral.large = 500n;
     }
 
     if (deployment === 'wsteth') {
@@ -48,6 +50,12 @@ export function applyNetworkOverrides(
     if (deployment === 'usds') {
       config.liquidation.asset.standard = 100n;
     }
+
+    if (deployment === 'usdt') {
+      config.liquidation.asset.tiny = 100n;
+      config.liquidation.asset.small = 100n;
+      config.supply.baseSupplyWithFees = 100n;
+    }
   }
 
   if (network === 'base') {
@@ -56,18 +64,50 @@ export function applyNetworkOverrides(
     }
 
     if (deployment === 'usds') {
-      config.liquidation.base.large = 100n;
-      config.liquidation.asset.medium = 99n;
+      config.supply.collateralAmount = 10n;
+      config.withdraw.collateralAmount = 10n;
+      config.transfer.collateralAmount = 10n;
+      config.common.amounts.collateral.standard = 10n;
+      config.common.amounts.collateral.large = 10n;
     }
 
     if (deployment === 'weth') {
       config.liquidation.base.standard = 1000n;
     }
+
+    if (deployment === 'usdc') {
+      config.supply.collateralAmount = 10n;
+      config.withdraw.collateralAmount = 10n;
+      config.transfer.collateralAmount = 10n;
+      config.common.amounts.collateral.standard = 10n;
+      config.common.amounts.collateral.large = 10n;
+    }
   }
 
   if (network === 'optimism') {
     if (deployment === 'usdc' || deployment === 'usdt') {
-      config.withdraw.alternateAsset = 3000n;
+      config.common.amounts.base.standard = 30n;
+      config.common.amounts.base.large = 30n;
+
+      config.transfer.baseAmount = 30n;
+      config.withdraw.alternateAsset = 200n;
+      
+      config.withdraw.baseAmount = 30n;
+      config.withdraw.assetAmount = 200n;
+      
+      config.withdraw.alternateBase = 30n;
+      
+      config.supply.collateralAmount = 10n;
+      config.withdraw.collateralAmount = 10n;
+      config.transfer.collateralAmount = 10n;
+      config.common.amounts.collateral.standard = 10n;
+      config.common.amounts.collateral.large = 10n;
+      
+      config.bulker.asset.standard = 200n;
+      config.bulker.asset.alternate = 200n;
+      config.bulker.base.borrow = 30n;
+      config.bulker.asset.borrow = 15n;
+      config.bulker.base.standard = 30n;
     }
     
     if (deployment === 'weth') {
@@ -102,25 +142,37 @@ export function applyNetworkOverrides(
   }
 
   if (network === 'ronin' && deployment === 'weth') {
-    config.transfer.baseAmount = 10n;
-    config.transfer.assetAmount = 200000n;
+    config.common.amounts.base.standard = 30n;
+    config.common.amounts.base.large = 30n;
+    
+    config.transfer.baseAmount = 30n;
+    config.transfer.assetAmount = 500000n; // Drastically increased for transfer tests
+    config.withdraw.alternateAsset = 500000n; // Drastically increased for undercollateralized tests
+    
+    // Withdraw tests: Need collateral to borrow 30n base
+    config.withdraw.baseAmount = 30n;
+    config.withdraw.assetAmount = 500000n; // Drastically increased
+    config.withdraw.alternateBase = 30n;
+    
+    config.supply.collateralAmount = 10n;
+    config.withdraw.collateralAmount = 10n;
+    config.transfer.collateralAmount = 10n;
+    config.common.amounts.collateral.standard = 10n;
+    config.common.amounts.collateral.large = 10n;
+    
     config.rewards.assetAmount = 1000000n;
     config.rewards.baseAmount = 200n;
-    config.withdraw.baseAmount = 10n;
-    config.withdraw.alternateBase = 10n;
-    config.withdraw.assetAmount = 100000n;
-    config.withdraw.alternateAsset = 10000n;
     config.liquidation.base.standard = 150n;
     config.liquidation.base.medium = 50n;
     config.liquidation.asset.standard = 5n;
-    config.bulker.asset.standard = 100000n;
-    config.bulker.asset.alternate = 100000n;
+    config.bulker.asset.standard = 200n;
+    config.bulker.asset.alternate = 200n;
+    config.bulker.base.borrow = 30n;
+    config.bulker.asset.borrow = 15n;
+    config.bulker.base.standard = 30n;
     config.bulker.cometAllocation = 100n;
-    config.bulker.base.borrow = 10n;
-    config.bulker.asset.borrow = 10n;
-    config.bulker.base.standard = 100n;
   }
-
+  
   if (network === 'polygon') {
     if (deployment === 'usdc') {
       config.bulker.asset.standard = 200n;
@@ -163,21 +215,42 @@ export function applyNetworkOverrides(
   }
 
   if (network === 'unichain' && deployment === 'weth') {
-    config.liquidation.base.standard = 1000n;
-    config.liquidation.base.medium = 350n;
-    config.liquidation.asset.standard = 100n;
-    config.bulker.asset.standard = 500n;
-    config.bulker.cometAllocation = 500n;
-    config.bulker.base.borrow = 100n;
-    config.bulker.asset.borrow = 50n;
-    config.rewards.baseAmount = 100n;
-    config.rewards.assetAmount = 1000n;
-    config.transfer.baseAmount = 100n;
-    config.transfer.assetAmount = 500n;
+    config.common.amounts.base.standard = 30n;
+    config.common.amounts.base.large = 30n;
+    
+    config.transfer.baseAmount = 30n;
+    config.transfer.assetAmount = 200n;
+    config.withdraw.alternateAsset = 200n;
+    
+    config.withdraw.baseAmount = 30n;
+    config.withdraw.assetAmount = 200n;
+    config.withdraw.alternateBase = 30n;
+    
+    config.supply.collateralAmount = 10n;
+    config.withdraw.collateralAmount = 10n;
+    config.transfer.collateralAmount = 10n;
+    config.common.amounts.collateral.standard = 10n;
+    config.common.amounts.collateral.large = 10n;
+    
+    config.liquidation.base.standard = 150n;
+    config.liquidation.base.medium = 50n;
+    config.liquidation.asset.standard = 5n;
+    config.bulker.asset.standard = 200n;
+    config.bulker.asset.alternate = 200n;
+    config.bulker.base.borrow = 30n;
+    config.bulker.asset.borrow = 15n;
+    config.bulker.base.standard = 30n;
+    config.bulker.cometAllocation = 100n;
+    config.rewards.baseAmount = 200n;
+    config.rewards.assetAmount = 200n;
   }
 
   if (network === 'fuji' && deployment === 'usdc') {
     config.liquidation.asset.standard = 100n;
+  }
+
+  if (network === 'hardhat' && deployment === 'dai') {
+    config.transfer.baseAmount = 100n;
   }
 
   return config;

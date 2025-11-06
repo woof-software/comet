@@ -64,6 +64,7 @@ const {
   _TENDERLY_KEY_RONIN,
   _TENDERLY_KEY_POLYGON,
   _TENDERLY_KEY_OPTIMISM,
+  _TENDERLY_KEY_LINEA,
   MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
@@ -161,7 +162,8 @@ export const networkConfigs: NetworkConfig[] = [
   {
     network: 'linea',
     chainId: 59144,
-    url: `https://rpc.ankr.com/linea/${ANKR_KEY}`,
+    //url: `https://rpc.ankr.com/linea/${ANKR_KEY}`,
+    url: `https://linea.gateway.tenderly.co/${_TENDERLY_KEY_LINEA}`
   },
   {
     network: 'base',
@@ -187,11 +189,6 @@ export const networkConfigs: NetworkConfig[] = [
     network: 'scroll',
     chainId: 534352,
     url: 'https://rpc.scroll.io',
-  },
-  {
-    network: 'linea',
-    chainId: 59144,
-    url: `https://rpc.ankr.com/linea/${ANKR_KEY}`,
   },
 ];
 
