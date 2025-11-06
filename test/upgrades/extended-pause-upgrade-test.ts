@@ -60,7 +60,7 @@ describe("extended pause upgrade test", function () {
   let baseTokenPriceFeedBefore: string;
   let supplyKinkBefore: BigNumber;
 
-  // Storage snapshot
+  // Totals basic snapshot
   let totalsBasicBefore: TotalsBasicStructOutput;
 
   before(async function () {
@@ -169,7 +169,7 @@ describe("extended pause upgrade test", function () {
     baseTokenPriceFeedBefore = await comet.baseTokenPriceFeed();
     supplyKinkBefore = await comet.supplyKink();
 
-    // Storage snapshot
+    // Totals basic snapshot
     totalsBasicBefore = await cometExt.totalsBasic();
   });
 

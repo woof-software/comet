@@ -42,6 +42,10 @@ import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarness';
 
+// Snapshot
+export { takeSnapshot } from "@nomicfoundation/hardhat-network-helpers";
+export type { SnapshotRestorer } from "@nomicfoundation/hardhat-network-helpers";
+
 export { Comet, ethers, expect, hre };
 
 export type Numeric = number | bigint;
@@ -213,6 +217,7 @@ export const factorDecimals = 18;
 export const factorScale = factor(1);
 export const ONE = factorScale;
 export const ZERO = factor(0);
+export const MAX_ASSETS = 24;
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;

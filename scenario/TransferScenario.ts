@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectBase, expectRevertCustom, getInterest, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, fundAdminAccount } from './utils';
+import { expectApproximately, expectBase, expectRevertCustom, getInterest, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, fundAccount } from './utils';
 import { ContractReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { CometExt } from '../build/types';
@@ -515,23 +515,22 @@ scenario(
     ),
   },
   async ({ comet, actors }, context, world) => {
-    const { albert, admin } = actors;
-    const { asset: asset0Address, scale: scaleBN } = await comet.getAssetInfo(0);
-    const collateralAsset = context.getAssetByAddress(asset0Address);
-    const scale = scaleBN.toBigInt();
+    const { albert, pauseGuardian } = actors;
+    const { asset } = await comet.getAssetInfo(0);
+    const collateralAsset = context.getAssetByAddress(asset);
 
-    // Fund admin account for gas fees
-    await fundAdminAccount(world, admin);
+    // Fund pause guardian account for gas fees
+    await fundAccount(world, pauseGuardian);
 
     // Pause collateral transfer
     const cometExt = comet.attach(comet.address) as CometExt;
-    await cometExt.connect(admin.signer).pauseCollateralTransfer(true);
+    await cometExt.connect(pauseGuardian.signer).pauseCollateralTransfer(true);
 
     await expectRevertCustom(
       albert.transferAsset({
         dst: actors.betty.address,
         asset: collateralAsset.address,
-        amount: BigInt(getConfigForScenario(context).transferCollateral) * scale
+        amount: BigInt(getConfigForScenario(context).transferCollateral)
       }),
       'CollateralTransferPaused()'
     );
@@ -548,26 +547,25 @@ scenario(
     ),
   },
   async ({ comet, actors }, context, world) => {
-    const { albert, betty, charles, admin } = actors;
-    const { asset: asset0Address, scale: scaleBN } = await comet.getAssetInfo(0);
-    const collateralAsset = context.getAssetByAddress(asset0Address);
-    const scale = scaleBN.toBigInt();
+    const { albert, betty, charles, pauseGuardian } = actors;
+    const { asset } = await comet.getAssetInfo(0);
+    const collateralAsset = context.getAssetByAddress(asset);
 
     await albert.allow(betty, true);
 
-    // Fund admin account for gas fees
-    await fundAdminAccount(world, admin);
+    // Fund pause guardian account for gas fees
+    await fundAccount(world, pauseGuardian);
 
     // Pause collateral transfer
     const cometExt = comet.attach(comet.address) as CometExt;
-    await cometExt.connect(admin.signer).pauseCollateralTransfer(true);
+    await cometExt.connect(pauseGuardian.signer).pauseCollateralTransfer(true);
 
     await expectRevertCustom(
       betty.transferAssetFrom({
         src: albert.address,
         dst: charles.address,
         asset: collateralAsset.address,
-        amount: BigInt(getConfigForScenario(context).transferCollateral) * scale
+        amount: BigInt(getConfigForScenario(context).transferCollateral)
       }),
       'CollateralTransferPaused()'
     );
@@ -591,23 +589,22 @@ scenario(
     ),
   },
   async ({ comet, actors }, context, world) => {
-    const { albert, betty, admin } = actors;
+    const { albert, betty, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
 
-    // Fund admin account for gas fees
-    await fundAdminAccount(world, admin);
+    // Fund pause guardian account for gas fees
+    await fundAccount(world, pauseGuardian);
 
     // Pause borrowers transfer
     const cometExt = comet.attach(comet.address) as CometExt;
-    await cometExt.connect(admin.signer).pauseBorrowersTransfer(true);
+    await cometExt.connect(pauseGuardian.signer).pauseBorrowersTransfer(true);
 
     await expectRevertCustom(
       albert.transferAsset({
         dst: betty.address,
         asset: baseAsset.address,
-        amount: BigInt(getConfigForScenario(context).transferBase) * scale
+        amount: BigInt(getConfigForScenario(context).transferBase)
       }),
       'BorrowersTransferPaused()'
     );
@@ -630,26 +627,25 @@ scenario(
     ),
   },
   async ({ comet, actors }, context, world) => {
-    const { albert, betty, admin } = actors;
+    const { albert, betty, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
 
     await albert.allow(betty, true);
 
-    // Fund admin account for gas fees
-    await fundAdminAccount(world, admin);
+    // Fund pause guardian account for gas fees
+    await fundAccount(world, pauseGuardian);
 
     // Pause borrowers transfer
     const cometExt = comet.attach(comet.address) as CometExt;
-    await cometExt.connect(admin.signer).pauseBorrowersTransfer(true);
+    await cometExt.connect(pauseGuardian.signer).pauseBorrowersTransfer(true);
 
     await expectRevertCustom(
       betty.transferAssetFrom({
         src: albert.address,
         dst: betty.address,
         asset: baseAsset.address,
-        amount: BigInt(getConfigForScenario(context).transferBase) * scale
+        amount: BigInt(getConfigForScenario(context).transferBase)
       }),
       'BorrowersTransferPaused()'
     );
@@ -664,17 +660,17 @@ scenario(
     },
   },
   async ({ comet, actors }, context, world) => {
-    const { albert, betty, admin } = actors;
+    const { albert, betty, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
 
-    // Fund admin account for gas fees
-    await fundAdminAccount(world, admin);
+    // Fund pause guardian account for gas fees
+    await fundAccount(world, pauseGuardian);
 
     // Pause lenders transfer
     const cometExt = comet.attach(comet.address) as CometExt;
-    await cometExt.connect(admin.signer).pauseLendersTransfer(true);
+    await cometExt.connect(pauseGuardian.signer).pauseLendersTransfer(true);
 
     await expectRevertCustom(
       albert.transferAsset({
@@ -695,19 +691,19 @@ scenario(
     },
   },
   async ({ comet, actors }, context, world) => {
-    const { albert, betty, admin } = actors;
+    const { albert, betty, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
 
     await albert.allow(betty, true);
 
-    // Fund admin account for gas fees
-    await fundAdminAccount(world, admin);
+    // Fund pause guardian account for gas fees
+    await fundAccount(world, pauseGuardian);
 
     // Pause lenders transfer
     const cometExt = comet.attach(comet.address) as CometExt;
-    await cometExt.connect(admin.signer).pauseLendersTransfer(true);
+    await cometExt.connect(pauseGuardian.signer).pauseLendersTransfer(true);
 
     await expectRevertCustom(
       betty.transferAssetFrom({
@@ -734,24 +730,23 @@ scenario(
     ),
   },
   async ({ comet, actors }, context, world) => {
-    const { albert, admin } = actors;
-    const { asset: asset0Address, scale: scale0BN } = await comet.getAssetInfo(0);
-    const collateralAsset0 = context.getAssetByAddress(asset0Address);
-    const scale0 = scale0BN.toBigInt();
+    const { albert, pauseGuardian } = actors;
+    const { asset } = await comet.getAssetInfo(0);
+    const collateralAsset = context.getAssetByAddress(asset);
 
-    // Fund admin account for gas fees
-    await fundAdminAccount(world, admin);
+    // Fund pause guardian account for gas fees
+    await fundAccount(world, pauseGuardian);
 
     // Pause only asset0 transfer
     const cometExt = comet.attach(comet.address) as CometExt;
-    await cometExt.connect(admin.signer).pauseCollateralAssetTransfer(0, true);
+    await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetTransfer(0, true);
 
     // Asset0 transfer should revert
     await expectRevertCustom(
       albert.transferAsset({
         dst: actors.betty.address,
-        asset: collateralAsset0.address,
-        amount: BigInt(getConfigForScenario(context).transferCollateral) * scale0
+        asset: collateralAsset.address,
+        amount: BigInt(getConfigForScenario(context).transferCollateral)
       }),
       'CollateralAssetTransferPaused(0)'
     );
@@ -772,23 +767,22 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       ),
     },
     async ({ comet, actors }, context, world) => {
-      const { albert, admin } = actors;
-      const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(i);
-      const collateralAsset = context.getAssetByAddress(assetAddress);
-      const scale = scaleBN.toBigInt();
+      const { albert, pauseGuardian } = actors;
+      const { asset } = await comet.getAssetInfo(i);
+      const collateralAsset = context.getAssetByAddress(asset);
 
-      // Fund admin account for gas fees
-      await fundAdminAccount(world, admin);
+      // Fund pause guardian account for gas fees
+      await fundAccount(world, pauseGuardian);
 
       // Pause specific collateral asset transfer at index i
       const cometExt = comet.attach(comet.address) as CometExt;
-      await cometExt.connect(admin.signer).pauseCollateralAssetTransfer(i, true);
+      await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetTransfer(i, true);
 
       await expectRevertCustom(
         albert.transferAsset({
           dst: actors.betty.address,
           asset: collateralAsset.address,
-          amount: BigInt(getConfigForScenario(context).transferCollateral) * scale
+          amount: BigInt(getConfigForScenario(context).transferCollateral)
         }),
         `CollateralAssetTransferPaused(${i})`
       );

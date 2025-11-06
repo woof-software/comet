@@ -1,17 +1,14 @@
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
-import { expect, makeProtocol } from "./helpers";
-import { takeSnapshot } from "@nomicfoundation/hardhat-network-helpers";
+import { expect, makeProtocol, MAX_ASSETS } from "./helpers";
 import { CometExt, CometHarnessInterfaceExtendedAssetList } from "build/types";
-import type { SnapshotRestorer } from "@nomicfoundation/hardhat-network-helpers";
 import { ContractTransaction } from "ethers";
 
 describe("extended pause functionality", function () {
-  // Snapshot
-  let snapshot: SnapshotRestorer;
-
   // Contracts
   let comet: CometHarnessInterfaceExtendedAssetList;
   let cometExt: CometExt;
+  let cometWithMaxAssets: CometHarnessInterfaceExtendedAssetList;
+  let cometExtWithMaxAssets: CometExt;
 
   // Signers
   let governor: SignerWithAddress;
@@ -21,26 +18,23 @@ describe("extended pause functionality", function () {
   // Constants
   const assetIndex = 0;
 
-  let maxAssets: number;
-
   before(async function () {
-    const assets = {
-      USDC: {},
-      ASSET1: {},
-      ASSET2: {},
-      ASSET3: {},
-    };
-
-    const protocol = await makeProtocol({ assets });
+    const protocol = await makeProtocol({ assets: { USDC: {}, ASSET1: {} } });
     comet = protocol.cometWithExtendedAssetList;
     cometExt = comet.attach(comet.address) as CometExt;
     governor = protocol.governor;
     pauseGuardian = protocol.pauseGuardian;
     users = protocol.users;
 
-    maxAssets = await comet.maxAssets();
-
-    snapshot = await takeSnapshot();
+    // Setup protocol with MAX_ASSETS collaterals
+    const collaterals = Object.fromEntries(
+      Array.from({ length: MAX_ASSETS }, (_, j) => [`ASSET${j}`, {}])
+    );
+    const protocolWithMaxAssets = await makeProtocol({
+      assets: { USDC: {}, ...collaterals },
+    });
+    cometWithMaxAssets = protocolWithMaxAssets.cometWithExtendedAssetList;
+    cometExtWithMaxAssets = cometWithMaxAssets.attach(cometWithMaxAssets.address) as CometExt;
   });
 
   describe("withdraw pause functions", function () {
@@ -370,38 +364,19 @@ describe("extended pause functionality", function () {
         it("sets to false when unpausing by governor", async function () {
           expect(await comet.isCollateralAssetWithdrawPaused(assetIndex)).to.be
             .false;
-
-          await snapshot.restore();
         });
 
-        for (let i = 1; i <= 24; i++) {
+        for (let i = 1; i <= MAX_ASSETS; i++) {
           it(`allows to call pauseCollateralAssetWithdraw for asset ${i} with ${i} collaterals`, async function () {
-            // Create collaterals: ASSET0, ASSET1, ..., ASSET{i-1}
-            const collaterals = Object.fromEntries(
-              Array.from({ length: i }, (_, j) => [`ASSET${j}`, {}])
-            );
-
-            // Create protocol with USDC (base token) + i collaterals
-            const protocol = await makeProtocol({
-              assets: { USDC: {}, ...collaterals },
-            });
-
-            const comet = protocol.cometWithExtendedAssetList;
-            const cometExt = comet.attach(comet.address) as CometExt;
-            const governor = protocol.governor;
             const assetIndex = i - 1;
 
-            // Verify we have i collaterals
-            const numAssets = await comet.numAssets();
-            expect(numAssets).to.be.equal(i);
-
             // Pause the collateral at index i
-            await cometExt
+            await cometExtWithMaxAssets
               .connect(governor)
               .pauseCollateralAssetWithdraw(assetIndex, true);
 
             // Verify that the asset at index i is paused
-            expect(await comet.isCollateralAssetWithdrawPaused(assetIndex)).to
+            expect(await cometWithMaxAssets.isCollateralAssetWithdrawPaused(assetIndex)).to
               .be.true;
           });
         }
@@ -691,32 +666,17 @@ describe("extended pause functionality", function () {
             .false;
         });
 
-        for (let i = 1; i <= 24; i++) {
+        for (let i = 1; i <= MAX_ASSETS; i++) {
           it(`allows to call pauseCollateralAssetSupply for asset ${i} with ${i} collaterals`, async function () {
-            const collaterals = Object.fromEntries(
-              Array.from({ length: i }, (_, j) => [`ASSET${j}`, {}])
-            );
-
-            const protocol = await makeProtocol({
-              assets: { USDC: {}, ...collaterals },
-            });
-
-            const comet = protocol.cometWithExtendedAssetList;
-            const cometExt = comet.attach(comet.address) as CometExt;
-            const governor = protocol.governor;
             const assetIndex = i - 1;
 
-            // Verify we have i collaterals
-            const numAssets = await comet.numAssets();
-            expect(numAssets).to.be.equal(i);
-
             // Pause the collateral at index i
-            await cometExt
+            await cometExtWithMaxAssets
               .connect(governor)
               .pauseCollateralAssetSupply(assetIndex, true);
 
             // Verify that the asset at index i is paused
-            expect(await comet.isCollateralAssetSupplyPaused(assetIndex)).to.be
+            expect(await cometWithMaxAssets.isCollateralAssetSupplyPaused(assetIndex)).to.be
               .true;
           });
         }
@@ -1095,32 +1055,17 @@ describe("extended pause functionality", function () {
             .false;
         });
 
-        for (let i = 1; i <= 24; i++) {
+        for (let i = 1; i <= MAX_ASSETS; i++) {
           it(`allows to call pauseCollateralAssetTransfer for asset ${i} with ${i} collaterals`, async function () {
-            const collaterals = Object.fromEntries(
-              Array.from({ length: i }, (_, j) => [`ASSET${j}`, {}])
-            );
-
-            const protocol = await makeProtocol({
-              assets: { USDC: {}, ...collaterals },
-            });
-
-            const comet = protocol.cometWithExtendedAssetList;
-            const cometExt = comet.attach(comet.address) as CometExt;
-            const governor = protocol.governor;
             const assetIndex = i - 1;
 
-            // Verify we have i collaterals
-            const numAssets = await comet.numAssets();
-            expect(numAssets).to.be.equal(i);
-
             // Pause the collateral at index i
-            await cometExt
+            await cometExtWithMaxAssets
               .connect(governor)
               .pauseCollateralAssetTransfer(assetIndex, true);
 
             // Verify that the asset at index i is paused
-            expect(await comet.isCollateralAssetTransferPaused(assetIndex)).to
+            expect(await cometWithMaxAssets.isCollateralAssetTransferPaused(assetIndex)).to
               .be.true;
           });
         }

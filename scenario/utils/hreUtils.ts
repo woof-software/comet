@@ -16,9 +16,9 @@ export async function setNextBlockTimestamp(dm: DeploymentManager, timestamp: nu
   await dm.hre.ethers.provider.send('evm_setNextBlockTimestamp', [timestamp]);
 }
 
-export async function fundAdminAccount(world: World, admin: CometActor) {
+export async function fundAccount(world: World, account: CometActor) {
   await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
-    admin.address,
+    account.address,
     world.deploymentManager.hre.ethers.utils.hexStripZeros(world.deploymentManager.hre.ethers.utils.parseEther('100').toHexString()),
   ]);
 }
