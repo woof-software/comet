@@ -64,13 +64,13 @@ const {
   _TENDERLY_KEY_RONIN,
   _TENDERLY_KEY_POLYGON,
   _TENDERLY_KEY_OPTIMISM,
-  LINEA_QUICKNODE_KEY,
   MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
   GOV_NETWORK_PROVIDER = '',
   GOV_NETWORK = '',
   UNICHAIN_QUICKNODE_KEY = '',
+  LINEA_QUICKNODE_KEY = '',
   REMOTE_ACCOUNTS = ''
 } = process.env;
 
@@ -96,6 +96,7 @@ export function requireEnv(varName, msg?: string): string {
   'INFURA_KEY',
   'ANKR_KEY',
   'UNICHAIN_QUICKNODE_KEY',
+  'LINEA_QUICKNODE_KEY'
 ].map((v) => requireEnv(v));
 
 // Networks
@@ -162,8 +163,6 @@ export const networkConfigs: NetworkConfig[] = [
   {
     network: 'linea',
     chainId: 59144,
-    //url: `https://rpc.ankr.com/linea/${ANKR_KEY}`,
-    //url: `https://linea.gateway.tenderly.co/${_TENDERLY_KEY_LINEA}`
     url: `https://omniscient-hardworking-gas.linea-mainnet.quiknode.pro/${LINEA_QUICKNODE_KEY}/`,
   },
   {
@@ -266,12 +265,33 @@ const config: HardhatUserConfig = {
       allowUnlimitedContractSize: true,
       //hardfork: 'london',
       chains: networkConfigs.reduce((acc, { chainId }) => {
-        if (chainId === 1) return acc;
+        if (chainId === 1) {
+          acc[chainId] = {
+            hardforkHistory: {
+              berlin: 1,
+              london: 2,
+              shanghai: 3,
+              cancun: 4,
+            }
+          };
+          return acc;
+        }
+        if (chainId === 10) {
+          acc[chainId] = {
+            hardforkHistory: {
+              berlin: 1,
+              london: 2,
+            }
+          };
+          return acc;
+        }
         if (chainId === 59144) {
           acc[chainId] = {
             hardforkHistory: {
               berlin: 1,
               london: 2,
+              shanghai: 3,
+              cancun: 4,
             }
           };
           return acc;
