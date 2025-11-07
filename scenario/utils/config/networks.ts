@@ -69,6 +69,10 @@ export function applyNetworkOverrides(
       config.transfer.collateralAmount = 10n;
       config.common.amounts.collateral.standard = 10n;
       config.common.amounts.collateral.large = 10n;
+      config.liquidation.base.standard = 100000n;
+      config.liquidation.asset.standard = 10000n;
+      config.liquidationBot.scenario.borrowCapacityUtilizationHigh = 99n;
+      config.liquidationBot.scenario.fudgeFactorShort = 60000n * 100n;
     }
 
     if (deployment === 'weth') {
@@ -81,6 +85,12 @@ export function applyNetworkOverrides(
       config.transfer.collateralAmount = 10n;
       config.common.amounts.collateral.standard = 10n;
       config.common.amounts.collateral.large = 10n;
+    }
+
+    if (deployment === 'usdbc') {
+      config.liquidation.base.standard = 100n;
+      config.liquidation.asset.standard = 50n;
+      config.liquidationBot.scenario.fudgeFactorLong = 60n * 60n;
     }
   }
 
@@ -160,9 +170,11 @@ export function applyNetworkOverrides(
     
     config.rewards.assetAmount = 1000000n;
     config.rewards.baseAmount = 200n;
-    config.liquidation.base.standard = 150n;
+    config.liquidation.base.standard = 100n;
     config.liquidation.base.medium = 50n;
-    config.liquidation.asset.standard = 5n;
+    config.liquidation.base.tiny = 10n;
+    config.liquidation.asset.standard = 500n;
+    config.liquidation.asset.tiny = 100000000000000n;
     config.bulker.asset.standard = 200n;
     config.bulker.asset.alternate = 200n;
     config.bulker.base.borrow = 30n;
@@ -192,6 +204,12 @@ export function applyNetworkOverrides(
 
   if (network === 'sepolia' && deployment === 'usdc') {
     config.bulker.asset.alternate = 10n;
+  }
+
+  if (network === 'sepolia' && deployment === 'weth') {
+    config.liquidation.base.standard = 1000n;
+    config.liquidation.base.tiny = 10n;
+    config.liquidation.asset.tiny = 100000000000000n;
   }
 
   if (network === 'linea') {

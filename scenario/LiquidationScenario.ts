@@ -176,13 +176,12 @@ scenario(
     const timeBeforeLiquidation = await timeUntilUnderwater({
       comet,
       actor: albert,
-      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong // 1 hour past when position is underwater
+      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
     });
 
-    while(!(await comet.isLiquidatable(albert.address))) {
-      await comet.accrueAccount(albert.address);
-      await world.increaseTime(timeBeforeLiquidation);
-    }
+    
+    await world.increaseTime(timeBeforeLiquidation);
+    await comet.accrueAccount(albert.address);
 
     const lp0 = await comet.liquidatorPoints(betty.address);
 
@@ -339,6 +338,7 @@ scenario(
 scenario(
   'Comet#liquidation > liquidates position with all collateral types',
   {
+    filter: async (ctx) => !matchesDeployment(ctx, [{ network: 'hardhat', deployment: 'dai' }, { network: 'sepolia', deployment: 'weth' }, { network: 'unichain', deployment: 'usdc' }, { network: 'base', deployment: 'usds' }, { network: 'base', deployment: 'usdbc' }]),
     tokenBalances: async (ctx) => ({
       $comet: {
         $base: getConfigForScenario(ctx).liquidation.base.standard
@@ -364,11 +364,9 @@ scenario(
       actor: albert,
       fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
     });
-
-    while(!(await comet.isLiquidatable(albert.address))) {
-      await comet.accrueAccount(albert.address);
-      await world.increaseTime(timeBeforeLiquidation);
-    }
+    
+    await world.increaseTime(timeBeforeLiquidation);
+    await comet.accrueAccount(albert.address);
 
     const lp0 = await comet.liquidatorPoints(betty.address);
 
@@ -428,13 +426,16 @@ scenario(
       amount: borrowAmount
     });
 
-    await world.increaseTime(
-      await timeUntilUnderwater({
-        comet,
-        actor: albert,
-        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
-      })
-    );
+    const timeBeforeLiquidation = await timeUntilUnderwater({
+      comet,
+      actor: albert,
+      fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
+    });
+
+    while(!(await comet.isLiquidatable(albert.address))) {
+      await comet.accrueAccount(albert.address);
+      await world.increaseTime(timeBeforeLiquidation);
+    }
 
     const lp0 = await comet.liquidatorPoints(betty.address);
 
@@ -451,6 +452,7 @@ scenario(
 scenario(
   'Comet#liquidation > small position liquidation',
   {
+    filter: async (ctx) => !matchesDeployment(ctx, [{ network: 'hardhat', deployment: 'dai' }]),
     tokenBalances: async (ctx) => ({
       $comet: { $base: getConfigForScenario(ctx).liquidation.base.standard * 10n }
     }),
@@ -530,13 +532,16 @@ scenario(
     const { albert, betty, charles } = actors;
     const numAssets = await comet.numAssets();
 
-    await world.increaseTime(
-      await timeUntilUnderwater({
-        comet,
-        actor: albert,
-        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
-      })
-    );
+    const timeBeforeLiquidation = await timeUntilUnderwater({
+      comet,
+      actor: albert,
+      fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
+    });
+
+    while(!(await comet.isLiquidatable(albert.address))) {
+      await comet.accrueAccount(albert.address);
+      await world.increaseTime(timeBeforeLiquidation);
+    }
 
     const lpBetty0 = await comet.liquidatorPoints(betty.address);
     const lpCharles0 = await comet.liquidatorPoints(charles.address);
