@@ -146,12 +146,10 @@ export function applyNetworkOverrides(
     config.common.amounts.base.large = 30n;
     
     config.transfer.baseAmount = 30n;
-    config.transfer.assetAmount = 500000n; // Drastically increased for transfer tests
-    config.withdraw.alternateAsset = 500000n; // Drastically increased for undercollateralized tests
-    
-    // Withdraw tests: Need collateral to borrow 30n base
+    config.transfer.assetAmount = 500000n;
+    config.withdraw.alternateAsset = 500000n;
     config.withdraw.baseAmount = 30n;
-    config.withdraw.assetAmount = 500000n; // Drastically increased
+    config.withdraw.assetAmount = 500000n;
     config.withdraw.alternateBase = 30n;
     
     config.supply.collateralAmount = 10n;
@@ -177,6 +175,7 @@ export function applyNetworkOverrides(
     if (deployment === 'usdc') {
       config.bulker.asset.standard = 200n;
       config.bulker.asset.alternate = 200n;
+      config.assets.maticx.baseBorrowMultiplier = 100n;
     }
 
     if (deployment === 'usdt') {
