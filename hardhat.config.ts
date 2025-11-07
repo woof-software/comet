@@ -64,7 +64,7 @@ const {
   _TENDERLY_KEY_RONIN,
   _TENDERLY_KEY_POLYGON,
   _TENDERLY_KEY_OPTIMISM,
-  _TENDERLY_KEY_LINEA,
+  LINEA_QUICKNODE_KEY,
   MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
@@ -95,7 +95,7 @@ export function requireEnv(varName, msg?: string): string {
   'SNOWTRACE_KEY',
   'INFURA_KEY',
   'ANKR_KEY',
-  'UNICHAIN_QUICKNODE_KEY'
+  'UNICHAIN_QUICKNODE_KEY',
 ].map((v) => requireEnv(v));
 
 // Networks
@@ -144,7 +144,7 @@ export const networkConfigs: NetworkConfig[] = [
   {
     network: 'optimism',
     chainId: 10,
-    url: `https://optimism.gateway.tenderly.co/${_TENDERLY_KEY_OPTIMISM}`,
+    url: `https://rpc.ankr.com/optimism/${ANKR_KEY}`,
   },
   {
     network: 'mantle',
@@ -163,7 +163,8 @@ export const networkConfigs: NetworkConfig[] = [
     network: 'linea',
     chainId: 59144,
     //url: `https://rpc.ankr.com/linea/${ANKR_KEY}`,
-    url: `https://linea.gateway.tenderly.co/${_TENDERLY_KEY_LINEA}`
+    //url: `https://linea.gateway.tenderly.co/${_TENDERLY_KEY_LINEA}`
+    url: `https://omniscient-hardworking-gas.linea-mainnet.quiknode.pro/${LINEA_QUICKNODE_KEY}/`,
   },
   {
     network: 'base',

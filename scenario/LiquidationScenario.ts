@@ -176,13 +176,12 @@ scenario(
     const timeBeforeLiquidation = await timeUntilUnderwater({
       comet,
       actor: albert,
-      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong // 1 hour past when position is underwater
+      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
     });
 
-    while(!(await comet.isLiquidatable(albert.address))) {
-      await comet.accrueAccount(albert.address);
-      await world.increaseTime(timeBeforeLiquidation);
-    }
+    
+    await world.increaseTime(timeBeforeLiquidation);
+    await comet.accrueAccount(albert.address);
 
     const lp0 = await comet.liquidatorPoints(betty.address);
 
