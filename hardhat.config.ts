@@ -144,7 +144,7 @@ export const networkConfigs: NetworkConfig[] = [
   {
     network: 'optimism',
     chainId: 10,
-    url: `https://optimism.gateway.tenderly.co/${_TENDERLY_KEY_OPTIMISM}`,
+    url: `https://rpc.ankr.com/optimism/${ANKR_KEY}`,
   },
   {
     network: 'mantle',
@@ -164,7 +164,7 @@ export const networkConfigs: NetworkConfig[] = [
     chainId: 59144,
     //url: `https://rpc.ankr.com/linea/${ANKR_KEY}`,
     //url: `https://linea.gateway.tenderly.co/${_TENDERLY_KEY_LINEA}`
-    url: `https://omniscient-hardworking-gas.linea-mainnet.quiknode.pro/${LINEA_QUICKNODE_KEY}`,
+    url: `https://omniscient-hardworking-gas.linea-mainnet.quiknode.pro/${LINEA_QUICKNODE_KEY}/`,
   },
   {
     network: 'base',
