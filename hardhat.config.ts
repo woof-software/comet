@@ -6,7 +6,6 @@ import '@nomiclabs/hardhat-etherscan';
 import '@tenderly/hardhat-tenderly';
 import '@nomiclabs/hardhat-ethers';
 import '@typechain/hardhat';
-import '@nomicfoundation/hardhat-network-helpers';
 import 'hardhat-chai-matchers';
 import 'hardhat-change-network';
 import 'hardhat-contract-sizer';
