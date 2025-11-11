@@ -1,5 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
+import { exp } from '../test/helpers';
 import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils';
 import { ContractReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper';
@@ -371,3 +372,56 @@ scenario.skip(
     // XXX fix for development base, where Faucet token doesn't give the same revert message
   }
 );
+
+for (let i = 0; i < MAX_ASSETS; i++) {
+  scenario(
+    `Comet#isBorrowCollateralized > skips liquidity of asset ${i} with borrowCF=0`,
+    {
+      filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral),
+      tokenBalances: async (ctx) => ({
+        albert: { [`$asset${i}`]: getConfigForScenario(ctx, i).supplyCollateral },
+        $comet: { $base: exp(150, 6) },
+      }),
+    },
+    async ({ comet, configurator, proxyAdmin, actors }, context) => {
+      const { albert, admin } = actors;
+      const { asset } = await comet.getAssetInfo(i);
+      const targetAsset = context.getAssetByAddress(asset);
+      const baseToken = await comet.baseToken();
+
+      const supplyAmount = exp(1, 18);
+      const borrowAmount = exp(150, 6);
+
+      // Approve and supply collateral
+      await targetAsset.approve(albert, comet.address);
+      await albert.supplyAsset({ asset: asset, amount: supplyAmount });
+
+      // Withdraw base (borrow) - base tokens are already in Comet from tokenBalances
+      await albert.withdrawAsset({ asset: baseToken, amount: borrowAmount });
+
+      // Initially collateralized with single asset active
+      expect(await comet.isBorrowCollateralized(albert.address)).to.be.true;
+
+      // Zero borrowCF for target asset via governance
+      await context.setNextBaseFeeToZero();
+      await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, asset, 0n, { gasPrice: 0 });
+      await context.setNextBaseFeeToZero();
+      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+
+      // Verify borrowCF is 0
+      const assetInfo = await comet.getAssetInfoByAddress(asset);
+      expect(assetInfo.borrowCollateralFactor).to.equal(0);
+
+      // Verify target asset liquidity is zero
+      // liquidity = (amount * price / scale) * borrowCollateralFactor / factorScale
+      const assetPrice = await comet.getPrice(assetInfo.priceFeed);
+      const priceUSD = supplyAmount * assetPrice.toBigInt() / assetInfo.scale.toBigInt();
+      const liquidity = priceUSD * assetInfo.borrowCollateralFactor.toBigInt() / (await comet.factorScale()).toBigInt();
+      expect(liquidity).to.equal(0n);
+
+      // After zeroing the only supplied asset's borrowCF, position should be undercollateralized
+      expect(await comet.isBorrowCollateralized(albert.address)).to.equal(false);
+    }
+  );
+}
+

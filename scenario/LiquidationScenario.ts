@@ -5,7 +5,7 @@ import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { calldata } from '../src/deploy';
 import { utils, Contract, ethers } from 'ethers';
-import { SimplePriceFeed } from 'build/types';
+import { CometExtAssetList, CometWithExtendedAssetList, SimplePriceFeed } from 'build/types';
 
 scenario(
   'Comet#liquidation > isLiquidatable=true for underwater position',
@@ -306,11 +306,11 @@ for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#liquidation > skips liquidation value of asset ${i} with liquidateCF=0`,
     {
-      filter: async (ctx) => await isValidAssetIndex(ctx, i),
-      tokenBalances: {
-        albert: { [`$asset${i}`]: exp(1, 18) },
+      filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral),
+      tokenBalances: async (ctx) => ( {
+        albert: { [`$asset${i}`]: getConfigForScenario(ctx, i).supplyCollateral },
         $comet: { $base: exp(150, 6) },
-      },
+      }),
     },
     async ({ comet, configurator, proxyAdmin, actors }, context) => {
       const { albert, admin } = actors;
@@ -347,14 +347,14 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 }
 
 for (let i = 0; i < MAX_ASSETS; i++) {
-  scenario.only(
+  scenario(
     `Comet#liquidation > skips absorption of asset ${i} with liquidation factor = 0`,
     {
-      // filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, 1),
-      tokenBalances: {
-        albert: { [`$asset${i}`]: exp(1, 18) },
+      filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral),
+      tokenBalances: async (ctx) => ( {
+        albert: { [`$asset${i}`]: getConfigForScenario(ctx, i).supplyCollateral },
         $comet: { $base: exp(150, 6) },
-      },
+      }),
     },
     async ({ comet, configurator, proxyAdmin, actors }, context, world) => {
       /**
