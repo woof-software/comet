@@ -3,6 +3,21 @@ import { exp, expect, factorScale, mulFactor } from '../test/helpers';
 import { MAX_ASSETS, isValidAssetIndex } from './utils';
 import { BigNumber } from 'ethers';
 
+/**
+ * This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
+ * The incident revealed that when a price feed becomes unavailable, the protocol cannot calculate the USD value
+ * of collateral (e.g., during absorption when trying to getPrice() for a delisted asset).
+ *
+ * The solution was to set the asset's liquidationFactor to 0 for delisted collateral. This affects both:
+ * - Absorption: Assets with liquidationFactor = 0 are skipped (cannot calculate their USD value)
+ * - quoteCollateral: When liquidationFactor = 0, the store front discount becomes 0, and quoteCollateral
+ *   quotes at market price without any discount (see quoteCollateral() in CometWithExtendedAssetList.sol)
+ *
+ * This test suite verifies that quoteCollateral behaves correctly when liquidationFactor is set to 0:
+ * - It should quote at market price (no discount) when liquidationFactor = 0
+ * - It should handle the transition from liquidationFactor > 0 to liquidationFactor = 0 correctly
+ * - It should work correctly for all assets in the protocol, even when at the maximum asset limit
+ */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#quoteCollateral > quotes with discount for asset ${i}`,
