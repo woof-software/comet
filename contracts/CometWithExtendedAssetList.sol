@@ -390,7 +390,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         AssetInfo memory asset;
         uint256 newAmount;
         uint64 borrowCollateralFactor;
-        for (uint8 i = 0; i < numAssets; ) {
+        for (uint8 i; i < numAssets; ) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 if (liquidity >= 0) {
                     return true;
@@ -443,7 +443,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         AssetInfo memory asset;
         uint256 newAmount;
         uint64 liquidateCollateralFactor;
-        for (uint8 i = 0; i < numAssets; ) {
+        for (uint8 i; i < numAssets; ) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 if (liquidity >= 0) {
                     return false;
