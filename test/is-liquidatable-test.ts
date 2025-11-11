@@ -325,7 +325,7 @@ describe('isLiquidatable', function () {
       // Verify liquidateCF=0 excludes those assets from liquidity
       const liquidityByAsset: Record<string, BigNumber> = {} as Record<string, BigNumber>;
       for (const sym of symbols) {
-        liquidityByAsset[sym] = await getLiquidityWithLiquidateCF(comet, tokens[sym] as IERC20, supplyAmount);
+        liquidityByAsset[sym] = await getLiquidityWithLiquidateCF(comet, tokens[sym], supplyAmount);
       }
 
       for (const sym of zeroLcfSymbols) {

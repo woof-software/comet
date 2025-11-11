@@ -34,12 +34,14 @@ import {
   Configurator__factory,
   CometHarnessInterface,
   CometInterface,
+  CometMainInterface,
   NonStandardFaucetFeeToken,
   NonStandardFaucetFeeToken__factory,
   AssetListFactory,
   AssetListFactory__factory,
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
+  CometHarnessInterfaceExtendedAssetList,
   IERC20,
 } from '../build/types';
 import { BigNumber } from 'ethers';
@@ -631,7 +633,7 @@ export async function getLiquidity(comet: CometWithExtendedAssetList, token: Fau
   return BigNumber.from(priceUSD).mul(assetInfo.borrowCollateralFactor).div(factorScale);
 }
 
-export async function getLiquidityWithLiquidateCF(comet: CometWithExtendedAssetList, token: IERC20, amount: bigint): Promise<BigNumber> {
+export async function getLiquidityWithLiquidateCF(comet: CometMainInterface, token: FaucetToken | NonStandardFaucetFeeToken, amount: bigint): Promise<BigNumber> {
   const assetInfo = await comet.getAssetInfoByAddress(token.address);
   const priceUSD = mulPrice(amount, await comet.getPrice(assetInfo.priceFeed), assetInfo.scale);
   if (assetInfo.liquidateCollateralFactor.eq(0)) {
