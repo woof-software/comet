@@ -3,9 +3,7 @@ import { event, exp, expect } from '../test/helpers';
 import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
-import { calldata } from '../src/deploy';
-import { utils, Contract, ethers } from 'ethers';
-import { CometExtAssetList, CometWithExtendedAssetList, SimplePriceFeed } from 'build/types';
+import { SimplePriceFeed } from 'build/types';
 
 scenario(
   'Comet#liquidation > isLiquidatable=true for underwater position',
