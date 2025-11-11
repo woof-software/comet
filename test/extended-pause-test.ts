@@ -3,6 +3,47 @@ import { expect, makeProtocol, MAX_ASSETS } from "./helpers";
 import { CometExt, CometHarnessInterfaceExtendedAssetList } from "build/types";
 import { ContractTransaction } from "ethers";
 
+/**
+ * Context: Written after the USDM incident (a Chainlink price feed removal). The protocol added
+ * an "extended pause" layer to selectively disable sensitive flows without halting the entire market.
+ *
+ * What extended pause is:
+ * - A set of fine‑grained, role‑gated pause flags exposed by the extension (`CometExt`) and enforced by
+ *   the core (`CometWithExtendedAssetList`).
+ * - Governor or Pause Guardian can toggle offsets that affect:
+ *   - Base/collateral Supply: global base (`pauseBaseSupply`) and global collateral (`pauseCollateralSupply`),
+ *     plus per‑collateral asset supply (`pauseCollateralAssetSupply(assetIndex, ...)`).
+ *   - Withdraw: lenders vs borrowers paths for base (`pauseLendersWithdraw`, `pauseBorrowersWithdraw`),
+ *     global collateral withdraw (`pauseCollateralWithdraw`), plus per‑asset collateral withdraw
+ *     (`pauseCollateralAssetWithdraw(assetIndex, ...)`).
+ *   - Transfer: lenders vs borrowers paths for base (`pauseLendersTransfer`, `pauseBorrowersTransfer`),
+ *     global collateral transfer (`pauseCollateralTransfer`), plus per‑asset collateral transfer
+ *     (`pauseCollateralAssetTransfer(assetIndex, ...)`).
+ * - These are separate from the legacy coarse flags (`pause(...)` on the core) and are checked in addition to them.
+ *
+ * Where it is enforced (core checks in `CometWithExtendedAssetList`):
+ * - Supply: `supplyInternal` → base path checks `isBaseSupplyPaused()`, collateral path checks
+ *   `isCollateralSupplyPaused()` and per‑asset `isCollateralAssetSupplyPaused(offset)`.
+ * - Withdraw (base): `withdrawBase` branches to lenders/borrowers and reverts with
+ *   `LendersWithdrawPaused` or `BorrowersWithdrawPaused`.
+ * - Withdraw (collateral): `withdrawCollateral` checks global `isCollateralWithdrawPaused()` and per‑asset
+ *   `isCollateralAssetWithdrawPaused(offset)`.
+ * - Transfer (base): `transferBase` branches to lenders/borrowers and reverts with
+ *   `LendersTransferPaused` or `BorrowersTransferPaused`.
+ * - Transfer (collateral): `transferCollateral` checks global `isCollateralTransferPaused()` and per‑asset
+ *   `isCollateralAssetTransferPaused(offset)`.
+ *
+ * What this suite verifies:
+ * - Only Governor or Pause Guardian can toggle (access control via `onlyGovernorOrPauseGuardian`).
+ * - Idempotency protection: attempting to set an already‑set status reverts with
+ *   `OffsetStatusAlreadySet` or `CollateralAssetOffsetStatusAlreadySet`.
+ * - Each pause flag blocks exactly its intended flow and does not affect unrelated flows:
+ *   - Base vs collateral supply; lenders vs borrowers withdraw/transfer; global vs per‑asset flags.
+ * - Per‑asset flags override behavior for a single collateral by index without impacting others.
+ * - Boundary conditions: `isValidAssetIndex` enforced; invalid indices revert with `InvalidAssetIndex`.
+ * - Coexistence with legacy pause flags: both layers are respected (extended flags are additional gates).
+ * - Events are emitted for each toggle action from `CometExt` methods.
+ */
 describe("extended pause functionality", function () {
   // Contracts
   let comet: CometHarnessInterfaceExtendedAssetList;
