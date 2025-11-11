@@ -1,4 +1,4 @@
-import { CometProxyAdmin, CometWithExtendedAssetList, Configurator, FaucetToken, IERC20, NonStandardFaucetFeeToken } from 'build/types';
+import { CometProxyAdmin, CometWithExtendedAssetList, Configurator, FaucetToken, NonStandardFaucetFeeToken } from 'build/types';
 import { expect, exp, makeProtocol, makeConfigurator, ethers, updateAssetLiquidateCollateralFactor, getLiquidityWithLiquidateCF, MAX_ASSETS, takeSnapshot, SnapshotRestorer } from './helpers';
 import { BigNumber } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';

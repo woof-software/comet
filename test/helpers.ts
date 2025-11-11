@@ -41,18 +41,16 @@ import {
   AssetListFactory__factory,
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
-  CometHarnessInterfaceExtendedAssetList,
-  IERC20,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarness';
 
 // Snapshot
-export { takeSnapshot } from '@nomicfoundation/hardhat-network-helpers';
-export type { SnapshotRestorer } from '@nomicfoundation/hardhat-network-helpers';
+import { takeSnapshot } from '@nomicfoundation/hardhat-network-helpers';
+import type { SnapshotRestorer } from '@nomicfoundation/hardhat-network-helpers';
 
-export { Comet, ethers, expect, hre };
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer };
 
 export type Numeric = number | bigint;
 
