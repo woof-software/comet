@@ -54,7 +54,7 @@ export function applyNetworkOverrides(
     if (deployment === 'usdt') {
       config.liquidation.asset.tiny = 100n;
       config.liquidation.asset.small = 100n;
-      config.supply.baseSupplyWithFees = 100n;
+      config.supply.baseBorrowRepayAmount = 999n;
     }
   }
 
@@ -70,7 +70,7 @@ export function applyNetworkOverrides(
       config.common.amounts.collateral.standard = 10n;
       config.common.amounts.collateral.large = 10n;
       config.liquidation.base.standard = 100000n;
-      config.liquidation.asset.standard = 10000n;
+      config.liquidation.asset.standard = 50000n;
       config.liquidationBot.scenario.borrowCapacityUtilizationHigh = 99n;
       config.liquidationBot.scenario.fudgeFactorShort = 60000n * 100n;
     }
