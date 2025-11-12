@@ -41,7 +41,7 @@ export default async function relayRoninMessage(
     );
     const latestBlock = (await governanceDeploymentManager.hre.ethers.provider.getBlock('latest')).number;
     const realEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
-      fromBlock: latestBlock - 500,
+      fromBlock: latestBlock - 600,
       toBlock: 'latest',
       address: l1CCIPOnRamp.address,
       topics: filterCCIP.topics || []
@@ -50,7 +50,7 @@ export default async function relayRoninMessage(
   } else {
     const latestBlock = (await governanceDeploymentManager.hre.ethers.provider.getBlock('latest')).number;
     logsCCIP = await governanceDeploymentManager.hre.ethers.provider.getLogs({
-      fromBlock: latestBlock - 500,
+      fromBlock: latestBlock - 600,
       toBlock: 'latest',
       address: l1CCIPOnRamp.address,
       topics: filterCCIP.topics || []

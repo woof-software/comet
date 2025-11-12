@@ -491,7 +491,7 @@ export async function loadEtherscanContract(network: string, address: string) {
   const contractFQN = `${contractPath}:${contract}`;
 
   let contractCreationCode = await getContractCreationCode(networkName, address);
-  if (constructorArgs.length > 0 && contractCreationCode.endsWith(constructorArgs)) {
+  if (constructorArgs && constructorArgs.length > 0 && contractCreationCode.endsWith(constructorArgs)) {
     contractCreationCode = contractCreationCode.slice(0, -constructorArgs.length);
   }
 

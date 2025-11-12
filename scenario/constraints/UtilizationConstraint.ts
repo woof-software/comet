@@ -1,9 +1,9 @@
 import { Constraint } from '../../plugins/scenario';
 import { CometContext } from '../context/CometContext';
-import { optionalNumber } from '../utils';
 import { defactor, factor, factorScale } from '../../test/helpers';
 import { expect } from 'chai';
 import { Requirements } from './Requirements';
+import { optionalCall } from '../utils';
 
 /**
   # Utilization Constraint
@@ -27,9 +27,9 @@ interface UtilizationConfig {
   utilization?: number;
 }
 
-function getUtilizationConfig(requirements: object): UtilizationConfig {
+function getUtilizationConfig(requirements: Requirements, context: any): UtilizationConfig {
   return {
-    utilization: optionalNumber(requirements, 'utilization'),
+    utilization: optionalCall(requirements, 'utilization', context),
   };
 }
 
@@ -50,7 +50,7 @@ else
 */
 export class UtilizationConstraint<T extends CometContext, R extends Requirements> implements Constraint<T, R> {
   async solve(requirements: R, _context: T) {
-    let { utilization } = getUtilizationConfig(requirements);
+    let { utilization } = getUtilizationConfig(requirements, _context);
 
     if (utilization === undefined) {
       return null;
@@ -116,9 +116,19 @@ export class UtilizationConstraint<T extends CometContext, R extends Requirement
             const collateralPrice = (await comet.getPrice(priceFeed)).toBigInt();
             const collateralScale = scale.toBigInt();
 
+            // we need this after wUSDM deprecation
+            if(borrowCollateralFactor.toBigInt() === 0n || collateralPrice === 0n){
+              console.log(`UtilizationConstraint: skipping $asset${i} due to zero collateral factor or price`);
+              continue; // can't use this asset as collateral
+            }
+
             const collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice;
             let collateralNeeded = (collateralWeiPerUnitBase * toBorrowBase) / baseScale;
-            collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor.toBigInt(); // adjust for borrowCollateralFactor
+            if(borrowCollateralFactor.toBigInt() != 0n) {
+              collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor.toBigInt(); // adjust for borrowCollateralFactor
+            } else {
+              continue;
+            }
             collateralNeeded = (collateralNeeded * 11n) / 10n; // add fudge factor
 
             try {
@@ -142,7 +152,7 @@ export class UtilizationConstraint<T extends CometContext, R extends Requirement
   }
 
   async check(requirements: R, context: T) {
-    let { utilization } = getUtilizationConfig(requirements);
+    let { utilization } = getUtilizationConfig(requirements, context);
 
     if (utilization) {
       let comet = await context.getComet();
