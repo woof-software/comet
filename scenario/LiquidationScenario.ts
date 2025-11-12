@@ -151,7 +151,7 @@ scenario(
   }
 );
 
-scenario.only(
+scenario(
   'Comet#liquidation > allows liquidation of underwater positions',
   {
     tokenBalances: async (ctx) => (
