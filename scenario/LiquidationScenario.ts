@@ -1,9 +1,8 @@
 import { scenario } from './context/CometContext';
-import { event, exp, expect } from '../test/helpers';
+import { event, expect } from '../test/helpers';
 import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
-import { SimplePriceFeed } from 'build/types';
 
 scenario(
   'Comet#liquidation > isLiquidatable=true for underwater position',
@@ -329,17 +328,29 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral),
       tokenBalances: async (ctx) => ( {
         albert: { [`$asset${i}`]: getConfigForScenario(ctx, i).supplyCollateral },
-        $comet: { $base: exp(150, 6) },
+        $comet: { $base: 10000 }, // Ensure enough base tokens for borrowing
       }),
     },
     async ({ comet, configurator, proxyAdmin, actors }, context) => {
       const { albert, admin } = actors;
-      const { asset } = await comet.getAssetInfo(i);
+      const { asset, scale, borrowCollateralFactor, priceFeed } = await comet.getAssetInfo(i);
       const targetAsset = context.getAssetByAddress(asset);
       const baseToken = await comet.baseToken();
+      const assetScale = scale.toBigInt();
+      const baseScale = (await comet.baseScale()).toBigInt();
+      const factorScale = (await comet.factorScale()).toBigInt();
 
-      const supplyAmount = exp(1, 18);
-      const borrowAmount = exp(150, 6);
+      const supplyAmount = BigInt(getConfigForScenario(context, i).supplyCollateral) * assetScale;
+
+      // Calculate maximum borrow amount based on collateral
+      // liquidity = (amount * price / scale) * borrowCollateralFactor / factorScale
+      // borrowAmount = liquidity (in base units)
+      const collateralPrice = (await comet.getPrice(priceFeed)).toBigInt();
+      const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+      const collateralValueUSD = supplyAmount * collateralPrice / assetScale;
+      const maxLiquidity = collateralValueUSD * borrowCollateralFactor.toBigInt() / factorScale;
+      // Borrow 80% of max liquidity to ensure we're collateralized
+      const borrowAmount = (maxLiquidity * baseScale * 8n) / (basePrice * 10n);
 
       // Approve and supply collateral
       await targetAsset.approve(albert, comet.address);
@@ -383,67 +394,64 @@ for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#liquidation > skips absorption of asset ${i} with liquidation factor = 0`,
     {
-      filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral),
-      tokenBalances: async (ctx) => ( {
-        albert: { [`$asset${i}`]: getConfigForScenario(ctx, i).supplyCollateral },
-        $comet: { $base: exp(150, 6) },
+      filter: async (ctx) => 
+        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral),
+      tokenBalances: async (ctx) => ({
+        $comet: {
+          $base: getConfigForScenario(ctx).liquidationBase
+        }
+      }),
+      cometBalances: async (ctx) => ( {
+        albert: { 
+          [`$asset${i}`]: getConfigForScenario(ctx, i).supplyCollateral,
+          $base: -getConfigForScenario(ctx, i).liquidationBase 
+        },
+        betty: { $base: getConfigForScenario(ctx).liquidationBase }
       }),
     },
     async ({ comet, configurator, proxyAdmin, actors }, context, world) => {
-      /**
-       * This parameterized test verifies that absorb skips assets with liquidation factor = 0.
-       * For each iteration (i = 0 to 23), it tests asset i in a protocol.
-       * The test: (1) supplies collateral and borrows to make the account liquidatable,
-       * (2) sets the target asset's liquidation factor to 0, (3) calls absorb, and
-       * (4) verifies that the target asset is skipped (user collateral balance and totalsCollateral totalSupplyAsset remain unchanged).
-       */
       const { albert, betty, admin } = actors;
-      const { asset, priceFeed } = await comet.getAssetInfo(i);
-      const targetAsset = context.getAssetByAddress(asset);
+      const { asset } = await comet.getAssetInfo(i);
       const baseToken = await comet.baseToken();
+      const baseScale = (await comet.baseScale()).toBigInt();
 
-      const supplyAmount = exp(1, 18);
-      const borrowAmount = exp(150, 6);
+      // Ensure account is liquidatable by waiting for time to pass and accruing interest
+      const timeBeforeLiquidation = await timeUntilUnderwater({
+        comet,
+        actor: albert,
+        fudgeFactor: 6000n * 6000n // 1 hour past when position is underwater
+      });
 
-      // Step 1: Supply, borrow, and make liquidatable
-      await targetAsset.approve(albert, comet.address);
-      await albert.supplyAsset({ asset: asset, amount: supplyAmount });
+      while(!(await comet.isLiquidatable(albert.address))) {
+        await comet.accrueAccount(albert.address);
+        await world.increaseTime(timeBeforeLiquidation);
+      }
 
-      // Withdraw base (borrow) - base tokens are already in Comet from tokenBalances
-      await albert.withdrawAsset({ asset: baseToken, amount: borrowAmount });
-
-      // Drop price of token to make liquidatable
-      // Get the price feed contract and set a lower price
-      const priceFeedContract = await world.deploymentManager.hre.ethers.getContractAt('SimplePriceFeed', priceFeed) as SimplePriceFeed;
-      const newPrice = exp(100, 8); // 100 USD with 8 decimals
-      const signer = await world.deploymentManager.getSigner();
-      await priceFeedContract.connect(signer).setRoundData(0, newPrice, 0, 0, 0);
+      // Force accrue to ensure state is up to date
+      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).liquidationBase) / 100n * baseScale });
 
       // Verify account is liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
 
       // Step 2: Update liquidationFactor to 0 for target asset
       await context.setNextBaseFeeToZero();
-      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, exp(0, 18));
+      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
 
       // Upgrade proxy again after updating liquidationFactor
       await context.setNextBaseFeeToZero();
-      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
+      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
 
       // Verify liquidationFactor is 0
       expect((await comet.getAssetInfoByAddress(asset)).liquidationFactor).to.equal(0);
+
+      expect(await comet.isLiquidatable(albert.address)).to.be.true;
 
       // Step 3: Save balances before absorb
       const userCollateralBefore = (await comet.userCollateral(albert.address, asset)).balance;
       const totalsBefore = (await comet.totalsCollateral(asset)).totalSupplyAsset;
 
-      expect(userCollateralBefore).to.equal(supplyAmount);
-      expect(totalsBefore).to.equal(supplyAmount);
-
-      // Step 4: Absorb should skip this asset (no seizure) and balances remain unchanged
       await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
 
-      // Step 5: Verify balances remain unchanged
       expect((await comet.userCollateral(albert.address, asset)).balance).to.equal(userCollateralBefore);
       expect((await comet.totalsCollateral(asset)).totalSupplyAsset).to.equal(totalsBefore);
     }

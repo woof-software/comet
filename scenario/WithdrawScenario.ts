@@ -1,6 +1,5 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { exp } from '../test/helpers';
 import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils';
 import { ContractReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper';
@@ -405,17 +404,29 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral),
       tokenBalances: async (ctx) => ({
         albert: { [`$asset${i}`]: getConfigForScenario(ctx, i).supplyCollateral },
-        $comet: { $base: exp(150, 6) },
+        $comet: { $base: 10000 }, // Ensure enough base tokens for borrowing
       }),
     },
     async ({ comet, configurator, proxyAdmin, actors }, context) => {
       const { albert, admin } = actors;
-      const { asset } = await comet.getAssetInfo(i);
+      const { asset, scale, borrowCollateralFactor, priceFeed } = await comet.getAssetInfo(i);
       const targetAsset = context.getAssetByAddress(asset);
       const baseToken = await comet.baseToken();
+      const assetScale = scale.toBigInt();
+      const baseScale = (await comet.baseScale()).toBigInt();
+      const factorScale = (await comet.factorScale()).toBigInt();
 
-      const supplyAmount = exp(1, 18);
-      const borrowAmount = exp(150, 6);
+      const supplyAmount = BigInt(getConfigForScenario(context, i).supplyCollateral) * assetScale;
+
+      // Calculate maximum borrow amount based on collateral
+      // liquidity = (amount * price / scale) * borrowCollateralFactor / factorScale
+      // borrowAmount = liquidity (in base units)
+      const collateralPrice = (await comet.getPrice(priceFeed)).toBigInt();
+      const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+      const collateralValueUSD = supplyAmount * collateralPrice / assetScale;
+      const maxLiquidity = collateralValueUSD * borrowCollateralFactor.toBigInt() / factorScale;
+      // Borrow 80% of max liquidity to ensure we're collateralized
+      const borrowAmount = (maxLiquidity * baseScale * 8n) / (basePrice * 10n);
 
       // Approve and supply collateral
       await targetAsset.approve(albert, comet.address);
@@ -439,9 +450,9 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 
       // Verify target asset liquidity is zero
       // liquidity = (amount * price / scale) * borrowCollateralFactor / factorScale
-      const assetPrice = await comet.getPrice(assetInfo.priceFeed);
-      const priceUSD = supplyAmount * assetPrice.toBigInt() / assetInfo.scale.toBigInt();
-      const liquidity = priceUSD * assetInfo.borrowCollateralFactor.toBigInt() / (await comet.factorScale()).toBigInt();
+      const assetPriceAfter = await comet.getPrice(assetInfo.priceFeed);
+      const priceUSDAfter = supplyAmount * assetPriceAfter.toBigInt() / assetInfo.scale.toBigInt();
+      const liquidity = priceUSDAfter * assetInfo.borrowCollateralFactor.toBigInt() / (await comet.factorScale()).toBigInt();
       expect(liquidity).to.equal(0n);
 
       // After zeroing the only supplied asset's borrowCF, position should be undercollateralized
