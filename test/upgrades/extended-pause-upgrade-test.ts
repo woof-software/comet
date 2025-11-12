@@ -1,10 +1,10 @@
-import { expect } from "chai";
-import { ethers } from "hardhat";
-import { setupFork } from "../helpers";
+import { expect } from 'chai';
+import { ethers } from 'hardhat';
+import { setupFork } from '../helpers';
 import {
   impersonateAccount,
   setBalance,
-} from "@nomicfoundation/hardhat-network-helpers";
+} from '@nomicfoundation/hardhat-network-helpers';
 import {
   CometExtAssetList__factory,
   CometFactoryWithExtendedAssetList__factory,
@@ -12,18 +12,18 @@ import {
   CometWithExtendedAssetList,
   Configurator,
   CometExtAssetList,
-} from "build/types";
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
-import { BigNumber } from "ethers";
-import { TotalsBasicStructOutput } from "build/types/CometExtAssetList";
+} from 'build/types';
+import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
+import { BigNumber } from 'ethers';
+import { TotalsBasicStructOutput } from 'build/types/CometExtAssetList';
 
-describe("extended pause upgrade test", function () {
+describe('extended pause upgrade test', function () {
   // Constants
   const FORK_BLOCK_NUMBER = 23655019;
-  const COMET_ADDRESS = "0xc3d688B66703497DAA19211EEdff47f25384cdc3";
-  const CONFIGURATOR_ADDRESS = "0x316f9708bB98af7dA9c68C1C3b5e79039cD336E3";
-  const GOVERNOR_ADDRESS = "0x6d903f6003cca6255d85cca4d3b5e5146dc33925";
-  const ADMIN_SLOT = "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103";
+  const COMET_ADDRESS = '0xc3d688B66703497DAA19211EEdff47f25384cdc3';
+  const CONFIGURATOR_ADDRESS = '0x316f9708bB98af7dA9c68C1C3b5e79039cD336E3';
+  const GOVERNOR_ADDRESS = '0x6d903f6003cca6255d85cca4d3b5e5146dc33925';
+  const ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
 
   // Contracts
   let comet: CometWithExtendedAssetList;
@@ -69,12 +69,12 @@ describe("extended pause upgrade test", function () {
 
     // Get contracts
     comet = (await ethers.getContractAt(
-      "CometWithExtendedAssetList",
+      'CometWithExtendedAssetList',
       COMET_ADDRESS
     )) as CometWithExtendedAssetList;
 
     configurator = (await ethers.getContractAt(
-      "Configurator",
+      'Configurator',
       CONFIGURATOR_ADDRESS
     )) as Configurator;
 
@@ -84,22 +84,22 @@ describe("extended pause upgrade test", function () {
       ADMIN_SLOT
     );
     const proxyAdminAddress = ethers.utils.getAddress(
-      "0x" + adminAddress.slice(26)
+      '0x' + adminAddress.slice(26)
     );
     proxyAdmin = (await ethers.getContractAt(
-      "CometProxyAdmin",
+      'CometProxyAdmin',
       proxyAdminAddress
     )) as CometProxyAdmin;
 
     // Impersonate governor
     await impersonateAccount(GOVERNOR_ADDRESS);
     governor = await ethers.getSigner(GOVERNOR_ADDRESS);
-    await setBalance(GOVERNOR_ADDRESS, ethers.utils.parseEther("10000"));
+    await setBalance(GOVERNOR_ADDRESS, ethers.utils.parseEther('10000'));
 
     // Get current extension delegate and its assetListFactory
     const currentExtensionDelegate = await comet.extensionDelegate();
     const CometExtAssetListInterface = await ethers.getContractAt(
-      "IAssetListFactoryHolder",
+      'IAssetListFactoryHolder',
       currentExtensionDelegate
     );
     assetListFactoryAddress =
@@ -107,7 +107,7 @@ describe("extended pause upgrade test", function () {
 
     // Get name and symbol from current extension delegate
     const ExtInterface = await ethers.getContractAt(
-      "CometExtInterface",
+      'CometExtInterface',
       currentExtensionDelegate
     );
     name32 = ethers.utils.formatBytes32String(await ExtInterface.name());
@@ -118,7 +118,7 @@ describe("extended pause upgrade test", function () {
 
     // Deploy new version of CometExtAssetList (with extended pause functionality)
     const CometExtAssetList = (await ethers.getContractFactory(
-      "CometExtAssetList"
+      'CometExtAssetList'
     )) as CometExtAssetList__factory;
     newCometExt = await CometExtAssetList.deploy(
       { name32, symbol32 },
@@ -127,7 +127,7 @@ describe("extended pause upgrade test", function () {
 
     // Deploy CometFactoryWithExtendedAssetList
     const CometFactoryWithExtendedAssetList = (await ethers.getContractFactory(
-      "CometFactoryWithExtendedAssetList"
+      'CometFactoryWithExtendedAssetList'
     )) as CometFactoryWithExtendedAssetList__factory;
     const newFactory = await CometFactoryWithExtendedAssetList.deploy();
 
@@ -144,12 +144,12 @@ describe("extended pause upgrade test", function () {
     // Deploy new implementation using configurator
     const deployTx = await configurator.connect(governor).deploy(COMET_ADDRESS);
     const deployReceipt = await deployTx.wait();
-    const deployEvent = deployReceipt.events.find((e) => e.event === "CometDeployed");
+    const deployEvent = deployReceipt.events.find((e) => e.event === 'CometDeployed');
     newImpl = deployEvent.args.newComet;
     expect(newImpl).to.not.equal(ethers.constants.AddressZero);
     expect(newImpl).to.not.equal(originalImpl);
 
-    cometExt = await ethers.getContractAt("CometExtAssetList", COMET_ADDRESS) as CometExtAssetList;
+    cometExt = await ethers.getContractAt('CometExtAssetList', COMET_ADDRESS) as CometExtAssetList;
 
     // Extension delegate storage snapshot
     assetListFactoryBefore = await cometExt.assetListFactory();

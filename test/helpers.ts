@@ -43,8 +43,8 @@ import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarness';
 
 // Snapshot
-export { takeSnapshot } from "@nomicfoundation/hardhat-network-helpers";
-export type { SnapshotRestorer } from "@nomicfoundation/hardhat-network-helpers";
+export { takeSnapshot } from '@nomicfoundation/hardhat-network-helpers';
+export type { SnapshotRestorer } from '@nomicfoundation/hardhat-network-helpers';
 
 export { Comet, ethers, expect, hre };
 
@@ -692,7 +692,7 @@ export async function setupFork(blockNumber?: number, jsonRpcUrl?: string) {
   const mainnetConfig = hre.config.networks.mainnet as any;
 
   await hre.network.provider.request({
-    method: "hardhat_reset",
+    method: 'hardhat_reset',
     params: [
       {
         forking: {

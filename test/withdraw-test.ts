@@ -1,8 +1,8 @@
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
-import { CometHarnessInterfaceExtendedAssetList, EvilToken, EvilToken__factory, FaucetToken, NonStandardFaucetFeeToken, } from "../build/types";
+import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
+import { CometHarnessInterfaceExtendedAssetList, EvilToken, EvilToken__factory, FaucetToken, NonStandardFaucetFeeToken, } from '../build/types';
 import { baseBalanceOf, ethers, event, expect, exp, makeProtocol, portfolio, ReentryAttack, setTotalsBasic, wait, fastForward, MAX_ASSETS, SnapshotRestorer, takeSnapshot } from './helpers';
 
-describe("withdraw functionality", function () {
+describe('withdraw functionality', function () {
   // Snapshot
   let snapshot: SnapshotRestorer;
 
@@ -81,7 +81,7 @@ describe("withdraw functionality", function () {
     snapshot = await takeSnapshot();
   });
 
-  describe("withdrawTo", function () {
+  describe('withdrawTo', function () {
     this.afterAll(async () => await snapshot.restore());
 
     it('withdraws base from sender if the asset is base', async () => {
@@ -476,7 +476,7 @@ describe("withdraw functionality", function () {
       expect(await USDC.balanceOf(bob.address)).to.eq(1e6);
     });
 
-    it("reverts if collateral withdraw is paused", async () => {
+    it('reverts if collateral withdraw is paused', async () => {
       // Pause collateral withdraw
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -494,11 +494,11 @@ describe("withdraw functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "CollateralWithdrawPaused"
+        'CollateralWithdrawPaused'
       );
     });
 
-    it("reverts if lender withdraw is paused", async () => {
+    it('reverts if lender withdraw is paused', async () => {
       // Pause lenders withdraw
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -512,11 +512,11 @@ describe("withdraw functionality", function () {
           .withdrawTo(alice.address, baseToken.address, baseTokenSupplyAmount)
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "LendersWithdrawPaused"
+        'LendersWithdrawPaused'
       );
     });
 
-    it("reverts if borrower withdraw is paused", async () => {
+    it('reverts if borrower withdraw is paused', async () => {
       // Borrow some USDC
       await cometWithExtendedAssetList
         .connect(bob)
@@ -539,7 +539,7 @@ describe("withdraw functionality", function () {
           .withdrawTo(bob.address, baseToken.address, baseTokenSupplyAmount)
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "BorrowersWithdrawPaused"
+        'BorrowersWithdrawPaused'
       );
     });
 
@@ -588,13 +588,13 @@ describe("withdraw functionality", function () {
             )
         ).to.be.revertedWithCustomError(
           cometWithExtendedAssetListMaxAssets,
-          "CollateralAssetWithdrawPaused"
+          'CollateralAssetWithdrawPaused'
         );
       });
     }
   });
 
-  describe("withdraw", function () {
+  describe('withdraw', function () {
     this.afterAll(async () => await snapshot.restore());
 
     it('withdraws to sender by default', async () => {
@@ -770,7 +770,7 @@ describe("withdraw functionality", function () {
       });
     });
 
-    it("reverts if collateral withdraw is paused", async () => {
+    it('reverts if collateral withdraw is paused', async () => {
       // Pause collateral withdraw
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -784,11 +784,11 @@ describe("withdraw functionality", function () {
           .withdraw(collateralToken.address, collateralTokenSupplyAmount)
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "CollateralWithdrawPaused"
+        'CollateralWithdrawPaused'
       );
     });
 
-    it("reverts if lender withdraw is paused", async () => {
+    it('reverts if lender withdraw is paused', async () => {
       // Pause lenders withdraw
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -802,11 +802,11 @@ describe("withdraw functionality", function () {
           .withdraw(baseToken.address, baseTokenSupplyAmount)
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "LendersWithdrawPaused"
+        'LendersWithdrawPaused'
       );
     });
 
-    it("reverts if borrower withdraw is paused", async () => {
+    it('reverts if borrower withdraw is paused', async () => {
       // Pause borrowers withdraw
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -820,7 +820,7 @@ describe("withdraw functionality", function () {
           .withdraw(baseToken.address, baseTokenSupplyAmount * 2n)
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "BorrowersWithdrawPaused"
+        'BorrowersWithdrawPaused'
       );
     });
 
@@ -865,13 +865,13 @@ describe("withdraw functionality", function () {
             .withdraw(assetToken.address, collateralTokenSupplyAmount)
         ).to.be.revertedWithCustomError(
           cometWithExtendedAssetListMaxAssets,
-          "CollateralAssetWithdrawPaused"
+          'CollateralAssetWithdrawPaused'
         );
       });
     }
   });
 
-  describe("withdrawFrom", function () {
+  describe('withdrawFrom', function () {
     this.afterAll(async () => await snapshot.restore());
 
     it('withdraws from src if specified and sender has permission', async () => {
@@ -935,7 +935,7 @@ describe("withdraw functionality", function () {
       await expect(cometAsC.withdrawFrom(bob.address, alice.address, COMP.address, 7)).to.be.revertedWith("custom error 'Paused()'");
     });
 
-    it("reverts if collateral withdraw is paused", async () => {
+    it('reverts if collateral withdraw is paused', async () => {
       // Pause collateral withdraw
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -954,11 +954,11 @@ describe("withdraw functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "CollateralWithdrawPaused"
+        'CollateralWithdrawPaused'
       );
     });
 
-    it("reverts if lender withdraw is paused", async () => {
+    it('reverts if lender withdraw is paused', async () => {
       // Pause lenders withdraw
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -977,11 +977,11 @@ describe("withdraw functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "LendersWithdrawPaused"
+        'LendersWithdrawPaused'
       );
     });
 
-    it("reverts if borrower withdraw is paused", async () => {
+    it('reverts if borrower withdraw is paused', async () => {
       // Pause borrowers withdraw
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -1000,7 +1000,7 @@ describe("withdraw functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "BorrowersWithdrawPaused"
+        'BorrowersWithdrawPaused'
       );
     });
 
@@ -1049,7 +1049,7 @@ describe("withdraw functionality", function () {
             )
         ).to.be.revertedWithCustomError(
           cometWithExtendedAssetListMaxAssets,
-          "CollateralAssetWithdrawPaused"
+          'CollateralAssetWithdrawPaused'
         );
       });
     }

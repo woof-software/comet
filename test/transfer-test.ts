@@ -1,9 +1,9 @@
 import {
-  CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken} from "build/types";
+  CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken} from 'build/types';
 import { baseBalanceOf, ethers, event, expect, exp, makeProtocol, portfolio, setTotalsBasic, wait, fastForward, MAX_ASSETS, SnapshotRestorer, takeSnapshot } from './helpers';
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
-describe("transfer functionality", function () {
+describe('transfer functionality', function () {
   // Snapshot
   let snapshot: SnapshotRestorer;
 
@@ -76,7 +76,7 @@ describe("transfer functionality", function () {
     snapshot = await takeSnapshot();
   });
 
-  describe("transfer", function () {
+  describe('transfer', function () {
     this.afterAll(async () => await snapshot.restore());
 
     it('transfers base from sender if the asset is base', async () => {
@@ -410,7 +410,7 @@ describe("transfer functionality", function () {
       ).to.be.revertedWith("custom error 'NotCollateralized()'");
     });
 
-    it("reverts if collateral transfer paused", async () => {
+    it('reverts if collateral transfer paused', async () => {
       // Pause collateral transfer
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -428,11 +428,11 @@ describe("transfer functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "CollateralTransferPaused"
+        'CollateralTransferPaused'
       );
     });
 
-    it("reverts if lenders transfer is paused", async () => {
+    it('reverts if lenders transfer is paused', async () => {
       // Pause lenders transfer
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -450,11 +450,11 @@ describe("transfer functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "LendersTransferPaused"
+        'LendersTransferPaused'
       );
     });
 
-    it("reverts if borrower transfer is paused", async () => {
+    it('reverts if borrower transfer is paused', async () => {
       // Borrow some USDC
       await cometWithExtendedAssetList
         .connect(bob)
@@ -482,7 +482,7 @@ describe("transfer functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "BorrowersTransferPaused"
+        'BorrowersTransferPaused'
       );
     });
 
@@ -524,13 +524,13 @@ describe("transfer functionality", function () {
             )
         ).to.be.revertedWithCustomError(
           cometWithExtendedAssetListMaxAssets,
-          "CollateralAssetTransferPaused"
+          'CollateralAssetTransferPaused'
         );
       });
     }
   });
 
-  describe("transferFrom", function () {
+  describe('transferFrom', function () {
     it('transfers from src if specified and sender has permission', async () => {
       const protocol = await makeProtocol();
       const {
@@ -621,7 +621,7 @@ describe("transfer functionality", function () {
       await expect(cometAsC.transferAssetFrom(bob.address, alice.address, COMP.address, 7)).to.be.revertedWith("custom error 'Paused()'");
     });
 
-    it("reverts if collateral transfer paused", async () => {
+    it('reverts if collateral transfer paused', async () => {
       // Pause collateral transfer
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -641,11 +641,11 @@ describe("transfer functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "CollateralTransferPaused"
+        'CollateralTransferPaused'
       );
     });
 
-    it("reverts if lenders transfer is paused", async () => {
+    it('reverts if lenders transfer is paused', async () => {
       const userBasic = await cometWithExtendedAssetList.userBasic(bob.address);
       expect(userBasic.principal).to.be.greaterThanOrEqual(0);
 
@@ -667,11 +667,11 @@ describe("transfer functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "LendersTransferPaused"
+        'LendersTransferPaused'
       );
     });
 
-    it("reverts if borrower transfer is paused", async () => {
+    it('reverts if borrower transfer is paused', async () => {
       // Borrow some USDC
       await cometWithExtendedAssetList
         .connect(bob)
@@ -699,7 +699,7 @@ describe("transfer functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "BorrowersTransferPaused"
+        'BorrowersTransferPaused'
       );
     });
 
@@ -749,7 +749,7 @@ describe("transfer functionality", function () {
             )
         ).to.be.revertedWithCustomError(
           cometWithExtendedAssetListMaxAssets,
-          "CollateralAssetTransferPaused"
+          'CollateralAssetTransferPaused'
         );
       });
     }

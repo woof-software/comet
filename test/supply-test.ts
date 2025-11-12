@@ -2,7 +2,7 @@ import { ethers, event, expect, exp, makeProtocol, portfolio, ReentryAttack, set
   takeSnapshot, MAX_ASSETS, } from './helpers';
 import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken,CometHarnessInterfaceExtendedAssetList,FaucetToken } from '../build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-describe("supply functionality", function () {
+describe('supply functionality', function () {
   // Snapshot
   let snapshot: SnapshotRestorer;
 
@@ -27,7 +27,7 @@ describe("supply functionality", function () {
   const collateralTokenSupplyAmount = 8e8;
 
   before(async () => {
-    const protocol = await makeProtocol({ base: "USDC" });
+    const protocol = await makeProtocol({ base: 'USDC' });
     cometWithExtendedAssetList = protocol.cometWithExtendedAssetList;
     baseToken = protocol.tokens.USDC;
     collateralToken = protocol.tokens.COMP;
@@ -51,7 +51,7 @@ describe("supply functionality", function () {
     snapshot = await takeSnapshot();
   });
 
-  describe("supplyTo", function () {
+  describe('supplyTo', function () {
     this.afterAll(async () => await snapshot.restore());
 
     it('supplies base from sender if the asset is base', async () => {
@@ -444,7 +444,7 @@ describe("supply functionality", function () {
       await expect(cometAsB.supplyTo(alice.address, USDC.address, 1)).to.be.revertedWith("custom error 'Paused()'");
     });
 
-    it("reverts if collateral supply is paused", async () => {
+    it('reverts if collateral supply is paused', async () => {
       // Pause collateral supply
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -468,7 +468,7 @@ describe("supply functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "CollateralSupplyPaused"
+        'CollateralSupplyPaused'
       );
     });
 
@@ -508,7 +508,7 @@ describe("supply functionality", function () {
             )
         ).to.be.revertedWithCustomError(
           cometWithExtendedAssetListMaxAssets,
-          "CollateralAssetSupplyPaused"
+          'CollateralAssetSupplyPaused'
         );
       });
     }
@@ -683,7 +683,7 @@ describe("supply functionality", function () {
     });
   });
 
-  describe("supply", function () {
+  describe('supply', function () {
     this.afterAll(async () => await snapshot.restore());
 
     it('supplies to sender by default', async () => {
@@ -725,7 +725,7 @@ describe("supply functionality", function () {
       await expect(cometAsB.supply(USDC.address, 100e6)).to.be.revertedWith("custom error 'Paused()'");
     });
 
-    it("reverts if base supply is paused", async () => {
+    it('reverts if base supply is paused', async () => {
       // Pause base supply
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -741,11 +741,11 @@ describe("supply functionality", function () {
           .supply(baseToken.address, baseTokenSupplyAmount)
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "BaseSupplyPaused"
+        'BaseSupplyPaused'
       );
     });
 
-    it("reverts if collateral supply is paused", async () => {
+    it('reverts if collateral supply is paused', async () => {
       // Pause collateral supply
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -765,7 +765,7 @@ describe("supply functionality", function () {
           .supply(collateralToken.address, collateralTokenSupplyAmount)
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "CollateralSupplyPaused"
+        'CollateralSupplyPaused'
       );
     });
 
@@ -801,13 +801,13 @@ describe("supply functionality", function () {
             .supply(assetToken.address, collateralTokenSupplyAmount)
         ).to.be.revertedWithCustomError(
           cometWithExtendedAssetListMaxAssets,
-          "CollateralAssetSupplyPaused"
+          'CollateralAssetSupplyPaused'
         );
       });
     }
   });
 
-  describe("supplyFrom", function () {
+  describe('supplyFrom', function () {
     this.afterAll(async () => await snapshot.restore());
     
     it('supplies from `from` if specified and sender has permission', async () => {
@@ -869,7 +869,7 @@ describe("supply functionality", function () {
       await expect(cometAsC.supplyFrom(bob.address, alice.address, COMP.address, 7)).to.be.revertedWith("custom error 'Paused()'");
     });
 
-    it("reverts if base supply is paused", async () => {
+    it('reverts if base supply is paused', async () => {
       // Pause base supply
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -891,11 +891,11 @@ describe("supply functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "BaseSupplyPaused"
+        'BaseSupplyPaused'
       );
     });
 
-    it("reverts if collateral supply is paused", async () => {
+    it('reverts if collateral supply is paused', async () => {
       // Pause collateral supply
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
@@ -921,7 +921,7 @@ describe("supply functionality", function () {
           )
       ).to.be.revertedWithCustomError(
         cometWithExtendedAssetList,
-        "CollateralSupplyPaused"
+        'CollateralSupplyPaused'
       );
     });
 
@@ -965,7 +965,7 @@ describe("supply functionality", function () {
             )
         ).to.be.revertedWithCustomError(
           cometWithExtendedAssetListMaxAssets,
-          "CollateralAssetSupplyPaused"
+          'CollateralAssetSupplyPaused'
         );
       });
     }

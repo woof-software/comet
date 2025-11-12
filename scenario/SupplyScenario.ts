@@ -765,11 +765,9 @@ for (let i = 0; i < MAX_ASSETS; i++) {
     `Comet#supply reverts when collateral asset ${i} supply is paused`,
     {
       filter: async (ctx) => await isValidAssetIndex(ctx, i),
-      tokenBalances: async (ctx) => (
-        {
-          albert: { [`$asset${i}`]: 100 }
-        }
-      ),
+      tokenBalances: {
+        albert: { [`$asset${i}`]: 100 }
+      },
     },
     async ({ comet, actors }, context, world) => {
       const { albert, pauseGuardian } = actors;
