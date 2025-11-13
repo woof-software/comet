@@ -408,11 +408,6 @@ for (let i = 0; i < MAX_ASSETS; i++) {
           $comet: { $base: getConfigForScenario(ctx, i).withdrawBase },
         }
       ),
-      cometBalances: async (ctx) => (
-        {
-          albert: {} // Will be set dynamically in the test
-        }
-      ),
     },
     async ({ comet, configurator, proxyAdmin, actors }, context) => {
       const { albert, admin } = actors;
