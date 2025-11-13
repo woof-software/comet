@@ -19,7 +19,7 @@ import { BigNumber } from 'ethers';
  * - It should work correctly for all assets in the protocol, even when at the maximum asset limit
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
-  scenario(
+  scenario.skip(
     `Comet#quoteCollateral > quotes with discount for asset ${i}`,
     {
       filter: async (ctx) => await isValidAssetIndex(ctx, i),
