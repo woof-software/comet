@@ -1,7 +1,6 @@
+import { expect } from 'chai';
 import { scenario } from './context/CometContext';
-import { exp, expect, factorScale, mulFactor } from '../test/helpers';
-import { MAX_ASSETS, isValidAssetIndex } from './utils';
-import { BigNumber } from 'ethers';
+import { MAX_ASSETS, isValidAssetIndex, usesAssetList } from './utils';
 
 /**
  * This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
@@ -17,53 +16,70 @@ import { BigNumber } from 'ethers';
  * - It should quote at market price (no discount) when liquidationFactor = 0
  * - It should handle the transition from liquidationFactor > 0 to liquidationFactor = 0 correctly
  * - It should work correctly for all assets in the protocol, even when at the maximum asset limit
+ *
+ * Note: This test only runs on Comet deployments that use the extended asset list feature (CometExtAssetList),
+ * as the quoteCollateral behavior with liquidationFactor = 0 is specific to that implementation. The test
+ * filters deployments using the usesAssetList() utility function to ensure compatibility.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
-  scenario.skip(
+  scenario(
     `Comet#quoteCollateral > quotes with discount for asset ${i}`,
     {
-      filter: async (ctx) => await isValidAssetIndex(ctx, i),
+      filter: async (ctx) => await isValidAssetIndex(ctx, i) && await usesAssetList(ctx),
     },
     async ({ comet, configurator, proxyAdmin, actors }, context) => {
       const { admin } = actors;
       const { asset } = await comet.getAssetInfo(i);
-      const QUOTE_AMOUNT = exp(200, 6);
+      const QUOTE_AMOUNT = 200n;
 
       // Get initial asset info and prices
       let assetInfo = await comet.getAssetInfoByAddress(asset);
-      const assetPrice = await comet.getPrice(assetInfo.priceFeed);
-      const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
-      const baseScale = await comet.baseScale();
+      const assetPrice = (await comet.getPrice(assetInfo.priceFeed)).toBigInt();
+      const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+      const baseScale = (await comet.baseScale()).toBigInt();
+      const factorScale = (await comet.factorScale()).toBigInt();
+      const assetScale = assetInfo.scale.toBigInt();
+      const liquidationFactor = assetInfo.liquidationFactor.toBigInt();
 
       // First quote with discount
-      let quoteAmount = await comet.quoteCollateral(asset, QUOTE_AMOUNT);
+      let quoteAmount = (await comet.quoteCollateral(asset, QUOTE_AMOUNT)).toBigInt();
 
-      // discount = storeFrontPriceFactor * (1e18 - liquidationFactor)
-      const storeFrontPriceFactor = await comet.storeFrontPriceFactor();
-      const discountFactor = mulFactor(storeFrontPriceFactor, BigNumber.from(factorScale).sub(assetInfo.liquidationFactor));
-      // assetPriceDiscounted = assetPrice * (1e18 - discount)
-      const assetPriceDiscounted = mulFactor(assetPrice, BigNumber.from(factorScale).sub(discountFactor));
+      // Helper function: mulFactor(n, factor) = n * factor / FACTOR_SCALE
+      const mulFactor = (n: bigint, factor: bigint): bigint => {
+        return (n * factor) / factorScale;
+      };
+
+      // discount = storeFrontPriceFactor * (factorScale - liquidationFactor)
+      const storeFrontPriceFactor = (await comet.storeFrontPriceFactor()).toBigInt();
+      const discountFactor = mulFactor(storeFrontPriceFactor, factorScale - liquidationFactor);
+      
+      // assetPriceDiscounted = assetPrice * (factorScale - discountFactor)
+      const assetPriceDiscounted = mulFactor(assetPrice, factorScale - discountFactor);
+      
       // expected quote calculation
-      const expectedQuoteWithDiscount = basePrice.mul(QUOTE_AMOUNT).mul(assetInfo.scale).div(assetPriceDiscounted).div(baseScale);
+      // = (basePrice * QUOTE_AMOUNT * assetScale) / (assetPriceDiscounted * baseScale)
+      const expectedQuoteWithDiscount = (basePrice * QUOTE_AMOUNT * assetScale) / (assetPriceDiscounted * baseScale);
 
-      expect(quoteAmount).to.eq(expectedQuoteWithDiscount);
+      expect(quoteAmount).to.equal(expectedQuoteWithDiscount);
 
       // Update liquidation factor to 0 to remove discount
       await context.setNextBaseFeeToZero();
-      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, exp(0, 18), { gasPrice: 0 });
+      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
       await context.setNextBaseFeeToZero();
       await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
 
       assetInfo = await comet.getAssetInfoByAddress(asset);
-      expect(assetInfo.liquidationFactor).to.eq(0);
+      expect(assetInfo.liquidationFactor).to.equal(0);
 
       // Second quote without discount
-      quoteAmount = await comet.quoteCollateral(asset, QUOTE_AMOUNT);
+      quoteAmount = (await comet.quoteCollateral(asset, QUOTE_AMOUNT)).toBigInt();
 
-      const expectedQuoteWithoutDiscount = basePrice.mul(QUOTE_AMOUNT).mul(assetInfo.scale).div(assetPrice).div(baseScale);
+      // When liquidationFactor = 0, no discount is applied, so use assetPrice directly
+      // = (basePrice * QUOTE_AMOUNT * assetScale) / (assetPrice * baseScale)
+      const expectedQuoteWithoutDiscount = (basePrice * QUOTE_AMOUNT * assetScale) / (assetPrice * baseScale);
 
       // Verify quote calculation
-      expect(quoteAmount).to.eq(expectedQuoteWithoutDiscount);
+      expect(quoteAmount).to.equal(expectedQuoteWithoutDiscount);
     }
   );
 }

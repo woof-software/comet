@@ -396,6 +396,11 @@ scenario.skip(
  * Unlike `isLiquidatable` which uses `liquidateCollateralFactor`, this function determines whether a user
  * can initiate new borrows, making it critical for preventing new positions from being opened with
  * unpriceable collateral.
+ *
+ * Note: The behavior of skipping assets with borrowCF=0 is specific to CometWithExtendedAssetList implementations.
+ * The base Comet contract does not have this check and will attempt to call getPrice() even when borrowCF=0,
+ * which would cause a revert if the price feed is unavailable. This test verifies the extended asset list
+ * implementation correctly handles this scenario.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
