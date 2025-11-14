@@ -1,6 +1,6 @@
-import { scenario } from './context/CometContext';
+import { CometContext, scenario } from './context/CometContext';
 import { event, expect } from '../test/helpers';
-import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable } from './utils';
+import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -322,54 +322,80 @@ scenario.skip(
  * protocol paralysis while ensuring undercollateralized positions can still be liquidated.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
-  scenario.skip(
+  scenario(
     `Comet#liquidation > skips liquidation value of asset ${i} with liquidateCF=0`,
     {
-      filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral),
-      tokenBalances: async (ctx) => ( {
-        albert: { [`$asset${i}`]: getConfigForScenario(ctx, i).supplyCollateral },
-        $comet: { $base: 10000 }, // Ensure enough base tokens for borrowing
-      }),
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx),
+      tokenBalances: async (ctx: CometContext) => (
+        {
+          albert: { $base: '== 0' },
+          $comet: { $base: getConfigForScenario(ctx, i).withdrawBase },
+        }
+      ),
     },
     async ({ comet, configurator, proxyAdmin, actors }, context) => {
       const { albert, admin } = actors;
-      const { asset, scale, borrowCollateralFactor, priceFeed } = await comet.getAssetInfo(i);
-      const targetAsset = context.getAssetByAddress(asset);
-      const baseToken = await comet.baseToken();
-      const assetScale = scale.toBigInt();
+      const { asset, borrowCollateralFactor, priceFeed, scale: scaleBN } = await comet.getAssetInfo(i);
+      const collateralAsset = context.getAssetByAddress(asset);
+      const collateralScale = scaleBN.toBigInt();
+      
+      // Get price feeds and scales
+      const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+      const collateralPrice = (await comet.getPrice(priceFeed)).toBigInt();
       const baseScale = (await comet.baseScale()).toBigInt();
       const factorScale = (await comet.factorScale()).toBigInt();
-
-      const supplyAmount = BigInt(getConfigForScenario(context, i).supplyCollateral) * assetScale;
-
-      // Calculate maximum borrow amount based on collateral
-      // liquidity = (amount * price / scale) * borrowCollateralFactor / factorScale
-      // borrowAmount = liquidity (in base units)
-      const collateralPrice = (await comet.getPrice(priceFeed)).toBigInt();
-      const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
-      const collateralValueUSD = supplyAmount * collateralPrice / assetScale;
-      const maxLiquidity = collateralValueUSD * borrowCollateralFactor.toBigInt() / factorScale;
-      // Borrow 80% of max liquidity to ensure we're collateralized
-      const borrowAmount = (maxLiquidity * baseScale * 8n) / (basePrice * 10n);
-
-      // Approve and supply collateral
-      await targetAsset.approve(albert, comet.address);
-      await albert.supplyAsset({ asset: asset, amount: supplyAmount });
-
-      // Withdraw base (borrow) - base tokens are already in Comet from tokenBalances
-      await albert.withdrawAsset({ asset: baseToken, amount: borrowAmount });
-
-      // Initially not liquidatable with positive liquidateCF
+      
+      // Target borrow amount (in base units, not wei)
+      const targetBorrowBase = BigInt(getConfigForScenario(context, i).withdrawBase);
+      const targetBorrowBaseWei = targetBorrowBase * baseScale;
+      
+      // Calculate required collateral amount
+      // Formula from CometBalanceConstraint.ts:
+      // collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice
+      // collateralNeeded = (collateralWeiPerUnitBase * toBorrowBase) / baseScale
+      // collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor
+      // collateralNeeded = (collateralNeeded * 11n) / 10n (fudge factor)
+      const collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice;
+      let collateralNeeded = (collateralWeiPerUnitBase * targetBorrowBaseWei) / baseScale;
+      collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor.toBigInt();
+      collateralNeeded = (collateralNeeded * 11n) / 10n; // add fudge factor to ensure collateralization
+      
+      // Set up balances dynamically
+      // 1. Source collateral tokens for albert
+      await context.sourceTokens(collateralNeeded, collateralAsset, albert);
+      
+      // 2. Approve and supply collateral
+      await collateralAsset.approve(albert, comet.address);
+      await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralNeeded });
+      
+      // 3. Borrow base (this will make albert have negative base balance)
+      const baseTokenAddress = await comet.baseToken();
+      await albert.withdrawAsset({ asset: baseTokenAddress, amount: targetBorrowBaseWei });
+      
+      // Verify initial state: position should be collateralized and not liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
       // Zero liquidateCF for target asset via governance
+      // For deployments using asset list, the factory should already be CometFactoryWithExtendedAssetList
+      // If not set, deploy and set it
+      let cometFactoryAddress = await configurator.factory(comet.address);
+      if (cometFactoryAddress === '0x0000000000000000000000000000000000000000') {
+        const CometFactoryWithExtendedAssetList = await (await context.world.deploymentManager.hre.ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
+        await CometFactoryWithExtendedAssetList.deployed();
+        cometFactoryAddress = CometFactoryWithExtendedAssetList.address;
+        await context.setNextBaseFeeToZero();
+        await configurator.connect(admin.signer).setFactory(comet.address, cometFactoryAddress, { gasPrice: 0 });
+      }
+      
+      // Set liquidateCF to 0 (CometWithExtendedAssetList allows this even if borrowCF > 0)
       await context.setNextBaseFeeToZero();
       await configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, asset, 0n, { gasPrice: 0 });
       await context.setNextBaseFeeToZero();
       await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
 
       // Verify liquidateCF is 0
-      expect((await comet.getAssetInfoByAddress(asset)).liquidateCollateralFactor).to.equal(0);
+      const assetInfo = await comet.getAssetInfoByAddress(asset);
+      expect(assetInfo.liquidateCollateralFactor).to.equal(0);
 
       // After zeroing the only supplied asset's liquidateCF, position should be liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.equal(true);
@@ -391,29 +417,64 @@ for (let i = 0; i < MAX_ASSETS; i++) {
  *    setting the asset's liquidation factor to 0 to prevent attempts to calculate its USD value.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
-  scenario.skip(
+  scenario(
     `Comet#liquidation > skips absorption of asset ${i} with liquidation factor = 0`,
     {
       filter: async (ctx) => 
         await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral),
       tokenBalances: async (ctx) => ({
+        albert: { $base: '== 0' },
         $comet: {
-          $base: getConfigForScenario(ctx).liquidationBase
+          $base: getConfigForScenario(ctx).withdrawBase
         }
-      }),
-      cometBalances: async (ctx) => ( {
-        albert: { 
-          [`$asset${i}`]: getConfigForScenario(ctx, i).supplyCollateral,
-          $base: -getConfigForScenario(ctx, i).liquidationBase 
-        },
-        betty: { $base: getConfigForScenario(ctx).liquidationBase }
       }),
     },
     async ({ comet, configurator, proxyAdmin, actors }, context, world) => {
       const { albert, betty, admin } = actors;
-      const { asset } = await comet.getAssetInfo(i);
+      const { asset, borrowCollateralFactor, priceFeed, scale: scaleBN } = await comet.getAssetInfo(i);
+      const collateralAsset = context.getAssetByAddress(asset);
+      const collateralScale = scaleBN.toBigInt();
       const baseToken = await comet.baseToken();
       const baseScale = (await comet.baseScale()).toBigInt();
+      
+      // Get price feeds and scales
+      const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+      const collateralPrice = (await comet.getPrice(priceFeed)).toBigInt();
+      const factorScale = (await comet.factorScale()).toBigInt();
+      
+      // Target borrow amount (in base units, not wei)
+      const targetBorrowBase = BigInt(getConfigForScenario(context, i).withdrawBase);
+      const targetBorrowBaseWei = targetBorrowBase * baseScale;
+      
+      // Calculate required collateral amount
+      // Formula from CometBalanceConstraint.ts:
+      // collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice
+      // collateralNeeded = (collateralWeiPerUnitBase * toBorrowBase) / baseScale
+      // collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor
+      // collateralNeeded = (collateralNeeded * 11n) / 10n (fudge factor)
+      const collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice;
+      let collateralNeeded = (collateralWeiPerUnitBase * targetBorrowBaseWei) / baseScale;
+      collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor.toBigInt();
+      collateralNeeded = (collateralNeeded * 11n) / 10n; // add fudge factor to ensure collateralization
+      
+      // Set up balances dynamically
+      // 1. Source collateral tokens for albert
+      await context.sourceTokens(collateralNeeded, collateralAsset, albert);
+      
+      // 2. Approve and supply collateral
+      await collateralAsset.approve(albert, comet.address);
+      await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralNeeded });
+      
+      // 3. Borrow base (this will make albert have negative base balance)
+      await albert.withdrawAsset({ asset: baseToken, amount: targetBorrowBaseWei });
+
+      // Set up betty's base token supply for forcing accrue
+      // Betty needs base tokens supplied to Comet to be able to withdraw them
+      const bettyBaseAmount = BigInt(getConfigForScenario(context).withdrawBase) * baseScale;
+      const baseAsset = context.getAssetByAddress(baseToken);
+      await context.sourceTokens(bettyBaseAmount, baseAsset, betty);
+      await baseAsset.approve(betty, comet.address);
+      await betty.supplyAsset({ asset: baseToken, amount: bettyBaseAmount });
 
       // Ensure account is liquidatable by waiting for time to pass and accruing interest
       const timeBeforeLiquidation = await timeUntilUnderwater({
@@ -428,12 +489,23 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       }
 
       // Force accrue to ensure state is up to date
-      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).liquidationBase) / 100n * baseScale });
+      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).withdrawBase) / 100n * baseScale });
 
       // Verify account is liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
 
       // Step 2: Update liquidationFactor to 0 for target asset
+      // For deployments using asset list, the factory should already be CometFactoryWithExtendedAssetList
+      // If not set, deploy and set it
+      let cometFactoryAddress = await configurator.factory(comet.address);
+      if (cometFactoryAddress === '0x0000000000000000000000000000000000000000') {
+        const CometFactoryWithExtendedAssetList = await (await context.world.deploymentManager.hre.ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
+        await CometFactoryWithExtendedAssetList.deployed();
+        cometFactoryAddress = CometFactoryWithExtendedAssetList.address;
+        await context.setNextBaseFeeToZero();
+        await configurator.connect(admin.signer).setFactory(comet.address, cometFactoryAddress, { gasPrice: 0 });
+      }
+      
       await context.setNextBaseFeeToZero();
       await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
 

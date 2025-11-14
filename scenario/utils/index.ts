@@ -27,7 +27,7 @@ import {
   setNextBaseFeeToZero,
   setNextBlockTimestamp,
 } from './hreUtils';
-import { BaseBridgeReceiver, CometExt, CometInterface } from '../../build/types';
+import { BaseBridgeReceiver, CometInterface } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
@@ -427,13 +427,7 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
 }
 
 export async function usesAssetList(ctx: CometContext): Promise<boolean> {
-  const comet = await ctx.getComet() as unknown as CometExt;
-  try {
-    // Try to call assetList() - if it exists, the contract uses assetList
-    if (await comet.maxAssets() == MAX_ASSETS) return true;
-  } catch (e) {
-    return false;
-  }
+  return (await (await ctx.getComet()).maxAssets()) == MAX_ASSETS;
 }
 
 export function isBridgedDeployment(ctx: CometContext): boolean {
