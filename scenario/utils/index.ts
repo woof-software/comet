@@ -427,7 +427,7 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
 }
 
 export async function usesAssetList(ctx: CometContext): Promise<boolean> {
-  return (await (await ctx.getComet()).maxAssets()) == MAX_ASSETS;
+  return (await (await ctx.getComet()).maxAssets()) === MAX_ASSETS;
 }
 
 export function isBridgedDeployment(ctx: CometContext): boolean {

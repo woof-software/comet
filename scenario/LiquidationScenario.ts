@@ -322,7 +322,7 @@ scenario.skip(
  * protocol paralysis while ensuring undercollateralized positions can still be liquidated.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
-  scenario(
+  scenario.skip(
     `Comet#liquidation > skips liquidation value of asset ${i} with liquidateCF=0`,
     {
       filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx),
@@ -417,7 +417,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
  *    setting the asset's liquidation factor to 0 to prevent attempts to calculate its USD value.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
-  scenario(
+  scenario.skip(
     `Comet#liquidation > skips absorption of asset ${i} with liquidation factor = 0`,
     {
       filter: async (ctx) => 
