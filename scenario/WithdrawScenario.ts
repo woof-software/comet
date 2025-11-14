@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils';
+import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, usesAssetList } from './utils';
 import { ContractReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -371,3 +371,104 @@ scenario.skip(
     // XXX fix for development base, where Faucet token doesn't give the same revert message
   }
 );
+
+/**
+ * This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
+ * The incident revealed that when a price feed becomes unavailable, the protocol cannot calculate the USD value
+ * of collateral (e.g., during absorption when trying to getPrice() for a delisted asset).
+ *
+ * Flow tested:
+ * The `isBorrowCollateralized` function iterates through a user's collateral assets to calculate their total liquidity.
+ * When an asset's `borrowCollateralFactor` is set to 0, the contract skips that asset in the liquidity calculation
+ * (see CometWithExtendedAssetList.sol lines 402-405), effectively excluding it from contributing to the user's
+ * collateralization. This prevents the protocol from calling `getPrice()` on unavailable price feeds.
+ *
+ * Test scenarios:
+ * 1. Positions with positive borrowCF are properly collateralized and can borrow
+ * 2. When borrowCF is set to 0 (simulating a price feed becoming unavailable), the collateral is excluded
+ *    from liquidity calculations, causing positions to become undercollateralized and preventing further borrowing
+ * 3. Mixed scenarios where some assets have borrowCF=0 and others have positive values - only assets with
+ *    positive borrowCF contribute to liquidity
+ * 4. All assets individually tested to ensure each can be excluded when borrowCF=0
+ *
+ * This mitigation allows governance to set borrowCF to 0 for assets with unavailable price feeds, preventing
+ * protocol paralysis while ensuring users cannot borrow against collateral that cannot be properly valued.
+ * Unlike `isLiquidatable` which uses `liquidateCollateralFactor`, this function determines whether a user
+ * can initiate new borrows, making it critical for preventing new positions from being opened with
+ * unpriceable collateral.
+ *
+ * Note: The behavior of skipping assets with borrowCF=0 is specific to CometWithExtendedAssetList implementations.
+ * The base Comet contract does not have this check and will attempt to call getPrice() even when borrowCF=0,
+ * which would cause a revert if the price feed is unavailable. This test verifies the extended asset list
+ * implementation correctly handles this scenario.
+ */
+for (let i = 0; i < MAX_ASSETS; i++) {
+  scenario(
+    `Comet#isBorrowCollateralized > skips liquidity of asset ${i} with borrowCF=0`,
+    {
+      filter: async (ctx) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx),
+      tokenBalances: async (ctx) => (
+        {
+          albert: { $base: '== 0' },
+          $comet: { $base: getConfigForScenario(ctx, i).withdrawBase },
+        }
+      ),
+    },
+    async ({ comet, configurator, proxyAdmin, actors }, context) => {
+      const { albert, admin } = actors;
+      const { asset, borrowCollateralFactor, priceFeed, scale: scaleBN } = await comet.getAssetInfo(i);
+      const collateralAsset = context.getAssetByAddress(asset);
+      const collateralScale = scaleBN.toBigInt();
+      
+      // Get price feeds and scales
+      const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+      const collateralPrice = (await comet.getPrice(priceFeed)).toBigInt();
+      const baseScale = (await comet.baseScale()).toBigInt();
+      const factorScale = (await comet.factorScale()).toBigInt();
+      
+      // Target borrow amount (in base units, not wei)
+      const targetBorrowBase = BigInt(getConfigForScenario(context, i).withdrawBase);
+      const targetBorrowBaseWei = targetBorrowBase * baseScale;
+      
+      // Calculate required collateral amount
+      // Formula from CometBalanceConstraint.ts:
+      // collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice
+      // collateralNeeded = (collateralWeiPerUnitBase * toBorrowBase) / baseScale
+      // collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor
+      // collateralNeeded = (collateralNeeded * 11n) / 10n (fudge factor)
+      const collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice;
+      let collateralNeeded = (collateralWeiPerUnitBase * targetBorrowBaseWei) / baseScale;
+      collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor.toBigInt();
+      collateralNeeded = (collateralNeeded * 11n) / 10n; // add fudge factor to ensure collateralization
+      
+      // Set up balances dynamically
+      // 1. Source collateral tokens for albert
+      await context.sourceTokens(collateralNeeded, collateralAsset, albert);
+      
+      // 2. Approve and supply collateral
+      await collateralAsset.approve(albert, comet.address);
+      await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralNeeded });
+      
+      // 3. Borrow base (this will make albert have negative base balance)
+      const baseTokenAddress = await comet.baseToken();
+      await albert.withdrawAsset({ asset: baseTokenAddress, amount: targetBorrowBaseWei });
+      
+      // Verify initial state: position should be collateralized
+      expect(await comet.isBorrowCollateralized(albert.address)).to.be.true;
+
+      // Zero borrowCF for target asset via governance
+      await context.setNextBaseFeeToZero();
+      await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, asset, 0n, { gasPrice: 0 });
+      await context.setNextBaseFeeToZero();
+      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+
+      // Verify borrowCF is 0
+      const assetInfo = await comet.getAssetInfoByAddress(asset);
+      expect(assetInfo.borrowCollateralFactor).to.equal(0);
+
+      // After zeroing the only supplied asset's borrowCF, position should be undercollateralized
+      expect(await comet.isBorrowCollateralized(albert.address)).to.equal(false);
+    }
+  );
+}
+

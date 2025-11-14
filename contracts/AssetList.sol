@@ -138,7 +138,7 @@ contract AssetList {
         if (IERC20NonStandard(asset).decimals() != decimals_) revert CometMainInterface.BadDecimals();
 
         // Ensure collateral factors are within range
-        if (assetConfig.borrowCollateralFactor >= assetConfig.liquidateCollateralFactor) revert CometMainInterface.BorrowCFTooLarge();
+        // Note: BorrowCFTooLarge is not checked here, as it is allowed to set liquidateCF to 0
         if (assetConfig.liquidateCollateralFactor > MAX_COLLATERAL_FACTOR) revert CometMainInterface.LiquidateCFTooLarge();
 
         unchecked {
@@ -149,7 +149,7 @@ contract AssetList {
             uint16 liquidationFactor = uint16(assetConfig.liquidationFactor / descale);
 
             // Be nice and check descaled values are still within range
-            if (borrowCollateralFactor >= liquidateCollateralFactor) revert CometMainInterface.BorrowCFTooLarge();
+            // Note: rmoved: revert if borrowCollateralFactor >= liquidateCollateralFactor; to allow collateral delisting
 
             // Keep whole units of asset for supply cap
             uint64 supplyCap = uint64(assetConfig.supplyCap / (10 ** decimals_));
