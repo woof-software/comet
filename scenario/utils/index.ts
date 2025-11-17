@@ -1544,26 +1544,36 @@ export async function setupExtendedAssetListSupport(
   configurator: Contract,
   admin: CometActor
 ): Promise<void> {
-  const signer = await context.world.deploymentManager.getSigner();
-  const cometWithAssetListFactory = new Contract(comet.address,
-    [
-      'function assetListFactory() view returns (address)'
-    ], signer);
-  const assetListFactoryAddress = await cometWithAssetListFactory.assetListFactory();
+  const ethers = context.world.deploymentManager.hre.ethers;
+  
+  // Deploy a new AssetListFactory (matching absorb-test.ts pattern)
+  const AssetListFactory = await ethers.getContractFactory('AssetListFactory');
+  const assetListFactory = await AssetListFactory.deploy();
+  await assetListFactory.deployed();
+  
+  // Deploy CometExtAssetList with the new AssetListFactory
   const CometExtAssetList = await (
-    await context.world.deploymentManager.hre.ethers.getContractFactory('CometExtAssetList')
+    await ethers.getContractFactory('CometExtAssetList')
   ).deploy(
     {
-      name32: context.world.deploymentManager.hre.ethers.utils.formatBytes32String('Compound Comet'),
-      symbol32: context.world.deploymentManager.hre.ethers.utils.formatBytes32String('BASE'),
+      name32: ethers.utils.formatBytes32String('Compound Comet'),
+      symbol32: ethers.utils.formatBytes32String('BASE'),
     },
-    assetListFactoryAddress
+    assetListFactory.address
   );
   await CometExtAssetList.deployed();
+  
+  // Set extension delegate first
   await context.setNextBaseFeeToZero();
   await configurator.connect(admin.signer).setExtensionDelegate(comet.address, CometExtAssetList.address, { gasPrice: 0 });
-  const CometFactoryWithExtendedAssetList = await (await context.world.deploymentManager.hre.ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
+  
+  // Deploy CometFactoryWithExtendedAssetList (matching absorb-test.ts pattern)
+  const CometFactoryWithExtendedAssetList = await (
+    await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
+  ).deploy();
   await CometFactoryWithExtendedAssetList.deployed();
+  
+  // Set factory
   await context.setNextBaseFeeToZero();
   await configurator.connect(admin.signer).setFactory(comet.address, CometFactoryWithExtendedAssetList.address, { gasPrice: 0 });
 }
