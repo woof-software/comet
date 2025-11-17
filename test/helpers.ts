@@ -41,7 +41,10 @@ import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarnessExtendedAssetList';
 
-export { Comet, ethers, expect, hre };
+// Snapshot
+import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
+
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer };
 
 export type Numeric = number | bigint;
 
