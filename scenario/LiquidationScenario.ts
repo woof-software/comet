@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { event, expect } from '../test/helpers';
-import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList } from './utils';
+import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList, isAssetDelisted, setupExtendedAssetListSupport } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -322,10 +322,10 @@ scenario.skip(
  * protocol paralysis while ensuring undercollateralized positions can still be liquidated.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
-  scenario.skip(
+  scenario.only(
     `Comet#liquidation > skips liquidation value of asset ${i} with liquidateCF=0`,
     {
-      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx),
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)),
       tokenBalances: async (ctx: CometContext) => (
         {
           albert: { $base: '== 0' },
@@ -375,17 +375,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       // Verify initial state: position should be collateralized and not liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
-      // Zero liquidateCF for target asset via governance
-      // For deployments using asset list, the factory should already be CometFactoryWithExtendedAssetList
-      // If not set, deploy and set it
-      let cometFactoryAddress = await configurator.factory(comet.address);
-      if (cometFactoryAddress === '0x0000000000000000000000000000000000000000') {
-        const CometFactoryWithExtendedAssetList = await (await context.world.deploymentManager.hre.ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
-        await CometFactoryWithExtendedAssetList.deployed();
-        cometFactoryAddress = CometFactoryWithExtendedAssetList.address;
-        await context.setNextBaseFeeToZero();
-        await configurator.connect(admin.signer).setFactory(comet.address, cometFactoryAddress, { gasPrice: 0 });
-      }
+      await setupExtendedAssetListSupport(context, comet, configurator, admin);
       
       // Set liquidateCF to 0 (CometWithExtendedAssetList allows this even if borrowCF > 0)
       await context.setNextBaseFeeToZero();
@@ -417,11 +407,11 @@ for (let i = 0; i < MAX_ASSETS; i++) {
  *    setting the asset's liquidation factor to 0 to prevent attempts to calculate its USD value.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
-  scenario.skip(
+  scenario.only(
     `Comet#liquidation > skips absorption of asset ${i} with liquidation factor = 0`,
     {
       filter: async (ctx) => 
-        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral),
+        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)),
       tokenBalances: async (ctx) => ({
         albert: { $base: '== 0' },
         $comet: {
@@ -494,22 +484,10 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       // Verify account is liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
 
-      // Step 2: Update liquidationFactor to 0 for target asset
-      // For deployments using asset list, the factory should already be CometFactoryWithExtendedAssetList
-      // If not set, deploy and set it
-      let cometFactoryAddress = await configurator.factory(comet.address);
-      if (cometFactoryAddress === '0x0000000000000000000000000000000000000000') {
-        const CometFactoryWithExtendedAssetList = await (await context.world.deploymentManager.hre.ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
-        await CometFactoryWithExtendedAssetList.deployed();
-        cometFactoryAddress = CometFactoryWithExtendedAssetList.address;
-        await context.setNextBaseFeeToZero();
-        await configurator.connect(admin.signer).setFactory(comet.address, cometFactoryAddress, { gasPrice: 0 });
-      }
+      await setupExtendedAssetListSupport(context, comet, configurator, admin);
       
       await context.setNextBaseFeeToZero();
       await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
-
-      // Upgrade proxy again after updating liquidationFactor
       await context.setNextBaseFeeToZero();
       await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
 
