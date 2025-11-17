@@ -1,8 +1,6 @@
 import { expect } from 'chai';
 import { CometContext, scenario } from './context/CometContext';
-import { MAX_ASSETS, isValidAssetIndex, usesAssetList } from './utils';
-import { Contract } from 'ethers';
-import { debug } from '../plugins/deployment_manager/Utils';
+import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, usesAssetList, setupExtendedAssetListSupport } from './utils';
 
 /**
  * This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
@@ -27,7 +25,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#quoteCollateral > quotes with discount for asset ${i}`,
     {
-      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await usesAssetList(ctx)
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i))
     },
     async ({ comet, configurator, proxyAdmin, actors }, context) => {
       const { admin } = actors;
@@ -45,61 +43,16 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       const factorScale = (await comet.factorScale()).toBigInt();
       const assetScale = assetInfo.scale.toBigInt();
       const liquidationFactor = assetInfo.liquidationFactor.toBigInt();
-
-      // console.log(`[Asset ${i}] Initial values:`);
-      // console.log(`  assetPrice: ${assetPrice}`);
-      // console.log(`  basePrice: ${basePrice}`);
-      // console.log(`  baseScale: ${baseScale}`);
-      // console.log(`  factorScale: ${factorScale}`);
-      // console.log(`  assetScale: ${assetScale}`);
-      // console.log(`  liquidationFactor: ${liquidationFactor}`);
-      // console.log(`  QUOTE_AMOUNT: ${QUOTE_AMOUNT}`);
+      const storeFrontPriceFactor = (await comet.storeFrontPriceFactor()).toBigInt();
 
       // First quote with discount
       const quoteAmount = (await comet.quoteCollateral(asset, QUOTE_AMOUNT)).toBigInt();
-      // console.log(`[Asset ${i}] First quote (with discount): ${quoteAmount}`);
-
-      // discount = storeFrontPriceFactor * (factorScale - liquidationFactor)
-      const storeFrontPriceFactor = (await comet.storeFrontPriceFactor()).toBigInt();
-      // console.log(`[Asset ${i}] storeFrontPriceFactor: ${storeFrontPriceFactor}`);
-      
       const discountFactor = storeFrontPriceFactor * (factorScale - liquidationFactor) / factorScale;
-      // console.log(`[Asset ${i}] discountFactor: ${discountFactor}`);
-      
-      // assetPriceDiscounted = assetPrice * (factorScale - discountFactor)
       const assetPriceDiscounted = assetPrice * (factorScale - discountFactor) / factorScale;
-      // console.log(`[Asset ${i}] assetPriceDiscounted: ${assetPriceDiscounted}`); 
-      
-      // expected quote calculation
       const expectedQuoteWithDiscount = (basePrice * QUOTE_AMOUNT * assetScale) / assetPriceDiscounted / baseScale;
-      // console.log(`[Asset ${i}] expectedQuoteWithDiscount calculation: (${basePrice} * ${QUOTE_AMOUNT} * ${assetScale}) / ${assetPriceDiscounted} / ${baseScale} = ${expectedQuoteWithDiscount}`);
-
       expect(quoteAmount).to.equal(expectedQuoteWithDiscount);
 
-      // Update liquidation factor to 0 to remove discount
-      // Set up factory for extended asset list support
-      const signer = await context.world.deploymentManager.getSigner();
-      const cometWithAssetListFactory = new Contract(comet.address,
-        [
-          'function assetListFactory() view returns (address)'
-        ], signer);
-      const assetListFactoryAddress = await cometWithAssetListFactory.assetListFactory();
-      const CometExtAssetList = await (
-        await context.world.deploymentManager.hre.ethers.getContractFactory('CometExtAssetList')
-      ).deploy(
-        {
-          name32: context.world.deploymentManager.hre.ethers.utils.formatBytes32String('Compound Comet'),
-          symbol32: context.world.deploymentManager.hre.ethers.utils.formatBytes32String('BASE'),
-        },
-        assetListFactoryAddress
-      );
-      await CometExtAssetList.deployed();
-      await context.setNextBaseFeeToZero();
-      await configurator.connect(admin.signer).setExtensionDelegate(comet.address, CometExtAssetList.address, { gasPrice: 0 });
-      const CometFactoryWithExtendedAssetList = await (await context.world.deploymentManager.hre.ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
-      await CometFactoryWithExtendedAssetList.deployed();
-      await context.setNextBaseFeeToZero();
-      await configurator.connect(admin.signer).setFactory(comet.address, CometFactoryWithExtendedAssetList.address, { gasPrice: 0 });
+      await setupExtendedAssetListSupport(context, comet, configurator, admin);
       
       await context.setNextBaseFeeToZero();
       await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
@@ -111,21 +64,9 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 
       // Second quote without discount
       const quoteAmountWithoutDiscount = (await comet.quoteCollateral(asset, QUOTE_AMOUNT)).toBigInt();
-      // console.log(`[Asset ${i}] Second quote (without discount): ${quoteAmountWithoutDiscount}`);
-
       // When liquidationFactor = 0, no discount is applied, so use assetPrice directly
       const expectedQuoteWithoutDiscount = (basePrice * QUOTE_AMOUNT * assetInfo.scale.toBigInt()) / assetPrice / baseScale;
-      // console.log(`[Asset ${i}] expectedQuoteWithoutDiscount calculation: (${basePrice} * ${QUOTE_AMOUNT} * ${assetInfo.scale.toBigInt()}) / ${assetPrice} / ${baseScale} = ${expectedQuoteWithoutDiscount}`);
-
-      // Log values for debugging
-      console.log(`[Asset ${i}] Final comparison:`);
-      console.log(`  quoteAmountWithoutDiscount: ${quoteAmountWithoutDiscount}`);
-      console.log(`  expectedQuoteWithDiscount: ${expectedQuoteWithDiscount}`);
-      console.log(`  expectedQuoteWithoutDiscount: ${expectedQuoteWithoutDiscount}`);
-      debug(`[Asset ${i}] Debug mode: quoteAmountWithoutDiscount=${quoteAmountWithoutDiscount}, expectedQuoteWithDiscount=${expectedQuoteWithDiscount}`);
-
       // Verify quote calculation
-      // expect(quoteAmountWithoutDiscount).to.equal(expectedQuoteWithoutDiscount);
       expect(quoteAmountWithoutDiscount).to.equal(expectedQuoteWithoutDiscount);
     }
   );
