@@ -432,10 +432,6 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       
       // Calculate required collateral amount
       // Formula from CometBalanceConstraint.ts:
-      // collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice
-      // collateralNeeded = (collateralWeiPerUnitBase * toBorrowBase) / baseScale
-      // collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor
-      // collateralNeeded = (collateralNeeded * 11n) / 10n (fudge factor)
       const collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice;
       let collateralNeeded = (collateralWeiPerUnitBase * targetBorrowBaseWei) / baseScale;
       collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor.toBigInt();
