@@ -1180,12 +1180,13 @@ contract CometWithExtendedAssetList is CometMainInterface {
     function quoteCollateral(address asset, uint baseAmount) override public view returns (uint) {
         AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
         uint256 assetPrice = getPrice(assetInfo.priceFeed);
+        uint64 liquidationFactor = assetInfo.liquidationFactor;
 
         // If liquidation factor is not zero, calculate the discount
-        if (assetInfo.liquidationFactor != 0) {
+        if (liquidationFactor != 0) {
             // Store front discount is derived from the collateral asset's liquidationFactor and storeFrontPriceFactor
             // discount = storeFrontPriceFactor * (1e18 - liquidationFactor)
-            uint256 discountFactor = mulFactor(storeFrontPriceFactor, FACTOR_SCALE - assetInfo.liquidationFactor);
+            uint256 discountFactor = mulFactor(storeFrontPriceFactor, FACTOR_SCALE - liquidationFactor);
             assetPrice = mulFactor(assetPrice, FACTOR_SCALE - discountFactor);
         }
 
