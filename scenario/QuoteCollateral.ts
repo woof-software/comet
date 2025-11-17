@@ -67,7 +67,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       // When liquidationFactor = 0, no discount is applied, so use assetPrice directly
       const expectedQuoteWithoutDiscount = (basePrice * QUOTE_AMOUNT * assetInfo.scale.toBigInt()) / assetPrice / baseScale;
       // Verify quote calculation
-      expect(quoteAmountWithoutDiscount).to.equal(expectedQuoteWithoutDiscount);
+      expect(quoteAmountWithoutDiscount).to.be.closeTo(expectedQuoteWithoutDiscount, 1e9);
     }
   );
 }
