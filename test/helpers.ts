@@ -43,10 +43,9 @@ import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarness';
 
 // Snapshot
-export { takeSnapshot } from '@nomicfoundation/hardhat-network-helpers';
-export type { SnapshotRestorer } from '@nomicfoundation/hardhat-network-helpers';
+import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
-export { Comet, ethers, expect, hre };
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer };
 
 export type Numeric = number | bigint;
 
