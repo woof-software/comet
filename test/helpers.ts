@@ -185,7 +185,7 @@ export function mulFactor(n: BigNumber, factor: BigNumber): BigNumber {
   return n.mul(factor).div(factorScale);
 }
 
-function toBigInt(f: bigint | BigNumber): bigint {
+export function toBigInt(f: bigint | BigNumber): bigint {
   if (typeof f === 'bigint') {
     return f;
   } else {

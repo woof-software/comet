@@ -1,15 +1,8 @@
 import { BigNumber } from 'ethers';
 import { CometExt, CometExtAssetList } from '../../build/types';
+import { toBigInt } from '../helpers';
 
 export const BASE_INDEX_SCALE = 1e15;
-
-function toBigInt(f: bigint | BigNumber): bigint {
-  if (typeof f === 'bigint') {
-    return f;
-  } else {
-    return f.toBigInt();
-  }
-}
 
 export function divPrice(n: bigint, price: bigint | BigNumber, toScale: bigint | BigNumber): bigint {
   return (n * toBigInt(toScale)) / toBigInt(price);
