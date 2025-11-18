@@ -1577,4 +1577,9 @@ export async function setupExtendedAssetListSupport(
   // Set factory
   await context.setNextBaseFeeToZero();
   await configurator.connect(admin.signer).setFactory(comet.address, CometFactoryWithExtendedAssetList.address, { gasPrice: 0 });
+  
+  // Upgrade the contract to the new implementation that includes extended pause storage
+  const cometAdmin = await context.getCometAdmin();
+  await context.setNextBaseFeeToZero();
+  await cometAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
 }

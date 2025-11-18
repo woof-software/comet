@@ -29,6 +29,7 @@ import {
   BaseBulker,
   BaseBridgeReceiver,
   ERC20,
+  CometExtAssetList,
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
@@ -59,6 +60,7 @@ export interface CometProperties {
   rewards: CometRewards;
   bulker: BaseBulker;
   bridgeReceiver: BaseBridgeReceiver;
+  cometExt?: CometExtAssetList;
 }
 
 export class CometContext {
@@ -401,17 +403,38 @@ async function getInitialContext(world: World): Promise<CometContext> {
 }
 
 async function getContextProperties(context: CometContext): Promise<CometProperties> {
+  const comet = await context.getComet();
+  
+  // Check if comet supports CometExtAssetList by checking for assetList() function
+  // let cometExt: CometExtAssetList | undefined;
+  // try {
+  //   const oldComet = new Contract(comet.address,
+  //     [
+  //       'function assetList() view returns (address)',
+  //     ],
+  //     await context.world.deploymentManager.getSigner());
+  //   await oldComet.assetList();
+  //   // If assetList() exists, try to get CometExtAssetList contract
+  //   cometExt = await context.world.deploymentManager.hre.ethers.getContractAt('CometExtAssetList', comet.address) as CometExtAssetList;
+  // } catch (e) {
+  //   // Contract doesn't support CometExtAssetList, leave it undefined
+  //   cometExt = undefined;
+  // }
+
+  const cometExt = await context.world.deploymentManager.hre.ethers.getContractAt('CometExtAssetList', comet.address) as CometExtAssetList;
+  
   return {
     actors: context.actors,
     assets: context.assets,
-    comet: await context.getComet(),
+    comet,
     configurator: await context.getConfigurator(),
     proxyAdmin: await context.getCometAdmin(),
     timelock: await context.getTimelock(),
     governor: await context.getGovernor(),
     rewards: await context.getRewards(),
     bulker: await context.getBulker(),
-    bridgeReceiver: await context.getBridgeReceiver()
+    bridgeReceiver: await context.getBridgeReceiver(),
+    cometExt
   };
 }
 
