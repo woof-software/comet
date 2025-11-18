@@ -71,10 +71,11 @@ export function applyNetworkOverrides(
       config.common.amounts.collateral.large = 10n;
       config.liquidationBot.scenario.borrowCapacityUtilizationHigh = 99n;
       config.liquidation.asset.standard = 200n;
-      config.bulker.asset.standard = 200n;
-      config.bulker.asset.alternate = 200n;
-      config.bulker.base.borrow = 30n;
-      config.bulker.asset.borrow = 15n;
+      config.bulker.asset.standard = 100n;
+      config.bulker.asset.alternate = 100n;
+      config.bulker.base.borrow = 20n;
+      config.bulker.asset.borrow = 10n;
+      config.bulker.cometAllocation = 200n;
     }
 
     if (deployment === 'weth') {
