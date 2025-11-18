@@ -404,23 +404,6 @@ async function getInitialContext(world: World): Promise<CometContext> {
 
 async function getContextProperties(context: CometContext): Promise<CometProperties> {
   const comet = await context.getComet();
-  
-  // Check if comet supports CometExtAssetList by checking for assetList() function
-  // let cometExt: CometExtAssetList | undefined;
-  // try {
-  //   const oldComet = new Contract(comet.address,
-  //     [
-  //       'function assetList() view returns (address)',
-  //     ],
-  //     await context.world.deploymentManager.getSigner());
-  //   await oldComet.assetList();
-  //   // If assetList() exists, try to get CometExtAssetList contract
-  //   cometExt = await context.world.deploymentManager.hre.ethers.getContractAt('CometExtAssetList', comet.address) as CometExtAssetList;
-  // } catch (e) {
-  //   // Contract doesn't support CometExtAssetList, leave it undefined
-  //   cometExt = undefined;
-  // }
-
   const cometExt = await context.world.deploymentManager.hre.ethers.getContractAt('CometExtAssetList', comet.address) as CometExtAssetList;
   
   return {
