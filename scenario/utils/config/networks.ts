@@ -69,10 +69,12 @@ export function applyNetworkOverrides(
       config.transfer.collateralAmount = 10n;
       config.common.amounts.collateral.standard = 10n;
       config.common.amounts.collateral.large = 10n;
-      config.liquidation.base.standard = 100000n;
-      config.liquidation.asset.standard = 50000n;
       config.liquidationBot.scenario.borrowCapacityUtilizationHigh = 99n;
-      config.liquidationBot.scenario.fudgeFactorShort = 60000n * 100n;
+      config.liquidation.asset.standard = 200n;
+      config.bulker.asset.standard = 200n;
+      config.bulker.asset.alternate = 200n;
+      config.bulker.base.borrow = 30n;
+      config.bulker.asset.borrow = 15n;
     }
 
     if (deployment === 'weth') {
@@ -192,8 +194,10 @@ export function applyNetworkOverrides(
 
     if (deployment === 'usdt') {
       config.withdraw.assetAmount = 10000n;
+      config.withdraw.baseAmount = 100n;
       config.transfer.assetAmount = 500000n;
       config.transfer.baseAmount = 100n;
+      config.rewards.baseAmount = 100n;
     }
   }
 

@@ -179,9 +179,10 @@ scenario(
       fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
     });
 
-    
-    await world.increaseTime(timeBeforeLiquidation);
-    await comet.accrueAccount(albert.address);
+    while(!(await comet.isLiquidatable(albert.address))) {
+      await comet.accrueAccount(albert.address);
+      await world.increaseTime(timeBeforeLiquidation);
+    }
 
     const lp0 = await comet.liquidatorPoints(betty.address);
 
