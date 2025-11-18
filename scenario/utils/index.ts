@@ -357,6 +357,15 @@ export async function isValidAssetIndex(
   return assetNum < (await comet.numAssets());
 }
 
+export async function isAssetDelisted(
+  ctx: CometContext,
+  assetNum: number
+): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const assetInfo = await comet.getAssetInfo(assetNum);
+  return assetInfo.borrowCollateralFactor.toBigInt() === 0n;
+}
+
 export async function isTriviallySourceable(
   ctx: CometContext,
   assetNum: number,
@@ -425,6 +434,11 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
   if (totalSupply.toBigInt() < exp(1, 18)) return false;
 
   return true;
+}
+
+export async function usesAssetList(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  return await comet.maxAssets() === MAX_ASSETS;
 }
 
 export function isBridgedDeployment(ctx: CometContext): boolean {
@@ -1523,4 +1537,44 @@ export function applyL1ToL2Alias(address: string) {
 
 export function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
   return !!log?.raw?.topics && !!log?.raw?.data;
+}
+
+export async function setupExtendedAssetListSupport(
+  context: CometContext,
+  comet: CometInterface,
+  configurator: Contract,
+  admin: CometActor
+): Promise<void> {
+  const ethers = context.world.deploymentManager.hre.ethers;
+  
+  // Deploy a new AssetListFactory (matching absorb-test.ts pattern)
+  const AssetListFactory = await ethers.getContractFactory('AssetListFactory');
+  const assetListFactory = await AssetListFactory.deploy();
+  await assetListFactory.deployed();
+  
+  // Deploy CometExtAssetList with the new AssetListFactory
+  const CometExtAssetList = await (
+    await ethers.getContractFactory('CometExtAssetList')
+  ).deploy(
+    {
+      name32: ethers.utils.formatBytes32String('Compound Comet'),
+      symbol32: ethers.utils.formatBytes32String('BASE'),
+    },
+    assetListFactory.address
+  );
+  await CometExtAssetList.deployed();
+  
+  // Set extension delegate first
+  await context.setNextBaseFeeToZero();
+  await configurator.connect(admin.signer).setExtensionDelegate(comet.address, CometExtAssetList.address, { gasPrice: 0 });
+  
+  // Deploy CometFactoryWithExtendedAssetList (matching absorb-test.ts pattern)
+  const CometFactoryWithExtendedAssetList = await (
+    await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
+  ).deploy();
+  await CometFactoryWithExtendedAssetList.deployed();
+  
+  // Set factory
+  await context.setNextBaseFeeToZero();
+  await configurator.connect(admin.signer).setFactory(comet.address, CometFactoryWithExtendedAssetList.address, { gasPrice: 0 });
 }

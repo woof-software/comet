@@ -1,10 +1,6 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import { setupFork } from '../helpers';
-import {
-  impersonateAccount,
-  setBalance,
-} from '@nomicfoundation/hardhat-network-helpers';
+import { setupFork, impersonateAccount, setBalance} from '../helpers';
 import {
   CometExtAssetList__factory,
   CometFactoryWithExtendedAssetList__factory,

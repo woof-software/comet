@@ -48,6 +48,9 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 // Snapshot
 import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
+// Network helpers
+export * from './helpers/network-helpers';
+
 export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer };
 
 export type Numeric = number | bigint;
