@@ -3,23 +3,26 @@ import { CometContext, scenario } from './context/CometContext';
 import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, usesAssetList, setupExtendedAssetListSupport } from './utils';
 
 /**
- * This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
+ * @title Quote Collateral Scenario
+ * @notice Test suite for quoteCollateral behavior with and without liquidation discounts
+ *
+ * @dev This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
  * The incident revealed that when a price feed becomes unavailable, the protocol cannot calculate the USD value
  * of collateral (e.g., during absorption when trying to getPrice() for a delisted asset).
  *
- * The solution was to set the asset's liquidationFactor to 0 for delisted collateral. This affects both:
- * - Absorption: Assets with liquidationFactor = 0 are skipped (cannot calculate their USD value)
- * - quoteCollateral: When liquidationFactor = 0, the store front discount becomes 0, and quoteCollateral
- *   quotes at market price without any discount (see quoteCollateral() in CometWithExtendedAssetList.sol)
+ * @dev The solution was to set the asset's liquidationFactor to 0 for delisted collateral. For quoteCollateral,
+ * when liquidationFactor = 0, the store front discount becomes 0, and quoteCollateral quotes at market price
+ * without any discount (see quoteCollateral() in CometWithExtendedAssetList.sol)
  *
- * This test suite verifies that quoteCollateral behaves correctly when liquidationFactor is set to 0:
- * - It should quote at market price (no discount) when liquidationFactor = 0
- * - It should handle the transition from liquidationFactor > 0 to liquidationFactor = 0 correctly
- * - It should work correctly for all assets in the protocol, even when at the maximum asset limit
+ * @dev This scenario tests quoteCollateral behavior in two phases:
+ * 1. Normal operation: Verifies that quoteCollateral applies the correct discount when liquidationFactor > 0
+ * 2. Delisted asset: Sets liquidationFactor to 0 and verifies that quoteCollateral quotes at market price
+ *    without discount, handling the transition correctly
  *
- * Note: This test only runs on Comet deployments that use the extended asset list feature (CometExtAssetList),
- * as the quoteCollateral behavior with liquidationFactor = 0 is specific to that implementation. The test
- * filters deployments using the usesAssetList() utility function to ensure compatibility.
+ * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
+ * the extended asset list feature (CometExtAssetList), as the quoteCollateral behavior with liquidationFactor = 0
+ * is specific to that implementation. The test filters deployments using the usesAssetList() utility function
+ * to ensure compatibility, and excludes assets that are already delisted.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(

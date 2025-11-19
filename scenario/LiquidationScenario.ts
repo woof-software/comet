@@ -300,26 +300,27 @@ scenario.skip(
 );
 
 /**
- * This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
+ * @title Liquidation Scenario - isLiquidatable with liquidateCollateralFactor = 0
+ * @notice Test suite for isLiquidatable behavior when liquidateCollateralFactor is set to 0
+ *
+ * @dev This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
  * The incident revealed that when a price feed becomes unavailable, the protocol cannot calculate the USD value
  * of collateral (e.g., during absorption when trying to getPrice() for a delisted asset).
  *
- * Flow tested:
- * The `isLiquidatable` function iterates through a user's collateral assets to calculate their total liquidity.
- * When an asset's `liquidateCollateralFactor` is set to 0, the contract skips that asset in the liquidity calculation
- * effectively excluding it from contributing to the user's
- * collateralization. This prevents the protocol from calling `getPrice()` on unavailable price feeds.
+ * @dev The solution was to set the asset's liquidateCollateralFactor to 0 for delisted collateral. For isLiquidatable,
+ * when liquidateCollateralFactor = 0, the contract skips that asset in the liquidity calculation, effectively
+ * excluding it from contributing to the user's collateralization. This prevents the protocol from calling
+ * getPrice() on unavailable price feeds.
  *
- * Test scenarios:
- * 1. Positions with positive liquidateCF are properly collateralized and not liquidatable
- * 2. When liquidateCF is set to 0 (simulating a price feed becoming unavailable), the collateral is excluded
- *    from liquidity calculations, causing positions to become liquidatable
- * 3. Mixed scenarios where some assets have liquidateCF=0 and others have positive values - only assets with
- *    positive liquidateCF contribute to liquidity
- * 4. All assets individually tested to ensure each can be excluded when liquidateCF=0
+ * @dev This scenario tests isLiquidatable behavior in two phases:
+ * 1. Normal operation: Verifies that positions with positive liquidateCF are properly collateralized and not liquidatable
+ * 2. Delisted asset: Sets liquidateCF to 0 and verifies that the collateral is excluded from liquidity calculations,
+ *    causing positions to become liquidatable when their only collateral asset is delisted
  *
- * This mitigation allows governance to set liquidateCF to 0 for assets with unavailable price feeds, preventing
- * protocol paralysis while ensuring undercollateralized positions can still be liquidated.
+ * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
+ * the extended asset list feature (CometExtAssetList), as the liquidateCollateralFactor = 0 behavior is specific
+ * to that implementation. The test filters deployments using the usesAssetList() utility function to ensure
+ * compatibility, and excludes assets that are already delisted.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
@@ -390,17 +391,28 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 }
 
 /**
- * This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
- * As a result, during absorption, the protocol would not be able to calculate the USD value of the collateral seized.
+ * @title Liquidation Scenario - Absorption with liquidationFactor = 0
+ * @notice Test suite for absorption behavior when liquidationFactor is set to 0
  *
- * This test suite verifies that the protocol behaves correctly in two scenarios:
- * 1. Normal absorption (liquidation factor > 0): When collateral has a non-zero liquidation factor,
- *    the protocol can successfully liquidate/seize the collateral during absorption, calculate its USD value,
- *    and update all state correctly.
- * 2. Delisted collateral (liquidation factor = 0): When collateral is delisted (liquidation factor set to 0),
- *    the protocol skips seizing that collateral during absorption, but still proceeds with debt absorption.
- *    This allows the protocol to continue functioning even when a price feed becomes unavailable, by
- *    setting the asset's liquidation factor to 0 to prevent attempts to calculate its USD value.
+ * @dev This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
+ * The incident revealed that during absorption, the protocol would not be able to calculate the USD value
+ * of collateral seized when trying to getPrice() for a delisted asset.
+ *
+ * @dev The solution was to set the asset's liquidationFactor to 0 for delisted collateral. For absorption,
+ * when liquidationFactor = 0, the protocol skips seizing that collateral during absorption, but still
+ * proceeds with debt absorption. This allows the protocol to continue functioning even when a price feed
+ * becomes unavailable, by setting the asset's liquidation factor to 0 to prevent attempts to calculate its USD value.
+ *
+ * @dev This scenario tests absorption behavior in two phases:
+ * 1. Normal operation: Verifies that when collateral has a non-zero liquidation factor, the protocol can
+ *    successfully liquidate/seize the collateral during absorption, calculate its USD value, and update all state correctly
+ * 2. Delisted asset: Sets liquidationFactor to 0 and verifies that the protocol skips seizing that collateral
+ *    during absorption, but still proceeds with debt absorption
+ *
+ * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
+ * the extended asset list feature (CometExtAssetList), as the liquidationFactor = 0 behavior is specific
+ * to that implementation. The test filters deployments using the usesAssetList() utility function to ensure
+ * compatibility, and excludes assets that are already delisted.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(

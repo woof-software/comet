@@ -373,34 +373,31 @@ scenario.skip(
 );
 
 /**
- * This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
+ * @title Withdraw Scenario - isBorrowCollateralized with borrowCollateralFactor = 0
+ * @notice Test suite for isBorrowCollateralized behavior when borrowCollateralFactor is set to 0
+ *
+ * @dev This test suite was written after the USDM incident, when a token price feed was removed from Chainlink.
  * The incident revealed that when a price feed becomes unavailable, the protocol cannot calculate the USD value
  * of collateral (e.g., during absorption when trying to getPrice() for a delisted asset).
  *
- * Flow tested:
- * The `isBorrowCollateralized` function iterates through a user's collateral assets to calculate their total liquidity.
- * When an asset's `borrowCollateralFactor` is set to 0, the contract skips that asset in the liquidity calculation
- * (see CometWithExtendedAssetList.sol lines 402-405), effectively excluding it from contributing to the user's
- * collateralization. This prevents the protocol from calling `getPrice()` on unavailable price feeds.
+ * @dev The solution was to set the asset's borrowCollateralFactor to 0 for delisted collateral. For isBorrowCollateralized,
+ * when borrowCollateralFactor = 0, the contract skips that asset in the liquidity calculation (see CometWithExtendedAssetList.sol
+ * lines 402-405), effectively excluding it from contributing to the user's collateralization. This prevents the protocol
+ * from calling getPrice() on unavailable price feeds.
  *
- * Test scenarios:
- * 1. Positions with positive borrowCF are properly collateralized and can borrow
- * 2. When borrowCF is set to 0 (simulating a price feed becoming unavailable), the collateral is excluded
- *    from liquidity calculations, causing positions to become undercollateralized and preventing further borrowing
- * 3. Mixed scenarios where some assets have borrowCF=0 and others have positive values - only assets with
- *    positive borrowCF contribute to liquidity
- * 4. All assets individually tested to ensure each can be excluded when borrowCF=0
+ * @dev This scenario tests isBorrowCollateralized behavior in two phases:
+ * 1. Normal operation: Verifies that positions with positive borrowCF are properly collateralized and can borrow
+ * 2. Delisted asset: Sets borrowCF to 0 and verifies that the collateral is excluded from liquidity calculations,
+ *    causing positions to become undercollateralized and preventing further borrowing when their only collateral asset is delisted
  *
- * This mitigation allows governance to set borrowCF to 0 for assets with unavailable price feeds, preventing
- * protocol paralysis while ensuring users cannot borrow against collateral that cannot be properly valued.
- * Unlike `isLiquidatable` which uses `liquidateCollateralFactor`, this function determines whether a user
- * can initiate new borrows, making it critical for preventing new positions from being opened with
- * unpriceable collateral.
+ * @dev Unlike isLiquidatable which uses liquidateCollateralFactor, this function determines whether a user can initiate
+ * new borrows, making it critical for preventing new positions from being opened with unpriceable collateral.
  *
- * Note: The behavior of skipping assets with borrowCF=0 is specific to CometWithExtendedAssetList implementations.
- * The base Comet contract does not have this check and will attempt to call getPrice() even when borrowCF=0,
- * which would cause a revert if the price feed is unavailable. This test verifies the extended asset list
- * implementation correctly handles this scenario.
+ * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
+ * the extended asset list feature (CometExtAssetList), as the borrowCollateralFactor = 0 behavior is specific
+ * to that implementation. The base Comet contract does not have this check and will attempt to call getPrice()
+ * even when borrowCF=0, which would cause a revert if the price feed is unavailable. The test filters deployments
+ * using the usesAssetList() utility function to ensure compatibility, and excludes assets that are already delisted.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
