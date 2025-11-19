@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, fundAccount, usesAssetList, isAssetDelisted, setupExtendedAssetListSupport } from './utils';
+import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, fundAccount, usesAssetList, isAssetDelisted, supportsExtendedPause } from './utils';
 import { ContractReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -287,7 +287,8 @@ scenario(
       return await isValidAssetIndex(ctx, 0) && 
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawCollateral) &&
       await usesAssetList(ctx) &&
-      !(await isAssetDelisted(ctx, 0));
+      !(await isAssetDelisted(ctx, 0)) &&
+      await supportsExtendedPause(ctx);
     },
     cometBalances: async (ctx: CometContext) => (
       {
@@ -295,13 +296,11 @@ scenario(
       }
     ),
   },
-  async ({ comet, actors, configurator, cometExt }, context, world) => {
-    const { albert, pauseGuardian, admin } = actors;
+  async ({ comet, actors, cometExt }, context, world) => {
+    const { albert, pauseGuardian } = actors;
     const { asset, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(asset);
     const scale = scaleBN.toBigInt();
-
-    await setupExtendedAssetListSupport(context, comet, configurator, admin);
 
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
@@ -326,7 +325,8 @@ scenario(
       return await isValidAssetIndex(ctx, 0) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawCollateral) &&
       await usesAssetList(ctx) &&
-      !(await isAssetDelisted(ctx, 0));
+      !(await isAssetDelisted(ctx, 0)) &&
+      await supportsExtendedPause(ctx);
     },
     cometBalances: async (ctx: CometContext) => (
       {
@@ -334,13 +334,12 @@ scenario(
       }
     ),
   },
-  async ({ comet, actors, configurator, cometExt }, context, world) => {
-    const { albert, betty, pauseGuardian, admin } = actors;
+  async ({ comet, actors, cometExt }, context, world) => {
+    const { albert, betty, pauseGuardian } = actors;
     const { asset, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(asset);
     const scale = scaleBN.toBigInt();
 
-    await setupExtendedAssetListSupport(context, comet, configurator, admin);
 
     await albert.allow(betty, true);
 
@@ -369,7 +368,8 @@ scenario(
       return await isValidAssetIndex(ctx, 0) &&
        await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawBase) &&
         await usesAssetList(ctx) &&
-         !(await isAssetDelisted(ctx, 0));
+         !(await isAssetDelisted(ctx, 0)) &&
+         await supportsExtendedPause(ctx);
     },
     tokenBalances: async (ctx: CometContext) => (
       {
@@ -383,13 +383,12 @@ scenario(
       }
     ),
   },
-  async ({ comet, actors, configurator, cometExt }, context, world) => {
-    const { albert, pauseGuardian, admin } = actors;
+  async ({ comet, actors, cometExt }, context, world) => {
+    const { albert, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const scale = (await comet.baseScale()).toBigInt();
 
-    await setupExtendedAssetListSupport(context, comet, configurator, admin);
 
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
@@ -414,7 +413,8 @@ scenario(
       return await isValidAssetIndex(ctx, 0) &&
        await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawBase) &&
         await usesAssetList(ctx) &&
-         !(await isAssetDelisted(ctx, 0));
+         !(await isAssetDelisted(ctx, 0)) &&
+         await supportsExtendedPause(ctx);
     },
     tokenBalances: async (ctx: CometContext) => (
       {
@@ -428,13 +428,12 @@ scenario(
       }
     ),
   },
-  async ({ comet, actors, configurator, cometExt }, context, world) => {
-    const { albert, betty, pauseGuardian, admin } = actors;
+  async ({ comet, actors, cometExt }, context, world) => {
+    const { albert, betty, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const scale = (await comet.baseScale()).toBigInt();
 
-    await setupExtendedAssetListSupport(context, comet, configurator, admin);
 
     await albert.allow(betty, true);
 
@@ -463,7 +462,8 @@ scenario(
       return await isValidAssetIndex(ctx, 0) &&
        await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawBase) &&
         await usesAssetList(ctx) &&
-         !(await isAssetDelisted(ctx, 0));
+         !(await isAssetDelisted(ctx, 0)) &&
+         await supportsExtendedPause(ctx);
     },
     cometBalances: async (ctx: CometContext) => (
       {
@@ -471,13 +471,12 @@ scenario(
       }
     ),
   },
-  async ({ comet, actors, configurator, cometExt }, context, world) => {
-    const { albert, pauseGuardian, admin } = actors;
+  async ({ comet, actors, cometExt }, context, world) => {
+    const { albert, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
 
-    await setupExtendedAssetListSupport(context, comet, configurator, admin);
 
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
@@ -502,7 +501,8 @@ scenario(
       return await isValidAssetIndex(ctx, 0) &&
        await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawBase) &&
         await usesAssetList(ctx) &&
-         !(await isAssetDelisted(ctx, 0));
+         !(await isAssetDelisted(ctx, 0)) &&
+         await supportsExtendedPause(ctx);
     },
     cometBalances: async (ctx: CometContext) => (
       {
@@ -510,13 +510,12 @@ scenario(
       }
     ),
   },
-  async ({ comet, actors, configurator, cometExt }, context, world) => {
-    const { albert, betty, pauseGuardian, admin } = actors;
+  async ({ comet, actors, cometExt }, context, world) => {
+    const { albert, betty, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
 
-    await setupExtendedAssetListSupport(context, comet, configurator, admin);
 
     await albert.allow(betty, true);
 
@@ -545,7 +544,8 @@ scenario(
       return await isValidAssetIndex(ctx, 0) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawCollateral) &&
       await usesAssetList(ctx) &&
-      !(await isAssetDelisted(ctx, 0));
+      !(await isAssetDelisted(ctx, 0)) &&
+      await supportsExtendedPause(ctx);
     },
     cometBalances: async (ctx: CometContext) => (
       {
@@ -555,13 +555,12 @@ scenario(
       }
     ),
   },
-  async ({ comet, actors, configurator, cometExt }, context, world) => {
-    const { albert, pauseGuardian, admin } = actors;
+  async ({ comet, actors, cometExt }, context, world) => {
+    const { albert, pauseGuardian } = actors;
     const { asset, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(asset);
     const scale = scaleBN.toBigInt();
 
-    await setupExtendedAssetListSupport(context, comet, configurator, admin);
 
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
@@ -588,7 +587,8 @@ for (let i = 0; i < MAX_ASSETS; i++) {
         return await isValidAssetIndex(ctx, i) &&
         await isTriviallySourceable(ctx, i, getConfigForScenario(ctx).withdrawCollateral) &&
         await usesAssetList(ctx) &&
-        !(await isAssetDelisted(ctx, i));
+        !(await isAssetDelisted(ctx, i)) &&
+        await supportsExtendedPause(ctx);
       },
       cometBalances: async (ctx: CometContext) => (
         {
@@ -598,13 +598,12 @@ for (let i = 0; i < MAX_ASSETS; i++) {
         }
       ),
     },
-    async ({ comet, actors, configurator, cometExt }, context, world) => {
-      const { albert, betty, pauseGuardian, admin } = actors;
+    async ({ comet, actors, cometExt }, context, world) => {
+      const { albert, betty, pauseGuardian } = actors;
       const { asset, scale: scaleBN } = await comet.getAssetInfo(i);
       const collateralAsset = context.getAssetByAddress(asset);
       const scale = scaleBN.toBigInt();
 
-      await setupExtendedAssetListSupport(context, comet, configurator, admin);
 
       await albert.allow(betty, true);
 

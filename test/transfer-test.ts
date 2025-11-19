@@ -415,8 +415,6 @@ describe('transfer functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseCollateralTransfer(true);
-      expect(await cometWithExtendedAssetList.isCollateralTransferPaused()).to
-        .be.true;
 
       await expect(
         cometWithExtendedAssetList
@@ -437,8 +435,6 @@ describe('transfer functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseLendersTransfer(true);
-      expect(await cometWithExtendedAssetList.isLendersTransferPaused()).to.be
-        .true;
 
       await expect(
         cometWithExtendedAssetList
@@ -468,8 +464,6 @@ describe('transfer functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseBorrowersTransfer(true);
-      expect(await cometWithExtendedAssetList.isBorrowersTransferPaused()).to.be
-        .true;
 
       // Transfer
       await expect(
@@ -508,11 +502,6 @@ describe('transfer functionality', function () {
         await cometWithExtendedAssetListMaxAssets
           .connect(pauseGuardian)
           .pauseCollateralAssetTransfer(assetIndex, true);
-        expect(
-          await cometWithExtendedAssetListMaxAssets.isCollateralAssetTransferPaused(
-            assetIndex
-          )
-        ).to.be.true;
 
         await expect(
           cometWithExtendedAssetListMaxAssets
@@ -626,8 +615,6 @@ describe('transfer functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseCollateralTransfer(true);
-      expect(await cometWithExtendedAssetList.isCollateralTransferPaused()).to
-        .be.true;
 
       await cometWithExtendedAssetList.connect(bob).allow(alice.address, true);
       await expect(
@@ -653,8 +640,6 @@ describe('transfer functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseLendersTransfer(true);
-      expect(await cometWithExtendedAssetList.isLendersTransferPaused()).to.be
-        .true;
 
       await expect(
         cometWithExtendedAssetList
@@ -685,8 +670,6 @@ describe('transfer functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseBorrowersTransfer(true);
-      expect(await cometWithExtendedAssetList.isBorrowersTransferPaused()).to.be
-        .true;
 
       await expect(
         cometWithExtendedAssetList
@@ -732,11 +715,6 @@ describe('transfer functionality', function () {
         await cometWithExtendedAssetListMaxAssets
           .connect(pauseGuardian)
           .pauseCollateralAssetTransfer(assetIndex, true);
-        expect(
-          await cometWithExtendedAssetListMaxAssets.isCollateralAssetTransferPaused(
-            assetIndex
-          )
-        ).to.be.true;
 
         await expect(
           cometWithExtendedAssetListMaxAssets

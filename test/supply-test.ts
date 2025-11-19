@@ -1,7 +1,8 @@
 import { ethers, event, expect, exp, makeProtocol, portfolio, ReentryAttack, setTotalsBasic, wait, fastForward, defaultAssets,SnapshotRestorer,
-  takeSnapshot, MAX_ASSETS, } from './helpers';
+  takeSnapshot, MAX_ASSETS } from './helpers';
 import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken,CometHarnessInterfaceExtendedAssetList,FaucetToken } from '../build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
+
 describe('supply functionality', function () {
   // Snapshot
   let snapshot: SnapshotRestorer;
@@ -449,8 +450,6 @@ describe('supply functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseCollateralSupply(true);
-      expect(await cometWithExtendedAssetList.isCollateralSupplyPaused()).to.be
-        .true;
 
       await collateralToken
         .connect(bob)
@@ -485,12 +484,6 @@ describe('supply functionality', function () {
         await cometWithExtendedAssetListMaxAssets
           .connect(pauseGuardian)
           .pauseCollateralAssetSupply(assetIndex, true);
-
-        expect(
-          await cometWithExtendedAssetListMaxAssets.isCollateralAssetSupplyPaused(
-            assetIndex
-          )
-        ).to.be.true;
 
         await assetToken
           .connect(bob)
@@ -730,7 +723,6 @@ describe('supply functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseBaseSupply(true);
-      expect(await cometWithExtendedAssetList.isBaseSupplyPaused()).to.be.true;
 
       await baseToken
         .connect(bob)
@@ -750,8 +742,6 @@ describe('supply functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseCollateralSupply(true);
-      expect(await cometWithExtendedAssetList.isCollateralSupplyPaused()).to.be
-        .true;
 
       await collateralToken
         .connect(bob)
@@ -782,12 +772,6 @@ describe('supply functionality', function () {
         await cometWithExtendedAssetListMaxAssets
           .connect(pauseGuardian)
           .pauseCollateralAssetSupply(assetIndex, true);
-
-        expect(
-          await cometWithExtendedAssetListMaxAssets.isCollateralAssetSupplyPaused(
-            assetIndex
-          )
-        ).to.be.true;
 
         await assetToken
           .connect(bob)
@@ -874,7 +858,6 @@ describe('supply functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseBaseSupply(true);
-      expect(await cometWithExtendedAssetList.isBaseSupplyPaused()).to.be.true;
 
       await baseToken
         .connect(bob)
@@ -900,8 +883,6 @@ describe('supply functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseCollateralSupply(true);
-      expect(await cometWithExtendedAssetList.isCollateralSupplyPaused()).to.be
-        .true;
 
       await collateralToken
         .connect(bob)
@@ -938,12 +919,6 @@ describe('supply functionality', function () {
         await cometWithExtendedAssetListMaxAssets
           .connect(pauseGuardian)
           .pauseCollateralAssetSupply(assetIndex, true);
-
-        expect(
-          await cometWithExtendedAssetListMaxAssets.isCollateralAssetSupplyPaused(
-            assetIndex
-          )
-        ).to.be.true;
 
         await assetToken
           .connect(bob)

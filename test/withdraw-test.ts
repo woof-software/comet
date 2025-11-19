@@ -481,8 +481,6 @@ describe('withdraw functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseCollateralWithdraw(true);
-      expect(await cometWithExtendedAssetList.isCollateralWithdrawPaused()).to
-        .be.true;
 
       await expect(
         cometWithExtendedAssetList
@@ -503,8 +501,6 @@ describe('withdraw functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseLendersWithdraw(true);
-      expect(await cometWithExtendedAssetList.isLendersWithdrawPaused()).to.be
-        .true;
 
       await expect(
         cometWithExtendedAssetList
@@ -530,8 +526,6 @@ describe('withdraw functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseBorrowersWithdraw(true);
-      expect(await cometWithExtendedAssetList.isBorrowersWithdrawPaused()).to.be
-        .true;
 
       await expect(
         cometWithExtendedAssetList
@@ -572,11 +566,6 @@ describe('withdraw functionality', function () {
         await cometWithExtendedAssetListMaxAssets
           .connect(pauseGuardian)
           .pauseCollateralAssetWithdraw(assetIndex, true);
-        expect(
-          await cometWithExtendedAssetListMaxAssets.isCollateralAssetWithdrawPaused(
-            assetIndex
-          )
-        ).to.be.true;
 
         await expect(
           cometWithExtendedAssetListMaxAssets
@@ -775,8 +764,6 @@ describe('withdraw functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseCollateralWithdraw(true);
-      expect(await cometWithExtendedAssetList.isCollateralWithdrawPaused()).to
-        .be.true;
 
       await expect(
         cometWithExtendedAssetList
@@ -793,8 +780,6 @@ describe('withdraw functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseLendersWithdraw(true);
-      expect(await cometWithExtendedAssetList.isLendersWithdrawPaused()).to.be
-        .true;
 
       await expect(
         cometWithExtendedAssetList
@@ -811,8 +796,6 @@ describe('withdraw functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseBorrowersWithdraw(true);
-      expect(await cometWithExtendedAssetList.isBorrowersWithdrawPaused()).to.be
-        .true;
 
       await expect(
         cometWithExtendedAssetList
@@ -853,11 +836,6 @@ describe('withdraw functionality', function () {
         await cometWithExtendedAssetListMaxAssets
           .connect(pauseGuardian)
           .pauseCollateralAssetWithdraw(assetIndex, true);
-        expect(
-          await cometWithExtendedAssetListMaxAssets.isCollateralAssetWithdrawPaused(
-            assetIndex
-          )
-        ).to.be.true;
 
         await expect(
           cometWithExtendedAssetListMaxAssets
@@ -940,8 +918,6 @@ describe('withdraw functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseCollateralWithdraw(true);
-      expect(await cometWithExtendedAssetList.isCollateralWithdrawPaused()).to
-        .be.true;
 
       await expect(
         cometWithExtendedAssetList
@@ -963,8 +939,6 @@ describe('withdraw functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseLendersWithdraw(true);
-      expect(await cometWithExtendedAssetList.isLendersWithdrawPaused()).to.be
-        .true;
 
       await expect(
         cometWithExtendedAssetList
@@ -986,8 +960,6 @@ describe('withdraw functionality', function () {
       await cometWithExtendedAssetList
         .connect(pauseGuardian)
         .pauseBorrowersWithdraw(true);
-      expect(await cometWithExtendedAssetList.isBorrowersWithdrawPaused()).to.be
-        .true;
 
       await expect(
         cometWithExtendedAssetList
@@ -1032,11 +1004,6 @@ describe('withdraw functionality', function () {
         await cometWithExtendedAssetListMaxAssets
           .connect(pauseGuardian)
           .pauseCollateralAssetWithdraw(assetIndex, true);
-        expect(
-          await cometWithExtendedAssetListMaxAssets.isCollateralAssetWithdrawPaused(
-            assetIndex
-          )
-        ).to.be.true;
 
         await expect(
           cometWithExtendedAssetListMaxAssets

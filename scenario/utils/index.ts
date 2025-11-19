@@ -1539,47 +1539,38 @@ export function isTenderlyLog(log: any): log is { raw: { topics: string[], data:
   return !!log?.raw?.topics && !!log?.raw?.data;
 }
 
-export async function setupExtendedAssetListSupport(
-  context: CometContext,
-  comet: CometInterface,
-  configurator: Contract,
-  admin: CometActor
-): Promise<void> {
-  const ethers = context.world.deploymentManager.hre.ethers;
-  
-  // Deploy a new AssetListFactory (matching absorb-test.ts pattern)
-  const AssetListFactory = await ethers.getContractFactory('AssetListFactory');
-  const assetListFactory = await AssetListFactory.deploy();
-  await assetListFactory.deployed();
-  
-  // Deploy CometExtAssetList with the new AssetListFactory
-  const CometExtAssetList = await (
-    await ethers.getContractFactory('CometExtAssetList')
-  ).deploy(
-    {
-      name32: ethers.utils.formatBytes32String('Compound Comet'),
-      symbol32: ethers.utils.formatBytes32String('BASE'),
-    },
-    assetListFactory.address
-  );
-  await CometExtAssetList.deployed();
-  
-  // Set extension delegate first
-  await context.setNextBaseFeeToZero();
-  await configurator.connect(admin.signer).setExtensionDelegate(comet.address, CometExtAssetList.address, { gasPrice: 0 });
-  
-  // Deploy CometFactoryWithExtendedAssetList (matching absorb-test.ts pattern)
-  const CometFactoryWithExtendedAssetList = await (
-    await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
-  ).deploy();
-  await CometFactoryWithExtendedAssetList.deployed();
-  
-  // Set factory
-  await context.setNextBaseFeeToZero();
-  await configurator.connect(admin.signer).setFactory(comet.address, CometFactoryWithExtendedAssetList.address, { gasPrice: 0 });
-  
-  // Upgrade the contract to the new implementation that includes extended pause storage
-  const cometAdmin = await context.getCometAdmin();
-  await context.setNextBaseFeeToZero();
-  await cometAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+/**
+ * Check if Comet supports extended pause functionality
+ * @param ctx The Comet context
+ * @returns true if Comet supports extended pause functions, false otherwise
+ */
+export async function supportsExtendedPause(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    // Get the function selector for isLendersWithdrawPaused()
+    // This function only exists in CometWithExtendedAssetList
+    const iface = new ethers.utils.Interface([
+      'function isLendersWithdrawPaused() external view returns (bool)'
+    ]);
+    const functionSelector = iface.getSighash('isLendersWithdrawPaused');
+    
+    // Try to call the function using a low-level static call
+    // If the function doesn't exist, this will revert
+    const result = await ethers.provider.call({
+      to: comet.address,
+      data: functionSelector
+    });
+    
+    // If the call succeeds (doesn't revert), the function exists
+    // Decode the result to verify it's a valid bool response
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    // If the call reverts or fails, extended pause is not supported
+    return false;
+  }
 }
