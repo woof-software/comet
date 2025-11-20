@@ -49,6 +49,9 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 // Snapshot
 import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
+// Network helpers
+export * from './helpers/network-helpers';
+
 export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer };
 
 export type Numeric = number | bigint;
@@ -750,4 +753,24 @@ function convertToBigInt(arr) {
 
 export function getGasUsed(tx: TransactionResponseExt): bigint {
   return tx.receipt.gasUsed.mul(tx.receipt.effectiveGasPrice).toBigInt();
+}
+
+/*//////////////////////////////////////////////////////////////
+                          FORK SETUP
+//////////////////////////////////////////////////////////////*/
+
+export async function setupFork(blockNumber?: number, jsonRpcUrl?: string) {
+  const mainnetConfig = hre.config.networks.mainnet as any;
+
+  await hre.network.provider.request({
+    method: 'hardhat_reset',
+    params: [
+      {
+        forking: {
+          jsonRpcUrl: jsonRpcUrl ?? mainnetConfig.url,
+          blockNumber: blockNumber ?? undefined,
+        },
+      },
+    ],
+  });
 }

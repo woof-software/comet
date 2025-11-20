@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { CometContext, scenario } from './context/CometContext';
-import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, usesAssetList, setupExtendedAssetListSupport } from './utils';
+import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, usesAssetList, supportsExtendedPause } from './utils';
 
 /**
  * @title Quote Collateral Scenario
@@ -28,7 +28,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#quoteCollateral > quotes with discount for asset ${i}`,
     {
-      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i))
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsExtendedPause(ctx)
     },
     async ({ comet, configurator, proxyAdmin, actors }, context) => {
       const { admin } = actors;
@@ -54,8 +54,6 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       const assetPriceDiscounted = assetPrice * (factorScale - discountFactor) / factorScale;
       const expectedQuoteWithDiscount = (basePrice * QUOTE_AMOUNT * assetScale) / assetPriceDiscounted / baseScale;
       expect(quoteAmount).to.equal(expectedQuoteWithDiscount);
-
-      await setupExtendedAssetListSupport(context, comet, configurator, admin);
       
       await context.setNextBaseFeeToZero();
       await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });

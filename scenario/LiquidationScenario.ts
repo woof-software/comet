@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { event, expect } from '../test/helpers';
-import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList, isAssetDelisted, setupExtendedAssetListSupport } from './utils';
+import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList, isAssetDelisted, supportsExtendedPause } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -326,7 +326,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#liquidation > skips liquidation value of asset ${i} with liquidateCF=0`,
     {
-      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)),
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsExtendedPause(ctx),
       tokenBalances: async (ctx: CometContext) => (
         {
           albert: { $base: '== 0' },
@@ -371,8 +371,6 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       
       // Verify initial state: position should be collateralized and not liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
-
-      await setupExtendedAssetListSupport(context, comet, configurator, admin);
       
       // Set liquidateCF to 0 (CometWithExtendedAssetList allows this even if borrowCF > 0)
       await context.setNextBaseFeeToZero();
@@ -419,7 +417,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
     `Comet#liquidation > skips absorption of asset ${i} with liquidation factor = 0`,
     {
       filter: async (ctx) => 
-        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)),
+        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsExtendedPause(ctx),
       tokenBalances: async (ctx) => ({
         albert: { $base: '== 0' },
         $comet: {
@@ -487,8 +485,6 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 
       // Verify account is liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
-
-      await setupExtendedAssetListSupport(context, comet, configurator, admin);
       
       await context.setNextBaseFeeToZero();
       await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
