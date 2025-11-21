@@ -41,6 +41,8 @@ import {
   AssetListFactory__factory,
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
+  MockAssetListFactory,
+  MockAssetListFactory__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
@@ -102,6 +104,7 @@ export type ProtocolOpts = {
   baseBorrowMin?: Numeric;
   targetReserves?: Numeric;
   baseTokenBalance?: Numeric;
+  withMockAssetListFactory?: boolean;
 };
 
 export type Protocol = {
@@ -313,9 +316,17 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
 
   const unsupportedToken = await FaucetFactory.deploy(1e6, 'Unsupported Token', 6, 'USUP');
 
-  const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
-  const assetListFactory = await AssetListFactory.deploy();
-  await assetListFactory.deployed();
+  let assetListFactory: AssetListFactory | MockAssetListFactory;
+
+  if (opts.withMockAssetListFactory) {
+    const MockAssetListFactory = (await ethers.getContractFactory('MockAssetListFactory')) as MockAssetListFactory__factory;
+    assetListFactory = await MockAssetListFactory.deploy();
+    await assetListFactory.deployed();
+  } else {
+    const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
+    assetListFactory = await AssetListFactory.deploy();
+    await assetListFactory.deployed();
+  }
 
   let extensionDelegate = opts.extensionDelegate;
   if (extensionDelegate === undefined) {

@@ -186,7 +186,7 @@ describe('isBorrowCollateralized', function () {
         ])
       );
       const protocol = await makeConfigurator({
-        assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals },
+        assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals }, withMockAssetListFactory: true
       });
 
       configurator = protocol.configurator;
