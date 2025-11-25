@@ -492,7 +492,7 @@ describe('extended pause functionality', function () {
 
         it('allows governor to unpause', async function () {
           await expect(cometExt.connect(governor).pauseCollateralSupply(false))
-            .to.emit(cometExt, 'LendersSupplyPauseAction')
+            .to.emit(cometExt, 'CollateralSupplyPauseAction')
             .withArgs(false);
         });
 
@@ -521,7 +521,7 @@ describe('extended pause functionality', function () {
           await expect(
             cometExt.connect(pauseGuardian).pauseCollateralSupply(false)
           )
-            .to.emit(cometExt, 'LendersSupplyPauseAction')
+            .to.emit(cometExt, 'CollateralSupplyPauseAction')
             .withArgs(false);
         });
 
@@ -577,7 +577,7 @@ describe('extended pause functionality', function () {
 
         it('allows governor to unpause', async function () {
           await expect(cometExt.connect(governor).pauseBaseSupply(false))
-            .to.emit(cometExt, 'BorrowersSupplyPauseAction')
+            .to.emit(cometExt, 'BaseSupplyPauseAction')
             .withArgs(false);
         });
 
@@ -604,7 +604,7 @@ describe('extended pause functionality', function () {
 
         it('allows pause guardian to unpause', async function () {
           await expect(cometExt.connect(pauseGuardian).pauseBaseSupply(false))
-            .to.emit(cometExt, 'BorrowersSupplyPauseAction')
+            .to.emit(cometExt, 'BaseSupplyPauseAction')
             .withArgs(false);
         });
 
