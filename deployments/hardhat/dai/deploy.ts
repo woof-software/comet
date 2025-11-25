@@ -63,6 +63,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
   const deployed = await deployComet(deploymentManager, deploySpec, {
     baseTokenPriceFeed: daiPriceFeed.address,
     assetConfigs: [assetConfig0, assetConfig1],
+    withMockAssetListFactory: true,
   }, true);
   const { rewards } = deployed;
 
@@ -80,7 +81,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
   trace(`Attempting to mint as ${signer.address}...`);
 
   await Promise.all(
-    [[DAI, 1e8], [GOLD, 2e6], [SILVER, 1e7]].map(([asset, units]) => {
+    ([[DAI, 1e8], [GOLD, 2e6], [SILVER, 1e7]] as [FaucetToken, number][]).map(([asset, units]) => {
       return deploymentManager.idempotent(
         async () => (await asset.balanceOf(fauceteer.address)).eq(0),
         async () => {

@@ -166,9 +166,11 @@ function getOverridesOrConfig(
       getContractAddress(config.rewardToken, contracts, config.rewardTokenAddress) :
       undefined,
   });
-  return Object.entries(mapping()).reduce((acc, [k, f]) => {
+  const result = Object.entries(mapping()).reduce((acc, [k, f]) => {
     return { [k]: overrides[k] ?? f(config), ...acc };
   }, {});
+  // Preserve any override keys that aren't in the mapping (e.g., withMockAssetListFactory)
+  return { ...result, ...Object.fromEntries(Object.entries(overrides).filter(([k]) => !(k in result))) };
 }
 
 export async function getConfiguration(
