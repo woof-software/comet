@@ -302,7 +302,7 @@ contract CometExt is CometExtInterface {
 
         setPauseFlag(PAUSE_COLLATERAL_SUPPLY_OFFSET, paused);
         
-        emit LendersSupplyPauseAction(paused);
+        emit CollateralSupplyPauseAction(paused);
     }
 
     /**
@@ -313,7 +313,7 @@ contract CometExt is CometExtInterface {
 
         setPauseFlag(PAUSE_BASE_SUPPLY_OFFSET, paused);
 
-        emit BorrowersSupplyPauseAction(paused);
+        emit BaseSupplyPauseAction(paused);
     }
 
     /**
