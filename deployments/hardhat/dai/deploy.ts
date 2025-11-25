@@ -63,6 +63,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
   const deployed = await deployComet(deploymentManager, deploySpec, {
     baseTokenPriceFeed: daiPriceFeed.address,
     assetConfigs: [assetConfig0, assetConfig1],
+    withMockAssetListFactory: true,
   }, true);
   const { rewards } = deployed;
 
