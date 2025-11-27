@@ -370,4 +370,36 @@ contract CometExt is CometExtInterface {
 
         emit CollateralAssetTransferPauseAction(assetIndex, paused);
     }
+
+    function deactivateCollateral(uint24 assetIndex) override external isValidAssetIndex(assetIndex) {
+        if (msg.sender != CometMainInterface(address(this)).pauseGuardian()) revert OnlyPauseGuardian();
+
+        // Mark collateral as deactivated
+        deactivatedCollaterals |= (uint24(1) << assetIndex);
+        emit CollateralDeactivated(assetIndex);
+        
+        // Pause supply of this collateral
+        collateralsSupplyPauseFlags |= (uint24(1) << assetIndex);
+        emit CollateralAssetSupplyPauseAction(assetIndex, true);
+        
+        // Pause transfer of this collateral
+        collateralsTransferPauseFlags |= (uint24(1) << assetIndex);
+        emit CollateralAssetTransferPauseAction(assetIndex, true);
+    }
+
+    function activateCollateral(uint24 assetIndex) override external isValidAssetIndex(assetIndex) {
+        if (msg.sender != CometMainInterface(address(this)).governor()) revert OnlyGovernor();
+
+        // Mark collateral as activated
+        deactivatedCollaterals &= ~(uint24(1) << assetIndex);
+        emit CollateralActivated(assetIndex);
+        
+        // Unpause supply of this collateral
+        collateralsSupplyPauseFlags &= ~(uint24(1) << assetIndex);
+        emit CollateralAssetSupplyPauseAction(assetIndex, false);
+
+        // Unpause transfer of this collateral
+        collateralsTransferPauseFlags &= ~(uint24(1) << assetIndex);
+        emit CollateralAssetTransferPauseAction(assetIndex, false);
+    }
 }

@@ -394,6 +394,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
                 }
 
                 AssetInfo memory asset = getAssetInfo(i);
+                if (isCollateralDeactivated(asset.offset)) return false;
                 uint newAmount = mulPrice(
                     userCollateral[account][asset.asset].balance,
                     getPrice(asset.priceFeed),
@@ -626,6 +627,15 @@ contract CometWithExtendedAssetList is CometMainInterface {
      */
     function isCollateralTransferPaused() public view returns (bool) {
         return toBool(uint8(extendedPauseFlags & (uint24(1) << PAUSE_COLLATERALS_TRANSFER_OFFSET)));
+    }
+
+    /**
+     * @notice Check if a collateral asset is deactivated
+     * @param assetIndex The index of the asset
+     * @return Whether the collateral asset is deactivated
+     */
+    function isCollateralDeactivated(uint24 assetIndex) public view returns (bool) {
+        return (deactivatedCollaterals & (uint24(1) << assetIndex)) != 0;
     }
 
     /**
