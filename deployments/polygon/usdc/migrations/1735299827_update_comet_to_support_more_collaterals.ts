@@ -5,6 +5,7 @@ import { calldata, proposal } from '../../../../src/deploy';
 import { ethers } from 'ethers';
 import { Contract } from 'ethers';
 import { utils } from 'ethers';
+import { MAX_ASSETS } from '../../../../scenario/utils';
 
 let newCometExtAddressUSDC: string;
 let newCometExtAddressUSDT: string;
@@ -207,5 +208,7 @@ export default migration('1735299827_update_comet_to_support_more_collaterals', 
 
     expect(assetListAddressUSDT).to.not.be.equal(ethers.constants.AddressZero);
     expect(await cometNewUSDT.extensionDelegate()).to.be.equal(newCometExtAddressUSDT);
+    expect(await cometNew.maxAssets()).to.be.equal(MAX_ASSETS);
+    expect(await cometNewUSDT.maxAssets()).to.be.equal(MAX_ASSETS);
   },
 });
