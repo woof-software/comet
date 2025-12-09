@@ -1,17 +1,15 @@
-import { expect } from 'chai';
 import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
 import { migration } from '../../../../plugins/deployment_manager/Migration';
 import { calldata, proposal } from '../../../../src/deploy';
-import { ethers } from 'ethers';
-import { Contract } from 'ethers';
-import { utils } from 'ethers';
+import { ethers, Contract, utils } from 'ethers';
 import { MAX_ASSETS } from '../../../../scenario/utils';
+import { expect } from 'chai';
 
 let newCometExtAddress: string;
 
-export default migration('1735299778_update_comet_to_support_more_collaterals', {
+export default migration('1765272632_my_migration', {
   async prepare(deploymentManager: DeploymentManager) {
-    const _assetListFactory = await deploymentManager.deploy(
+    const assetListFactory = await deploymentManager.deploy(
       'assetListFactory',
       'AssetListFactory.sol',
       []
@@ -22,9 +20,8 @@ export default migration('1735299778_update_comet_to_support_more_collaterals', 
       'CometFactoryWithExtendedAssetList.sol',
       []
     );
-    const {
-      comet
-    } = await deploymentManager.getContracts();
+
+    const { comet } = await deploymentManager.getContracts();
 
     const extensionDelegate = new Contract(
       await comet.extensionDelegate(),
@@ -34,53 +31,54 @@ export default migration('1735299778_update_comet_to_support_more_collaterals', 
       ],
       await deploymentManager.getSigner()
     );
+
     const name = await extensionDelegate.name();
     const symbol = await extensionDelegate.symbol();
 
-    const _newCometExt = await deploymentManager.deploy(
+    const newCometExt = await deploymentManager.deploy(
       'CometExtAssetList',
       'CometExtAssetList.sol',
       [
         {
           name32: ethers.utils.formatBytes32String(name),
-          symbol32: ethers.utils.formatBytes32String(symbol)
+          symbol32: ethers.utils.formatBytes32String(symbol),
         },
-        _assetListFactory.address
+        assetListFactory.address,
       ],
       true
     );
+
     return {
       cometFactoryWithExtendedAssetList: cometFactoryWithExtendedAssetList.address,
-      newCometExt: _newCometExt.address
+      newCometExt: newCometExt.address,
     };
   },
 
-  async enact(deploymentManager: DeploymentManager, govDeploymentManager, {
-    cometFactoryWithExtendedAssetList,
-    newCometExt,
-  }) {
-
+  async enact(
+    deploymentManager: DeploymentManager,
+    govDeploymentManager: DeploymentManager,
+    { cometFactoryWithExtendedAssetList, newCometExt }
+  ) {
     const trace = deploymentManager.tracer();
-    const {
-      comet,
-      cometAdmin,
-      configurator,
-      bridgeReceiver,
-    } = await deploymentManager.getContracts();
-
-    const {
-      mantleL1CrossDomainMessenger,
-      governor
-    } = await govDeploymentManager.getContracts();
+    const { comet, cometAdmin, configurator, bridgeReceiver } =
+      await deploymentManager.getContracts();
+    const { mantleL1CrossDomainMessenger, governor } =
+      await govDeploymentManager.getContracts();
 
     newCometExtAddress = newCometExt;
 
     const setFactoryCalldata = await calldata(
-      configurator.populateTransaction.setFactory(comet.address, cometFactoryWithExtendedAssetList)
+      configurator.populateTransaction.setFactory(
+        comet.address,
+        cometFactoryWithExtendedAssetList
+      )
     );
 
     const setExtensionDelegateCalldata = await calldata(
-      configurator.populateTransaction.setExtensionDelegate(comet.address, newCometExt)
+      configurator.populateTransaction.setExtensionDelegate(
+        comet.address,
+        newCometExt
+      )
     );
 
     const deployAndUpgradeToCalldata = utils.defaultAbiCoder.encode(
@@ -102,8 +100,7 @@ export default migration('1735299778_update_comet_to_support_more_collaterals', 
       ]
     );
 
-    const mainnetActions = [
-      // 1. Set Comet configuration + deployAndUpgradeTo new Comet and set reward config on Mantle.
+    const actions = [
       {
         contract: mantleL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
@@ -111,16 +108,18 @@ export default migration('1735299778_update_comet_to_support_more_collaterals', 
       },
     ];
 
-    const description = '# Update USDe Comet on Mantle to support more collaterals\n\n## Proposal summary\n\nCompound Growth Program [AlphaGrowth] proposes to update Mantle cUSDeV3 Comet to a new version, which supports up to 24 collaterals. This proposal takes the governance steps recommended and necessary to update Compound III USDe markets on Mantle. Simulations have confirmed the market’s readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario).\n\nDetailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/904) and [forum discussion](https://www.comp.xyz/t/increase-amount-of-collaterals-in-comet/5465).\n\n\n## Proposal Actions\n\nThe first action sets the factory to the newly deployed factory, extension delegate to the newly deployed contract and deploys and upgrades Comet to a new version.';
+    const description =
+      '# Update USDe Comet on Mantle to support up to 24 collaterals\n\n' +
+      '## Proposal summary\n\n' +
+      'Upgrade Mantle cUSDev3 Comet to the CometWithExtendedAssetList implementation and new extension delegate, enabling up to 24 collaterals through the asset list factory.\n\n' +
+      '## Proposal Actions\n\n' +
+      '1) Set factory to CometFactoryWithExtendedAssetList, set extension delegate to CometExtAssetList, then deploy and upgrade the Comet implementation on Mantle via the bridge.';
+
     const txn = await deploymentManager.retry(async () =>
-      trace(
-        await governor.propose(...(await proposal(mainnetActions, description)))
-      )
+      trace(await governor.propose(...(await proposal(actions, description))))
     );
 
-    const event = txn.events.find(
-      (event) => event.event === 'ProposalCreated'
-    );
+    const event = txn.events.find((e) => e.event === 'ProposalCreated');
     const [proposalId] = event.args;
     trace(`Created proposal ${proposalId}.`);
   },
@@ -134,17 +133,15 @@ export default migration('1735299778_update_comet_to_support_more_collaterals', 
 
     const cometNew = new Contract(
       comet.address,
-      [
-        'function assetList() external view returns (address)',
-      ],
+      ['function assetList() external view returns (address)', 'function maxAssets() external view returns (uint8)'],
       await deploymentManager.getSigner()
     );
 
     const assetListAddress = await cometNew.assetList();
+    const maxAssets = await cometNew.maxAssets();
 
-    expect(assetListAddress).to.not.be.equal(ethers.constants.AddressZero);
-
-    expect(await comet.extensionDelegate()).to.be.equal(newCometExtAddress);
-    expect(await cometNew.maxAssets()).to.be.equal(MAX_ASSETS);
+    expect(assetListAddress).to.not.eq(ethers.constants.AddressZero);
+    expect(maxAssets).to.eq(MAX_ASSETS);
+    expect(await comet.extensionDelegate()).to.eq(newCometExtAddress);
   },
 });
