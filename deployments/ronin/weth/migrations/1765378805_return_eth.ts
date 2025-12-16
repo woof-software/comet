@@ -81,6 +81,7 @@ export default migration('1765378805_return_eth', {
       constants.AddressZero,
       '0x'
     ]);
+    expect(await deploymentManager.hre.ethers.provider.getBalance(timelock.address)).to.be.gte(fee0.mul(2n));
 
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
@@ -94,7 +95,7 @@ export default migration('1765378805_return_eth', {
         [
           0,
           0,
-          fee0.mul(2n),
+          fee0.mul(3n).div(2n),
         ],
         [
           'sweepToken(address,address)',
