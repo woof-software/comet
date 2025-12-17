@@ -90,7 +90,7 @@ export default async function relayRoninMessage(
 
     await bridgeDeploymentManager.hre.network.provider.request({
       method: 'hardhat_setBalance',
-      params: [l2CCIPOffRamp.address, '0x1000000000000000000000']
+      params: [offRampSigner.address, '0x1000000000000000000000']
     });
 
     await setNextBaseFeeToZero(bridgeDeploymentManager);
@@ -217,23 +217,6 @@ export default async function relayRoninMessage(
     }
   }
 
-  if (tenderlyLogs) {
-    const proposalFilter = bridgeReceiver.filters.ProposalCreated();
-    const proposalEvents = await bridgeDeploymentManager.hre.ethers.provider.getLogs({
-      fromBlock: 'latest',
-      toBlock: 'latest',
-      address: bridgeReceiver.address,
-      topics: proposalFilter.topics
-    });
-
-    for (let event of proposalEvents) {
-      const {
-        args: { id, eta },
-      } = bridgeReceiver.interface.parseLog(event);
-      openBridgedProposals.push({ id, eta });
-    }
-  }
-
   for (const proposal of openBridgedProposals) {
     const { id, eta } = proposal;
     await setNextBlockTimestamp(bridgeDeploymentManager, eta.toNumber() + 1);
@@ -241,6 +224,7 @@ export default async function relayRoninMessage(
 
     if (tenderlyLogs) {
       const callData = bridgeReceiver.interface.encodeFunctionData('executeProposal', [id]);
+      await updateCCIPStats(bridgeDeploymentManager, tenderlyLogs);
       const signer = await bridgeDeploymentManager.getSigner();
       bridgeDeploymentManager.stashRelayMessage(
         bridgeReceiver.address,
@@ -248,11 +232,13 @@ export default async function relayRoninMessage(
         await signer.getAddress()
       );
     } else {
-      await updateCCIPStats(governanceDeploymentManager);
-      await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
+      await updateCCIPStats(bridgeDeploymentManager);
+      const signer = await bridgeDeploymentManager.getSigner();
+      await bridgeReceiver.connect(signer).executeProposal(id, { gasPrice: 0 });
+      console.log(`[CCIP L2] Executed bridged proposal ${id.toString()}`);
     }
-    console.log(`[CCIP L2] Executed bridged proposal ${id.toString()}`);
   }
+  if (tenderlyLogs) return openBridgedProposals;
 
   // Process L2→L1 (Ronin→Mainnet) messages
   const filterCCIPL2ToL1 = l2CCIPOnRamp.filters.CCIPSendRequested();

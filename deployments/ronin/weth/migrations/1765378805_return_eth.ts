@@ -87,7 +87,6 @@ export default migration('1765378805_return_eth', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
-          
           bridgeReceiver.address,
           WETH.address,
           l2CCIPRouter.address,
@@ -142,7 +141,7 @@ export default migration('1765378805_return_eth', {
     const txn = await deploymentManager.retry(async () =>
       trace(
         await governor.propose(...(await proposal(mainnetActions, description)))
-      )
+      ), 0, 300_000
     );
 
     const event = txn.events.find(
