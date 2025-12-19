@@ -300,7 +300,7 @@ scenario(
     const utilization = await comet.getUtilization();
     const borrowRate = (await comet.getBorrowRate(utilization)).toBigInt();
 
-    expectApproximately(await albert.getCometBaseBalance(), config.supply.baseBorrowRepayAmount * scale, getInterest(config.supply.baseSupplyAfterFees * scale, borrowRate, config.supply.interestTimeFactor.long) + config.common.tolerances.interest.medium);
+    expectApproximately(await albert.getCometBaseBalance(), -config.supply.baseBorrowRepayAmount * scale, getInterest(config.supply.baseSupplyAfterFees * scale, borrowRate, config.supply.interestTimeFactor.long) + config.common.tolerances.interest.medium);
 
     await baseAsset.approve(albert, comet.address);
     const txn = await albert.supplyAsset({ asset: baseAsset.address, amount: config.supply.baseSupplyWithFees * scale });
@@ -382,7 +382,7 @@ scenario(
 
     const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
-    const baseSupplied = getExpectedBaseBalance(config.supply.baseSupplyWithFees * scale, baseIndexScale, baseSupplyIndex);
+    const baseSupplied = getExpectedBaseBalance(config.supply.baseSupplyAfterFees * scale, baseIndexScale, baseSupplyIndex);
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
     expect(await comet.balanceOf(betty.address)).to.be.equal(baseSupplied);

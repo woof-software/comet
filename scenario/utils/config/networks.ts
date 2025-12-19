@@ -54,7 +54,7 @@ export function applyNetworkOverrides(
     if (deployment === 'usdt') {
       config.liquidation.asset.tiny = 100n;
       config.liquidation.asset.small = 100n;
-      config.supply.baseSupplyWithFees = 100n;
+      config.supply.baseBorrowRepayAmount = 999n;
     }
   }
 
@@ -132,14 +132,23 @@ export function applyNetworkOverrides(
       config.bulker.asset.borrow = 50n;
       config.withdraw.baseAmount = 100n;    
       config.transfer.baseAmount = 100n;
+      config.supply.collateralAmount = 10n;
+      config.withdraw.collateralAmount = 10n;
+      config.transfer.collateralAmount = 10n;
+      config.common.amounts.collateral.standard = 10n;
+      config.common.amounts.collateral.large = 10n;
     }
 
     if (deployment === 'usdc.e') {
       config.withdraw.assetAmount = 7000n;
       config.withdraw.alternateAsset = 10000n;
+      config.withdraw.baseAmount = 100n;
       config.bulker.asset.standard = 10000n;
       config.bulker.asset.alternate = 10000n;
+      config.bulker.base.borrow = 100n;
+      config.bulker.asset.borrow = 50n;
       config.transfer.assetAmount = 10000n;
+      config.transfer.baseAmount = 100n;
       config.liquidation.factors.denominator = 84n;
       config.liquidation.base.standard = 100000n;
       config.liquidation.base.medium = 50000n;
@@ -192,8 +201,10 @@ export function applyNetworkOverrides(
 
     if (deployment === 'usdt') {
       config.withdraw.assetAmount = 10000n;
+      config.withdraw.baseAmount = 100n;
       config.transfer.assetAmount = 500000n;
       config.transfer.baseAmount = 100n;
+      config.rewards.baseAmount = 100n;
     }
   }
 
