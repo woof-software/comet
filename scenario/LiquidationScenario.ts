@@ -1,6 +1,6 @@
 import { scenario } from './context/CometContext';
 import { ethers, expect, defactor } from '../test/helpers';
-import { expectRevertCustom, timeUntilUnderwater } from './utils';
+import { expectRevertCustom, setNextBaseFeeToZero, timeUntilUnderwater } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -285,9 +285,10 @@ scenario(
       ? scale.toBigInt() / config.liquidationBot.scenario.collateralDivisor 
       : reserves;
 
+    await setNextBaseFeeToZero(world.deploymentManager);
     await asset0Contract
       .connect(admin.signer)
-      .transferFrom(comet.address, admin.address, withdrawAmount);
+      .transferFrom(comet.address, admin.address, withdrawAmount, { gasPrice: 0 });
 
     const finalReserves = await comet.getCollateralReserves(asset0Address);
     expect(finalReserves).to.equal(reserves.sub(withdrawAmount));
@@ -306,8 +307,7 @@ scenario(
       albert: {
         $base: -getConfigForScenario(ctx).liquidation.base.standard,
         $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.standard),
-        $asset1: defactor(getConfigForScenario(ctx).liquidation.asset.small),
-        $asset2: defactor(getConfigForScenario(ctx).liquidation.asset.tiny)
+        $asset1: defactor(getConfigForScenario(ctx).liquidation.asset.small)
       },
       betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
     }),
@@ -414,25 +414,31 @@ scenario(
     }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.base.standard * 10n,
+        $base: -getConfigForScenario(ctx).liquidation.base.standard,
         $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.tiny)
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.base.tiny }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
     }),
   },
   async ({ comet, actors }, context, world) => {
     const config = getConfigForScenario(context);
     const { albert, betty } = actors;
 
-    const timeBeforeLiquidation = await timeUntilUnderwater({
-      comet,
-      actor: albert,
-      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
-    });
-    
-    while(!(await comet.isLiquidatable(albert.address))) {
-      await comet.accrueAccount(albert.address);
-      await world.increaseTime(timeBeforeLiquidation);
+    // Check if already liquidatable, if not, wait until underwater
+    if (!(await comet.isLiquidatable(albert.address))) {
+      const timeBeforeLiquidation = await timeUntilUnderwater({
+        comet,
+        actor: albert,
+        fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
+      });
+      
+      // Ensure time is reasonable to avoid overflow
+      const timeToIncrease = Math.min(Math.max(timeBeforeLiquidation, 1), 365 * 24 * 60 * 60); // Max 1 year
+      
+      while(!(await comet.isLiquidatable(albert.address))) {
+        await comet.accrueAccount(albert.address);
+        await world.increaseTime(timeToIncrease);
+      }
     }
 
     const { asset: collateralAsset } = await comet.getAssetInfo(0);

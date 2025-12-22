@@ -143,7 +143,7 @@ scenario(
   {
     cometBalances: async (ctx) =>  (
       {
-        albert: { $base: getConfigForScenario(ctx).transfer.baseAmount, $asset0: getConfigForScenario(ctx).withdraw.alternateAsset },
+        albert: { $base: getConfigForScenario(ctx).transfer.baseAmount, $asset0: getConfigForScenario(ctx).common.amounts.collateral.large },
         betty: { $base: -getConfigForScenario(ctx).transfer.baseAmount },
         charles: { $base: getConfigForScenario(ctx).transfer.baseAmount },
       }
@@ -172,13 +172,11 @@ scenario(
 
     // Albert with positive balance transfers to Betty with negative balance
     const toTransfer = BigInt(config.transfer.baseAmount) * config.transfer.multiplier.num / config.transfer.multiplier.denom * scale;
-    const txn = await albert.transferAsset({ dst: betty.address, asset: baseAsset.address, amount: toTransfer });
+    await albert.transferAsset({ dst: betty.address, asset: baseAsset.address, amount: toTransfer });
 
     // Albert ends with negative balance and Betty with positive balance
     expectApproximately(await albert.getCometBaseBalance(), -BigInt(config.transfer.baseAmount) * config.transfer.result.num / config.transfer.result.denom * scale, getInterest(BigInt(config.transfer.baseAmount) * config.transfer.result.num / config.transfer.result.denom * scale, borrowRate, config.common.timing.interestSeconds) + config.common.tolerances.interest.large);
     expectApproximately(await betty.getCometBaseBalance(), BigInt(config.transfer.baseAmount) * config.transfer.result.num / config.transfer.result.denom * scale, getInterest(BigInt(config.transfer.baseAmount) * config.transfer.result.num / config.transfer.result.denom * scale, borrowRate, config.common.timing.interestSeconds) + config.common.tolerances.interest.large);
-
-    return txn;
   }
 );
 
