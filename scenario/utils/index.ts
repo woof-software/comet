@@ -38,6 +38,7 @@ import path from 'path';
 
 export const MAX_ASSETS = 24;
 export const UINT256_MAX = 2n ** 256n - 1n;
+export const UINT32_MAX = 2n ** 32n - 1n;
 
 export interface ComparativeAmount {
   val: number;
@@ -196,6 +197,17 @@ export function optionalNumber(o: object, key: string): number | undefined {
     throw new Error(`[requirement ${key} required to be number type]`);
   }
   return value;
+}
+
+export function optionalCall(o: object, key: string, ctx: CometContext): any | undefined {
+  let func: unknown = o[key];
+  if (func === undefined) {
+    return undefined;
+  }
+  if (typeof func !== 'function') {
+    throw new Error(`[requirement ${key} required to be function type]`);
+  }
+  return func(ctx);
 }
 
 export function* subsets<T>(array: T[], offset = 0): Generator<T[]> {

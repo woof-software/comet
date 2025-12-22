@@ -263,7 +263,7 @@ task('migrate', 'Runs migration')
 
       const migrationPath = `${__dirname}/../../deployments/${network}/${deployment}/migrations/${migrationName}.ts`;
       console.log(`Loading migration from ${migrationPath}`);
-      const [migration] = await loadMigrations([migrationPath]);
+      const [migration] = await loadMigrations([migrationPath], dm, governanceDm);
       if (!migration) {
         throw new Error(`Unknown migration for network ${network}/${deployment}: \`${migrationName}\`.`);
       }
@@ -384,7 +384,7 @@ task('deploy_and_migrate', 'Runs deploy and migration')
       }
 
       const migrationPath = `${__dirname}/../../deployments/${network}/${deployment}/migrations/${migrationName}.ts`;
-      const [migration] = await loadMigrations([migrationPath]);
+      const [migration] = await loadMigrations([migrationPath], dm, governanceDm);
       if (!migration) {
         throw new Error(`Unknown migration for network ${network}/${deployment}: \`${migrationName}\`.`);
       }
