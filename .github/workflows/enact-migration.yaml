@@ -105,11 +105,7 @@ jobs:
         with:
           wallet_connect_project_id: ${{ secrets.WALLET_CONNECT_PROJECT_ID }}
           requested_network: "${{ inputs.network }}"
-<<<<<<< HEAD
-          ethereum_url: "${{ fromJSON('{\"linea\":\"https://omniscient-hardworking-gas.linea-mainnet.quiknode.pro/${LINEA_QUICKNODE_KEY}\",\"ronin\":\"https://ronin.gateway.tenderly.co/${_TENDERLY_KEY_RONIN}\",\"unichain\":\"https://multi-boldest-patina.unichain-mainnet.quiknode.pro/${UNICHAIN_QUICKNODE_KEY}\",\"mantle\":\"https://rpc.ankr.com/mantle/${ANKR_KEY}\",\"optimism\":\"https://rpc.ankr.com/optimism/$ANKR_KEY\",\"fuji\":\"https://api.avax-test.network/ext/bc/C/rpc\",\"mainnet\":\"https://mainnet.infura.io/v3/${INFURA_KEY}\",\"sepolia\":\"https://rpc.ankr.com/eth_sepolia/${ANKR_KEY}\",\"polygon\":\"https://polygon-mainnet.infura.io/v3/$INFURA_KEY\",\"arbitrum\":\"https://rpc.ankr.com/arbitrum/$ANKR_KEY\",\"base\":\"https://rpc.ankr.com/base/$ANKR_KEY\",\"scroll\":\"https://rpc.scroll.io\"}')[github.event.inputs.network] }}"
-=======
           ethereum_url: "${{ fromJSON('{\"linea\":\"${LINEA_QUICKNODE_LINK}\",\"ronin\":\"${RONIN_QUICKNODE_LINK}\",\"unichain\":\"${UNICHAIN_QUICKNODE_LINK}\",\"mantle\":\"${MANTLE_QUICKNODE_LINK}\",\"optimism\":\"${OPTIMISM_QUICKNODE_LINK}\",\"fuji\":\"https://api.avax-test.network/ext/bc/C/rpc\",\"mainnet\":\"${MAINNET_QUICKNODE_LINK}\",\"sepolia\":\"${SEPOLIA_QUICKNODE_LINK}\",\"polygon\":\"${POLYGON_QUICKNODE_LINK}\",\"arbitrum\":\"${ARBITRUM_QUICKNODE_LINK}\",\"base\":\"${BASE_QUICKNODE_LINK}\",\"scroll\":\"https://rpc.scroll.io\"}')[github.event.inputs.network] }}"
->>>>>>> d2801ea71e7811121160acd2c786b50ee184b1ec
           port: 8585
         if: github.event.inputs.eth_pk == ''
 
@@ -118,11 +114,7 @@ jobs:
         with:
           wallet_connect_project_id: ${{ secrets.WALLET_CONNECT_PROJECT_ID }}
           requested_network: "${{ vars.GOV_NETWORK }}"
-<<<<<<< HEAD
-          ethereum_url: "${{ fromJSON('{\"mainnet\":\"https://mainnet.infura.io/v3/${INFURA_KEY}\",\"sepolia\":\"https://rpc.ankr.com/eth_sepolia/${ANKR_KEY}\"}')[vars.GOV_NETWORK] }}"
-=======
           ethereum_url: "${{ fromJSON('{\"mainnet\":\"${MAINNET_QUICKNODE_LINK}\",\"sepolia\":\"${SEPOLIA_QUICKNODE_LINK}\"}')[vars.GOV_NETWORK] }}"
->>>>>>> d2801ea71e7811121160acd2c786b50ee184b1ec
           port: 8685
         if: github.event.inputs.eth_pk == '' && vars.GOV_NETWORK != '' && github.event.inputs.network != vars.GOV_NETWORK
 
