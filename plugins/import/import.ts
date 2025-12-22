@@ -496,6 +496,7 @@ export async function loadEtherscanContract(network: string, address: string) {
   const maxRetries = 12; // Maximum number of API key rotations
   let lastError: Error | null = null;
 
+  
   for (let i = 0; i < maxRetries; i++) {
     try {
       const apiKey = getEtherscanApiKey(network, i);

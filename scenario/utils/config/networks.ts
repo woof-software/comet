@@ -69,13 +69,10 @@ export function applyNetworkOverrides(
       config.transfer.collateralAmount = 10n;
       config.common.amounts.collateral.standard = 10n;
       config.common.amounts.collateral.large = 10n;
+      config.liquidation.base.standard = 100000n;
+      config.liquidation.asset.standard = 10000n;
       config.liquidationBot.scenario.borrowCapacityUtilizationHigh = 99n;
-      config.liquidation.asset.standard = 200n;
-      config.bulker.asset.standard = 100n;
-      config.bulker.asset.alternate = 100n;
-      config.bulker.base.borrow = 20n;
-      config.bulker.asset.borrow = 10n;
-      config.bulker.cometAllocation = 200n;
+      config.liquidationBot.scenario.fudgeFactorShort = 60000n * 100n;
     }
 
     if (deployment === 'weth') {
@@ -91,9 +88,9 @@ export function applyNetworkOverrides(
     }
 
     if (deployment === 'usdbc') {
-      config.liquidation.base.standard = 100000n;
-      config.liquidation.asset.standard = 200n;
-      config.liquidationBot.scenario.fudgeFactorLong = 1n;
+      config.liquidation.base.standard = 100n;
+      config.liquidation.asset.standard = 50n;
+      config.liquidationBot.scenario.fudgeFactorLong = 60n * 60n;
     }
   }
 
