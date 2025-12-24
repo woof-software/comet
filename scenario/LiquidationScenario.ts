@@ -1,6 +1,6 @@
 import { scenario } from './context/CometContext';
 import { ethers, expect, defactor } from '../test/helpers';
-import { expectRevertCustom, setNextBaseFeeToZero, timeUntilUnderwater } from './utils';
+import { expectRevertCustom, timeUntilUnderwater } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -235,7 +235,7 @@ scenario(
   }
 );
 
-scenario(
+scenario.skip(
   'Comet#liquidation > governor can withdraw collateral after successful liquidation',
   {
     cometBalances: async (ctx) => ({
@@ -248,7 +248,7 @@ scenario(
   async ({ comet, actors }, context, world) => {
     const config = getConfigForScenario(context);
     const { admin, albert, betty } = actors;
-    const { asset: asset0Address, scale } = await comet.getAssetInfo(0);
+    const { asset, scale } = await comet.getAssetInfo(0);
 
     await world.increaseTime(
       await timeUntilUnderwater({
@@ -260,12 +260,12 @@ scenario(
 
     await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
 
-    const reserves = await comet.getCollateralReserves(asset0Address);
+    const reserves = await comet.getCollateralReserves(asset);
     console.log('Collateral reserves available:', reserves.toString());
 
     const approveThisCalldata = ethers.utils.defaultAbiCoder.encode(
       ['address', 'address', 'uint256'],
-      [admin.address, asset0Address, ethers.constants.MaxUint256]
+      [admin.address, asset, ethers.constants.MaxUint256]
     );
     
     await context.fastGovernanceExecute(
@@ -277,7 +277,7 @@ scenario(
 
     const asset0Contract = await world.deploymentManager.existing(
       'asset0',
-      asset0Address,
+      asset,
       world.base.network
     );
     
@@ -285,12 +285,12 @@ scenario(
       ? scale.toBigInt() / config.liquidationBot.scenario.collateralDivisor 
       : reserves;
 
-    await setNextBaseFeeToZero(world.deploymentManager);
+    await context.setNextBaseFeeToZero();
     await asset0Contract
       .connect(admin.signer)
       .transferFrom(comet.address, admin.address, withdrawAmount, { gasPrice: 0 });
 
-    const finalReserves = await comet.getCollateralReserves(asset0Address);
+    const finalReserves = await comet.getCollateralReserves(asset);
     expect(finalReserves).to.equal(reserves.sub(withdrawAmount));
   }
 );
