@@ -184,9 +184,9 @@ scenario(
   'Comet#transferFrom > withdraw to repay',
   {
     cometBalances: async (ctx) => ({
-      albert: { $base: getConfigForScenario(ctx).common.amounts.base.small, $asset0: getConfigForScenario(ctx).common.amounts.collateral.small },
-      betty: { $base: -getConfigForScenario(ctx).common.amounts.base.small },
-      charles: { $base: getConfigForScenario(ctx).common.amounts.base.small },
+      albert: { $base: getConfigForScenario(ctx).common.amounts.base.large, $asset0: getConfigForScenario(ctx).common.amounts.collateral.large },
+      betty: { $base: -getConfigForScenario(ctx).common.amounts.base.large },
+      charles: { $base: getConfigForScenario(ctx).common.amounts.base.large },
     }),
   },
   async ({ comet, actors }, context) => {

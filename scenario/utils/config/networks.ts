@@ -30,6 +30,7 @@ export function applyNetworkOverrides(
       config.withdraw.baseAmount = 100n;
       config.withdraw.assetAmount = 200n;
       config.common.timing.interestSeconds = 70n;
+      config.common.amounts.base.large = 2n;
     }
 
     if (deployment === 'wsteth') {
