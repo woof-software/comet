@@ -80,13 +80,22 @@ export function applyNetworkOverrides(
   if (network === 'arbitrum') {
     if (deployment === 'usdc' || deployment === 'usdt') {
       config.withdraw.assetAmount = 3500n;
+      config.withdraw.baseAmount = 100n;
+      config.bulker.base.borrow = 2n;
+      config.supply.collateralAmount = 4n;
+      config.transfer.collateralAmount = 4n;
+      config.withdraw.collateralAmount = 4n;
+      config.common.amounts.collateral.large = 20000n;
+      config.transfer.assetAmount = 10000n;
     }
 
     if (deployment === 'usdc.e') {
-      config.withdraw.assetAmount = 7000n;
+      config.withdraw.assetAmount = 17000n;
       config.bulker.asset.standard = 10000n;
       config.bulker.asset.alternate = 10000n;
+      config.bulker.base.borrow = 100n;
       config.transfer.assetAmount = 10000n;
+      config.common.amounts.collateral.large = 20000n;
       config.liquidation.factors.denominator = 84n;
       config.liquidation.base.standard = 100000n;
       config.liquidation.base.medium = 50000n;
