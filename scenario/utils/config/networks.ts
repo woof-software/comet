@@ -125,9 +125,12 @@ export function applyNetworkOverrides(
     }
 
     if (deployment === 'usdt') {
-      config.withdraw.assetAmount = 10000n;
+      config.withdraw.assetAmount = 20000n;
+      config.withdraw.baseAmount = 100n;
       config.transfer.assetAmount = 500000n;
       config.transfer.baseAmount = 100n;
+      config.rewards.assetAmount = 20000n;
+      config.rewards.baseAmount = 1000n;
     }
   }
 
