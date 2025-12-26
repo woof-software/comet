@@ -61,8 +61,15 @@ export function applyNetworkOverrides(
       config.liquidation.asset.medium = 99n;
     }
 
+    if (deployment === 'usdc') {
+      config.supply.collateralAmount = 4n;
+      config.transfer.collateralAmount = 4n;
+      config.withdraw.collateralAmount = 4n;
+    }
+
     if (deployment === 'weth') {
       config.liquidation.base.standard = 1000n;
+      config.common.amounts.base.large = 2n;
     }
   }
 
