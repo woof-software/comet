@@ -116,6 +116,9 @@ export function applyNetworkOverrides(
 
     if (deployment === 'weth') {
       config.liquidation.base.standard = 1000n;
+      config.supply.collateralAmount = 4n;
+      config.transfer.collateralAmount = 4n;
+      config.withdraw.collateralAmount = 4n;
     }
   }
 
@@ -158,6 +161,9 @@ export function applyNetworkOverrides(
   if (network === 'scroll' && deployment === 'usdc') {
     config.bulker.asset.standard = 200n;
     config.bulker.asset.alternate = 200n;
+    config.liquidation.base.standard = 1000n;
+    config.liquidation.asset.standard = 10n;
+    config.liquidationBot.scenario.borrowCapacityUtilizationHigh = 10n;
   }
 
   if (network === 'sepolia' && deployment === 'usdc') {
@@ -183,18 +189,25 @@ export function applyNetworkOverrides(
     }
   }
 
-  if (network === 'unichain' && deployment === 'weth') {
-    config.liquidation.base.standard = 1000n;
-    config.liquidation.base.medium = 350n;
-    config.liquidation.asset.standard = 100n;
-    config.bulker.asset.standard = 500n;
-    config.bulker.cometAllocation = 500n;
-    config.bulker.base.borrow = 100n;
-    config.bulker.asset.borrow = 50n;
-    config.rewards.baseAmount = 100n;
-    config.rewards.assetAmount = 1000n;
-    config.transfer.baseAmount = 100n;
-    config.transfer.assetAmount = 500n;
+  if (network === 'unichain') {
+    if (deployment === 'weth') {
+      config.liquidation.base.standard = 10000n;
+      config.liquidation.base.medium = 350n;
+      config.liquidation.asset.standard = 250n;
+      config.bulker.asset.standard = 500n;
+      config.bulker.cometAllocation = 500n;
+      config.bulker.base.borrow = 100n;
+      config.bulker.asset.borrow = 50n;
+      config.rewards.baseAmount = 100n;
+      config.rewards.assetAmount = 1000n;
+      config.transfer.baseAmount = 100n;
+      config.transfer.assetAmount = 500n;
+    }
+
+    if (deployment === 'usdc') {
+      config.liquidation.base.standard = 10n;
+      config.liquidationBot.scenario.fudgeFactorLong = 6000n * 6000n;
+    }
   }
 
   if (network === 'fuji' && deployment === 'usdc') {

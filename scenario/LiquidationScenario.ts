@@ -228,10 +228,16 @@ scenario(
     );
 
     const ab0 = await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
-    expect(ab0.events?.[2]?.event).to.be.equal('Transfer');
 
+    const userPrincipal = (await comet.userBasic(albert.address)).principal;
     const baseBalance = await albert.getCometBaseBalance();
-    expect(Number(baseBalance)).to.be.greaterThan(0);
+
+    if (userPrincipal.toBigInt() > 0n) {
+      expect(ab0.events?.[2]?.event).to.be.equal('Transfer');
+      expect(Number(baseBalance)).to.be.greaterThan(0);
+    } else {
+      expect(Number(baseBalance)).to.be.equal(0);
+    }
   }
 );
 

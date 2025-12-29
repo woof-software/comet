@@ -92,12 +92,16 @@ export const COMP_WHALES = {
 export const WHALES = {
   mainnet: [
     '0xf977814e90da44bfa03b6295a0616a897441acec',
-    '0x0548f59fee79f8832c299e01dca5c76f034f558e',
-    '0x218b95be3ed99141b0144dba6ce88807c4ad7c09',
-    '0xf04a5cc80b1e94c69b48f5ee68a08cd2f09a7c3e',
-    '0x2775b1c75658be0f640272ccb8c72ac986009e38',
-    '0x1a9c8182c09f50c8318d769245bea52c32be35bc',
-    '0x3c22ec75ea5D745c78fc84762F7F1E6D82a2c5BF',
+    // '0x0548f59fee79f8832c299e01dca5c76f034f558e',
+    // '0x218b95be3ed99141b0144dba6ce88807c4ad7c09',
+    '0xf04a5cc80b1e94c69b48f5ee68a08cd2f09a7c3e', // weth whale
+    // '0x2775b1c75658be0f640272ccb8c72ac986009e38',
+    '0x1a9c8182c09f50c8318d769245bea52c32be35bc', // uni whale
+    '0x3c22ec75ea5D745c78fc84762F7F1E6D82a2c5BF', // wstETH/stETH whale
+    '0xF977814e90dA44bFA03b6295A0616a897441aceC', // usdt whale
+    '0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503', // usdt whale
+    '0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee', // usdt whale
+    '0x23878914EFE38d27C4D67Ab83ed1b93A74D4086a', // usdt whale
     '0x3B95bC951EE0f553ba487327278cAc44f29715E5', // wUSDM whale
     '0x88a1493366D48225fc3cEFbdae9eBb23E323Ade3', // USDe whale
     '0x43594da5d6A03b2137a04DF5685805C676dEf7cB', // rsETH whale
@@ -130,7 +134,6 @@ export const WHALES = {
     '0x75231079973C23e9eB6180fa3D2fc21334565aB5', // LBTC whale
     '0x96C8AE2AC9A5cd5fC354e375dB4d0ca75fc0685e', // LBTC whale
     '0xCecd97DAF0B5a8A4E870C17ef825c8EBd602B2B8', // LBTC whale
-    '0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503' // usdt whale
   ],
   polygon: [
     '0xF977814e90dA44bFA03b6295A0616a897441aceC', // USDT whale
@@ -212,7 +215,7 @@ export const WHALES = {
     '0x233493E9DC68e548AC27E4933A600A3A4682c0c3', // FBTC whale
     '0xCd83CbBFCE149d141A5171C3D6a0F0fCCeE225Ab', // COMP whale
   ],
-  'unichain': [
+  unichain: [
     '0x4200000000000000000000000000000000000006', // WETH whale
     '0x7Ae0911198AD568E1FE4af3cf81e36A29983778f', // wstETH whale
     '0x4B2cf5C94A88934870B523983B22e6d2dd1b6577', // wstETH whale
