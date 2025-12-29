@@ -73,8 +73,20 @@ export function applyNetworkOverrides(
     }
   }
 
-  if (network === 'optimism' && deployment === 'weth') {
-    config.liquidation.base.standard = 1000n;
+  if (network === 'optimism') {
+    if (deployment === 'weth') {
+      config.liquidation.base.standard = 1000n;
+      config.supply.collateralAmount = 4n;
+      config.transfer.collateralAmount = 4n;
+      config.withdraw.collateralAmount = 4n;
+    }
+
+    if (deployment === 'usdc' || deployment === 'usdt') {
+      config.bulker.base.borrow = 2n;
+      config.common.amounts.collateral.large = 20000n;
+      config.transfer.assetAmount = 10000n;
+      config.withdraw.assetAmount = 10000n;
+    }
   }
 
   if (network === 'arbitrum') {
