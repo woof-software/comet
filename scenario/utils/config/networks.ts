@@ -205,8 +205,8 @@ export function applyNetworkOverrides(
     }
 
     if (deployment === 'usdc') {
-      config.liquidation.base.standard = 10n;
-      config.liquidationBot.scenario.fudgeFactorLong = 6000n * 6000n;
+      config.liquidation.base.standard = 100000n;
+      config.liquidationBot.scenario.fudgeFactorLong = 600n * 600n;
     }
   }
 
