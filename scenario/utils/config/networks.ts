@@ -49,6 +49,13 @@ export function applyNetworkOverrides(
     if (deployment === 'usds') {
       config.liquidation.asset.standard = 100n;
     }
+
+    if (deployment === 'usdt') {
+      config.liquidation.base.tiny = 5n;
+      config.liquidation.base.medium = 5n;
+      config.liquidation.base.standard = 5n;
+      config.liquidation.base.large = 5n;
+    }
   }
 
   if (network === 'base') {
@@ -65,11 +72,19 @@ export function applyNetworkOverrides(
       config.supply.collateralAmount = 4n;
       config.transfer.collateralAmount = 4n;
       config.withdraw.collateralAmount = 4n;
+      config.rewards.assetAmount = 4n;
+      config.rewards.baseAmount = 4n;
     }
 
     if (deployment === 'weth') {
       config.liquidation.base.standard = 1000n;
       config.common.amounts.base.large = 2n;
+      config.rewards.assetAmount = 4n;
+      config.rewards.baseAmount = 4n;
+    }
+
+    if (deployment === 'usdbc') {
+      config.rewards.assetAmount = 4n;
     }
   }
 
@@ -78,7 +93,9 @@ export function applyNetworkOverrides(
       config.liquidation.base.standard = 1000n;
       config.supply.collateralAmount = 4n;
       config.transfer.collateralAmount = 4n;
+      config.transfer.baseAmount = 2n;
       config.withdraw.collateralAmount = 4n;
+      config.common.amounts.collateral.large = 4n;
     }
 
     if (deployment === 'usdc' || deployment === 'usdt') {
