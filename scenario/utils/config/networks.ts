@@ -147,7 +147,7 @@ export function applyNetworkOverrides(
     config.withdraw.baseAmount = 10n;
     config.withdraw.alternateBase = 10n;
     config.withdraw.assetAmount = 100000n;
-    config.withdraw.alternateAsset = 10000n;
+    config.withdraw.alternateAsset = 100000n;
     config.liquidation.base.standard = 150n;
     config.liquidation.base.medium = 50n;
     config.liquidation.asset.standard = 5n;
