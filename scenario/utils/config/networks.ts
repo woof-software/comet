@@ -187,8 +187,6 @@ export function applyNetworkOverrides(
   if (network === 'scroll' && deployment === 'usdc') {
     config.bulker.asset.standard = 50n;
     config.bulker.asset.alternate = 50n;
-    // config.liquidation.base.standard = 1000n;
-    // config.liquidation.asset.standard = 10n;
     config.liquidationBot.scenario.borrowCapacityUtilizationHigh = 10n;
   }
 

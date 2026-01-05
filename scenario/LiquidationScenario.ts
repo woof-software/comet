@@ -392,13 +392,16 @@ scenario(
       amount: borrowAmount
     });
 
-    await world.increaseTime(
-      await timeUntilUnderwater({
-        comet,
-        actor: albert,
-        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
-      })
-    );
+    while(!(await comet.isLiquidatable(albert.address))) {
+      await comet.accrueAccount(albert.address);
+      await world.increaseTime(
+        await timeUntilUnderwater({
+          comet,
+          actor: albert,
+          fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
+        })
+      );
+    }
 
     const lp0 = await comet.liquidatorPoints(betty.address);
 
@@ -500,13 +503,16 @@ scenario(
     const { albert, betty, charles } = actors;
     const numAssets = await comet.numAssets();
 
-    await world.increaseTime(
-      await timeUntilUnderwater({
-        comet,
-        actor: albert,
-        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
-      })
-    );
+    while(!(await comet.isLiquidatable(albert.address))) {
+      await comet.accrueAccount(albert.address);
+      await world.increaseTime(
+        await timeUntilUnderwater({
+          comet,
+          actor: albert,
+          fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
+        })
+      );
+    }
 
     const lpBetty0 = await comet.liquidatorPoints(betty.address);
     const lpCharles0 = await comet.liquidatorPoints(charles.address);
