@@ -140,23 +140,27 @@ export function applyNetworkOverrides(
   }
 
   if (network === 'ronin' && deployment === 'weth') {
-    config.transfer.baseAmount = 10n;
+    config.transfer.baseAmount = 4n;
     config.transfer.assetAmount = 200000n;
+    config.transfer.collateralAmount = 4n;
     config.rewards.assetAmount = 1000000n;
     config.rewards.baseAmount = 200n;
-    config.withdraw.baseAmount = 10n;
+    config.withdraw.baseAmount = 4n;
     config.withdraw.alternateBase = 10n;
-    config.withdraw.assetAmount = 100000n;
+    config.withdraw.assetAmount = 200000n;
     config.withdraw.alternateAsset = 100000n;
     config.liquidation.base.standard = 150n;
     config.liquidation.base.medium = 50n;
-    config.liquidation.asset.standard = 5n;
+    config.liquidation.asset.standard = 5000n;
     config.bulker.asset.standard = 100000n;
     config.bulker.asset.alternate = 100000n;
     config.bulker.cometAllocation = 100n;
     config.bulker.base.borrow = 10n;
     config.bulker.asset.borrow = 10n;
     config.bulker.base.standard = 100n;
+    config.supply.baseBalance = 2n;
+    config.common.amounts.base.large = 4n;
+    config.common.amounts.collateral.large = 200000n;
   }
 
   if (network === 'polygon') {
