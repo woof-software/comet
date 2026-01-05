@@ -14,12 +14,12 @@ export function applyNetworkOverrides(
 
   if (network === 'mainnet') {
     if (deployment === 'wbtc') {
-      config.bulker.base.standard = 200n;
-      config.bulker.asset.standard = 400n;
-      config.bulker.asset.alternate = 400n;
+      config.bulker.base.standard = 2n;
+      config.bulker.asset.standard = 100n;
+      config.bulker.asset.alternate = 100n;
       config.bulker.cometAllocation = 200n;
-      config.bulker.base.borrow = 100n;
-      config.bulker.asset.borrow = 50n;
+      config.bulker.base.borrow = 2n;
+      config.bulker.asset.borrow = 2n;
       config.liquidation.base.standard = 1000n;
       config.liquidation.base.medium = 500n;
       config.liquidation.asset.standard = 100n;
@@ -27,8 +27,8 @@ export function applyNetworkOverrides(
       config.rewards.baseAmount = 10n;
       config.transfer.baseAmount = 100n;
       config.transfer.assetAmount = 500n;
-      config.withdraw.baseAmount = 100n;
-      config.withdraw.assetAmount = 200n;
+      config.withdraw.baseAmount = 10n;
+      config.withdraw.assetAmount = 20n;
       config.common.timing.interestSeconds = 70n;
       config.common.amounts.base.large = 2n;
     }
@@ -51,10 +51,15 @@ export function applyNetworkOverrides(
     }
 
     if (deployment === 'usdt') {
-      config.liquidation.base.tiny = 5n;
-      config.liquidation.base.medium = 5n;
-      config.liquidation.base.standard = 5n;
-      config.liquidation.base.large = 5n;
+      config.liquidation.base.tiny = 1000n;
+      config.liquidation.base.medium = 1000n;
+      config.liquidation.base.standard = 1000n; 
+      config.liquidation.base.large = 1000n;
+      config.liquidation.asset.tiny = 100n;
+      config.liquidation.asset.small = 100n;
+      config.liquidation.asset.medium = 100n;
+      config.liquidation.asset.standard = 100n;
+      config.liquidation.asset.large = 100n;
     }
   }
 
@@ -180,10 +185,10 @@ export function applyNetworkOverrides(
   }
 
   if (network === 'scroll' && deployment === 'usdc') {
-    config.bulker.asset.standard = 200n;
-    config.bulker.asset.alternate = 200n;
-    config.liquidation.base.standard = 1000n;
-    config.liquidation.asset.standard = 10n;
+    config.bulker.asset.standard = 50n;
+    config.bulker.asset.alternate = 50n;
+    // config.liquidation.base.standard = 1000n;
+    // config.liquidation.asset.standard = 10n;
     config.liquidationBot.scenario.borrowCapacityUtilizationHigh = 10n;
   }
 
@@ -198,6 +203,7 @@ export function applyNetworkOverrides(
       config.supply.collateralAmount = 10n;
       config.transfer.collateralAmount = 10n;
       config.withdraw.collateralAmount = 10n;
+      config.liquidationBot.scenario.borrowCapacityUtilizationHigh = 10n;
     }
 
     if (deployment === 'weth') {
