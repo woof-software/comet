@@ -181,6 +181,8 @@ export function applyNetworkOverrides(
       config.transfer.baseAmount = 100n;
       config.rewards.assetAmount = 20000n;
       config.rewards.baseAmount = 1000n;
+      config.bulker.asset.standard = 200n;
+      config.bulker.asset.alternate = 200n;
     }
   }
 
