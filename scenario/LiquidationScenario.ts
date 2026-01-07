@@ -1,6 +1,6 @@
 import { scenario } from './context/CometContext';
 import { ethers, expect, defactor } from '../test/helpers';
-import { expectRevertCustom, timeUntilUnderwater } from './utils';
+import { expectRevertCustom, isBridgedDeployment, timeUntilUnderwater } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -241,25 +241,24 @@ scenario(
   }
 );
 
-scenario.skip(
+/**
+ * @note We work here with token with index 1, as wbtc market has USDT as zero collateral and has not function `transferFrom`
+ */
+scenario(
   'Comet#liquidation > governor can withdraw collateral after successful liquidation',
   {
-    filter: async (ctx) => matchesDeployment(ctx, [
-      { network: 'mainnet', deployment: 'usdt' }, 
-      { network: 'mainnet', deployment: 'usds' }, 
-      { network: 'mainnet', deployment: 'usdc' }]
-    ),
+    filter: async (ctx) => !isBridgedDeployment(ctx),
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
-        $asset0: getConfigForScenario(ctx).liquidation.asset.smallPosition
+        $asset1: getConfigForScenario(ctx).liquidation.asset.smallPosition
       },
     }),
   },
   async ({ comet, actors }, context, world) => {
     const config = getConfigForScenario(context);
     const { admin, albert, betty } = actors;
-    const { asset, scale } = await comet.getAssetInfo(0);
+    const { asset, scale } = await comet.getAssetInfo(1);
 
     await world.increaseTime(
       await timeUntilUnderwater({
@@ -286,8 +285,8 @@ scenario.skip(
       [approveThisCalldata]
     );
 
-    const asset0Contract = await world.deploymentManager.existing(
-      'asset0',
+    const asset1Contract = await world.deploymentManager.existing(
+      'asset1',
       asset,
       world.base.network
     );
@@ -297,7 +296,7 @@ scenario.skip(
       : reserves;
 
     await context.setNextBaseFeeToZero();
-    await asset0Contract
+    await asset1Contract
       .connect(admin.signer)
       .transferFrom(comet.address, admin.address, withdrawAmount, { gasPrice: 0 });
 
