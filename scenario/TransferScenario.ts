@@ -143,7 +143,7 @@ scenario(
   {
     cometBalances: async (ctx) =>  (
       {
-        albert: { $base: getConfigForScenario(ctx).transfer.baseAmount, $asset0: getConfigForScenario(ctx).common.amounts.collateral.large },
+        albert: { $base: getConfigForScenario(ctx).transfer.baseAmount, $asset0: getConfigForScenario(ctx).common.cometBalances.collateral.asset0CometBalance },
         betty: { $base: -getConfigForScenario(ctx).transfer.baseAmount },
         charles: { $base: getConfigForScenario(ctx).transfer.baseAmount },
       }
@@ -185,11 +185,11 @@ scenario(
   {
     cometBalances: async (ctx) => ({
       albert: { 
-        $base: getConfigForScenario(ctx).common.amounts.base.large, 
-        $asset0: getConfigForScenario(ctx).common.amounts.collateral.large 
+        $base: getConfigForScenario(ctx).common.cometBalances.base, 
+        $asset0: getConfigForScenario(ctx).common.cometBalances.collateral.asset0CometBalance 
       },
-      betty: { $base: -getConfigForScenario(ctx).common.amounts.base.large },
-      charles: { $base: getConfigForScenario(ctx).common.amounts.base.large },
+      betty: { $base: -getConfigForScenario(ctx).common.cometBalances.base },
+      charles: { $base: getConfigForScenario(ctx).common.cometBalances.base },
     }),
   },
   async ({ comet, actors }, context) => {
@@ -201,16 +201,16 @@ scenario(
     const utilization = await comet.getUtilization();
     const borrowRate = (await comet.getBorrowRate(utilization)).toBigInt();
 
-    expectApproximately(await albert.getCometBaseBalance(), BigInt(config.common.amounts.base.large) * scale, getInterest(BigInt(config.common.amounts.base.large) * scale, borrowRate, config.common.timing.interestSeconds) + config.common.tolerances.interest.small);
-    expectApproximately(await betty.getCometBaseBalance(), BigInt(-config.common.amounts.base.large) * scale, getInterest(BigInt(config.common.amounts.base.large) * scale, borrowRate, config.common.timing.interestSeconds) + config.common.tolerances.interest.small);
+    expectApproximately(await albert.getCometBaseBalance(), BigInt(config.common.cometBalances.base) * scale, getInterest(BigInt(config.common.cometBalances.base) * scale, borrowRate, config.common.timing.interestSeconds) + config.common.tolerances.interest.small);
+    expectApproximately(await betty.getCometBaseBalance(), BigInt(-config.common.cometBalances.base) * scale, getInterest(BigInt(config.common.cometBalances.base) * scale, borrowRate, config.common.timing.interestSeconds) + config.common.tolerances.interest.small);
 
     await albert.allow(betty, true);
 
-    const toTransfer = (config.common.amounts.base.large - 1n) * scale;
+    const toTransfer = (config.common.cometBalances.base - 1n) * scale;
     await betty.transferAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: toTransfer });
 
-    expectApproximately(await albert.getCometBaseBalance(), config.transfer.remainingBalance * scale, getInterest(BigInt(config.common.amounts.base.large) * scale, borrowRate, config.common.timing.interestSeconds) + config.common.tolerances.interest.small);
-    expectApproximately(await betty.getCometBaseBalance(), -config.transfer.remainingBalance * scale, getInterest(BigInt(config.common.amounts.base.large) * scale, borrowRate, config.common.timing.interestSeconds) + config.common.tolerances.interest.small);
+    expectApproximately(await albert.getCometBaseBalance(), config.transfer.remainingBalance * scale, getInterest(BigInt(config.common.cometBalances.base) * scale, borrowRate, config.common.timing.interestSeconds) + config.common.tolerances.interest.small);
+    expectApproximately(await betty.getCometBaseBalance(), -config.transfer.remainingBalance * scale, getInterest(BigInt(config.common.cometBalances.base) * scale, borrowRate, config.common.timing.interestSeconds) + config.common.tolerances.interest.small);
   }
 );
 
@@ -220,7 +220,7 @@ scenario(
     cometBalances: async (ctx) => ({
       albert: { 
         $base: getConfigForScenario(ctx).transfer.baseAmount,
-        $asset0: defactor(getConfigForScenario(ctx).common.amounts.collateral.tiny) 
+        $asset0: defactor(getConfigForScenario(ctx).common.cometBalances.collateral.undercollateralized) 
       },
       betty: { $base: -getConfigForScenario(ctx).transfer.baseAmount },
       charles: { $base: getConfigForScenario(ctx).transfer.baseAmount },
@@ -265,7 +265,7 @@ scenario(
     cometBalances: async (ctx) => ({
       albert: { 
         $base: getConfigForScenario(ctx).transfer.baseAmount,
-        $asset0: defactor(getConfigForScenario(ctx).common.amounts.collateral.tiny) 
+        $asset0: defactor(getConfigForScenario(ctx).common.cometBalances.collateral.undercollateralized) 
       },
       betty: { $base: -getConfigForScenario(ctx).transfer.baseAmount },
       charles: { $base: getConfigForScenario(ctx).transfer.baseAmount },
@@ -386,7 +386,7 @@ scenario(
       albert.transferAsset({
         dst: albert.address,
         asset: baseToken,
-        amount: config.common.amounts.base.small,
+        amount: config.transfer.baseAmount,
       }),
       'NoSelfTransfer()'
     );
@@ -406,7 +406,7 @@ scenario(
       albert.transferAsset({
         dst: albert.address,
         asset: collateralAsset.asset,
-        amount: config.common.amounts.collateral.small,
+        amount: config.transfer.collateralAmount,
       }),
       'NoSelfTransfer()'
     );
@@ -429,7 +429,7 @@ scenario(
         src: betty.address,
         dst: betty.address,
         asset: baseToken,
-        amount: config.common.amounts.base.small,
+        amount: config.transfer.baseAmount,
       }),
       'NoSelfTransfer()'
     );
@@ -452,7 +452,7 @@ scenario(
         src: betty.address,
         dst: betty.address,
         asset: collateralAsset.asset,
-        amount: config.common.amounts.collateral.small,
+        amount: config.transfer.collateralAmount,
       }),
       'NoSelfTransfer()'
     );
@@ -474,7 +474,7 @@ scenario(
         src: albert.address,
         dst: betty.address,
         asset: baseAsset.address,
-        amount: config.common.amounts.base.tiny * scale,
+        amount: config.transfer.baseAmount * scale,
       }),
       'Unauthorized()'
     );
@@ -500,7 +500,7 @@ scenario(
       albert.transferAsset({
         dst: betty.address,
         asset: baseToken,
-        amount: config.common.amounts.base.small,
+        amount: config.transfer.baseAmount,
       }),
       'Paused()'
     );
@@ -528,7 +528,7 @@ scenario(
         src: betty.address,
         dst: albert.address,
         asset: baseToken,
-        amount: config.common.amounts.base.small,
+        amount: config.transfer.baseAmount,
       }),
       'Paused()'
     );
@@ -540,7 +540,7 @@ scenario(
   {
     filter: async (ctx) => await hasMinBorrowGreaterThanOne(ctx),
     cometBalances: async (ctx) => ({
-      albert: { $base: 0, $asset0: getConfigForScenario(ctx).common.amounts.collateral.standard }
+      albert: { $base: 0, $asset0: getConfigForScenario(ctx).transfer.collateralAmount }
     })
   },
   async ({ comet, actors }, context) => {

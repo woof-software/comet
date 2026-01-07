@@ -176,11 +176,11 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         albert: {
-          $base: `== ${getConfigForScenario(ctx).liquidation.base.standard}`
+          $base: `== ${getConfigForScenario(ctx).liquidation.base.borrowPrincipal}`
         }
       }),
     cometBalances: async (ctx) => ({
-      albert: { $base: -getConfigForScenario(ctx).liquidation.base.standard },
+      albert: { $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal },
     }),
   },
   async ({ comet, actors }, context) => {
@@ -191,10 +191,10 @@ scenario(
     const scale = (await comet.baseScale()).toBigInt();
     const utilization = await comet.getUtilization();
     const borrowRate = (await comet.getBorrowRate(utilization)).toBigInt();
-    expectApproximately(await albert.getCometBaseBalance(), -BigInt(config.liquidation.base.standard) * scale, getInterest(BigInt(config.liquidation.base.standard) * scale, borrowRate, config.supply.interestTimeFactor.short) + config.common.tolerances.interest.small);
+    expectApproximately(await albert.getCometBaseBalance(), -BigInt(config.liquidation.base.borrowPrincipal) * scale, getInterest(BigInt(config.liquidation.base.borrowPrincipal) * scale, borrowRate, config.supply.interestTimeFactor.short) + config.common.tolerances.interest.small);
     await baseAsset.approve(albert, comet.address);
-    const txn = await albert.supplyAsset({ asset: baseAsset.address, amount: BigInt(config.liquidation.base.standard) * scale });
-    expectApproximately(await albert.getCometBaseBalance(), 0n, getInterest(BigInt(config.liquidation.base.standard) * scale, borrowRate, config.supply.interestTimeFactor.long) + config.common.tolerances.interest.medium);
+    const txn = await albert.supplyAsset({ asset: baseAsset.address, amount: BigInt(config.liquidation.base.borrowPrincipal) * scale });
+    expectApproximately(await albert.getCometBaseBalance(), 0n, getInterest(BigInt(config.liquidation.base.borrowPrincipal) * scale, borrowRate, config.supply.interestTimeFactor.long) + config.common.tolerances.interest.medium);
     return txn;
   }
 );

@@ -1,4 +1,3 @@
-import { exp } from '../../../test/helpers';
 import { CommonConfig } from './types';
 
 export const commonConfig: CommonConfig = {
@@ -12,7 +11,6 @@ export const commonConfig: CommonConfig = {
   tolerances: {
     interest: { small: 1n, medium: 2n, large: 4n },
     balance: 1n,
-    borrow: exp(1.6e-6, 18),
   },
 
   timing: {
@@ -20,18 +18,11 @@ export const commonConfig: CommonConfig = {
     interestSeconds: 110n,
   },
 
-  amounts: {
-    base: {
-      tiny: exp(0.000001, 18),
-      small: 2n,
-      standard: 1000n,
-      large: 10000n,
-    },
+  cometBalances: {
+    base: 10000n,
     collateral: {
-      tiny: 1n,
-      small: 50n,
-      standard: 100n,
-      large: 5000n
+      undercollateralized: 1n,
+      asset0CometBalance: 5000n
     },
   },
 };

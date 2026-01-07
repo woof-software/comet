@@ -1,10 +1,9 @@
-import { commonConfig } from './common';
 import { TransferConfig } from './types';
 
 export const transferConfig: TransferConfig = {
-  baseAmount: commonConfig.amounts.base.standard,
+  baseAmount: 1000n,
   assetAmount: 5000n,
-  collateralAmount: commonConfig.amounts.collateral.standard,
+  collateralAmount: 100n,
   multiplier: { num: 25n, denom: 10n },
   result: { num: 15n, denom: 10n },
   remainingBalance: 1n,

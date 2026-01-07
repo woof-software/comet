@@ -8,15 +8,14 @@ export interface CommonConfig {
     tolerances: {
       interest: { small: bigint, medium: bigint, large: bigint };
       balance: bigint;
-      borrow: bigint;
     };
     timing: {
       oneDay: bigint;
       interestSeconds: bigint;
     };
-    amounts: {
-      base: { tiny: bigint, small: bigint, standard: bigint, large: bigint };
-      collateral: { tiny: bigint, small: bigint, standard: bigint, large: bigint };
+    cometBalances: {
+      base: bigint;
+      collateral: { undercollateralized: bigint, asset0CometBalance: bigint };
     };
   }
   
@@ -46,7 +45,6 @@ export interface SupplyConfig {
     baseBorrowWithFees: bigint;
     baseBorrowRepayAmount: bigint;
     baseBalance: bigint;
-    baseBalanceMax: bigint;
     baseSupplySmall: bigint;
     baseSupplyAfterFees: bigint;
     usdtFeeBasisPoints: bigint;
@@ -54,26 +52,21 @@ export interface SupplyConfig {
     usdtRemainingDebt: bigint;
     ethBalanceForGas: bigint;
     interestTimeFactor: { short: bigint, long: bigint };
-    minBorrow: number;
   }
   
 export interface BulkerConfig {
-    base: { standard: bigint, weth: bigint, borrow: bigint };
-    asset: { standard: bigint, alternate: bigint, minimal: bigint, borrow: bigint };
+    base: { supply: bigint, borrow: bigint };
+    asset: { supply: bigint, supplyAlternate: bigint, borrow: bigint };
+    eth: { supply: bigint, withdraw: bigint };
+    weth: { borrow: bigint, transfer: bigint, supply: bigint };
     cometAllocation: bigint;
-    supplyAmount: bigint;
-    withdrawAmount: bigint;
-    weth: { borrowBase: bigint, transferBase: bigint };
   }
   
 export interface LiquidationConfig {
-    base: { tiny: bigint, standard: bigint, medium: bigint, large: bigint };
+    base: { borrowPrincipal: bigint, undercollateralized: bigint };
     asset: {
-      tiny: bigint;
-      small: bigint;
-      standard: bigint;
-      medium: bigint;
-      large: bigint;
+      smallPosition: number;
+      supplyAmount: bigint;
     };
     factors: { denominator: bigint, alternateDenominator: bigint, numerator: bigint };
     timeMultiplier: number;
@@ -92,11 +85,11 @@ export interface RewardsConfig {
   
 export interface AuthorizationConfig {
     expiryOffset: {
-      short: bigint;
-      long: bigint;
-      veryLong: bigint;
-      altered: bigint;
-      past: bigint;
+      failed: number;
+      valid: number;
+      extended: number;
+      altered: number;
+      past: number;
     };
     invalidVValue: bigint;
     maxSValuePlusOne: string;

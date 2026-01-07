@@ -549,15 +549,15 @@ scenario(
     filter: async (ctx) => matchesDeployment(ctx, [{ network: 'mainnet' }, { network: 'polygon' }, { network: 'arbitrum' }]),
     tokenBalances: async (ctx) => (
       {
-        $comet: { $base: getConfigForScenario(ctx).liquidation.base.standard },
+        $comet: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal },
       }
     ),
     cometBalances: async (ctx) => (
       {
         albert: {
-          $asset0: `== ${getConfigForScenario(ctx).liquidation.asset.standard}`,
+          $asset0: `== ${getConfigForScenario(ctx).liquidation.asset.supplyAmount}`,
         },
-        betty: { $base: getConfigForScenario(ctx).liquidation.base.medium },
+        betty: { $base: getConfigForScenario(ctx).liquidation.base.undercollateralized },
       }
     )
   },
@@ -649,15 +649,15 @@ scenario(
     filter: async (ctx) => matchesDeployment(ctx, [{ network: 'mainnet' }, { network: 'polygon' }, { network: 'arbitrum' }]),
     tokenBalances: async (ctx) => (
       {
-        $comet: { $base: getConfigForScenario(ctx).liquidation.base.standard },
+        $comet: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal },
       }
     ),
     cometBalances: async (ctx) => (
       {
         albert: {
-          $asset0: `== ${getConfigForScenario(ctx).liquidation.asset.standard}`,
+          $asset0: `== ${getConfigForScenario(ctx).liquidation.asset.supplyAmount}`,
         },
-        betty: { $base: getConfigForScenario(ctx).liquidation.base.medium },
+        betty: { $base: getConfigForScenario(ctx).liquidation.base.undercollateralized },
       }
     )
   },

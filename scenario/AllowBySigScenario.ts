@@ -19,7 +19,7 @@ scenario(
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + Number(config.authorization.expiryOffset.long);
+    const expiry = (await world.timestamp()) + config.authorization.expiryOffset.valid;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -51,7 +51,7 @@ scenario(
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
     await context.mineBlocks(1);  // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + Number(config.authorization.expiryOffset.short);
+    const expiry = (await world.timestamp()) + config.authorization.expiryOffset.failed;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -83,7 +83,7 @@ scenario(
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
     await context.mineBlocks(1);  // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + Number(config.authorization.expiryOffset.short);
+    const expiry = (await world.timestamp()) + config.authorization.expiryOffset.failed;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -116,7 +116,7 @@ scenario(
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + Number(config.authorization.expiryOffset.short);
+    const expiry = (await world.timestamp()) + config.authorization.expiryOffset.failed;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -150,7 +150,7 @@ scenario(
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + Number(config.authorization.expiryOffset.short);
+    const expiry = (await world.timestamp()) + config.authorization.expiryOffset.failed;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -183,7 +183,7 @@ scenario(
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + Number(config.authorization.expiryOffset.short);
+    const expiry = (await world.timestamp()) + config.authorization.expiryOffset.failed;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -197,7 +197,7 @@ scenario(
         manager: betty.address,
         isAllowed: true,
         nonce,
-        expiry: expiry + Number(config.authorization.expiryOffset.altered),
+        expiry: expiry + config.authorization.expiryOffset.altered,
         signature,
       }),
       'BadSignatory()'
@@ -216,7 +216,7 @@ scenario(
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const invalidNonce = nonce.add(1);
-    const expiry = (await world.timestamp()) + Number(config.authorization.expiryOffset.short);
+    const expiry = (await world.timestamp()) + config.authorization.expiryOffset.failed;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -248,7 +248,7 @@ scenario(
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
     await context.world.deploymentManager.hre.network.provider.send('evm_mine', []);
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + Number(config.authorization.expiryOffset.veryLong);
+    const expiry = (await world.timestamp()) + config.authorization.expiryOffset.extended;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -292,7 +292,7 @@ scenario(
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const invalidExpiry = (await world.timestamp()) - Number(config.authorization.expiryOffset.past);
+    const invalidExpiry = (await world.timestamp()) - config.authorization.expiryOffset.past;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -326,7 +326,7 @@ scenario(
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + Number(config.authorization.expiryOffset.short);
+    const expiry = (await world.timestamp()) + config.authorization.expiryOffset.failed;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,
@@ -360,7 +360,7 @@ scenario(
 
     await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + Number(config.authorization.expiryOffset.short);
+    const expiry = (await world.timestamp()) + config.authorization.expiryOffset.failed;
     const signature = await albert.signAuthorization({
       manager: betty.address,
       isAllowed: true,

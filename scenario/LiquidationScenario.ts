@@ -10,12 +10,12 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidation.base.standard
+          $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
         }
       }),
     cometBalances: async (ctx) => ({
-      albert: { $base: -getConfigForScenario(ctx).liquidation.base.standard },
-      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
+      albert: { $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal },
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
     }),
   },
   async ({ comet, actors }, context, world) => {
@@ -35,7 +35,7 @@ scenario(
       await world.increaseTime(timeBeforeLiquidation);
     }
 
-    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(config.liquidation.base.standard) / 100n * baseScale.toBigInt() }); // force accrue
+    await betty.withdrawAsset({ asset: baseToken, amount: config.liquidation.base.borrowPrincipal / 100n * baseScale.toBigInt() }); // force accrue
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
   }
@@ -45,14 +45,14 @@ scenario(
   'Comet#liquidation > allows liquidation of underwater positions with token fees',
   {
     tokenBalances: async (ctx) => ({
-      $comet: { $base: getConfigForScenario(ctx).liquidation.base.medium }
+      $comet: { $base: getConfigForScenario(ctx).liquidation.base.undercollateralized }
     }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.base.medium,
-        $asset0: getConfigForScenario(ctx).liquidation.asset.tiny
+        $base: -getConfigForScenario(ctx).liquidation.base.undercollateralized,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.smallPosition
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.asset.small }
+      betty: { $base: getConfigForScenario(ctx).liquidation.asset.smallPosition }
     }),
     filter: async (ctx) => matchesDeployment(ctx, [{ network: 'mainnet', deployment: 'usdt' }]),
   },
@@ -111,12 +111,12 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidation.base.standard
+          $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
         }
       }),
     cometBalances: async (ctx) => ({
-      albert: { $base: -getConfigForScenario(ctx).liquidation.base.standard },
-      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
+      albert: { $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal },
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
     }),
     pause: {
       absorbPaused: true,
@@ -151,15 +151,15 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidation.base.standard
+          $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
         }
       }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.base.standard,
-        $asset0: getConfigForScenario(ctx).liquidation.asset.standard
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.supplyAmount
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
     }),
   },
   async ({ comet, actors }, context, world) => {
@@ -206,13 +206,13 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidation.base.standard
+          $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
         }
       }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.base.standard,
-        $asset0: getConfigForScenario(ctx).liquidation.asset.standard
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.supplyAmount
       }
     }),
   },
@@ -246,8 +246,8 @@ scenario.skip(
   {
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.base.standard,
-        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.tiny)
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.smallPosition
       },
     }),
   },
@@ -306,16 +306,16 @@ scenario(
   {
     tokenBalances: async (ctx) => ({
       $comet: {
-        $base: getConfigForScenario(ctx).liquidation.base.standard
+        $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
       }
     }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.base.standard,
-        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.standard),
-        $asset1: defactor(getConfigForScenario(ctx).liquidation.asset.small)
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.supplyAmount),
+        $asset1: getConfigForScenario(ctx).liquidation.asset.smallPosition
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
     }),
   },
   async ({ comet, actors }, context, world) => {
@@ -360,14 +360,14 @@ scenario(
   {
     tokenBalances: async (ctx) => ({
       $comet: {
-        $base: getConfigForScenario(ctx).liquidation.base.standard
+        $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
       }
     }),
     cometBalances: async (ctx) => ({
       albert: {
-        $asset0: getConfigForScenario(ctx).liquidation.asset.standard
+        $asset0: getConfigForScenario(ctx).liquidation.asset.supplyAmount
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
     }),
   },
   async ({ comet, actors }, context, world) => {
@@ -419,14 +419,14 @@ scenario(
   'Comet#liquidation > small position liquidation',
   {
     tokenBalances: async (ctx) => ({
-      $comet: { $base: getConfigForScenario(ctx).liquidation.base.standard * 10n }
+      $comet: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal * 10n }
     }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.base.standard,
-        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.tiny)
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.smallPosition
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
     }),
   },
   async ({ comet, actors }, context, world) => {
@@ -486,16 +486,16 @@ scenario(
   {
     tokenBalances: async (ctx) => ({
       $comet: {
-        $base: getConfigForScenario(ctx).liquidation.base.standard * 2n
+        $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal * 2n
       }
     }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidation.base.standard,
-        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.standard)
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.supplyAmount)
       },
-      betty: { $base: getConfigForScenario(ctx).liquidation.base.standard },
-      charles: { $base: getConfigForScenario(ctx).liquidation.base.standard }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal },
+      charles: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
     }),
   },
   async ({ comet, actors }, context, world) => {

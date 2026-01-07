@@ -87,7 +87,7 @@ scenario(
       albert: { $base: `== 0n` },
     },
     cometBalances: async (ctx) => ({
-      albert: { $base: getConfigForScenario(ctx).common.amounts.base.small },
+      albert: { $base: getConfigForScenario(ctx).withdraw.baseAmount },
     }),
   },
   async ({ comet, actors }, context) => {
@@ -147,7 +147,7 @@ scenario(
   'Comet#withdrawFrom > base asset',
   {
     cometBalances: async (ctx) => ({
-      albert: { $base: getConfigForScenario(ctx).common.amounts.base.small },
+      albert: { $base: getConfigForScenario(ctx).withdraw.baseAmount },
     }),
   },
   async ({ comet, actors }, context) => {
@@ -233,7 +233,7 @@ scenario(
         src: albert.address,
         dst: betty.address,
         asset: baseAsset.address,
-        amount: config.common.amounts.base.tiny * scale,
+        amount: config.withdraw.baseAmount * scale,
       }),
       'Unauthorized()'
     );
@@ -294,7 +294,7 @@ scenario(
   {
     cometBalances: async (ctx) => ({
       albert: { $base: 0n },
-      charles: { $base: getConfigForScenario(ctx).common.amounts.base.large },
+      charles: { $base: getConfigForScenario(ctx).common.cometBalances.base },
     }),
   },
   async ({ comet, actors }, context) => {
@@ -307,7 +307,7 @@ scenario(
     await expectRevertCustom(
       albert.withdrawAsset({
         asset: baseAsset.address,
-        amount: config.common.amounts.base.large * scale,
+        amount: config.common.cometBalances.base * scale,
       }),
       'NotCollateralized()'
     );
