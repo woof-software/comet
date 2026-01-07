@@ -243,11 +243,12 @@ scenario(
 
 /**
  * @note We work here with token with index 1, as wbtc market has USDT as zero collateral and has not function `transferFrom`
+ * We also skip this scenario for mainnet wstETH beacuse it has no function `transferFrom`
  */
 scenario(
   'Comet#liquidation > governor can withdraw collateral after successful liquidation',
   {
-    filter: async (ctx) => !isBridgedDeployment(ctx),
+    filter: async (ctx) => !isBridgedDeployment(ctx) && !matchesDeployment(ctx, [{ network: 'mainnet', deployment: 'wsteth' }]),
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
