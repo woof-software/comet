@@ -1,6 +1,6 @@
 import { scenario } from './context/CometContext';
-import { event, expect } from '../test/helpers';
-import { expectRevertCustom, timeUntilUnderwater } from './utils';
+import { ethers, expect, defactor } from '../test/helpers';
+import { expectRevertCustom, isBridgedDeployment, timeUntilUnderwater } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -10,15 +10,16 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidationBase
+          $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
         }
       }),
     cometBalances: async (ctx) => ({
-      albert: { $base: -getConfigForScenario(ctx).liquidationBase },
-      betty: { $base: getConfigForScenario(ctx).liquidationBase }
+      albert: { $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal },
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
     }),
   },
   async ({ comet, actors }, context, world) => {
+    const config = getConfigForScenario(context);
     const { albert, betty } = actors;
     const baseToken = await comet.baseToken();
     const baseScale = await comet.baseScale();
@@ -26,7 +27,7 @@ scenario(
     const timeBeforeLiquidation = await timeUntilUnderwater({
       comet,
       actor: albert,
-      fudgeFactor: 6000n * 6000n // 1 hour past when position is underwater
+      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
     });
 
     while(!(await comet.isLiquidatable(albert.address))) {
@@ -34,7 +35,7 @@ scenario(
       await world.increaseTime(timeBeforeLiquidation);
     }
 
-    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).liquidationBase) / 100n * baseScale.toBigInt() }); // force accrue
+    await betty.withdrawAsset({ asset: baseToken, amount: config.liquidation.base.borrowPrincipal / 100n * baseScale.toBigInt() }); // force accrue
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
   }
@@ -43,19 +44,20 @@ scenario(
 scenario(
   'Comet#liquidation > allows liquidation of underwater positions with token fees',
   {
-    tokenBalances: {
-      $comet: { $base: 1000 },
-    },
-    cometBalances: {
+    tokenBalances: async (ctx) => ({
+      $comet: { $base: getConfigForScenario(ctx).liquidation.base.undercollateralized }
+    }),
+    cometBalances: async (ctx) => ({
       albert: {
-        $base: -1000,
-        $asset0: .001
+        $base: -getConfigForScenario(ctx).liquidation.base.undercollateralized,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.smallPosition
       },
-      betty: { $base: 10 }
-    },
+      betty: { $base: getConfigForScenario(ctx).liquidation.asset.smallPosition }
+    }),
     filter: async (ctx) => matchesDeployment(ctx, [{ network: 'mainnet', deployment: 'usdt' }]),
   },
   async ({ comet, actors }, context, world) => {
+    const config = getConfigForScenario(context);
     // Set fees for USDT for testing
     const USDT = await world.deploymentManager.existing('USDT', await comet.baseToken(), world.base.network);
     const USDTAdminAddress = await USDT.owner();
@@ -67,7 +69,6 @@ scenario(
       method: 'hardhat_impersonateAccount',
       params: [USDTAdminAddress],
     });
-    // mine a block to ensure the impersonation is effective
     const USDTAdminSigner = await world.deploymentManager.hre.ethers.getSigner(USDTAdminAddress);
     // 10 basis points, and max 10 USDT
     await USDT.connect(USDTAdminSigner).setParams(10, 10);
@@ -78,7 +79,7 @@ scenario(
       await timeUntilUnderwater({
         comet,
         actor: albert,
-        fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
+        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
       })
     );
 
@@ -88,23 +89,18 @@ scenario(
 
     const lp1 = await comet.liquidatorPoints(betty.address);
 
-    // increments absorber's numAbsorbs
     expect(lp1.numAbsorbs).to.eq(lp0.numAbsorbs + 1);
-    // increases absorber's numAbsorbed
     expect(lp1.numAbsorbed.toNumber()).to.eq(lp0.numAbsorbed.toNumber() + 1);
-    // XXX test approxSpend?
 
     const baseBalance = await albert.getCometBaseBalance();
     expect(Number(baseBalance)).to.be.greaterThanOrEqual(0);
 
-    // clears out all of liquidated user's collateral
     const numAssets = await comet.numAssets();
     for (let i = 0; i < numAssets; i++) {
       const { asset } = await comet.getAssetInfo(i);
       expect(await comet.collateralBalanceOf(albert.address, asset)).to.eq(0);
     }
 
-    // clears assetsIn
     expect((await comet.userBasic(albert.address)).assetsIn).to.eq(0);
   }
 );
@@ -115,18 +111,19 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidationBase
+          $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
         }
       }),
     cometBalances: async (ctx) => ({
-      albert: { $base: -getConfigForScenario(ctx).liquidationBase },
-      betty: { $base: getConfigForScenario(ctx).liquidationBase }
+      albert: { $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal },
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
     }),
     pause: {
       absorbPaused: true,
     },
   },
   async ({ comet, actors }, context, world) => {
+    const config = getConfigForScenario(context);
     const { albert, betty } = actors;
     const baseToken = await comet.baseToken();
     const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
@@ -135,11 +132,11 @@ scenario(
       await timeUntilUnderwater({
         comet,
         actor: albert,
-        fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
+        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
       })
     );
 
-    await betty.withdrawAsset({ asset: baseToken, amount: baseBorrowMin }); // force accrue
+    await betty.withdrawAsset({ asset: baseToken, amount: baseBorrowMin });
 
     await expectRevertCustom(
       betty.absorb({ absorber: betty.address, accounts: [albert.address] }),
@@ -154,25 +151,25 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidationBase
+          $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
         }
       }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidationBase,
-        $asset0: getConfigForScenario(ctx).liquidationAsset
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.supplyAmount
       },
-      betty: { $base: getConfigForScenario(ctx).liquidationBase }
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
     }),
   },
   async ({ comet, actors }, context, world) => {
+    const config = getConfigForScenario(context);
     const { albert, betty } = actors;
 
-    
     const timeBeforeLiquidation = await timeUntilUnderwater({
       comet,
       actor: albert,
-      fudgeFactor: 6000n * 6000n // 1 hour past when position is underwater
+      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
     });
 
     while(!(await comet.isLiquidatable(albert.address))) {
@@ -186,23 +183,18 @@ scenario(
 
     const lp1 = await comet.liquidatorPoints(betty.address);
 
-    // increments absorber's numAbsorbs
     expect(lp1.numAbsorbs).to.eq(lp0.numAbsorbs + 1);
-    // increases absorber's numAbsorbed
     expect(lp1.numAbsorbed.toNumber()).to.eq(lp0.numAbsorbed.toNumber() + 1);
-    // XXX test approxSpend?
 
     const baseBalance = await albert.getCometBaseBalance();
     expect(Number(baseBalance)).to.be.greaterThanOrEqual(0);
 
-    // clears out all of liquidated user's collateral
     const numAssets = await comet.numAssets();
     for (let i = 0; i < numAssets; i++) {
       const { asset } = await comet.getAssetInfo(i);
       expect(await comet.collateralBalanceOf(albert.address, asset)).to.eq(0);
     }
 
-    // clears assetsIn
     expect((await comet.userBasic(albert.address)).assetsIn).to.eq(0);
   }
 );
@@ -214,87 +206,337 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         $comet: {
-          $base: getConfigForScenario(ctx).liquidationBase
+          $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
         }
       }),
     cometBalances: async (ctx) => ({
       albert: {
-        $base: -getConfigForScenario(ctx).liquidationBase,
-        $asset0: getConfigForScenario(ctx).liquidationAsset
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.supplyAmount
       }
     }),
   },
   async ({ comet, actors }, context, world) => {
+    const config = getConfigForScenario(context);
     const { albert, betty } = actors;
 
     await world.increaseTime(
       Math.round(await timeUntilUnderwater({
         comet,
         actor: albert,
-      }) * 1.001) // XXX why is this off? better to use a price constraint?
+      }) * config.liquidation.timeMultiplier)
     );
 
     const ab0 = await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
-    expect(ab0.events?.[2]?.event).to.be.equal('Transfer');
 
+    const userPrincipal = (await comet.userBasic(albert.address)).principal;
     const baseBalance = await albert.getCometBaseBalance();
-    expect(Number(baseBalance)).to.be.greaterThan(0);
+
+    if (userPrincipal.toBigInt() > 0n) {
+      expect(ab0.events?.[2]?.event).to.be.equal('Transfer');
+      expect(Number(baseBalance)).to.be.greaterThan(0);
+    } else {
+      expect(Number(baseBalance)).to.be.equal(0);
+    }
   }
 );
 
-// XXX Skipping temporarily because testnet is in a weird state where an EOA ('admin') still
-// has permission to withdraw Comet's collateral, while Timelock does not. This is because the
-// permission was set up in the initialize() function. There is currently no way to update this
-// permission in Comet, so a new function (e.g. `approveCometPermission`) needs to be created
-// to allow governance to modify which addresses can withdraw assets from Comet's Comet balance.
-scenario.skip(
+/**
+ * @note We work here with token with index 1, as wbtc market has USDT as zero collateral and has not function `transferFrom`
+ * We also skip this scenario for mainnet wstETH beacuse it has no function `transferFrom`
+ */
+scenario(
   'Comet#liquidation > governor can withdraw collateral after successful liquidation',
   {
-    cometBalances: {
+    filter: async (ctx) => !isBridgedDeployment(ctx) && !matchesDeployment(ctx, [{ network: 'mainnet', deployment: 'wsteth' }]),
+    cometBalances: async (ctx) => ({
       albert: {
-        $base: -10,
-        $asset0: .001
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset1: getConfigForScenario(ctx).liquidation.asset.smallPosition
       },
-    },
+    }),
   },
   async ({ comet, actors }, context, world) => {
-    const { albert, betty, charles } = actors;
-    const { asset: asset0Address, scale } = await comet.getAssetInfo(0);
-
-    const collateralBalance = scale.toBigInt() / 1000n; // .001
+    const config = getConfigForScenario(context);
+    const { admin, albert, betty } = actors;
+    const { asset, scale } = await comet.getAssetInfo(1);
 
     await world.increaseTime(
       await timeUntilUnderwater({
         comet,
         actor: albert,
-        fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
+        fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
       })
     );
 
     await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
 
-    const txReceipt = await charles.withdrawAssetFrom({
-      src: comet.address,
-      dst: charles.address,
-      asset: asset0Address,
-      amount: collateralBalance
+    const reserves = await comet.getCollateralReserves(asset);
+    console.log('Collateral reserves available:', reserves.toString());
+
+    const approveThisCalldata = ethers.utils.defaultAbiCoder.encode(
+      ['address', 'address', 'uint256'],
+      [admin.address, asset, ethers.constants.MaxUint256]
+    );
+    
+    await context.fastGovernanceExecute(
+      [comet.address],
+      [0],
+      ['approveThis(address,address,uint256)'],
+      [approveThisCalldata]
+    );
+
+    const asset1Contract = await world.deploymentManager.existing(
+      'asset1',
+      asset,
+      world.base.network
+    );
+    
+    const withdrawAmount = reserves.gt(scale.div(config.liquidationBot.scenario.collateralDivisor)) 
+      ? scale.toBigInt() / config.liquidationBot.scenario.collateralDivisor 
+      : reserves;
+
+    await context.setNextBaseFeeToZero();
+    await asset1Contract
+      .connect(admin.signer)
+      .transferFrom(comet.address, admin.address, withdrawAmount, { gasPrice: 0 });
+
+    const finalReserves = await comet.getCollateralReserves(asset);
+    expect(finalReserves).to.equal(reserves.sub(withdrawAmount));
+  }
+);
+
+scenario(
+  'Comet#liquidation > liquidates position with all collateral types',
+  {
+    tokenBalances: async (ctx) => ({
+      $comet: {
+        $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
+      }
+    }),
+    cometBalances: async (ctx) => ({
+      albert: {
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.supplyAmount),
+        $asset1: getConfigForScenario(ctx).liquidation.asset.smallPosition
+      },
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
+    }),
+  },
+  async ({ comet, actors }, context, world) => {
+    const config = getConfigForScenario(context);
+    const { albert, betty } = actors;
+    const numAssets = await comet.numAssets();
+
+    const timeBeforeLiquidation = await timeUntilUnderwater({
+      comet,
+      actor: albert,
+      fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
     });
 
-    expect(event({ receipt: txReceipt }, 0)).to.deep.equal({
-      Transfer: {
-        from: comet.address,
-        to: charles.address,
-        amount: collateralBalance
+    while(!(await comet.isLiquidatable(albert.address))) {
+      await comet.accrueAccount(albert.address);
+      await world.increaseTime(timeBeforeLiquidation);
+    }
+
+    const lp0 = await comet.liquidatorPoints(betty.address);
+
+    await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
+
+    const lp1 = await comet.liquidatorPoints(betty.address);
+
+    expect(lp1.numAbsorbs).to.eq(lp0.numAbsorbs + 1);
+    expect(lp1.numAbsorbed.toNumber()).to.eq(lp0.numAbsorbed.toNumber() + 1);
+
+    for (let i = 0; i < numAssets; i++) {
+      const { asset } = await comet.getAssetInfo(i);
+      expect(await comet.collateralBalanceOf(albert.address, asset)).to.eq(0);
+    }
+
+    const baseBalance = await albert.getCometBaseBalance();
+    expect(Number(baseBalance)).to.be.greaterThanOrEqual(0);
+
+    expect((await comet.userBasic(albert.address)).assetsIn).to.eq(0);
+  }
+);
+
+scenario(
+  'Comet#liquidation > debt covered with each collateral type separately',
+  {
+    tokenBalances: async (ctx) => ({
+      $comet: {
+        $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal
       }
+    }),
+    cometBalances: async (ctx) => ({
+      albert: {
+        $asset0: getConfigForScenario(ctx).liquidation.asset.supplyAmount
+      },
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
+    }),
+  },
+  async ({ comet, actors }, context, world) => {
+    const config = getConfigForScenario(context);
+    const { albert, betty } = actors;
+    const baseToken = await comet.baseToken();
+    const { asset: collateralAsset0 } = await comet.getAssetInfo(0);
+
+    const { borrowCollateralFactor, priceFeed, scale } = await comet.getAssetInfo(0);
+    const userCollateral = await comet.collateralBalanceOf(albert.address, collateralAsset0);
+    const price = await comet.getPrice(priceFeed);
+    const factorScale = await comet.factorScale();
+    const priceScale = await comet.priceScale();
+    const baseScale = await comet.baseScale();
+
+    const collateralValue = userCollateral.mul(price).div(scale);
+    const borrowCapacity = collateralValue.mul(borrowCollateralFactor).mul(baseScale).div(factorScale).div(priceScale);
+    const borrowAmount = borrowCapacity.mul(config.liquidationBot.scenario.borrowCapacityUtilizationHigh).div(100n);
+
+    await albert.withdrawAsset({
+      asset: baseToken,
+      amount: borrowAmount
     });
 
-    expect(event({ receipt: txReceipt }, 1)).to.deep.equal({
-      WithdrawCollateral: {
-        src: comet.address,
-        to: charles.address,
-        asset: asset0Address,
-        amount: collateralBalance
+    while(!(await comet.isLiquidatable(albert.address))) {
+      await comet.accrueAccount(albert.address);
+      await world.increaseTime(
+        await timeUntilUnderwater({
+          comet,
+          actor: albert,
+          fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
+        })
+      );
+    }
+
+    const lp0 = await comet.liquidatorPoints(betty.address);
+
+    await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
+
+    const lp1 = await comet.liquidatorPoints(betty.address);
+
+    expect(lp1.numAbsorbs).to.eq(lp0.numAbsorbs + 1);
+    expect(await comet.collateralBalanceOf(albert.address, collateralAsset0)).to.eq(0);
+    expect(await comet.isLiquidatable(albert.address)).to.be.false;
+  }
+);
+
+scenario(
+  'Comet#liquidation > small position liquidation',
+  {
+    tokenBalances: async (ctx) => ({
+      $comet: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal * 10n }
+    }),
+    cometBalances: async (ctx) => ({
+      albert: {
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset0: getConfigForScenario(ctx).liquidation.asset.smallPosition
+      },
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
+    }),
+  },
+  async ({ comet, actors }, context, world) => {
+    const config = getConfigForScenario(context);
+    const { albert, betty } = actors;
+
+    // Check if already liquidatable, if not, wait until underwater
+    if (!(await comet.isLiquidatable(albert.address))) {
+      const timeBeforeLiquidation = await timeUntilUnderwater({
+        comet,
+        actor: albert,
+        fudgeFactor: config.liquidationBot.scenario.fudgeFactorLong
+      });
+      
+      // Ensure time is reasonable to avoid overflow
+      const timeToIncrease = Math.min(Math.max(timeBeforeLiquidation, 1), 365 * 24 * 60 * 60); // Max 1 year
+      
+      while(!(await comet.isLiquidatable(albert.address))) {
+        await comet.accrueAccount(albert.address);
+        await world.increaseTime(timeToIncrease);
       }
-    });
+    }
+
+    const { asset: collateralAsset } = await comet.getAssetInfo(0);
+    const initialCollateral = await comet.collateralBalanceOf(albert.address, collateralAsset);
+
+    expect(await comet.isLiquidatable(albert.address)).to.be.true;
+    expect(initialCollateral).to.be.greaterThan(0);
+
+    const lp0 = await comet.liquidatorPoints(betty.address);
+
+    await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
+
+    const lp1 = await comet.liquidatorPoints(betty.address);
+
+    expect(lp1.numAbsorbs).to.eq(lp0.numAbsorbs + 1);
+    expect(lp1.numAbsorbed.toNumber()).to.eq(lp0.numAbsorbed.toNumber() + 1);
+    expect(await comet.isLiquidatable(albert.address)).to.be.false;
+    expect(await comet.collateralBalanceOf(albert.address, collateralAsset)).to.eq(0);
+
+    const baseBalance = await albert.getCometBaseBalance();
+    expect(Number(baseBalance)).to.be.greaterThanOrEqual(0);
+
+    const numAssets = await comet.numAssets();
+    for (let i = 0; i < numAssets; i++) {
+      const { asset } = await comet.getAssetInfo(i);
+      expect(await comet.collateralBalanceOf(albert.address, asset)).to.eq(0);
+    }
+
+    expect((await comet.userBasic(albert.address)).assetsIn).to.eq(0);
+  }
+);
+
+
+scenario(
+  'Comet#liquidation > multiple liquidators absorb different positions',
+  {
+    tokenBalances: async (ctx) => ({
+      $comet: {
+        $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal * 2n
+      }
+    }),
+    cometBalances: async (ctx) => ({
+      albert: {
+        $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
+        $asset0: defactor(getConfigForScenario(ctx).liquidation.asset.supplyAmount)
+      },
+      betty: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal },
+      charles: { $base: getConfigForScenario(ctx).liquidation.base.borrowPrincipal }
+    }),
+  },
+  async ({ comet, actors }, context, world) => {
+    const config = getConfigForScenario(context);
+    const { albert, betty, charles } = actors;
+    const numAssets = await comet.numAssets();
+
+    while(!(await comet.isLiquidatable(albert.address))) {
+      await comet.accrueAccount(albert.address);
+      await world.increaseTime(
+        await timeUntilUnderwater({
+          comet,
+          actor: albert,
+          fudgeFactor: config.liquidationBot.scenario.fudgeFactorShort
+        })
+      );
+    }
+
+    const lpBetty0 = await comet.liquidatorPoints(betty.address);
+    const lpCharles0 = await comet.liquidatorPoints(charles.address);
+    
+    await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
+    
+    const lpBetty1 = await comet.liquidatorPoints(betty.address);
+    const lpCharles1 = await comet.liquidatorPoints(charles.address);
+
+    expect(lpBetty1.numAbsorbs).to.eq(lpBetty0.numAbsorbs + 1);
+    expect(lpCharles1.numAbsorbs).to.eq(lpCharles0.numAbsorbs);
+    expect(await comet.isLiquidatable(albert.address)).to.be.false;
+
+    for (let i = 0; i < numAssets; i++) {
+      const { asset } = await comet.getAssetInfo(i);
+      const protocolCollateral = await comet.getCollateralReserves(asset);
+      if (i === 0) {
+        expect(protocolCollateral).to.be.greaterThan(0);
+      }
+    }
   }
 );

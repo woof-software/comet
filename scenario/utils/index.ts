@@ -38,6 +38,7 @@ import path from 'path';
 
 export const MAX_ASSETS = 24;
 export const UINT256_MAX = 2n ** 256n - 1n;
+export const UINT32_MAX = 2n ** 32n - 1n;
 
 export interface ComparativeAmount {
   val: number;
@@ -196,6 +197,17 @@ export function optionalNumber(o: object, key: string): number | undefined {
     throw new Error(`[requirement ${key} required to be number type]`);
   }
   return value;
+}
+
+export function optionalCall(o: object, key: string, ctx: CometContext): any | undefined {
+  let func: unknown = o[key];
+  if (func === undefined) {
+    return undefined;
+  }
+  if (typeof func !== 'function') {
+    throw new Error(`[requirement ${key} required to be function type]`);
+  }
+  return func(ctx);
 }
 
 export function* subsets<T>(array: T[], offset = 0): Generator<T[]> {
@@ -668,6 +680,7 @@ const REDSTONE_FEEDS = {
     '0xc44be6D00307c3565FDf753e852Fc003036cBc13', // BTC / USD
     '0xf1454949C6dEdfb500ae63Aa6c784Aa1Dde08A6c', // UNI / USD
     '0x24c8964338Deb5204B096039147B8e8C3AEa42Cc', // wstETH / ETH
+    '0xC3346631E0A9720582fB9CAbdBEA22BC2F57741b', // wstETH / stETH
     '0xBf3bA2b090188B40eF83145Be0e9F30C6ca63689', // weETH / ETH
     '0xa0f2EF6ceC437a4e5F6127d6C51E1B0d3A746911', // ezETH / ETH
     '0x85C4F855Bc0609D2584405819EdAEa3aDAbfE97D', // rsETH / ETH
@@ -910,7 +923,7 @@ export async function tenderlyExecute(
       return {
         network_id: chainId2.toString(),
         from: msg.signer,
-        to: msg.messanger,
+        to: msg.messenger,
         block_number: Number(block),
         block_header: {
           timestamp: gdm.hre.ethers.utils.hexlify(Number(timestamp))

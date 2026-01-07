@@ -5,6 +5,7 @@ import { BaseBridgeReceiver, LineaBridgeReceiver, ScrollBridgeReceiver } from '.
 import { calldata } from '../src/deploy';
 import { isBridgedDeployment, matchesDeployment, createCrossChainProposal } from './utils';
 import { ArbitrumBridgeReceiver } from '../build/types';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 // This is a generic scenario that runs for all L2s and sidechains
 scenario(
@@ -13,8 +14,9 @@ scenario(
     filter: async ctx => isBridgedDeployment(ctx)
   },
   async ({ comet, timelock, bridgeReceiver }, context) => {
+    const config = getConfigForScenario(context);
     const currentTimelockDelay = await timelock.delay();
-    const newTimelockDelay = currentTimelockDelay.mul(2);
+    const newTimelockDelay = currentTimelockDelay.mul(Number(config.governance.delayMultiplier));
 
     // Cross-chain proposal to change L2 timelock's delay and pause L2 Comet actions
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
@@ -50,6 +52,7 @@ scenario(
     filter: async ctx => matchesDeployment(ctx, [{network: 'polygon'}])
   },
   async ({ comet, configurator, proxyAdmin, timelock: oldLocalTimelock, bridgeReceiver: oldBridgeReceiver }, context, world) => {
+    const config = getConfigForScenario(context);
     const dm = world.deploymentManager;
     const govDeploymentManager = world.auxiliaryDeploymentManager!;
     const fxChild = await dm.getContractOrThrow('fxChild');
@@ -62,16 +65,15 @@ scenario(
     );
 
     // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
     const newLocalTimelock = await dm.deploy(
       'newTimelock',
       'vendor/Timelock.sol',
       [
-        newBridgeReceiver.address, // admin
-        2 * secondsPerDay,         // delay
-        14 * secondsPerDay,        // grace period
-        2 * secondsPerDay,         // minimum delay
-        30 * secondsPerDay         // maxiumum delay
+        newBridgeReceiver.address,              // admin
+        Number(config.governance.timelock.delayDays * config.common.timing.oneDay),         // delay
+        Number(config.governance.timelock.gracePeriodDays * config.common.timing.oneDay),        // grace period
+        Number(config.governance.timelock.minDelayDays * config.common.timing.oneDay),         // minimum delay
+        Number(config.governance.timelock.maxDelayDays * config.common.timing.oneDay)         // maxiumum delay
       ]
     );
 
@@ -124,7 +126,7 @@ scenario(
 
     // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
     const currentTimelockDelay = await newLocalTimelock.delay();
-    const newTimelockDelay = currentTimelockDelay.mul(2);
+    const newTimelockDelay = currentTimelockDelay.mul(Number(config.governance.delayMultiplier));
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
     const pauseCalldata = await calldata(comet.populateTransaction.pause(true, true, true, true, true));
@@ -158,6 +160,7 @@ scenario(
     filter: async ctx => matchesDeployment(ctx, [{network: 'arbitrum'}])
   },
   async ({ comet, configurator, proxyAdmin, timelock: oldLocalTimelock, bridgeReceiver: oldBridgeReceiver }, context, world) => {
+    const config = getConfigForScenario(context);
     const dm = world.deploymentManager;
     const governanceDeploymentManager = world.auxiliaryDeploymentManager;
     if (!governanceDeploymentManager) {
@@ -172,16 +175,15 @@ scenario(
     );
 
     // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
     const newLocalTimelock = await dm.deploy(
       'newTimelock',
       'vendor/Timelock.sol',
       [
-        newBridgeReceiver.address, // admin
-        2 * secondsPerDay,         // delay
-        14 * secondsPerDay,        // grace period
-        2 * secondsPerDay,         // minimum delay
-        30 * secondsPerDay         // maxiumum delay
+        newBridgeReceiver.address,              // admin
+        Number(config.governance.timelock.delayDays * config.common.timing.oneDay),         // delay
+        Number(config.governance.timelock.gracePeriodDays * config.common.timing.oneDay),        // grace period
+        Number(config.governance.timelock.minDelayDays * config.common.timing.oneDay),         // minimum delay
+        Number(config.governance.timelock.maxDelayDays * config.common.timing.oneDay)         // maxiumum delay
       ]
     );
 
@@ -234,7 +236,7 @@ scenario(
 
     // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
     const currentTimelockDelay = await newLocalTimelock.delay();
-    const newTimelockDelay = currentTimelockDelay.mul(2);
+    const newTimelockDelay = currentTimelockDelay.mul(Number(config.governance.delayMultiplier));
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
     const pauseCalldata = await calldata(comet.populateTransaction.pause(true, true, true, true, true));
@@ -278,6 +280,7 @@ scenario.skip(
     context,
     world
   ) => {
+    const config = getConfigForScenario(context);
     const dm = world.deploymentManager;
     const governanceDeploymentManager = world.auxiliaryDeploymentManager;
     if (!governanceDeploymentManager) {
@@ -294,13 +297,12 @@ scenario.skip(
     );
 
     // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
     const newLocalTimelock = await dm.deploy('newTimelock', 'vendor/Timelock.sol', [
       newBridgeReceiver.address, // admin
-      2 * secondsPerDay, // delay
-      14 * secondsPerDay, // grace period
-      2 * secondsPerDay, // minimum delay
-      30 * secondsPerDay // maxiumum delay
+      Number(config.governance.timelock.delayDays * config.common.timing.oneDay), // delay
+      Number(config.governance.timelock.gracePeriodDays * config.common.timing.oneDay), // grace period
+      Number(config.governance.timelock.minDelayDays * config.common.timing.oneDay), // minimum delay
+      Number(config.governance.timelock.maxDelayDays * config.common.timing.oneDay) // maxiumum delay
     ]);
 
     // Initialize new LineaBridgeReceiver
@@ -353,7 +355,7 @@ scenario.skip(
 
     // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
     const currentTimelockDelay = await newLocalTimelock.delay();
-    const newTimelockDelay = currentTimelockDelay.mul(2);
+    const newTimelockDelay = currentTimelockDelay.mul(Number(config.governance.delayMultiplier));
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
     const pauseCalldata = await calldata(
@@ -399,6 +401,7 @@ scenario(
     context,
     world
   ) => {
+    const config = getConfigForScenario(context);
     const dm = world.deploymentManager;
     const governanceDeploymentManager = world.auxiliaryDeploymentManager;
     if (!governanceDeploymentManager) {
@@ -415,13 +418,12 @@ scenario(
     );
 
     // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
     const newLocalTimelock = await dm.deploy('newTimelock', 'vendor/Timelock.sol', [
       newBridgeReceiver.address, // admin
-      2 * secondsPerDay, // delay
-      14 * secondsPerDay, // grace period
-      2 * secondsPerDay, // minimum delay
-      30 * secondsPerDay // maxiumum delay
+      Number(config.governance.timelock.delayDays * config.common.timing.oneDay), // delay
+      Number(config.governance.timelock.gracePeriodDays * config.common.timing.oneDay), // grace period
+      Number(config.governance.timelock.minDelayDays * config.common.timing.oneDay), // minimum delay
+      Number(config.governance.timelock.maxDelayDays * config.common.timing.oneDay) // maxiumum delay
     ]);
 
     // Initialize new ScrollBridgeReceiver
@@ -474,7 +476,7 @@ scenario(
 
     // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
     const currentTimelockDelay = await newLocalTimelock.delay();
-    const newTimelockDelay = currentTimelockDelay.mul(2);
+    const newTimelockDelay = currentTimelockDelay.mul(Number(config.governance.delayMultiplier));
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
     const pauseCalldata = await calldata(
