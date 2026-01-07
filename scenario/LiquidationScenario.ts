@@ -244,6 +244,11 @@ scenario(
 scenario.skip(
   'Comet#liquidation > governor can withdraw collateral after successful liquidation',
   {
+    filter: async (ctx) => matchesDeployment(ctx, [
+      { network: 'mainnet', deployment: 'usdt' }, 
+      { network: 'mainnet', deployment: 'usds' }, 
+      { network: 'mainnet', deployment: 'usdc' }]
+    ),
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidation.base.borrowPrincipal,
