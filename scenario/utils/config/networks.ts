@@ -53,7 +53,7 @@ export function applyNetworkOverrides(
     if (deployment === 'usdt') {
       config.liquidation.base.undercollateralized = 1000n;
       config.liquidation.base.borrowPrincipal = 1000n; 
-      config.liquidation.asset.smallPosition = 100;
+      config.liquidation.asset.smallPosition = 4;
       config.liquidation.asset.supplyAmount = 100n;
     }
   }
