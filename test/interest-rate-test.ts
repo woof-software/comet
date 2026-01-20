@@ -116,4 +116,57 @@ describe('interest rates', function () {
     // = 0.01 + 0.05 * 0 = 0.01
     assertInterestRatesMatch(exp(0.01, 18), borrowRate.mul(SECONDS_PER_YEAR));
   });
+
+  it('returns 0 supply rate when reserves exhausted with no borrows', async () => {
+    const params = {
+      ...interestRateParams,
+      supplyInterestRateBase: exp(0.02, 18),
+    };
+    const { comet, tokens: { USDC } } = await makeProtocol(params);
+
+    const totals = {
+      trackingSupplyIndex: 0,
+      trackingBorrowIndex: 0,
+      baseSupplyIndex: exp(1.1, 15),
+      baseBorrowIndex: exp(1, 15),
+      totalSupplyBase: exp(1000, 6),
+      totalBorrowBase: 0,
+      lastAccrualTime: 0,
+      pauseFlags: 0,
+    };
+    await wait(comet.setTotalsBasic(totals));
+
+    const utilization = await comet.getUtilization();
+    expect(utilization).to.be.equal(0);
+
+    const balance = await USDC.balanceOf(comet.address);
+    const presentValue = totals.totalSupplyBase * BigInt(totals.baseSupplyIndex) / BigInt(exp(1, 15));
+    
+    if (presentValue >= balance.toBigInt()) {
+      const supplyRate = await comet.getSupplyRate(utilization);
+      expect(supplyRate).to.be.equal(0);
+    }
+  });
+
+  it('returns positive supply rate when reserves are sufficient with no borrows', async () => {
+    const params = {
+      ...interestRateParams,
+      supplyInterestRateBase: exp(0.02, 18),
+    };
+    const { comet, users: [alice], tokens: { USDC } } = await makeProtocol(params);
+    const supplyAmount = exp(100, 6);
+    await USDC.allocateTo(alice.address, supplyAmount);
+    await USDC.connect(alice).approve(comet.address, supplyAmount);
+    await wait(comet.connect(alice).supply(USDC.address, supplyAmount));
+
+    const reserveAmount = exp(50, 6);
+    await USDC.allocateTo(comet.address, reserveAmount);
+
+    const utilization = await comet.getUtilization();
+    expect(utilization).to.be.equal(0);
+
+    const supplyRate = await comet.getSupplyRate(utilization);
+    const baseRate = await comet.supplyPerSecondInterestRateBase();
+    expect(supplyRate).to.be.equal(baseRate);
+  });
 });

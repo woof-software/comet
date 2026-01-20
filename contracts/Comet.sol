@@ -447,6 +447,19 @@ contract Comet is CometMainInterface {
      * @return The per second supply rate at `utilization`
      */
     function getSupplyRate(uint utilization) override public view returns (uint64) {
+        if (totalSupplyBase == 0) return 0;
+
+        // In fresh markets with no borrows but positive base supply rate, lenders earn interest from reserves.
+        // If reserves are insufficient, total supply (with accrued interest) can exceed actual token balance,
+        // causing illiquidity. To prevent this, we cut off the supply rate when reserves are exhausted.
+        // Note: accrual happens BEFORE supply state change, so this check works only AFTER the last accrual.
+        // Total supply may slightly exceed balance, but this prevents infinite growth and limits the shortfall.
+        if (utilization == 0 && supplyPerSecondInterestRateBase != 0) {
+            if (presentValueSupply(baseSupplyIndex, totalSupplyBase) >= IERC20NonStandard(baseToken).balanceOf(address(this))) {
+                return 0;
+            }
+        }
+
         if (utilization <= supplyKink) {
             // interestRateBase + interestRateSlopeLow * utilization
             return safe64(supplyPerSecondInterestRateBase + mulFactor(supplyPerSecondInterestRateSlopeLow, utilization));
