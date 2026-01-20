@@ -538,7 +538,7 @@ scenario(
   }
 );
 
-scenario.only(
+scenario(
   'Comet#transfer reverts if receivers borrow balance is less than minimum borrow',
   {
     filter: async (ctx) => await hasMinBorrowGreaterThanOne(ctx) 
