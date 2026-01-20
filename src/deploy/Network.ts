@@ -84,6 +84,7 @@ export async function deployNetworkComet(
   deploySpec: DeploySpec = { all: true },
   configOverrides: ProtocolConfiguration = {},
   withAssetList = false,
+  version: string = '0',
   adminSigner?: SignerWithAddress,
 ): Promise<Deployed> {
   function maybeForce(flag?: boolean): boolean {
@@ -144,8 +145,8 @@ export async function deployNetworkComet(
     );
     cometExt = await deploymentManager.deploy(
       'comet:implementation:implementation',
-      'CometExtAssetList.sol',
-      [extConfiguration, assetListFactory.address],
+      'CometExtAssetListCustomVersion.sol',
+      [extConfiguration, assetListFactory.address, ethers.utils.formatBytes32String(version)],
       maybeForce(deploySpec.cometExt)
     );
   } else {

@@ -169,7 +169,8 @@ export class CometContext {
     catch (e) {
       withAssetList = false;
     }
-    const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, withAssetList, admin);
+    const version = await oldComet.version();
+    const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, withAssetList, version, admin);
 
     await this.world.deploymentManager.spider(deployed);
     await this.setAssets();

@@ -891,6 +891,10 @@ contract CometWithExtendedAssetList is CometMainInterface {
             if (!isBorrowCollateralized(src)) revert NotCollateralized();
         }
 
+        if (dstBalance < 0) {
+            if (uint256(-dstBalance) < baseBorrowMin) revert BorrowTooSmall();
+        }
+
         if (withdrawAmount > 0) {
             emit Transfer(src, address(0), presentValueSupply(baseSupplyIndex, withdrawAmount));
         }

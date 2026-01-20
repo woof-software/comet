@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectBase, expectRevertCustom, getInterest, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils';
+import { expectApproximately, expectBase, expectRevertCustom, getInterest, hasMinBorrowGreaterThanOne, sufficientVersion, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils';
 import { ContractReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -532,6 +532,34 @@ scenario(
         dst: betty.address,
         asset: baseAsset.address,
         amount: minBorrow / 2n
+      }),
+      'BorrowTooSmall()'
+    );
+  }
+);
+
+scenario.only(
+  'Comet#transfer reverts if receivers borrow balance is less than minimum borrow',
+  {
+    filter: async (ctx) => await hasMinBorrowGreaterThanOne(ctx) 
+      && await sufficientVersion(ctx, '1.0.0'),
+    cometBalances: {
+      albert: { $base: 1 },
+      betty: { $base: 0, $asset0: 100 }
+    }
+  },
+  async ({ comet, actors }, context) => {
+    const { albert, betty } = actors;
+    const baseAssetAddress = await comet.baseToken();
+    const baseAsset = context.getAssetByAddress(baseAssetAddress);
+    const minBorrow = (await comet.baseBorrowMin()).toBigInt();
+    await betty.withdrawAsset({ asset: baseAsset.address, amount: minBorrow });
+
+    await expectRevertCustom(
+      albert.transferAsset({
+        dst: betty.address,
+        asset: baseAsset.address,
+        amount: 1
       }),
       'BorrowTooSmall()'
     );

@@ -283,6 +283,30 @@ describe('transfer', function () {
     );
   });
 
+  it('cant transfer base to other borrow and make it less than the minimum', async () => {
+    const protocol = await makeProtocol();
+    const {
+      cometWithExtendedAssetList: comet,
+      tokens,
+      users: [alice, bob],
+    } = protocol;
+    const { USDC, COMP } = tokens;
+
+    await COMP.allocateTo(alice.address, ethers.utils.parseEther('50'));
+    await COMP.connect(alice).approve(comet.address, ethers.utils.parseEther('50'));
+    await comet.connect(alice).supply(COMP.address, ethers.utils.parseEther('50'));
+
+    await USDC.allocateTo(bob.address, 10e6);
+    await USDC.connect(bob).approve(comet.address, 10e6);
+    await comet.connect(bob).supply(USDC.address, 10e6);
+
+    await comet.connect(alice).withdraw(USDC.address, await comet.baseBorrowMin());
+    const cometAsB = comet.connect(bob);
+    await expect(cometAsB.transferAsset(alice.address, USDC.address, 1)).to.be.revertedWith(
+      "custom error 'BorrowTooSmall()'"
+    );
+  });
+
   it('reverts on self-transfer of base token', async () => {
     const {
       comet,
