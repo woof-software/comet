@@ -8,8 +8,8 @@ import {
   BaseBulker__factory,
   CometExt,
   CometExt__factory,
-  CometExtAssetList,
-  CometExtAssetList__factory,
+  CometExtAssetListCustomVersion,
+  CometExtAssetListCustomVersion__factory,
   CometHarness__factory,
   CometHarnessInterface as Comet,
   CometRewards,
@@ -104,7 +104,7 @@ export type Protocol = {
   governor: SignerWithAddress;
   pauseGuardian: SignerWithAddress;
   extensionDelegate: CometExt;
-  extensionDelegateAssetList: CometExtAssetList;
+  extensionDelegateAssetList: CometExtAssetListCustomVersion;
   users: SignerWithAddress[];
   base: string;
   reward: string;
@@ -352,8 +352,8 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   }, []);
   let extensionDelegateAssetList = opts.extensionDelegate;
   if (extensionDelegateAssetList === undefined) {
-    const CometExtFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
-    extensionDelegateAssetList = await CometExtFactory.deploy({ name32, symbol32 }, assetListFactory.address);
+    const CometExtFactory = (await ethers.getContractFactory('CometExtAssetListCustomVersion')) as CometExtAssetListCustomVersion__factory;
+    extensionDelegateAssetList = await CometExtFactory.deploy({ name32, symbol32 }, assetListFactory.address, ethers.utils.formatBytes32String('1.0.0'));
     await extensionDelegateAssetList.deployed();
   }
   config.extensionDelegate = extensionDelegateAssetList.address;
@@ -378,7 +378,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     governor,
     pauseGuardian,
     extensionDelegate,
-    extensionDelegateAssetList: extensionDelegateAssetList as CometExtAssetList,
+    extensionDelegateAssetList: extensionDelegateAssetList as CometExtAssetListCustomVersion,
     users,
     base,
     reward,

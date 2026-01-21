@@ -7,7 +7,6 @@ contract CometExt is CometExtInterface {
     /** Public constants **/
 
     /// @notice The major version of this contract
-    string public override constant version = "0";
 
     /** Internal constants **/
 
@@ -40,6 +39,7 @@ contract CometExt is CometExtInterface {
 
     /** External getters for internal constants **/
 
+    function version() virtual override public view returns (string memory) { return "0"; }
     function baseAccrualScale() override external pure returns (uint64) { return BASE_ACCRUAL_SCALE; }
     function baseIndexScale() override external pure returns (uint64) { return BASE_INDEX_SCALE; }
     function factorScale() override external pure returns (uint64) { return FACTOR_SCALE; }
@@ -195,7 +195,7 @@ contract CometExt is CometExtInterface {
         if (uint256(s) > MAX_VALID_ECDSA_S) revert InvalidValueS();
         // v ∈ {27, 28} (source: https://ethereum.github.io/yellowpaper/paper.pdf #308)
         if (v != 27 && v != 28) revert InvalidValueV();
-        bytes32 domainSeparator = keccak256(abi.encode(DOMAIN_TYPEHASH, keccak256(bytes(name())), keccak256(bytes(version)), block.chainid, address(this)));
+        bytes32 domainSeparator = keccak256(abi.encode(DOMAIN_TYPEHASH, keccak256(bytes(name())), keccak256(bytes(version())), block.chainid, address(this)));
         bytes32 structHash = keccak256(abi.encode(AUTHORIZATION_TYPEHASH, owner, manager, isAllowed_, nonce, expiry));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
         address signatory = ecrecover(digest, v, r, s);

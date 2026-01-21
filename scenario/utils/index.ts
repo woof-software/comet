@@ -386,6 +386,21 @@ export async function hasMinBorrowGreaterThanOne(
   return minBorrow > 1n;
 }
 
+export async function sufficientVersion(
+  ctx: CometContext,
+  requiredVersion: string
+): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const version = await comet.version();
+  const parseVersion = (v: string) => v.split('.').map((x) => parseInt(x));
+  console.log(`Current version: ${version}, Required version: ${requiredVersion}`);
+  const [reqMajor, reqMinor, reqPatch] = parseVersion(requiredVersion);
+  const [major, minor, patch] = parseVersion(version);
+  if (major !== reqMajor) return major > reqMajor;
+  if (minor !== reqMinor) return minor > reqMinor;
+  return patch >= reqPatch;
+}
+
 type DeploymentCriterion = {
   network?: string;
   deployment?: string;
@@ -910,7 +925,7 @@ export async function tenderlyExecute(
       return {
         network_id: chainId2.toString(),
         from: msg.signer,
-        to: msg.messanger,
+        to: msg.messenger,
         block_number: Number(block),
         block_header: {
           timestamp: gdm.hre.ethers.utils.hexlify(Number(timestamp))
