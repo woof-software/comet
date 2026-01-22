@@ -379,14 +379,11 @@ describe('withdraw', function () {
       });
 
       it.skip('same block withdrawal may end up in 1 wei less because of the rounding error', async () => {
-        // TODO: recreate conditions
-        // supply from alice
-        // catch the Supply event with 0 amount
+        // wip
       });
     });
   });
 
-  // TODO: extend into testcase assuming no illiquidity from over-utilization
   it('user can withdraw non-less than supplied', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
     const { comet, tokens, users: [, bob] } = protocol;
