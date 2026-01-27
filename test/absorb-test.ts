@@ -3,6 +3,20 @@ import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } 
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 
+/**
+ * Absorb liquidation behavior tests
+ * @notice Exercises the `absorb` liquidation flow of Comet with an extended asset list.
+ * @dev Covers:
+ * - Making a single borrower under-collateralized and absorbing a single collateral position.
+ * - Absorbing a single borrower with multiple collateral assets and validating events, balances,
+ *   reserves, `assetsIn` bitmasks, and asset lists.
+ * - Absorbing multiple underwater borrowers in a single call and checking protocol accounting.
+ * - Tracking liquidator points (`numAbsorbs`, `numAbsorbed`, `approxSpend`) including edge cases
+ *   like empty account arrays.
+ * - Revert paths for paused absorb, non-liquidatable accounts, and bad/deprecated price feeds.
+ * - Sensitivity of post-absorb principal to different price drop magnitudes (borrower becomes
+ *   lender vs principal zero) and behavior when absorbing across many (24) collateral assets.
+ */
 describe('abosorb', function () {
   // Constants
   const baseTokenDecimals = 6;
@@ -22,6 +36,7 @@ describe('abosorb', function () {
   let absorber: SignerWithAddress;
   let alice: SignerWithAddress;
   let dave: SignerWithAddress;
+  let pauseGuardian: SignerWithAddress;
   let protocol: any; // Store protocol to access more users
   // Prices
   let compPrice = 100;
@@ -52,7 +67,7 @@ describe('abosorb', function () {
     priceFeeds['USDC'] = protocol.priceFeeds['USDC'];
 
     [absorber, alice, dave] = protocol.users;
-
+    pauseGuardian = protocol.pauseGuardian;
     await baseToken.allocateTo(dave.address, exp(1000, baseTokenDecimals));
     await collaterals['COMP'].allocateTo(alice.address, exp(100, 18));
 
@@ -805,6 +820,37 @@ describe('abosorb', function () {
         await expect(comet.connect(absorber).absorb(absorber.address, [])).to.not.be.reverted;
         newLiquidatorPoints = await comet.liquidatorPoints(absorber.address);
         expect(newLiquidatorPoints.numAbsorbs).to.be.equal(liquidatorPoints.numAbsorbs + 1);
+      });
+    });
+  });
+
+  describe('revert cases', function () {
+    describe('pause', function () {
+      it('absorbing is not paused for default', async () => {
+        expect(await comet.isAbsorbPaused()).to.be.false;
+      });
+
+      it('pause guarding pause absorbing', async () => {
+        await comet.connect(pauseGuardian).pause(false, false, false, true, false);
+      });
+
+      it('isAbsorbPaused returns true', async () => {
+        expect(await comet.isAbsorbPaused()).to.be.true;
+      });
+
+      it('absorb is reverted', async () => {
+        await expect(comet.connect(absorber).absorb(absorber.address, [alice.address])).to.be.revertedWithCustomError(comet, 'Paused');
+        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
+      });
+    });
+
+    describe('not liquidatable', function () {
+      it('alice is not liquidatable', async () => {
+        expect(await comet.isLiquidatable(alice.address)).to.be.false;
+      });
+
+      it('revert when user is not liquidatable', async () => {
+        await expect(comet.connect(absorber).absorb(absorber.address, [alice.address])).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
       });
     });
   });
