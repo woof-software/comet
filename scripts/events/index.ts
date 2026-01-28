@@ -11,7 +11,7 @@ import fs from 'fs/promises';
 import { forkedHreForBase } from '../../plugins/scenario/utils/hreForBase';
 
 const network = 'mainnet';
-const deployment = 'usdc';
+const deployment = 'usdt';
 
 const main = async () => {
   console.log('Start Event Fetcher');
@@ -39,7 +39,7 @@ const main = async () => {
   console.log(`Comet deployed block ${cometDeployedBlockNumber}`);
   
   const fetchSettings = eventsFetchSettings[network];
-  const events = await getAllEvents(comet, endBlock - 300, endBlock, dm, fetchSettings?.chunkSize, fetchSettings?.delaySeconds);
+  const events = await getAllEvents(comet, 23740110, 23751110, dm, fetchSettings?.chunkSize, fetchSettings?.delaySeconds);
   console.log(events.length, 'events fetched');
   console.log(events);
   // putt all events in a csv file
@@ -57,9 +57,9 @@ const main = async () => {
   const csvContent =
     headers.join(',') + '\n' +
     csvData.map(e => headers.map(h => escapeCsv(String(e[h as keyof typeof e]))).join(',')).join('\n');
-  const csvFilePath = `./events_${network}_${deployment}.csv`;
+  const csvFilePath = `./scripts/events/reports/events_${network}_${deployment}.csv`;
 
-  await fs.mkdir('./', { recursive: true });
+  await fs.mkdir('./scripts/events/reports', { recursive: true });
   await fs.writeFile(csvFilePath, csvContent);
   console.log(`Events saved to ${csvFilePath}`);
 };

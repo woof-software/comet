@@ -6,7 +6,7 @@ import { forkedHreForBase } from '../../plugins/scenario/utils/hreForBase';
 import { TransactionResponse } from '@ethersproject/abstract-provider';
 
 const network = 'mainnet';
-const deployment = 'usdc';
+const deployment = 'usdt';
 
 const main = async () => {
   const hre = await forkedHreForBase({ name: '', network: network, deployment: deployment });
@@ -28,33 +28,76 @@ const main = async () => {
   const csvContent = await fs.readFile(csvFilePath, 'utf-8');
   const lines = csvContent.split('\n').filter(line => line.trim() !== '');
 
+  let i = 0;
   const events = lines.map(line => {
+    i++;
     if (line.startsWith('blockNumber')) return null;
-    const [blockNumber, transactionHash, event, args, timestamp] = line.split(';');
+    if( i <= 10)console.log('Processing line:', line);
+    
+    // Split by comma, but handle quoted fields that may contain commas
+    const parts = line.match(/(?:[^,"]+|"[^"]*")+/g) || [];
+    if (parts.length < 5) {
+      console.warn(`Skipping invalid line: ${line}`);
+      return null;
+    }
+    
+    const [blockNumber, transactionHash, event, args, timestamp] = parts;
+    console.log('Parsed parts:', { blockNumber, transactionHash, event, args, timestamp });
+    const date = new Date(timestamp);
+    const parsedTimestamp = !isNaN(date.getTime()) ? date.toISOString() : timestamp;
+    
     return {
       blockNumber: parseInt(blockNumber),
       transactionHash,
       event,
       args: args,
-      timestamp: new Date(timestamp).toISOString(),
+      timestamp: parsedTimestamp,
     };
   });
-
+  i = 0;
   const parsedEvents = events.map((e) => {
-    if (!e) return null; // skip null events
+    if(i <= 10) console.log('Parsing event:', e);
+    if (!e || !e.args) return null; // skip null events or events without args
+    // Remove outer quotes if present
+    let argsStr = e.args;
+    if (argsStr.startsWith('"') && argsStr.endsWith('"')) {
+      argsStr = argsStr.slice(1, -1);
+    }
     // before parsing as a json remove double quotes around the keys
-    e.args = e.args.replace(/""/g, '"').replace(/"{/g, '{').replace(/}"/g, '}');
-    const args = JSON.parse(e.args);
+    argsStr = argsStr.replace(/""/g, '"').replace(/"{/g, '{').replace(/}"/g, '}');
+    if(i <= 10) console.log('After processing:', argsStr);
+    const args = JSON.parse(argsStr);
+    
+    // Helper function to parse BigNumber objects or hex strings
+    const parseBigInt = (val: any): bigint => {
+      if (typeof val === 'object' && val?.type === 'BigNumber' && val?.hex) {
+        return BigInt(val.hex);
+      }
+      if (typeof val === 'string') {
+        return BigInt(val);
+      }
+      if (typeof val === 'number') {
+        return BigInt(val);
+      }
+      return BigInt(val);
+    };
+    
+    // Helper function to format price with decimals (8 decimals)
+    const formatPrice = (value: bigint): string => {
+      const num = Number(value) / 1e8;
+      return num.toFixed(8).replace(/0+$/, '').replace(/\.$/, '0');
+    };
+    
     if (e.event === 'AbsorbDebt') {
       return {
         blockNumber: e.blockNumber,
         transactionHash: e.transactionHash,
         event: e.event,
         args: {
-          absorber: args.absorber,
-          borrower: args.borrower,
-          basePaidOut: BigInt(args.basePaidOut),
-          usdValue: BigInt(args.usdValue),
+          absorber: args[0],
+          borrower: args[1],
+          basePaidOut: parseBigInt(args[2]),
+          usdValue: formatPrice(parseBigInt(args[3])),
         },
         timestamp: e.timestamp,
       };
@@ -65,11 +108,11 @@ const main = async () => {
         transactionHash: e.transactionHash,
         event: e.event,
         args: {
-          absorber: args.absorber,
-          borrower: args.borrower,
-          asset: args.asset,
-          collateralAbsorbed: BigInt(args.collateralAbsorbed),
-          usdValue: BigInt(args.usdValue),
+          absorber: args[0],
+          borrower: args[1],
+          asset: args[2],
+          collateralAbsorbed: parseBigInt(args[3]),
+          usdValue: formatPrice(parseBigInt(args[4])),
         },
         timestamp: e.timestamp,
       };
@@ -80,10 +123,10 @@ const main = async () => {
         transactionHash: e.transactionHash,
         event: e.event,
         args: {
-          buyer: args.buyer,
-          asset: args.asset,
-          baseAmount: BigInt(args.baseAmount),
-          collateralAmount: BigInt(args.collateralAmount),
+          buyer: args[0],
+          asset: args[1],
+          baseAmount: parseBigInt(args[2]),
+          collateralAmount: parseBigInt(args[3]),
         },
         timestamp: e.timestamp,
       };

@@ -11,7 +11,10 @@ import fs from 'fs/promises';
 import { forkedHreForBase } from '../../plugins/scenario/utils/hreForBase';
 
 const network = 'mainnet';
-const deployment = 'usdc';
+const deployment = 'usdt';
+
+const StartBlock = 23740110;
+const EndBlock = 23751110;
 
 const main = async () => {
   console.log('Start Event Fetcher');
@@ -63,7 +66,7 @@ const main = async () => {
   console.log(`Start block (≈1.5 years ago): ${startBlock}`);
 
   const fetchSettings = eventsFetchSettings[network];
-  const events = await getAllEvents(comet, startBlock, endBlock, dm, fetchSettings?.chunkSize, fetchSettings?.delaySeconds);
+  const events = await getAllEvents(comet, StartBlock || startBlock, EndBlock || endBlock, dm, fetchSettings?.chunkSize, fetchSettings?.delaySeconds);
   console.log(events.length, 'events fetched');
 
   // Cache blockNumber -> timestamp to avoid redundant requests

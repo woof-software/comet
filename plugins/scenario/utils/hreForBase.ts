@@ -85,7 +85,7 @@ function getBlockRollback(base: ForkSpec) {
     return undefined;
   }
   else if (base.network === 'mainnet') {
-    return 10;
+    return 0;
   }
   else
     return 25;
@@ -104,17 +104,22 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
   const baseNetwork = networks[base.network] as HttpNetworkUserConfig;
 
   const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
-  if(baseNetwork.url)
-    console.log(`Forking from network: ${base.network} at block number: ${await provider.getBlockNumber() - (getBlockRollback(base) || 0)}`);
+  console.log(baseNetwork.url);
 
-  // noNetwork otherwise
-  if (!base.blockNumber && baseNetwork.url && getBlockRollback(base) !== undefined)
-    base.blockNumber = await provider.getBlockNumber() - getBlockRollback(base); // arbitrary number of blocks to go back
+  // Only calculate blockNumber if not already provided
+  if (!base.blockNumber) {
+    if (baseNetwork.url && getBlockRollback(base) !== undefined) {
+      if (getBlockRollback(base) === 0) {
+        const block = await provider.getBlockNumber();
+        base.blockNumber = block - 1;
+      } else {
+        base.blockNumber = await provider.getBlockNumber() - getBlockRollback(base);
+      }
+    }
+  }
 
-  if (getBlockRollback(base) === 0) {
-    const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
-    const block = await provider.getBlockNumber();
-    base.blockNumber = block - 1;
+  if (baseNetwork.url && base.blockNumber) {
+    console.log(`Forking from network: ${base.network} at block number: ${base.blockNumber}`);
   }
 
   if (!baseNetwork) {
