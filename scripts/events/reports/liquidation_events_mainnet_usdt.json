@@ -1,0 +1,1525 @@
+[
+  {
+    'blockNumber': 23741068,
+    'transactionHash': '0x0e636f4c5b6f6285b0a7189b8ef1c85e5f5ba14d3d3676a421dbe652e58edd5b',
+    'timestamp': '2025-11-06T15:14:59.000Z',
+    'caller': '0xfc9928F6590D853752824B0B403A6AE36785e535',
+    'liquidator': '0x81463B0f960f247f704377661ec81C1fd65b5128',
+    'gasUsed': 2240003,
+    'borrower': '0x1597E4B7cF6D2877A1d690b6088668afDb045763',
+    'basePaidOut': '3191234991296',
+    'basePaidOutUsdValue': '319053291959791',
+    'collateralAbsorbed': [
+      {
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'collateralAbsorbed': '3640000000000000000000000',
+        'usdValue': '188663966400000'
+      }
+    ],
+    'buyCollateral': [
+      {
+        'buyer': '0x81463B0f960f247f704377661ec81C1fd65b5128',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '1217954396',
+        'collateralAmount': '2407121898474070944288'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741744,
+    'transactionHash': '0xb20ebba3734f7f75f790a7857f849b1017ce37b43bc318e802c8797f80d0cd90',
+    'timestamp': '2025-11-06T17:31:11.000Z',
+    'caller': '0xfc9928F6590D853752824B0B403A6AE36785e535',
+    'liquidator': '0x00000000009E50a7dDb7a7B0e2ee6604fd120E49',
+    'gasUsed': 1336387,
+    'borrower': '0xA65e4B8AF4d325838D68FD9dDf925eA3Ca96f167',
+    'basePaidOut': '1333305734201',
+    'basePaidOutUsdValue': '133301240693947',
+    'collateralAbsorbed': [
+      {
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'collateralAbsorbed': '1522499999998818611194456',
+        'usdValue': '11884552784990'
+      }
+    ],
+    'buyCollateral': [
+      {
+        'buyer': '0x00000000009E50a7dDb7a7B0e2ee6604fd120E49',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '168533242',
+        'collateralAmount': '2211641224601938176854'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741858,
+    'transactionHash': '0xda1bcbe1dc704831dcb0654e6d10a9203b7d489f8b45a8221b7c4123fba13d5c',
+    'timestamp': '2025-11-06T17:54:11.000Z',
+    'caller': '0x03C558AEe40a9FcED1CaBE9B465Bae8096E05230',
+    'liquidator': '0x36331E299247E5D0D3261e1d9852f6E0cFFEe95C',
+    'gasUsed': 1568571,
+    'borrower': '0x7FD2f0ff55045451232cFfd5293AA728880c79B4',
+    'basePaidOut': '2178407060784',
+    'basePaidOutUsdValue': '217792781123062',
+    'collateralAbsorbed': [
+      {
+        'asset': '0x5C5b196aBE0d54485975D1Ec29617D42D9198326',
+        'collateralAbsorbed': '1029213262209256054938329',
+        'usdValue': '6616262462861'
+      },
+      {
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'collateralAbsorbed': '1380205592014405937231603',
+        'usdValue': '8287764684947'
+      }
+    ],
+    'buyCollateral': [
+      {
+        'buyer': '0x36331E299247E5D0D3261e1d9852f6E0cFFEe95C',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '210188436',
+        'collateralAmount': '3585666128454029933361'
+      },
+      {
+        'buyer': '0x36331E299247E5D0D3261e1d9852f6E0cFFEe95C',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '179667020',
+        'collateralAmount': '3064992348172155223220'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743167,
+    'transactionHash': '0xbba06f9504d50170fb826565c9ba885099e1df7d49837deca4de7e9f312bcfcb',
+    'timestamp': '2025-11-06T22:17:23.000Z',
+    'caller': '0xfc9928F6590D853752824B0B403A6AE36785e535',
+    'liquidator': '0x00000000009E50a7dDb7a7B0e2ee6604fd120E49',
+    'gasUsed': 1792247,
+    'borrower': '0x21933a31efa8CdbFa714Cbb524063de36bB8b37d',
+    'basePaidOut': '2972759736993',
+    'basePaidOutUsdValue': '297210572985086',
+    'collateralAbsorbed': [
+      {
+        'asset': '0x5C5b196aBE0d54485975D1Ec29617D42D9198326',
+        'collateralAbsorbed': '3181228963091288731269185',
+        'usdValue': '4366977978191'
+      }
+    ],
+    'buyCollateral': [
+      {
+        'buyer': '0x00000000009E50a7dDb7a7B0e2ee6604fd120E49',
+        'asset': '0x5C5b196aBE0d54485975D1Ec29617D42D9198326',
+        'baseAmount': '218915998',
+        'collateralAmount': '16336017328160371760585'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741069,
+    'transactionHash': '0xab3612a001f0c080b9c0ba8fc8c5dd0e1df38b81ed8a6f10010b9d000b82ee12',
+    'timestamp': '2025-11-06T15:15:11.000Z',
+    'caller': '0x276BF434613BD8CB5c8B3282Ec6445c9370e33FA',
+    'liquidator': null,
+    'gasUsed': 1066510,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x828AE1566824A9835Acb6F565E1E9eA22BfB883A',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '876109499',
+        'collateralAmount': '1731511760563527010325'
+      },
+      {
+        'buyer': '0x828AE1566824A9835Acb6F565E1E9eA22BfB883A',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '4270619227',
+        'collateralAmount': '8440300470294545688095'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741069,
+    'transactionHash': '0xb45d1c6334068ef977540e8e83a30c50c9e0fc096b64603ad7a639bb925c14b4',
+    'timestamp': '2025-11-06T15:15:11.000Z',
+    'caller': '0x07De4e70Ff80bc47546ef7c5D081a4a1FF8bD98E',
+    'liquidator': null,
+    'gasUsed': 1019158,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xbD32122bAD41A09f2405Bb374A83877d8245079C',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '4097430679',
+        'collateralAmount': '8098016762608229522863'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741261,
+    'transactionHash': '0xba0891b277e18f1b635194552aeef989416aa3fb27b72a6ae5a4cd5073e40c8b',
+    'timestamp': '2025-11-06T15:53:59.000Z',
+    'caller': '0x00000027F490ACeE7F11ab5fdD47209d6422C5a7',
+    'liquidator': null,
+    'gasUsed': 873588,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '383691139',
+        'collateralAmount': '4367940956737874849527'
+      },
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '78332845',
+        'collateralAmount': '891741317834550399188'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741380,
+    'transactionHash': '0x940fc2b535393557424562c662354b8438191c4dc42997913ebe33b514ff59a9',
+    'timestamp': '2025-11-06T16:18:23.000Z',
+    'caller': '0x00000027F490ACeE7F11ab5fdD47209d6422C5a7',
+    'liquidator': null,
+    'gasUsed': 545515,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '331596731',
+        'collateralAmount': '4669645631281367309388'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741383,
+    'transactionHash': '0x9df3b09e705176f373df856be5fcaf6b78fd2ef3ce65dafdd9d4eb60f5bce051',
+    'timestamp': '2025-11-06T16:18:59.000Z',
+    'caller': '0x00000027F490ACeE7F11ab5fdD47209d6422C5a7',
+    'liquidator': null,
+    'gasUsed': 545532,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '284758656',
+        'collateralAmount': '4010057668391048501813'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741390,
+    'transactionHash': '0x881bc3b16007bb867d1f9c682a05a2ba3913f2f2df948e0e3ea8f6351c9239eb',
+    'timestamp': '2025-11-06T16:20:23.000Z',
+    'caller': '0x00000027F490ACeE7F11ab5fdD47209d6422C5a7',
+    'liquidator': null,
+    'gasUsed': 825595,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '383895780',
+        'collateralAmount': '5442416142093067675256'
+      },
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '83318792',
+        'collateralAmount': '1181194381768131835876'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741470,
+    'transactionHash': '0xb97f9a17b9d74da67dee891e9008a4c7236e90ebd6d227037bb02ff060fcda2d',
+    'timestamp': '2025-11-06T16:36:23.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 896138,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '1574338194',
+        'collateralAmount': '22679860433082681632186'
+      },
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '234600051',
+        'collateralAmount': '3379640051008048654460'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741475,
+    'transactionHash': '0x35e83dbaf37d7e33660efc5b28ee9e5c0383a9dcc4b2882adfbe3a0197361871',
+    'timestamp': '2025-11-06T16:37:23.000Z',
+    'caller': '0x0b4e49d09a8AE348a51559F3d32002341657D4c5',
+    'liquidator': null,
+    'gasUsed': 888961,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '205805521',
+        'collateralAmount': '2901525284252545776597'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741509,
+    'transactionHash': '0x1a06b792ba6fb26f4f61b369197f3245ce6b7ace60de1ecb600bc2aa370c0b87',
+    'timestamp': '2025-11-06T16:44:11.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 821032,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '312244685',
+        'collateralAmount': '4606821263861002014938'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741660,
+    'transactionHash': '0xe95d8e12eb52cd52daa2ee11ead03bcde2a4c2fa86e06fc2b4c98e4d027f47f6',
+    'timestamp': '2025-11-06T17:14:23.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1958388,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '494116260',
+        'collateralAmount': '7236146936985842270228'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741684,
+    'transactionHash': '0x4d578abf48d1c0d7f7e2dcba3a99ff12258be310ad09927b2471522e340fbc65',
+    'timestamp': '2025-11-06T17:19:11.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1303905,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '254007815',
+        'collateralAmount': '3246325566849253779041'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741686,
+    'transactionHash': '0x1cdb070ad0f29436130388794b986d37d5f794bfe367a974838171c90fa9a908',
+    'timestamp': '2025-11-06T17:19:35.000Z',
+    'caller': '0x9c4Ebb54625b1E93E987E287fa832BD2e0a854b7',
+    'liquidator': null,
+    'gasUsed': 1060630,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '315485831',
+        'collateralAmount': '3888092186588876000478'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741724,
+    'transactionHash': '0xea8784f3a22a48fb2d7db9a54f50279a11bddb436c43ea27a27c7920c764e9ea',
+    'timestamp': '2025-11-06T17:27:11.000Z',
+    'caller': '0xFDe0d1575Ed8E06FBf36256bcdfA1F359281455A',
+    'liquidator': null,
+    'gasUsed': 942085,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x80BF7Db69556D9521c03461978B8fC731DBBD4e4',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '492771050',
+        'collateralAmount': '6410336640005433650456'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741725,
+    'transactionHash': '0x9840876702c9ad515e6a7972eac5be814e65df4129ffda0443385b621456747e',
+    'timestamp': '2025-11-06T17:27:23.000Z',
+    'caller': '0x276BF434613BD8CB5c8B3282Ec6445c9370e33FA',
+    'liquidator': null,
+    'gasUsed': 769444,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x828AE1566824A9835Acb6F565E1E9eA22BfB883A',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '109294201',
+        'collateralAmount': '1421781213020567069606'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741755,
+    'transactionHash': '0x98ad4bdea01f56633c1c75008da6c8af56be491df3508722a9cda880215aa815',
+    'timestamp': '2025-11-06T17:33:35.000Z',
+    'caller': '0xFDe0d1575Ed8E06FBf36256bcdfA1F359281455A',
+    'liquidator': null,
+    'gasUsed': 1127959,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x80BF7Db69556D9521c03461978B8fC731DBBD4e4',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '1235650110',
+        'collateralAmount': '16195429161197302969188'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741795,
+    'transactionHash': '0x55b3226da5327e7dedea7f250a1dba19ed5e5737767392016694c40d13fd6915',
+    'timestamp': '2025-11-06T17:41:35.000Z',
+    'caller': '0x276BF434613BD8CB5c8B3282Ec6445c9370e33FA',
+    'liquidator': null,
+    'gasUsed': 769444,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x828AE1566824A9835Acb6F565E1E9eA22BfB883A',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '85350898',
+        'collateralAmount': '1115138134286058166344'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741852,
+    'transactionHash': '0x6c300e03600961d69a317a04a4642b74f2a2f4bfb25d3c50b0499ed8a20746a6',
+    'timestamp': '2025-11-06T17:52:59.000Z',
+    'caller': '0x00000027F490ACeE7F11ab5fdD47209d6422C5a7',
+    'liquidator': null,
+    'gasUsed': 768785,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '145687901',
+        'collateralAmount': '2375022802104219935400'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741854,
+    'transactionHash': '0x403e8dbeacfa86f446b7ddf42de857477d75b21a532990cb8913c8a83f9d38de',
+    'timestamp': '2025-11-06T17:53:23.000Z',
+    'caller': '0x7b26efB006249371B88BbBa20dDbB47e51D76645',
+    'liquidator': null,
+    'gasUsed': 998200,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '531183770',
+        'collateralAmount': '8857838258748390028031'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741868,
+    'transactionHash': '0x3b2bb542c13328421697cd7131889d2ccebb92db0c57c913ef11b37485130b76',
+    'timestamp': '2025-11-06T17:56:11.000Z',
+    'caller': '0x276BF434613BD8CB5c8B3282Ec6445c9370e33FA',
+    'liquidator': null,
+    'gasUsed': 768768,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x828AE1566824A9835Acb6F565E1E9eA22BfB883A',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '84914961',
+        'collateralAmount': '1369202302434399997806'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23741877,
+    'transactionHash': '0x049af6235ff2cc86dec2c0d793996dfe3e74750436f8287e3791006e05c66cb0',
+    'timestamp': '2025-11-06T17:57:59.000Z',
+    'caller': '0x276BF434613BD8CB5c8B3282Ec6445c9370e33FA',
+    'liquidator': null,
+    'gasUsed': 769445,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x828AE1566824A9835Acb6F565E1E9eA22BfB883A',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '57372076',
+        'collateralAmount': '905095854023186201259'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742074,
+    'transactionHash': '0xa14f275ae9d82ff0738b22ebec1bc9ff659005e184f9aa9c0a2a91213eacef09',
+    'timestamp': '2025-11-06T18:37:35.000Z',
+    'caller': '0x00000027F490ACeE7F11ab5fdD47209d6422C5a7',
+    'liquidator': null,
+    'gasUsed': 597335,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '98051394',
+        'collateralAmount': '1946434585112041806226'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742143,
+    'transactionHash': '0x3fce60444701941b063cae67db85288c9d76dcf6935eb6a37c7860bec1bf140c',
+    'timestamp': '2025-11-06T18:51:23.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 2799090,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '8567723',
+        'collateralAmount': '174348188847936847555'
+      },
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '458356394',
+        'collateralAmount': '9327286507835436298000'
+      },
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '295421381',
+        'collateralAmount': '6011653589209910556833'
+      },
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '184953630',
+        'collateralAmount': '3763698991126514940574'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742449,
+    'transactionHash': '0x0fb5ad88960bf0bce9be541128ebca85bbf229d4b9e92a78658f4e44cb0148fb',
+    'timestamp': '2025-11-06T19:52:47.000Z',
+    'caller': '0x00000027F490ACeE7F11ab5fdD47209d6422C5a7',
+    'liquidator': null,
+    'gasUsed': 1099182,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '91050399',
+        'collateralAmount': '2536145934987110368289'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742451,
+    'transactionHash': '0x34cfa808d7e0b1c588df96526b727b0931c5f8806fb849fd4e65551eaad6db6a',
+    'timestamp': '2025-11-06T19:53:11.000Z',
+    'caller': '0x9c4Ebb54625b1E93E987E287fa832BD2e0a854b7',
+    'liquidator': null,
+    'gasUsed': 997520,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '345505924',
+        'collateralAmount': '9623828717835333109149'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742467,
+    'transactionHash': '0x69a83ff0151cc2493635ece207ca46d7df1248d46c6971908470ceee40743f98',
+    'timestamp': '2025-11-06T19:56:23.000Z',
+    'caller': '0x276BF434613BD8CB5c8B3282Ec6445c9370e33FA',
+    'liquidator': null,
+    'gasUsed': 1179780,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x828AE1566824A9835Acb6F565E1E9eA22BfB883A',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '1050277459',
+        'collateralAmount': '34717224105617031715923'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742515,
+    'transactionHash': '0x31f31cc79b67d79d797e219f8b714726e30b7e5c817e3121b2a608342fd791c6',
+    'timestamp': '2025-11-06T20:05:59.000Z',
+    'caller': '0x00000027F490ACeE7F11ab5fdD47209d6422C5a7',
+    'liquidator': null,
+    'gasUsed': 764405,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '60949072',
+        'collateralAmount': '2060840838401872272209'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742535,
+    'transactionHash': '0x0ce128a4edadcdde497e15eb189571f594e9267941bd2ffa5b06346b424851d0',
+    'timestamp': '2025-11-06T20:09:59.000Z',
+    'caller': '0x07De4e70Ff80bc47546ef7c5D081a4a1FF8bD98E',
+    'liquidator': null,
+    'gasUsed': 1023534,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xbD32122bAD41A09f2405Bb374A83877d8245079C',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '96253496',
+        'collateralAmount': '3413413552265149472907'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742586,
+    'transactionHash': '0x637d218128969d99bfb30045c109b011686412511c6c86cc6620bb29febbb7e7',
+    'timestamp': '2025-11-06T20:20:11.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1028235,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '8945651',
+        'collateralAmount': '324595827096510071936'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742610,
+    'transactionHash': '0x3b8711d9708fcb37220f852f6503898f8cad1d7fd39efd5acab1d7947ae995c8',
+    'timestamp': '2025-11-06T20:24:59.000Z',
+    'caller': '0xC31a49D1c4C652aF57cEFDeF248f3c55b801c649',
+    'liquidator': null,
+    'gasUsed': 1126188,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xF0D539955974b248d763D60C3663eF272dfC6971',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '60949072',
+        'collateralAmount': '2216262179276873909566'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742741,
+    'transactionHash': '0xeac988509835b5c37d915263e10c4ffc181090da1c79801b25fc305cd059bf4a',
+    'timestamp': '2025-11-06T20:51:35.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1005594,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '51675013',
+        'collateralAmount': '1893545411725079240348'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742757,
+    'transactionHash': '0x58f1ad7c34d376e66713547750d29e498a60b8788a2e9ec51c69f1fd02dbb282',
+    'timestamp': '2025-11-06T20:54:59.000Z',
+    'caller': '0x53dAf8aEbBF482e21611aFA2688bd74a90056C24',
+    'liquidator': null,
+    'gasUsed': 373593,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x53dAf8aEbBF482e21611aFA2688bd74a90056C24',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '1500000000',
+        'collateralAmount': '54553708849722024067844'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742777,
+    'transactionHash': '0x6f708f7b600a0837aad3050b60a336dbb64313c130e86a87474d353f80ffb08e',
+    'timestamp': '2025-11-06T20:58:59.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1300890,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '39121438',
+        'collateralAmount': '1440713331090339557923'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742778,
+    'transactionHash': '0x909413976bae667c99ea4bf04f738e332cc597ef2a8ddf4018bcf1b83d70b265',
+    'timestamp': '2025-11-06T20:59:11.000Z',
+    'caller': '0x3eA68f362520Bfa09D2deFC6169eEDF9E9b70408',
+    'liquidator': null,
+    'gasUsed': 998050,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '55679889',
+        'collateralAmount': '2050506383633708851844'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742779,
+    'transactionHash': '0x1a495a04ece447427259b4d1058fed053dc789742c5d2dee4c85bcb82964ce06',
+    'timestamp': '2025-11-06T20:59:23.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1129845,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '47925675',
+        'collateralAmount': '1764944296628437055219'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742789,
+    'transactionHash': '0x585fd4b7e622db47f94e7d052b9a7fab124abd31dbaec98b481b613785b5eb85',
+    'timestamp': '2025-11-06T21:01:23.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1784578,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '131165866',
+        'collateralAmount': '4876473713313775924753'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742808,
+    'transactionHash': '0x24f985e335aa2a31c8234da4098919ad3c320562c19d548178fcbb02e173f6a7',
+    'timestamp': '2025-11-06T21:05:11.000Z',
+    'caller': '0x5B6Fc74F269C731840A74ae478d2C3d555E6A316',
+    'liquidator': null,
+    'gasUsed': 999530,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '57157229',
+        'collateralAmount': '2152817814627872387557'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742842,
+    'transactionHash': '0x23f3654dc096e58bb33bdddae3047b4a87a1996e02e5c434e70998cd05ce9194',
+    'timestamp': '2025-11-06T21:11:59.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1022275,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '33836164',
+        'collateralAmount': '1416148134110074414430'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742887,
+    'transactionHash': '0xa1b8e9a8d3e1c312a1812bbed8f02a9ef250b5be4845fd2f41b1bef75f3f9f19',
+    'timestamp': '2025-11-06T21:21:11.000Z',
+    'caller': '0x53dAf8aEbBF482e21611aFA2688bd74a90056C24',
+    'liquidator': null,
+    'gasUsed': 347536,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x53dAf8aEbBF482e21611aFA2688bd74a90056C24',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '1100000000',
+        'collateralAmount': '47296577812679820302265'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742894,
+    'transactionHash': '0x0485ea986885e06ee7fdabfbba074c11429f1011b54415d0474a613c21f7eebe',
+    'timestamp': '2025-11-06T21:22:35.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 895861,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '42935914',
+        'collateralAmount': '1891828071385035215224'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742895,
+    'transactionHash': '0xd53ddfcfe1b14431171f1b4ce856e817b0c9221f9e5f7456eeeee89bfd6f00c1',
+    'timestamp': '2025-11-06T21:22:47.000Z',
+    'caller': '0x3eA68f362520Bfa09D2deFC6169eEDF9E9b70408',
+    'liquidator': null,
+    'gasUsed': 997970,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '58070272',
+        'collateralAmount': '2558673158385877419022'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742925,
+    'transactionHash': '0xd51149d3f53b17dd0922370c9fec84bd56a0c438003957efac9a42d0fa173d9c',
+    'timestamp': '2025-11-06T21:28:47.000Z',
+    'caller': '0x04C62B449056D592474830d647d25451EE9c5F40',
+    'liquidator': null,
+    'gasUsed': 1400000,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x36331E299247E5D0D3261e1d9852f6E0cFFEe95C',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '43154942',
+        'collateralAmount': '1929659418883586548653'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742942,
+    'transactionHash': '0x941e604e409af5c57e42c189233dc15a69ab02a7e7e6499ac1a1923a3ee7f455',
+    'timestamp': '2025-11-06T21:32:11.000Z',
+    'caller': '0x53dAf8aEbBF482e21611aFA2688bd74a90056C24',
+    'liquidator': null,
+    'gasUsed': 347463,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x53dAf8aEbBF482e21611aFA2688bd74a90056C24',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '495',
+        'collateralAmount': '22364411340844910'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742951,
+    'transactionHash': '0x9880c53151921b5344cac9bd115f5a9bd89d2f6e6572f35e24a018756d9aa552',
+    'timestamp': '2025-11-06T21:33:59.000Z',
+    'caller': '0x53dAf8aEbBF482e21611aFA2688bd74a90056C24',
+    'liquidator': null,
+    'gasUsed': 347499,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x53dAf8aEbBF482e21611aFA2688bd74a90056C24',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '495000000',
+        'collateralAmount': '22364411340844910027832'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23742978,
+    'transactionHash': '0xdd1686e7edc67640ea29ca84c5afcd41a434a15738864adb166e0df2c233a1a8',
+    'timestamp': '2025-11-06T21:39:35.000Z',
+    'caller': '0x9Ba0172ba5fA5d72dc47De26D71283774A4a47cb',
+    'liquidator': null,
+    'gasUsed': 278021,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x7667095Caa12b79fCa489ff6E2198Ca01fDAe057',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '135529170720',
+        'collateralAmount': '6123293177102371555970103'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743013,
+    'transactionHash': '0x821f98ff67e655c778a6137d3cf348d0fc640096523e000afccbc736b492b123',
+    'timestamp': '2025-11-06T21:46:35.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 943450,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '65683409',
+        'collateralAmount': '3013737973196719393002'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743021,
+    'transactionHash': '0x9db1fe2d840b9c0e19305090b38e5a9a2a42d76ac92777155ccddd47e9c909c4',
+    'timestamp': '2025-11-06T21:48:11.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 726432,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '39256101',
+        'collateralAmount': '1832179475453044392024'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743027,
+    'transactionHash': '0xb8dcc9a017fa7659ff16bb8f8b94d6c21bc23fa9f3d8ab4f59b4c7fa48e52de3',
+    'timestamp': '2025-11-06T21:49:23.000Z',
+    'caller': '0x1b9FcB24c533839dC847235bd8Eb80E37EC42f85',
+    'liquidator': null,
+    'gasUsed': 999480,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '152114117',
+        'collateralAmount': '7214133906533535285208'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743045,
+    'transactionHash': '0x4500bf77b67c6a3ee700a672887594d64206d83906da20d1d6a4c62f2e79330a',
+    'timestamp': '2025-11-06T21:52:59.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 623620,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '45913646',
+        'collateralAmount': '2186127733240624546080'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743068,
+    'transactionHash': '0xd0f51f1641e036c25f484c9edf971879019100297030ea248e578d4f15ce0a10',
+    'timestamp': '2025-11-06T21:57:35.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1574151,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '49953069',
+        'collateralAmount': '2677911172806552834263'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743151,
+    'transactionHash': '0x1283612415f6ba4fc1034dd07b45be16b2f65b79669e6c2268ff72da0e151045',
+    'timestamp': '2025-11-06T22:14:11.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 543015,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '30792136',
+        'collateralAmount': '1757605786533192581888'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743186,
+    'transactionHash': '0xccd5a73e1a46c01f482220de73c7310f269d67f4b91c2bbfef605e43c7d1d752',
+    'timestamp': '2025-11-06T22:21:11.000Z',
+    'caller': '0x07De4e70Ff80bc47546ef7c5D081a4a1FF8bD98E',
+    'liquidator': null,
+    'gasUsed': 813026,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xbD32122bAD41A09f2405Bb374A83877d8245079C',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '38381414',
+        'collateralAmount': '3536193655333967962003'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743194,
+    'transactionHash': '0x5cc6445177aa54ccc146343346e1dd5bbd63d6bada77d8ada1c382c4d6845537',
+    'timestamp': '2025-11-06T22:22:47.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1028794,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '25498209',
+        'collateralAmount': '2365000393726383718136'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743212,
+    'transactionHash': '0x178293e6914542eacd3e71462143bdd46496c61cf4ef2d2c17fea5be6c18f053',
+    'timestamp': '2025-11-06T22:26:23.000Z',
+    'caller': '0x7b26efB006249371B88BbBa20dDbB47e51D76645',
+    'liquidator': null,
+    'gasUsed': 810940,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '33940350',
+        'collateralAmount': '3187880424995819374428'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743254,
+    'transactionHash': '0xb81d3e4ccb3f1dcf6735411ba417e5d86aa86a4b9bb6d9ed541f39ea7e977e32',
+    'timestamp': '2025-11-06T22:34:47.000Z',
+    'caller': '0x00000027F490ACeE7F11ab5fdD47209d6422C5a7',
+    'liquidator': null,
+    'gasUsed': 924490,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '24800530',
+        'collateralAmount': '2360527366936911892947'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743256,
+    'transactionHash': '0x3d5e6bf5893a9a95f5296c7274431a0b05cd78f6289f9040641f694a57f1b2b8',
+    'timestamp': '2025-11-06T22:35:11.000Z',
+    'caller': '0x00000027F490ACeE7F11ab5fdD47209d6422C5a7',
+    'liquidator': null,
+    'gasUsed': 529581,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '36045751',
+        'collateralAmount': '3430853360685983678660'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743263,
+    'transactionHash': '0x6fe8bdaf74aa4c866a9d80b292dba0290817e8f0f44345ad1ef85a7963ae7d3a',
+    'timestamp': '2025-11-06T22:36:35.000Z',
+    'caller': '0x1b9FcB24c533839dC847235bd8Eb80E37EC42f85',
+    'liquidator': null,
+    'gasUsed': 821062,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '36697340',
+        'collateralAmount': '3615112099802342332045'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743263,
+    'transactionHash': '0x0f3898e2ea2329d91d0999c902ca71a17ef40694602668c599c398e9b474eb0f',
+    'timestamp': '2025-11-06T22:36:35.000Z',
+    'caller': '0x9c4Ebb54625b1E93E987E287fa832BD2e0a854b7',
+    'liquidator': null,
+    'gasUsed': 821060,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '36894703',
+        'collateralAmount': '3634554636219240387590'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743269,
+    'transactionHash': '0x503a4142a9da9a2d6268fc8dbba773b2bf315e2d700f5d4b03258fd2af534218',
+    'timestamp': '2025-11-06T22:37:47.000Z',
+    'caller': '0x0b4e49d09a8AE348a51559F3d32002341657D4c5',
+    'liquidator': null,
+    'gasUsed': 997320,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '45554065',
+        'collateralAmount': '4487601869145894218661'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743270,
+    'transactionHash': '0x1c414e939681874eca298ab39ec0c0b0fbe86b402944b57ed29c47ae76d57828',
+    'timestamp': '2025-11-06T22:37:59.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1363971,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '16767585',
+        'collateralAmount': '1651800904860250313828'
+      },
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x5C5b196aBE0d54485975D1Ec29617D42D9198326',
+        'baseAmount': '5888299',
+        'collateralAmount': '541830402145231076214'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743271,
+    'transactionHash': '0x87e1449f398dad6109966e8bfdc8b365c0957b271bc5b3355a01518363aa0839',
+    'timestamp': '2025-11-06T22:38:11.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1125894,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '40039707',
+        'collateralAmount': '3944373876914254408869'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743283,
+    'transactionHash': '0xef52f1b8d81317bab9be413e61f79a07952f2ddfa8769575b2f7b3b6712296bb',
+    'timestamp': '2025-11-06T22:40:35.000Z',
+    'caller': '0x276BF434613BD8CB5c8B3282Ec6445c9370e33FA',
+    'liquidator': null,
+    'gasUsed': 901242,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x828AE1566824A9835Acb6F565E1E9eA22BfB883A',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '29124491',
+        'collateralAmount': '3003077904883210534566'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743284,
+    'transactionHash': '0xf17fbdf8824656a7050d58c57ec7b19d2ad754533eeca9d409487f4e3f2b653a',
+    'timestamp': '2025-11-06T22:40:47.000Z',
+    'caller': '0x5B6Fc74F269C731840A74ae478d2C3d555E6A316',
+    'liquidator': null,
+    'gasUsed': 998822,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '34478977',
+        'collateralAmount': '3555188449874588493494'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743299,
+    'transactionHash': '0x1fb5a91d8b73fdbf773c5e50132329038fff7941118ba46586b7b5720b38cc2d',
+    'timestamp': '2025-11-06T22:43:59.000Z',
+    'caller': '0x9c4Ebb54625b1E93E987E287fa832BD2e0a854b7',
+    'liquidator': null,
+    'gasUsed': 997320,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0xd36F184111225D065884e129566752968c96E26c',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '27952816',
+        'collateralAmount': '2881108537498569583204'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743339,
+    'transactionHash': '0xa1af2941493ab5f7606b69392852da578c55eca3d8a99f8c75c68ae4af1b95c2',
+    'timestamp': '2025-11-06T22:52:11.000Z',
+    'caller': '0xf72Dbe617a4f24c8447178f6F11E4F399393255e',
+    'liquidator': null,
+    'gasUsed': 328995,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x7667095Caa12b79fCa489ff6E2198Ca01fDAe057',
+        'asset': '0x5C5b196aBE0d54485975D1Ec29617D42D9198326',
+        'baseAmount': '40000000000',
+        'collateralAmount': '3788659940315475344607076'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743383,
+    'transactionHash': '0x9e2f44bab546dcd1749024ca54b61b832f54ba05d66de63e3f23b5365142f34f',
+    'timestamp': '2025-11-06T23:00:59.000Z',
+    'caller': '0xf72Dbe617a4f24c8447178f6F11E4F399393255e',
+    'liquidator': null,
+    'gasUsed': 311217,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x7667095Caa12b79fCa489ff6E2198Ca01fDAe057',
+        'asset': '0x5C5b196aBE0d54485975D1Ec29617D42D9198326',
+        'baseAmount': '4000000000',
+        'collateralAmount': '394761546107929839385536'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23743665,
+    'transactionHash': '0xb7cf54abd1be1bd422d619794dccc5a027d5b1342e3d53d566020db502a10d03',
+    'timestamp': '2025-11-06T23:57:23.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 1703318,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x15700B564Ca08D9439C58cA5053166E8317aa138',
+        'baseAmount': '980847',
+        'collateralAmount': '81179088619477890867'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23744708,
+    'transactionHash': '0xeac8ca780f82a4574f8db15907a10181bbf3c303b51f45d9915a53c04982287b',
+    'timestamp': '2025-11-07T03:27:35.000Z',
+    'caller': '0x00000027F490ACeE7F11ab5fdD47209d6422C5a7',
+    'liquidator': null,
+    'gasUsed': 2203525,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x42E213a3ad048e899B89ea8CB11d21bc97b84748',
+        'asset': '0x5C5b196aBE0d54485975D1Ec29617D42D9198326',
+        'baseAmount': '154110331',
+        'collateralAmount': '8099532075436526961217'
+      }
+    ]
+  },
+  {
+    'blockNumber': 23744733,
+    'transactionHash': '0xa7d85923bf40bd770b867d8c18299ee9611817c76aacb34d6d1ff8e368b21fd2',
+    'timestamp': '2025-11-07T03:32:35.000Z',
+    'caller': '0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13',
+    'liquidator': null,
+    'gasUsed': 2421422,
+    'borrower': null,
+    'basePaidOut': '0',
+    'basePaidOutUsdValue': '0',
+    'collateralAbsorbed': [],
+    'buyCollateral': [
+      {
+        'buyer': '0x1f2F10D1C40777AE1Da742455c65828FF36Df387',
+        'asset': '0x5C5b196aBE0d54485975D1Ec29617D42D9198326',
+        'baseAmount': '1191568',
+        'collateralAmount': '22607985288656039403'
+      }
+    ]
+  }
+];
