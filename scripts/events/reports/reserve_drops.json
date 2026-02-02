@@ -1,9 +1,46 @@
 [
   {
-    "blockRange": "23741010-23741110",
-    "dropBlock": 23741110,
-    "dropPercent": "171.15",
-    "before": "1858426914350",
-    "after": "-1322326460116"
+    'blockRange': '23741754-23741755',
+    'dropBlock': 23741755,
+    'dropPercent': '28.42',
+    'before': '17251410691416',
+    'beforeUsd': '17250021.44',
+    'after': '12347715407386',
+    'afterUsd': '12346721.05',
+    'type': 'base'
+  },
+  {
+    'blockRange': '23741754-23741755',
+    'dropBlock': 23741755,
+    'asset': '0x15700b564ca08d9439c58ca5053166e8317aa138',
+    'symbol': 'deUSD',
+    'decimals': 18,
+    'price': '7815517',
+    'priceFormatted': '$0.08',
+    'before': '536644621562895892483098',
+    'beforeFormatted': '536644.621562',
+    'after': '3818794406244894709578387',
+    'afterFormatted': '3818794.406244',
+    'change': '3282149784681998817095289',
+    'changeFormatted': '3282149.784681',
+    'changeUsdValue': '256516.97',
+    'type': 'collateral'
+  },
+  {
+    'blockRange': '23741754-23741755',
+    'dropBlock': 23741755,
+    'asset': '0x5c5b196abe0d54485975d1ec29617d42d9198326',
+    'symbol': 'sdeUSD',
+    'decimals': 18,
+    'price': '8367032',
+    'priceFormatted': '$0.08',
+    'before': '0',
+    'beforeFormatted': '0.000000',
+    'after': '2165923171495994446243591',
+    'afterFormatted': '2165923.171495',
+    'change': '2165923171495994446243591',
+    'changeFormatted': '2165923.171495',
+    'changeUsdValue': '181223.48',
+    'type': 'collateral'
   }
-]
+];

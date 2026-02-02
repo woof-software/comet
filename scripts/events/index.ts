@@ -32,7 +32,7 @@ const main = async () => {
   const contracts = await dm.contracts();
   const comet = contracts.get('comet') as CometInterface;
   const { blockNumber: cometDeployedBlockNumber, hash } = await getContractDeploymentData(network, comet.address);
-  const endBlock = await dm.hre.ethers.provider.getBlockNumber();
+  const _endBlock = await dm.hre.ethers.provider.getBlockNumber();
 
   console.log(`Comet address ${getEtherscanUrl(network)}/address/${comet.address}`);
   console.log(`Comet deployed transaction ${getEtherscanUrl(network)}/trx/${hash}`);

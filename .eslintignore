@@ -2,3 +2,4 @@ plugins/scenario/worker/BootstrapWorker.js
 plugins/deployment_manager/test/SolcList.json
 scripts/build-spec.js
 scripts/exportNetworkConfigs.js
+scripts/events/reports/
