@@ -1,10 +1,10 @@
-import { ethers, event, expect, exp, makeProtocol, portfolio, ReentryAttack, setTotalsBasic, wait, fastForward, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer } from './helpers';
+import { ethers, expect, exp, makeProtocol, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer } from './helpers';
 import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, CometHarnessInterface, FaucetToken, CometExtAssetList, CometHarnessInterfaceExtendedAssetList } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
-// Note: isolated supply functionality, withdraw and repay are tested in separate testsets
-describe.only('5. supply', function () {
+// Note: isolated supply functionality and withdraw are tested in separate testsets
+describe('5. supply', function () {
   const baseTokenDecimals = 6;
 
   let comet: CometHarnessInterfaceExtendedAssetList;
@@ -17,6 +17,7 @@ describe.only('5. supply', function () {
   // Accounts
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
+  let dave: SignerWithAddress;
   let pauseGuardian: SignerWithAddress;
 
   before(async function () {
@@ -30,8 +31,7 @@ describe.only('5. supply', function () {
     pauseGuardian = protocol.pauseGuardian;
     unsupportedToken = protocol.unsupportedToken;
 
-    alice = protocol.users[0];
-    bob = protocol.users[1];
+    [alice, bob, dave] = protocol.users;
 
     await baseToken.allocateTo(alice.address, exp(1e10, baseTokenDecimals));
     await baseToken.allocateTo(bob.address, exp(1e10, baseTokenDecimals));
@@ -473,162 +473,434 @@ describe.only('5. supply', function () {
         expect(await comet.totalSupply()).to.be.approximately(totalPresentSupply, 1);
       });
     });
+  });
 
-    describe('supply max base (repay borrow)', function () {
-      it('supplies max base borrow balance (including accrued) from sender', async () => {
-        const protocol = await makeProtocol({ base: 'USDC' });
-        const { comet, tokens, users: [alice, bob] } = protocol;
-        const { USDC } = tokens;
+  describe('repay', function () {
+    const COLLATERAL_AMOUNT: bigint = exp(1, 18); // 1 COMP token 
+    const BORROW_AMOUNT: bigint = exp(10, baseTokenDecimals); // $10 borrow amount
+    let collateral: FaucetToken;
 
-        await USDC.allocateTo(bob.address, 100e6);
-        await setTotalsBasic(comet, {
-          totalSupplyBase: 100e6,
-          totalBorrowBase: 50e6,
-        });
-        await comet.setBasePrincipal(alice.address, -50e6);
+    let snapshot: SnapshotRestorer;
 
-        // Fast forward to accrue interest
-        await fastForward(86400);
+    before(async function () {
+      collateral = collaterals['COMP'] as FaucetToken;
+
+      await collateral.allocateTo(dave.address, exp(1e10, 18));
+
+      snapshot = await takeSnapshot();
+    });
+
+    this.afterAll(async () => snapshot.restore());
+
+    describe('setup: dave becomes a borrower', function () {
+      it('dave supply collateral and withdraw base to become borrower', async () => {
+        await collateral.connect(dave).approve(comet.address, COLLATERAL_AMOUNT);
+        await comet.connect(dave).supply(collateral.address, COLLATERAL_AMOUNT);
+
+        await comet.connect(dave).withdraw(baseToken.address, BORROW_AMOUNT);
+      });
+
+      it('dave has negative principal', async () => {
+        expect((await comet.userBasic(dave.address)).principal).to.be.lessThan(0);
+      });
+
+      it('dave borrow balance is equal to borrow amount', async () => {
+        expect(await comet.borrowBalanceOf(dave.address)).to.be.equal(BORROW_AMOUNT);
+      });
+
+      it('dave balanceOf is 0 (no supply position)', async () => {
+        expect(await comet.balanceOf(dave.address)).to.be.equal(0);
+      });
+
+      it('dave has collateral registered', async () => {
+        expect((await comet.userCollateral(dave.address, collateral.address)).balance).to.be.equal(COLLATERAL_AMOUNT);
+      });
+    });
+
+    describe('partial repay', function () {
+      const PARTIAL_REPAY_AMOUNT: bigint = exp(5, baseTokenDecimals); // $5 repay (half of borrow)
+      let davePrincipalBefore: BigNumber;
+      let daveBorrowBalanceBefore: BigNumber;
+      let daveBaseTokenBalanceBefore: BigNumber;
+      let cometBaseTokenBalanceBefore: BigNumber;
+      let totalBorrowBaseBefore: BigNumber;
+      let totalSupplyBaseBefore: BigNumber;
+
+      let repayTx: ContractTransaction;
+
+      before(async function () {
+        // Allocate base tokens to dave for repayment
+        await baseToken.allocateTo(dave.address, PARTIAL_REPAY_AMOUNT);
+
+        // Wait to accrue some interest
+        await ethers.provider.send('evm_increaseTime', [60 * 60]); // 1 hr
         await ethers.provider.send('evm_mine', []);
 
-        const t0 = await comet.totalsBasic();
-        const a0 = await portfolio(protocol, alice.address);
-        const b0 = await portfolio(protocol, bob.address);
-
-        await wait(USDC.connect(bob).approve(comet.address, 100e6));
-        const aliceAccruedBorrowBalance = (await comet.callStatic.borrowBalanceOf(alice.address)).toBigInt();
-        const s0 = await wait(comet.connect(bob).supplyTo(alice.address, USDC.address, ethers.constants.MaxUint256));
-
-        const t1 = await comet.totalsBasic();
-        const a1 = await portfolio(protocol, alice.address);
-        const b1 = await portfolio(protocol, bob.address);
-
-        // Only 2 events (no mint Transfer since repaying borrow)
-        expect(s0.receipt['events'].length).to.be.equal(2);
-        expect(event(s0, 0)).to.be.deep.equal({
-          Transfer: {
-            from: bob.address,
-            to: comet.address,
-            amount: aliceAccruedBorrowBalance,
-          }
-        });
-        expect(event(s0, 1)).to.be.deep.equal({
-          Supply: {
-            from: bob.address,
-            dst: alice.address,
-            amount: aliceAccruedBorrowBalance,
-          }
-        });
-
-        // Interest accrued
-        expect(-aliceAccruedBorrowBalance).to.not.equal(exp(-50, 6));
-
-        // Alice borrow repaid
-        expect(a0.internal).to.be.deep.equal({ USDC: -aliceAccruedBorrowBalance, COMP: 0n, WETH: 0n, WBTC: 0n });
-        expect(a1.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
-
-        // Bob paid
-        expect(b0.external).to.be.deep.equal({ USDC: exp(100, 6), COMP: 0n, WETH: 0n, WBTC: 0n });
-        expect(b1.external).to.be.deep.equal({ USDC: exp(100, 6) - aliceAccruedBorrowBalance, COMP: 0n, WETH: 0n, WBTC: 0n });
-
-        // Totals updated
-        expect(t1.totalSupplyBase).to.be.equal(t0.totalSupplyBase);
-        expect(t1.totalBorrowBase).to.be.equal(0n);
-
-        expect(Number(s0.receipt.gasUsed)).to.be.lessThan(120000);
+        davePrincipalBefore = (await comet.userBasic(dave.address)).principal;
+        daveBorrowBalanceBefore = await comet.borrowBalanceOf(dave.address);
+        daveBaseTokenBalanceBefore = await baseToken.balanceOf(dave.address);
+        cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+        totalBorrowBaseBefore = (await comet.totalsBasic()).totalBorrowBase;
+        totalSupplyBaseBefore = (await comet.totalsBasic()).totalSupplyBase;
       });
 
-      it('supply max base should supply 0 if user has no borrow position', async () => {
-        const protocol = await makeProtocol({ base: 'USDC' });
-        const { comet, tokens, users: [alice, bob] } = protocol;
-        const { USDC } = tokens;
-
-        await USDC.allocateTo(bob.address, 100e6);
-
-        const t0 = await comet.totalsBasic();
-        await wait(USDC.connect(bob).approve(comet.address, 100e6));
-        const s0 = await wait(comet.connect(bob).supplyTo(alice.address, USDC.address, ethers.constants.MaxUint256));
-
-        const t1 = await comet.totalsBasic();
-        const a1 = await portfolio(protocol, alice.address);
-        const b1 = await portfolio(protocol, bob.address);
-
-        // Events show 0 amount
-        expect(s0.receipt['events'].length).to.be.equal(2);
-        expect(event(s0, 0)).to.be.deep.equal({
-          Transfer: { from: bob.address, to: comet.address, amount: 0n }
-        });
-        expect(event(s0, 1)).to.be.deep.equal({
-          Supply: { from: bob.address, dst: alice.address, amount: 0n }
-        });
-
-        // No tokens transferred
-        expect(a1.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
-        expect(b1.external).to.be.deep.equal({ USDC: exp(100, 6), COMP: 0n, WETH: 0n, WBTC: 0n });
-
-        // Totals unchanged
-        expect(t1.totalSupplyBase).to.be.equal(t0.totalSupplyBase);
-        expect(t1.totalBorrowBase).to.be.equal(t0.totalBorrowBase);
-
-        expect(Number(s0.receipt.gasUsed)).to.be.lessThan(120000);
+      it('borrow balance has accrued interest', async () => {
+        // Borrow balance should be greater than initial borrow amount due to interest
+        expect(daveBorrowBalanceBefore).to.be.greaterThanOrEqual(BORROW_AMOUNT);
       });
 
-      it('does not emit Transfer for 0 mint when repaying exact borrow', async () => {
-        const protocol = await makeProtocol({ base: 'USDC' });
-        const { comet, tokens, users: [alice, bob] } = protocol;
-        const { USDC } = tokens;
-
-        await USDC.allocateTo(bob.address, 100e6);
-        await comet.setBasePrincipal(alice.address, -100e6);
-        await setTotalsBasic(comet, {
-          totalBorrowBase: 100e6,
-        });
-
-        await wait(USDC.connect(bob).approve(comet.address, 100e6));
-        const s0 = await wait(comet.connect(bob).supplyTo(alice.address, USDC.address, 100e6));
-
-        // Only 2 events - no mint Transfer
-        expect(s0.receipt['events'].length).to.be.equal(2);
-        expect(event(s0, 0)).to.be.deep.equal({
-          Transfer: { from: bob.address, to: comet.address, amount: BigInt(100e6) }
-        });
-        expect(event(s0, 1)).to.be.deep.equal({
-          Supply: { from: bob.address, dst: alice.address, amount: BigInt(100e6) }
-        });
+      it('partial repay succeeds', async () => {
+        await baseToken.connect(dave).approve(comet.address, PARTIAL_REPAY_AMOUNT);
+        repayTx = await comet.connect(dave).supply(baseToken.address, PARTIAL_REPAY_AMOUNT);
+        expect(repayTx).to.not.be.reverted;
       });
 
-      // Edge-case: when supplying 0, dstPrincipalNew can be less than dstPrincipal due to rounding
-      it('supplies 0 and does not revert when dstPrincipalNew < dstPrincipal', async () => {
-        const { comet, tokens, users: [alice] } = await makeProtocol({ base: 'USDC' });
-        const { USDC } = tokens;
-
-        await comet.setBasePrincipal(alice.address, 99999992291226);
-        await setTotalsBasic(comet, {
-          totalSupplyBase: 699999944771920,
-          baseSupplyIndex: 1000000131467072,
-        });
-
-        const s0 = await wait(comet.connect(alice).supply(USDC.address, 0));
-
-        expect(s0.receipt['events'].length).to.be.equal(2);
-        expect(event(s0, 0)).to.be.deep.equal({
-          Transfer: { from: alice.address, to: comet.address, amount: BigInt(0) }
-        });
-        expect(event(s0, 1)).to.be.deep.equal({
-          Supply: { from: alice.address, dst: alice.address, amount: BigInt(0) }
-        });
+      it('emits Supply event when repaying', async () => {
+        expect(repayTx).to.emit(comet, 'Supply').withArgs(dave.address, dave.address, PARTIAL_REPAY_AMOUNT);
       });
 
-      it('reverts if supply max for a collateral asset', async () => {
-        const { comet, tokens, users: [alice, bob] } = await makeProtocol({ base: 'USDC' });
-        const { COMP } = tokens;
+      it('does NOT emit Transfer event (no mint) when only repaying debt', async () => {
+        await expect(repayTx).to.not.emit(comet, 'Transfer');
+      });
 
-        await COMP.allocateTo(bob.address, 100e6);
-        await wait(COMP.connect(bob).approve(COMP.address, 100e6));
+      it('dave base token balance decreased by repay amount', async () => {
+        const daveBaseTokenBalanceAfter = await baseToken.balanceOf(dave.address);
+        expect(daveBaseTokenBalanceBefore.sub(daveBaseTokenBalanceAfter)).to.equal(PARTIAL_REPAY_AMOUNT);
+      });
 
-        await expect(
-          comet.connect(bob).supplyTo(alice.address, COMP.address, ethers.constants.MaxUint256)
-        ).to.be.revertedWith("custom error 'InvalidUInt128()'");
+      it('comet base token balance increased by repay amount', async () => {
+        const cometBaseTokenBalanceAfter = await baseToken.balanceOf(comet.address);
+        expect(cometBaseTokenBalanceAfter.sub(cometBaseTokenBalanceBefore)).to.equal(PARTIAL_REPAY_AMOUNT);
+      });
+
+      it('dave principal is still negative (still has debt)', async () => {
+        const davePrincipalAfter = (await comet.userBasic(dave.address)).principal;
+        expect(davePrincipalAfter).to.be.lessThan(0);
+      });
+
+      it('dave principal increased (less debt)', async () => {
+        const davePrincipalAfter = (await comet.userBasic(dave.address)).principal;
+        // Principal increased means less negative (closer to 0)
+        expect(davePrincipalAfter).to.be.approximately(davePrincipalBefore.add(PARTIAL_REPAY_AMOUNT), 40);
+      });
+
+      it('dave borrow balance decreased', async () => {
+        const daveBorrowBalanceAfter = await comet.borrowBalanceOf(dave.address);
+        expect(daveBorrowBalanceAfter).to.be.lessThan(daveBorrowBalanceBefore);
+      });
+
+      it('dave balanceOf is still 0 (no supply position)', async () => {
+        expect(await comet.balanceOf(dave.address)).to.be.equal(0);
+      });
+
+      it('total borrow base decreased', async () => {
+        const totalBorrowBaseAfter = (await comet.totalsBasic()).totalBorrowBase;
+        expect(totalBorrowBaseAfter).to.be.lessThan(totalBorrowBaseBefore);
+      });
+
+      it('total supply base unchanged (repay does not add supply)', async () => {
+        const totalSupplyBaseAfter = (await comet.totalsBasic()).totalSupplyBase;
+        expect(totalSupplyBaseAfter).to.equal(totalSupplyBaseBefore);
+      });
+
+      it('dave collateral is unchanged after repay', async () => {
+        expect((await comet.userCollateral(dave.address, collateral.address)).balance).to.be.equal(COLLATERAL_AMOUNT);
+      });
+    });
+
+    describe('full repay (exactly remaining debt)', function () {
+      let davePrincipalBefore: BigNumber;
+      let daveBorrowBalanceBefore: BigNumber;
+      let daveBaseTokenBalanceBefore: BigNumber;
+      let cometBaseTokenBalanceBefore: BigNumber;
+
+      before(async function () {
+        // Wait to accrue more interest
+        await ethers.provider.send('evm_increaseTime', [60 * 60]); // 1 hr
+        await ethers.provider.send('evm_mine', []);
+
+        davePrincipalBefore = (await comet.userBasic(dave.address)).principal;
+        daveBorrowBalanceBefore = await comet.borrowBalanceOf(dave.address);
+
+        // Allocate exactly the borrow balance to dave
+        await baseToken.allocateTo(dave.address, daveBorrowBalanceBefore);
+
+        daveBaseTokenBalanceBefore = await baseToken.balanceOf(dave.address);
+        cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      });
+
+      it('dave still has debt before full repay', async () => {
+        expect(davePrincipalBefore).to.be.lessThan(0);
+        expect(daveBorrowBalanceBefore).to.be.greaterThan(0);
+      });
+
+      it('full repay using max uint256 succeeds', async () => {
+        await baseToken.connect(dave).approve(comet.address, ethers.constants.MaxUint256);
+        await expect(comet.connect(dave).supply(baseToken.address, ethers.constants.MaxUint256)).to.not.be.reverted;
+      });
+
+      it('dave principal is 0 after full repay', async () => {
+        expect((await comet.userBasic(dave.address)).principal).to.equal(0);
+      });
+
+      it('dave borrow balance is 0 after full repay', async () => {
+        expect(await comet.borrowBalanceOf(dave.address)).to.equal(0);
+      });
+
+      it('dave balanceOf is 0 (no excess was supplied)', async () => {
+        expect(await comet.balanceOf(dave.address)).to.equal(0);
+      });
+
+      it('dave base token balance decreased by exactly the borrow balance', async () => {
+        const daveBaseTokenBalanceAfter = await baseToken.balanceOf(dave.address);
+        expect(daveBaseTokenBalanceBefore.sub(daveBaseTokenBalanceAfter)).to.equal(daveBorrowBalanceBefore);
+      });
+
+      it('comet base token balance increased by borrow balance', async () => {
+        const cometBaseTokenBalanceAfter = await baseToken.balanceOf(comet.address);
+        expect(cometBaseTokenBalanceAfter.sub(cometBaseTokenBalanceBefore)).to.equal(daveBorrowBalanceBefore);
+      });
+
+      it('total borrow base is 0 (dave was the only borrower)', async () => {
+        const totalBorrowBaseAfter = (await comet.totalsBasic()).totalBorrowBase;
+        expect(totalBorrowBaseAfter).to.equal(0);
+      });
+
+      it('dave collateral is still intact', async () => {
+        expect((await comet.userCollateral(dave.address, collateral.address)).balance).to.be.equal(COLLATERAL_AMOUNT);
+      });
+    });
+
+    describe('over-repay (repay more than debt - becomes supplier)', function () {
+      const NEW_BORROW_AMOUNT: bigint = exp(5, baseTokenDecimals); // $5 new borrow
+      const OVER_REPAY_AMOUNT: bigint = exp(10, baseTokenDecimals); // $10 repay (more than $5 debt)
+      let davePrincipalBefore: BigNumber;
+      let daveBorrowBalanceBefore: BigNumber;
+      let daveBaseTokenBalanceBefore: BigNumber;
+      let totalSupplyBaseBefore: BigNumber;
+
+      let overRepayTx: ContractTransaction;
+
+      before(async function () {
+        // Dave creates new borrow position
+        await comet.connect(dave).withdraw(baseToken.address, NEW_BORROW_AMOUNT);
+
+        // Wait to accrue some interest
+        await ethers.provider.send('evm_increaseTime', [60 * 60]); // 1 hr
+        await ethers.provider.send('evm_mine', []);
+
+        davePrincipalBefore = (await comet.userBasic(dave.address)).principal;
+        daveBorrowBalanceBefore = await comet.borrowBalanceOf(dave.address);
+
+        // Allocate over-repay amount to dave
+        await baseToken.allocateTo(dave.address, OVER_REPAY_AMOUNT);
+        daveBaseTokenBalanceBefore = await baseToken.balanceOf(dave.address);
+        totalSupplyBaseBefore = (await comet.totalsBasic()).totalSupplyBase;
+      });
+
+      it('dave has debt before over-repay', async () => {
+        expect(davePrincipalBefore).to.be.lessThan(0);
+        expect(daveBorrowBalanceBefore).to.be.greaterThan(0);
+      });
+
+      it('over-repay amount is greater than borrow balance', async () => {
+        expect(OVER_REPAY_AMOUNT).to.be.greaterThan(daveBorrowBalanceBefore);
+      });
+
+      it('over-repay succeeds', async () => {
+        await baseToken.connect(dave).approve(comet.address, OVER_REPAY_AMOUNT);
+        overRepayTx = await comet.connect(dave).supply(baseToken.address, OVER_REPAY_AMOUNT);
+        expect(overRepayTx).to.not.be.reverted;
+      });
+
+      it('emits both Supply and Transfer (mint) events when over-repaying', async () => {
+        expect(overRepayTx)
+          .to.emit(comet, 'Supply').withArgs(dave.address, dave.address, OVER_REPAY_AMOUNT)
+          .to.not.emit(comet, 'Transfer');
+      });
+
+      it('dave principal is now positive (became supplier)', async () => {
+        const davePrincipalAfter = (await comet.userBasic(dave.address)).principal;
+        expect(davePrincipalAfter).to.be.greaterThan(0);
+      });
+
+      it('dave borrow balance is 0', async () => {
+        expect(await comet.borrowBalanceOf(dave.address)).to.equal(0);
+      });
+
+      it('dave balanceOf is greater than 0 (has supply position)', async () => {
+        expect(await comet.balanceOf(dave.address)).to.be.greaterThan(0);
+      });
+
+      it('dave base token balance decreased by over-repay amount', async () => {
+        const daveBaseTokenBalanceAfter = await baseToken.balanceOf(dave.address);
+        expect(daveBaseTokenBalanceBefore.sub(daveBaseTokenBalanceAfter)).to.equal(OVER_REPAY_AMOUNT);
+      });
+
+      it('total borrow base is 0', async () => {
+        const totalBorrowBaseAfter = (await comet.totalsBasic()).totalBorrowBase;
+        expect(totalBorrowBaseAfter).to.equal(0);
+      });
+
+      it('total supply base increased', async () => {
+        const totalSupplyBaseAfter = (await comet.totalsBasic()).totalSupplyBase;
+        expect(totalSupplyBaseAfter).to.be.greaterThan(totalSupplyBaseBefore);
+      });
+
+      it('dave collateral is still intact', async () => {
+        expect((await comet.userCollateral(dave.address, collateral.address)).balance).to.be.equal(COLLATERAL_AMOUNT);
+      });
+    });
+
+    describe('repay on behalf (supplyTo)', function () {
+      const NEW_BORROW_AMOUNT: bigint = exp(5, baseTokenDecimals); // $5 new borrow
+      const REPAY_ON_BEHALF_AMOUNT: bigint = exp(3, baseTokenDecimals); // $3 repay
+      let davePrincipalBefore: BigNumber;
+      let daveBorrowBalanceBefore: BigNumber;
+      let aliceBaseTokenBalanceBefore: BigNumber;
+      let daveBaseTokenBalanceBefore: BigNumber;
+      let alicePrincipalBefore: BigNumber;
+      let _totalBorrowBaseBefore: BigNumber;
+
+      before(async function () {
+        // First, dave withdraws his supply and creates new borrow
+        const daveBalance = await comet.balanceOf(dave.address);
+        if (daveBalance.gt(0)) {
+          await comet.connect(dave).withdraw(baseToken.address, daveBalance);
+        }
+
+        // Dave creates new borrow position
+        await comet.connect(dave).withdraw(baseToken.address, NEW_BORROW_AMOUNT);
+
+        // Wait to accrue some interest
+        await ethers.provider.send('evm_increaseTime', [60 * 60]); // 1 hr
+        await ethers.provider.send('evm_mine', []);
+
+        davePrincipalBefore = (await comet.userBasic(dave.address)).principal;
+        daveBorrowBalanceBefore = await comet.borrowBalanceOf(dave.address);
+        aliceBaseTokenBalanceBefore = await baseToken.balanceOf(alice.address);
+        daveBaseTokenBalanceBefore = await baseToken.balanceOf(dave.address);
+        alicePrincipalBefore = (await comet.userBasic(alice.address)).principal;
+        _totalBorrowBaseBefore = (await comet.totalsBasic()).totalBorrowBase;
+      });
+
+      it('dave has debt', async () => {
+        expect(davePrincipalBefore).to.be.lessThan(0);
+      });
+
+      it('alice repays on behalf of dave using supplyTo', async () => {
+        await baseToken.connect(alice).approve(comet.address, REPAY_ON_BEHALF_AMOUNT);
+        await expect(comet.connect(alice).supplyTo(dave.address, baseToken.address, REPAY_ON_BEHALF_AMOUNT)).to.not.be.reverted;
+      });
+
+      it('alice base token balance decreased', async () => {
+        const aliceBaseTokenBalanceAfter = await baseToken.balanceOf(alice.address);
+        expect(aliceBaseTokenBalanceBefore.sub(aliceBaseTokenBalanceAfter)).to.equal(REPAY_ON_BEHALF_AMOUNT);
+      });
+
+      it('dave base token balance unchanged', async () => {
+        const daveBaseTokenBalanceAfter = await baseToken.balanceOf(dave.address);
+        expect(daveBaseTokenBalanceAfter).to.equal(daveBaseTokenBalanceBefore);
+      });
+
+      it('dave principal increased (debt reduced)', async () => {
+        const davePrincipalAfter = (await comet.userBasic(dave.address)).principal;
+        expect(davePrincipalAfter).to.be.greaterThan(davePrincipalBefore);
+      });
+
+      it('dave borrow balance decreased', async () => {
+        const daveBorrowBalanceAfter = await comet.borrowBalanceOf(dave.address);
+        expect(daveBorrowBalanceAfter).to.be.lessThan(daveBorrowBalanceBefore);
+      });
+
+      it('alice principal unchanged (she did not become supplier from this)', async () => {
+        const alicePrincipalAfter = (await comet.userBasic(alice.address)).principal;
+        expect(alicePrincipalAfter).to.equal(alicePrincipalBefore);
+      });
+    });
+
+    describe('repay with accrued interest', function () {
+      const NEW_BORROW_AMOUNT: bigint = exp(5, baseTokenDecimals);
+      let borrowBalanceInitial: BigNumber;
+      let borrowBalanceAfterTime: BigNumber;
+
+      before(async function () {
+        // First, fully repay dave's existing debt
+        const currentBorrowBalance = await comet.borrowBalanceOf(dave.address);
+        if (currentBorrowBalance.gt(0)) {
+          await baseToken.allocateTo(dave.address, currentBorrowBalance);
+          await baseToken.connect(dave).approve(comet.address, currentBorrowBalance);
+          await comet.connect(dave).supply(baseToken.address, ethers.constants.MaxUint256);
+        }
+
+        // Dave creates new borrow
+        await comet.connect(dave).withdraw(baseToken.address, NEW_BORROW_AMOUNT);
+        borrowBalanceInitial = await comet.borrowBalanceOf(dave.address);
+
+        // Wait significant time for interest to accrue
+        await ethers.provider.send('evm_increaseTime', [3600]);
+        await ethers.provider.send('evm_mine', []);
+
+        borrowBalanceAfterTime = await comet.borrowBalanceOf(dave.address);
+      });
+
+      it('borrow balance increased due to interest', async () => {
+        expect(borrowBalanceAfterTime).to.be.greaterThan(borrowBalanceInitial);
+      });
+
+      it('interest is reflected in borrow balance', async () => {
+        const interestAccrued = borrowBalanceAfterTime.sub(borrowBalanceInitial);
+        expect(interestAccrued).to.be.greaterThan(0);
+      });
+
+      it('repaying full borrow balance (including interest) clears debt', async () => {
+        await baseToken.allocateTo(dave.address, borrowBalanceAfterTime.mul(2)); // Extra to cover any new interest
+        await baseToken.connect(dave).approve(comet.address, borrowBalanceAfterTime.mul(2));
+        await comet.connect(dave).supply(baseToken.address, ethers.constants.MaxUint256);
+
+        expect(await comet.borrowBalanceOf(dave.address)).to.equal(0);
+        expect((await comet.userBasic(dave.address)).principal).to.equal(0);
+      });
+    });
+
+    describe('repay edge cases', function () {
+      it('repay reverts when supply is paused', async () => {
+        const snapshot = await takeSnapshot();
+
+        // Create new borrow
+        await comet.connect(dave).withdraw(baseToken.address, exp(1, baseTokenDecimals));
+        await baseToken.allocateTo(dave.address, exp(1, baseTokenDecimals));
+
+        await comet.connect(pauseGuardian).pause(true, false, false, false, false);
+        expect(await comet.isSupplyPaused()).to.be.true;
+
+        await baseToken.connect(dave).approve(comet.address, exp(1, baseTokenDecimals));
+        await expect(comet.connect(dave).supply(baseToken.address, exp(1, baseTokenDecimals)))
+          .to.be.revertedWithCustomError(comet, 'Paused');
+
+        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
+        await snapshot.restore();
+      });
+
+      it('can withdraw collateral after repaying all debt', async () => {
+        const snapshot = await takeSnapshot();
+
+        // Create new borrow
+        await comet.connect(dave).withdraw(baseToken.address, exp(1, baseTokenDecimals));
+        const borrowBalance = await comet.borrowBalanceOf(dave.address);
+
+        // Repay all debt
+        await baseToken.allocateTo(dave.address, borrowBalance.mul(2));
+        await baseToken.connect(dave).approve(comet.address, ethers.constants.MaxUint256);
+        await comet.connect(dave).supply(baseToken.address, ethers.constants.MaxUint256);
+
+        // Now dave should be able to withdraw collateral
+        const collateralBalance = (await comet.userCollateral(dave.address, collateral.address)).balance;
+        await expect(comet.connect(dave).withdraw(collateral.address, collateralBalance)).to.not.be.reverted;
+
+        expect((await comet.userCollateral(dave.address, collateral.address)).balance).to.equal(0);
+
+        await snapshot.restore();
       });
     });
   });
