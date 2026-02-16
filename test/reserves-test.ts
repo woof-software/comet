@@ -1,7 +1,7 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken } from 'build/types';
 import { ethers, expect, exp, makeProtocol, presentValueBorrow, presentValueSupply, defaultAssets } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-import { BigNumber } from 'ethers';
+import { BigNumber, Contract } from 'ethers';
 
 describe.only('getReserves', function () {
   // Constants
@@ -18,6 +18,7 @@ describe.only('getReserves', function () {
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let dave: SignerWithAddress;
+  let charlie: SignerWithAddress;
 
   before(async () => {
     const protocol = await makeProtocol(
@@ -41,7 +42,7 @@ describe.only('getReserves', function () {
       if (asset === 'USDC') continue;
       collaterals[asset] = protocol.tokens[asset] as FaucetToken;
     }
-    [alice, bob, dave] = protocol.users;
+    [alice, bob, dave, charlie] = protocol.users;
   });
 
   describe('before seeding', function () {
@@ -257,17 +258,21 @@ describe.only('getReserves', function () {
 
 
   describe('liquidation', function () {
+    const suppliedCollateral = exp(1, 18);
+
     let reservesBefore: BigNumber;
     let totalBorrowBefore: BigNumber;
     let totalSupplyBefore: BigNumber;
 
     let borrowedAmount: BigNumber;
     let liquidatedAmount: BigNumber;
+
+    let collateralReservesBefore: BigNumber;
     before(async function () {
       // prepare position for liquidation
-      await collaterals.WETH.connect(dave).allocateTo(dave.address, exp(1, 18));
-      await collaterals.WETH.connect(dave).approve(comet.address, exp(1, 18));
-      const collateralTx = await comet.connect(dave).supply(collaterals.WETH.address, exp(1, 18));
+      await collaterals.WETH.connect(dave).allocateTo(dave.address, suppliedCollateral);
+      await collaterals.WETH.connect(dave).approve(comet.address, suppliedCollateral);
+      const collateralTx = await comet.connect(dave).supply(collaterals.WETH.address, suppliedCollateral);
       await collateralTx.wait();
 
       const maxBorrow = await comet.getBorrowLimit(dave.address);
@@ -293,6 +298,7 @@ describe.only('getReserves', function () {
 
     it('save values before liquidation', async function () {
       reservesBefore = await comet.getReserves();
+      collateralReservesBefore = await comet.getCollateralReserves(collaterals.WETH.address);
       ({
         totalBorrowBase: totalBorrowBefore,
         totalSupplyBase: totalSupplyBefore,
@@ -320,28 +326,139 @@ describe.only('getReserves', function () {
 
     it('reserves should decrease proportionally to liquidated debt after liquidation', async function () {
       const reservesAfter = await comet.getReserves();
-      // reserves should decrease by at least the amount repaid due to interest accruing on the remaining debt
-      expect(reservesAfter.add(liquidatedAmount)).to.be.lte(reservesBefore);
+      // reserves should decrease by less than the amount repaid due to debt accruing
+      expect(reservesAfter.add(liquidatedAmount)).to.be.gte(reservesBefore);
     });
 
+    it('reserves should not be affected by interest accrual with utilization = 0 after liquidation', async function () {
+      const reservesAfter = await comet.getReserves();
 
+      // Fast forward a month
+      await ethers.provider.send('evm_increaseTime', [oneMonth]);
+      await ethers.provider.send('evm_mine', []);
 
+      const reserves = await comet.getReserves();
+      expect(reserves).to.equal(reservesAfter);
+    });
 
+    describe('collateral reserves', function () {
+      it('saved collateral reserves should be 0', async function () {
+        expect(collateralReservesBefore).to.equal(0);
+      });
 
+      it('collateral reserves should equal liquidated collateral after liquidation', async function () {
+        const collateralReservesAfter = await comet.getCollateralReserves(collaterals.WETH.address);
+        expect(collateralReservesAfter).to.equal(suppliedCollateral);
+      });
 
+      it('collateral reserves should not increase with time', async function () {
+        // Fast forward a month
+        await ethers.provider.send('evm_increaseTime', [oneMonth]);
+        await ethers.provider.send('evm_mine', []);
 
-
-
-
-
-
-
-
-
-
-
-
-
+        const collateralReservesAfter = await comet.getCollateralReserves(collaterals.WETH.address);
+        expect(collateralReservesAfter).to.equal(suppliedCollateral);
+      });
+    });
   });
+
+  describe('negative reserves', function () {
+    it('should allow borrowing more than total supply (to use reserves)', async function () {
+      await collaterals.WETH.connect(charlie).allocateTo(charlie.address, exp(80, 18));
+      await collaterals.WETH.connect(charlie).approve(comet.address, exp(80, 18));
+      const collateralTx = await comet.connect(charlie).supply(collaterals.WETH.address, exp(80, 18));
+      await collateralTx.wait();
+
+      const currentBalance = await baseToken.balanceOf(comet.address);
+      const borrowTx = await comet.connect(charlie).withdraw(baseToken.address, currentBalance);
+      await borrowTx.wait();
+      expect(await baseToken.balanceOf(charlie.address)).to.equal(currentBalance);
+    });
+
+    it('total borrow should be greater than total supply + reserves after some time for accrual', async function () {
+      await ethers.provider.send('evm_increaseTime', [oneMonth * 3]);
+      await ethers.provider.send('evm_mine', []);
+      const { totalSupplyBase, totalBorrowBase } = await comet.totalsBasic();
+      const reserves = await comet.getReserves();
+      expect(totalBorrowBase).to.be.gt(totalSupplyBase);
+      expect(await baseToken.balanceOf(comet.address)).to.equal(0);
+      expect(reserves).to.be.greaterThan(totalBorrowBase.sub(totalSupplyBase));
+    });
+
+    it('liquidating when total borrow is greater than total supply + reserves make reserves negative', async function () {
+      let i = 0;
+      while (!(await comet.isLiquidatable(charlie.address)) && i < 100) {
+        await ethers.provider.send('evm_increaseTime', [oneDay]);
+        await ethers.provider.send('evm_mine', []);
+
+        await comet.accrueAccount(charlie.address);
+        i++;
+      }
+      const isLiquidatable = await comet.isLiquidatable(charlie.address);
+      expect(isLiquidatable).to.equal(true);
+
+      const reservesBefore = await comet.getReserves();
+      const liquidateTx = await comet.connect(bob).absorb(bob.address, [charlie.address]);
+      await liquidateTx.wait();
+      const reservesAfter = await comet.getReserves();
+      expect(reservesAfter).to.be.lt(reservesBefore);
+      expect(reservesAfter).to.be.lt(0);
+    });
+
+    describe('buy collateral', function () {
+      let collateralReservesBefore: BigNumber;
+      let reservesBefore: BigNumber;
+
+      before(async function () {
+        reservesBefore = await comet.getReserves();
+      });
+
+      it('collateral reserves should be available for purchase', async function () {
+        collateralReservesBefore = await comet.getCollateralReserves(collaterals.WETH.address);
+        expect(collateralReservesBefore).to.be.gt(0);
+      });
+
+      it('should allow buying collateral', async function () {
+        const availableCollateral = (await comet.getCollateralReserves(collaterals.WETH.address)).mul(95).div(100);
+        const priceWETH = await comet.getPrice((await comet.getAssetInfoByAddress(collaterals.WETH.address)).priceFeed);
+        const priceBase = await comet.getPrice(await comet.baseTokenPriceFeed());
+
+        const amountToPay = availableCollateral.mul(priceWETH).div(priceBase).div(exp(1, 12)); // adjust for price feed decimals
+        await baseToken.connect(dave).allocateTo(dave.address, amountToPay);
+        await baseToken.connect(dave).approve(comet.address, amountToPay);
+
+        const buyTx = await comet.connect(dave).buyCollateral(collaterals.WETH.address, availableCollateral, amountToPay, dave.address);
+        await buyTx.wait();
+      });
+
+      it('collateral reserves should decrease after buying collateral', async function () {
+        const collateralReservesAfter = await comet.getCollateralReserves(collaterals.WETH.address);
+        expect(collateralReservesAfter).to.be.equal(0);
+      });
+
+      it('reserves should increase after buying collateral', async function () {
+        const reservesAfter = await comet.getReserves();
+        expect(reservesAfter).to.be.gt(reservesBefore);
+      });
+
+      it('reserves should be positive after buying collateral even if they were negative before', async function () {
+        const reservesAfter = await comet.getReserves();
+        expect(reservesAfter).to.be.gt(0);
+      });
+    });
+  });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 });
-  
