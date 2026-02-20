@@ -1,14 +1,17 @@
-import { CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken, SimplePriceFeed } from 'build/types';
-import { expect, exp, makeProtocol, ethers, MAX_ASSETS, presentValue, mulPrice, mulFactor, factorScale, BigNumber, takeSnapshot, SnapshotRestorer } from './helpers';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, SimplePriceFeed } from 'build/types';
+import { expect, exp, ethers, MAX_ASSETS, presentValue, mulPrice, mulFactor, factorScale, BigNumber, takeSnapshot, SnapshotRestorer, makeConfigurator } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
-describe.only('isLiquidatable', function () {
+describe('isLiquidatable', function () {
   // Constants
   const ONE_HOUR = 60 * 60;
   const baseTokenDecimals = 6;
   const collateralTokenDecimals = 18;
   // Configurator and protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
+  let configurator: Configurator;
+  let configuratorProxyAddress: string;
+  let proxyAdmin: CometProxyAdmin;
   // Tokens
   let baseSymbol: string;
   let baseToken: FaucetToken | NonStandardFaucetFeeToken;
@@ -32,7 +35,7 @@ describe.only('isLiquidatable', function () {
         },
       ])
     );
-    const protocol = await makeProtocol({ 
+    const protocol = await makeConfigurator({ 
       assets: { 
         USDC: { decimals: baseTokenDecimals, initialPrice: 1 }, 
         ...collaterals 
@@ -40,13 +43,35 @@ describe.only('isLiquidatable', function () {
       baseTrackingBorrowSpeed: exp(1 / 86400, 15, 18), // 1 comp per day
       baseTrackingSupplySpeed: exp(1 / 86400, 15, 18), // 1 comp per day
     });
-    comet = protocol.cometWithExtendedAssetList;
+    const cometProxyAddress = protocol.cometProxy.address;
+    comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
+    configurator = protocol.configurator;
+    configuratorProxyAddress = protocol.configuratorProxy.address;
+    proxyAdmin = protocol.proxyAdmin;
     [alice, bob] = protocol.users;
     baseSymbol = protocol.base;
     baseToken = protocol.tokens[baseSymbol];
     collateralToken = protocol.tokens['ASSET0'];
     tokens = protocol.tokens;
     priceFeeds = protocol.priceFeeds;
+
+    // Upgrade proxy to extended asset list implementation to support many assets
+    const assetListFactory = protocol.assetListFactory;
+    configurator = configurator.attach(configuratorProxyAddress);
+    const CometExtAssetList = await (
+      await ethers.getContractFactory('CometExtAssetList')
+    ).deploy(
+      {
+        name32: ethers.utils.formatBytes32String('Test Comet'),
+        symbol32: ethers.utils.formatBytes32String('Test Comet'),
+      },
+      assetListFactory.address
+    );
+    await CometExtAssetList.deployed();
+    await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+    const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
+    await CometFactoryWithExtendedAssetList.deployed();
+    await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
   });
 
   describe('empty market (no position)', function () {
@@ -544,6 +569,8 @@ describe.only('isLiquidatable', function () {
     let borrowBalanceBefore: BigNumber;
     let collateralBalanceBefore: BigNumber;
     let fullRepayAmount: BigNumber;
+
+    let snapshot: SnapshotRestorer;
  
     before(async () => {
       principalBefore = (await comet.userBasic(bob.address)).principal;
@@ -558,6 +585,8 @@ describe.only('isLiquidatable', function () {
         await baseToken.allocateTo(bob.address, needToAllocate);
       }
       fullRepayAmount = await comet.borrowBalanceOf(bob.address);
+
+      snapshot = await takeSnapshot();
     });
 
     it('sanity check: user is a liquidatable borrower at start', async () => {
@@ -598,16 +627,18 @@ describe.only('isLiquidatable', function () {
     });
 
     it('bob performs full repayment by supplying base tokens', async () => {
+      // Add 1 to the borrow balance to ensure that the user is no longer a borrower
+      fullRepayAmount = (await comet.borrowBalanceOf(bob.address)).add(1);
       await baseToken.connect(bob).approve(comet.address, fullRepayAmount);
       await comet.connect(bob).supply(baseToken.address, fullRepayAmount);
     });
 
     it('user is no longer a borrower after full repayment (principal >= 0)', async () => {
-      expect((await comet.userBasic(bob.address)).principal).to.be.gte(0);
+      expect((await comet.userBasic(bob.address)).principal).to.be.greaterThanOrEqual(0);
     });
 
     it('borrow balance is zero after full repayment', async () => {
-      expect(await comet.borrowBalanceOf(bob.address)).to.eq(0);
+      expect(await comet.borrowBalanceOf(bob.address)).to.be.equal(0);
     });
 
     it('collateral balance remains unchanged after repayment', async () => {
@@ -616,11 +647,420 @@ describe.only('isLiquidatable', function () {
 
     it('after full repayment principal >= 0 so user is not liquidatable', async () => {
       const principal = (await comet.userBasic(bob.address)).principal;
-      expect(principal).to.be.gte(0);
+      expect(principal).to.be.greaterThanOrEqual(0);
     });
 
     it('user is no longer liquidatable after full repayment', async () => {
       expect(await comet.isLiquidatable(bob.address)).to.be.false;
+
+      // Restore snapshot
+      await snapshot.restore();
+    });
+  });
+
+  // From the liquidatable state (debt grew past weighted collateral due to interest),
+  // increasing the collateral asset price on the price feed raises the weighted
+  // collateral value above the accrued debt, so the user recovers from liquidation
+  // without any repayment or collateral deposit — only the oracle price changes.
+  describe('recovers from liquidatable position via collateral price increase on price feed', function () {
+    const NEW_COLLATERAL_PRICE:bigint = exp(220, 8);
+    let principalBefore: BigNumber;
+    let collateralBalanceBefore: BigNumber;
+
+    before(async () => {
+      principalBefore = (await comet.userBasic(bob.address)).principal;
+      collateralBalanceBefore = (await comet.userCollateral(bob.address, collateralToken.address)).balance;
+    });
+
+    it('sanity check: user is a liquidatable borrower at start', async () => {
+      expect(principalBefore).to.be.lessThan(0);
+      expect(await comet.isLiquidatable(bob.address)).to.be.true;
+    });
+
+    it('sanity check: new price is greater than current price', async () => {
+      expect(NEW_COLLATERAL_PRICE).to.be.greaterThan((await priceFeeds['ASSET0'].latestRoundData())[1]);
+    });
+
+    it('liquidity is negative at current collateral price', async () => {
+      // Get present value of principal
+      const totalsBasic = await comet.totalsBasic();
+      const presentValuePrincipal = presentValue(
+        principalBefore.toBigInt(),
+        totalsBasic.baseSupplyIndex.toBigInt(),
+        totalsBasic.baseBorrowIndex.toBigInt()
+      );
+      // Get base token price and scale
+      const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+      const baseScale = await comet.baseScale();
+      const debtUSD = mulPrice(presentValuePrincipal, basePrice, baseScale);
+      // Get collateral data
+      const assetInfo = await comet.getAssetInfo(0);
+      const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+      // Calculate collateral value in USD
+      const collateralUSD = mulPrice(
+        collateralBalanceBefore.toBigInt(),
+        collateralPrice.toBigInt(),
+        assetInfo.scale.toBigInt()
+      );
+      // Calculate weighted collateral value
+      const weightedCollateral = mulFactor(collateralUSD, assetInfo.liquidateCollateralFactor);
+      // Calculate liquidity
+      const liquidity = debtUSD + weightedCollateral;
+      // Check if liquidity is less than zero
+      expect(liquidity).to.be.lessThan(0n);
+    });
+
+    it('collateral price is updated on the price feed', async () => {
+      await priceFeeds['ASSET0'].setRoundData(1, NEW_COLLATERAL_PRICE, 0, 0, 1);
+    });
+
+    it('price feed reflects the new collateral price', async () => {
+      const newPrice = (await priceFeeds['ASSET0'].latestRoundData())[1];
+      expect(newPrice.toBigInt()).to.eq(NEW_COLLATERAL_PRICE);
+    });
+
+    it('principal unchanged after price feed update', async () => {
+      expect((await comet.userBasic(bob.address)).principal).to.eq(principalBefore);
+    });
+
+    it('collateral balance unchanged after price feed update', async () => {
+      expect((await comet.userCollateral(bob.address, collateralToken.address)).balance).to.eq(collateralBalanceBefore);
+    });
+
+    it('user is no longer liquidatable after price increase', async () => {
+      expect(await comet.isLiquidatable(bob.address)).to.be.false;
+    });
+
+    it('weighted collateral value exceeds debt value at new price (liquidity >= 0)', async () => {
+      const principal = (await comet.userBasic(bob.address)).principal;
+      const totalsBasic = await comet.totalsBasic();
+      const presentValuePrincipal = presentValue(
+        principal.toBigInt(),
+        totalsBasic.baseSupplyIndex.toBigInt(),
+        totalsBasic.baseBorrowIndex.toBigInt()
+      );
+
+      const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+      const baseScale = await comet.baseScale();
+      const debtUSD = mulPrice(presentValuePrincipal, basePrice, baseScale);
+
+      const assetInfo = await comet.getAssetInfo(0);
+      const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+      const collateralUSD = mulPrice(
+        collateralBalanceBefore.toBigInt(),
+        collateralPrice.toBigInt(),
+        assetInfo.scale.toBigInt()
+      );
+      const weightedCollateral = mulFactor(collateralUSD, assetInfo.liquidateCollateralFactor);
+
+      const liquidity = debtUSD + weightedCollateral;
+      expect(liquidity).to.be.greaterThanOrEqual(0n);
+    });
+  });
+
+  describe('edge cases', function () {
+    // Simulates a scenario where the base token price feed becomes broken (reverts
+    // on latestRoundData) for an unknown reason. Governance upgrades comet with
+    // the broken feed via configurator + proxyAdmin, making isLiquidatable
+    // unreachable (reverts). Once governance restores the original working price
+    // feed and upgrades again, isLiquidatable resumes normal operation.
+    describe('isLiquidatable reverts when base price feed is broken and recovers after restore', function () {
+      let originalBasePriceFeed: string;
+      let brokenPriceFeed: PriceFeedWithRevert;
+
+      before(async () => {
+        originalBasePriceFeed = await comet.baseTokenPriceFeed();
+      });
+
+      it('sanity check: bob is a borrower so isLiquidatable exercises the price feed', async () => {
+        expect((await comet.userBasic(bob.address)).principal).to.be.lt(0);
+        expect(await comet.isLiquidatable(bob.address)).to.be.false;
+      });
+
+      it('deploy broken price feed that reverts on latestRoundData', async () => {
+        const factory = await ethers.getContractFactory('PriceFeedWithRevert');
+        brokenPriceFeed = await factory.deploy(exp(1, 8), 8) as PriceFeedWithRevert;
+        await brokenPriceFeed.deployed();
+      });
+
+      it('set broken price feed as base token price feed via configurator', async () => {
+        await configurator.setBaseTokenPriceFeed(comet.address, brokenPriceFeed.address);
+      });
+
+      it('deploy and upgrade comet with broken price feed', async () => {
+        await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
+      });
+
+      it('comet base price feed is now the broken feed', async () => {
+        expect(await comet.baseTokenPriceFeed()).to.eq(brokenPriceFeed.address);
+      });
+
+      it('isLiquidatable reverts due to broken base price feed', async () => {
+        await expect(comet.isLiquidatable(bob.address)).to.be.revertedWithCustomError(brokenPriceFeed, 'Reverted');
+      });
+
+      it('restore original base price feed via configurator', async () => {
+        await configurator.setBaseTokenPriceFeed(comet.address, originalBasePriceFeed);
+      });
+
+      it('deploy and upgrade comet to restore original price feed', async () => {
+        await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
+      });
+
+      it('comet base price feed is restored to original', async () => {
+        expect(await comet.baseTokenPriceFeed()).to.eq(originalBasePriceFeed);
+      });
+
+      it('isLiquidatable works again after restoring price feed', async () => {
+        expect(await comet.isLiquidatable(bob.address)).to.be.false;
+      });
+    });
+
+    // Same scenario but with a collateral token (ASSET0) price feed. When the
+    // collateral price feed becomes broken, isLiquidatable cannot compute the
+    // collateral value for the borrower's position and reverts. After governance
+    // restores the working feed and upgrades, isLiquidatable resumes normal operation.
+    describe('isLiquidatable reverts when collateral price feed is broken and recovers after restore', function () {
+      let originalCollateralPriceFeed: string;
+      let brokenPriceFeed: PriceFeedWithRevert;
+
+      before(async () => {
+        originalCollateralPriceFeed = (await comet.getAssetInfo(0)).priceFeed;
+      });
+
+      it('sanity check: bob is a borrower with collateral so isLiquidatable exercises the collateral price feed', async () => {
+        expect((await comet.userBasic(bob.address)).principal).to.be.lessThan(0);
+        expect((await comet.userCollateral(bob.address, collateralToken.address)).balance).to.be.greaterThan(0);
+        expect(await comet.isLiquidatable(bob.address)).to.be.false;
+      });
+
+      it('deploy broken price feed that reverts on latestRoundData', async () => {
+        const factory = await ethers.getContractFactory('PriceFeedWithRevert');
+        brokenPriceFeed = await factory.deploy(exp(1, 8), 8) as PriceFeedWithRevert;
+        await brokenPriceFeed.deployed();
+      });
+
+      it('broken price feed has correct decimals for comet compatibility', async () => {
+        expect(await brokenPriceFeed.decimals()).to.be.equal(8);
+      });
+
+      it('set broken price feed for collateral asset via configurator', async () => {
+        await configurator.updateAssetPriceFeed(comet.address, collateralToken.address, brokenPriceFeed.address);
+      });
+
+      it('deploy and upgrade comet with broken collateral price feed', async () => {
+        await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
+      });
+
+      it('comet collateral price feed is now the broken feed', async () => {
+        expect((await comet.getAssetInfo(0)).priceFeed).to.be.equal(brokenPriceFeed.address);
+      });
+
+      it('isLiquidatable reverts due to broken collateral price feed', async () => {
+        await expect(comet.isLiquidatable(bob.address)).to.be.revertedWithCustomError(brokenPriceFeed, 'Reverted');
+      });
+
+      it('restore original collateral price feed via configurator', async () => {
+        await configurator.updateAssetPriceFeed(comet.address, collateralToken.address, originalCollateralPriceFeed);
+      });
+
+      it('deploy and upgrade comet to restore original collateral price feed', async () => {
+        await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
+      });
+
+      it('comet collateral price feed is restored to original', async () => {
+        expect((await comet.getAssetInfo(0)).priceFeed).to.be.equal(originalCollateralPriceFeed);
+      });
+
+      it('isLiquidatable works again after restoring collateral price feed', async () => {
+        expect(await comet.isLiquidatable(bob.address)).to.be.false;
+      });
+    }); 
+
+    // Verifies that isLiquidatable correctly handles non-contiguous collateral
+    // positions spanning both assetsIn (bits 0-15) and _reserved (bits 16-23).
+    // Only 3 assets at indices 7, 15, 21 are supplied, proving the liquidity
+    // loop correctly processes sparse asset bitmaps.
+    describe('sparse collateral indices (assets 7, 15, 21) across assetsIn and _reserved', function () {
+      const ASSET_INDICES = [7, 15, 21];
+      const SUPPLY_COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals);
+      // Max borrow = 3 * ($200 * borrowCF 0.75) = 3 * $150 = $450
+      // Borrow $5 below max to pass collateralization check
+      const BORROW_AMOUNT = exp(ASSET_INDICES.length * 200 * 0.75 - 5, baseTokenDecimals);
+
+      let dave: SignerWithAddress;
+
+      before(async () => {
+        dave = (await ethers.getSigners())[6];
+
+        await baseToken.allocateTo(comet.address, BORROW_AMOUNT);
+
+        for (const idx of ASSET_INDICES) {
+          const asset = tokens[`ASSET${idx}`];
+          await asset.allocateTo(dave.address, SUPPLY_COLLATERAL_AMOUNT);
+          await asset.connect(dave).approve(comet.address, SUPPLY_COLLATERAL_AMOUNT);
+          await comet.connect(dave).supply(asset.address, SUPPLY_COLLATERAL_AMOUNT);
+        }
+      });
+
+      it('dave principal is zero before borrow', async () => {
+        expect((await comet.userBasic(dave.address)).principal).to.eq(0);
+      });
+
+      it('only selected collateral balances are non-zero', async () => {
+        for (let i = 0; i < MAX_ASSETS; i++) {
+          const balance = (await comet.userCollateral(dave.address, tokens[`ASSET${i}`].address)).balance;
+          ASSET_INDICES.includes(i) ? 
+            expect(balance).to.equal(SUPPLY_COLLATERAL_AMOUNT) :
+            expect(balance).to.equal(0);
+        }
+      });
+
+      it('dave performs borrow near max capacity', async () => {
+        await comet.connect(dave).withdraw(baseToken.address, BORROW_AMOUNT);
+      });
+
+      it('principal is negative after borrow', async () => {
+        expect((await comet.userBasic(dave.address)).principal).to.be.lt(0);
+      });
+
+      it('borrow balance equals expected amount (with possible minor interest accrual)', async () => {
+        const borrowBalance = await comet.borrowBalanceOf(dave.address);
+        expect(borrowBalance).to.be.approximately(BORROW_AMOUNT, 1);
+      });
+
+      it('user is not liquidatable with sparse collateral positions', async () => {
+        expect(await comet.isLiquidatable(dave.address)).to.be.false;
+      });
+
+      it('only 3 supplied collaterals contribute to liquidity and total exceeds debt', async () => {
+        const principal = (await comet.userBasic(dave.address)).principal;
+        const totalsBasic = await comet.totalsBasic();
+        const presentValuePrincipal = presentValue(
+          principal.toBigInt(),
+          totalsBasic.baseSupplyIndex.toBigInt(),
+          totalsBasic.baseBorrowIndex.toBigInt()
+        );
+
+        const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+        const baseScale = await comet.baseScale();
+        let liquidity = mulPrice(presentValuePrincipal, basePrice, baseScale);
+
+        let totalWeightedCollateral = 0n;
+
+        for (let i = 0; i < MAX_ASSETS; i++) {
+          const assetInfo = await comet.getAssetInfo(i);
+          const balance = (await comet.userCollateral(dave.address, assetInfo.asset)).balance;
+
+          if (balance.isZero()) continue;
+
+          const price = await comet.getPrice(assetInfo.priceFeed);
+          const collateralUSD = mulPrice(balance.toBigInt(), price.toBigInt(), assetInfo.scale.toBigInt());
+          const weighted = mulFactor(collateralUSD, assetInfo.liquidateCollateralFactor);
+
+          totalWeightedCollateral += weighted;
+          liquidity += weighted;
+        }
+
+        // Each asset: 1 token * $200 * liquidateCF 0.8 = $160
+        // Total from 3 assets: 3 * $160 = $480
+        const perAssetExpected = mulFactor(
+          mulPrice(SUPPLY_COLLATERAL_AMOUNT, exp(200, 8), exp(1, collateralTokenDecimals)),
+          exp(0.8, 18)
+        );
+        expect(totalWeightedCollateral).to.eq(perAssetExpected * BigInt(ASSET_INDICES.length));
+        expect(totalWeightedCollateral).to.be.greaterThan(-mulPrice(presentValuePrincipal, basePrice, baseScale));
+        expect(liquidity).to.be.greaterThanOrEqual(0n);
+      });
+    });
+  });
+
+  // With all 24 collateral assets supplied and a near-max borrow, this verifies
+  // that isLiquidatable correctly iterates over all 24 assets in the liquidity
+  // computation. Each asset contributes equally (same price, same CF) and the
+  // off-chain calculation mirrors the contract's loop to prove every asset is counted.
+  describe('24 assets computation support', function () {
+    const SUPPLY_COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals);
+    // Max borrow = MAX_ASSETS * ($200 * borrowCF 0.75) = 24 * $150 = $3600
+    // Borrow $5 below max to pass collateralization check
+    const BORROW_AMOUNT = exp(MAX_ASSETS * 200 * 0.75 - 5, baseTokenDecimals);
+
+    let charlie: SignerWithAddress;
+
+    before(async () => {
+      charlie = (await ethers.getSigners())[5];
+
+      // Ensure all collateral price feeds are at $200 (ASSET0 was left at $220
+      // by the "collateral price increase" describe block)
+      await priceFeeds['ASSET0'].setRoundData(1, exp(200, 8), 0, 0, 1);
+
+      await baseToken.allocateTo(comet.address, BORROW_AMOUNT);
+
+      for (let i = 0; i < MAX_ASSETS; i++) {
+        const asset = tokens[`ASSET${i}`];
+        await asset.allocateTo(charlie.address, SUPPLY_COLLATERAL_AMOUNT);
+        await asset.connect(charlie).approve(comet.address, SUPPLY_COLLATERAL_AMOUNT);
+        await comet.connect(charlie).supply(asset.address, SUPPLY_COLLATERAL_AMOUNT);
+      }
+    });
+
+    it('comet supports 24 collateral assets', async () => {
+      expect(await comet.numAssets()).to.eq(MAX_ASSETS);
+    });
+
+    it('charlie principal is zero before borrow', async () => {
+      expect((await comet.userBasic(charlie.address)).principal).to.eq(0);
+    });
+
+    it('each of 24 collateral balances equals supply amount', async () => {
+      for (let i = 0; i < MAX_ASSETS; i++) {
+        expect(
+          (await comet.userCollateral(charlie.address, tokens[`ASSET${i}`].address)).balance
+        ).to.be.equal(SUPPLY_COLLATERAL_AMOUNT);
+      }
+    });
+
+    it('charlie performs borrow near max capacity', async () => {
+      await comet.connect(charlie).withdraw(baseToken.address, BORROW_AMOUNT);
+    });
+
+    it('principal is negative after borrow', async () => {
+      expect((await comet.userBasic(charlie.address)).principal).to.be.lessThan(0);
+    });
+
+    it('borrow balance equals expected amount (with possible minor interest accrual)', async () => {
+      const borrowBalance = await comet.borrowBalanceOf(charlie.address);
+      expect(borrowBalance).to.be.approximately(BORROW_AMOUNT, 1); // 1 wei of possible rounding
+    });
+
+    it('user is not liquidatable with all 24 collaterals supporting the borrow', async () => {
+      expect(await comet.isLiquidatable(charlie.address)).to.be.false;
+    });
+
+    it('all 24 collaterals are involved in liquidity calculation and total exceeds debt', async () => {
+      const principal = (await comet.userBasic(charlie.address)).principal;
+      const totalsBasic = await comet.totalsBasic();
+      const presentValuePrincipal = presentValue(
+        principal.toBigInt(),
+        totalsBasic.baseSupplyIndex.toBigInt(),
+        totalsBasic.baseBorrowIndex.toBigInt()
+      );
+
+      const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+      const baseScale = await comet.baseScale();
+      let liquidity = mulPrice(presentValuePrincipal, basePrice, baseScale);
+
+      for (let i = 0; i < MAX_ASSETS; i++) {
+        const assetInfo = await comet.getAssetInfo(i);
+        const balance = (await comet.userCollateral(charlie.address, assetInfo.asset)).balance;
+        const price = await comet.getPrice(assetInfo.priceFeed);
+        const collateralUSD = mulPrice(balance.toBigInt(), price.toBigInt(), assetInfo.scale.toBigInt());
+        const weighted = mulFactor(collateralUSD, assetInfo.liquidateCollateralFactor);
+
+        liquidity += weighted;
+      }
+
+      expect(liquidity).to.be.greaterThanOrEqual(0n);
     });
   });
 });
