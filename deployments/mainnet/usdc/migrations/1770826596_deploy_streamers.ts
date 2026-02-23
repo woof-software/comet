@@ -376,7 +376,5 @@ This proposal will execute the following:
     expect(await USDC.balanceOf(zeroShadowStreamer)).to.equal(zeroShadowParams.remainingStreamAmount);
     expect(await USDC.balanceOf(tallyStreamer)).to.equal(tallyParams.remainingStreamAmount);
     expect(await USDC.balanceOf(gauntletStreamer)).to.equal(gauntletParams.remainingStreamAmount);
-
-    expect(false).to.be.true;
   },
 });
