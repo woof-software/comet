@@ -262,7 +262,76 @@ export default migration('1770826596_deploy_streamers', {
         calldata: '0x',
       },
     ];
-    const description = `DESCRIPTION`;
+    const description = `# Service Providers Stream Revision
+
+*Following the community discussion in [Service Providers Stream Revision](https://www.comp.xyz/t/service-providers-stream-revision/7622), this post presents the formal on-chain proposal with exact figures.*
+
+## Summary
+
+This proposal migrates all active Compound service provider streams from COMP to USDC, covering Risk Management, Security Services, Development, and Governance workstreams. New USDC streams will be created to fulfill remaining obligations for each vendor without further drawing down COMP reserves.
+
+## Current Stream Balances
+
+*Snapshot taken at 2026-02-23T21:08:16.000Z*
+
+| Service Provider | Claimed to Date (USD) | Remaining Stream Balance (COMP) | Governance Pipeline (days) | Termination Period (days) | Stream Runway (days) |
+| ----- | ----- | ----- | :---: | :---: | :---: |
+| Woof Software | $ 1,471,298.3257 | 7,889.46 | 6.5 | 0 | 24.76 |
+| SSP | $ 872,464.2314 | 8,451.24 | 6.5 | 60 | 30.16 |
+| ZeroShadow | $ 112,235.8257 | 2,048.62 | 6.5 | 60 | 51.17 |
+| Tally | $ 76,098.0594 | 812.49 | 6.5 | 30 | 33.82 |
+| Gauntlet | $ 609,124.0183 | 13,393.04 | 6.5 | 60 | 51.95 |
+
+**Definitions:**
+
+- **Governance Pipeline** — Minimum days required for an on-chain proposal to pass (6.5 days).  
+- **Termination Period** — Days required to sweep a stream balance after cancellation, per each provider's agreement.  
+- **Stream Runway** — Days until the remaining COMP stream balance is fully claimed at the current COMP price.
+
+## Stream Deficit Analysis
+
+The table above shows that all streams, except Woof have a runway longer than the combined governance pipeline \+ termination period. This means that in the time required to pass and execute this proposal, providers will continue claiming COMP and their stream balances may be partially or fully depleted before the sweep occurs.
+
+To conservatively estimate the remaining claimable COMP value, we assume an average COMP price of **$14** over the next **66.5 days** (governance pipeline \+ maximum termination period).
+
+| Service Provider | Remaining Balance (COMP) | Assumed COMP Price | Total USD Value at $14 | Claimed to Date (USD) | Time to Termination (days) | COMP Claimed by Termination (USD at $14) | Estimated Deficit (USD) |
+| :---- | :---- | :---- | :---- | :---- | :---- | :---- | :---- |
+| Woof Software | 7,889.46 | $14 | $ 110,452.3879 | $ 1,471,298.3257 | 6.5 | $ 64,418.6327 | $ 464,283.0416 |
+| SSP | 8,451.24 | $14 | $ 118,317.3916 | $ 872,464.2314 | 66.5 | $ 118,317.3916 | $ 759,218.3771 |
+| ZeroShadow | 2,048.62 | $14 | $ 28,680.6323 | $ 112,235.8257 | 66.5 | $ 28,680.6323 | $ 109,083.5419 |
+| Tally | 812.49 | $14 | $ 11,374.8534 | $ 76,098.0594 | 36.5 | $ 11,374.8534 | $ 62,527.0873 |
+| Gauntlet | 13,393.04 | $14 | $ 187,502.6130 | $ 609,124.0183 | 66.5 | $ 187,502.6130 | $ 813,373.3687 |
+
+**Total estimated deficit across all streams: 2,208,485.4166 USDC**
+
+The deficit represents the gap between the USD value each provider is owed under their mandate and what they will have received by the time existing streams are terminated and swept.
+
+\[[Detailed calculations](https://docs.google.com/spreadsheets/d/1QVdpxSbFP5p83aoSaGBsO2M_kYE8NIMxthqSiFBFL3Q/edit?gid=0#gid=0)\]
+
+## New USDC Streams
+
+To cover the deficit, this proposal creates five new USDC streams — one per service provider. Funding will be sourced primarily from the [Aera Vendor Vault](https://app.aera.finance/vaults/eth:0x8624f61cc6e5a86790e173712afdd480fa8b73ba), with a supplemental draw from the [Aera Reserves Vault](https://app.aera.finance/vaults/eth:0x3d6eef6a92b15361697698695334e98c5db91d6b) as needed.
+
+| Service Provider | Recipient Address | USDC Stream Amount |
+| :---- | :---- | :---- |
+| Woof Software | 0x72bf2d7b05152ef282805f3e38752c436d94e4af | $ 464,283.0416 |
+| SSP | 0xba3cdb9d5c2119137126989f81edaea8b50331d2 | $ 759,218.3771 |
+| ZeroShadow | 0xe9c21ebc3815cdfbe07f721126d3cb46407fd79a | $ 109,083.5419 |
+| Tally | 0x96a0029c945898de1072ea8f33aa88b7fde3b125 | $ 62,527.0873 |
+| Gauntlet | 0x12875aed495cd573433f0c93d538c0ccc9e2b8fa | $ 813,373.3687 |
+
+## Surplus Reconciliation
+
+Because this proposal uses estimated values — including the assumed $14 average COMP price and variable governance timeline — the USDC streams are intentionally sized slightly above the minimum required to avoid any shortfall. Once all COMP streams are fully terminated and swept, Woof Software will publish a final reconciliation report and coordinate with each service provider to return any surplus USDC to the Compound Timelock.
+
+## On-Chain Actions
+
+This proposal will execute the following:
+
+1. Cancel all active COMP streams to the five service providers  
+2. Withdraw USDC from the Aera Vendor and Aera Reserves Vaults  
+3. Fund new USDC streams for each service provider based on the deficit amounts above
+`;
     console.log('proposal: ', await proposal(mainnetActions, description));
     const txn = await deploymentManager.retry(async () =>
       trace(
