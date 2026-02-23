@@ -127,7 +127,11 @@ export default migration('1770826596_deploy_streamers', {
     };
   },
 
-  async enact(deploymentManager: DeploymentManager) {
+  async enact(
+    deploymentManager: DeploymentManager,
+    _,
+    {woofStreamer, sspStreamer, zeroShadowStreamer, tallyStreamer, gauntletStreamer}
+  ) {
     const trace = deploymentManager.tracer();
 
     const {
