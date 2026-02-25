@@ -52,7 +52,7 @@ import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 // Network helpers
 export * from './helpers/network-helpers';
 
-export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer };
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, SignerWithAddress, BigNumber };
 
 export type Numeric = number | bigint;
 
@@ -181,6 +181,20 @@ export function truncateDecimals(factor: bigint | BigNumber, decimals = 4) {
 
 export function mulPrice(n: bigint, price: bigint | BigNumber, fromScale: bigint | BigNumber): bigint {
   return n * toBigInt(price) / toBigInt(fromScale);
+}
+
+const BASE_INDEX_SCALE = BigInt(1e15);
+
+export function presentValue(principalValue: bigint, baseSupplyIndex: bigint, baseBorrowIndex: bigint): bigint {
+  if (principalValue >= 0n) {
+    return principalValue * baseSupplyIndex / BASE_INDEX_SCALE;
+  } else {
+    return -((-principalValue) * baseBorrowIndex / BASE_INDEX_SCALE);
+  }
+}
+
+export function mulFactor(n: bigint, factor: bigint | BigNumber): bigint {
+  return n * toBigInt(factor) / toBigInt(factorScale);
 }
 
 function toBigInt(f: bigint | BigNumber): bigint {
