@@ -51,8 +51,10 @@ import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
 // Network helpers
 export * from './helpers/network-helpers';
+// Math helpers
+export * from './helpers/math';
 
-export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer };
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, BigNumber };
 
 export type Numeric = number | bigint;
 
@@ -232,7 +234,9 @@ export const factorDecimals = 18;
 export const factorScale = factor(1);
 export const ONE = factorScale;
 export const ZERO = factor(0);
+export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const MAX_ASSETS = 24;
+export const BASE_INDEX_SCALE = BigInt(1e15);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;
