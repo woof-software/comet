@@ -41,6 +41,8 @@ describe('isBorrowCollateralized', function () {
   // Users
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
+  let charlie: SignerWithAddress;
+  let liquidityProvider: SignerWithAddress;
 
   let snapshot: SnapshotRestorer;
 
@@ -69,7 +71,7 @@ describe('isBorrowCollateralized', function () {
     configurator = protocol.configurator;
     configuratorProxyAddress = protocol.configuratorProxy.address;
     proxyAdmin = protocol.proxyAdmin;
-    [alice, bob] = protocol.users;
+    [alice, bob, charlie, liquidityProvider] = protocol.users;
     baseSymbol = protocol.base;
     baseToken = protocol.tokens[baseSymbol];
     collateralToken = protocol.tokens['ASSET0'];
@@ -100,6 +102,7 @@ describe('isBorrowCollateralized', function () {
       cometProxyAddress,
       CometFactoryWithExtendedAssetList.address
     );
+    await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
   });
 
   describe('empty market (no position)', function () {
@@ -1873,6 +1876,15 @@ describe('isBorrowCollateralized', function () {
   describe('multiple collaterals: liquidity calculation across collateral types', function () {
     // Each collateral: $200 price, 0.75 borrowCF → weighted $150 per token
     // Base token: $1 price, 6 decimals
+    const BASE_SUPPLY = exp(100_000, baseTokenDecimals);
+
+    before(async () => {
+      // Supply base liquidity once for all multiple-collateral scenarios
+      await baseToken.allocateTo(liquidityProvider.address, BASE_SUPPLY);
+      await baseToken.connect(liquidityProvider).approve(comet.address, BASE_SUPPLY);
+      await comet.connect(liquidityProvider).supply(baseToken.address, BASE_SUPPLY);
+      snapshot = await takeSnapshot();
+    });
 
     describe('4 collaterals, liquidity becomes sufficient at 3rd collateral', function () {
       // Charlie supplies 1 token each of ASSET0-ASSET3
@@ -1886,24 +1898,10 @@ describe('isBorrowCollateralized', function () {
 
       const NUM_COLLATERALS = 4;
       const COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals);
-      const BASE_SUPPLY = exp(10000, baseTokenDecimals);
       const BORROW_AMOUNT = exp(400, baseTokenDecimals);
 
-      let charlie: SignerWithAddress;
-      let liquidityProvider: SignerWithAddress;
-      let localSnapshot: SnapshotRestorer;
-
       before(async () => {
-        localSnapshot = await takeSnapshot();
-        const signers = await ethers.getSigners();
-        charlie = signers[4];
-        liquidityProvider = signers[5];
-
-        // Supply base liquidity so charlie can borrow
-        await baseToken.allocateTo(liquidityProvider.address, BASE_SUPPLY);
-        await baseToken.connect(liquidityProvider).approve(comet.address, BASE_SUPPLY);
-        await comet.connect(liquidityProvider).supply(baseToken.address, BASE_SUPPLY);
-
+        await snapshot.restore();
         // Charlie supplies 4 different collateral types
         for (let i = 0; i < NUM_COLLATERALS; i++) {
           const assetInfo = await comet.getAssetInfo(i);
@@ -1918,10 +1916,6 @@ describe('isBorrowCollateralized', function () {
 
         // Charlie borrows 400 USDC
         await comet.connect(charlie).withdraw(baseToken.address, BORROW_AMOUNT);
-      });
-
-      after(async () => {
-        await localSnapshot.restore();
       });
 
       it('charlie has negative principal (borrower state)', async () => {
@@ -1999,23 +1993,10 @@ describe('isBorrowCollateralized', function () {
       const NUM_COLLATERALS = 3;
       const SMALL_COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals - 2); // 0.01 tokens
       const LARGE_COLLATERAL_AMOUNT = exp(3, collateralTokenDecimals); // 3 tokens
-      const BASE_SUPPLY = exp(10000, baseTokenDecimals);
       const BORROW_AMOUNT = exp(300, baseTokenDecimals);
 
-      let charlie: SignerWithAddress;
-      let liquidityProvider: SignerWithAddress;
-      let localSnapshot: SnapshotRestorer;
-
       before(async () => {
-        localSnapshot = await takeSnapshot();
-        const signers = await ethers.getSigners();
-        charlie = signers[4];
-        liquidityProvider = signers[5];
-
-        // Supply base liquidity
-        await baseToken.allocateTo(liquidityProvider.address, BASE_SUPPLY);
-        await baseToken.connect(liquidityProvider).approve(comet.address, BASE_SUPPLY);
-        await comet.connect(liquidityProvider).supply(baseToken.address, BASE_SUPPLY);
+        await snapshot.restore();
 
         // Charlie supplies 3 collateral types with different amounts
         for (let i = 0; i < NUM_COLLATERALS; i++) {
@@ -2033,10 +2014,6 @@ describe('isBorrowCollateralized', function () {
 
         // Charlie borrows 300 USDC
         await comet.connect(charlie).withdraw(baseToken.address, BORROW_AMOUNT);
-      });
-
-      after(async () => {
-        await localSnapshot.restore();
       });
 
       it('charlie has negative principal (borrower state)', async () => {
@@ -2112,26 +2089,10 @@ describe('isBorrowCollateralized', function () {
 
       const NUM_COLLATERALS = MAX_ASSETS; // 24
       const COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals);
-      const BASE_SUPPLY = exp(100000, baseTokenDecimals);
       const BORROW_AMOUNT = exp(3500, baseTokenDecimals);
 
-      let charlie: SignerWithAddress;
-      let liquidityProvider: SignerWithAddress;
-      let allCollateralsSnapshot: SnapshotRestorer;
-
       before(async () => {
-        allCollateralsSnapshot = await takeSnapshot();
-        const signers = await ethers.getSigners();
-        charlie = signers[4];
-        liquidityProvider = signers[5];
-
-        // Upgrade proxy to extended asset list implementation to support all 24 collaterals
-        await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
-
-        // Supply base liquidity
-        await baseToken.allocateTo(liquidityProvider.address, BASE_SUPPLY);
-        await baseToken.connect(liquidityProvider).approve(comet.address, BASE_SUPPLY);
-        await comet.connect(liquidityProvider).supply(baseToken.address, BASE_SUPPLY);
+        await snapshot.restore();
 
         // Charlie supplies all 24 collateral types
         for (let i = 0; i < NUM_COLLATERALS; i++) {
@@ -2147,10 +2108,6 @@ describe('isBorrowCollateralized', function () {
 
         // Charlie borrows 3500 USDC
         await comet.connect(charlie).withdraw(baseToken.address, BORROW_AMOUNT);
-      });
-
-      after(async () => {
-        await allCollateralsSnapshot.restore();
       });
 
       describe('huge loan covered by all 24 collaterals', function () {
@@ -2215,33 +2172,21 @@ describe('isBorrowCollateralized', function () {
       });
 
       describe('all 24 collaterals insufficient to cover the debt', function () {
-        // Base price is doubled: debt = 3500 * $2 = $7000
+        // Base price is increased by 10%: debt = 3500 * 1.1 = $3850
         // Total weighted collateral remains $3600
-        // $3600 < $7000 → undercollateralized
+        // $3600 < $3850 → undercollateralized
         let basePriceBefore: BigNumber;
 
         before(async () => {
           basePriceBefore = await comet.getPrice(
             await comet.baseTokenPriceFeed()
           );
-          // Double base price: debt in USD doubles from $3500 to $7000
-          await priceFeeds[baseSymbol].setRoundData(
-            1,
-            basePriceBefore.mul(2),
-            1,
-            1,
-            1
-          );
+          // Increase base price by 10%: debt in USD increases from $3500 to $3850
+          await priceFeeds[baseSymbol].setRoundData(1, basePriceBefore.mul(110).div(100), 1, 1, 1);
         });
 
         after(async () => {
-          await priceFeeds[baseSymbol].setRoundData(
-            1,
-            basePriceBefore,
-            1,
-            1,
-            1
-          );
+          await priceFeeds[baseSymbol].setRoundData(1, basePriceBefore, 1, 1, 1);
         });
 
         it('charlie is NOT borrow-collateralized despite having all 24 collaterals', async () => {
