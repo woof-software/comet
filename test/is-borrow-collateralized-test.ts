@@ -18,9 +18,11 @@ import {
   BigNumber,
   makeConfigurator,
   SignerWithAddress,
+  SnapshotRestorer,
+  takeSnapshot
 } from './helpers';
 
-describe.only('isBorrowCollateralized', function () {
+describe('isBorrowCollateralized', function () {
   // Constants
   const ONE_HOUR = 60 * 60;
   const baseTokenDecimals = 6;
@@ -40,7 +42,7 @@ describe.only('isBorrowCollateralized', function () {
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
 
-  let snapshotId: string;
+  let snapshot: SnapshotRestorer;
 
   before(async () => {
     const collaterals = Object.fromEntries(
@@ -234,7 +236,7 @@ describe.only('isBorrowCollateralized', function () {
 
   describe('transfers: isBorrowCollateralized impact on transfer functions', function () {
     before(async () => {
-      snapshotId = await ethers.provider.send('evm_snapshot', []);
+      snapshot = await takeSnapshot();
     });
     describe('transferBase', function () {
       describe('revert when', function () {
@@ -415,21 +417,16 @@ describe.only('isBorrowCollateralized', function () {
           });
 
           it('alice borrow balance after transfer equals 100 USDC', async () => {
-            expect(await comet.borrowBalanceOf(alice.address)).to.eq(
-              EXPECTED_BORROW_AMOUNT
-            );
+            expect(await comet.borrowBalanceOf(alice.address)).to.eq(EXPECTED_BORROW_AMOUNT);
           });
 
           it('bob base balance increases by 1100 USDC', async () => {
             const bobBaseBalanceAfter = await comet.balanceOf(bob.address);
-            expect(bobBaseBalanceAfter.sub(bobBaseBalanceBefore)).to.eq(
-              TRANSFER_AMOUNT
-            );
+            expect(bobBaseBalanceAfter.sub(bobBaseBalanceBefore)).to.eq(TRANSFER_AMOUNT);
           });
 
           it('alice remains borrow-collateralized after transfer', async () => {
-            expect(await comet.isBorrowCollateralized(alice.address)).to.be
-              .true;
+            expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
           });
 
           it('manual liquidity proof after transfer is positive', async () => {
@@ -481,108 +478,110 @@ describe.only('isBorrowCollateralized', function () {
         // - Alice transfers 1 ASSET0 to Bob -> Alice collateral: 1 -> 0, Bob collateral: 1 -> 2
         // - Alice weighted collateral becomes 0 while debt remains > 0, so liquidity is negative
         // - transferCollateral must revert with NotCollateralized and balances stay unchanged
-        describe(
-          'sender transfers away collateral required for current borrow',
-          function () {
-            const TRANSFER_COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals);
+        describe('sender transfers away collateral required for current borrow', function () {
+          const TRANSFER_COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals);
 
-            let alicePrincipalBefore: BigNumber;
-            let aliceBorrowBalanceBefore: BigNumber;
-            let aliceCollateralBalanceBefore: BigNumber;
-            let bobCollateralBalanceBefore: BigNumber;
-            let basePrice: BigNumber;
-            let baseScale: BigNumber;
+          let alicePrincipalBefore: BigNumber;
+          let aliceBorrowBalanceBefore: BigNumber;
+          let aliceCollateralBalanceBefore: BigNumber;
+          let bobCollateralBalanceBefore: BigNumber;
+          let basePrice: BigNumber;
+          let baseScale: BigNumber;
 
-            before(async () => {
-              alicePrincipalBefore = (await comet.userBasic(alice.address))
-                .principal;
-              aliceBorrowBalanceBefore = await comet.borrowBalanceOf(
-                alice.address
-              );
-              aliceCollateralBalanceBefore = (
+          before(async () => {
+            alicePrincipalBefore = (await comet.userBasic(alice.address))
+              .principal;
+
+            aliceBorrowBalanceBefore = await comet.borrowBalanceOf(
+              alice.address
+            );
+
+            aliceCollateralBalanceBefore = (
+              await comet.userCollateral(alice.address, collateralToken.address)
+            ).balance;
+
+            bobCollateralBalanceBefore = (
+              await comet.userCollateral(bob.address, collateralToken.address)
+            ).balance;
+
+            basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            baseScale = await comet.baseScale();
+          });
+
+          it('alice is currently in borrower state', async () => {
+            expect(alicePrincipalBefore).to.be.lessThan(0);
+          });
+
+          it('alice has outstanding borrow before collateral transfer', async () => {
+            expect(aliceBorrowBalanceBefore).to.be.greaterThan(0);
+          });
+
+          it('alice has 1 ASSET0 collateral before transfer', async () => {
+            expect(aliceCollateralBalanceBefore).to.eq(
+              TRANSFER_COLLATERAL_AMOUNT
+            );
+          });
+
+          it('alice transferCollateral to bob reverts with NotCollateralized', async () => {
+            await expect(
+              comet
+                .connect(alice)
+                .transferAsset(
+                  bob.address,
+                  collateralToken.address,
+                  TRANSFER_COLLATERAL_AMOUNT
+                )
+            ).to.be.revertedWithCustomError(comet, 'NotCollateralized');
+          });
+
+          it('alice collateral remains unchanged after revert', async () => {
+            expect(
+              (
                 await comet.userCollateral(alice.address, collateralToken.address)
-              ).balance;
-              bobCollateralBalanceBefore = (
+              ).balance
+            ).to.eq(aliceCollateralBalanceBefore);
+          });
+
+          it('bob collateral remains unchanged after revert', async () => {
+            expect(
+              (
                 await comet.userCollateral(bob.address, collateralToken.address)
-              ).balance;
-              basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
-              baseScale = await comet.baseScale();
-            });
+              ).balance
+            ).to.eq(bobCollateralBalanceBefore);
+          });
 
-            it('alice is currently in borrower state', async () => {
-              expect(alicePrincipalBefore).to.be.lessThan(0);
-            });
+          it('manual post-transfer simulation shows negative liquidity', async () => {
+            const totalsBasic = await comet.totalsBasic();
+            const baseBalance = presentValue(
+              alicePrincipalBefore.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
 
-            it('alice has outstanding borrow before collateral transfer', async () => {
-              expect(aliceBorrowBalanceBefore).to.be.greaterThan(0);
-            });
+            // debtUSD remains negative from existing borrow position
+            const debtUSD = mulPrice(baseBalance, basePrice, baseScale);
 
-            it('alice has 1 ASSET0 collateral before transfer', async () => {
-              expect(aliceCollateralBalanceBefore).to.eq(
-                TRANSFER_COLLATERAL_AMOUNT
-              );
-            });
-
-            it('alice transferCollateral to bob reverts with NotCollateralized', async () => {
-              await expect(
-                comet
-                  .connect(alice)
-                  .transferAsset(
-                    bob.address,
-                    collateralToken.address,
-                    TRANSFER_COLLATERAL_AMOUNT
-                  )
-              ).to.be.revertedWithCustomError(comet, 'NotCollateralized');
-            });
-
-            it('alice collateral remains unchanged after revert', async () => {
-              expect(
-                (
-                  await comet.userCollateral(alice.address, collateralToken.address)
-                ).balance
-              ).to.eq(aliceCollateralBalanceBefore);
-            });
-
-            it('bob collateral remains unchanged after revert', async () => {
-              expect(
-                (
-                  await comet.userCollateral(bob.address, collateralToken.address)
-                ).balance
-              ).to.eq(bobCollateralBalanceBefore);
-            });
-
-            it('manual post-transfer simulation shows negative liquidity', async () => {
-              const totalsBasic = await comet.totalsBasic();
-              const baseBalance = presentValue(
-                alicePrincipalBefore.toBigInt(),
-                totalsBasic.baseSupplyIndex.toBigInt(),
-                totalsBasic.baseBorrowIndex.toBigInt()
-              );
-
-              // debtUSD remains negative from existing borrow position
-              const debtUSD = mulPrice(baseBalance, basePrice, baseScale);
-
-              const assetInfo = await comet.getAssetInfo(0);
-              const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
-              const collateralAfterTransfer =
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const collateralAfterTransfer =
                 aliceCollateralBalanceBefore.toBigInt() -
                 TRANSFER_COLLATERAL_AMOUNT;
 
-              // after transfer all collateral is removed -> weighted collateral = 0
-              const collateralUSD = mulPrice(
-                collateralAfterTransfer,
-                collateralPrice.toBigInt(),
-                assetInfo.scale.toBigInt()
-              );
-              const weightedCollateral = mulFactor(
-                collateralUSD,
-                assetInfo.borrowCollateralFactor
-              );
+            // after transfer all collateral is removed -> weighted collateral = 0
+            const collateralUSD = mulPrice(
+              collateralAfterTransfer,
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
 
-              const liquidity = debtUSD + weightedCollateral;
-              expect(liquidity).to.be.lessThan(0n);
-            });
-          }
+            const liquidity = debtUSD + weightedCollateral;
+            expect(liquidity).to.be.lessThan(0n);
+          });
+        }
         );
       });
 
@@ -708,6 +707,37 @@ describe.only('isBorrowCollateralized', function () {
   });
 
   describe('price feed impact', function () {
+    let priceFeedSnapshot: SnapshotRestorer;
+    let collateralOnly: SignerWithAddress;
+
+    before(async () => {
+      priceFeedSnapshot = await takeSnapshot();
+
+      const signers = await ethers.getSigners();
+
+      // Set up collateral-only user (signers[5]): 1 ASSET0, no base supply/borrow
+      collateralOnly = signers[5];
+      const collateralAmount = exp(1, collateralTokenDecimals);
+      await collateralToken.allocateTo(collateralOnly.address, collateralAmount);
+      await collateralToken.connect(collateralOnly).approve(comet.address, collateralAmount);
+      await comet.connect(collateralOnly).supply(collateralToken.address, collateralAmount);
+
+      // Tighten Alice's position so realistic price changes (~10-20%) flip collateralization.
+      // Current state: ~100 USDC borrow, 1.75 ASSET0 collateral (weighted capacity = $262.50).
+      // After additional borrow of 140 USDC: ~240 USDC borrow → utilization ~91%.
+      const additionalBorrow = exp(140, baseTokenDecimals);
+      const liquidityProvider = signers[4];
+      const liquidity = exp(10000, baseTokenDecimals);
+      await baseToken.allocateTo(liquidityProvider.address, liquidity);
+      await baseToken.connect(liquidityProvider).approve(comet.address, liquidity);
+      await comet.connect(liquidityProvider).supply(baseToken.address, liquidity);
+      await comet.connect(alice).withdraw(baseToken.address, additionalBorrow);
+    });
+
+    after(async () => {
+      await priceFeedSnapshot.restore();
+    });
+
     describe('revert when', function () {
       describe('base price feed returns zero price', function () {
         let basePriceFeed: SimplePriceFeed;
@@ -839,105 +869,555 @@ describe.only('isBorrowCollateralized', function () {
     });
 
     describe('base price change', function () {
-      // Current state:
-      // - Alice has active borrow position (~100 USDC) and 1 ASSET0 collateral (weighted capacity = $150)
-      // - Bob has 1 ASSET0 collateral and no borrow position
-      it('confirm initial state is collateralized for both users', async () => {
+      // Current state (after tightening in parent before):
+      // - Alice (borrower): ~240 USDC borrow, 1.75 ASSET0 collateral (weighted = $262.50)
+      // - Bob (lender): ~1100 USDC supply, 1.25 ASSET0 collateral, no borrow
+      // - collateralOnly: 0 base position, 1 ASSET0 collateral
+      it('confirm initial state is collateralized for all users', async () => {
         expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
         expect(await comet.isBorrowCollateralized(bob.address)).to.be.true;
+        expect(await comet.isBorrowCollateralized(collateralOnly.address)).to.be.true;
       });
 
-      describe('base price increases', function () {
+      describe('base price increases by 15%', function () {
         let basePriceFeed: SimplePriceFeed;
         let basePriceBefore: BigNumber;
 
         before(async () => {
           basePriceFeed = priceFeeds[baseSymbol];
           basePriceBefore = await comet.getPrice(await comet.baseTokenPriceFeed());
-          await basePriceFeed.setRoundData(1, basePriceBefore.mul(10), 1, 1, 1);
+          await basePriceFeed.setRoundData(1, basePriceBefore.mul(115).div(100), 1, 1, 1);
         });
 
         after(async () => {
           await basePriceFeed.setRoundData(1, basePriceBefore, 1, 1, 1);
         });
 
-        it('opened borrow position becomes undercollateralized', async () => {
-          expect(await comet.isBorrowCollateralized(alice.address)).to.be.false;
+        describe('borrower (Alice): ~240 USDC borrow + 1.75 ASSET0', function () {
+          it('becomes undercollateralized', async () => {
+            const alicePrincipal = (await comet.userBasic(alice.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const aliceBalance = presentValue(
+              alicePrincipal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // debtUSD = ~-240e6 * 1.15e8 / 1e6 = ~-276e8 (negative, borrower)
+            const debtUSD = mulPrice(aliceBalance, basePrice, baseScale);
+            expect(debtUSD).to.be.lessThan(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const aliceCollateral = (await comet.userCollateral(alice.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1.75e18 * 200e8 / 1e18 = 350e8
+            const collateralUSD = mulPrice(
+              aliceCollateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 350e8 * 0.75e18 / 1e18 = 262.5e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = ~-276e8 + 262.5e8 = ~-13.5e8 < 0 → undercollateralized
+            const liquidity = debtUSD + weightedCollateral;
+            expect(liquidity).to.be.lessThan(0n);
+            expect(await comet.isBorrowCollateralized(alice.address)).to.be.false;
+          });
         });
 
-        it('non-opened position is not affected by base price increase', async () => {
-          expect(await comet.isBorrowCollateralized(bob.address)).to.be.true;
+        describe('lender without borrowing (Bob): ~1100 USDC supply + 1.25 ASSET0', function () {
+          it('stays collateralized', async () => {
+            const bobPrincipal = (await comet.userBasic(bob.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const bobBalance = presentValue(
+              bobPrincipal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // supplyUSD = ~1100e6 * 1.15e8 / 1e6 = ~1265e8 (positive, lender)
+            const supplyUSD = mulPrice(bobBalance, basePrice, baseScale);
+            expect(supplyUSD).to.be.greaterThan(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const bobCollateral = (await comet.userCollateral(bob.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1.25e18 * 200e8 / 1e18 = 250e8 (collateral price unchanged)
+            const collateralUSD = mulPrice(
+              bobCollateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 250e8 * 0.75e18 / 1e18 = 187.5e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = ~1265e8 + 187.5e8 > 0 → collateralized (positive principal, no borrow)
+            const liquidity = supplyUSD + weightedCollateral;
+            expect(liquidity).to.be.greaterThan(0n);
+            expect(await comet.isBorrowCollateralized(bob.address)).to.be.true;
+          });
+        });
+
+        describe('collateral-only user: 1 ASSET0, no base position', function () {
+          it('stays collateralized', async () => {
+            const principal = (await comet.userBasic(collateralOnly.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const balance = presentValue(
+              principal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // baseUSD = 0 * 1.15e8 / 1e6 = 0 (no base position at all)
+            const baseUSD = mulPrice(balance, basePrice, baseScale);
+            expect(baseUSD).to.eq(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const collateral = (await comet.userCollateral(collateralOnly.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1e18 * 200e8 / 1e18 = 200e8 (collateral price unchanged)
+            const collateralUSD = mulPrice(
+              collateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 200e8 * 0.75e18 / 1e18 = 150e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = 0 + 150e8 = 150e8 > 0 → collateralized (no base exposure)
+            const liquidity = baseUSD + weightedCollateral;
+            expect(liquidity).to.be.greaterThan(0n);
+            expect(await comet.isBorrowCollateralized(collateralOnly.address)).to.be.true;
+          });
         });
       });
 
-      describe('base price decreases', function () {
+      describe('base price decreases by 10%', function () {
         let basePriceFeed: SimplePriceFeed;
         let basePriceBefore: BigNumber;
 
         before(async () => {
           basePriceFeed = priceFeeds[baseSymbol];
           basePriceBefore = await comet.getPrice(await comet.baseTokenPriceFeed());
-          await basePriceFeed.setRoundData(1, basePriceBefore.div(10), 1, 1, 1);
+          await basePriceFeed.setRoundData(1, basePriceBefore.mul(90).div(100), 1, 1, 1);
         });
 
         after(async () => {
           await basePriceFeed.setRoundData(1, basePriceBefore, 1, 1, 1);
         });
 
-        it('opened borrow position stays collateralized', async () => {
-          expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
+        describe('borrower (Alice): ~240 USDC borrow + 1.75 ASSET0', function () {
+          it('stays collateralized', async () => {
+            const alicePrincipal = (await comet.userBasic(alice.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const aliceBalance = presentValue(
+              alicePrincipal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // debtUSD = ~-240e6 * 0.9e8 / 1e6 = ~-216e8 (negative, borrower)
+            const debtUSD = mulPrice(aliceBalance, basePrice, baseScale);
+            expect(debtUSD).to.be.lessThan(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const aliceCollateral = (await comet.userCollateral(alice.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1.75e18 * 200e8 / 1e18 = 350e8
+            const collateralUSD = mulPrice(
+              aliceCollateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 350e8 * 0.75e18 / 1e18 = 262.5e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = ~-216e8 + 262.5e8 = ~46.5e8 > 0 → stays collateralized
+            const liquidity = debtUSD + weightedCollateral;
+            expect(liquidity).to.be.greaterThan(0n);
+            expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
+          });
         });
 
-        it('non-opened position is not affected by base price decrease', async () => {
-          expect(await comet.isBorrowCollateralized(bob.address)).to.be.true;
+        describe('lender without borrowing (Bob): ~1100 USDC supply + 1.25 ASSET0', function () {
+          it('stays collateralized', async () => {
+            const bobPrincipal = (await comet.userBasic(bob.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const bobBalance = presentValue(
+              bobPrincipal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // supplyUSD = ~1100e6 * 0.9e8 / 1e6 = ~990e8 (positive, lender)
+            const supplyUSD = mulPrice(bobBalance, basePrice, baseScale);
+            expect(supplyUSD).to.be.greaterThan(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const bobCollateral = (await comet.userCollateral(bob.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1.25e18 * 200e8 / 1e18 = 250e8 (collateral price unchanged)
+            const collateralUSD = mulPrice(
+              bobCollateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 250e8 * 0.75e18 / 1e18 = 187.5e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = ~990e8 + 187.5e8 > 0 → collateralized (positive principal, no borrow)
+            const liquidity = supplyUSD + weightedCollateral;
+            expect(liquidity).to.be.greaterThan(0n);
+            expect(await comet.isBorrowCollateralized(bob.address)).to.be.true;
+          });
+        });
+
+        describe('collateral-only user: 1 ASSET0, no base position', function () {
+          it('stays collateralized', async () => {
+            const principal = (await comet.userBasic(collateralOnly.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const balance = presentValue(
+              principal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // baseUSD = 0 * 0.9e8 / 1e6 = 0 (no base position at all)
+            const baseUSD = mulPrice(balance, basePrice, baseScale);
+            expect(baseUSD).to.eq(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const collateral = (await comet.userCollateral(collateralOnly.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1e18 * 200e8 / 1e18 = 200e8 (collateral price unchanged)
+            const collateralUSD = mulPrice(
+              collateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 200e8 * 0.75e18 / 1e18 = 150e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = 0 + 150e8 = 150e8 > 0 → collateralized (no base exposure)
+            const liquidity = baseUSD + weightedCollateral;
+            expect(liquidity).to.be.greaterThan(0n);
+            expect(await comet.isBorrowCollateralized(collateralOnly.address)).to.be.true;
+          });
         });
       });
     });
 
     describe('collateral price change', function () {
-      describe('collateral price increases', function () {
+      describe('collateral price increases by 15%', function () {
         let collateralPriceFeed: SimplePriceFeed;
         let collateralPriceBefore: BigNumber;
 
         before(async () => {
           collateralPriceFeed = priceFeeds['ASSET0'];
           collateralPriceBefore = await comet.getPrice(collateralPriceFeed.address);
-          await collateralPriceFeed.setRoundData(1, collateralPriceBefore.mul(10), 1, 1, 1);
+          await collateralPriceFeed.setRoundData(1, collateralPriceBefore.mul(115).div(100), 1, 1, 1);
         });
 
         after(async () => {
           await collateralPriceFeed.setRoundData(1, collateralPriceBefore, 1, 1, 1);
         });
 
-        it('opened borrow position stays collateralized', async () => {
-          expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
+        describe('borrower (Alice): ~240 USDC borrow + 1.75 ASSET0', function () {
+          it('stays collateralized', async () => {
+            const alicePrincipal = (await comet.userBasic(alice.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const aliceBalance = presentValue(
+              alicePrincipal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // debtUSD = ~-240e6 * 1e8 / 1e6 = ~-240e8 (negative, borrower, base price unchanged)
+            const debtUSD = mulPrice(aliceBalance, basePrice, baseScale);
+            expect(debtUSD).to.be.lessThan(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const aliceCollateral = (await comet.userCollateral(alice.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1.75e18 * 230e8 / 1e18 = 402.5e8 (+15% from $200)
+            const collateralUSD = mulPrice(
+              aliceCollateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 402.5e8 * 0.75e18 / 1e18 = 301.875e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = ~-240e8 + 301.875e8 = ~61.875e8 > 0 → stays collateralized
+            const liquidity = debtUSD + weightedCollateral;
+            expect(liquidity).to.be.greaterThan(0n);
+            expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
+          });
         });
 
-        it('non-opened position is not affected by collateral price increase', async () => {
-          expect(await comet.isBorrowCollateralized(bob.address)).to.be.true;
+        describe('lender without borrowing (Bob): ~1100 USDC supply + 1.25 ASSET0', function () {
+          it('stays collateralized', async () => {
+            const bobPrincipal = (await comet.userBasic(bob.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const bobBalance = presentValue(
+              bobPrincipal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // supplyUSD = ~1100e6 * 1e8 / 1e6 = ~1100e8 (positive, base price unchanged)
+            const supplyUSD = mulPrice(bobBalance, basePrice, baseScale);
+            expect(supplyUSD).to.be.greaterThan(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const bobCollateral = (await comet.userCollateral(bob.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1.25e18 * 230e8 / 1e18 = 287.5e8 (+15% from $200)
+            const collateralUSD = mulPrice(
+              bobCollateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 287.5e8 * 0.75e18 / 1e18 = 215.625e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = ~1100e8 + 215.625e8 > 0 → collateralized (positive principal, no borrow)
+            const liquidity = supplyUSD + weightedCollateral;
+            expect(liquidity).to.be.greaterThan(0n);
+            expect(await comet.isBorrowCollateralized(bob.address)).to.be.true;
+          });
+        });
+
+        describe('collateral-only user: 1 ASSET0, no base position', function () {
+          it('stays collateralized', async () => {
+            const principal = (await comet.userBasic(collateralOnly.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const balance = presentValue(
+              principal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // baseUSD = 0 * 1e8 / 1e6 = 0 (no base position)
+            const baseUSD = mulPrice(balance, basePrice, baseScale);
+            expect(baseUSD).to.eq(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const collateral = (await comet.userCollateral(collateralOnly.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1e18 * 230e8 / 1e18 = 230e8 (+15% from $200)
+            const collateralUSD = mulPrice(
+              collateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 230e8 * 0.75e18 / 1e18 = 172.5e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = 0 + 172.5e8 = 172.5e8 > 0 → collateralized (no borrow)
+            const liquidity = baseUSD + weightedCollateral;
+            expect(liquidity).to.be.greaterThan(0n);
+            expect(await comet.isBorrowCollateralized(collateralOnly.address)).to.be.true;
+          });
         });
       });
 
-      describe('collateral price decreases', function () {
+      describe('collateral price decreases by 20%', function () {
         let collateralPriceFeed: SimplePriceFeed;
         let collateralPriceBefore: BigNumber;
 
         before(async () => {
           collateralPriceFeed = priceFeeds['ASSET0'];
           collateralPriceBefore = await comet.getPrice(collateralPriceFeed.address);
-          await collateralPriceFeed.setRoundData(1, collateralPriceBefore.div(10), 1, 1, 1);
+          await collateralPriceFeed.setRoundData(1, collateralPriceBefore.mul(80).div(100), 1, 1, 1);
         });
 
         after(async () => {
           await collateralPriceFeed.setRoundData(1, collateralPriceBefore, 1, 1, 1);
         });
 
-        it('opened borrow position becomes undercollateralized', async () => {
-          expect(await comet.isBorrowCollateralized(alice.address)).to.be.false;
+        describe('borrower (Alice): ~240 USDC borrow + 1.75 ASSET0', function () {
+          it('becomes undercollateralized', async () => {
+            const alicePrincipal = (await comet.userBasic(alice.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const aliceBalance = presentValue(
+              alicePrincipal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // debtUSD = ~-240e6 * 1e8 / 1e6 = ~-240e8 (negative, borrower, base price unchanged)
+            const debtUSD = mulPrice(aliceBalance, basePrice, baseScale);
+            expect(debtUSD).to.be.lessThan(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const aliceCollateral = (await comet.userCollateral(alice.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1.75e18 * 160e8 / 1e18 = 280e8 (-20% from $200)
+            const collateralUSD = mulPrice(
+              aliceCollateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 280e8 * 0.75e18 / 1e18 = 210e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = ~-240e8 + 210e8 = ~-30e8 < 0 → undercollateralized
+            const liquidity = debtUSD + weightedCollateral;
+            expect(liquidity).to.be.lessThan(0n);
+            expect(await comet.isBorrowCollateralized(alice.address)).to.be.false;
+          });
         });
 
-        it('non-opened position is not affected by collateral price decrease', async () => {
-          expect(await comet.isBorrowCollateralized(bob.address)).to.be.true;
+        describe('lender without borrowing (Bob): ~1100 USDC supply + 1.25 ASSET0', function () {
+          it('stays collateralized', async () => {
+            const bobPrincipal = (await comet.userBasic(bob.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const bobBalance = presentValue(
+              bobPrincipal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // supplyUSD = ~1100e6 * 1e8 / 1e6 = ~1100e8 (positive, base price unchanged)
+            const supplyUSD = mulPrice(bobBalance, basePrice, baseScale);
+            expect(supplyUSD).to.be.greaterThan(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const bobCollateral = (await comet.userCollateral(bob.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1.25e18 * 160e8 / 1e18 = 200e8 (-20% from $200)
+            const collateralUSD = mulPrice(
+              bobCollateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 200e8 * 0.75e18 / 1e18 = 150e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = ~1100e8 + 150e8 > 0 → collateralized (positive principal, no borrow)
+            const liquidity = supplyUSD + weightedCollateral;
+            expect(liquidity).to.be.greaterThan(0n);
+            expect(await comet.isBorrowCollateralized(bob.address)).to.be.true;
+          });
+        });
+
+        describe('collateral-only user: 1 ASSET0, no base position', function () {
+          it('stays collateralized', async () => {
+            const principal = (await comet.userBasic(collateralOnly.address)).principal;
+            const totalsBasic = await comet.totalsBasic();
+            const balance = presentValue(
+              principal.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
+
+            const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            const baseScale = await comet.baseScale();
+
+            // baseUSD = 0 * 1e8 / 1e6 = 0 (no base position)
+            const baseUSD = mulPrice(balance, basePrice, baseScale);
+            expect(baseUSD).to.eq(0n);
+
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const collateral = (await comet.userCollateral(collateralOnly.address, collateralToken.address)).balance;
+
+            // collateralUSD = 1e18 * 160e8 / 1e18 = 160e8 (-20% from $200)
+            const collateralUSD = mulPrice(
+              collateral.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            // weightedCollateral = 160e8 * 0.75e18 / 1e18 = 120e8
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+
+            // liquidity = 0 + 120e8 = 120e8 > 0 → collateralized (no borrow)
+            const liquidity = baseUSD + weightedCollateral;
+            expect(liquidity).to.be.greaterThan(0n);
+            expect(await comet.isBorrowCollateralized(collateralOnly.address)).to.be.true;
+          });
         });
       });
     });
@@ -946,7 +1426,7 @@ describe.only('isBorrowCollateralized', function () {
   describe('withdraw: isBorrowCollateralized impact on withdraw function', function () {
     // Reset to pre-transfer state
     before(async () => {
-      await ethers.provider.send('evm_revert', [snapshotId]);
+      await snapshot.restore();
     });
 
     describe('withdraw base', function () {
@@ -1112,7 +1592,6 @@ describe.only('isBorrowCollateralized', function () {
           });
 
           it('alice withdraws 1100 USDC and opens a borrow-backed withdrawal', async () => {
-            console.log(await baseToken.balanceOf(alice.address));
             await expect(
               comet.connect(alice).withdraw(baseToken.address, WITHDRAW_AMOUNT)
             ).to.not.be.reverted;
@@ -1136,7 +1615,6 @@ describe.only('isBorrowCollateralized', function () {
 
           it('alice base balance increases by 1100 USDC', async () => {
             const aliceBaseBalanceAfter = await baseToken.balanceOf(alice.address);
-            console.log(aliceBaseBalanceAfter, aliceBaseBalanceBefore);
             expect(aliceBaseBalanceAfter.sub(aliceBaseBalanceBefore)).to.eq(
               WITHDRAW_AMOUNT
             );
@@ -1195,103 +1673,85 @@ describe.only('isBorrowCollateralized', function () {
         // - Alice withdraws 1 ASSET0 -> Alice collateral: 1 -> 0
         // - Alice weighted collateral becomes 0 while debt remains > 0, so liquidity is negative
         // - withdraw of a collateral must revert with NotCollateralized and balances stay unchanged
-        describe(
-          'sender withdraws collateral required for current borrow',
-          function () {
-            const WITHDRAW_COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals);
+        describe('sender withdraws collateral required for current borrow', function () {
+          const WITHDRAW_COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals);
 
-            let alicePrincipalBefore: BigNumber;
-            let aliceBorrowBalanceBefore: BigNumber;
-            let aliceCollateralBalanceBefore: BigNumber;
-            let basePrice: BigNumber;
-            let baseScale: BigNumber;
+          let alicePrincipalBefore: BigNumber;
+          let aliceBorrowBalanceBefore: BigNumber;
+          let aliceCollateralBalanceBefore: BigNumber;
+          let basePrice: BigNumber;
+          let baseScale: BigNumber;
 
-            before(async () => {
-              alicePrincipalBefore = (await comet.userBasic(alice.address))
-                .principal;
-              aliceBorrowBalanceBefore = await comet.borrowBalanceOf(
-                alice.address
-              );
-              aliceCollateralBalanceBefore = (
-                await comet.userCollateral(alice.address, collateralToken.address)
-              ).balance;
-              basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
-              baseScale = await comet.baseScale();
-            });
+          before(async () => {
+            alicePrincipalBefore = (await comet.userBasic(alice.address))
+              .principal;
+            aliceBorrowBalanceBefore = await comet.borrowBalanceOf(
+              alice.address
+            );
+            aliceCollateralBalanceBefore = (
+              await comet.userCollateral(alice.address, collateralToken.address)
+            ).balance;
+            basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+            baseScale = await comet.baseScale();
+          });
 
-            it('alice is currently in borrower state', async () => {
-              expect(alicePrincipalBefore).to.be.lessThan(0);
-            });
+          it('alice is currently in borrower state', async () => {
+            expect(alicePrincipalBefore).to.be.lessThan(0);
+          });
 
-            it('alice has outstanding borrow before collateral withdrawal', async () => {
-              expect(aliceBorrowBalanceBefore).to.be.greaterThan(0);
-            });
+          it('alice has outstanding borrow before collateral withdrawal', async () => {
+            expect(aliceBorrowBalanceBefore).to.be.greaterThan(0);
+          });
 
-            it('alice has 1 ASSET0 collateral before withdrawal', async () => {
-              expect(aliceCollateralBalanceBefore).to.eq(
-                WITHDRAW_COLLATERAL_AMOUNT
-              );
-            });
+          it('alice has 1 ASSET0 collateral before withdrawal', async () => {
+            expect(aliceCollateralBalanceBefore).to.eq(
+              WITHDRAW_COLLATERAL_AMOUNT
+            );
+          });
 
-            it('alice withdraws collateral reverts with NotCollateralized', async () => {
-              await expect(
-                comet
-                  .connect(alice)
-                  .withdraw(
-                    collateralToken.address,
-                    WITHDRAW_COLLATERAL_AMOUNT
-                  )
-              ).to.be.revertedWithCustomError(comet, 'NotCollateralized');
-            });
+          it('alice withdraws collateral reverts with NotCollateralized', async () => {
+            await expect(
+              comet
+                .connect(alice)
+                .withdraw(
+                  collateralToken.address,
+                  WITHDRAW_COLLATERAL_AMOUNT
+                )
+            ).to.be.revertedWithCustomError(comet, 'NotCollateralized');
+          });
 
-            it('alice collateral remains unchanged after revert', async () => {
-              expect(
-                (
-                  await comet.userCollateral(alice.address, collateralToken.address)
-                ).balance
-              ).to.eq(aliceCollateralBalanceBefore);
-            });
+          it('manual post-withdrawal simulation shows negative liquidity', async () => {
+            const totalsBasic = await comet.totalsBasic();
+            const baseBalance = presentValue(
+              alicePrincipalBefore.toBigInt(),
+              totalsBasic.baseSupplyIndex.toBigInt(),
+              totalsBasic.baseBorrowIndex.toBigInt()
+            );
 
-            it('alice collateral remains unchanged after revert', async () => {
-              expect(
-                (
-                  await comet.userCollateral(alice.address, collateralToken.address)
-                ).balance
-              ).to.eq(aliceCollateralBalanceBefore);
-            });
+            // debtUSD remains negative from existing borrow position
+            const debtUSD = mulPrice(baseBalance, basePrice, baseScale);
 
-            it('manual post-withdrawal simulation shows negative liquidity', async () => {
-              const totalsBasic = await comet.totalsBasic();
-              const baseBalance = presentValue(
-                alicePrincipalBefore.toBigInt(),
-                totalsBasic.baseSupplyIndex.toBigInt(),
-                totalsBasic.baseBorrowIndex.toBigInt()
-              );
-
-              // debtUSD remains negative from existing borrow position
-              const debtUSD = mulPrice(baseBalance, basePrice, baseScale);
-
-              const assetInfo = await comet.getAssetInfo(0);
-              const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
-              const collateralAfterWithdrawal =
+            const assetInfo = await comet.getAssetInfo(0);
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const collateralAfterWithdrawal =
                 aliceCollateralBalanceBefore.toBigInt() -
                 WITHDRAW_COLLATERAL_AMOUNT;
 
-              // after withdrawal all collateral is removed -> weighted collateral = 0
-              const collateralUSD = mulPrice(
-                collateralAfterWithdrawal,
-                collateralPrice.toBigInt(),
-                assetInfo.scale.toBigInt()
-              );
-              const weightedCollateral = mulFactor(
-                collateralUSD,
-                assetInfo.borrowCollateralFactor
-              );
+            // after withdrawal all collateral is removed -> weighted collateral = 0
+            const collateralUSD = mulPrice(
+              collateralAfterWithdrawal,
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            const weightedCollateral = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
 
-              const liquidity = debtUSD + weightedCollateral;
-              expect(liquidity).to.be.lessThan(0n);
-            });
-          }
+            const liquidity = debtUSD + weightedCollateral;
+            expect(liquidity).to.be.lessThan(0n);
+          });
+        }
         );
       });
 
@@ -1405,6 +1865,421 @@ describe.only('isBorrowCollateralized', function () {
             const liquidity = debtUSD + weightedCollateral;
             expect(liquidity).to.be.greaterThan(0n);
           });
+        });
+      });
+    });
+  });
+
+  describe('multiple collaterals: liquidity calculation across collateral types', function () {
+    // Each collateral: $200 price, 0.75 borrowCF → weighted $150 per token
+    // Base token: $1 price, 6 decimals
+
+    describe('4 collaterals, liquidity becomes sufficient at 3rd collateral', function () {
+      // Charlie supplies 1 token each of ASSET0-ASSET3
+      // Weighted capacity per collateral = $200 * 0.75 = $150
+      // Borrow: 400 USDC ($400)
+      // Cumulative weighted after each collateral:
+      //   ASSET0: $150           → liquidity = $150 - $400 = -$250 (insufficient)
+      //   ASSET1: $150 + $150    → liquidity = $300 - $400 = -$100 (insufficient)
+      //   ASSET2: $300 + $150    → liquidity = $450 - $400 = +$50  (sufficient)
+      //   ASSET3: $450 + $150    → liquidity = $600 - $400 = +$200 (extra)
+
+      const NUM_COLLATERALS = 4;
+      const COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals);
+      const BASE_SUPPLY = exp(10000, baseTokenDecimals);
+      const BORROW_AMOUNT = exp(400, baseTokenDecimals);
+
+      let charlie: SignerWithAddress;
+      let liquidityProvider: SignerWithAddress;
+      let localSnapshot: SnapshotRestorer;
+
+      before(async () => {
+        localSnapshot = await takeSnapshot();
+        const signers = await ethers.getSigners();
+        charlie = signers[4];
+        liquidityProvider = signers[5];
+
+        // Supply base liquidity so charlie can borrow
+        await baseToken.allocateTo(liquidityProvider.address, BASE_SUPPLY);
+        await baseToken.connect(liquidityProvider).approve(comet.address, BASE_SUPPLY);
+        await comet.connect(liquidityProvider).supply(baseToken.address, BASE_SUPPLY);
+
+        // Charlie supplies 4 different collateral types
+        for (let i = 0; i < NUM_COLLATERALS; i++) {
+          const assetInfo = await comet.getAssetInfo(i);
+          const token = await ethers.getContractAt(
+            'FaucetToken',
+            assetInfo.asset
+          );
+          await token.allocateTo(charlie.address, COLLATERAL_AMOUNT);
+          await token.connect(charlie).approve(comet.address, COLLATERAL_AMOUNT);
+          await comet.connect(charlie).supply(token.address, COLLATERAL_AMOUNT);
+        }
+
+        // Charlie borrows 400 USDC
+        await comet.connect(charlie).withdraw(baseToken.address, BORROW_AMOUNT);
+      });
+
+      after(async () => {
+        await localSnapshot.restore();
+      });
+
+      it('charlie has negative principal (borrower state)', async () => {
+        expect((await comet.userBasic(charlie.address)).principal).to.be.lessThan(0);
+      });
+
+      it('charlie borrow balance equals 400 USDC', async () => {
+        expect(await comet.borrowBalanceOf(charlie.address)).to.eq(BORROW_AMOUNT);
+      });
+
+      it('charlie has 1 token of each of 4 collaterals', async () => {
+        for (let i = 0; i < NUM_COLLATERALS; i++) {
+          const assetInfo = await comet.getAssetInfo(i);
+          const userCollateral = await comet.userCollateral(charlie.address, assetInfo.asset);
+
+          expect(userCollateral.balance).to.eq(COLLATERAL_AMOUNT);
+        }
+      });
+
+      it('charlie is borrow-collateralized', async () => {
+        expect(await comet.isBorrowCollateralized(charlie.address)).to.be.true;
+      });
+
+      it('manual proof: first 2 collaterals insufficient, 3rd makes it sufficient', async () => {
+        const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+        const baseScale = await comet.baseScale();
+        const totalsBasic = await comet.totalsBasic();
+        const principal = (await comet.userBasic(charlie.address)).principal;
+        const baseBalance = presentValue(
+          principal.toBigInt(),
+          totalsBasic.baseSupplyIndex.toBigInt(),
+          totalsBasic.baseBorrowIndex.toBigInt()
+        );
+        const debtUSD = mulPrice(baseBalance, basePrice, baseScale);
+
+        let cumulativeWeighted = 0n;
+        for (let i = 0; i < NUM_COLLATERALS; i++) {
+          const assetInfo = await comet.getAssetInfo(i);
+          const balance = (await comet.userCollateral(charlie.address, assetInfo.asset)).balance;
+          const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+          const collateralUSD = mulPrice(
+            balance.toBigInt(),
+            collateralPrice.toBigInt(),
+            assetInfo.scale.toBigInt()
+          );
+          const weighted = mulFactor(
+            collateralUSD,
+            assetInfo.borrowCollateralFactor
+          );
+          cumulativeWeighted += weighted;
+
+          const liquidity = debtUSD + cumulativeWeighted;
+          if (i < 2) {
+            // After 1st and 2nd collateral: cumulative weighted < debt
+            expect(liquidity).to.be.lessThan(0n);
+          } else {
+            // After 3rd and 4th collateral: cumulative weighted > debt
+            expect(liquidity).to.be.greaterThan(0n);
+          }
+        }
+      });
+    });
+
+    describe('3 collaterals, only the last one covers the debt', function () {
+      // Charlie supplies:
+      //   ASSET0: 0.01 tokens → weighted = $200 * 0.01 * 0.75 = $1.50
+      //   ASSET1: 0.01 tokens → weighted = $1.50
+      //   ASSET2: 3 tokens    → weighted = $200 * 3 * 0.75 = $450
+      // Borrow: 300 USDC ($300)
+      // Cumulative weighted after each collateral:
+      //   ASSET0: $1.50              → liquidity = $1.50 - $300 = -$298.50 (insufficient)
+      //   ASSET1: $1.50 + $1.50      → liquidity = $3.00 - $300 = -$297    (insufficient)
+      //   ASSET2: $3.00 + $450       → liquidity = $453  - $300 = +$153    (sufficient)
+
+      const NUM_COLLATERALS = 3;
+      const SMALL_COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals - 2); // 0.01 tokens
+      const LARGE_COLLATERAL_AMOUNT = exp(3, collateralTokenDecimals); // 3 tokens
+      const BASE_SUPPLY = exp(10000, baseTokenDecimals);
+      const BORROW_AMOUNT = exp(300, baseTokenDecimals);
+
+      let charlie: SignerWithAddress;
+      let liquidityProvider: SignerWithAddress;
+      let localSnapshot: SnapshotRestorer;
+
+      before(async () => {
+        localSnapshot = await takeSnapshot();
+        const signers = await ethers.getSigners();
+        charlie = signers[4];
+        liquidityProvider = signers[5];
+
+        // Supply base liquidity
+        await baseToken.allocateTo(liquidityProvider.address, BASE_SUPPLY);
+        await baseToken.connect(liquidityProvider).approve(comet.address, BASE_SUPPLY);
+        await comet.connect(liquidityProvider).supply(baseToken.address, BASE_SUPPLY);
+
+        // Charlie supplies 3 collateral types with different amounts
+        for (let i = 0; i < NUM_COLLATERALS; i++) {
+          const assetInfo = await comet.getAssetInfo(i);
+          const token = await ethers.getContractAt(
+            'FaucetToken',
+            assetInfo.asset
+          );
+          const amount =
+            i < 2 ? SMALL_COLLATERAL_AMOUNT : LARGE_COLLATERAL_AMOUNT;
+          await token.allocateTo(charlie.address, amount);
+          await token.connect(charlie).approve(comet.address, amount);
+          await comet.connect(charlie).supply(token.address, amount);
+        }
+
+        // Charlie borrows 300 USDC
+        await comet.connect(charlie).withdraw(baseToken.address, BORROW_AMOUNT);
+      });
+
+      after(async () => {
+        await localSnapshot.restore();
+      });
+
+      it('charlie has negative principal (borrower state)', async () => {
+        expect((await comet.userBasic(charlie.address)).principal).to.be.lessThan(0);
+      });
+
+      it('charlie borrow balance equals 300 USDC', async () => {
+        expect(await comet.borrowBalanceOf(charlie.address)).to.eq(BORROW_AMOUNT);
+      });
+
+      it('charlie has 0.01 tokens of ASSET0 and ASSET1, 3 tokens of ASSET2', async () => {
+        for (let i = 0; i < NUM_COLLATERALS; i++) {
+          const assetInfo = await comet.getAssetInfo(i);
+          const expectedAmount =
+            i < 2 ? SMALL_COLLATERAL_AMOUNT : LARGE_COLLATERAL_AMOUNT;
+          const userCollateral = await comet.userCollateral(charlie.address, assetInfo.asset);
+          expect(userCollateral.balance).to.eq(expectedAmount);
+        }
+      });
+
+      it('charlie is borrow-collateralized', async () => {
+        expect(await comet.isBorrowCollateralized(charlie.address)).to.be.true;
+      });
+
+      it('manual proof: first 2 collaterals insufficient, only the 3rd covers the debt', async () => {
+        const basePrice = await comet.getPrice(
+          await comet.baseTokenPriceFeed()
+        );
+        const baseScale = await comet.baseScale();
+        const totalsBasic = await comet.totalsBasic();
+        const principal = (await comet.userBasic(charlie.address)).principal;
+        const baseBalance = presentValue(
+          principal.toBigInt(),
+          totalsBasic.baseSupplyIndex.toBigInt(),
+          totalsBasic.baseBorrowIndex.toBigInt()
+        );
+        const debtUSD = mulPrice(baseBalance, basePrice, baseScale);
+
+        let cumulativeWeighted = 0n;
+        for (let i = 0; i < NUM_COLLATERALS; i++) {
+          const assetInfo = await comet.getAssetInfo(i);
+          const balance = (await comet.userCollateral(charlie.address, assetInfo.asset)).balance;
+          const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+          const collateralUSD = mulPrice(
+            balance.toBigInt(),
+            collateralPrice.toBigInt(),
+            assetInfo.scale.toBigInt()
+          );
+          const weighted = mulFactor(
+            collateralUSD,
+            assetInfo.borrowCollateralFactor
+          );
+          cumulativeWeighted += weighted;
+
+          const liquidity = debtUSD + cumulativeWeighted;
+          if (i < 2) {
+            // First 2 collaterals (0.01 tokens each) contribute only $1.50 each
+            expect(liquidity).to.be.lessThan(0n);
+          } else {
+            // 3rd collateral (3 tokens) contributes $450, making total sufficient
+            expect(liquidity).to.be.greaterThan(0n);
+          }
+        }
+      });
+    });
+
+    describe('24 collaterals', function () {
+      // Charlie supplies 1 token of each of all 24 collateral types
+      // Total weighted capacity = 24 * $200 * 0.75 = $3600
+      // Borrow: 3500 USDC ($3500)
+      // 23 collaterals: 23 * $150 = $3450 < $3500 → insufficient
+      // 24 collaterals: 24 * $150 = $3600 > $3500 → sufficient
+
+      const NUM_COLLATERALS = MAX_ASSETS; // 24
+      const COLLATERAL_AMOUNT = exp(1, collateralTokenDecimals);
+      const BASE_SUPPLY = exp(100000, baseTokenDecimals);
+      const BORROW_AMOUNT = exp(3500, baseTokenDecimals);
+
+      let charlie: SignerWithAddress;
+      let liquidityProvider: SignerWithAddress;
+      let allCollateralsSnapshot: SnapshotRestorer;
+
+      before(async () => {
+        allCollateralsSnapshot = await takeSnapshot();
+        const signers = await ethers.getSigners();
+        charlie = signers[4];
+        liquidityProvider = signers[5];
+
+        // Upgrade proxy to extended asset list implementation to support all 24 collaterals
+        await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
+
+        // Supply base liquidity
+        await baseToken.allocateTo(liquidityProvider.address, BASE_SUPPLY);
+        await baseToken.connect(liquidityProvider).approve(comet.address, BASE_SUPPLY);
+        await comet.connect(liquidityProvider).supply(baseToken.address, BASE_SUPPLY);
+
+        // Charlie supplies all 24 collateral types
+        for (let i = 0; i < NUM_COLLATERALS; i++) {
+          const assetInfo = await comet.getAssetInfo(i);
+          const token = await ethers.getContractAt(
+            'FaucetToken',
+            assetInfo.asset
+          );
+          await token.allocateTo(charlie.address, COLLATERAL_AMOUNT);
+          await token.connect(charlie).approve(comet.address, COLLATERAL_AMOUNT);
+          await comet.connect(charlie).supply(token.address, COLLATERAL_AMOUNT);
+        }
+
+        // Charlie borrows 3500 USDC
+        await comet.connect(charlie).withdraw(baseToken.address, BORROW_AMOUNT);
+      });
+
+      after(async () => {
+        await allCollateralsSnapshot.restore();
+      });
+
+      describe('huge loan covered by all 24 collaterals', function () {
+        it('charlie has negative principal (borrower state)', async () => {
+          expect((await comet.userBasic(charlie.address)).principal).to.be.lessThan(0);
+        });
+
+        it('charlie borrow balance equals 3500 USDC', async () => {
+          expect(await comet.borrowBalanceOf(charlie.address)).to.eq(BORROW_AMOUNT);
+        });
+
+        it('charlie has 1 token of each of all 24 collaterals', async () => {
+          for (let i = 0; i < NUM_COLLATERALS; i++) {
+            const assetInfo = await comet.getAssetInfo(i);
+            const userCollateral = await comet.userCollateral(charlie.address, assetInfo.asset);
+            expect(userCollateral.balance).to.eq(COLLATERAL_AMOUNT);
+          }
+        });
+
+        it('charlie is borrow-collateralized with all 24 collaterals', async () => {
+          expect(await comet.isBorrowCollateralized(charlie.address)).to.be.true;
+        });
+
+        it('manual proof: first 23 collaterals insufficient, all 24 sufficient', async () => {
+          const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+          const baseScale = await comet.baseScale();
+          const totalsBasic = await comet.totalsBasic();
+          const principal = (await comet.userBasic(charlie.address)).principal;
+          const baseBalance = presentValue(
+            principal.toBigInt(),
+            totalsBasic.baseSupplyIndex.toBigInt(),
+            totalsBasic.baseBorrowIndex.toBigInt()
+          );
+          const debtUSD = mulPrice(baseBalance, basePrice, baseScale);
+
+          let cumulativeWeighted = 0n;
+          for (let i = 0; i < NUM_COLLATERALS; i++) {
+            const assetInfo = await comet.getAssetInfo(i);
+            const balance = (await comet.userCollateral(charlie.address, assetInfo.asset)).balance;
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const collateralUSD = mulPrice(
+              balance.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            const weighted = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+            cumulativeWeighted += weighted;
+
+            const liquidity = debtUSD + cumulativeWeighted;
+            if (i < NUM_COLLATERALS - 1) {
+              // First 23 collaterals: cumulative $3450 < $3500 debt
+              expect(liquidity).to.be.lessThan(0n);
+            } else {
+              // All 24 collaterals: cumulative $3600 > $3500 debt
+              expect(liquidity).to.be.greaterThan(0n);
+            }
+          }
+        });
+      });
+
+      describe('all 24 collaterals insufficient to cover the debt', function () {
+        // Base price is doubled: debt = 3500 * $2 = $7000
+        // Total weighted collateral remains $3600
+        // $3600 < $7000 → undercollateralized
+        let basePriceBefore: BigNumber;
+
+        before(async () => {
+          basePriceBefore = await comet.getPrice(
+            await comet.baseTokenPriceFeed()
+          );
+          // Double base price: debt in USD doubles from $3500 to $7000
+          await priceFeeds[baseSymbol].setRoundData(
+            1,
+            basePriceBefore.mul(2),
+            1,
+            1,
+            1
+          );
+        });
+
+        after(async () => {
+          await priceFeeds[baseSymbol].setRoundData(
+            1,
+            basePriceBefore,
+            1,
+            1,
+            1
+          );
+        });
+
+        it('charlie is NOT borrow-collateralized despite having all 24 collaterals', async () => {
+          expect(await comet.isBorrowCollateralized(charlie.address)).to.be.false;
+        });
+
+        it('manual proof: total weighted collateral across all 24 assets is less than debt', async () => {
+          const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+          const baseScale = await comet.baseScale();
+          const totalsBasic = await comet.totalsBasic();
+          const principal = (await comet.userBasic(charlie.address)).principal;
+          const baseBalance = presentValue(
+            principal.toBigInt(),
+            totalsBasic.baseSupplyIndex.toBigInt(),
+            totalsBasic.baseBorrowIndex.toBigInt()
+          );
+          const debtUSD = mulPrice(baseBalance, basePrice, baseScale);
+
+          let cumulativeWeighted = 0n;
+          for (let i = 0; i < NUM_COLLATERALS; i++) {
+            const assetInfo = await comet.getAssetInfo(i);
+            const balance = (await comet.userCollateral(charlie.address, assetInfo.asset)).balance;
+            const collateralPrice = await comet.getPrice(assetInfo.priceFeed);
+            const collateralUSD = mulPrice(
+              balance.toBigInt(),
+              collateralPrice.toBigInt(),
+              assetInfo.scale.toBigInt()
+            );
+            const weighted = mulFactor(
+              collateralUSD,
+              assetInfo.borrowCollateralFactor
+            );
+            cumulativeWeighted += weighted;
+          }
+
+          // Even after all 24 collaterals, liquidity is still negative
+          const liquidity = debtUSD + cumulativeWeighted;
+          expect(liquidity).to.be.lessThan(0n);
         });
       });
     });
