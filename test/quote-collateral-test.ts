@@ -574,7 +574,7 @@ describe('quoteCollateral', function () {
   });
 
   // ─────────────────────────────────────────────────────────
-  //  7. Different base token price (base != $1)
+  //  6. Different base token price (base != $1)
   // ─────────────────────────────────────────────────────────
   describe('different base token price (base != $1)', function () {
     let snapshot: SnapshotRestorer;
