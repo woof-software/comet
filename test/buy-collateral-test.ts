@@ -969,4 +969,488 @@ describe('buyCollateral', function () {
       });
     });
   });
+
+  // ─── WBTC base / tBTC collateral — cross-decimal market ──────────────────────
+
+  describe('buyCollateral — WBTC base (8 decimals) / tBTC collateral (18 decimals)', function () {
+    // Protocol: WBTC base (8 decimals, $60,000), tBTC collateral (18 decimals, $61,000).
+    // storeFrontPriceFactor=0.9, liquidationFactor(tBTC)=0.93.
+    //   discountFactor       = 0.9 × (1 − 0.93) = 0.063
+    //   assetPriceDiscounted  = $61,000 × (1 − 0.063) = $57,157
+    //   baseScale            = 1e8 (WBTC 8 decimals)
+    //   assetScale           = 1e18 (tBTC 18 decimals)
+    // General quote formula:
+    //   quote(baseAmount) = basePrice × baseAmount × 1e18 / assetPriceDiscounted / 1e8
+    let comet: CometWithExtendedAssetList;
+    let wbtc: FaucetToken;
+    let tbtc: FaucetToken;
+    let alice: SignerWithAddress;
+    let priceFeeds: { [symbol: string]: SimplePriceFeed };
+    let snapshot: SnapshotRestorer;
+    let baseScale: BigNumber;
+
+    before(async () => {
+      const protocol = await makeConfigurator({
+        base: 'WBTC',
+        storeFrontPriceFactor: exp(0.9, 18),
+        targetReserves: exp(1, 8), // 1 WBTC
+        assets: {
+          WBTC: { initial: 1e6, decimals: 8, initialPrice: 60000 },
+          TBTC: {
+            initial: 1e6,
+            decimals: 18,
+            initialPrice: 61000,
+            liquidationFactor: exp(0.93, 18),
+            borrowCF: exp(0.80, 18),
+            liquidateCF: exp(0.85, 18),
+            supplyCap: exp(1000, 18),
+          },
+        },
+      });
+
+      const { cometWithExtendedAssetList, cometProxyWithExtendedAssetList, configurator, configuratorProxy } = protocol;
+
+      comet = cometWithExtendedAssetList.attach(cometProxyWithExtendedAssetList.address) as CometWithExtendedAssetList;
+      configuratorAsProxy = configurator.attach(configuratorProxy.address) as unknown as Configurator;
+      proxyAdmin = protocol.proxyAdmin;
+      configuratorProxyAddress = configuratorProxy.address;
+
+      wbtc = protocol.tokens.WBTC as FaucetToken;
+      tbtc = protocol.tokens.TBTC as FaucetToken;
+      priceFeeds = protocol.priceFeeds;
+      [alice, bob] = protocol.users;
+      governor = protocol.governor;
+
+      baseScale = await comet.baseScale();
+
+      // Pre-allocate 10 tBTC directly to comet as collateral reserves (not tracked in totalsCollateral)
+      await tbtc.allocateTo(comet.address, exp(10, 18));
+
+      // Give alice 5 WBTC with a standing MaxUint256 approval
+      await wbtc.allocateTo(alice.address, exp(5, 8));
+      await wbtc.connect(alice).approve(comet.address, ethers.constants.MaxUint256);
+
+      snapshot = await takeSnapshot();
+    });
+
+    // ─── Standard buy — tBTC at premium to WBTC, buyer is recipient ──────────────
+
+    describe('standard buy — tBTC priced above WBTC, buyer is recipient', function () {
+    // tBTC ($61,000) > WBTC ($60,000): discount lowers effective tBTC price below spot
+    // → buyer receives MORE tBTC than the raw price ratio would imply
+    // quote(0.1 WBTC) = 60000e8 × 0.1e8 × 1e18 / 57157e8 / 1e8
+    //                 = 6000 × 1e18 / 57157 ≈ 0.10497 tBTC
+
+      const BUY_AMOUNT = exp(0.1, 8); // 10,000,000 satoshis = 0.1 WBTC
+
+      let reservesBefore: BigNumber;
+      let collateralReservesBefore: BigNumber;
+      let quoteAmount: BigNumber;
+      let buyTx: ContractTransaction;
+
+      before(async () => {
+        reservesBefore = await comet.getReserves();
+        collateralReservesBefore = await comet.getCollateralReserves(tbtc.address);
+        quoteAmount = await comet.quoteCollateral(tbtc.address, BUY_AMOUNT);
+      });
+
+      it('sanity: WBTC reserves are below targetReserves before purchase', async () => {
+        expect(reservesBefore).to.be.lt(await comet.targetReserves());
+      });
+
+      it('sanity: tBTC collateral reserves equal the 10 tBTC pre-allocated', () => {
+        expect(collateralReservesBefore).to.be.equal(exp(10, 18));
+      });
+
+      it('sanity: quoted tBTC amount is positive', () => {
+        expect(quoteAmount).to.be.gt(0);
+      });
+
+      it('sanity: discount lowers effective price — quote exceeds face-value ratio', () => {
+      // Face-value (no discount): baseAmount × basePrice / tBTCprice × assetScale / baseScale
+      //   = 0.1e8 × 60000e8 × 1e18 / 61000e8 / 1e8 ≈ 0.09836 tBTC
+      // With 6.3% discount: effective price = 57157 → quote ≈ 0.10497 tBTC > face-value
+        const faceValueQuote = exp(60000, 8) * BUY_AMOUNT * exp(1, 18) / exp(61000, 8) / baseScale.toBigInt();
+        expect(quoteAmount.toBigInt()).to.be.gt(faceValueQuote);
+      });
+
+      it('alice buys tBTC with WBTC — does not revert', async () => {
+        buyTx = await comet.connect(alice).buyCollateral(tbtc.address, 0, BUY_AMOUNT, alice.address);
+        await expect(buyTx).to.not.be.reverted;
+      });
+
+      it('emits BuyCollateral with correct buyer, asset, baseAmount and collateralAmount', async () => {
+        await expect(buyTx)
+          .to.emit(comet, 'BuyCollateral')
+          .withArgs(alice.address, tbtc.address, BUY_AMOUNT, quoteAmount);
+      });
+
+      it('emits Transfer: WBTC from alice to comet', async () => {
+        await expect(buyTx)
+          .to.emit(wbtc, 'Transfer')
+          .withArgs(alice.address, comet.address, BUY_AMOUNT);
+      });
+
+      it('emits Transfer: tBTC from comet to alice', async () => {
+        await expect(buyTx)
+          .to.emit(tbtc, 'Transfer')
+          .withArgs(comet.address, alice.address, quoteAmount);
+      });
+
+      it('alice WBTC balance decreases by BUY_AMOUNT', async () => {
+        await expect(buyTx).to.changeTokenBalance(wbtc, alice, -BUY_AMOUNT);
+      });
+
+      it('alice tBTC balance increases by quoted collateral amount', async () => {
+        await expect(buyTx).to.changeTokenBalance(tbtc, alice, quoteAmount);
+      });
+
+      it('comet WBTC balance increases by BUY_AMOUNT', async () => {
+        await expect(buyTx).to.changeTokenBalance(wbtc, comet, BUY_AMOUNT);
+      });
+
+      it('comet tBTC balance decreases by quoted collateral amount', async () => {
+        await expect(buyTx).to.changeTokenBalance(tbtc, comet, quoteAmount.mul(-1));
+      });
+
+      it('protocol WBTC reserves increase by BUY_AMOUNT', async () => {
+        expect(await comet.getReserves()).to.be.equal(reservesBefore.add(BUY_AMOUNT));
+      });
+
+      it('tBTC collateral reserves decrease by quoted collateral amount', async () => {
+        expect(await comet.getCollateralReserves(tbtc.address)).to.be.equal(
+          collateralReservesBefore.sub(quoteAmount)
+        );
+      });
+    });
+
+    // ─── tBTC price drops below WBTC — more collateral per satoshi ───────────────
+
+    describe('tBTC price drops below WBTC — more collateral per satoshi', function () {
+    // tBTC price set to $55,000 < WBTC $60,000.
+    //   assetPriceDiscounted = 55000e8 × (1 − 0.063) = 55000e8 × 0.937 = 51535e8
+    //   quote(0.1 WBTC) = 60000e8 × 0.1e8 × 1e18 / 51535e8 / 1e8
+    //                   = 6000 × 1e18 / 51535 ≈ 0.11642 tBTC
+    // Compare to $61,000 quote ≈ 0.10497 tBTC — buyer receives more when tBTC is cheaper.
+
+      const BUY_AMOUNT = exp(0.1, 8);
+
+      let quoteAtHighPrice: BigNumber;  // quote at initial $61,000
+      let quoteAtLowPrice: BigNumber;   // quote after price drops to $55,000
+      let reservesBefore: BigNumber;
+      let collateralReservesBefore: BigNumber;
+      let buyTx: ContractTransaction;
+
+      before(async () => {
+        await snapshot.restore();
+
+        quoteAtHighPrice = await comet.quoteCollateral(tbtc.address, BUY_AMOUNT);
+
+        // Drop tBTC price to $55,000
+        await priceFeeds['TBTC'].setRoundData(0, exp(55000, 8), 0, 0, 0);
+
+        quoteAtLowPrice = await comet.quoteCollateral(tbtc.address, BUY_AMOUNT);
+        reservesBefore = await comet.getReserves();
+        collateralReservesBefore = await comet.getCollateralReserves(tbtc.address);
+      });
+
+      after(async () => {
+        await snapshot.restore();
+      });
+
+      it('sanity: quote increases when tBTC price drops — cheaper collateral means more received', () => {
+        expect(quoteAtLowPrice).to.be.gt(quoteAtHighPrice);
+      });
+
+      it('alice buys tBTC at lower price — does not revert', async () => {
+        buyTx = await comet.connect(alice).buyCollateral(tbtc.address, 0, BUY_AMOUNT, alice.address);
+        await expect(buyTx).to.not.be.reverted;
+      });
+
+      it('emits BuyCollateral with collateralAmount equal to low-price quote', async () => {
+        await expect(buyTx)
+          .to.emit(comet, 'BuyCollateral')
+          .withArgs(alice.address, tbtc.address, BUY_AMOUNT, quoteAtLowPrice);
+      });
+
+      it('emits Transfer: WBTC from alice to comet', async () => {
+        await expect(buyTx)
+          .to.emit(wbtc, 'Transfer')
+          .withArgs(alice.address, comet.address, BUY_AMOUNT);
+      });
+
+      it('emits Transfer: tBTC from comet to alice', async () => {
+        await expect(buyTx)
+          .to.emit(tbtc, 'Transfer')
+          .withArgs(comet.address, alice.address, quoteAtLowPrice);
+      });
+
+      it('alice receives more tBTC than at the original $61,000 price', async () => {
+        await expect(buyTx).to.changeTokenBalance(tbtc, alice, quoteAtLowPrice);
+      });
+
+      it('alice WBTC balance decreases by BUY_AMOUNT', async () => {
+        await expect(buyTx).to.changeTokenBalance(wbtc, alice, -BUY_AMOUNT);
+      });
+
+      it('comet WBTC balance increases by BUY_AMOUNT', async () => {
+        await expect(buyTx).to.changeTokenBalance(wbtc, comet, BUY_AMOUNT);
+      });
+
+      it('protocol reserves increase by BUY_AMOUNT', async () => {
+        expect(await comet.getReserves()).to.be.equal(reservesBefore.add(BUY_AMOUNT));
+      });
+
+      it('tBTC collateral reserves decrease by low-price quote amount', async () => {
+        expect(await comet.getCollateralReserves(tbtc.address)).to.be.equal(
+          collateralReservesBefore.sub(quoteAtLowPrice)
+        );
+      });
+    });
+
+    // ─── tBTC price rises above WBTC — fewer collateral per satoshi ──────────────
+
+    describe('tBTC price rises above WBTC — fewer collateral per satoshi', function () {
+    // tBTC price set to $70,000 > WBTC $60,000.
+    //   assetPriceDiscounted = 70000e8 × (1 − 0.063) = 70000e8 × 0.937 = 65590e8
+    //   quote(0.1 WBTC) = 60000e8 × 0.1e8 × 1e18 / 65590e8 / 1e8
+    //                   = 6000 × 1e18 / 65590 ≈ 0.09150 tBTC
+    // Compare to $61,000 quote ≈ 0.10497 tBTC — buyer receives fewer when tBTC is costlier.
+
+      const BUY_AMOUNT = exp(0.1, 8);
+
+      let quoteAtLowPrice: BigNumber;   // quote at initial $61,000
+      let quoteAtHighPrice: BigNumber;  // quote after price rises to $70,000
+      let reservesBefore: BigNumber;
+      let collateralReservesBefore: BigNumber;
+      let buyTx: ContractTransaction;
+
+      before(async () => {
+        await snapshot.restore();
+
+        quoteAtLowPrice = await comet.quoteCollateral(tbtc.address, BUY_AMOUNT);
+
+        // Raise tBTC price to $70,000
+        await priceFeeds['TBTC'].setRoundData(0, exp(70000, 8), 0, 0, 0);
+
+        quoteAtHighPrice = await comet.quoteCollateral(tbtc.address, BUY_AMOUNT);
+        reservesBefore = await comet.getReserves();
+        collateralReservesBefore = await comet.getCollateralReserves(tbtc.address);
+      });
+
+      after(async () => {
+        await snapshot.restore();
+      });
+
+      it('sanity: quote decreases when tBTC price rises — costlier collateral means fewer received', () => {
+        expect(quoteAtHighPrice).to.be.lt(quoteAtLowPrice);
+      });
+
+      it('alice buys tBTC at higher price — does not revert', async () => {
+        buyTx = await comet.connect(alice).buyCollateral(tbtc.address, 0, BUY_AMOUNT, alice.address);
+        await expect(buyTx).to.not.be.reverted;
+      });
+
+      it('emits BuyCollateral with collateralAmount equal to high-price quote', async () => {
+        await expect(buyTx)
+          .to.emit(comet, 'BuyCollateral')
+          .withArgs(alice.address, tbtc.address, BUY_AMOUNT, quoteAtHighPrice);
+      });
+
+      it('emits Transfer: WBTC from alice to comet', async () => {
+        await expect(buyTx)
+          .to.emit(wbtc, 'Transfer')
+          .withArgs(alice.address, comet.address, BUY_AMOUNT);
+      });
+
+      it('emits Transfer: tBTC from comet to alice', async () => {
+        await expect(buyTx)
+          .to.emit(tbtc, 'Transfer')
+          .withArgs(comet.address, alice.address, quoteAtHighPrice);
+      });
+
+      it('alice receives fewer tBTC than at the original $61,000 price', async () => {
+        await expect(buyTx).to.changeTokenBalance(tbtc, alice, quoteAtHighPrice);
+      });
+
+      it('alice WBTC balance decreases by BUY_AMOUNT', async () => {
+        await expect(buyTx).to.changeTokenBalance(wbtc, alice, -BUY_AMOUNT);
+      });
+
+      it('comet WBTC balance increases by BUY_AMOUNT', async () => {
+        await expect(buyTx).to.changeTokenBalance(wbtc, comet, BUY_AMOUNT);
+      });
+
+      it('protocol reserves increase by BUY_AMOUNT', async () => {
+        expect(await comet.getReserves()).to.be.equal(reservesBefore.add(BUY_AMOUNT));
+      });
+
+      it('tBTC collateral reserves decrease by high-price quote amount', async () => {
+        expect(await comet.getCollateralReserves(tbtc.address)).to.be.equal(
+          collateralReservesBefore.sub(quoteAtHighPrice)
+        );
+      });
+    });
+
+    // ─── Dust base amount: 0.001 WBTC (100,000 satoshis) ─────────────────────────
+
+    describe('dust base amount — 0.001 WBTC (100,000 satoshis)', function () {
+    // Validates that the 8-decimal baseScale correctly handles sub-cent amounts
+    // without rounding to zero or losing precision in the 18-decimal collateral output.
+    // quote(0.001 WBTC) = 60000e8 × 0.001e8 × 1e18 / 57157e8 / 1e8
+    //                   = 60 × 1e18 / 57157 ≈ 0.001049... tBTC (still non-zero)
+
+      const BUY_AMOUNT = exp(0.001, 8); // 100,000 satoshis
+
+      let quoteAmount: BigNumber;
+      let reservesBefore: BigNumber;
+      let collateralReservesBefore: BigNumber;
+      let buyTx: ContractTransaction;
+
+      before(async () => {
+        await snapshot.restore();
+
+        quoteAmount = await comet.quoteCollateral(tbtc.address, BUY_AMOUNT);
+        reservesBefore = await comet.getReserves();
+        collateralReservesBefore = await comet.getCollateralReserves(tbtc.address);
+      });
+
+      it('sanity: dust buy yields a positive tBTC quote despite small satoshi input', () => {
+        expect(quoteAmount).to.be.gt(0);
+      });
+
+      it('alice buys with dust WBTC amount — does not revert', async () => {
+        buyTx = await comet.connect(alice).buyCollateral(tbtc.address, 0, BUY_AMOUNT, alice.address);
+        await expect(buyTx).to.not.be.reverted;
+      });
+
+      it('emits BuyCollateral with correct dust baseAmount and positive collateralAmount', async () => {
+        await expect(buyTx)
+          .to.emit(comet, 'BuyCollateral')
+          .withArgs(alice.address, tbtc.address, BUY_AMOUNT, quoteAmount);
+      });
+
+      it('emits Transfer: dust WBTC from alice to comet', async () => {
+        await expect(buyTx)
+          .to.emit(wbtc, 'Transfer')
+          .withArgs(alice.address, comet.address, BUY_AMOUNT);
+      });
+
+      it('emits Transfer: tBTC from comet to alice', async () => {
+        await expect(buyTx)
+          .to.emit(tbtc, 'Transfer')
+          .withArgs(comet.address, alice.address, quoteAmount);
+      });
+
+      it('alice receives positive tBTC — 18-decimal collateral preserves precision for dust input', async () => {
+        await expect(buyTx).to.changeTokenBalance(tbtc, alice, quoteAmount);
+      });
+
+      it('alice WBTC balance decreases by exactly the dust BUY_AMOUNT', async () => {
+        await expect(buyTx).to.changeTokenBalance(wbtc, alice, -BUY_AMOUNT);
+      });
+
+      it('comet WBTC balance increases by dust BUY_AMOUNT', async () => {
+        await expect(buyTx).to.changeTokenBalance(wbtc, comet, BUY_AMOUNT);
+      });
+
+      it('protocol reserves increase by dust BUY_AMOUNT', async () => {
+        expect(await comet.getReserves()).to.be.equal(reservesBefore.add(BUY_AMOUNT));
+      });
+
+      it('tBTC collateral reserves decrease by quoted amount', async () => {
+        expect(await comet.getCollateralReserves(tbtc.address)).to.be.equal(
+          collateralReservesBefore.sub(quoteAmount)
+        );
+      });
+    });
+
+    // ─── Large base amount: 1 full WBTC ──────────────────────────────────────────
+
+    describe('large base amount — 1 full WBTC', function () {
+    // 1 WBTC = 1e8 satoshis; quote scales linearly with baseAmount.
+    // quote(1 WBTC) = 60000e8 × 1e8 × 1e18 / 57157e8 / 1e8
+    //              = 60000 × 1e18 / 57157 ≈ 1.04974 tBTC
+    // Covered by the 10 tBTC pre-allocated as reserves.
+
+      const BUY_AMOUNT = exp(1, 8); // 1 WBTC = 100,000,000 satoshis
+
+      let quoteAmount: BigNumber;
+      let reservesBefore: BigNumber;
+      let collateralReservesBefore: BigNumber;
+      let buyTx: ContractTransaction;
+
+      before(async () => {
+        await snapshot.restore();
+
+        quoteAmount = await comet.quoteCollateral(tbtc.address, BUY_AMOUNT);
+        reservesBefore = await comet.getReserves();
+        collateralReservesBefore = await comet.getCollateralReserves(tbtc.address);
+      });
+
+      it('sanity: 10 tBTC reserves cover the 1 WBTC purchase quote', () => {
+      // quote ≈ 1.04974 tBTC < 10 tBTC available
+        expect(collateralReservesBefore).to.be.gte(quoteAmount);
+      });
+
+      it('sanity: quote for 1 WBTC is within 1 wei of 10× the quote for 0.1 WBTC — linear scaling', async () => {
+      // quoteCollateral is linear in baseAmount; integer division may introduce ±1 wei rounding
+      // when the numerator is not perfectly divisible at different scales
+        const smallQuote = await comet.quoteCollateral(tbtc.address, exp(0.1, 8));
+        const diff = quoteAmount.sub(smallQuote.mul(10)).abs();
+        expect(diff).to.be.lte(1);
+      });
+
+      it('alice buys tBTC with 1 full WBTC — does not revert', async () => {
+        buyTx = await comet.connect(alice).buyCollateral(tbtc.address, 0, BUY_AMOUNT, alice.address);
+        await expect(buyTx).to.not.be.reverted;
+      });
+
+      it('emits BuyCollateral with correct buyer, asset, baseAmount and collateralAmount', async () => {
+        await expect(buyTx)
+          .to.emit(comet, 'BuyCollateral')
+          .withArgs(alice.address, tbtc.address, BUY_AMOUNT, quoteAmount);
+      });
+
+      it('emits Transfer: 1 WBTC from alice to comet', async () => {
+        await expect(buyTx)
+          .to.emit(wbtc, 'Transfer')
+          .withArgs(alice.address, comet.address, BUY_AMOUNT);
+      });
+
+      it('emits Transfer: tBTC from comet to alice', async () => {
+        await expect(buyTx)
+          .to.emit(tbtc, 'Transfer')
+          .withArgs(comet.address, alice.address, quoteAmount);
+      });
+
+      it('alice WBTC balance decreases by 1 full WBTC', async () => {
+        await expect(buyTx).to.changeTokenBalance(wbtc, alice, -BUY_AMOUNT);
+      });
+
+      it('alice tBTC balance increases by quoted amount', async () => {
+        await expect(buyTx).to.changeTokenBalance(tbtc, alice, quoteAmount);
+      });
+
+      it('comet WBTC balance increases by 1 full WBTC', async () => {
+        await expect(buyTx).to.changeTokenBalance(wbtc, comet, BUY_AMOUNT);
+      });
+
+      it('comet tBTC balance decreases by quoted amount', async () => {
+        await expect(buyTx).to.changeTokenBalance(tbtc, comet, quoteAmount.mul(-1));
+      });
+
+      it('protocol WBTC reserves increase by 1 WBTC', async () => {
+        expect(await comet.getReserves()).to.be.equal(reservesBefore.add(BUY_AMOUNT));
+      });
+
+      it('tBTC collateral reserves decrease by quoted collateral amount', async () => {
+        expect(await comet.getCollateralReserves(tbtc.address)).to.be.equal(
+          collateralReservesBefore.sub(quoteAmount)
+        );
+      });
+    });
+  });
 });
+
+
