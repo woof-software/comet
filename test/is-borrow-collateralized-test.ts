@@ -1901,7 +1901,6 @@ describe('isBorrowCollateralized', function () {
       const BORROW_AMOUNT = exp(400, baseTokenDecimals);
 
       before(async () => {
-        await snapshot.restore();
         // Charlie supplies 4 different collateral types
         for (let i = 0; i < NUM_COLLATERALS; i++) {
           const assetInfo = await comet.getAssetInfo(i);
