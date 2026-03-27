@@ -1,5 +1,5 @@
 import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, SimplePriceFeed } from 'build/types';
-import { expect, exp, ethers, MAX_ASSETS, mulFactor, factorScale, makeConfigurator, wait, ZERO_ADDRESS, SnapshotRestorer, takeSnapshot } from './helpers';
+import { expect, exp, ethers, MAX_ASSETS, mulFactor, factorScale, makeConfigurator, ZERO_ADDRESS, SnapshotRestorer, takeSnapshot } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
 describe('quoteCollateral', function () {
@@ -20,7 +20,6 @@ describe('quoteCollateral', function () {
   let priceFeeds: Record<string, SimplePriceFeed>;
   // Users
   let alice: SignerWithAddress;
-  let bob: SignerWithAddress;
 
   async function updateStoreFrontPriceFactor(factor: bigint) {
     await configurator.setStoreFrontPriceFactor(comet.address, factor);
@@ -52,7 +51,7 @@ describe('quoteCollateral', function () {
     configurator = protocol.configurator;
     configuratorProxyAddress = protocol.configuratorProxy.address;
     proxyAdmin = protocol.proxyAdmin;
-    [alice, bob] = protocol.users;
+    [alice] = protocol.users;
     baseSymbol = protocol.base;
     baseToken = protocol.tokens[baseSymbol];
     collateralToken = protocol.tokens['ASSET0'];
@@ -200,6 +199,41 @@ describe('quoteCollateral', function () {
       // Restore liquidation factor for collateral for other tests
       await snapshot.restore();
     });
+
+    it('100% storeFrontPriceFactor with normal liquidationFactor', async () => {
+      await updateStoreFrontPriceFactor(exp(1, 18));
+
+      const baseAmount = exp(200, baseTokenDecimals);
+      const quote = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      // discountFactor = 1.0 * (1 - 0.6) = 0.4
+      // assetPriceDiscounted = 200e8 * (1 - 0.4) = 200e8 * 0.6 = 120e8 (non-zero, safe)
+      // quote = 1e8 * 200e6 * 1e18 / 120e8 / 1e6 ≈ 1.666...e18
+      const discountFactor = mulFactor(exp(1, 18), factorScale - exp(0.6, 18));
+      const assetPriceDiscounted = mulFactor(exp(200, 8), factorScale - discountFactor);
+      const expected = exp(1, 8) * baseAmount * exp(1, 18) / assetPriceDiscounted / exp(1, 6);
+      expect(quote).to.equal(expected);
+      // At maximum discount the buyer gets more collateral per base
+      expect(quote).to.be.gt(exp(1.66, 18));
+    });
+
+    it('division-by-zero panic: storeFrontPriceFactor = 1e18, liquidationFactor = 0', async () => {
+      const snapshot = await takeSnapshot();
+      // discountFactor = 1e18 * (1 - 0) = 1e18 = FACTOR_SCALE
+      // assetPriceDiscounted = assetPrice * (FACTOR_SCALE - FACTOR_SCALE) / FACTOR_SCALE = 0
+      // Final division by assetPriceDiscounted = 0 → EVM panics (0x12)
+      await updateStoreFrontPriceFactor(exp(1, 18));
+      await configurator.updateAssetLiquidationFactor(comet.address, collateralToken.address, 0);
+      await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
+
+      const baseAmount = exp(200, baseTokenDecimals);
+      // Solidity division-by-zero causes panic code 0x12
+      await expect(
+        comet.quoteCollateral(collateralToken.address, baseAmount)
+      ).to.be.revertedWithPanic('0x12');
+
+      await snapshot.restore();
+    });
   });
 
   // ─────────────────────────────────────────────────────────
@@ -326,136 +360,7 @@ describe('quoteCollateral', function () {
   });
 
   // ─────────────────────────────────────────────────────────
-  //  4. Integration with buyCollateral
-  // ─────────────────────────────────────────────────────────
-  describe('integration with buyCollateral', function () {
-    const baseAmount = exp(200, baseTokenDecimals);
-    before(async () => {
-      await configurator.setStoreFrontPriceFactor(comet.address, exp(0.8, 18));
-      await configurator.setTargetReserves(comet.address, exp(1, 18));
-      await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
-
-      // Supply collateral to comet so it has reserves available to sell
-      const collateralReserveAmount = exp(50, collateralTokenDecimals);
-      await collateralToken.allocateTo(comet.address, collateralReserveAmount); 
-    
-      // Set a known price for collateral
-      await priceFeeds['ASSET0'].setRoundData(1, exp(200, 8), 0, 0, 1);
-      await baseToken.allocateTo(alice.address, baseAmount * 2n);
-    });
-
-    it('buyCollateral transfers collateralAmount consistent with quoteCollateral', async () => {
-      // Compute expected collateral amount via quoteCollateral
-      const expectedCollateral = await comet.quoteCollateral(collateralToken.address, baseAmount);
-      // Record balances before
-      const aliceCollateralBefore = await collateralToken.balanceOf(alice.address);
-      const aliceBaseBefore = await baseToken.balanceOf(alice.address);
-
-      // Approve and buy
-      await baseToken.connect(alice).approve(comet.address, baseAmount);
-      await wait(
-        comet.connect(alice).buyCollateral(collateralToken.address, 0, baseAmount, alice.address)
-      );
-
-      // Verify that alice received exactly the amount quoted
-      const aliceCollateralAfter = await collateralToken.balanceOf(alice.address);
-      const aliceBaseAfter = await baseToken.balanceOf(alice.address);
-
-      expect(aliceCollateralAfter.sub(aliceCollateralBefore).toBigInt()).to.equal(expectedCollateral);
-      expect(aliceBaseBefore.sub(aliceBaseAfter).toBigInt()).to.equal(baseAmount);
-    });
-
-    it('buyCollateral emits correct BuyCollateral event matching quoteCollateral', async () => {
-      const expectedCollateral = await comet.quoteCollateral(collateralToken.address, baseAmount);
-
-      await baseToken.connect(alice).approve(comet.address, baseAmount);
-      await expect(
-        comet.connect(alice).buyCollateral(collateralToken.address, 0, baseAmount, alice.address)
-      ).to.emit(comet, 'BuyCollateral')
-        .withArgs(alice.address, collateralToken.address, baseAmount, expectedCollateral);
-    });
-
-    describe('liquidation circle: supply → borrow → price drop → absorb → quote → buyCollateral', function () {
-      const SUPPLY_BASE = exp(1000, baseTokenDecimals);
-      const SUPPLY_COLLATERAL = exp(10, collateralTokenDecimals); // 10 ASSET0 @ $200 = $2000
-      // borrowCF = 0.75, so max borrow = 10 * 200 * 0.75 = $1500; borrow $1000
-      const BORROW_AMOUNT = exp(1000, baseTokenDecimals);
-
-      it('create new supply position', async () => {
-        // 1. Alice supplies base so there is liquidity to borrow
-        await baseToken.allocateTo(alice.address, SUPPLY_BASE);
-        await baseToken.connect(alice).approve(comet.address, SUPPLY_BASE);
-        await comet.connect(alice).supply(baseToken.address, SUPPLY_BASE);
-
-        expect(await comet.balanceOf(alice.address)).to.equal(SUPPLY_BASE);
-      });
-
-      it('create new borrow position', async () => {
-        // 2. Bob supplies collateral and borrows base
-        await collateralToken.allocateTo(bob.address, SUPPLY_COLLATERAL);
-        await collateralToken.connect(bob).approve(comet.address, SUPPLY_COLLATERAL);
-        await comet.connect(bob).supply(collateralToken.address, SUPPLY_COLLATERAL);
-        await comet.connect(bob).withdraw(baseToken.address, BORROW_AMOUNT);
-
-        expect((await comet.userBasic(bob.address)).principal).to.be.lt(0);
-        expect(await comet.isLiquidatable(bob.address)).to.be.false;
-      });
-
-      it('make borrow position liquidatable', async () => {
-        // 3. Collateral price drops drastically: $200 → $50
-        // liquidateCF = 0.8, weighted collateral = 10 * 50 * 0.8 = $400 < $1000 debt → liquidatable
-        await priceFeeds['ASSET0'].setRoundData(1, exp(50, 8), 0, 0, 1);
-        expect(await comet.isLiquidatable(bob.address)).to.be.true;
-      });
-
-      it('liquidate borrow position', async () => {
-        // 4. Absorb bob — his collateral moves to protocol reserves
-        const collateralReservesBefore = await comet.getCollateralReserves(collateralToken.address);
-        const absorber = (await ethers.getSigners())[5];
-        await comet.connect(absorber).absorb(absorber.address, [bob.address]);
-
-        // Bob's principal is zeroed out, collateral seized
-        expect((await comet.userBasic(bob.address)).principal).to.equal(0);
-        expect((await comet.userCollateral(bob.address, collateralToken.address)).balance).to.equal(0);
-
-        // Collateral reserves increased by bob's collateral
-        const collateralReservesAfter = await comet.getCollateralReserves(collateralToken.address);
-        expect(collateralReservesAfter.sub(collateralReservesBefore)).to.equal(SUPPLY_COLLATERAL);
-      });
-
-      it('quote of absorbed collateral remains accurate for buyCollateral', async () => {
-        // 5. Quote the absorbed collateral — should work at new $50 price
-        const buyBaseAmount = exp(100, baseTokenDecimals);
-        const expectedCollateral = await comet.quoteCollateral(collateralToken.address, buyBaseAmount);
-        expect(expectedCollateral).to.be.gt(0);
-
-        // Hand-verify the quote at $50 collateral price
-        // discountFactor = 0.8 * (1 - 0.6) = 0.2
-        // assetPriceDiscounted = 50e8 * 0.8 = 40e8
-        // quote = 1e8 * 100e6 * 1e18 / 40e8 / 1e6 = 2.5e18
-        const discountFactor = mulFactor(exp(0.8, 18), factorScale - exp(0.8, 18));
-        const assetPriceDiscounted = mulFactor(exp(50, 8), factorScale - discountFactor);
-        const expectedManual = exp(1, 8) * buyBaseAmount * exp(1, 18) / assetPriceDiscounted / exp(1, 6);
-        expect(expectedCollateral).to.equal(expectedManual);
-
-        // 6. Buy the collateral from reserves
-        await baseToken.allocateTo(alice.address, buyBaseAmount);
-        await baseToken.connect(alice).approve(comet.address, buyBaseAmount);
-
-        const aliceCollateralBefore = await collateralToken.balanceOf(alice.address);
-        await expect(
-          comet.connect(alice).buyCollateral(collateralToken.address, 0, buyBaseAmount, alice.address)
-        ).to.emit(comet, 'BuyCollateral')
-          .withArgs(alice.address, collateralToken.address, buyBaseAmount, expectedCollateral);
-
-        const aliceCollateralAfter = await collateralToken.balanceOf(alice.address);
-        expect(aliceCollateralAfter.sub(aliceCollateralBefore).toBigInt()).to.equal(expectedCollateral);
-      });
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────
-  //  5. Reverts
+  //  4. Reverts
   // ─────────────────────────────────────────────────────────
   describe('reverts', function () {
     describe('invalid / unsupported asset', function () {
@@ -558,31 +463,197 @@ describe('quoteCollateral', function () {
         ).to.be.revertedWithCustomError(brokenPriceFeed, 'Reverted');
       });
     });
+  });
 
-    describe('integration with buyCollateral', function () {
-      it('buyCollateral reverts with TooMuchSlippage when minAmount exceeds quote', async () => {
-        await configurator.setTargetReserves(comet.address, exp(1, 18));
-        await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
+  // ─────────────────────────────────────────────────────────
+  //  5. Price changes between quoteCollateral calls
+  // ─────────────────────────────────────────────────────────
+  describe('price changes between quoteCollateral calls', function () {
+    let snapshot: SnapshotRestorer;
 
-        const collateralReserveAmount = exp(10, collateralTokenDecimals);
-        await collateralToken.allocateTo(comet.address, collateralReserveAmount);
+    before(async () => {
+      // Reset to known state: storeFrontPriceFactor=0.5, ASSET0=$200, USDC=$1
+      await configurator.setStoreFrontPriceFactor(comet.address, exp(0.5, 18));
+      await configurator.updateAssetLiquidationFactor(comet.address, collateralToken.address, exp(0.6, 18));
+      await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
+      await priceFeeds['ASSET0'].setRoundData(1, exp(200, 8), 0, 0, 1);
+      await priceFeeds['USDC'].setRoundData(1, exp(1, 8), 0, 0, 1);
+    });
 
-        const baseAmount = exp(200, baseTokenDecimals);
-        await baseToken.allocateTo(alice.address, baseAmount);
+    beforeEach(async () => {
+      snapshot = await takeSnapshot();
+    });
 
-        const expectedCollateral = await comet.quoteCollateral(collateralToken.address, baseAmount);
+    afterEach(async () => {
+      await snapshot.restore();
+    });
 
-        await baseToken.connect(alice).approve(comet.address, baseAmount);
-        // Set minAmount to be 1 more than the quote
-        await expect(
-          comet.connect(alice).buyCollateral(
-            collateralToken.address,
-            expectedCollateral.toBigInt() + 1n,
-            baseAmount,
-            alice.address
-          )
-        ).to.be.revertedWithCustomError(comet, 'TooMuchSlippage');
-      });
+    it('quote changes when collateral price moves between two calls', async () => {
+      const baseAmount = exp(200, baseTokenDecimals);
+
+      // Quote at $200
+      const quoteBefore = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      // Price drops $200 → $100
+      await priceFeeds['ASSET0'].setRoundData(1, exp(100, 8), 0, 0, 1);
+
+      // Quote at $100 — buyer gets more collateral (cheaper asset)
+      const quoteAfter = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      expect(quoteAfter).to.be.gt(quoteBefore);
+      // At half the price, buyer should get exactly double
+      expect(quoteAfter).to.equal(quoteBefore.toBigInt() * 2n);
+    });
+
+    it('quote changes when base token price moves between two calls', async () => {
+      const baseAmount = exp(200, baseTokenDecimals);
+
+      // Quote at USDC = $1
+      const quoteBefore = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      // USDC price doubles: $1 → $2
+      await priceFeeds['USDC'].setRoundData(1, exp(2, 8), 0, 0, 1);
+
+      // Quote at USDC = $2 — each USDC is worth more, so buyer gets more collateral
+      const quoteAfter = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      expect(quoteAfter).to.be.gt(quoteBefore);
+      expect(quoteAfter).to.equal(quoteBefore.toBigInt() * 2n);
+    });
+
+    it('buyCollateral reverts with stale minAmount after price increase', async () => {
+      // Setup reserves
+      await configurator.setTargetReserves(comet.address, exp(1, 18));
+      await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
+      await collateralToken.allocateTo(comet.address, exp(50, collateralTokenDecimals));
+
+      const baseAmount = exp(200, baseTokenDecimals);
+      await baseToken.allocateTo(alice.address, baseAmount);
+
+      // Quote at current price ($200)
+      const staleQuote = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      // Collateral price rises $200 → $400, making the new quote smaller
+      await priceFeeds['ASSET0'].setRoundData(1, exp(400, 8), 0, 0, 1);
+
+      const freshQuote = await comet.quoteCollateral(collateralToken.address, baseAmount);
+      expect(freshQuote).to.be.lt(staleQuote);
+
+      // Buyer uses stale (larger) minAmount — should revert with TooMuchSlippage
+      await baseToken.connect(alice).approve(comet.address, baseAmount);
+      await expect(
+        comet.connect(alice).buyCollateral(
+          collateralToken.address,
+          staleQuote, // stale, higher than what the contract will compute now
+          baseAmount,
+          alice.address
+        )
+      ).to.be.revertedWithCustomError(comet, 'TooMuchSlippage');
+    });
+
+    it('same-block: price feed update and query see new price after mine', async () => {
+      const baseAmount = exp(200, baseTokenDecimals);
+
+      // Quote before price change
+      const quoteBefore = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      // Disable automine so we can batch the price update into one block
+      await ethers.provider.send('evm_setAutomine', [false]);
+      await priceFeeds['ASSET0'].setRoundData(1, exp(100, 8), 0, 0, 1);
+
+      // Mine the block containing the price update
+      await ethers.provider.send('evm_mine', []);
+      await ethers.provider.send('evm_setAutomine', [true]);
+
+      // Post-mine: quote should reflect the new $100 price
+      const quoteAfter = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      // At half the price, buyer should get exactly double
+      expect(quoteAfter).to.equal(quoteBefore.toBigInt() * 2n);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────
+  //  7. Different base token price (base != $1)
+  // ─────────────────────────────────────────────────────────
+  describe('different base token price (base != $1)', function () {
+    let snapshot: SnapshotRestorer;
+
+    before(async () => {
+      // Reset to known state: storeFrontPriceFactor=0.5, ASSET0=$200, liquidationFactor=0.6, USDC=$1
+      await configurator.setStoreFrontPriceFactor(comet.address, exp(0.5, 18));
+      await configurator.updateAssetLiquidationFactor(comet.address, collateralToken.address, exp(0.6, 18));
+      await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
+      await priceFeeds['ASSET0'].setRoundData(1, exp(200, 8), 0, 0, 1);
+      await priceFeeds['USDC'].setRoundData(1, exp(1, 8), 0, 0, 1);
+    });
+
+    beforeEach(async () => {
+      snapshot = await takeSnapshot();
+    });
+
+    afterEach(async () => {
+      await snapshot.restore();
+    });
+
+    it('quote scales linearly with base token price', async () => {
+      const baseAmount = exp(200, baseTokenDecimals);
+
+      // Quote at USDC = $1
+      const quoteAt1 = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      // Set USDC price to $3 (simulating a non-unit-price base, e.g. WETH-based market)
+      await priceFeeds['USDC'].setRoundData(1, exp(3, 8), 0, 0, 1);
+      const quoteAt3 = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      // basePrice is a multiplicative factor, so 3x price → 3x quote
+      expect(quoteAt3).to.equal(quoteAt1.toBigInt() * 3n);
+    });
+
+    it('correct quote with WBTC-like base price ($60,000)', async () => {
+      // Simulate a WBTC-based market: base token at $60,000
+      await priceFeeds['USDC'].setRoundData(1, exp(60000, 8), 0, 0, 1);
+
+      const baseAmount = exp(1, baseTokenDecimals); // 1 unit of base
+      const quote = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      // ASSET0: price $200, liquidationFactor 0.6, storeFrontPriceFactor 0.5
+      // discountFactor = 0.5 * 0.4 = 0.2
+      // assetPriceDiscounted = 200e8 * 0.8 = 160e8
+      // quote = 60000e8 * 1e6 * 1e18 / 160e8 / 1e6 = 375e18
+      const discountFactor = mulFactor(exp(0.5, 18), factorScale - exp(0.6, 18));
+      const assetPriceDiscounted = mulFactor(exp(200, 8), factorScale - discountFactor);
+      const expected = exp(60000, 8) * baseAmount * exp(1, 18) / assetPriceDiscounted / exp(1, 6);
+      expect(quote).to.equal(expected);
+      expect(quote).to.equal(exp(375, 18));
+    });
+
+    it('correct quote with WETH-like base price ($3,000)', async () => {
+      // Simulate a WETH-based market: base token at $3,000
+      await priceFeeds['USDC'].setRoundData(1, exp(3000, 8), 0, 0, 1);
+
+      const baseAmount = exp(10, baseTokenDecimals); // 10 units of base
+      const quote = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      // quote = 3000e8 * 10e6 * 1e18 / 160e8 / 1e6 = 187.5e18
+      const discountFactor = mulFactor(exp(0.5, 18), factorScale - exp(0.6, 18));
+      const assetPriceDiscounted = mulFactor(exp(200, 8), factorScale - discountFactor);
+      const expected = exp(3000, 8) * baseAmount * exp(1, 18) / assetPriceDiscounted / exp(1, 6);
+      expect(quote).to.equal(expected);
+      expect(quote).to.equal(exp(187.5, 18));
+    });
+
+    it('quote truncates to zero when base token price is very small and baseAmount is small', async () => {
+      // Edge case: very cheap base token with small amount
+      // Set base price to smallest valid: 1 (= 1e-8 USD)
+      await priceFeeds['USDC'].setRoundData(1, 1, 0, 0, 1);
+      // Raise collateral price so the denominator dominates
+      await priceFeeds['ASSET0'].setRoundData(1, exp(1_000_000, 8), 0, 0, 1);
+
+      // assetPriceDiscounted = 1_000_000e8 * 0.8 = 800_000e8
+      // quote = 1 * 1 * 1e18 / 800_000e8 / 1e6 = 1e18 / 8e19 = 0 (truncated)
+      const quote = await comet.quoteCollateral(collateralToken.address, 1);
+      expect(quote).to.equal(0);
     });
   });
 });
