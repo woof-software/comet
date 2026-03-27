@@ -51,8 +51,10 @@ import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
 // Network helpers
 export * from './helpers/network-helpers';
+// Math helpers
+export * from './helpers/math';
 
-export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer };
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, BigNumber };
 
 export type Numeric = number | bigint;
 
@@ -162,7 +164,12 @@ export function dfn<T>(x: T | undefined | null, dflt: T): T {
 }
 
 export function exp(i: number, d: Numeric = 0, r: Numeric = 6): bigint {
-  return (BigInt(Math.floor(i * 10 ** Number(r))) * 10n ** BigInt(d)) / 10n ** BigInt(r);
+  const sign = i < 0 ? -1n : 1n;
+  const parts = Math.abs(i).toString().split('.');
+  const intPart = parts[0];
+  const fracPart = (parts[1] || '').padEnd(Number(r), '0').slice(0, Number(r));
+  const scaled = BigInt(intPart + fracPart);
+  return sign * (scaled * 10n ** BigInt(d)) / 10n ** BigInt(r);
 }
 
 export function factor(f: number): bigint {
@@ -227,7 +234,9 @@ export const factorDecimals = 18;
 export const factorScale = factor(1);
 export const ONE = factorScale;
 export const ZERO = factor(0);
+export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const MAX_ASSETS = 24;
+export const BASE_INDEX_SCALE = BigInt(1e15);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;
