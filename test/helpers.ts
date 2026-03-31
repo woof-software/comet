@@ -157,6 +157,12 @@ export type BulkerInfo = {
   bulker: BaseBulker;
 };
 
+export type UserBasic = { principal: BigNumber, baseTrackingIndex: BigNumber, baseTrackingAccrued: BigNumber, assetsIn: number, _reserved: number };
+
+
+export const oneDay = 24 * 60 * 60;
+export const oneMonth = 30 * oneDay;
+
 export function dfn<T>(x: T | undefined | null, dflt: T): T {
   return x == undefined ? dflt : x;
 }
