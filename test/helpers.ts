@@ -157,6 +157,9 @@ export type BulkerInfo = {
   bulker: BaseBulker;
 };
 
+export const oneDay = 24 * 60 * 60;
+export const oneMonth = 30 * oneDay;
+
 export function dfn<T>(x: T | undefined | null, dflt: T): T {
   return x == undefined ? dflt : x;
 }
