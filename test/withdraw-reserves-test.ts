@@ -18,12 +18,13 @@ import { ContractTransaction } from 'ethers';
 // to a recipient. `approveThis` grants an ERC-20 allowance on any token held by the
 // protocol, enabling collateral rescue, arbitrary-token recovery, or base-token
 // extraction without the InsufficientReserves guard.
-describe.only('withdrawReserves', function () {
+describe('withdrawReserves', function () {
   // Contracts
   let comet: CometHarnessInterfaceExtendedAssetList;
   // Tokens
   let base: FaucetToken;
   let collateral: FaucetToken;
+  let unsupportedToken: FaucetToken;
   // Users
   let governor: SignerWithAddress;
   let alice: SignerWithAddress;
@@ -43,7 +44,7 @@ describe.only('withdrawReserves', function () {
 
     base = protocol.tokens.USDC as FaucetToken;
     collateral = protocol.tokens.WETH as FaucetToken;
-
+    unsupportedToken = protocol.unsupportedToken;
     governor = protocol.governor;
     [alice, bob, manager] = protocol.users;
 
@@ -495,196 +496,160 @@ describe.only('withdrawReserves', function () {
     // Useful for emergency extractions when getReserves() is negative.
 
     describe('base token approval', function () {
-      const TOKEN_AMOUNT = exp(500, 6);  // 500 USDC
+      // approveThis grants a raw ERC-20 allowance with no InsufficientReserves guard.
+      // Each transferFrom reduces comet's balance directly, lowering getReserves.
+      // This block verifies the full approval flow and its reserves impact together.
 
-      // Restore state
-      before(async () => await snapshot.restore());
+      const SEED_AMOUNT = exp(1_000, 6);  // 1,000 USDC seeded directly — no supply/borrow positions
+      const EXTRACT_AMOUNT = exp(600, 6); // 600 USDC extracted via manager
 
-      it('allocate tokens to comet', async () => {
-        await base.allocateTo(comet.address, TOKEN_AMOUNT);
+      let extractTx: ContractTransaction;
+
+      before(async () => {
+        await snapshot.restore();
+        await base.allocateTo(comet.address, SEED_AMOUNT);
+      });
+
+      it('getReserves equals seeded amount before approval', async () => {
+        // reserves = balance − totalSupply + totalBorrow = 1,000 − 0 + 0 = 1,000
+        expect(await comet.getReserves()).to.equal(SEED_AMOUNT);
       });
 
       it('governor sets approveThis for the base token and a manager', async () => {
         await expect(
-          comet.connect(governor).approveThis(manager.address, base.address, TOKEN_AMOUNT)
+          comet.connect(governor).approveThis(manager.address, base.address, SEED_AMOUNT)
         ).to.not.be.reverted;
       });
 
       it('allowance on USDC from comet to manager equals approved amount', async () => {
-        expect(await base.allowance(comet.address, manager.address)).to.equal(TOKEN_AMOUNT);
+        expect(await base.allowance(comet.address, manager.address)).to.equal(SEED_AMOUNT);
       });
 
-      it('manager can transferFrom USDC out of comet', async () => {
-        await expect(
-          base.connect(manager).transferFrom(comet.address, manager.address, TOKEN_AMOUNT)
-        ).to.not.be.reverted;
+      it('manager extracts base token via approved allowance', async () => {
+        extractTx = await base.connect(manager).transferFrom(comet.address, manager.address, EXTRACT_AMOUNT);
+        await expect(extractTx).to.not.be.reverted;
       });
 
-      it('comet USDC balance is zero after manager transfer', async () => {
-        expect(await base.balanceOf(comet.address)).to.equal(0);
+      it('emits Transfer event from comet to manager', async () => {
+        await expect(extractTx)
+          .to.emit(base, 'Transfer')
+          .withArgs(comet.address, manager.address, EXTRACT_AMOUNT);
       });
 
-      it('manager USDC balance equals the transferred amount', async () => {
-        expect(await base.balanceOf(manager.address)).to.equal(TOKEN_AMOUNT);
+      it('getReserves decreases by the extracted amount', async () => {
+        // reserves = (1,000 − 600) − 0 + 0 = 400
+        expect(await comet.getReserves()).to.equal(SEED_AMOUNT - EXTRACT_AMOUNT);
+      });
+
+      it('comet USDC balance decreases by the extracted amount', async () => {
+        expect(extractTx).to.changeTokenBalance(base, comet.address, -EXTRACT_AMOUNT);
+      });
+
+      it('manager USDC balance equals extracted amount', async () => {
+        expect(extractTx).to.changeTokenBalance(base, manager.address, EXTRACT_AMOUNT);
       });
 
       describe('revert when', function () {
         it('caller is not governor', async () => {
           await expect(
-            comet.connect(alice).approveThis(manager.address, base.address, TOKEN_AMOUNT)
+            comet.connect(alice).approveThis(manager.address, base.address, SEED_AMOUNT)
           ).to.be.revertedWithCustomError(comet, 'Unauthorized');
+        });
+
+        it('not approved address cannot extract base token', async () => {
+          await expect(
+            base.connect(alice).transferFrom(comet.address, alice.address, EXTRACT_AMOUNT)
+          ).to.be.revertedWith('ERC20: transfer amount exceeds allowance');
         });
       });
 
-      describe('reserves impact — manager extraction reduces getReserves', function () {
-        // approveThis grants a raw ERC-20 allowance with no InsufficientReserves guard.
-        // Each transferFrom reduces comet's balance directly, lowering getReserves.
+      describe('full drain — approveThis bypasses InsufficientReserves guard', function () {
+        // withdrawReserves reverts when amount > getReserves().
+        // approveThis has no such guard: the manager can drain the remaining balance,
+        // reducing getReserves to zero and blocking any future withdrawReserves call.
 
-        const SEED_AMOUNT = exp(1_000, 6);  // 1,000 USDC seeded directly — no supply/borrow
-        const EXTRACT_AMOUNT = exp(600, 6); // 600 USDC extracted by manager
+        const REMAINING = SEED_AMOUNT - EXTRACT_AMOUNT;  // 400 USDC remaining after partial extraction
 
-        let extractTx: ContractTransaction;
-
-        before(async () => {
-          await snapshot.restore();
-          // Seed base token directly so reserves = balance (no supply/borrow positions)
-          await base.allocateTo(comet.address, SEED_AMOUNT);
-          // Pre-approve full balance so manager can transfer in subsequent it blocks
-          await comet.connect(governor).approveThis(manager.address, base.address, SEED_AMOUNT);
+        it('approveThis allowance on USDC from comet to manager equals remaining amount', async () => {
+          await comet.connect(governor).approveThis(manager.address, base.address, REMAINING);
         });
 
-        it('getReserves equals seeded amount before extraction', async () => {
-          // reserves = balance − totalSupply + totalBorrow = 1,000 − 0 + 0 = 1,000
-          expect(await comet.getReserves()).to.equal(SEED_AMOUNT);
+        it('manager drains remaining base tokens', async () => {
+          await expect(
+            base.connect(manager).transferFrom(comet.address, manager.address, REMAINING)
+          ).to.not.be.reverted;
         });
 
-        it('manager extracts base token via approved allowance', async () => {
-          extractTx = await base.connect(manager).transferFrom(comet.address, manager.address, EXTRACT_AMOUNT);
-          await expect(extractTx).to.not.be.reverted;
+        it('getReserves is zero after full drain', async () => {
+          expect(await comet.getReserves()).to.equal(0);
         });
 
-        it('emits Transfer event from comet to manager', async () => {
-          await expect(extractTx)
-            .to.emit(base, 'Transfer')
-            .withArgs(comet.address, manager.address, EXTRACT_AMOUNT);
-        });
-
-        it('getReserves decreases by the extracted amount', async () => {
-          // reserves = (1,000 − 600) − 0 + 0 = 400
-          expect(await comet.getReserves()).to.equal(SEED_AMOUNT - EXTRACT_AMOUNT);
-        });
-
-        it('comet base token balance decreases by the extracted amount', async () => {
-          expect(await base.balanceOf(comet.address)).to.equal(SEED_AMOUNT - EXTRACT_AMOUNT);
-        });
-
-        it('manager base token balance equals extracted amount', async () => {
-          expect(await base.balanceOf(manager.address)).to.equal(EXTRACT_AMOUNT);
-        });
-
-        describe('full drain — approveThis bypasses InsufficientReserves guard', function () {
-          // withdrawReserves reverts when amount > getReserves().
-          // approveThis has no such guard: the manager can drain the remaining balance,
-          // reducing getReserves to zero and blocking any future withdrawReserves call.
-
-          const REMAINING = SEED_AMOUNT - EXTRACT_AMOUNT;  // 400 USDC remaining after partial extraction
-
-          let drainSnapshot: SnapshotRestorer;
-
-          before(async () => {
-            drainSnapshot = await takeSnapshot();
-            await comet.connect(governor).approveThis(manager.address, base.address, REMAINING);
-          });
-
-          after(async () => {
-            await drainSnapshot.restore();
-          });
-
-          it('manager drains remaining base tokens', async () => {
-            await expect(
-              base.connect(manager).transferFrom(comet.address, manager.address, REMAINING)
-            ).to.not.be.reverted;
-          });
-
-          it('getReserves is zero after full drain', async () => {
-            expect(await comet.getReserves()).to.equal(0);
-          });
-
-          it('withdrawReserves reverts with InsufficientReserves after approveThis drained all reserves', async () => {
-            await expect(
-              comet.connect(governor).withdrawReserves(governor.address, 1)
-            ).to.be.revertedWithCustomError(comet, 'InsufficientReserves');
-          });
+        it('withdrawReserves reverts with InsufficientReserves after approveThis drained all reserves', async () => {
+          await expect(
+            comet.connect(governor).withdrawReserves(governor.address, 1)
+          ).to.be.revertedWithCustomError(comet, 'InsufficientReserves');
         });
       });
     });
 
-    // ── 2b. Collateral token approval ─────────────────────────────────────────
+    // ── Collateral token approval ─────────────────────────────────────────
     // After absorptions, collateral tokens accumulate in comet and must be
     // rescued or sold. The governor uses approveThis to grant a manager
     // the allowance to move them. Alice supplying WETH places those tokens
     // physically in comet.address — the same mechanism as post-absorption rescue.
 
     describe('collateral token approval', function () {
-      const WETH_SUPPLY = exp(5, 18);    // 5 WETH deposited as collateral
-      const APPROVE_AMOUNT = exp(3, 18); // approve manager for 3 WETH
-
-      let comet: CometHarnessInterfaceExtendedAssetList;
-      let WETH: FaucetToken;
-      let governor: SignerWithAddress;
-      let alice: SignerWithAddress;
-      let manager: SignerWithAddress;
-
-      before(async () => {
-        const protocol = await makeProtocol();
-        comet = protocol.cometWithExtendedAssetList;
-        WETH = protocol.tokens.WETH as FaucetToken;
-        governor = protocol.governor;
-        [alice, manager] = protocol.users;
-
-        // Supply WETH collateral so the tokens are physically in comet
-        await WETH.allocateTo(alice.address, WETH_SUPPLY);
-        await WETH.connect(alice).approve(comet.address, WETH_SUPPLY);
-        await comet.connect(alice).supply(WETH.address, WETH_SUPPLY);
-      });
-
-      it('comet holds the WETH supplied by alice', async () => {
-        expect(await WETH.balanceOf(comet.address)).to.equal(WETH_SUPPLY);
-      });
-
       describe('approval and transfer', function () {
-        let snapshot: SnapshotRestorer;
+        // approveThis grants a raw ERC-20 allowance on the collateral token with no reserves guard.
+        // Donating extra WETH creates positive collateral reserves; each manager transferFrom
+        // reduces the physical balance and lowers getCollateralReserves.
+
+        const DONATED_WETH = exp(5, 18);   // 5 WETH donated directly → collateral reserves = 5
+        const EXTRACT_AMOUNT = exp(2, 18); // 2 WETH extracted by manager
+
+        let extractTx: ContractTransaction;
 
         before(async () => {
-          snapshot = await takeSnapshot();
+          // Donate WETH directly to comet (outside supply) to create positive collateral reserves
+          await collateral.allocateTo(comet.address, DONATED_WETH);
         });
 
-        after(async () => {
-          await snapshot.restore();
+        it('getCollateralReserves equals donated WETH before approval', async () => {
+          expect(await comet.getCollateralReserves(collateral.address)).to.equal(DONATED_WETH);
         });
 
         it('governor sets approveThis for WETH and manager', async () => {
           await expect(
-            comet.connect(governor).approveThis(manager.address, WETH.address, APPROVE_AMOUNT)
+            comet.connect(governor).approveThis(manager.address, collateral.address, DONATED_WETH)
           ).to.not.be.reverted;
         });
 
         it('allowance on WETH from comet to manager equals approved amount', async () => {
-          expect(await WETH.allowance(comet.address, manager.address)).to.equal(APPROVE_AMOUNT);
+          expect(await collateral.allowance(comet.address, manager.address)).to.equal(DONATED_WETH);
         });
 
-        it('manager can transferFrom WETH out of comet', async () => {
-          await expect(
-            WETH.connect(manager).transferFrom(comet.address, manager.address, APPROVE_AMOUNT)
-          ).to.not.be.reverted;
+        it('manager extracts collateral token via approved allowance', async () => {
+          extractTx = await collateral.connect(manager).transferFrom(comet.address, manager.address, EXTRACT_AMOUNT);
+          await expect(extractTx).to.not.be.reverted;
         });
 
-        it('comet WETH balance decreases by the transferred amount', async () => {
-          expect(await WETH.balanceOf(comet.address)).to.equal(WETH_SUPPLY - APPROVE_AMOUNT);
+        it('emits Transfer event from comet to manager', async () => {
+          await expect(extractTx)
+            .to.emit(collateral, 'Transfer')
+            .withArgs(comet.address, manager.address, EXTRACT_AMOUNT);
         });
 
-        it('manager WETH balance equals the transferred amount', async () => {
-          expect(await WETH.balanceOf(manager.address)).to.equal(APPROVE_AMOUNT);
+        it('getCollateralReserves decreases by the extracted amount', async () => {
+          // getCollateralReserves = (5 + 2 − 1) − 5 = 1 WETH
+          expect(await comet.getCollateralReserves(collateral.address)).to.equal(DONATED_WETH - EXTRACT_AMOUNT);
+        });
+
+        it('comet collateral balance decreases by the extracted amount', async () => {
+          expect(extractTx).to.changeTokenBalance(collateral, comet.address, -EXTRACT_AMOUNT);
+        });
+
+        it('manager collateral balance equals extracted amount', async () => {
+          expect(extractTx).to.changeTokenBalance(collateral, manager.address, EXTRACT_AMOUNT);
         });
       });
 
@@ -693,41 +658,35 @@ describe.only('withdrawReserves', function () {
       // The governor must reset to 0 before setting a new value.
       describe('reset and re-approve', function () {
         const NEW_AMOUNT = exp(2, 18);
-        let snapshot: SnapshotRestorer;
 
         before(async () => {
-          snapshot = await takeSnapshot();
           // Establish an initial non-zero approval
-          await comet.connect(governor).approveThis(manager.address, WETH.address, APPROVE_AMOUNT);
-        });
-
-        after(async () => {
-          await snapshot.restore();
+          await comet.connect(governor).approveThis(manager.address, collateral.address, NEW_AMOUNT);
         });
 
         it('governor resets WETH allowance to zero', async () => {
           await expect(
-            comet.connect(governor).approveThis(manager.address, WETH.address, 0)
+            comet.connect(governor).approveThis(manager.address, collateral.address, 0)
           ).to.not.be.reverted;
         });
 
         it('WETH allowance from comet to manager is zero after reset', async () => {
-          expect(await WETH.allowance(comet.address, manager.address)).to.equal(0);
+          expect(await collateral.allowance(comet.address, manager.address)).to.equal(0);
         });
 
         it('governor sets a new non-zero WETH allowance after reset', async () => {
           await expect(
-            comet.connect(governor).approveThis(manager.address, WETH.address, NEW_AMOUNT)
+            comet.connect(governor).approveThis(manager.address, collateral.address, NEW_AMOUNT)
           ).to.not.be.reverted;
         });
 
         it('WETH allowance from comet to manager equals the new amount', async () => {
-          expect(await WETH.allowance(comet.address, manager.address)).to.equal(NEW_AMOUNT);
+          expect(await collateral.allowance(comet.address, manager.address)).to.equal(NEW_AMOUNT);
         });
 
         it('manager can use the new allowance to transfer WETH out of comet', async () => {
           await expect(
-            WETH.connect(manager).transferFrom(comet.address, manager.address, NEW_AMOUNT)
+            collateral.connect(manager).transferFrom(comet.address, manager.address, NEW_AMOUNT)
           ).to.not.be.reverted;
         });
       });
@@ -735,61 +694,14 @@ describe.only('withdrawReserves', function () {
       describe('revert when', function () {
         it('caller is not governor', async () => {
           await expect(
-            comet.connect(alice).approveThis(manager.address, WETH.address, APPROVE_AMOUNT)
+            comet.connect(alice).approveThis(manager.address, collateral.address, 1)
           ).to.be.revertedWithCustomError(comet, 'Unauthorized');
         });
-      });
 
-      describe('collateral reserves impact — manager extraction reduces getCollateralReserves', function () {
-        // Excess collateral held by comet beyond totalSupplyCollateral constitutes
-        // getCollateralReserves. approveThis grants an allowance on that collateral;
-        // each manager transferFrom reduces the physical balance and lowers getCollateralReserves.
-
-        const DONATED_WETH = exp(2, 18);   // 2 WETH donated directly → collateral reserves = 2
-        const EXTRACT_AMOUNT = exp(1, 18); // 1 WETH extracted by manager
-
-        let extractTx: ContractTransaction;
-        let reservesSnapshot: SnapshotRestorer;
-
-        before(async () => {
-          reservesSnapshot = await takeSnapshot();
-          // Donate WETH directly to comet (outside supply) to create positive collateral reserves
-          await WETH.allocateTo(comet.address, DONATED_WETH);
-          // Pre-approve full donated amount so manager can transferFrom
-          await comet.connect(governor).approveThis(manager.address, WETH.address, DONATED_WETH);
-        });
-
-        after(async () => {
-          await reservesSnapshot.restore();
-        });
-
-        it('getCollateralReserves equals donated WETH before extraction', async () => {
-          // getCollateralReserves = balance − totalSupplyCollateral = (5 + 2) − 5 = 2 WETH
-          expect(await comet.getCollateralReserves(WETH.address)).to.equal(DONATED_WETH);
-        });
-
-        it('manager extracts collateral token via approved allowance', async () => {
-          extractTx = await WETH.connect(manager).transferFrom(comet.address, manager.address, EXTRACT_AMOUNT);
-          await expect(extractTx).to.not.be.reverted;
-        });
-
-        it('emits Transfer event from comet to manager', async () => {
-          await expect(extractTx)
-            .to.emit(WETH, 'Transfer')
-            .withArgs(comet.address, manager.address, EXTRACT_AMOUNT);
-        });
-
-        it('getCollateralReserves decreases by the extracted amount', async () => {
-          // getCollateralReserves = (5 + 2 − 1) − 5 = 1 WETH
-          expect(await comet.getCollateralReserves(WETH.address)).to.equal(DONATED_WETH - EXTRACT_AMOUNT);
-        });
-
-        it('comet WETH balance decreases by the extracted amount', async () => {
-          expect(await WETH.balanceOf(comet.address)).to.equal(WETH_SUPPLY + DONATED_WETH - EXTRACT_AMOUNT);
-        });
-
-        it('manager WETH balance equals extracted amount', async () => {
-          expect(await WETH.balanceOf(manager.address)).to.equal(EXTRACT_AMOUNT);
+        it('not approved address cannot extract collateral token', async () => {
+          await expect(
+            collateral.connect(alice).transferFrom(comet.address, alice.address, 1)
+          ).to.be.revertedWith('ERC20: transfer amount exceeds allowance');
         });
       });
     });
@@ -800,20 +712,9 @@ describe.only('withdrawReserves', function () {
 
     describe('arbitrary token rescue', function () {
       const RESCUE_AMOUNT = exp(1_000, 6);  // 1,000 of the unsupported token
-
-      let comet: CometHarnessInterfaceExtendedAssetList;
-      let unsupportedToken: FaucetToken;
-      let governor: SignerWithAddress;
-      let alice: SignerWithAddress;
-      let manager: SignerWithAddress;
+      let extractTx: ContractTransaction;
 
       before(async () => {
-        const protocol = await makeProtocol();
-        comet = protocol.cometWithExtendedAssetList;
-        unsupportedToken = protocol.unsupportedToken;
-        governor = protocol.governor;
-        [alice, manager] = protocol.users;
-
         await unsupportedToken.allocateTo(comet.address, RESCUE_AMOUNT);
       });
 
@@ -832,17 +733,16 @@ describe.only('withdrawReserves', function () {
       });
 
       it('manager can transferFrom the arbitrary token out of comet', async () => {
-        await expect(
-          unsupportedToken.connect(manager).transferFrom(comet.address, manager.address, RESCUE_AMOUNT)
-        ).to.not.be.reverted;
+        extractTx = await unsupportedToken.connect(manager).transferFrom(comet.address, manager.address, RESCUE_AMOUNT);
+        await expect(extractTx).to.not.be.reverted;
       });
 
       it('comet arbitrary token balance is zero after rescue', async () => {
-        expect(await unsupportedToken.balanceOf(comet.address)).to.equal(0);
+        expect(extractTx).to.changeTokenBalance(unsupportedToken, comet.address, -RESCUE_AMOUNT);
       });
 
       it('manager holds the rescued tokens', async () => {
-        expect(await unsupportedToken.balanceOf(manager.address)).to.equal(RESCUE_AMOUNT);
+        expect(extractTx).to.changeTokenBalance(unsupportedToken, manager.address, RESCUE_AMOUNT);
       });
 
       describe('revert when', function () {
@@ -850,6 +750,12 @@ describe.only('withdrawReserves', function () {
           await expect(
             comet.connect(alice).approveThis(manager.address, unsupportedToken.address, RESCUE_AMOUNT)
           ).to.be.revertedWithCustomError(comet, 'Unauthorized');
+        });
+
+        it('not approved address cannot extract arbitrary token', async () => {
+          await expect(
+            unsupportedToken.connect(alice).transferFrom(comet.address, alice.address, RESCUE_AMOUNT)
+          ).to.be.revertedWith('ERC20: transfer amount exceeds allowance');
         });
       });
     });
