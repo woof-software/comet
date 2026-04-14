@@ -3,6 +3,7 @@ import {
   expect,
   exp,
   makeProtocol,
+  MAX_ASSETS,
   SnapshotRestorer,
   takeSnapshot,
 } from './helpers';
@@ -759,5 +760,68 @@ describe('withdrawReserves', function () {
         });
       });
     });
+  });
+
+  // ── All 24 collateral slots — approveThis covers the full asset list ─────
+  // Verifies that the governor can rescue any of the 24 supported collateral
+  // tokens via approveThis, covering the complete index range of the extended
+  // asset list. Each asset is donated directly to comet; getCollateralReserves
+  // must decrease by exactly the extracted amount.
+
+  describe('each of 24 collaterals can be withdrawn', function () {
+    let comet24: CometHarnessInterfaceExtendedAssetList;
+    let governor24: SignerWithAddress;
+    let manager24: SignerWithAddress;
+    let tokens24: { [symbol: string]: FaucetToken };
+    let token: FaucetToken;
+
+    // 1 unit of each 18-decimal collateral donated directly to comet
+    const DONATE_AMOUNT = exp(1, 18);
+
+    before(async function () {
+      const collaterals = Object.fromEntries(
+        Array.from({ length: MAX_ASSETS }, (_, j) => [`ASSET${j}`, {}])
+      );
+      const protocol = await makeProtocol({
+        assets: { USDC: {}, ...collaterals },
+        baseTrackingSupplySpeed: 0,
+        baseTrackingBorrowSpeed: 0,
+      });
+      comet24 = protocol.cometWithExtendedAssetList;
+      governor24 = protocol.governor;
+      [, , manager24] = protocol.users;
+      tokens24 = protocol.tokens as { [symbol: string]: FaucetToken };
+    });
+
+    for (let i = 0; i < MAX_ASSETS; i++) {
+      it(`allocate collateral ASSET${i} to comet`, async function () {
+        token = tokens24[`ASSET${i}`];
+        await token.allocateTo(comet24.address, DONATE_AMOUNT);
+      });
+
+      it(`collateral ASSET${i} balance of comet is equal to DONATE_AMOUNT`, async function () {
+        expect(await token.balanceOf(comet24.address)).to.equal(DONATE_AMOUNT);
+      });
+
+      it(`governor can approve collateral ASSET${i} for manager`, async function () {
+        await comet24.connect(governor24).approveThis(manager24.address, token.address, DONATE_AMOUNT);
+      });
+
+      it(`allowance on collateral ASSET${i} from comet to manager is equal to DONATE_AMOUNT`, async function () {
+        expect(await token.allowance(comet24.address, manager24.address)).to.equal(DONATE_AMOUNT);
+      });
+
+      it(`manager can transferFrom collateral ASSET${i} out of comet`, async function () {
+        await token.connect(manager24).transferFrom(comet24.address, manager24.address, DONATE_AMOUNT);
+      });
+
+      it(`collateral ASSET${i} balance of manager is equal to DONATE_AMOUNT`, async function () {
+        expect(await token.balanceOf(manager24.address)).to.equal(DONATE_AMOUNT);
+      });
+
+      it(`getCollateralReserves of collateral ASSET${i} is equal to zero`, async function () {
+        expect(await comet24.getCollateralReserves(token.address)).to.equal(0);
+      });
+    }
   });
 });
