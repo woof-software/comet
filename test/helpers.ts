@@ -51,8 +51,10 @@ import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
 // Network helpers
 export * from './helpers/network-helpers';
+// Math helpers
+export * from './helpers/math';
 
-export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer };
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, BigNumber };
 
 export type Numeric = number | bigint;
 
@@ -184,11 +186,7 @@ export function truncateDecimals(factor: bigint | BigNumber, decimals = 4) {
   return toBigInt(factor) / descaleFactor * descaleFactor;
 }
 
-export function mulPrice(n: bigint, price: bigint | BigNumber, fromScale: bigint | BigNumber): bigint {
-  return n * toBigInt(price) / toBigInt(fromScale);
-}
-
-function toBigInt(f: bigint | BigNumber): bigint {
+export function toBigInt(f: bigint | BigNumber): bigint {
   if (typeof f === 'bigint') {
     return f;
   } else {
@@ -233,6 +231,7 @@ export const factorScale = factor(1);
 export const ONE = factorScale;
 export const ZERO = factor(0);
 export const MAX_ASSETS = 24;
+export const BASE_INDEX_SCALE = BigInt(1e15);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;
