@@ -75,8 +75,6 @@ const {
   ARBITRUM_QUICKNODE_LINK,
   UNICHAIN_QUICKNODE_LINK = '',
   LINEA_QUICKNODE_LINK = '',
-  _TENDERLY_KEY_RONIN,
-  _TENDERLY_KEY_POLYGON,
   MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
@@ -99,15 +97,6 @@ export function requireEnv(varName, msg?: string): string {
   }
   return varVal;
 }
-
-// required environment variables
-[
-  'ETHERSCAN_KEY',
-  'SNOWTRACE_KEY',
-  'MAINNET_QUICKNODE_LINK',
-  'UNICHAIN_QUICKNODE_LINK',
-  'LINEA_QUICKNODE_LINK'
-].map((v) => requireEnv(v));
 
 // Networks
 interface NetworkConfig {
