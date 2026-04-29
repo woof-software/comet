@@ -45,11 +45,28 @@ const relationConfigMap: RelationConfigMap = {
           );
         },
         alias: async (token) => {
+          const address = token.address.toLowerCase();
+
           try {
-            return token.symbol();
+            const symbol = await token.symbol();
+            return symbol;
           }
           catch (e) {
-            throw new Error(`Failed to get symbol for token ${token.address}`);
+            // If symbol() fails (e.g., proxy contract in fork), try to get it from storage
+            // This is a workaround for contracts that don't work in Hardhat fork
+
+            // invalid opcode when calling symbol()
+            if (address === '0xd09acb80c1e8f2291862c4978a008791c9167003') {
+              return 'tETH';
+            }
+            if (address === '0x5a7facb970d094b6c7ff1df0ea68d99e6e73cbff') {
+              return 'weETH';
+            }
+            if (address.toLowerCase() === '0x87eee96d50fb761ad85b1c982d28a042169d61b1') {
+              return 'wrsETH';
+            }
+
+            throw new Error(`Failed to get symbol for token ${token.address}: ${e.message}`);
           }
         },
       },
@@ -63,7 +80,27 @@ const relationConfigMap: RelationConfigMap = {
             })
           );
         },
-        alias: async (_, { assets }, i) => `${await assets[i].symbol()}:priceFeed`,
+        alias: async (_, { assets }, i) => {
+          try {
+            return `${await assets[i].symbol()}:priceFeed`;
+          } catch (e) {
+            // invalid opcode when calling symbol()
+            const address = assets[i].address.toLowerCase();
+            
+            // Known contract mappings for Arbitrum
+            if (address === '0xd09acb80c1e8f2291862c4978a008791c9167003') {
+              return 'tETH:priceFeed';
+            }
+            if (address === '0x5a7facb970d094b6c7ff1df0ea68d99e6e73cbff') {
+              return 'weETH:priceFeed';
+            }
+            if (address === '0x87eee96d50fb761ad85b1c982d28a042169d61b1') {
+              return 'wrsETH:priceFeed';
+            }
+            
+            throw new Error(`Failed to get symbol for token ${assets[i].address}: ${e.message}`);
+          }
+        },
       },
       cometAdmin: {
         field: {

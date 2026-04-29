@@ -8,6 +8,7 @@ import {
   BaseBulker__factory,
   CometExt,
   CometExt__factory,
+  CometExtAssetList,
   CometExtAssetList__factory,
   CometHarness__factory,
   CometHarnessInterface as Comet,
@@ -27,6 +28,8 @@ import {
   CometProxyAdmin__factory,
   CometFactory,
   CometFactory__factory,
+  CometFactoryWithExtendedAssetList,
+  CometFactoryWithExtendedAssetList__factory,
   Configurator,
   Configurator__factory,
   CometHarnessInterface,
@@ -37,6 +40,7 @@ import {
   AssetListFactory__factory,
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
+  MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
@@ -92,6 +96,7 @@ export type ProtocolOpts = {
   baseBorrowMin?: Numeric;
   targetReserves?: Numeric;
   baseTokenBalance?: Numeric;
+  marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
 };
 
 export type Protocol = {
@@ -99,6 +104,7 @@ export type Protocol = {
   governor: SignerWithAddress;
   pauseGuardian: SignerWithAddress;
   extensionDelegate: CometExt;
+  extensionDelegateAssetList: CometExtAssetList;
   users: SignerWithAddress[];
   base: string;
   reward: string;
@@ -119,7 +125,9 @@ export type ConfiguratorAndProtocol = {
   configuratorProxy: ConfiguratorProxy;
   proxyAdmin: CometProxyAdmin;
   cometFactory: CometFactory;
+  cometFactoryWithExtendedAssetList: CometFactoryWithExtendedAssetList;
   cometProxy: TransparentUpgradeableProxy;
+  cometProxyWithExtendedAssetList: TransparentUpgradeableProxy;
 } & Protocol;
 
 export type RewardsOpts = {
@@ -148,7 +156,12 @@ export function dfn<T>(x: T | undefined | null, dflt: T): T {
 }
 
 export function exp(i: number, d: Numeric = 0, r: Numeric = 6): bigint {
-  return (BigInt(Math.floor(i * 10 ** Number(r))) * 10n ** BigInt(d)) / 10n ** BigInt(r);
+  const sign = i < 0 ? -1n : 1n;
+  const parts = Math.abs(i).toString().split('.');
+  const intPart = parts[0];
+  const fracPart = (parts[1] || '').padEnd(Number(r), '0').slice(0, Number(r));
+  const scaled = BigInt(intPart + fracPart);
+  return sign * (scaled * 10n ** BigInt(d)) / 10n ** BigInt(r);
 }
 
 export function factor(f: number): bigint {
@@ -370,6 +383,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     governor,
     pauseGuardian,
     extensionDelegate,
+    extensionDelegateAssetList: extensionDelegateAssetList as CometExtAssetList,
     users,
     base,
     reward,
@@ -382,38 +396,19 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   };
 }
 
-// Only for testing configurator. Non-configurator tests need to deploy the CometHarness instead.
-export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<ConfiguratorAndProtocol> {
+export async function getConfigurationForConfigurator(
+  opts: ProtocolOpts,
+  comet: CometHarnessInterface,
+  governor: SignerWithAddress,
+  pauseGuardian: SignerWithAddress,
+  extensionDelegate: CometExt,
+  tokens: {
+    [p: string]: FaucetToken | NonStandardFaucetFeeToken;
+  },
+  base: string,
+  priceFeeds: { [p: string]: SimplePriceFeed }) {
+
   const assets = opts.assets || defaultAssets();
-
-  const {
-    governor,
-    pauseGuardian,
-    extensionDelegate,
-    users,
-    base,
-    reward,
-    comet,
-    cometWithExtendedAssetList,
-    assetListFactory,
-    tokens,
-    unsupportedToken,
-    priceFeeds,
-  } = await makeProtocol(opts);
-
-  // Deploy ProxyAdmin
-  const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdmin')) as CometProxyAdmin__factory;
-  const proxyAdmin = await ProxyAdmin.connect(governor).deploy();
-  await proxyAdmin.deployed();
-
-  // Deploy Comet proxy
-  const CometProxy = (await ethers.getContractFactory('TransparentUpgradeableProxy')) as TransparentUpgradeableProxy__factory;
-  const cometProxy = await CometProxy.deploy(
-    comet.address,
-    proxyAdmin.address,
-    (await comet.populateTransaction.initializeStorage()).data,
-  );
-  await cometProxy.deployed();
 
   // Derive the rest of the Configurator configuration values
   const supplyKink = dfn(opts.supplyKink, exp(0.8, 18));
@@ -436,6 +431,10 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
   const CometFactoryFactory = (await ethers.getContractFactory('CometFactory')) as CometFactory__factory;
   const cometFactory = await CometFactoryFactory.deploy();
   await cometFactory.deployed();
+
+  const CometFactoryWithExtendedAssetListFactory = (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')) as CometFactoryWithExtendedAssetList__factory;
+  const cometFactoryWithExtendedAssetList = await CometFactoryWithExtendedAssetListFactory.deploy();
+  await cometFactoryWithExtendedAssetList.deployed();
 
   // Deploy Configurator
   const ConfiguratorFactory = (await ethers.getContractFactory('Configurator')) as Configurator__factory;
@@ -477,6 +476,71 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
       return acc;
     }, []),
   };
+  return configuration;
+}
+
+// Only for testing configurator. Non-configurator tests need to deploy the CometHarness instead.
+export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<ConfiguratorAndProtocol> {
+  const {
+    governor,
+    pauseGuardian,
+    extensionDelegate,
+    users,
+    base,
+    reward,
+    comet,
+    cometWithExtendedAssetList,
+    extensionDelegateAssetList,
+    assetListFactory,
+    tokens,
+    unsupportedToken,
+    priceFeeds,
+  } = await makeProtocol(opts);
+
+  // Deploy ProxyAdmin
+  const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdmin')) as CometProxyAdmin__factory;
+  const proxyAdmin = await ProxyAdmin.connect(governor).deploy(governor.address);
+  await proxyAdmin.deployed();
+
+  // Deploy Comet proxy
+  const CometProxy = (await ethers.getContractFactory('TransparentUpgradeableProxy')) as TransparentUpgradeableProxy__factory;
+  const cometProxy = await CometProxy.deploy(
+    comet.address,
+    proxyAdmin.address,
+    (await comet.populateTransaction.initializeStorage()).data,
+  );
+  await cometProxy.deployed();
+  const configuration = await getConfigurationForConfigurator(
+    opts,
+    comet,
+    governor,
+    pauseGuardian,
+    extensionDelegate,
+    tokens,
+    base,
+    priceFeeds,
+  );
+
+  const cometProxyWithExtendedAssetList = await CometProxy.deploy(
+    cometWithExtendedAssetList.address,
+    proxyAdmin.address,
+    (await cometWithExtendedAssetList.populateTransaction.initializeStorage()).data,
+  );
+  await cometProxyWithExtendedAssetList.deployed();
+
+  // Deploy CometFactory
+  const CometFactoryFactory = (await ethers.getContractFactory('CometFactory')) as CometFactory__factory;
+  const cometFactory = await CometFactoryFactory.deploy();
+  await cometFactory.deployed();
+
+  const CometFactoryWithExtendedAssetListFactory = (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')) as CometFactoryWithExtendedAssetList__factory;
+  const cometFactoryWithExtendedAssetList = await CometFactoryWithExtendedAssetListFactory.deploy();
+  await cometFactoryWithExtendedAssetList.deployed();
+
+  // Deploy Configurator
+  const ConfiguratorFactory = (await ethers.getContractFactory('Configurator')) as Configurator__factory;
+  const configurator = await ConfiguratorFactory.deploy();
+  await configurator.deployed();
 
   // Deploy Configurator proxy
   const initializeCalldata = (await configurator.populateTransaction.initialize(governor.address)).data;
@@ -490,14 +554,37 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
 
   // Set the initial factory and configuration for Comet in Configurator
   const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-  await configuratorAsProxy.setConfiguration(cometProxy.address, configuration);
-  await configuratorAsProxy.setFactory(cometProxy.address, cometFactory.address);
+  await configuratorAsProxy.connect(governor).setConfiguration(cometProxy.address, configuration);
+  await configuratorAsProxy.connect(governor).setFactory(cometProxy.address, cometFactory.address);
+
+  configuration.extensionDelegate = extensionDelegateAssetList.address;
+  await configuratorAsProxy.connect(governor).setConfiguration(cometProxyWithExtendedAssetList.address, configuration);
+  await configuratorAsProxy.connect(governor).setFactory(cometProxyWithExtendedAssetList.address, cometFactoryWithExtendedAssetList.address);
+
+  if(opts.marketAdminPermissionCheckerContract) {
+    await configuratorAsProxy.connect(governor).setMarketAdminPermissionChecker(opts.marketAdminPermissionCheckerContract.address);
+    await proxyAdmin.connect(governor).setMarketAdminPermissionChecker(opts.marketAdminPermissionCheckerContract.address);
+  } else {
+    const MarketAdminPermissionCheckerFactory = (await ethers.getContractFactory(
+      'MarketAdminPermissionChecker'
+    )) as MarketAdminPermissionChecker__factory;
+
+    const marketAdminPermissionCheckerContract =  await MarketAdminPermissionCheckerFactory.deploy(
+      governor.address,
+      ethers.constants.AddressZero,
+      ethers.constants.AddressZero
+    );
+
+    await configuratorAsProxy.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
+    await proxyAdmin.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
+  }
 
   return {
     opts,
     governor,
     pauseGuardian,
     extensionDelegate,
+    extensionDelegateAssetList,
     users,
     base,
     reward,
@@ -506,9 +593,11 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     cometWithExtendedAssetList,
     assetListFactory,
     cometProxy,
+    cometProxyWithExtendedAssetList,
     configurator,
     configuratorProxy,
     cometFactory,
+    cometFactoryWithExtendedAssetList,
     tokens,
     unsupportedToken,
     priceFeeds,

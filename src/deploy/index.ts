@@ -79,12 +79,11 @@ export type TestnetProposal = [
 // Ideally these wouldn't be hardcoded, but other solutions are much more complex, and slower
 export const COMP_WHALES = {
   mainnet: [
-    '0x9aa835bc7b8ce13b9b0c9764a52fbf71ac62ccf1',
-    '0x683a4f9915d6216f73d6df50151725036bd26c02',
+    '0x66cD62c6F8A4BB0Cd8720488BCBd1A6221B765F9',
+    '0xb06df4dd01a5c5782f360ada9345c87e86adae3d',
+    '0x3FB19771947072629C8EEE7995a2eF23B72d4C8A',
     '0x8169522c2C57883E8EF80C498aAB7820dA539806',
-    '0x8d07D225a769b7Af3A923481E1FdF49180e6A265',
-    '0x7d1a02C0ebcF06E1A36231A54951E061673ab27f',
-    '0x54A37d93E57c5DA659F508069Cf65A381b61E189',
+    '0x36cc7B13029B5DEe4034745FB4F24034f3F2ffc6',
   ],
 
   testnet: ['0xbbfe34e868343e6f4f5e8b5308de980d7bd88c46']
@@ -113,6 +112,7 @@ export const WHALES = {
     '0x34C0bD5877A5Ee7099D0f5688D65F4bB9158BDE2', // sFRAX whale
     '0x9152e9C04e8fE8373EDaa8f5841E25d4015658B7', // pumpBTC whale
     '0x65906988ADEe75306021C417a1A3458040239602', // LBTC whale
+    '0x7667095Caa12b79fCa489ff6E2198Ca01fDAe057',
   ],
   polygon: [
     '0xF977814e90dA44bFA03b6295A0616a897441aceC', // USDT whale
@@ -144,6 +144,12 @@ export const WHALES = {
     '0x56CC5A9c0788e674f17F7555dC8D3e2F1C0313C0', // wUSDM whale
     '0x8437d7C167dFB82ED4Cb79CD44B7a32A1dd95c77', // weETH whale
     '0x6b030Ff3FB9956B1B69f475B77aE0d3Cf2CC5aFa', // rsETH whale
+    '0x186cF879186986A20aADFb7eAD50e3C20cb26CeC', // tBTC whale
+    '0x620Fe90b1EAcaEa936ea199e7B05F998CA65836a', // tBTC whale
+    '0x54b5569deC8A6A8AE61A36Fd34e5c8945810db8b', // tBTC whale
+    '0xDBD974Eb5360d053ea0c56B4DaCF4A9D3E894Ee2', // tETH whale
+    '0xbA1333333333a1BA1108E8412f11850A5C319bA9', // tETH whale
+    '0xEA1132120ddcDDA2F119e99Fa7A27a0d036F7Ac9', // ezETH whale
   ],
   base: [
     '0x6D3c5a4a7aC4B1428368310E4EC3bB1350d01455', // USDbC whale
@@ -154,6 +160,7 @@ export const WHALES = {
     '0xcf3D55c10DB69f28fD1A75Bd73f3D8A2d9c595ad', // cbETH whale
     '0xb125E6687d4313864e53df431d5425969c15Eb2F', // cbETH whale
     '0x1539A4611f16a139891c14365Cab86599F3A8AFC', // tBTC whale
+    '0x0a1d576f3eFeF75b330424287a95A366e8281D54', // USDbC whale
   ],
   scroll: [
     '0xaaaaAAAACB71BF2C8CaE522EA5fa455571A74106', // USDC whale
@@ -275,7 +282,7 @@ export async function proposal(
       const { target, value, signature, calldata: cd } = action as TargetAction;
       targets.push(target);
       values.push(value ?? 0);
-      calldatas.push(utils.id(signature).slice(0, 10) + cd.slice(2));
+      calldatas.push(signature ? utils.id(signature).slice(0, 10) + cd.slice(2) : cd);
       signatures.push('');
     }
   }
