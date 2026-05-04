@@ -83,7 +83,7 @@ function getMinSupplyCapIncrement(assetConfig: { supplyCap: bigint; decimals: nu
 |       Governor-Only Functions
 |========================================
 */
-scenario.only(
+scenario(
   'Configurator#transferGovernor updates configurator governor if called by governor',
   {},
   async ({ configurator, actors }, context) => {
@@ -97,7 +97,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#transferGovernor succeeds if new governor is zero address',
   {},
   async ({ configurator, actors }, context) => {
@@ -111,7 +111,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#transferGovernor new governor can call governor-only methods',
   {},
   async ({ configurator, actors }, context) => {
@@ -126,7 +126,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#transferGovernor reverts if called by non-governor',
   {},
   async ({ configurator, actors }) => {
@@ -136,7 +136,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setFactory updates factory if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -150,7 +150,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setFactory can be overwritten multiple times',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -171,7 +171,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setFactory reverts if called by non-governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -187,7 +187,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setConfiguration updates value if called by governor',
   {},
   async ({ governor, configurator, actors }, context) => {
@@ -237,7 +237,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setConfiguration reverts if called by non-governor',
   {},
   async ({ governor, configurator, actors }) => {
@@ -285,7 +285,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setGovernor updates governor in configuration if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -304,7 +304,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setGovernor can be overwritten multiple times',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -325,7 +325,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setGovernor reverts if called by non-governor',
   {},
   async ({ comet, configurator, actors }) => {
@@ -338,7 +338,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setPauseGuardian updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -357,7 +357,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setPauseGuardian can be overwritten multiple times',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -378,7 +378,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setPauseGuardian reverts if called by non-governor',
   {},
   async ({ comet, configurator, actors }) => {
@@ -391,7 +391,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setMarketAdminPermissionChecker updates value if called by governor',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -408,7 +408,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setMarketAdminPermissionChecker can be overwritten multiple times',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -435,7 +435,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setMarketAdminPermissionChecker reverts if called by non-governor',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -450,7 +450,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseTokenPriceFeed updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -467,7 +467,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseTokenPriceFeed can be overwritten multiple times',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -492,7 +492,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseTokenPriceFeed reverts if called by non-governor',
   {},
   async ({ comet, configurator, actors }) => {
@@ -505,7 +505,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setExtensionDelegate updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -522,7 +522,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setExtensionDelegate can be overwritten multiple times',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -547,7 +547,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setExtensionDelegate reverts if called by non-governor',
   {},
   async ({ comet, configurator, actors }) => {
@@ -560,7 +560,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setStoreFrontPriceFactor updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -586,7 +586,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setStoreFrontPriceFactor reverts if called by non-governor',
   {},
   async ({ comet, configurator, actors }) => {
@@ -599,7 +599,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseMinForRewards updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -625,7 +625,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseMinForRewards reverts if called by non-governor',
   {},
   async ({ comet, configurator, actors }) => {
@@ -638,7 +638,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setTargetReserves updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -660,7 +660,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setTargetReserves reverts if called by non-governor',
   {},
   async ({ comet, configurator, actors }) => {
@@ -673,7 +673,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#addAsset succeeds if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -701,7 +701,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#addAsset reverts if called by non-governor',
   {},
   async ({ comet, configurator, actors }) => {
@@ -722,7 +722,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAsset succeeds if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -756,7 +756,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAsset reverts if called by non-governor',
   {},
   async ({ comet, configurator, actors }) => {
@@ -778,7 +778,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAsset reverts if asset does not exist',
   {},
   async ({ comet, configurator, actors }) => {
@@ -800,7 +800,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetPriceFeed succeeds if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -820,7 +820,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetPriceFeed reverts if called by non-governor',
   {},
   async ({ comet, configurator, actors }) => {
@@ -836,7 +836,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetPriceFeed reverts if asset does not exist',
   {},
   async ({ comet, configurator, actors }) => {
@@ -858,7 +858,7 @@ scenario.only(
 |========================================
 */
 
-scenario.only(
+scenario(
   'Configurator#setSupplyKink updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -881,7 +881,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setSupplyKink updates value if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -907,7 +907,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setSupplyKink reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -917,7 +917,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setSupplyPerYearInterestRateSlopeLow updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -947,7 +947,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setSupplyPerYearInterestRateSlopeLow updates value if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -981,7 +981,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setSupplyPerYearInterestRateSlopeLow reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -994,7 +994,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setSupplyPerYearInterestRateSlopeHigh updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1026,7 +1026,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setSupplyPerYearInterestRateSlopeHigh updates value if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1062,7 +1062,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setSupplyPerYearInterestRateSlopeHigh reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1075,7 +1075,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setSupplyPerYearInterestRateBase updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1105,7 +1105,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setSupplyPerYearInterestRateBase updates value if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1139,7 +1139,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setSupplyPerYearInterestRateBase reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1152,7 +1152,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowKink updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1175,7 +1175,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowKink updates value if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1201,7 +1201,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowKink reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1211,7 +1211,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowPerYearInterestRateSlopeLow updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1241,7 +1241,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowPerYearInterestRateSlopeLow updates value if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1275,7 +1275,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowPerYearInterestRateSlopeLow reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1288,7 +1288,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowPerYearInterestRateSlopeHigh updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1320,7 +1320,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowPerYearInterestRateSlopeHigh updates value if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1356,7 +1356,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowPerYearInterestRateSlopeHigh reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1369,7 +1369,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowPerYearInterestRateBase updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1399,7 +1399,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowPerYearInterestRateBase updates value if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1433,7 +1433,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBorrowPerYearInterestRateBase reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1446,7 +1446,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseTrackingSupplySpeed updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1474,7 +1474,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseTrackingSupplySpeed updates value if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1508,7 +1508,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseTrackingSupplySpeed reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1521,7 +1521,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseTrackingBorrowSpeed updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1549,7 +1549,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseTrackingBorrowSpeed updates value if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1583,7 +1583,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseTrackingBorrowSpeed reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1596,7 +1596,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseBorrowMin updates value if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1619,7 +1619,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseBorrowMin updates value if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1645,7 +1645,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#setBaseBorrowMin reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1655,7 +1655,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetBorrowCollateralFactor succeeds if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1686,7 +1686,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetBorrowCollateralFactor disables asset if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1723,7 +1723,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetBorrowCollateralFactor succeeds if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1757,7 +1757,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetBorrowCollateralFactor disables asset if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1790,7 +1790,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetBorrowCollateralFactor reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1807,7 +1807,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetBorrowCollateralFactor reverts if asset does not exist',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1822,7 +1822,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetLiquidateCollateralFactor succeeds if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1853,7 +1853,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetLiquidateCollateralFactor succeeds if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1888,7 +1888,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetLiquidateCollateralFactor reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1905,7 +1905,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetLiquidateCollateralFactor reverts if asset does not exist',
   {},
   async ({ comet, configurator, actors }) => {
@@ -1920,7 +1920,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetLiquidationFactor succeeds if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -1951,7 +1951,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetLiquidationFactor succeeds if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -1985,7 +1985,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetLiquidationFactor reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -2000,7 +2000,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetLiquidationFactor reverts if asset does not exist',
   {},
   async ({ comet, configurator, actors }) => {
@@ -2015,7 +2015,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetSupplyCap succeeds if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -2043,7 +2043,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetSupplyCap disables asset if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
@@ -2070,7 +2070,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetSupplyCap succeeds if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -2101,7 +2101,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetSupplyCap disables asset if called by market-admin',
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
@@ -2131,7 +2131,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetSupplyCap reverts if called by unauthorized caller',
   {},
   async ({ comet, configurator, actors }) => {
@@ -2146,7 +2146,7 @@ scenario.only(
   }
 );
 
-scenario.only(
+scenario(
   'Configurator#updateAssetSupplyCap reverts if asset does not exist',
   {},
   async ({ comet, configurator, actors }) => {
