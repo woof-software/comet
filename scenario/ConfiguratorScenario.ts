@@ -1,10 +1,10 @@
-import { CometContext, scenario } from './context/CometContext';
+import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { BigNumber, ethers } from 'ethers';
-import { expectRevertCustom, supportsMarketAdminPermissionChecker } from './utils';
-import { MarketAdminPermissionChecker__factory, CometFactoryWithExtendedAssetList__factory } from '../build/types';
-
+import { CometContext, scenario } from './context/CometContext';
 import { exp } from '../test/helpers';
+import { expectRevertCustom, supportsMarketAdminPermissionChecker } from './utils';
+import { MarketAdminPermissionChecker } from '../build/types';
 
 const SECONDS_PER_YEAR = 31_536_000n;
 // Based on contract's internal precision: FACTOR_SCALE=1e18 with 4 decimal places
@@ -53,6 +53,14 @@ function normalizeStructOutput<T>(value: T): NormalizedStruct<T> {
   return normalize(value) as NormalizedStruct<T>;
 }
 
+async function hasActiveAsset(ctx: CometContext): Promise<boolean> {
+  const configurator = await ctx.getConfigurator();
+  const cometAddress = (await ctx.getComet()).address;
+  const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
+
+  return assetConfigs.some((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
+}
+
 /// Finds the first asset with non-zero configuration values
 async function getActiveAsset(context: CometContext) {
   const configurator = await context.getConfigurator();
@@ -61,43 +69,154 @@ async function getActiveAsset(context: CometContext) {
 
   const assetIndex = assetConfigs.findIndex((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
 
-  if (assetIndex === -1) {
-    throw new Error('No active asset found in configuration');
-  }
-
   return {
     assetIndex,
     assetConfig: assetConfigs[assetIndex]
   };
 }
 
-async function getMarketAdminSigner(context: CometContext) {
-  const { albert } = context.actors;
+function getMinSupplyCapIncrement(decimals: number): bigint {
+  return 10n ** BigInt(decimals);
+}
+
+async function getMarketAdminSigner(context: CometContext): Promise<SignerWithAddress> {
+  const dm = context.world.deploymentManager;
   const configurator = await context.getConfigurator();
-  const marketAdminPermissionChecker = MarketAdminPermissionChecker__factory.connect(
-    await configurator.marketAdminPermissionChecker(),
-    albert.signer
-  );
+
+  const marketAdminPermissionChecker = (await dm.hre.ethers.getContractAt(
+    'MarketAdminPermissionChecker',
+    await configurator.marketAdminPermissionChecker()
+  )) as MarketAdminPermissionChecker;
+
   return context.world.impersonateAddress(await marketAdminPermissionChecker.marketAdmin());
 }
 
-async function deployMockPriceFeed(context: CometContext): Promise<string> {
+async function deployMarketAdminPermissionChecker(context: CometContext, force?: boolean): Promise<string> {
+  const dm = context.world.deploymentManager;
+  const initialOwner = await ethers.Wallet.createRandom().getAddress();
+  const marketAdmin = await ethers.Wallet.createRandom().getAddress();
+  const marketAdminPauseGuardian = await ethers.Wallet.createRandom().getAddress();
+
+  const marketAdminPermissionChecker = await dm.deploy(
+    'test:marketAdminPermissionChecker',
+    'marketupdates/MarketAdminPermissionChecker.sol',
+    [initialOwner, marketAdmin, marketAdminPauseGuardian],
+    force
+  );
+
+  return marketAdminPermissionChecker.address;
+}
+
+async function deployCometFactory(context: CometContext, force?: boolean): Promise<string> {
+  const dm = context.world.deploymentManager;
+  const cometFactory = await dm.deploy('test:cometFactory', 'CometFactoryWithExtendedAssetList.sol', [], force);
+
+  return cometFactory.address;
+}
+
+async function deployPriceFeed(context: CometContext, alias: string, force?: boolean): Promise<string> {
   const dm = context.world.deploymentManager;
   const PRICE_FEED_DECIMALS = 8;
   const PRICE_FEED_ANSWER = 1 * 10 ** PRICE_FEED_DECIMALS;
 
   const priceFeed = await dm.deploy(
-    'mock:priceFeed',
+    `test:${alias}PriceFeed`,
     'test/SimplePriceFeed.sol',
     [PRICE_FEED_ANSWER, PRICE_FEED_DECIMALS],
-    true
+    force
   );
 
   return priceFeed.address;
 }
 
-function getMinSupplyCapIncrement(assetConfig: { supplyCap: bigint; decimals: number }): bigint {
-  return 10n ** BigInt(assetConfig.decimals);
+async function deployTimelock(context: CometContext, force?: boolean): Promise<string> {
+  const dm = context.world.deploymentManager;
+  const admin = context.actors.admin;
+  const timelock = await dm.deploy('test:timelock', 'test/SimpleTimelock.sol', [admin.address], force);
+
+  return timelock.address;
+}
+
+async function deployMockERC20(context: CometContext, alias: string, force?: boolean): Promise<string> {
+  const dm = context.world.deploymentManager;
+
+  const mockERC20 = await dm.deploy(
+    `mockERC20:${alias}`,
+    'capo/contracts/test/MockERC20.sol',
+    ['Mock Token', 'MOCK', 18],
+    force
+  );
+
+  return mockERC20.address;
+}
+
+async function deployCometExt(context: CometContext, force?: boolean): Promise<string> {
+  const dm = context.world.deploymentManager;
+  const assetListFactory = await dm.deploy('test:assetListFactory', 'AssetListFactory.sol', []);
+
+  const extConfiguration = {
+    name32: ethers.utils.formatBytes32String('MOCK'),
+    symbol32: ethers.utils.formatBytes32String('cMOCKv3')
+  };
+
+  const cometExt = await dm.deploy(
+    'test:comet:implementation:implementation',
+    'CometExtAssetList.sol',
+    [extConfiguration, assetListFactory.address],
+    force
+  );
+
+  return cometExt.address;
+}
+
+async function deployComet(context: CometContext): Promise<string> {
+  const dm = context.world.deploymentManager;
+  const { admin, pauseGuardian } = context.actors;
+
+  const configuration = {
+    governor: admin.address,
+    pauseGuardian: pauseGuardian.address,
+    baseToken: await deployMockERC20(context, 'baseToken'),
+    baseTokenPriceFeed: await deployPriceFeed(context, 'baseToken'),
+    extensionDelegate: await deployCometExt(context),
+    supplyKink: exp(0.9, 18), // 900000000000000000n
+    supplyPerYearInterestRateSlopeLow: exp(0.036, 18), // 36000000000000000n
+    supplyPerYearInterestRateSlopeHigh: exp(3.196, 18), // 3196000000000000000n
+    supplyPerYearInterestRateBase: 0n,
+    borrowKink: exp(0.9, 18), // 900000000000000000n
+    borrowPerYearInterestRateSlopeLow: exp(0.027778, 18), // 27778000000000000n
+    borrowPerYearInterestRateSlopeHigh: exp(3.6, 18), // 3600000000000000000n
+    borrowPerYearInterestRateBase: exp(0.015, 18), // 15000000000000000n
+    storeFrontPriceFactor: exp(0.6, 18), // 600000000000000000n
+    trackingIndexScale: exp(0.001, 18), // 1000000000000000n
+    baseTrackingSupplySpeed: 0n,
+    baseTrackingBorrowSpeed: 0n,
+    baseMinForRewards: exp(1, 9), // 1000000000n
+    baseBorrowMin: exp(1, 5), // 100000n
+    targetReserves: exp(2, 13), //20000000000000n
+    assetConfigs: [
+      {
+        asset: await deployMockERC20(context, 'asset'),
+        priceFeed: await deployPriceFeed(context, 'asset'),
+        decimals: 18,
+        borrowCollateralFactor: exp(0.65, 18), // 650000000000000000n
+        liquidateCollateralFactor: exp(0.7, 18), // 700000000000000000n
+        liquidationFactor: exp(0.8, 18), // 800000000000000000n
+        supplyCap: exp(1.4, 24) // 1400000000000000000000000n
+      }
+    ]
+  };
+
+  const cometAdmin = await context.getCometAdmin();
+  const tmpCometImpl = await dm.deploy('test:comet:implementation', 'CometWithExtendedAssetList.sol', [configuration]);
+
+  const cometProxy = await dm.deploy('test:comet', 'vendor/proxy/transparent/TransparentUpgradeableProxy.sol', [
+    tmpCometImpl.address,
+    cometAdmin.address,
+    []
+  ]);
+
+  return cometProxy.address;
 }
 
 /*
@@ -109,23 +228,9 @@ scenario(
   'Configurator#transferGovernor updates configurator governor if called by governor',
   {},
   async ({ configurator, actors }, context) => {
-    const { albert, admin } = actors;
-
-    const newGovernor = albert.address;
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).transferGovernor(newGovernor, { gasPrice: 0 });
-
-    expect(await configurator.governor()).to.be.equal(newGovernor);
-  }
-);
-
-scenario(
-  'Configurator#transferGovernor succeeds if new governor is zero address',
-  {},
-  async ({ configurator, actors }, context) => {
     const { admin } = actors;
 
-    const newGovernor = ethers.constants.AddressZero;
+    const newGovernor = await deployTimelock(context);
     await context.setNextBaseFeeToZero();
     await configurator.connect(admin.signer).transferGovernor(newGovernor, { gasPrice: 0 });
 
@@ -137,24 +242,28 @@ scenario(
   'Configurator#transferGovernor new governor can call governor-only methods',
   {},
   async ({ configurator, actors }, context) => {
-    const { albert, betty, admin } = actors;
+    const { admin } = actors;
+
+    const newGovernor = await deployTimelock(context);
+    const newGovernorSigner = await context.world.impersonateAddress(newGovernor);
 
     await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).transferGovernor(albert.address, { gasPrice: 0 });
+    await configurator.connect(admin.signer).transferGovernor(newGovernor, { gasPrice: 0 });
     await context.setNextBaseFeeToZero();
-    await configurator.connect(albert.signer).transferGovernor(betty.address, { gasPrice: 0 });
+    await configurator.connect(newGovernorSigner).transferGovernor(admin.address, { gasPrice: 0 });
 
-    expect(await configurator.governor()).to.be.equal(betty.address);
+    expect(await configurator.governor()).to.be.equal(admin.address);
   }
 );
 
 scenario(
   'Configurator#transferGovernor reverts if called by non-governor',
   {},
-  async ({ configurator, actors }) => {
+  async ({ configurator, actors }, context) => {
     const { albert } = actors;
+    const newGovernor = await deployTimelock(context);
 
-    await expectRevertCustom(configurator.connect(albert.signer).transferGovernor(albert.address), 'Unauthorized()');
+    await expectRevertCustom(configurator.connect(albert.signer).transferGovernor(newGovernor), 'Unauthorized()');
   }
 );
 
@@ -164,20 +273,13 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const dm = context.world.deploymentManager;
+    await context.setNextBaseFeeToZero();
+    const newFactory = await deployCometFactory(context);
 
     await context.setNextBaseFeeToZero();
-    const newFactory = await dm.deploy(
-      'CometFactoryWithExtendedAssetList',
-      'CometFactoryWithExtendedAssetList.sol',
-      [],
-      true
-    );
+    await configurator.connect(admin.signer).setFactory(comet.address, newFactory, { gasPrice: 0 });
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setFactory(comet.address, newFactory.address, { gasPrice: 0 });
-
-    expect(await configurator.factory(comet.address)).to.be.equal(newFactory.address);
+    expect(await configurator.factory(comet.address)).to.be.equal(newFactory);
   }
 );
 
@@ -187,30 +289,18 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const dm = context.world.deploymentManager;
-
-    const firstNewFactory = await dm.deploy(
-      'CometFactoryWithExtendedAssetList',
-      'CometFactoryWithExtendedAssetList.sol',
-      [],
-      true
-    );
-    const secondNewFactory = await dm.deploy(
-      'CometFactoryWithExtendedAssetList',
-      'CometFactoryWithExtendedAssetList.sol',
-      [],
-      true
-    );
+    const firstNewFactory = await deployCometFactory(context);
+    const secondNewFactory = await deployCometFactory(context, true);
 
     await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setFactory(comet.address, firstNewFactory.address, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setFactory(comet.address, firstNewFactory, { gasPrice: 0 });
 
-    expect(await configurator.factory(comet.address)).to.be.equal(firstNewFactory.address);
+    expect(await configurator.factory(comet.address)).to.be.equal(firstNewFactory);
 
     await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setFactory(comet.address, secondNewFactory.address, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setFactory(comet.address, secondNewFactory, { gasPrice: 0 });
 
-    expect(await configurator.factory(comet.address)).to.be.equal(secondNewFactory.address);
+    expect(await configurator.factory(comet.address)).to.be.equal(secondNewFactory);
   }
 );
 
@@ -219,44 +309,48 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { albert } = actors;
-
-    const dm = context.world.deploymentManager;
-
-    await context.setNextBaseFeeToZero();
-    const newFactory = await dm.deploy(
-      'CometFactoryWithExtendedAssetList',
-      'CometFactoryWithExtendedAssetList.sol',
-      [],
-      true
-    );
+    const newFactory = await deployCometFactory(context);
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setFactory(comet.address, newFactory.address),
+      configurator.connect(albert.signer).setFactory(comet.address, newFactory),
       'Unauthorized()'
     );
   }
 );
 
 scenario(
-  'Configurator#setConfiguration updates value if called by governor',
+  'Configurator#setConfiguration updates existing configuration if called by governor',
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
-
-    const newCometProxy = '0x' + '1234'.repeat(10); // @todo change to a valid contract
-    // use the existing configuration from the current comet as a base
     const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
-    const newConfiguration = {
+
+    const updatedConfiguration = {
       ...existingConfiguration,
-      baseToken: '0x' + '4321'.repeat(10)
+      baseBorrowMin: existingConfiguration.baseBorrowMin + 1n
     };
 
     await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setConfiguration(newCometProxy, newConfiguration, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration, { gasPrice: 0 });
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(newCometProxy))).to.be.deep.equal(
-      newConfiguration
+    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address))).to.be.deep.equal(
+      updatedConfiguration
     );
+  }
+);
+
+scenario(
+  'Configurator#setConfiguration initializes new comet proxy configuration',
+  {},
+  async ({ configurator, actors }, context) => {
+    const { admin } = actors;
+    const newCometProxy = await deployComet(context);
+    const configuration = normalizeStructOutput(await configurator.getConfiguration(newCometProxy));
+
+    await context.setNextBaseFeeToZero();
+    await configurator.connect(admin.signer).setConfiguration(newCometProxy, configuration, { gasPrice: 0 });
+
+    expect(normalizeStructOutput(await configurator.getConfiguration(newCometProxy))).to.be.deep.equal(configuration);
   }
 );
 
@@ -266,35 +360,53 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
-    const newCometProxy = '0x' + '1234'.repeat(10); // @todo change to a valid contract
-    // use the existing configuration from the current comet as a base
     const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
-    const newConfiguration = {
-      ...existingConfiguration,
-      baseToken: '0x' + '4321'.repeat(10)
-    };
 
+    const updatedConfiguration = {
+      ...existingConfiguration,
+      baseBorrowMin: existingConfiguration.baseBorrowMin + 1n
+    };
     await expectRevertCustom(
-      configurator.connect(albert.signer).setConfiguration(newCometProxy, newConfiguration),
+      configurator.connect(albert.signer).setConfiguration(comet.address, updatedConfiguration),
       'Unauthorized()'
     );
   }
 );
 
 scenario(
-  'Configurator#setConfiguration reverts if configuration already exists for comet proxy',
+  'Configurator#setConfiguration reverts if base token is changed for existing configuration',
+  {},
+  async ({ comet, configurator, actors }, context) => {
+    const { admin } = actors;
+    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
+
+    const updatedConfiguration = {
+      ...existingConfiguration,
+      baseToken: await deployMockERC20(context, 'baseToken')
+    };
+
+    await context.setNextBaseFeeToZero();
+    await expectRevertCustom(
+      configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration, { gasPrice: 0 }),
+      'ConfigurationAlreadyExists()'
+    );
+  }
+);
+
+scenario(
+  'Configurator#setConfiguration reverts if tracking index scale is changed for existing configuration',
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
-    // use the existing configuration from the current comet as a base
     const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
-    const newConfiguration = {
+
+    const updatedConfiguration = {
       ...existingConfiguration,
-      baseToken: '0x' + '4321'.repeat(10)
+      trackingIndexScale: existingConfiguration.trackingIndexScale + 1n
     };
 
     await expectRevertCustom(
-      configurator.connect(admin.signer).setConfiguration(comet.address, newConfiguration),
+      configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration),
       'ConfigurationAlreadyExists()'
     );
   }
@@ -306,7 +418,7 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const newGovernor = '0x' + '1234'.repeat(10); // @todo change to a valid contract
+    const newGovernor = await deployTimelock(context);
     await context.setNextBaseFeeToZero();
     await configurator.connect(admin.signer).setGovernor(comet.address, newGovernor, { gasPrice: 0 });
 
@@ -325,8 +437,8 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const firstNewGovernor = '0x' + '1234'.repeat(10); // @todo change to a valid contract
-    const secondNewGovernor = '0x' + '5678'.repeat(10); // @todo change to a valid contract
+    const firstNewGovernor = await deployTimelock(context);
+    const secondNewGovernor = await deployTimelock(context, true);
 
     await context.setNextBaseFeeToZero();
     await configurator.connect(admin.signer).setGovernor(comet.address, firstNewGovernor, { gasPrice: 0 });
@@ -343,10 +455,9 @@ scenario(
 scenario(
   'Configurator#setGovernor reverts if called by non-governor',
   {},
-  async ({ comet, configurator, actors }) => {
+  async ({ comet, configurator, actors }, context) => {
     const { albert } = actors;
-
-    const newGovernor = '0x' + '1234'.repeat(10); // @todo change to a valid contract
+    const newGovernor = await deployTimelock(context);
 
     await expectRevertCustom(
       configurator.connect(albert.signer).setGovernor(comet.address, newGovernor),
@@ -361,7 +472,7 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const newPauseGuardian = '0x' + '1234'.repeat(10); // @todo change to a valid contract
+    const newPauseGuardian = await ethers.Wallet.createRandom().getAddress();
     await context.setNextBaseFeeToZero();
     await configurator.connect(admin.signer).setPauseGuardian(comet.address, newPauseGuardian, { gasPrice: 0 });
 
@@ -380,8 +491,8 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const firstNewPauseGuardian = '0x' + '1234'.repeat(10); // @todo change to a valid contract
-    const secondNewPauseGuardian = '0x' + '5678'.repeat(10); // @todo change to a valid contract
+    const firstNewPauseGuardian = await ethers.Wallet.createRandom().getAddress();
+    const secondNewPauseGuardian = await ethers.Wallet.createRandom().getAddress();
 
     await context.setNextBaseFeeToZero();
     await configurator.connect(admin.signer).setPauseGuardian(comet.address, firstNewPauseGuardian, { gasPrice: 0 });
@@ -401,7 +512,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
-    const newPauseGuardian = '0x' + '1234'.repeat(10); // @todo change to a valid contract
+    const newPauseGuardian = await ethers.Wallet.createRandom().getAddress();
 
     await expectRevertCustom(
       configurator.connect(albert.signer).setPauseGuardian(comet.address, newPauseGuardian),
@@ -415,10 +526,10 @@ scenario(
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
   },
-  async ({ configurator, actors }) => {
+  async ({ configurator, actors }, context) => {
     const { admin } = actors;
 
-    const newMarketAdminPermissionChecker = '0x' + '1234'.repeat(10); // @todo change to a valid contract
+    const newMarketAdminPermissionChecker = await deployMarketAdminPermissionChecker(context);
     await configurator.connect(admin.signer).setMarketAdminPermissionChecker(newMarketAdminPermissionChecker, {
       gasPrice: 0
     });
@@ -435,8 +546,8 @@ scenario(
   async ({ configurator, actors }, context) => {
     const { admin } = actors;
 
-    const firstNewMarketAdminPermissionChecker = '0x' + '1234'.repeat(10); // @todo change to a valid contract
-    const secondNewMarketAdminPermissionChecker = '0x' + '5678'.repeat(10); // @todo change to a valid contract
+    const firstNewMarketAdminPermissionChecker = await deployMarketAdminPermissionChecker(context);
+    const secondNewMarketAdminPermissionChecker = await deployMarketAdminPermissionChecker(context, true);
 
     await context.setNextBaseFeeToZero();
     await configurator.connect(admin.signer).setMarketAdminPermissionChecker(firstNewMarketAdminPermissionChecker, {
@@ -459,10 +570,10 @@ scenario(
   {
     filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
   },
-  async ({ configurator, actors }) => {
+  async ({ configurator, actors }, context) => {
     const { albert } = actors;
 
-    const newMarketAdminPermissionChecker = '0x' + '1234'.repeat(10); // @todo change to a valid contract
+    const newMarketAdminPermissionChecker = await deployMarketAdminPermissionChecker(context);
 
     await expectRevertCustom(
       configurator.connect(albert.signer).setMarketAdminPermissionChecker(newMarketAdminPermissionChecker),
@@ -476,8 +587,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
-
-    const newPriceFeed = await deployMockPriceFeed(context);
+    const newPriceFeed = await deployPriceFeed(context, 'baseToken');
 
     await context.setNextBaseFeeToZero();
     await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, newPriceFeed, {
@@ -499,8 +609,8 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const firstNewPriceFeed = await deployMockPriceFeed(context);
-    const secondNewPriceFeed = await deployMockPriceFeed(context);
+    const firstNewPriceFeed = await deployPriceFeed(context, 'baseToken');
+    const secondNewPriceFeed = await deployPriceFeed(context, 'baseToken', true);
 
     await context.setNextBaseFeeToZero();
     await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, firstNewPriceFeed, {
@@ -524,7 +634,7 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { albert } = actors;
 
-    const newPriceFeed = await deployMockPriceFeed(context);
+    const newPriceFeed = await deployPriceFeed(context, 'baseToken');
 
     await expectRevertCustom(
       configurator.connect(albert.signer).setBaseTokenPriceFeed(comet.address, newPriceFeed),
@@ -539,7 +649,7 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const newExtensionDelegate = '0x' + '1234'.repeat(10); // @todo change to a valid contract
+    const newExtensionDelegate = await deployCometExt(context);
 
     await context.setNextBaseFeeToZero();
     await configurator.connect(admin.signer).setExtensionDelegate(comet.address, newExtensionDelegate, {
@@ -556,8 +666,8 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const firstNewExtensionDelegate = '0x' + '1234'.repeat(10); // @todo change to a valid contract
-    const secondNewExtensionDelegate = '0x' + '5678'.repeat(10); // @todo change to a valid contract
+    const firstNewExtensionDelegate = await deployCometExt(context);
+    const secondNewExtensionDelegate = await deployCometExt(context, true);
 
     await context.setNextBaseFeeToZero();
     await configurator.connect(admin.signer).setExtensionDelegate(comet.address, firstNewExtensionDelegate, {
@@ -582,10 +692,10 @@ scenario(
 scenario(
   'Configurator#setExtensionDelegate reverts if called by non-governor',
   {},
-  async ({ comet, configurator, actors }) => {
+  async ({ comet, configurator, actors }, context) => {
     const { albert } = actors;
 
-    const newExtensionDelegate = '0x' + '1234'.repeat(10); // @todo change to a valid contract
+    const newExtensionDelegate = await deployCometExt(context);
 
     await expectRevertCustom(
       configurator.connect(albert.signer).setExtensionDelegate(comet.address, newExtensionDelegate),
@@ -826,8 +936,8 @@ scenario(
       .length;
 
     const newAssetConfig = {
-      asset: '0x' + '2211'.repeat(10),
-      priceFeed: await deployMockPriceFeed(context),
+      asset: await deployMockERC20(context, 'asset'),
+      priceFeed: await deployPriceFeed(context, 'asset'),
       decimals: 18,
       borrowCollateralFactor: exp(0.8, 18),
       liquidateCollateralFactor: exp(0.85, 18),
@@ -850,8 +960,8 @@ scenario('Configurator#addAsset can add multiple assets', {}, async ({ comet, co
   const numAssetsBefore = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.length;
 
   const firstNewAssetConfig = {
-    asset: '0x' + '2211'.repeat(10),
-    priceFeed: await deployMockPriceFeed(context),
+    asset: await deployMockERC20(context, 'asset'),
+    priceFeed: await deployPriceFeed(context, 'asset'),
     decimals: 18,
     borrowCollateralFactor: exp(0.8, 18),
     liquidateCollateralFactor: exp(0.85, 18),
@@ -860,8 +970,8 @@ scenario('Configurator#addAsset can add multiple assets', {}, async ({ comet, co
   };
 
   const secondNewAssetConfig = {
-    asset: '0x' + '5566'.repeat(10),
-    priceFeed: await deployMockPriceFeed(context),
+    asset: await deployMockERC20(context, 'asset', true),
+    priceFeed: await deployPriceFeed(context, 'asset', true),
     decimals: 6,
     borrowCollateralFactor: exp(0.8, 18),
     liquidateCollateralFactor: exp(0.85, 18),
@@ -888,8 +998,8 @@ scenario(
 
     await expectRevertCustom(
       configurator.connect(albert.signer).addAsset(comet.address, {
-        asset: '0x' + '2211'.repeat(10),
-        priceFeed: await deployMockPriceFeed(context),
+        asset: await deployMockERC20(context, 'asset'),
+        priceFeed: await deployPriceFeed(context, 'asset'),
         decimals: 18,
         borrowCollateralFactor: exp(0.8, 18),
         liquidateCollateralFactor: exp(0.85, 18),
@@ -907,9 +1017,8 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
+    const assetIndex = -1;
     const assetConfigsBefore = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs;
-
-    const { assetIndex } = await getActiveAsset(context);
     const existingAssetConfig = assetConfigsBefore.at(assetIndex);
 
     const updatedAssetConfig = {
@@ -941,7 +1050,10 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const { assetIndex, assetConfig } = await getActiveAsset(context);
+    const assetIndex = -1;
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+      assetIndex
+    );
 
     const firstUpdatedAssetConfig = {
       ...assetConfig,
@@ -967,49 +1079,41 @@ scenario(
   }
 );
 
-scenario(
-  'Configurator#updateAsset reverts if called by non-governor',
-  {},
-  async ({ comet, configurator, actors }) => {
-    const { albert } = actors;
+scenario('Configurator#updateAsset reverts if called by non-governor', {}, async ({ comet, configurator, actors }) => {
+  const { albert } = actors;
 
-    const existingAssetConfig = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
-    ).assetConfigs.at(-1);
+  const existingAssetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    -1
+  );
 
-    const updatedAssetConfig = {
-      ...existingAssetConfig,
-      supplyCap: existingAssetConfig.supplyCap + getMinSupplyCapIncrement(existingAssetConfig)
-    };
+  const updatedAssetConfig = {
+    ...existingAssetConfig,
+    supplyCap: existingAssetConfig.supplyCap + getMinSupplyCapIncrement(existingAssetConfig.decimals)
+  };
 
-    await expectRevertCustom(
-      configurator.connect(albert.signer).updateAsset(comet.address, updatedAssetConfig),
-      'Unauthorized()'
-    );
-  }
-);
+  await expectRevertCustom(
+    configurator.connect(albert.signer).updateAsset(comet.address, updatedAssetConfig),
+    'Unauthorized()'
+  );
+});
 
-scenario(
-  'Configurator#updateAsset reverts if asset does not exist',
-  {},
-  async ({ comet, configurator, actors }) => {
-    const { admin } = actors;
+scenario('Configurator#updateAsset reverts if asset does not exist', {}, async ({ comet, configurator, actors }) => {
+  const { admin } = actors;
 
-    const existingAssetConfig = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
-    ).assetConfigs.at(-1);
+  const existingAssetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    -1
+  );
 
-    const updatedAssetConfig = {
-      ...existingAssetConfig,
-      asset: '0x' + '9999'.repeat(10) // non-existing asset address
-    };
+  const updatedAssetConfig = {
+    ...existingAssetConfig,
+    asset: await ethers.Wallet.createRandom().getAddress()
+  };
 
-    await expectRevertCustom(
-      configurator.connect(admin.signer).updateAsset(comet.address, updatedAssetConfig),
-      'AssetDoesNotExist()'
-    );
-  }
-);
+  await expectRevertCustom(
+    configurator.connect(admin.signer).updateAsset(comet.address, updatedAssetConfig),
+    'AssetDoesNotExist()'
+  );
+});
 
 scenario(
   'Configurator#updateAssetPriceFeed succeeds if called by governor',
@@ -1019,7 +1123,7 @@ scenario(
     // use the last asset in the existing configuration to ensure the asset exists
     const assetIndex = -1;
     const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).asset;
-    const newPriceFeed = await deployMockPriceFeed(context);
+    const newPriceFeed = await deployPriceFeed(context, 'asset');
 
     await context.setNextBaseFeeToZero();
     await configurator
@@ -1041,8 +1145,8 @@ scenario(
     const assetIndex = -1;
     const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).asset;
 
-    const firstNewPriceFeed = await deployMockPriceFeed(context);
-    const secondNewPriceFeed = await deployMockPriceFeed(context);
+    const firstNewPriceFeed = await deployPriceFeed(context, 'asset');
+    const secondNewPriceFeed = await deployPriceFeed(context, 'asset', true);
 
     await context.setNextBaseFeeToZero();
     await configurator
@@ -1071,7 +1175,7 @@ scenario(
     const { albert } = actors;
 
     const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(-1).asset;
-    const newPriceFeed = await deployMockPriceFeed(context);
+    const newPriceFeed = await deployPriceFeed(context, 'asset');
 
     await expectRevertCustom(
       configurator.connect(albert.signer).updateAssetPriceFeed(comet.address, existingAsset, newPriceFeed),
@@ -1086,8 +1190,8 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const nonExistingAsset = '0x' + '1199'.repeat(10);
-    const newPriceFeed = await deployMockPriceFeed(context);
+    const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
+    const newPriceFeed = await deployPriceFeed(context, 'asset');
 
     await expectRevertCustom(
       configurator.connect(admin.signer).updateAssetPriceFeed(comet.address, nonExistingAsset, newPriceFeed),
@@ -1263,7 +1367,6 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
-
     const marketAdminSigner = await getMarketAdminSigner(context);
 
     const oldSupplyPerYearInterestRateSlopeLow = normalizeStructOutput(
@@ -2337,7 +2440,9 @@ scenario(
 
 scenario(
   'Configurator#updateAssetBorrowCollateralFactor succeeds if called by governor',
-  {},
+  {
+    filter: async (ctx: CometContext) => await hasActiveAsset(ctx)
+  },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
@@ -2372,7 +2477,10 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const { assetIndex, assetConfig } = await getActiveAsset(context);
+    const assetIndex = -1;
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+      assetIndex
+    );
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
     const firstNewAssetBorrowCollateralFactor = oldAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
     const secondNewAssetBorrowCollateralFactor = firstNewAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
@@ -2405,7 +2513,9 @@ scenario(
 
 scenario(
   'Configurator#updateAssetBorrowCollateralFactor disables asset if called by governor',
-  {},
+  {
+    filter: async (ctx: CometContext) => await hasActiveAsset(ctx)
+  },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
@@ -2436,7 +2546,8 @@ scenario(
 scenario(
   'Configurator#updateAssetBorrowCollateralFactor succeeds if called by market-admin',
   {
-    filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
+    filter: async (ctx: CometContext) =>
+      (await supportsMarketAdminPermissionChecker(ctx)) && (await hasActiveAsset(ctx))
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
@@ -2470,7 +2581,8 @@ scenario(
 scenario(
   'Configurator#updateAssetBorrowCollateralFactor disables asset if called by market-admin',
   {
-    filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
+    filter: async (ctx: CometContext) =>
+      (await supportsMarketAdminPermissionChecker(ctx)) && (await hasActiveAsset(ctx))
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
@@ -2506,7 +2618,7 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { albert } = actors;
 
-    const { assetConfig } = await getActiveAsset(context);
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(-1);
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
     const newAssetBorrowCollateralFactor = oldAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
 
@@ -2525,14 +2637,16 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
     // use the existing config to get a valid factor value
-    const { assetConfig } = await getActiveAsset(context);
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(-1);
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
     const newAssetBorrowCollateralFactor = oldAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
 
-    const nonExistingAsset = '0x' + '1199'.repeat(10);
+    const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
 
     await expectRevertCustom(
-      configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, nonExistingAsset, newAssetBorrowCollateralFactor),
+      configurator
+        .connect(admin.signer)
+        .updateAssetBorrowCollateralFactor(comet.address, nonExistingAsset, newAssetBorrowCollateralFactor),
       'AssetDoesNotExist()'
     );
   }
@@ -2544,7 +2658,10 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const { assetIndex, assetConfig } = await getActiveAsset(context);
+    const assetIndex = -1;
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+      assetIndex
+    );
     const oldAssetLiquidateCollateralFactor = assetConfig.liquidateCollateralFactor;
     const newAssetLiquidateCollateralFactor = oldAssetLiquidateCollateralFactor + MIN_FACTOR_INCREMENT;
 
@@ -2575,7 +2692,10 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const { assetIndex, assetConfig } = await getActiveAsset(context);
+    const assetIndex = -1;
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+      assetIndex
+    );
     const oldAssetLiquidateCollateralFactor = assetConfig.liquidateCollateralFactor;
     const firstNewAssetLiquidateCollateralFactor = oldAssetLiquidateCollateralFactor + MIN_FACTOR_INCREMENT;
     const secondNewAssetLiquidateCollateralFactor = firstNewAssetLiquidateCollateralFactor + MIN_FACTOR_INCREMENT;
@@ -2615,8 +2735,10 @@ scenario(
     const { admin } = actors;
 
     const marketAdminSigner = await getMarketAdminSigner(context);
-
-    const { assetIndex, assetConfig } = await getActiveAsset(context);
+    const assetIndex = -1;
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+      assetIndex
+    );
     const oldAssetLiquidateCollateralFactor = assetConfig.liquidateCollateralFactor;
     const newAssetLiquidateCollateralFactor = oldAssetLiquidateCollateralFactor + MIN_FACTOR_INCREMENT;
 
@@ -2664,7 +2786,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const nonExistingAsset = '0x' + '1199'.repeat(10);
+    const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
 
     await expectRevertCustom(
       configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, nonExistingAsset, 1n),
@@ -2679,7 +2801,10 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const { assetIndex, assetConfig } = await getActiveAsset(context);
+    const assetIndex = -1;
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+      assetIndex
+    );
     const oldAssetLiquidationFactor = assetConfig.liquidationFactor;
     const newAssetLiquidationFactor = oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
 
@@ -2710,7 +2835,10 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const { assetIndex, assetConfig } = await getActiveAsset(context);
+    const assetIndex = -1;
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+      assetIndex
+    );
     const oldAssetLiquidationFactor = assetConfig.liquidationFactor;
     const firstNewAssetLiquidationFactor = oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
     const secondNewAssetLiquidationFactor = firstNewAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
@@ -2750,7 +2878,10 @@ scenario(
     const { admin } = actors;
 
     const marketAdminSigner = await getMarketAdminSigner(context);
-    const { assetIndex, assetConfig } = await getActiveAsset(context);
+    const assetIndex = -1;
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+      assetIndex
+    );
     const oldAssetLiquidationFactor = assetConfig.liquidationFactor;
     const newAssetLiquidationFactor = oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
 
@@ -2796,7 +2927,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const nonExistingAsset = '0x' + '1199'.repeat(10);
+    const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
 
     await expectRevertCustom(
       configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, nonExistingAsset, 1n),
@@ -2811,9 +2942,12 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const { assetIndex, assetConfig } = await getActiveAsset(context);
+    const assetIndex = -1;
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+      assetIndex
+    );
     const oldAssetSupplyCap = assetConfig.supplyCap;
-    const newAssetSupplyCap = oldAssetSupplyCap + getMinSupplyCapIncrement(assetConfig);
+    const newAssetSupplyCap = oldAssetSupplyCap + getMinSupplyCapIncrement(assetConfig.decimals);
 
     await context.setNextBaseFeeToZero();
     await configurator
@@ -2839,10 +2973,13 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const { assetIndex, assetConfig } = await getActiveAsset(context);
+    const assetIndex = -1;
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+      assetIndex
+    );
     const oldAssetSupplyCap = assetConfig.supplyCap;
-    const firstNewAssetSupplyCap = oldAssetSupplyCap + getMinSupplyCapIncrement(assetConfig);
-    const secondNewAssetSupplyCap = firstNewAssetSupplyCap + getMinSupplyCapIncrement(assetConfig);
+    const firstNewAssetSupplyCap = oldAssetSupplyCap + getMinSupplyCapIncrement(assetConfig.decimals);
+    const secondNewAssetSupplyCap = firstNewAssetSupplyCap + getMinSupplyCapIncrement(assetConfig.decimals);
 
     await context.setNextBaseFeeToZero();
     await configurator
@@ -2866,7 +3003,9 @@ scenario(
 
 scenario(
   'Configurator#updateAssetSupplyCap disables asset if called by governor',
-  {},
+  {
+    filter: async (ctx: CometContext) => await hasActiveAsset(ctx)
+  },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
@@ -2900,9 +3039,12 @@ scenario(
     const { admin } = actors;
 
     const marketAdminSigner = await getMarketAdminSigner(context);
-    const { assetIndex, assetConfig } = await getActiveAsset(context);
+    const assetIndex = -1;
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+      assetIndex
+    );
     const oldAssetSupplyCap = assetConfig.supplyCap;
-    const newAssetSupplyCap = oldAssetSupplyCap + getMinSupplyCapIncrement(assetConfig);
+    const newAssetSupplyCap = oldAssetSupplyCap + getMinSupplyCapIncrement(assetConfig.decimals);
 
     await context.setNextBaseFeeToZero();
     await configurator
@@ -2925,7 +3067,8 @@ scenario(
 scenario(
   'Configurator#updateAssetSupplyCap disables asset if called by market-admin',
   {
-    filter: async (ctx: CometContext) => await supportsMarketAdminPermissionChecker(ctx)
+    filter: async (ctx: CometContext) =>
+      (await supportsMarketAdminPermissionChecker(ctx)) && (await hasActiveAsset(ctx))
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
@@ -2957,7 +3100,6 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
-
     const assetConfigs = (await configurator.getConfiguration(comet.address)).assetConfigs;
 
     await expectRevertCustom(
@@ -2972,8 +3114,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
-
-    const nonExistingAsset = '0x' + '1199'.repeat(10);
+    const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
 
     await expectRevertCustom(
       configurator.connect(admin.signer).updateAssetSupplyCap(comet.address, nonExistingAsset, 1n),
