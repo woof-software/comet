@@ -176,10 +176,10 @@ describe('constructor', function () {
   });
 
   context('target health factor', function () {
+    const minHealthFactor = exp(1.05, 18);
     let CometFactory: CometHarnessExtendedAssetList__factory;
     let baseConfig: any;
     let referenceComet: CometWithExtendedAssetList;
-    let minHealthFactor: BigNumber;
 
     before(async function () {
       const [governor, pauseGuardian] = await ethers.getSigners();
@@ -235,7 +235,6 @@ describe('constructor', function () {
 
       referenceComet = (await CometFactory.deploy(baseConfig)) as unknown as CometWithExtendedAssetList;
       await referenceComet.deployed();
-      minHealthFactor = await referenceComet.MIN_TARGET_HEALTH_FACTOR();
     });
 
     describe('with the default target health factor', function () {
@@ -286,7 +285,7 @@ describe('constructor', function () {
     describe('revert when', function () {
       it('target health factor is one below the minimum', async function () {
         await expect(
-          CometFactory.deploy({ ...baseConfig, targetHealthFactor: minHealthFactor.sub(1) })
+          CometFactory.deploy({ ...baseConfig, targetHealthFactor: (minHealthFactor - 1n) })
         ).to.be.revertedWithCustomError(referenceComet, 'BadHealthFactor');
       });
 
