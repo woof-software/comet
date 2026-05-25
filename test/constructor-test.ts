@@ -1,4 +1,4 @@
-import { ethers, exp, expect, makeProtocol, ONE } from './helpers';
+import { ethers, exp, expect, makeProtocol, ONE, ZERO_ADDRESS } from './helpers';
 import {
   AssetListFactory__factory,
   CometExt__factory,
@@ -10,6 +10,8 @@ import {
 } from '../build/types';
 import type { CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList } from '../build/types';
 import { BigNumber } from 'ethers';
+import { ConfigurationStruct } from 'build/types/CometWithExtendedAssetList';
+import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
 describe('constructor', function () {
   it('sets the baseBorrowMin', async function () {
@@ -61,6 +63,7 @@ describe('constructor', function () {
       governor: governor.address,
       pauseGuardian: pauseGuardian.address,
       extensionDelegate: extensionDelegate.address,
+      liquidationModule: ethers.constants.AddressZero,
       baseToken: tokens['USDC'].address,
       baseTokenPriceFeed: priceFeeds['USDC'].address,
       supplyKink: exp(8, 17),
@@ -212,6 +215,7 @@ describe('constructor', function () {
         governor: governor.address,
         pauseGuardian: pauseGuardian.address,
         extensionDelegate: extensionDelegate.address,
+        liquidationModule: ethers.constants.AddressZero,
         baseToken: baseToken.address,
         baseTokenPriceFeed: priceFeed.address,
         supplyKink: exp(0.8, 18),
@@ -293,6 +297,83 @@ describe('constructor', function () {
         await expect(
           CometFactory.deploy({ ...baseConfig, targetHealthFactor: 0 })
         ).to.be.revertedWithCustomError(referenceComet, 'BadHealthFactor');
+      });
+    });
+  });
+
+  context('liquidation module', function () {
+    let CometFactory: CometHarnessExtendedAssetList__factory;
+    let baseConfig: ConfigurationStruct;
+
+    let liquidationModule: SignerWithAddress;
+
+    before(async function () {
+      const [governor, pauseGuardian, liquidationModuleSigner] = await ethers.getSigners();
+      liquidationModule = liquidationModuleSigner;
+
+      const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
+      const baseToken = await FaucetFactory.deploy(exp(1, 6), 'USDC', 6, 'USDC');
+      await baseToken.deployed();
+
+      const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
+      const priceFeed = await PriceFeedFactory.deploy(exp(1, 8), 8);
+      await priceFeed.deployed();
+
+      const AssetListFactoryFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
+      const assetListFactory = await AssetListFactoryFactory.deploy();
+      await assetListFactory.deployed();
+
+      const CometExtFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
+      const extensionDelegate = await CometExtFactory.deploy(
+        {
+          name32: ethers.utils.formatBytes32String('Compound Comet'),
+          symbol32: ethers.utils.formatBytes32String('📈BASE'),
+        },
+        assetListFactory.address
+      );
+      await extensionDelegate.deployed();
+
+      CometFactory = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
+
+      baseConfig = {
+        governor: governor.address,
+        pauseGuardian: pauseGuardian.address,
+        extensionDelegate: extensionDelegate.address,
+        liquidationModule: liquidationModule.address,
+        baseToken: baseToken.address,
+        baseTokenPriceFeed: priceFeed.address,
+        supplyKink: exp(0.8, 18),
+        supplyPerYearInterestRateBase: exp(0, 18),
+        supplyPerYearInterestRateSlopeLow: exp(0.05, 18),
+        supplyPerYearInterestRateSlopeHigh: exp(2, 18),
+        borrowKink: exp(0.8, 18),
+        borrowPerYearInterestRateBase: exp(0.005, 18),
+        borrowPerYearInterestRateSlopeLow: exp(0.1, 18),
+        borrowPerYearInterestRateSlopeHigh: exp(3, 18),
+        storeFrontPriceFactor: exp(1, 18),
+        trackingIndexScale: exp(1, 15),
+        baseTrackingSupplySpeed: exp(1, 15),
+        baseTrackingBorrowSpeed: exp(1, 15),
+        baseMinForRewards: exp(1, 6),
+        baseBorrowMin: exp(1, 6),
+        targetReserves: 0,
+        targetHealthFactor: exp(1.05, 18),
+        assetConfigs: [],
+      };
+    });
+
+    describe('liquidation module correctly set on construction', function () {
+      it('stores the configured liquidation module address', async function () {
+        const comet = (await CometFactory.deploy(baseConfig)) as unknown as CometWithExtendedAssetList;
+        expect(await comet.liquidationModule()).to.be.equal(liquidationModule.address);
+      });
+    });
+
+    describe('revert when', function () {
+      it('liquidation module is zero address', async function () {
+        await expect(
+          CometFactory.deploy({ ...baseConfig, liquidationModule: ZERO_ADDRESS })
+        ).to.be.revertedWithCustomError(CometFactory, 'ZeroAddress');
       });
     });
   });

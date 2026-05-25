@@ -17,25 +17,26 @@ contract CometConfiguration {
         address baseToken;                          // slot 3: 20 bytes
         address baseTokenPriceFeed;                 // slot 4: 20 bytes
         address extensionDelegate;                  // slot 5: 20 bytes
+        address liquidationModule;                  // slot 6: 20 bytes
 
         uint64 supplyKink;
         uint64 supplyPerYearInterestRateSlopeLow;
         uint64 supplyPerYearInterestRateSlopeHigh;
-        uint64 supplyPerYearInterestRateBase;       // slot 6: 4 * 64 bits = 256 bits = 32 bytes
+        uint64 supplyPerYearInterestRateBase;       // slot 7: 4 * 64 bits = 256 bits = 32 bytes
         uint64 borrowKink;
         uint64 borrowPerYearInterestRateSlopeLow;
         uint64 borrowPerYearInterestRateSlopeHigh;
-        uint64 borrowPerYearInterestRateBase;       // slot 7: 4 * 64 bits = 256 bits = 32 bytes
+        uint64 borrowPerYearInterestRateBase;       // slot 8: 4 * 64 bits = 256 bits = 32 bytes
         uint64 storeFrontPriceFactor;
         uint64 trackingIndexScale;
         uint64 baseTrackingSupplySpeed;
-        uint64 baseTrackingBorrowSpeed;             // slot 8: 4 * 64 bits = 256 bits = 32 bytes
+        uint64 baseTrackingBorrowSpeed;             // slot 9: 4 * 64 bits = 256 bits = 32 bytes
         uint104 baseMinForRewards;
-        uint104 baseBorrowMin;                      // slot 9: 2 * 104 bits = 208 bits = 26 bytes
+        uint104 baseBorrowMin;                      // slot 10: 2 * 104 bits = 208 bits = 26 bytes
         uint104 targetReserves;
-        uint64 targetHealthFactor;                  // slot 10: 104 bits + 64 bits = 168 bits = 21 bytes
+        uint64 targetHealthFactor;                  // slot 11: 104 bits + 64 bits = 168 bits = 21 bytes
 
-        AssetConfig[] assetConfigs;                 // slot 11: 32 bytes
+        AssetConfig[] assetConfigs;                 // slot 12: 32 bytes
     }
 
     struct AssetConfig {

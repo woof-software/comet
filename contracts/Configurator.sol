@@ -19,6 +19,7 @@ contract Configurator is ConfiguratorStorage {
     event SetMarketAdminPermissionChecker(address indexed oldMarketAdminPermissionChecker, address indexed newMarketAdminPermissionChecker);
     event SetBaseTokenPriceFeed(address indexed cometProxy, address indexed oldBaseTokenPriceFeed, address indexed newBaseTokenPriceFeed);
     event SetExtensionDelegate(address indexed cometProxy, address indexed oldExt, address indexed newExt);
+    event SetLiquidationModule(address indexed cometProxy, address indexed oldLiquidationModule, address indexed newLiquidationModule);
     event SetSupplyKink(address indexed cometProxy,uint64 oldKink, uint64 newKink);
     event SetSupplyPerYearInterestRateSlopeLow(address indexed cometProxy,uint64 oldIRSlopeLow, uint64 newIRSlopeLow);
     event SetSupplyPerYearInterestRateSlopeHigh(address indexed cometProxy,uint64 oldIRSlopeHigh, uint64 newIRSlopeHigh);
@@ -147,6 +148,14 @@ contract Configurator is ConfiguratorStorage {
         address oldExtensionDelegate = configuratorParams[cometProxy].extensionDelegate;
         configuratorParams[cometProxy].extensionDelegate = newExtensionDelegate;
         emit SetExtensionDelegate(cometProxy, oldExtensionDelegate, newExtensionDelegate);
+    }
+
+    function setLiquidationModule(address cometProxy, address newLiquidationModule) external {
+        if (msg.sender != governor) revert Unauthorized();
+        if (newLiquidationModule == address(0)) revert InvalidAddress();
+
+        emit SetLiquidationModule(cometProxy, configuratorParams[cometProxy].liquidationModule, newLiquidationModule);
+        configuratorParams[cometProxy].liquidationModule = newLiquidationModule;
     }
 
     function setSupplyKink(address cometProxy, uint64 newSupplyKink) external governorOrMarketAdmin {

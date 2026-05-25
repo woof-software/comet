@@ -104,6 +104,7 @@ export type ProtocolOpts = {
   baseBorrowMin?: Numeric;
   targetReserves?: Numeric;
   targetHealthFactor?: Numeric;
+  liquidationModule?: string;
   baseTokenBalance?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
 };
@@ -127,6 +128,7 @@ export type Protocol = {
   priceFeeds: {
     [symbol: string]: SimplePriceFeed;
   };
+  liquidationModule: string;
 };
 
 export type ConfiguratorAndProtocol = {
@@ -287,6 +289,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const symbol32 = ethers.utils.formatBytes32String(opts.symbol || '📈BASE');
   const governor = opts.governor || signers[0];
   const pauseGuardian = opts.pauseGuardian || signers[1];
+  const liquidationModule = opts.liquidationModule ?? '0x1111111111111111111111111111111111111111';
   const users = signers.slice(2); // guaranteed to not be governor or pause guardian
   const base = opts.base || 'USDC';
   const reward = opts.reward || 'COMP';
@@ -337,6 +340,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     governor: governor.address,
     pauseGuardian: pauseGuardian.address,
     extensionDelegate: extensionDelegate.address,
+    liquidationModule,
     baseToken: tokens[base].address,
     baseTokenPriceFeed: priceFeeds[base].address,
     supplyKink,
@@ -424,6 +428,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     tokens,
     unsupportedToken,
     priceFeeds,
+    liquidationModule,
   };
 }
 
@@ -437,7 +442,8 @@ export async function getConfigurationForConfigurator(
     [p: string]: FaucetToken | NonStandardFaucetFeeToken;
   },
   base: string,
-  priceFeeds: { [p: string]: SimplePriceFeed }) {
+  priceFeeds: { [p: string]: SimplePriceFeed },
+  liquidationModule: string) {
 
   const assets = opts.assets || defaultAssets();
 
@@ -475,6 +481,7 @@ export async function getConfigurationForConfigurator(
     governor: governor.address,
     pauseGuardian: pauseGuardian.address,
     extensionDelegate: extensionDelegate.address,
+    liquidationModule,
     baseToken: tokens[base].address,
     baseTokenPriceFeed: priceFeeds[base].address,
     supplyKink,
@@ -527,6 +534,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
+    liquidationModule,
   } = await makeProtocol(opts);
 
   // Deploy ProxyAdmin
@@ -551,6 +559,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     base,
     priceFeeds,
+    liquidationModule,
   );
   configuration.extensionDelegate = extensionDelegateAssetList.address;
 
@@ -632,6 +641,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
+    liquidationModule,
   };
 }
 

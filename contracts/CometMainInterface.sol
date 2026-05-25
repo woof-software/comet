@@ -35,6 +35,7 @@ abstract contract CometMainInterface is CometCore {
     error TransferInFailed();
     error TransferOutFailed();
     error Unauthorized();
+    error ZeroAddress();
 
     /// @dev Error emitted when the utilization exceeds the supported utilization
     error ExceedsSupportedUtilization();
@@ -145,6 +146,7 @@ abstract contract CometMainInterface is CometCore {
     function baseToken() virtual external view returns (address);
     function baseTokenPriceFeed() virtual external view returns (address);
     function extensionDelegate() virtual external view returns (address);
+    function liquidationModule() virtual external view returns (address);
 
     /// @dev uint64
     function supplyKink() virtual external view returns (uint);

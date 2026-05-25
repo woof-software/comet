@@ -23,6 +23,7 @@ contract CometTest is Test {
                           address(0),
                           address(0),
                           address(0),
+                          address(0),
                           0,
                           0,
                           0,

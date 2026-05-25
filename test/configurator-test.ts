@@ -43,6 +43,7 @@ function convertToEventConfiguration(configuration: ConfigurationStructOutput) {
     configuration.baseToken,
     configuration.baseTokenPriceFeed,
     configuration.extensionDelegate,
+    configuration.liquidationModule,
     configuration.supplyKink.toBigInt(),
     configuration.supplyPerYearInterestRateSlopeLow.toBigInt(),
     configuration.supplyPerYearInterestRateSlopeHigh.toBigInt(),
@@ -1154,6 +1155,95 @@ describe('configurator', function () {
         await expect(
           proxyAdmin.deployAndUpgradeTo(configuratorAsProxy.address, cometProxyAddress)
         ).to.be.revertedWithCustomError(cometAsProxy, 'BadHealthFactor');
+      });
+    });
+  });
+
+  context('liquidation module', function () {
+    let configuratorAsProxy: Configurator;
+    let cometAsProxy: CometWithExtendedAssetList;
+    let proxyAdmin: CometProxyAdmin;
+    let cometProxyAddress: string;
+    
+    let liquidationModule: SignerWithAddress;
+    let unauthorizedUser: SignerWithAddress;
+
+    let snapshot: SnapshotRestorer;
+
+    before(async function () {
+      const signers = await ethers.getSigners();
+      unauthorizedUser = signers[9];
+      liquidationModule = signers[10];
+
+      const protocol = await makeConfigurator({
+        base: 'USDC',
+        assets: {
+          USDC: { decimals: 6, initialPrice: 1 },
+          COMP: { decimals: 18, initialPrice: 100 },
+        },
+        liquidationModule: liquidationModule.address 
+      });
+
+      configuratorAsProxy = protocol.configurator.attach(protocol.configuratorProxy.address);
+      cometAsProxy = protocol.cometWithExtendedAssetList.attach(protocol.cometProxyWithExtendedAssetList.address);
+      proxyAdmin = protocol.proxyAdmin;
+      cometProxyAddress = protocol.cometProxyWithExtendedAssetList.address;
+
+      snapshot = await takeSnapshot();
+    });
+
+    context('governor updates liquidation module and deploys new implementation', function () {
+      const newLiquidationModule = '0x1111111111111111111111111111111111111111';
+      let setLiquidationModuleTx: ContractTransaction;
+
+      after(async () => await snapshot.restore());
+
+      it('configuration and Comet start with the same liquidation module', async function () {
+        expect((await configuratorAsProxy.getConfiguration(cometProxyAddress)).liquidationModule).to.be.equal(liquidationModule.address);
+        expect(await cometAsProxy.liquidationModule()).to.be.equal(liquidationModule.address);
+      });
+
+      it('governor sets liquidation module', async function () {
+        setLiquidationModuleTx = await configuratorAsProxy.setLiquidationModule(cometProxyAddress, newLiquidationModule);
+        await expect(setLiquidationModuleTx).to.not.be.reverted;
+      });
+
+      it('emits SetLiquidationModule event', async function () {
+        await expect(setLiquidationModuleTx).to.emit(configuratorAsProxy, 'SetLiquidationModule').withArgs(
+          cometProxyAddress,
+          liquidationModule.address,
+          newLiquidationModule
+        );
+      });
+
+      it('configuration stores the new liquidation module', async function () {
+        expect((await configuratorAsProxy.getConfiguration(cometProxyAddress)).liquidationModule).to.be.equal(newLiquidationModule);
+      });
+
+      it('Comet keeps the old liquidation module before deploy', async function () {
+        expect(await cometAsProxy.liquidationModule()).to.be.equal(liquidationModule.address);
+      });
+
+      it('proxy admin deploys and upgrades Comet', async function () {
+        await expect(proxyAdmin.deployAndUpgradeTo(configuratorAsProxy.address, cometProxyAddress)).to.not.be.reverted;
+      });
+
+      it('Comet uses the new liquidation module after deploy', async function () {
+        expect(await cometAsProxy.liquidationModule()).to.be.equal(newLiquidationModule);
+      });
+    });
+
+    context('revert when', function () {
+      it('sender is not governor', async function () {
+        await expect(
+          configuratorAsProxy.connect(unauthorizedUser).setLiquidationModule(cometProxyAddress, '0x1111111111111111111111111111111111111111')
+        ).to.be.revertedWithCustomError(configuratorAsProxy, 'Unauthorized');
+      });
+
+      it('liquidation module is set to zero address', async function () {
+        await expect(
+          configuratorAsProxy.setLiquidationModule(cometProxyAddress, ethers.constants.AddressZero)
+        ).to.be.revertedWithCustomError(configuratorAsProxy, 'InvalidAddress');
       });
     });
   });

@@ -28,6 +28,8 @@ contract ScrollComet is CometMainInterface {
     /// @notice The address of the extension contract delegate
     address public override immutable extensionDelegate;
 
+    address public override immutable liquidationModule;
+
     /// @notice The point in the supply rates separating the low interest rate slope and the high interest rate slope (factor)
     /// @dev uint64
     uint public override immutable supplyKink;
@@ -156,6 +158,7 @@ contract ScrollComet is CometMainInterface {
             baseToken = config.baseToken;
             baseTokenPriceFeed = config.baseTokenPriceFeed;
             extensionDelegate = config.extensionDelegate;
+            liquidationModule = config.liquidationModule;
             storeFrontPriceFactor = config.storeFrontPriceFactor;
 
             decimals = decimals_;
