@@ -9,7 +9,7 @@ import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 // The special setups below reproduce cases where current divPrice flooring seizes too little
 // collateral for the closed debt. Tests assert the expected no-loss accounting flow, so the
 // current contract fails at the event/storage step that uses the floored seizure amount.
-describe.skip('partial liquidation: debt closing rounding', function() {
+describe('partial liquidation: debt closing rounding', function() {
   const baseTokenPrice = exp(1, 8);
   const initialBaseFunding = baseTokenPrice * 10_000n;
   const baseBorrowMin = exp(10, 6); // $10
