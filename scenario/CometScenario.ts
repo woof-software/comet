@@ -220,7 +220,10 @@ scenario(
       await context.setNextBaseFeeToZero();
       await configurator.connect(admin.signer).setConfiguration(comet.address, currentConfiguration, { gasPrice: 0 });
       await context.setNextBaseFeeToZero();
-      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, {
+        gasPrice: 0
+      });
+
       await context.setAssets();
     } else {
       const assetInfo = await comet.getAssetInfo(REQUIRED_NUM_ASSETS - 1);
@@ -237,9 +240,12 @@ scenario(
     expect(basicBefore._reserved).to.equal(0);
 
     await targetAsset.approve(albert, comet.address);
-    await albert.safeSupplyAsset({ asset: targetAssetAddress, amount: supplyAmount });
+    await albert.safeSupplyAsset({
+      asset: targetAssetAddress,
+      amount: supplyAmount
+    });
 
-    const expectedReservedAfterSupply = 1 << (targetOffset - 16);
+    const expectedReservedAfterSupply = 1 << (targetOffset - (REQUIRED_NUM_ASSETS - 1));
     const basicAfterSupply = await comet.userBasic(albert.address);
 
     expect(basicAfterSupply._reserved).to.equal(expectedReservedAfterSupply);
