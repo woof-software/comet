@@ -20,6 +20,7 @@ describe('extended pause upgrade test', function () {
   const CONFIGURATOR_ADDRESS = '0x316f9708bB98af7dA9c68C1C3b5e79039cD336E3';
   const GOVERNOR_ADDRESS = '0x6d903f6003cca6255d85cca4d3b5e5146dc33925';
   const ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
+  const LIQUIDATION_MODULE = '0x1111111111111111111111111111111111111111';
 
   // Contracts
   let comet: CometWithExtendedAssetList;
@@ -178,6 +179,11 @@ describe('extended pause upgrade test', function () {
     await configurator
       .connect(governor)
       .setTargetHealthFactor(COMET_ADDRESS, BigNumber.from('1050000000000000000'));
+
+    // Ensure liquidation module is set
+    await configurator
+      .connect(governor)
+      .setLiquidationModule(COMET_ADDRESS, LIQUIDATION_MODULE);
 
     // Deploy new implementation using configurator
     const deployTx = await configurator.connect(governor).deploy(COMET_ADDRESS);

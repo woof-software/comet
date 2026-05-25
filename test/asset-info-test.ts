@@ -103,6 +103,7 @@ describe('asset info', function () {
       baseBorrowMin: 0,
       targetReserves: 0,
       targetHealthFactor: 0,
+      liquidationModule: ethers.constants.AddressZero,
       assetConfigs: Object.entries(assets).reduce((acc, [symbol], _i) => {
         if (symbol != base) {
           acc.push({
