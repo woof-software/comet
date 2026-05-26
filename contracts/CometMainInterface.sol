@@ -146,7 +146,6 @@ abstract contract CometMainInterface is CometCore {
     function baseToken() virtual external view returns (address);
     function baseTokenPriceFeed() virtual external view returns (address);
     function extensionDelegate() virtual external view returns (address);
-    function liquidationModule() virtual external view returns (address);
 
     /// @dev uint64
     function supplyKink() virtual external view returns (uint);
@@ -183,10 +182,13 @@ abstract contract CometMainInterface is CometCore {
     /// @dev uint104
     function targetReserves() virtual external view returns (uint);
 
-    function targetHealthFactor() virtual external view returns (uint);
-
     function numAssets() virtual external view returns (uint8);
     function decimals() virtual external view returns (uint8);
 
     function initializeStorage() virtual external;
+
+    function assetList() virtual external view returns (address);
+    function getUserBasic(address account) virtual external view returns (UserBasic memory);
+    function updateCollateral(address account, AssetInfo memory collateralInfo, uint128 seizedAmount) virtual external;
+    function updateDebtAndPrincipal(address account, int104 oldPrincipal, int256 newBalance) virtual external returns (int256 oldBalance);
 }

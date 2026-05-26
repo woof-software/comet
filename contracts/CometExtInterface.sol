@@ -130,6 +130,7 @@ abstract contract CometExtInterface is CometCore {
      * @param assetIndex The index of the collateral asset to activate.
      */
     function activateCollateral(uint24 assetIndex) virtual external;
+    function isCollateralDeactivated(uint24 assetIndex) virtual external view returns (bool);
 
     function collateralBalanceOf(address account, address asset) virtual external view returns (uint128);
     function baseTrackingAccrued(address account) virtual external view returns (uint64);

@@ -28,8 +28,6 @@ contract Comet is CometMainInterface {
     /// @notice The address of the extension contract delegate
     address public override immutable extensionDelegate;
 
-    address public override immutable liquidationModule;
-
     /// @notice The point in the supply rates separating the low interest rate slope and the high interest rate slope (factor)
     /// @dev uint64
     uint public override immutable supplyKink;
@@ -92,9 +90,6 @@ contract Comet is CometMainInterface {
 
     /// @notice The minimum base token reserves which must be held before collateral is hodled
     uint public override immutable targetReserves;
-
-    /// @notice The target health factor for partial liquidation
-    uint public override immutable targetHealthFactor;
 
     /// @notice The number of decimals for wrapped base token
     uint8 public override immutable decimals;
@@ -160,8 +155,6 @@ contract Comet is CometMainInterface {
             trackingIndexScale = config.trackingIndexScale;
             if (baseScale < BASE_ACCRUAL_SCALE) revert BadDecimals();
             accrualDescaleFactor = baseScale / BASE_ACCRUAL_SCALE;
-
-            targetHealthFactor = config.targetHealthFactor;
 
             baseMinForRewards = config.baseMinForRewards;
             baseTrackingSupplySpeed = config.baseTrackingSupplySpeed;
@@ -1383,4 +1376,9 @@ contract Comet is CometMainInterface {
             default { return(0, returndatasize()) }
         }
     }
+
+    function getUserBasic(address account) external view override returns (UserBasic memory) {}
+    function updateCollateral(address account, AssetInfo memory collateralInfo, uint128 seizedAmount) external override {}
+    function updateDebtAndPrincipal(address account, int104 oldPrincipal, int256 newBalance) external override returns (int256 oldBalance) {}
+    function assetList() external view override returns (address) {}
 }
