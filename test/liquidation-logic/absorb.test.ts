@@ -25,6 +25,7 @@ describe('absorb: general logic', function () {
 
   let alice: SignerWithAddress;
   let absorber: SignerWithAddress;
+  let governor: SignerWithAddress;
 
   let snapshot: SnapshotRestorer;
 
@@ -54,6 +55,7 @@ describe('absorb: general logic', function () {
     priceFeeds['USDC'] = protocol.priceFeeds['USDC'];
 
     [alice, absorber] = protocol.users;
+    governor = protocol.governor;
 
     const allocateAmount = exp(1_000_000, 18);
     for (const token of Object.values(protocol.tokens)) {
@@ -1678,6 +1680,17 @@ describe('absorb: general logic', function () {
       it('absorb reverts because alice is not liquidatable', async () => {
         await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
           .to.be.revertedWithCustomError(comet, 'NotLiquidatable');
+      });
+    });
+
+    context('absorb reverts when liquidation is on pause', function () {
+      it('set liquidation to pause', async () => {
+        await comet.connect(governor).pause(false, false, false, true, false);
+      });
+
+      it('absorb reverts because liquidation is on pause', async () => {
+        await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
+          .to.be.revertedWithCustomError(comet, 'AbsorbPaused');
       });
     });
   });
