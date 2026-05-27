@@ -61,7 +61,7 @@ describe('partial liquidation', function() {
 
     // Make reserves on comet for borrowings
     await baseToken.allocateTo(comet.address, initialBaseFunding);
-    targetHealthFactor = (await comet.targetHealthFactor()).toBigInt();
+    targetHealthFactor = (await protocol.defaultLiquidationModule.targetHealthFactor()).toBigInt();
     
     snapshot = await takeSnapshot();
   });

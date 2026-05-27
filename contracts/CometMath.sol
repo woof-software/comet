@@ -7,6 +7,9 @@ pragma solidity 0.8.15;
  * @author Compound
  */
 contract CometMath {
+    /// @dev The scale for factors
+    uint64 internal constant FACTOR_SCALE = 1e18;
+
     /** Custom errors **/
 
     error InvalidUInt64();
@@ -57,5 +60,33 @@ contract CometMath {
 
     function toBool(uint8 x) internal pure returns (bool) {
         return x != 0;
+    }
+
+    /**
+     * @dev Multiply a `fromScale` quantity by a price, returning a common price quantity
+     */
+    function mulPrice(uint256 n, uint256 price, uint64 fromScale) internal pure returns (uint256) {
+        return n * price / fromScale;
+    }
+
+    /**
+     * @dev Multiply a number by a factor
+     */
+    function mulFactor(uint256 n, uint256 factor) internal pure returns (uint256) {
+        return n * factor / FACTOR_SCALE;
+    }
+
+    /**
+     * @dev Divide a common price quantity by a price, returning a `toScale` quantity
+     */
+    function divPrice(uint256 n, uint256 price, uint64 toScale) internal pure returns (uint256) {
+        return n * toScale / price;
+    }
+
+    /**
+     * @dev Multiply a signed `fromScale` quantity by a price, returning a common price quantity
+     */
+    function signedMulPrice(int256 n, uint256 price, uint64 fromScale) internal pure returns (int256) {
+        return n * signed256(price) / int256(uint256(fromScale));
     }
 }

@@ -52,7 +52,7 @@ describe('partial liquidation: min debt', function() {
     }
 
     await baseToken.allocateTo(comet.address, initialBaseFunding);
-    targetHealthFactor = (await comet.targetHealthFactor()).toBigInt();
+    targetHealthFactor = (await protocol.defaultLiquidationModule.targetHealthFactor()).toBigInt();
     snapshot = await takeSnapshot();
   });
 

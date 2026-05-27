@@ -187,8 +187,14 @@ abstract contract CometMainInterface is CometCore {
 
     function initializeStorage() virtual external;
 
+    /*//////////////////////////////////////////////////////////////
+                        LIQUIDATION MODULE PART
+    //////////////////////////////////////////////////////////////*/
+
     function assetList() virtual external view returns (address);
     function getUserBasic(address account) virtual external view returns (UserBasic memory);
     function updateCollateral(address account, AssetInfo memory collateralInfo, uint128 seizedAmount) virtual external;
     function updateDebtAndPrincipal(address account, int104 oldPrincipal, int256 newBalance) virtual external returns (int256 oldBalance);
+    function isInAssetExternal(uint16 assetsIn, uint8 assetOffset, uint8 _reserved) virtual external view returns (bool);
+    function presentValueExternal(int104 principalValue_) virtual external view returns (int256);
 }

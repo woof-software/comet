@@ -8,7 +8,7 @@ import "./IAssetListFactory.sol";
 import "./IAssetListFactoryHolder.sol";
 import "./IAssetList.sol";
 
-import { IDefaultLiquidationModule } from "./liquidation-module/interfaces/IDefaultLiquidationModule.sol";
+import { IDefaultLiquidationModule } from "./interfaces/liquidation-module/IDefaultLiquidationModule.sol";
 
 /**
  * @title Compound's Comet Contract
@@ -676,38 +676,10 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /**
-     * @dev Multiply a number by a factor
-     */
-    function mulFactor(uint n, uint factor) internal pure returns (uint) {
-        return n * factor / FACTOR_SCALE;
-    }
-
-    /**
      * @dev Divide a number by an amount of base
      */
     function divBaseWei(uint n, uint baseWei) internal view returns (uint) {
         return n * baseScale / baseWei;
-    }
-
-    /**
-     * @dev Multiply a `fromScale` quantity by a price, returning a common price quantity
-     */
-    function mulPrice(uint n, uint price, uint64 fromScale) internal pure returns (uint) {
-        return n * price / fromScale;
-    }
-
-    /**
-     * @dev Multiply a signed `fromScale` quantity by a price, returning a common price quantity
-     */
-    function signedMulPrice(int n, uint price, uint64 fromScale) internal pure returns (int) {
-        return n * signed256(price) / int256(uint256(fromScale));
-    }
-
-    /**
-     * @dev Divide a common price quantity by a price, returning a `toScale` quantity
-     */
-    function divPrice(uint n, uint price, uint64 toScale) internal pure returns (uint) {
-        return n * toScale / price;
     }
 
     /**
@@ -1200,6 +1172,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         emit WithdrawCollateral(src, to, asset, amount);
     }
 
+    // event AbsorbDebt(address indexed absorber, address indexed borrower, uint basePaidOut, uint usdValue);
+
     /**
      * @notice Absorb a list of underwater accounts onto the protocol balance sheet
      * @param absorber The recipient of the incentive paid to the caller of absorb
@@ -1210,8 +1184,28 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
         uint startGas = gasleft();
         accrueInternal();
+
+        int256 newBalance;
+        int104 oldPrincipal;
+        uint256 basePrice;
+        UserBasic memory accountUser;
         for (uint i = 0; i < accounts.length; ) {
-            IDefaultLiquidationModule(liquidationModule).liquidate(absorber, accounts[i]);
+            (newBalance, oldPrincipal, basePrice) = IDefaultLiquidationModule(liquidationModule).liquidate(absorber, accounts[i]);
+
+            int104 newPrincipal = principalValue(newBalance);
+            int256 oldBalance = presentValue(oldPrincipal);
+
+            accountUser = userBasic[accounts[i]];
+
+            updateBasePrincipal(accounts[i], accountUser, newPrincipal);
+
+            totalBorrowBase -= uint104(newPrincipal - oldPrincipal);
+
+            uint256 basePaidOut = unsigned256(newBalance - oldBalance); // Base tokens effectively paid out to the account
+            uint256 valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, uint64(baseScale));
+
+            emit AbsorbDebt(absorber, accounts[i], basePaidOut, valueOfBasePaidOut);
+
             unchecked { ++i; }
         }
         uint gasUsed = startGas - gasleft();
@@ -1254,16 +1248,31 @@ contract CometWithExtendedAssetList is CometMainInterface {
         int256 newBalance
     ) external override onlyLiquidationModule returns (int256 oldBalance) {
         int104 newPrincipal = principalValue(newBalance);
-        oldBalance = presentValue(oldPrincipal);
+
         UserBasic memory accountUser = userBasic[account];
         updateBasePrincipal(account, accountUser, newPrincipal);
+
         totalBorrowBase -= uint104(newPrincipal - oldPrincipal);
+
+        oldBalance = presentValue(oldPrincipal);
     }
 
     function setLiquidationModule(address newLiquidationModule) external {
         if (msg.sender != governor) revert Unauthorized();
         liquidationModule = newLiquidationModule;
     }
+
+    function isInAssetExternal(uint16 assetsIn, uint8 assetOffset, uint8 _reserved) override external view returns (bool) {
+        return isInAsset(assetsIn, assetOffset, _reserved);
+    }
+
+    function presentValueExternal(int104 principalValue_) override external view returns (int256) {
+        return presentValue(principalValue_);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                    
+    //////////////////////////////////////////////////////////////*/
 
     /**
     * @notice The internal method which abstracts the account's collateral value calculation

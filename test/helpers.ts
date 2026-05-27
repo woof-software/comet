@@ -39,9 +39,12 @@ import {
   NonStandardFaucetFeeToken__factory,
   AssetListFactory,
   AssetListFactory__factory,
+  CometHarnessExtendedAssetList,
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
   MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
+  DefaultLiquidationModule,
+  DefaultLiquidationModule__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
@@ -129,6 +132,7 @@ export type Protocol = {
     [symbol: string]: SimplePriceFeed;
   };
   liquidationModule: string;
+  defaultLiquidationModule: DefaultLiquidationModule;
 };
 
 export type ConfiguratorAndProtocol = {
@@ -407,6 +411,11 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   await comet.initializeStorage();
   await cometWithExtendedAssetList.initializeStorage();
 
+  const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
+  const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(cometWithExtendedAssetList.address);
+  await defaultLiquidationModule.deployed();
+  await cometWithExtendedAssetList.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
+
   const baseTokenBalance = opts.baseTokenBalance;
   if (baseTokenBalance) {
     const baseToken = tokens[base];
@@ -429,6 +438,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     unsupportedToken,
     priceFeeds,
     liquidationModule,
+    defaultLiquidationModule,
   };
 }
 
@@ -618,7 +628,23 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
 
   configuration.extensionDelegate = extensionDelegateAssetList.address;
   configuration.targetHealthFactor = exp(1.05, 18);
-  
+
+  const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
+
+  const defaultLiquidationModuleForProxy = await DefaultLiquidationModuleFactory.deploy(cometProxy.address);
+  await defaultLiquidationModuleForProxy.deployed();
+  const cometProxyAsImpl = await ethers.getContractAt('CometHarnessExtendedAssetList', cometProxy.address) as CometHarnessExtendedAssetList;
+  await cometProxyAsImpl.connect(governor).setLiquidationModule(defaultLiquidationModuleForProxy.address);
+
+  const defaultLiquidationModuleForExtProxy = await DefaultLiquidationModuleFactory.deploy(cometProxyWithExtendedAssetList.address);
+  await defaultLiquidationModuleForExtProxy.deployed();
+  const cometExtProxyAsImpl = await ethers.getContractAt('CometHarnessExtendedAssetList', cometProxyWithExtendedAssetList.address) as CometHarnessExtendedAssetList;
+  await cometExtProxyAsImpl.connect(governor).setLiquidationModule(defaultLiquidationModuleForExtProxy.address);
+
+  // Update config in configurator
+  await configuratorAsProxy.connect(governor).setLiquidationModule(cometProxy.address, defaultLiquidationModuleForProxy.address);
+  await configuratorAsProxy.connect(governor).setLiquidationModule(cometProxyWithExtendedAssetList.address, defaultLiquidationModuleForExtProxy.address);
+
   return {
     opts,
     governor,
@@ -642,6 +668,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     unsupportedToken,
     priceFeeds,
     liquidationModule,
+    defaultLiquidationModule: defaultLiquidationModuleForExtProxy,
   };
 }
 
