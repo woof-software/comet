@@ -1649,3 +1649,18 @@ export function applyL1ToL2Alias(address: string) {
 export function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
   return !!log?.raw?.topics && !!log?.raw?.data;
 }
+
+/**
+ * @notice Checks if the market is fresh (no supplies and no borrows)
+ * @dev A fresh market has totalSupplyBase == 0 and totalBorrowBase == 0
+ *      This is used to filter scenarios that should only run on new/empty markets
+ */
+export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const totals = await comet.totalsBasic();
+    return totals.totalSupplyBase.isZero() && totals.totalBorrowBase.isZero();
+  } catch (error) {
+    return false;
+  }
+}
