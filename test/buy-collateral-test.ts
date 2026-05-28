@@ -17,6 +17,8 @@ describe('buyCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 1,
+          borrowCF: exp(0.7, 18),
+          liquidateCF: exp(0.75, 18),
           liquidationFactor: exp(0.8, 18),
         },
       }
@@ -86,6 +88,8 @@ describe('buyCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 1,
+          borrowCF: exp(0.7, 18),
+          liquidateCF: exp(0.75, 18),
           liquidationFactor: exp(0.8, 18),
         },
       }
@@ -148,7 +152,9 @@ describe('buyCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 1,
-          liquidationFactor: exp(1.0, 18),
+          borrowCF: exp(0.7, 18),
+          liquidateCF: exp(0.75, 18),
+          liquidationFactor: exp(1, 18),
         },
       }
     });
@@ -196,7 +202,9 @@ describe('buyCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 1,
-          liquidationFactor: exp(1.0, 18),
+          borrowCF: exp(0.7, 18),
+          liquidateCF: exp(0.75, 18),
+          liquidationFactor: exp(0.8, 18),
         },
       }
     });
@@ -339,6 +347,8 @@ describe('buyCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 1,
+          borrowCF: exp(0.7, 18),
+          liquidateCF: exp(0.75, 18),
           liquidationFactor: exp(0.8, 18),
           factory: (await ethers.getContractFactory('NonStandardFaucetFeeToken')) as NonStandardFaucetFeeToken__factory,
         },

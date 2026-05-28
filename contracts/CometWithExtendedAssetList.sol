@@ -94,6 +94,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
     /// @notice The minimum base token reserves which must be held before collateral is hodled
     uint public override immutable targetReserves;
 
+    /// @notice The target health factor for partial liquidation
+    uint256 public override immutable targetHealthFactor;
+
     /// @notice The number of decimals for wrapped base token
     uint8 public override immutable decimals;
 
@@ -108,6 +111,13 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
     uint8 internal constant MAX_ASSETS_FOR_ASSET_LIST = 24;
 
+    /// @dev The protocol only supports 200% utilization on which borrows are allowed
+    /// It keeps healthy state of the market, with no over-utilization leading to illiquidity,
+    /// and keeps protocol reserves from exhaustion
+    uint256 public constant MAX_SUPPORTED_UTILIZATION = 2e18;
+
+    uint64 internal constant MIN_TARGET_HEALTH_FACTOR = 105e16;
+
     /**
      * @notice Construct a new protocol instance
      * @param config The mapping of initial/constant parameters
@@ -116,10 +126,13 @@ contract CometWithExtendedAssetList is CometMainInterface {
         // Sanity checks
         uint8 decimals_ = IERC20NonStandard(config.baseToken).decimals();
         if (decimals_ > MAX_BASE_DECIMALS) revert BadDecimals();
+        uint64 baseScale_ = uint64(10 ** decimals_);
+        if (baseScale_ < BASE_ACCRUAL_SCALE) revert BadDecimals();
         if (config.storeFrontPriceFactor > FACTOR_SCALE) revert BadDiscount();
         if (config.assetConfigs.length > MAX_ASSETS_FOR_ASSET_LIST) revert TooManyAssets();
         if (config.baseMinForRewards == 0) revert BadMinimum();
         if (IPriceFeed(config.baseTokenPriceFeed).decimals() != PRICE_FEED_DECIMALS) revert BadDecimals();
+        if (config.targetHealthFactor < MIN_TARGET_HEALTH_FACTOR) revert BadHealthFactor();
 
         // Copy configuration
         unchecked {
@@ -129,19 +142,16 @@ contract CometWithExtendedAssetList is CometMainInterface {
             baseTokenPriceFeed = config.baseTokenPriceFeed;
             extensionDelegate = config.extensionDelegate;
             storeFrontPriceFactor = config.storeFrontPriceFactor;
-
             decimals = decimals_;
-            baseScale = uint64(10 ** decimals_);
+            baseScale = baseScale_;
             trackingIndexScale = config.trackingIndexScale;
-            if (baseScale < BASE_ACCRUAL_SCALE) revert BadDecimals();
             accrualDescaleFactor = baseScale / BASE_ACCRUAL_SCALE;
-
             baseMinForRewards = config.baseMinForRewards;
             baseTrackingSupplySpeed = config.baseTrackingSupplySpeed;
             baseTrackingBorrowSpeed = config.baseTrackingBorrowSpeed;
-
             baseBorrowMin = config.baseBorrowMin;
             targetReserves = config.targetReserves;
+            targetHealthFactor = config.targetHealthFactor;
         }
 
         // Set interest rate model configs
@@ -261,6 +271,19 @@ contract CometWithExtendedAssetList is CometMainInterface {
             baseSupplyIndex_ += safe64(mulFactor(baseSupplyIndex_, supplyRate * timeElapsed));
             baseBorrowIndex_ += safe64(mulFactor(baseBorrowIndex_, borrowRate * timeElapsed));
         }
+
+        /// @dev Prevent lenders' illiquidity when there are no borrowers
+        /// In markets with reserves and lenders but no borrows, lenders earn the base supply rate
+        /// funded from reserves. Without this cap, totalSupply() could exceed the actual token balance,
+        /// making it impossible for lenders to withdraw their full entitled amount.
+        /// This safeguard recalculates the supply index to match the available balance exactly,
+        /// ensuring withdrawals remain possible even when interest accrual outpaces reserves.
+        if (totalBorrowBase == 0 && totalSupplyBase > 0) {
+            uint256 baseBalance = IERC20NonStandard(baseToken).balanceOf(address(this));
+            if (presentValueSupply(baseSupplyIndex_, totalSupplyBase) > baseBalance) 
+                baseSupplyIndex_ = safe64((baseBalance * BASE_INDEX_SCALE) / totalSupplyBase);
+        }
+
         return (baseSupplyIndex_, baseBorrowIndex_);
     }
 
@@ -283,13 +306,24 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /**
-     * @notice Accrue interest and rewards for an account
-     **/
-    function accrueAccount(address account) override external {
+     * @dev Accrue interest and rewards for an account
+     * @param account The account to accrue interest and rewards for
+     * @dev Function is internal to allow accrual for account inside supplying, transferring and borrowing collateral functions
+     */
+    function accrueAccountInternal(address account) internal {
         accrueInternal();
 
         UserBasic memory basic = userBasic[account];
         updateBasePrincipal(account, basic, basic.principal);
+    }
+
+    /**
+     * @notice Accrue interest and rewards for an account
+     * @param account The account to accrue interest and rewards for
+     * @dev This function is splitted to allow accrueAccountInternal to be called from other functions
+     **/
+    function accrueAccount(address account) override external {
+        accrueAccountInternal(account);
     }
 
     /**
@@ -298,6 +332,20 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @return The per second supply rate at `utilization`
      */
     function getSupplyRate(uint utilization) override public view returns (uint64) {
+        /// No supply - no supply interest
+        if (totalSupplyBase == 0) return 0;
+
+        /// In several situations new market with reserves and have lenders, but may not have borrows
+        /// In such case, lenders will farm on this market on the base supply per second, until reserves are exhausted
+        /// So, we limit the farming possibility by the size of reserves:
+        /// - for the new market with no borrows, the balance consists of reserves and supplied base asset
+        /// - totalSupply() will grow based on the base rate until it will reach the available balance
+        /// - once it happens - we cut off the supply rate to avoid illiquidity (when lenders will not be able to
+        ///   withdraw as there is no tokens on the Comet balance
+        if (utilization == 0 && supplyPerSecondInterestRateBase != 0) {
+            if (presentValueSupply(baseSupplyIndex, totalSupplyBase) >= IERC20NonStandard(baseToken).balanceOf(address(this))) return 0;
+        }
+
         if (utilization <= supplyKink) {
             // interestRateBase + interestRateSlopeLow * utilization
             return safe64(supplyPerSecondInterestRateBase + mulFactor(supplyPerSecondInterestRateSlopeLow, utilization));
@@ -313,6 +361,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @return The per second borrow rate at `utilization`
      */
     function getBorrowRate(uint utilization) override public view returns (uint64) {
+         /// No borrow - no borrow interest
+        if (totalBorrowBase == 0) return 0;
+
         if (utilization <= borrowKink) {
             // interestRateBase + interestRateSlopeLow * utilization
             return safe64(borrowPerSecondInterestRateBase + mulFactor(borrowPerSecondInterestRateSlopeLow, utilization));
@@ -375,82 +426,47 @@ contract CometWithExtendedAssetList is CometMainInterface {
     function isBorrowCollateralized(address account) override public view returns (bool) {
         int104 principal = userBasic[account].principal;
 
-        if (principal >= 0) {
-            return true;
-        }
+        if (principal >= 0) return true;
 
-        uint16 assetsIn = userBasic[account].assetsIn;
-        uint8 _reserved = userBasic[account]._reserved;
-        int liquidity = signedMulPrice(
+        int256 debt = signedMulPrice(
             presentValue(principal),
             getPrice(baseTokenPriceFeed),
             uint64(baseScale)
         );
 
-        for (uint8 i = 0; i < numAssets; ) {
-            if (isInAsset(assetsIn, i, _reserved)) {
-                if (liquidity >= 0) {
-                    return true;
-                }
+        (uint256 liquidity, ) = _getLiquidity(account, false, new uint256[](0));
 
-                AssetInfo memory asset = getAssetInfo(i);
-                uint newAmount = mulPrice(
-                    userCollateral[account][asset.asset].balance,
-                    getPrice(asset.priceFeed),
-                    asset.scale
-                );
-                liquidity += signed256(mulFactor(
-                    newAmount,
-                    asset.borrowCollateralFactor
-                ));
-            }
-            unchecked { i++; }
-        }
-
-        return liquidity >= 0;
+        return (debt + int256(liquidity) >= 0);
     }
 
     /**
      * @notice Check whether an account has enough collateral to not be liquidated
      * @param account The address to check
      * @return Whether the account is minimally collateralized enough to not be liquidated
+     *
+     * @dev Intentionally does NOT check isCollateralDeactivated. Unlike isBorrowCollateralized,
+     *      which reverts on deactivated collateral to block borrower actions, this function
+     *      must always return a result so that liquidation remains possible. A stuck borrower
+     *      who cannot withdraw deactivated collateral (see withdrawCollateral) relies on
+     *      liquidation as their only exit path. If isLiquidatable reverted on deactivated
+     *      collateral, the borrower would be permanently frozen with no way out.
+     *
+     *      When liquidateCollateralFactor is 0 for the deactivated asset, it contributes
+     *      nothing to the liquidity calculation, making the account easier to liquidate.
      */
     function isLiquidatable(address account) override public view returns (bool) {
         int104 principal = userBasic[account].principal;
 
-        if (principal >= 0) {
-            return false;
-        }
+        if (principal >= 0) return false;
 
-        uint16 assetsIn = userBasic[account].assetsIn;
-        uint8 _reserved = userBasic[account]._reserved;
-        int liquidity = signedMulPrice(
+        int256 debt = signedMulPrice(
             presentValue(principal),
             getPrice(baseTokenPriceFeed),
             uint64(baseScale)
         );
 
-        for (uint8 i = 0; i < numAssets; ) {
-            if (isInAsset(assetsIn, i, _reserved)) {
-                if (liquidity >= 0) {
-                    return false;
-                }
-
-                AssetInfo memory asset = getAssetInfo(i);
-                uint newAmount = mulPrice(
-                    userCollateral[account][asset.asset].balance,
-                    getPrice(asset.priceFeed),
-                    asset.scale
-                );
-                liquidity += signed256(mulFactor(
-                    newAmount,
-                    asset.liquidateCollateralFactor
-                ));
-            }
-            unchecked { i++; }
-        }
-
-        return liquidity < 0;
+        (uint256 liquidity, ) = _getLiquidity(account, true, new uint256[](0));
+        return debt + int256(liquidity) < 0;
     }
 
     /**
@@ -549,6 +565,118 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /**
+     * @return Whether or not lenders withdraw actions are paused
+     */
+    function isLendersWithdrawPaused() public view returns (bool) {
+        return (extendedPauseFlags & (uint24(1) << PAUSE_LENDERS_WITHDRAW_OFFSET)) != 0;
+    }
+
+    /**
+     * @return Whether or not borrowers withdraw actions are paused
+     */
+    function isBorrowersWithdrawPaused() public view returns (bool) {
+        return (extendedPauseFlags & (uint24(1) << PAUSE_BORROWERS_WITHDRAW_OFFSET)) != 0;
+    }
+
+    /**
+     * @param assetIndex The index of the asset (offset)
+     * @return Whether or not collateral asset withdraw actions are paused
+     */
+    function isCollateralAssetWithdrawPaused(uint24 assetIndex)  public view returns (bool) {
+        return (collateralsWithdrawPauseFlags & (uint24(1) << assetIndex)) != 0;
+    }
+
+    /**
+     * @return Whether or not collateral withdraw actions are paused
+     */
+    function isCollateralWithdrawPaused() public view returns (bool) {
+        return (extendedPauseFlags & (uint24(1) << PAUSE_COLLATERALS_WITHDRAW_OFFSET)) != 0;
+    }
+
+    /**
+     * @return Whether or not collateral supply actions are paused
+     */
+    function isCollateralSupplyPaused() public view returns (bool) {
+        return (extendedPauseFlags & (uint24(1) << PAUSE_COLLATERAL_SUPPLY_OFFSET)) != 0;
+    }
+
+    /**
+     * @return Whether or not base supply actions are paused
+     */
+    function isBaseSupplyPaused() public view returns (bool) {
+        return (extendedPauseFlags & (uint24(1) << PAUSE_BASE_SUPPLY_OFFSET)) != 0;
+    }
+
+    /**
+     * @param assetIndex The index of the asset (offset)
+     * @return Whether or not collateral asset supply actions are paused
+     */
+    function isCollateralAssetSupplyPaused(uint24 assetIndex) public view returns (bool) {
+        return (collateralsSupplyPauseFlags & (uint24(1) << assetIndex)) != 0;
+    }
+
+    /**
+     * @return Whether or not lenders transfer actions are paused
+     */
+    function isLendersTransferPaused() public view returns (bool) {
+        return (extendedPauseFlags & (uint24(1) << PAUSE_LENDERS_TRANSFER_OFFSET)) != 0;
+    }
+
+    /**
+     * @return Whether or not borrowers transfer actions are paused
+     */
+    function isBorrowersTransferPaused() public view returns (bool) {
+        return (extendedPauseFlags & (uint24(1) << PAUSE_BORROWERS_TRANSFER_OFFSET)) != 0;
+    }
+
+    /**
+     * @param assetIndex The index of the asset (offset)
+     * @return Whether or not collateral asset transfer actions are paused
+     */
+    function isCollateralAssetTransferPaused(uint24 assetIndex) public view returns (bool) {
+        return (collateralsTransferPauseFlags & (uint24(1) << assetIndex)) != 0;
+    }
+
+    /**
+     * @return Whether or not collateral transfer actions are paused
+     */
+    function isCollateralTransferPaused() public view returns (bool) {
+        return (extendedPauseFlags & (uint24(1) << PAUSE_COLLATERALS_TRANSFER_OFFSET)) != 0;
+    }
+
+    /**
+     * @notice Check if a collateral asset is deactivated
+     * @param assetIndex The index of the asset
+     * @return Whether the collateral asset is deactivated
+     *
+     * Deactivation is an emergency action only. It can be called and executed
+     * immediately by the pause guardian via `deactivateCollateral`.
+     * When executed, the asset's bit is set in `deactivatedCollaterals`, and
+     * supply and transfer for that collateral are paused.
+     *
+     * ─── Impact on borrowers holding deactivated collateral ─────────────────────
+     *
+     * If a borrower still has debt and still holds deactivated collateral, borrow-side
+     * actions are blocked because `isBorrowCollateralized` reverts with
+     * `TokenIsDeactivated` when that asset is encountered in `assetsIn`.
+     *
+     * The borrower then has two options:
+     *
+     *   1. Repay debt until principal is > 0 (i.e. no borrow position). This avoids
+     *      collateral liquidity checks in `isBorrowCollateralized`, allowing the borrower
+     *      to withdraw the deactivated collateral.
+     *
+     *   2. Wait for liquidation (`absorbInternal`), where collateral is seized and debt
+     *      is absorbed according to the protocol's liquidation rules.
+     *
+     * If a user is not a borrower (no debt / principal >= 0), they can withdraw
+     * deactivated collateral without these borrow-side restrictions.
+     */
+    function isCollateralDeactivated(uint24 assetIndex) public view returns (bool) {
+        return (deactivatedCollaterals & (uint24(1) << assetIndex)) != 0;
+    }
+
+    /**
      * @dev Multiply a number by a factor
      */
     function mulFactor(uint n, uint factor) internal pure returns (uint) {
@@ -629,7 +757,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /**
-     * @dev Write updated principal to store and tracking participation
+     * @dev Updates the base principal for an account and writes the result to storage.
+     * @param basic copy of userBasic[account]. Function modifies it in-place via memory reference.
      */
     function updateBasePrincipal(address account, UserBasic memory basic, int104 principalNew) internal {
         int104 principal = basic.principal;
@@ -706,7 +835,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @param amount The quantity to supply
      */
     function supply(address asset, uint amount) override external {
-        return supplyInternal(msg.sender, msg.sender, msg.sender, asset, amount);
+        return supplyInternal(msg.sender, msg.sender, asset, amount);
     }
 
     /**
@@ -716,7 +845,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @param amount The quantity to supply
      */
     function supplyTo(address dst, address asset, uint amount) override external {
-        return supplyInternal(msg.sender, msg.sender, dst, asset, amount);
+        return supplyInternal(msg.sender, dst, asset, amount);
     }
 
     /**
@@ -727,23 +856,25 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @param amount The quantity to supply
      */
     function supplyFrom(address from, address dst, address asset, uint amount) override external {
-        return supplyInternal(msg.sender, from, dst, asset, amount);
+        return supplyInternal(from, dst, asset, amount);
     }
 
     /**
      * @dev Supply either collateral or base asset, depending on the asset, if operator is allowed
      * @dev Note: Specifying an `amount` of uint256.max will repay all of `dst`'s accrued base borrow balance
      */
-    function supplyInternal(address operator, address from, address dst, address asset, uint amount) internal nonReentrant {
+    function supplyInternal(address from, address dst, address asset, uint amount) internal nonReentrant {
         if (isSupplyPaused()) revert Paused();
-        if (!hasPermission(from, operator)) revert Unauthorized();
+        if (!hasPermission(from, msg.sender)) revert Unauthorized();
 
         if (asset == baseToken) {
+            if (isBaseSupplyPaused()) revert BaseSupplyPaused();
             if (amount == type(uint256).max) {
                 amount = borrowBalanceOf(dst);
             }
             return supplyBase(from, dst, amount);
         } else {
+            if (isCollateralSupplyPaused()) revert CollateralSupplyPaused();
             return supplyCollateral(from, dst, asset, safe128(amount));
         }
     }
@@ -753,7 +884,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
      */
     function supplyBase(address from, address dst, uint256 amount) internal {
         amount = doTransferIn(baseToken, from, amount);
-
         accrueInternal();
 
         UserBasic memory dstUser = userBasic[dst];
@@ -779,9 +909,14 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @dev Supply an amount of collateral asset from `from` to dst
      */
     function supplyCollateral(address from, address dst, address asset, uint128 amount) internal {
+        AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
+        uint8 offset = assetInfo.offset;
+
+        if (isCollateralAssetSupplyPaused(offset)) revert CollateralAssetSupplyPaused(offset);
+        accrueAccountInternal(dst);
+
         amount = safe128(doTransferIn(asset, from, amount));
 
-        AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
         TotalsCollateral memory totals = totalsCollateral[asset];
         totals.totalSupplyAsset += amount;
         if (totals.totalSupplyAsset > assetInfo.supplyCap) revert SupplyCapExceeded();
@@ -856,6 +991,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
             }
             return transferBase(src, dst, amount);
         } else {
+            if (isCollateralTransferPaused()) revert CollateralTransferPaused();
             return transferCollateral(src, dst, asset, safe128(amount));
         }
     }
@@ -887,8 +1023,22 @@ contract CometWithExtendedAssetList is CometMainInterface {
         updateBasePrincipal(dst, dstUser, dstPrincipalNew);
 
         if (srcBalance < 0) {
+            if (isBorrowersTransferPaused()) revert BorrowersTransferPaused();
             if (uint256(-srcBalance) < baseBorrowMin) revert BorrowTooSmall();
             if (!isBorrowCollateralized(src)) revert NotCollateralized();
+
+            /// @dev Guard against utilization being pushed above the supported ceiling via a borrow-side transferBase.
+            /// When the source account is in a borrow position, the supply credited to the destination is new
+            /// liquidity that the destination can immediately withdraw. To capture this worst case, utilization is
+            /// evaluated against total supply *excluding* the destination's newly credited amount — i.e. the supply
+            /// that would remain if the destination withdrew right away. This prevents a pattern where a borrower
+            /// transfers base to a fresh account that then withdraws, draining pool liquidity and pushing
+            /// utilization beyond MAX_SUPPORTED_UTILIZATION.
+            uint256 totalSupplyWithoutDst = presentValueSupply(baseSupplyIndex, totalSupplyBase - supplyAmount);
+            uint256 presentTotalBorrow = presentValueBorrow(baseBorrowIndex, totalBorrowBase);
+            if (totalSupplyWithoutDst > 0 && presentTotalBorrow * FACTOR_SCALE / totalSupplyWithoutDst > MAX_SUPPORTED_UTILIZATION) revert ExceedsSupportedUtilization();
+        } else {
+            if (isLendersTransferPaused()) revert LendersTransferPaused();
         }
 
         if (withdrawAmount > 0) {
@@ -913,10 +1063,14 @@ contract CometWithExtendedAssetList is CometMainInterface {
         userCollateral[dst][asset].balance = dstCollateralNew;
 
         AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
+        uint8 offset = assetInfo.offset;
+
+        if (isCollateralAssetTransferPaused(offset)) revert CollateralAssetTransferPaused(offset);
+        accrueAccountInternal(src);
+        accrueAccountInternal(dst);
         updateAssetsIn(src, assetInfo, srcCollateral, srcCollateralNew);
         updateAssetsIn(dst, assetInfo, dstCollateral, dstCollateralNew);
 
-        // Note: no accrue interest, BorrowCF < LiquidationCF covers small changes
         if (!isBorrowCollateralized(src)) revert NotCollateralized();
 
         emit TransferCollateral(src, dst, asset, amount);
@@ -966,6 +1120,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
             }
             return withdrawBase(src, to, amount);
         } else {
+            if (isCollateralWithdrawPaused()) revert CollateralWithdrawPaused();
             return withdrawCollateral(src, to, asset, safe128(amount));
         }
     }
@@ -989,8 +1144,14 @@ contract CometWithExtendedAssetList is CometMainInterface {
         updateBasePrincipal(src, srcUser, srcPrincipalNew);
 
         if (srcBalance < 0) {
+            if (isBorrowersWithdrawPaused()) revert BorrowersWithdrawPaused();
             if (uint256(-srcBalance) < baseBorrowMin) revert BorrowTooSmall();
             if (!isBorrowCollateralized(src)) revert NotCollateralized();
+            /// @dev safeguard against the over-utilization leading to illiquidity and reserves exhaustion
+            /// At this point totals are updated and it is a borrow case, so we can check resulting utilization
+            if (getUtilization() > MAX_SUPPORTED_UTILIZATION) revert ExceedsSupportedUtilization();
+        } else {
+            if (isLendersWithdrawPaused()) revert LendersWithdrawPaused();
         }
 
         doTransferOut(baseToken, to, amount);
@@ -1004,8 +1165,23 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
     /**
      * @dev Withdraw an amount of collateral asset from src to `to`
+     *
+     * Note on deactivated collateral:
+     *   This is the path a borrower must use to remove deactivated collateral from their
+     *   account before they can resume normal operations (see deactivation lifecycle on
+     *   isCollateralDeactivated). If the borrower withdraws ALL of the deactivated asset,
+     *   updateAssetsIn clears its bit from `assetsIn`, so the subsequent
+     *   isBorrowCollateralized call no longer encounters the deactivated asset.
+     *
+     *   However, if removing the deactivated collateral leaves the borrower under-
+     *   collateralized (remaining active collateral is insufficient for the borrow),
+     *   isBorrowCollateralized reverts with NotCollateralized — the borrower is stuck.
+     *   In this case the borrower has no choice but to wait for liquidation, which will
+     *   seize all collateral (including deactivated) and absorb the debt.
      */
     function withdrawCollateral(address src, address to, address asset, uint128 amount) internal {
+        accrueAccountInternal(src);
+        
         uint128 srcCollateral = userCollateral[src][asset].balance;
         uint128 srcCollateralNew = srcCollateral - amount;
 
@@ -1013,9 +1189,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
         userCollateral[src][asset].balance = srcCollateralNew;
 
         AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
+        uint8 offset = assetInfo.offset;
+        if (isCollateralAssetWithdrawPaused(offset)) revert CollateralAssetWithdrawPaused(offset);
+
         updateAssetsIn(src, assetInfo, srcCollateral, srcCollateralNew);
 
-        // Note: no accrue interest, BorrowCF < LiquidationCF covers small changes
         if (!isBorrowCollateralized(src)) revert NotCollateralized();
 
         doTransferOut(asset, to, amount);
@@ -1051,64 +1229,228 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /**
-     * @dev Transfer user's collateral and debt to the protocol itself.
-     */
-    function absorbInternal(address absorber, address account) internal {
-        if (!isLiquidatable(account)) revert NotLiquidatable();
+    * @notice The internal method which abstracts the account's collateral value calculation
+    * @param account The address of the account
+    * @param liquidation Whether to use liquidation factors or borrow factors in the calculation
+    * @param fetchedCollateralPrices Optional array of collateral prices to use instead of fetching them from the price feeds
+    * @return liquidity collateral-factor-weighted sum of collateral USD value for the account
+    * @return collateralPrices array of cached collaterals prices
+    */
+    function _getLiquidity(address account, bool liquidation, uint256[] memory fetchedCollateralPrices) internal view returns (uint256 liquidity, uint256[] memory collateralPrices) {
+        uint16 assetsIn = userBasic[account].assetsIn;
+        uint8 _reserved = userBasic[account]._reserved;
+        uint256 newAmount;
+        AssetInfo memory asset;
 
-        UserBasic memory accountUser = userBasic[account];
-        int104 oldPrincipal = accountUser.principal;
-        int256 oldBalance = presentValue(oldPrincipal);
-        uint16 assetsIn = accountUser.assetsIn;
-        uint8 _reserved = accountUser._reserved;
-
-        uint256 basePrice = getPrice(baseTokenPriceFeed);
-        uint256 deltaValue = 0;
-
-        for (uint8 i = 0; i < numAssets; ) {
+        fetchedCollateralPrices.length == 0 ? collateralPrices = new uint256[](numAssets) : collateralPrices = fetchedCollateralPrices;
+        for (uint8 i; i < numAssets; ++i) {
             if (isInAsset(assetsIn, i, _reserved)) {
-                AssetInfo memory assetInfo = getAssetInfo(i);
-                address asset = assetInfo.asset;
-                uint128 seizeAmount = userCollateral[account][asset].balance;
-                userCollateral[account][asset].balance = 0;
-                totalsCollateral[asset].totalSupplyAsset -= seizeAmount;
+                asset = getAssetInfo(i);
+                
+                if (liquidation) {
+                    // Skip assets that do not count toward the liquidation threshold. It avoids getPrice() call for price feed
+                    // so in case if excluded asset's oracle reverts (e.g. stale, broken, decommissioned),
+                    // it won't block the entire liquidation check, and won't paralyze liquidations of accounts which hold it.
+                    if (asset.liquidateCollateralFactor == 0) continue;
+                } else {
+                    // Block ALL borrow-side actions when the borrower still holds deactivated collateral.
+                    // This revert is intentionally broad: it prevents borrowing, withdrawing other
+                    // collateral, and transferring — even if the remaining active collateral would
+                    // pass the collateralization check on its own. The purpose is to force the
+                    // borrower to withdraw the deactivated collateral FIRST before doing anything
+                    // else (see the deactivation lifecycle comment on isCollateralDeactivated).
+                    //
+                    // If the borrower cannot withdraw the deactivated collateral without becoming
+                    // under-collateralized, they are stuck and must wait for liquidation.
+                    if (isCollateralDeactivated(asset.offset)) revert TokenIsDeactivated(asset.asset);
 
-                uint256 value = mulPrice(seizeAmount, getPrice(assetInfo.priceFeed), assetInfo.scale);
-                deltaValue += mulFactor(value, assetInfo.liquidationFactor);
+                    // Mechanism to skip assets with no borrowing power. It avoids getPrice() call price feed,
+                    // so in case if excluded asset's oracle reverts (e.g. stale, broken, decommissioned),
+                    // it won't block the entire collateralization check, and won't paralyze borrows and transfers.
+                    if (asset.borrowCollateralFactor == 0) { 
+                        continue; 
+                    }
+                }
 
-                emit AbsorbCollateral(absorber, account, asset, seizeAmount, value);
+                if (fetchedCollateralPrices.length == 0) collateralPrices[i] = getPrice(asset.priceFeed);
+
+                newAmount = mulPrice(
+                    userCollateral[account][asset.asset].balance,
+                    collateralPrices[i],
+                    asset.scale
+                );
+                liquidity += mulFactor(
+                    newAmount,
+                    liquidation ? asset.liquidateCollateralFactor : asset.borrowCollateralFactor
+                );
             }
-            unchecked { i++; }
+        }
+    }
+
+    /**
+    * @notice Internal helper used in absorbInternal() per-collateral cycle
+    * @return seizedAmount Collateral amount to cover the debt
+    * @return seizedValue Collateral value scaled by LF, which covers the debt
+    * @return wantedCollateralValue seizedAmount * collateral price
+    */
+    function _processDebtClosing(
+        uint256 debtRemainingValue,
+        AssetInfo memory collateralInfo,
+        uint256 collateralPrice,
+        uint256 collateralAmount
+    ) internal pure returns (uint256 seizedAmount, uint256 seizedValue, uint256 wantedCollateralValue) {
+        wantedCollateralValue = mulPrice(collateralAmount, collateralPrice, collateralInfo.scale);
+        uint256 collateralValueLeft = mulFactor(wantedCollateralValue, collateralInfo.liquidationFactor);
+
+        if (debtRemainingValue < collateralValueLeft) {
+            // collateral amount to seize = (debt value / LF) / price
+            // we need to scale down debt value by LF, as seized collateral value is treated as penalized
+            seizedAmount = divPrice(debtRemainingValue * FACTOR_SCALE / collateralInfo.liquidationFactor, collateralPrice, collateralInfo.scale);
+            seizedValue = debtRemainingValue;
+            wantedCollateralValue = mulPrice(seizedAmount, collateralPrice, collateralInfo.scale);
+        } else {
+            // Collateral is insufficient for full closure — seize all and continue to the next asset.
+            seizedAmount = collateralAmount;
+            seizedValue = collateralValueLeft;
+        }
+    }
+
+    /**
+    * @notice Seizes collateral assets one by one until the account reaches targetHealthFactor
+    *         or all debt is fully repaid. Any unrecoverable shortfall is written off
+    *         as bad debt absorbed by the protocol
+    * @dev Iterates over account collateral assets in index order. Accounts for baseBorrowMin limit
+    * @param absorber The recipient of the incentive paid to the caller of absorb()
+    * @param account  The underwater account whose collateral and debt are being absorbed
+    */
+    function absorbInternal(address absorber, address account) internal {
+        UserBasic memory accountUser = userBasic[account];
+        if (accountUser.principal > 0) revert NotLiquidatable();
+
+        // replicate isLiquidatable() and cache collateral prices for this function execution
+        // liquidity represents value of all collateral's weighted by LCF
+        (uint256 liquidity, uint256[] memory collateralPrices) = _getLiquidity(account, true, new uint256[](0));
+        // cache base asset price
+        uint256 basePrice = getPrice(baseTokenPriceFeed);
+        
+        uint256 debtRemainingValue = mulPrice(uint256(-presentValue(accountUser.principal)), basePrice, uint64(baseScale));
+        if (debtRemainingValue <= liquidity) revert NotLiquidatable();
+
+        // Account's value of all collaterals weighted by BCF - using cached prices
+        (uint256 totalCollateralizedValue, ) = _getLiquidity(account, false, collateralPrices);
+        uint256 minDebtValue = mulPrice(baseBorrowMin, basePrice, uint64(baseScale));
+        
+        AssetInfo memory collateralInfo;
+        uint256 collateralAmount;
+        uint256 collateralValue;
+        uint256 wantedCollateralValue;
+        uint256 seizedAmount;
+        uint256 seizedValue;
+        
+        for (uint8 i; i < numAssets; ++i) {
+            if (debtRemainingValue == 0) break;
+            if (!isInAsset(accountUser.assetsIn, i, accountUser._reserved)) continue;
+
+            collateralInfo = getAssetInfo(i);
+            
+            // Skip non-liquidatable assets - we must not sieze collaterals with LF = 0:
+            // 1. The collateral remains with the borrower: non-liquidatable assets should
+            //    not be absorbed, and their value should not offset the account's debt.
+            // 2. Avoids calling getPrice(): if the oracle is disabled or reverting,
+            //    it would otherwise block liquidation even for assets that *should* be seized.
+            if (collateralInfo.liquidationFactor == 0) continue;
+
+            collateralAmount = userCollateral[account][collateralInfo.asset].balance;
+            collateralValue = mulPrice(collateralAmount, collateralPrices[i], collateralInfo.scale);
+
+            // we derive value from the baseBorrowMin instead of comparing it directly with balance 
+            // as this branch can be taken at any cycle step, not just the 1st step
+            if (debtRemainingValue <= minDebtValue) {
+                (seizedAmount, seizedValue, wantedCollateralValue) = _processDebtClosing(debtRemainingValue, collateralInfo, collateralPrices[i], collateralAmount);
+            }
+            else if (mulFactor(debtRemainingValue, targetHealthFactor) <= totalCollateralizedValue) {
+                // target HF is reached
+                break;
+            }
+            // Calculate the collateral value S to seize in order to restore the account to targetHF
+            //   HF   = health factor = totalCollateralValue / debt
+            //   LF   = liquidationFactor (penalty to seized collateral)
+            //   LCF  = liquidateCollateralFactor
+            //   BCF  = borrowCollateralFactor
+            //
+            // After seizing of one collateral of value S, debt is reduced by: S * LF
+            // Collateralized value of user's position is reduced by: S * BCF
+            // So, expected HF (which we want to be targetHF) after seizing collateral of value S:
+            //   targetHF = (totalCollateralValue - S * BCF) / (debt - S * LF)
+            //
+            // After solving the formula for S:
+            //   S = (targetHF * debt - totalCollateralValue) / (targetHF * LF - BCF)
+            //
+            // The denominator is always positive since with targetHF >= 1:
+            //   LF * targetHF >= LF > LCF > BCF (enforced in Configurator)
+            else {
+                wantedCollateralValue = (mulFactor(debtRemainingValue, targetHealthFactor) - totalCollateralizedValue) * FACTOR_SCALE
+                                    / (mulFactor(collateralInfo.liquidationFactor, targetHealthFactor) - collateralInfo.borrowCollateralFactor);
+
+                // we do not want more collateral than user's debt, though we must descale the value by penalty
+                uint256 maxWantedCollateralValue = debtRemainingValue * FACTOR_SCALE / collateralInfo.liquidationFactor;
+                if (wantedCollateralValue > maxWantedCollateralValue) wantedCollateralValue = maxWantedCollateralValue;
+
+                // So, we want to seize a collateral of value calculated above.
+                //   if user has more collateral than we want, we seize only calculated value
+                //   if user has less collateral value than we want - we seize what we can and move to the next collateral
+                if (wantedCollateralValue < collateralValue) {
+                    seizedAmount = divPrice(wantedCollateralValue, collateralPrices[i], collateralInfo.scale);
+                    seizedValue = mulFactor(wantedCollateralValue, collateralInfo.liquidationFactor);
+
+                    // we can fall below minDebt at this step, so check it on current iteration
+                    if (debtRemainingValue - seizedValue <= minDebtValue) {
+                        (seizedAmount, seizedValue, wantedCollateralValue) = _processDebtClosing(debtRemainingValue, collateralInfo, collateralPrices[i], collateralAmount);
+                    }
+                } else {
+                    seizedAmount = collateralAmount;
+                    seizedValue = mulFactor(collateralValue, collateralInfo.liquidationFactor);
+                    
+                    wantedCollateralValue = collateralValue;
+                }
+            }
+            emit AbsorbCollateral(absorber, account, collateralInfo.asset, seizedAmount, wantedCollateralValue);
+            
+            // Collaterals storage update
+            userCollateral[account][collateralInfo.asset].balance -= uint128(seizedAmount);
+            totalsCollateral[collateralInfo.asset].totalSupplyAsset -= uint128(seizedAmount);
+            updateAssetsIn(account, collateralInfo, uint128(collateralAmount), userCollateral[account][collateralInfo.asset].balance);
+
+            // cycle values update
+            totalCollateralizedValue -= mulFactor(wantedCollateralValue, collateralInfo.borrowCollateralFactor);
+            debtRemainingValue -= seizedValue;
         }
 
-        uint256 deltaBalance = divPrice(deltaValue, basePrice, uint64(baseScale));
-        int256 newBalance = oldBalance + signed256(deltaBalance);
-        // New balance will not be negative, all excess debt absorbed by reserves
-        if (newBalance < 0) {
+        int104 oldPrincipal = accountUser.principal;
+        int256 oldBalance = presentValue(oldPrincipal);
+
+        // After the liquidation user can either have debt closed (balance == 0) or "healthy" debt (negative balance)
+        int256 newBalance = -signed256(divPrice(debtRemainingValue, basePrice, uint64(baseScale)));
+
+        // If balance is negative but not "healthy" - bad debt occured. (no asset brought HF to targetHF)
+        // Zero out any residual shortfall as bad debt absorbed by the protocol.
+        if (newBalance < 0 && totalCollateralizedValue == 0) {
             newBalance = 0;
         }
 
         int104 newPrincipal = principalValue(newBalance);
+        // Note: assetsIn/_reserved bits were mutated by updateAssetsIn during the loop;
+        //       re-read them from storage before updateBasePrincipal writes accountUser back.
+        accountUser.assetsIn = userBasic[account].assetsIn;
+        accountUser._reserved = userBasic[account]._reserved;
         updateBasePrincipal(account, accountUser, newPrincipal);
 
-        // reset assetsIn
-        userBasic[account].assetsIn = 0;
-        userBasic[account]._reserved = 0;
+        totalBorrowBase -= uint104(newPrincipal - oldPrincipal);
 
-        (uint104 repayAmount, uint104 supplyAmount) = repayAndSupplyAmount(oldPrincipal, newPrincipal);
-
-        // Reserves are decreased by increasing total supply and decreasing borrows
-        //  the amount of debt repaid by reserves is `newBalance - oldBalance`
-        totalSupplyBase += supplyAmount;
-        totalBorrowBase -= repayAmount;
-
-        uint256 basePaidOut = unsigned256(newBalance - oldBalance);
+        uint256 basePaidOut = unsigned256(newBalance - oldBalance); // Base tokens effectively paid out to the account
         uint256 valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, uint64(baseScale));
+        
         emit AbsorbDebt(absorber, account, basePaidOut, valueOfBasePaidOut);
-
-        if (newPrincipal > 0) {
-            emit Transfer(address(0), account, presentValueSupply(baseSupplyIndex, unsigned104(newPrincipal)));
-        }
     }
 
     /**
@@ -1148,11 +1490,24 @@ contract CometWithExtendedAssetList is CometMainInterface {
      */
     function quoteCollateral(address asset, uint baseAmount) override public view returns (uint) {
         AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
-        uint256 assetPrice = getPrice(assetInfo.priceFeed);
-        // Store front discount is derived from the collateral asset's liquidationFactor and storeFrontPriceFactor
-        // discount = storeFrontPriceFactor * (1e18 - liquidationFactor)
-        uint256 discountFactor = mulFactor(storeFrontPriceFactor, FACTOR_SCALE - assetInfo.liquidationFactor);
-        uint256 assetPriceDiscounted = mulFactor(assetPrice, FACTOR_SCALE - discountFactor);
+
+        // NOTE: This getPrice() call is intentionally left unguarded. Unlike isBorrowCollateralized
+        // and isLiquidatable — where we skip zero-factor assets to prevent a broken price feed
+        // from paralyzing collateral checks — quoteCollateral is only called from buyCollateral,
+        // which is a voluntary action by an external buyer. If the asset's price feed is disabled
+        // or reverting, it is acceptable (and safer) for the quote to revert: the protocol should
+        // not sell collateral whose price it cannot verify.
+        uint256 assetPriceDiscounted = getPrice(assetInfo.priceFeed);
+
+        // Assets with LF == 0 are non-liquidatable: they are skipped during absorption (see absorbInternal)
+        // and therefore should not receive a liquidation discount. Market price is used isntead.
+        if (assetInfo.liquidationFactor != 0) {
+            // Store front discount is derived from the collateral asset's liquidationFactor and storeFrontPriceFactor
+            // discount = storeFrontPriceFactor * (1e18 - liquidationFactor)
+            uint256 discountFactor = mulFactor(storeFrontPriceFactor, FACTOR_SCALE - assetInfo.liquidationFactor);
+            assetPriceDiscounted = mulFactor(assetPriceDiscounted, FACTOR_SCALE - discountFactor);
+        }
+
         uint256 basePrice = getPrice(baseTokenPriceFeed);
         // # of collateral assets
         // = (TotalValueOfBaseAmount / DiscountedPriceOfCollateralAsset) * assetScale
