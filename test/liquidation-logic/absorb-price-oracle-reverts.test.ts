@@ -82,8 +82,10 @@ describe('collateral price oracle reverts across varying collateral factors duri
   // BCF = 0 shields the borrow collateralization check from the broken oracle, but the
   // liquidation check still requires the oracle (LCF > 0), so absorb remains blocked.
   context('BCF = 0, LCF and LF > 0', function() {
+    const collateralKey = 'COMP';
+
     before(async function() {
-      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
+      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
     });
 
@@ -99,6 +101,8 @@ describe('collateral price oracle reverts across varying collateral factors duri
   // absorb succeeds: all collateral is seized at price 0 and the remaining debt is written
   // off as bad debt absorbed by the protocol.
   context('BCF = 0, LCF = 0, LF > 0', function() {
+    const collateralKey = 'COMP';
+    
     let absorbTx: ContractTransaction;
     let oldBalance: bigint;
     let basePaidOut: bigint;
@@ -116,8 +120,8 @@ describe('collateral price oracle reverts across varying collateral factors duri
     let reservedBefore: number;
 
     before(async function() {
-      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
-      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
+      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
+      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       const userBasic = await comet.userBasic(alice.address);
@@ -129,9 +133,9 @@ describe('collateral price oracle reverts across varying collateral factors duri
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase.toBigInt();
       baseReservesBefore = (await comet.getReserves()).toBigInt();
       cometBaseTokenBalanceBefore = (await baseToken.balanceOf(comet.address)).toBigInt();
-      cometCompTokenBalanceBefore = (await tokens['COMP'].balanceOf(comet.address)).toBigInt();
-      totalSupplyCompBefore = (await comet.totalsCollateral(tokens['COMP'].address)).totalSupplyAsset.toBigInt();
-      compReservesBefore = (await comet.getCollateralReserves(tokens['COMP'].address)).toBigInt();
+      cometCompTokenBalanceBefore = (await tokens[collateralKey].balanceOf(comet.address)).toBigInt();
+      totalSupplyCompBefore = (await comet.totalsCollateral(tokens[collateralKey].address)).totalSupplyAsset.toBigInt();
+      compReservesBefore = (await comet.getCollateralReserves(tokens[collateralKey].address)).toBigInt();
       reservedBefore = userBasic._reserved;
     });
 
@@ -154,7 +158,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
 
     it('calculates COMP collateral value as zero because LCF = 0 skipped the oracle fetch', async () => {
       // collateralValue = collateralAmount * cachedPrice / COMP scale = 1e18 * 0 / 1e18 = 0
-      const assetInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
+      const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       collateralValue = mulPrice(collateralAmount, 0n, assetInfo.scale);
       expect(collateralValue).to.be.equal(0n);
     });
@@ -165,7 +169,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
     });
 
     it('calculates seized debt value as zero', async () => {
-      const assetInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
+      const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       // seizedValue = wantedCollateralValue * LF = 0 regardless of LF being positive.
       seizedValue = mulFactor(wantedCollateralValue, assetInfo.liquidationFactor);
       expect(seizedValue).to.be.equal(0n);
@@ -173,7 +177,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
 
     it('AbsorbCollateral seizes all COMP at value 0 because the price was never fetched', async () => {
       await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
-        absorber.address, alice.address, tokens['COMP'].address, collateralAmount, wantedCollateralValue
+        absorber.address, alice.address, tokens[collateralKey].address, collateralAmount, wantedCollateralValue
       );
     });
 
@@ -185,16 +189,16 @@ describe('collateral price oracle reverts across varying collateral factors duri
     });
 
     it('alice COMP collateral balance is zero', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['COMP'].address)).to.be.equal(0);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address)).to.be.equal(0);
     });
 
     it('comet total supplied COMP is reduced by the seized collateral', async () => {
-      const totalSupplyAssetAfter = (await comet.totalsCollateral(tokens['COMP'].address)).totalSupplyAsset.toBigInt();
+      const totalSupplyAssetAfter = (await comet.totalsCollateral(tokens[collateralKey].address)).totalSupplyAsset.toBigInt();
       expect(totalSupplyAssetAfter).to.be.equal(totalSupplyCompBefore - collateralAmount);
     });
 
     it('comet COMP reserves increase by the seized collateral', async () => {
-      expect((await comet.getCollateralReserves(tokens['COMP'].address)).toBigInt()).to.be.equal(compReservesBefore + collateralAmount);
+      expect((await comet.getCollateralReserves(tokens[collateralKey].address)).toBigInt()).to.be.equal(compReservesBefore + collateralAmount);
     });
 
     it('asset removed from the assetIn list of the user', async () => {
@@ -211,7 +215,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
     });
 
     it('comet ERC20 COMP token balance is unchanged', async () => {
-      expect(await tokens['COMP'].balanceOf(comet.address)).to.be.equal(cometCompTokenBalanceBefore);
+      expect(await tokens[collateralKey].balanceOf(comet.address)).to.be.equal(cometCompTokenBalanceBefore);
     });
 
     it('alice borrow balance is zero', async () => {
@@ -243,6 +247,8 @@ describe('collateral price oracle reverts across varying collateral factors duri
   // in the seizure loop. The debt is written off as bad debt but the collateral stays with
   // the borrower, making the asset effectively non-liquidatable.
   context('BCF = 0, LCF = 0, LF = 0', function() {
+    const collateralKey = 'COMP';
+    
     let absorbTx: ContractTransaction;
     let oldBalance: bigint;
     let basePaidOut: bigint;
@@ -259,9 +265,9 @@ describe('collateral price oracle reverts across varying collateral factors duri
     let reservedBefore: number;
 
     before(async function() {
-      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
-      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
-      await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens['COMP'].address, 0);
+      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
+      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
+      await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       const userBasic = await comet.userBasic(alice.address);
@@ -273,9 +279,9 @@ describe('collateral price oracle reverts across varying collateral factors duri
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase.toBigInt();
       baseReservesBefore = (await comet.getReserves()).toBigInt();
       cometBaseTokenBalanceBefore = (await baseToken.balanceOf(comet.address)).toBigInt();
-      cometCompTokenBalanceBefore = (await tokens['COMP'].balanceOf(comet.address)).toBigInt();
-      totalSupplyCompBefore = (await comet.totalsCollateral(tokens['COMP'].address)).totalSupplyAsset.toBigInt();
-      compReservesBefore = (await comet.getCollateralReserves(tokens['COMP'].address)).toBigInt();
+      cometCompTokenBalanceBefore = (await tokens[collateralKey].balanceOf(comet.address)).toBigInt();
+      totalSupplyCompBefore = (await comet.totalsCollateral(tokens[collateralKey].address)).totalSupplyAsset.toBigInt();
+      compReservesBefore = (await comet.getCollateralReserves(tokens[collateralKey].address)).toBigInt();
       assetsInBefore = userBasic.assetsIn;
       reservedBefore = userBasic._reserved;
     });
@@ -295,7 +301,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
 
     it('calculates COMP collateral value as zero because LCF = 0 skipped the oracle fetch', async () => {
       // collateralValue = collateralAmount * cachedPrice / COMP scale = 1e18 * 0 / 1e18 = 0
-      const assetInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
+      const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       collateralValue = mulPrice(collateralAmount, 0n, assetInfo.scale);
       expect(collateralValue).to.be.equal(0n);
     });
@@ -314,16 +320,16 @@ describe('collateral price oracle reverts across varying collateral factors duri
     });
 
     it('alice COMP collateral balance is unchanged because the asset was not seized', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['COMP'].address)).to.be.equal(collateralAmount);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address)).to.be.equal(collateralAmount);
     });
 
     it('comet total supplied COMP is unchanged because LF = 0 skips collateral seizure', async () => {
-      const totalSupplyAssetAfter = (await comet.totalsCollateral(tokens['COMP'].address)).totalSupplyAsset;
+      const totalSupplyAssetAfter = (await comet.totalsCollateral(tokens[collateralKey].address)).totalSupplyAsset;
       expect(totalSupplyAssetAfter).to.be.equal(totalSupplyCompBefore);
     });
 
     it('comet COMP reserves are unchanged because LF = 0 skips collateral seizure', async () => {
-      expect(await comet.getCollateralReserves(tokens['COMP'].address)).to.be.equal(compReservesBefore);
+      expect(await comet.getCollateralReserves(tokens[collateralKey].address)).to.be.equal(compReservesBefore);
     });
 
     it('asset remains in the assetIn list of the user', async () => {
@@ -339,7 +345,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
     });
 
     it('comet ERC20 COMP token balance is unchanged', async () => {
-      expect(await tokens['COMP'].balanceOf(comet.address)).to.be.equal(cometCompTokenBalanceBefore);
+      expect(await tokens[collateralKey].balanceOf(comet.address)).to.be.equal(cometCompTokenBalanceBefore);
     });
 
     it('alice borrow balance is zero', async () => {
@@ -373,10 +379,12 @@ describe('collateral price oracle reverts across varying collateral factors duri
   // revert with the oracle error because _getLiquidity(true) does not check deactivation and
   // LCF > 0 triggers the oracle call.
   context('deactivated, all factors > 0', function() {
+    const collateralKey = 'COMP';
+    
     before(async function() {
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
-      const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
+      const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
     });
 
@@ -393,11 +401,13 @@ describe('collateral price oracle reverts across varying collateral factors duri
   // otherwise bypass the oracle. The liquidation path (LCF still default > 0) and absorb still
   // revert from the oracle because _getLiquidity(true) never checks deactivation.
   context('deactivated, BCF = 0, LCF and LF > 0', function() {
+    const collateralKey = 'COMP';
+    
     before(async function() {
-      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
+      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
-      const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
+      const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
     });
 
@@ -414,12 +424,14 @@ describe('collateral price oracle reverts across varying collateral factors duri
   // totalCollateralizedValue - that path checks deactivation before the BCF = 0 oracle-skip,
   // blocking absorb even though _getLiquidity(true) succeeded.
   context('deactivated, BCF = 0, LCF = 0, LF > 0', function() {
+    const collateralKey = 'COMP';
+
     before(async function() {
-      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
-      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
+      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
+      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
-      const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
+      const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
     });
 
@@ -430,7 +442,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
       // _getLiquidity(false) call for totalCollateralizedValue hits the deactivation check
       await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
         .to.be.revertedWithCustomError(comet, 'TokenIsDeactivated')
-        .withArgs(tokens['COMP'].address);
+        .withArgs(tokens[collateralKey].address);
     });
   });
 
@@ -439,13 +451,15 @@ describe('collateral price oracle reverts across varying collateral factors duri
   // deactivation blocks that call before the BCF = 0 skip can help, so absorb reverts before bad
   // debt can be written off, even though no collateral would have been seized anyway.
   context('deactivated, all factors are zero', function() {
+    const collateralKey = 'COMP';
+    
     before(async function() {
-      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
-      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
-      await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens['COMP'].address, 0);
+      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
+      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
+      await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
-      const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
+      const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
     });
 
@@ -454,7 +468,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
     it('absorb reverts with TokenIsDeactivated because _getLiquidity(false) inside absorbInternal hits deactivation even after the seizure loop is skipped by LF = 0', async () => {
       await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
         .to.be.revertedWithCustomError(comet, 'TokenIsDeactivated')
-        .withArgs(tokens['COMP'].address);
+        .withArgs(tokens[collateralKey].address);
     });
   });
 });

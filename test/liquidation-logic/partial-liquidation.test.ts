@@ -70,7 +70,7 @@ describe('partial liquidation', function() {
     const collateralAmount = exp(1, 18); // $100 COMP
     const borrowAmount = exp(80, 6); // $80
 
-    const collateralKeys = ['COMP'];
+    const collateralKey = 'COMP';
     let collateralsState: Record<string, CollateralState>;
     let absorbTx: ContractTransaction;
     let totalSupplyBaseBefore: BigNumber;
@@ -86,13 +86,13 @@ describe('partial liquidation', function() {
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['COMP'].address, collateralAmount);
+      await comet.connect(alice).supply(tokens[collateralKey].address, collateralAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Drop price by 7%
-      const compPrice = (await priceFeeds['COMP'].latestRoundData())[1].toBigInt();
+      const compPrice = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
       const newCompPrice = compPrice * 93n / 100n;
-      await priceFeeds['COMP'].connect(alice).setRoundData(0, newCompPrice, 0, 0, 0);
+      await priceFeeds[collateralKey].connect(alice).setRoundData(0, newCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
 
       const principal = (await comet.userBasic(alice.address)).principal;
@@ -104,7 +104,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
+      collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
     });
 
     after(async () => await snapshot.restore());
@@ -119,8 +119,8 @@ describe('partial liquidation', function() {
     });
 
     it('calculates seize amount and seized value for partial liquidation', async () => {
-      const assetInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
-      const compPrice = (await priceFeeds['COMP'].latestRoundData())[1].toBigInt();
+      const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
+      const compPrice = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
 
       // Debt is 80 USDC, so the debt value is $80.
       debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
@@ -141,8 +141,8 @@ describe('partial liquidation', function() {
       // At $93/COMP this seizes about 0.7119 COMP and repays about $59.59 of debt value.
       seizeAmount = divPrice(wantedCollateralValue, compPrice, assetInfo.scale);
       seizedValue = mulFactor(wantedCollateralValue, assetInfo.liquidationFactor);
-      collateralsState['COMP'].seizeAmount = seizeAmount;
-      collateralsState['COMP'].seizedValue = seizedValue;
+      collateralsState[collateralKey].seizeAmount = seizeAmount;
+      collateralsState[collateralKey].seizedValue = seizedValue;
     });
 
     it('calculates newBalance after debt is reduced by seized value', async () => {
@@ -181,7 +181,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet ERC20 collateral token balance does not change during absorb', async () => {
-      expect(await tokens['COMP'].balanceOf(comet.address)).to.be.equal(collateralsState['COMP'].tokenBalanceBefore);
+      expect(await tokens[collateralKey].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey].tokenBalanceBefore);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -193,7 +193,7 @@ describe('partial liquidation', function() {
     });
 
     it('alice collateral balance is reduced by the seized amount', async () => {
-      const collateralBalance = await comet.collateralBalanceOf(alice.address, tokens['COMP'].address);
+      const collateralBalance = await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address);
 
       expect(collateralBalance).to.be.equal(collateralAmount - seizeAmount);
     });
@@ -207,9 +207,9 @@ describe('partial liquidation', function() {
     });
 
     it('comet total supplied collateral is reduced by the seized amount', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['COMP'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['COMP'].totalsCollateralBefore.sub(seizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey].totalsCollateralBefore.sub(seizeAmount));
     });
 
     it('comet total borrow base is reduced by the base paid out', async () => {
@@ -223,7 +223,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet collateral reserves increase by the seized amount', async () => {
-      expect(await comet.getCollateralReserves(tokens['COMP'].address)).to.be.equal(collateralsState['COMP'].collateralReservesBefore.add(seizeAmount));
+      expect(await comet.getCollateralReserves(tokens[collateralKey].address)).to.be.equal(collateralsState[collateralKey].collateralReservesBefore.add(seizeAmount));
     });
 
     it('comet total supply base is unchanged', async () => {
@@ -235,7 +235,7 @@ describe('partial liquidation', function() {
     const collateralAmount = exp(100, 18); // 100 LDO, initially worth $200
     const borrowAmount = exp(80, 6); // $80
 
-    const collateralKeys = ['LDO'];
+    const collateralKey = 'LDO';
     let collateralsState: Record<string, CollateralState>;
     let absorbTx: ContractTransaction;
     let totalSupplyBaseBefore: BigNumber;
@@ -251,14 +251,14 @@ describe('partial liquidation', function() {
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['LDO'].address, collateralAmount);
+      await comet.connect(alice).supply(tokens[collateralKey].address, collateralAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Drop LDO by 45% from $2 to $1.10. 100 LDO is now worth $110.
       // Remaining debt after partial seizure ≈ $21.68, which is above baseBorrowMin ($10).
-      const ldoPrice = (await priceFeeds['LDO'].latestRoundData())[1].toBigInt();
+      const ldoPrice = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
       const newLdoPrice = ldoPrice * 55n / 100n;
-      await priceFeeds['LDO'].connect(alice).setRoundData(0, newLdoPrice, 0, 0, 0);
+      await priceFeeds[collateralKey].connect(alice).setRoundData(0, newLdoPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
 
       const principal = (await comet.userBasic(alice.address)).principal;
@@ -270,7 +270,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
+      collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
     });
 
     after(async () => await snapshot.restore());
@@ -285,8 +285,8 @@ describe('partial liquidation', function() {
     });
 
     it('calculates seize amount and seized value for partial liquidation', async () => {
-      const assetInfo = await comet.getAssetInfoByAddress(tokens['LDO'].address);
-      const ldoPrice = (await priceFeeds['LDO'].latestRoundData())[1];
+      const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
+      const ldoPrice = (await priceFeeds[collateralKey].latestRoundData())[1];
 
       // Debt is $80.
       debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
@@ -337,7 +337,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet ERC20 collateral token balance does not change during absorb', async () => {
-      expect(await tokens['LDO'].balanceOf(comet.address)).to.be.equal(collateralsState['LDO'].tokenBalanceBefore);
+      expect(await tokens[collateralKey].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey].tokenBalanceBefore);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -349,7 +349,7 @@ describe('partial liquidation', function() {
     });
 
     it('alice collateral balance is reduced by the seized amount', async () => {
-      const collateralBalance = await comet.collateralBalanceOf(alice.address, tokens['LDO'].address);
+      const collateralBalance = await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address);
 
       expect(collateralBalance).to.be.equal(collateralAmount - seizeAmount);
     });
@@ -363,9 +363,9 @@ describe('partial liquidation', function() {
     });
 
     it('comet total supplied collateral is reduced by the seized amount', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['LDO'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['LDO'].totalsCollateralBefore.sub(seizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey].totalsCollateralBefore.sub(seizeAmount));
     });
 
     it('comet total borrow base is reduced by the base paid out', async () => {
@@ -379,7 +379,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet collateral reserves increase by the seized amount', async () => {
-      expect(await comet.getCollateralReserves(tokens['LDO'].address)).to.be.equal(collateralsState['LDO'].collateralReservesBefore.add(seizeAmount));
+      expect(await comet.getCollateralReserves(tokens[collateralKey].address)).to.be.equal(collateralsState[collateralKey].collateralReservesBefore.add(seizeAmount));
     });
 
     it('comet total supply base is unchanged', async () => {
@@ -391,7 +391,7 @@ describe('partial liquidation', function() {
     const collateralAmount = exp(100, 18); // 100 sUSDe, initially worth $100
     const borrowAmount = exp(50, 6); // $50
 
-    const collateralKeys = ['sUSDe'];
+    const collateralKey = 'sUSDe';
     let collateralsState: Record<string, CollateralState>;
     let absorbTx: ContractTransaction;
     let totalSupplyBaseBefore: BigNumber;
@@ -407,14 +407,14 @@ describe('partial liquidation', function() {
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['sUSDe'].address, collateralAmount);
+      await comet.connect(alice).supply(tokens[collateralKey].address, collateralAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Drop sUSDe by 40% from $1 to $0.60. 100 sUSDe is now worth $60.
       // Remaining debt after partial seizure ≈ $15.22, which is above baseBorrowMin ($10).
-      const sUsdePrice = (await priceFeeds['sUSDe'].latestRoundData())[1].toBigInt();
+      const sUsdePrice = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
       const newSUsdePrice = sUsdePrice * 60n / 100n;
-      await priceFeeds['sUSDe'].connect(alice).setRoundData(0, newSUsdePrice, 0, 0, 0);
+      await priceFeeds[collateralKey].connect(alice).setRoundData(0, newSUsdePrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
 
       const principal = (await comet.userBasic(alice.address)).principal;
@@ -426,7 +426,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
+      collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
     });
 
     after(async () => await snapshot.restore());
@@ -441,8 +441,8 @@ describe('partial liquidation', function() {
     });
 
     it('calculates seize amount and seized value for partial liquidation', async () => {
-      const assetInfo = await comet.getAssetInfoByAddress(tokens['sUSDe'].address);
-      const sUsdePrice = (await priceFeeds['sUSDe'].latestRoundData())[1];
+      const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
+      const sUsdePrice = (await priceFeeds[collateralKey].latestRoundData())[1];
 
       // Debt is $50.
       debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
@@ -493,7 +493,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet ERC20 collateral token balance does not change during absorb', async () => {
-      expect(await tokens['sUSDe'].balanceOf(comet.address)).to.be.equal(collateralsState['sUSDe'].tokenBalanceBefore);
+      expect(await tokens[collateralKey].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey].tokenBalanceBefore);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -505,7 +505,7 @@ describe('partial liquidation', function() {
     });
 
     it('alice collateral balance is reduced by the seized amount', async () => {
-      const collateralBalance = await comet.collateralBalanceOf(alice.address, tokens['sUSDe'].address);
+      const collateralBalance = await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address);
 
       expect(collateralBalance).to.be.equal(collateralAmount - seizeAmount);
     });
@@ -519,9 +519,9 @@ describe('partial liquidation', function() {
     });
 
     it('comet total supplied collateral is reduced by the seized amount', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['sUSDe'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['sUSDe'].totalsCollateralBefore.sub(seizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey].totalsCollateralBefore.sub(seizeAmount));
     });
 
     it('comet total borrow base is reduced by the base paid out', async () => {
@@ -535,7 +535,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet collateral reserves increase by the seized amount', async () => {
-      expect(await comet.getCollateralReserves(tokens['sUSDe'].address)).to.be.equal(collateralsState['sUSDe'].collateralReservesBefore.add(seizeAmount));
+      expect(await comet.getCollateralReserves(tokens[collateralKey].address)).to.be.equal(collateralsState[collateralKey].collateralReservesBefore.add(seizeAmount));
     });
 
     it('comet total supply base is unchanged', async () => {
@@ -548,7 +548,8 @@ describe('partial liquidation', function() {
     const wethAmount = exp(0.0225, 18); // 0.0225 WETH at $2,000 = $45
     const borrowAmount = exp(80, 6); // $80
 
-    const collateralKeys = ['COMP', 'WETH'];
+    const collateralKey1 = 'COMP';
+    const collateralKey2 = 'WETH';
     let collateralsState: Record<string, CollateralState>;
     let absorbTx: ContractTransaction;
     let totalSupplyBaseBefore: BigNumber;
@@ -562,15 +563,15 @@ describe('partial liquidation', function() {
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['COMP'].address, compAmount);
-      await comet.connect(alice).supply(tokens['WETH'].address, wethAmount);
+      await comet.connect(alice).supply(tokens[collateralKey1].address, compAmount);
+      await comet.connect(alice).supply(tokens[collateralKey2].address, wethAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Drop COMP by 20% to $80. The supplied COMP is now worth $48.
       // WETH stays at $45, enough for partial seizure after COMP is fully seized.
-      const compPrice = (await priceFeeds['COMP'].latestRoundData())[1].toBigInt();
+      const compPrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
       const newCompPrice = compPrice * 80n / 100n;
-      await priceFeeds['COMP'].connect(alice).setRoundData(0, newCompPrice, 0, 0, 0);
+      await priceFeeds[collateralKey1].connect(alice).setRoundData(0, newCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
 
       const principal = (await comet.userBasic(alice.address)).principal;
@@ -582,7 +583,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
+      collateralsState = await makeCollateralStates(comet, tokens, [collateralKey1, collateralKey2]);
     });
 
     after(async () => await snapshot.restore());
@@ -597,10 +598,10 @@ describe('partial liquidation', function() {
     });
 
     it('calculates COMP full seizure values', async () => {
-      const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
-      const wethInfo = await comet.getAssetInfoByAddress(tokens['WETH'].address);
-      const compPrice = (await priceFeeds['COMP'].latestRoundData())[1].toBigInt();
-      const wethPrice = (await priceFeeds['WETH'].latestRoundData())[1].toBigInt();
+      const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
+      const wethInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+      const compPrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+      const wethPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
 
       debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
 
@@ -616,17 +617,17 @@ describe('partial liquidation', function() {
         / (mulFactor(compInfo.liquidationFactor, targetHealthFactor) - compInfo.borrowCollateralFactor.toBigInt());
       expect(wantedCompCollateralValue).to.be.greaterThan(compCollateralValue);
 
-      collateralsState['COMP'].seizeAmount = compAmount;
-      collateralsState['COMP'].seizedValue = mulFactor(compCollateralValue, compInfo.liquidationFactor);
+      collateralsState[collateralKey1].seizeAmount = compAmount;
+      collateralsState[collateralKey1].seizedValue = mulFactor(compCollateralValue, compInfo.liquidationFactor);
     });
 
     it('calculates WETH partial seizure values', async () => {
-      const wethInfo = await comet.getAssetInfoByAddress(tokens['WETH'].address);
-      const wethPrice = (await priceFeeds['WETH'].latestRoundData())[1].toBigInt();
+      const wethInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+      const wethPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
       const wethCollateralValue = mulPrice(wethAmount, wethPrice, wethInfo.scale);
 
       // After COMP full seizure, debt is $80 - $43.20 = $36.80.
-      debtRemainingValue -= collateralsState['COMP'].seizedValue;
+      debtRemainingValue -= collateralsState[collateralKey1].seizedValue;
 
       // WETH is still worth $45, with $33.75 borrow-CF collateral value.
       const totalCollateralizedValue = mulFactor(wethCollateralValue, wethInfo.borrowCollateralFactor);
@@ -637,12 +638,12 @@ describe('partial liquidation', function() {
         / (mulFactor(wethInfo.liquidationFactor, targetHealthFactor) - wethInfo.borrowCollateralFactor.toBigInt());
       expect(wantedWethCollateralValue).to.be.lessThan(wethCollateralValue);
 
-      collateralsState['WETH'].seizeAmount = divPrice(wantedWethCollateralValue, wethPrice, wethInfo.scale);
-      collateralsState['WETH'].seizedValue = mulFactor(wantedWethCollateralValue, wethInfo.liquidationFactor);
+      collateralsState[collateralKey2].seizeAmount = divPrice(wantedWethCollateralValue, wethPrice, wethInfo.scale);
+      collateralsState[collateralKey2].seizedValue = mulFactor(wantedWethCollateralValue, wethInfo.liquidationFactor);
     });
 
     it('calculates newBalance after COMP and WETH reduce debt', async () => {
-      const debtRemainingValueAfterSeize = debtRemainingValue - collateralsState['WETH'].seizedValue;
+      const debtRemainingValueAfterSeize = debtRemainingValue - collateralsState[collateralKey2].seizedValue;
       newBalance = -(debtRemainingValueAfterSeize * baseScale / baseTokenPrice);
     });
 
@@ -673,11 +674,11 @@ describe('partial liquidation', function() {
     });
 
     it('comet ERC20 COMP token balance does not change during absorb', async () => {
-      expect(await tokens['COMP'].balanceOf(comet.address)).to.be.equal(collateralsState['COMP'].tokenBalanceBefore);
+      expect(await tokens[collateralKey1].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey1].tokenBalanceBefore);
     });
 
     it('comet ERC20 WETH token balance does not change during absorb', async () => {
-      expect(await tokens['WETH'].balanceOf(comet.address)).to.be.equal(collateralsState['WETH'].tokenBalanceBefore);
+      expect(await tokens[collateralKey2].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey2].tokenBalanceBefore);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -689,15 +690,15 @@ describe('partial liquidation', function() {
     });
 
     it('alice COMP collateral balance is zero', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['COMP'].address)).to.be.equal(0);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey1].address)).to.be.equal(0);
     });
 
     it('alice WETH collateral balance is reduced by the seized amount', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['WETH'].address)).to.be.equal(wethAmount - collateralsState['WETH'].seizeAmount);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey2].address)).to.be.equal(wethAmount - collateralsState[collateralKey2].seizeAmount);
     });
 
     it('alice assetsIn keeps only WETH', async () => {
-      const wethInfo = await comet.getAssetInfoByAddress(tokens['WETH'].address);
+      const wethInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
       const expectedAssetsIn = 1 << wethInfo.offset;
 
       expect(assetsInBefore).to.not.equal(expectedAssetsIn);
@@ -709,16 +710,16 @@ describe('partial liquidation', function() {
     });
 
     it('comet total supplied COMP is zero', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['COMP'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey1].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['COMP'].totalsCollateralBefore.sub(collateralsState['COMP'].seizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey1].totalsCollateralBefore.sub(collateralsState[collateralKey1].seizeAmount));
       expect(totalSupplyAsset).to.be.equal(0);
     });
 
     it('comet total supplied WETH is reduced by the seized amount', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['WETH'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey2].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['WETH'].totalsCollateralBefore.sub(collateralsState['WETH'].seizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey2].totalsCollateralBefore.sub(collateralsState[collateralKey2].seizeAmount));
       expect(totalSupplyAsset).to.not.be.equal(0);
     });
 
@@ -733,11 +734,11 @@ describe('partial liquidation', function() {
     });
 
     it('comet COMP collateral reserves increase by all seized COMP', async () => {
-      expect(await comet.getCollateralReserves(tokens['COMP'].address)).to.be.equal(collateralsState['COMP'].collateralReservesBefore.add(collateralsState['COMP'].seizeAmount));
+      expect(await comet.getCollateralReserves(tokens[collateralKey1].address)).to.be.equal(collateralsState[collateralKey1].collateralReservesBefore.add(collateralsState[collateralKey1].seizeAmount));
     });
 
     it('comet WETH collateral reserves increase by seized WETH', async () => {
-      expect(await comet.getCollateralReserves(tokens['WETH'].address)).to.be.equal(collateralsState['WETH'].collateralReservesBefore.add(collateralsState['WETH'].seizeAmount));
+      expect(await comet.getCollateralReserves(tokens[collateralKey2].address)).to.be.equal(collateralsState[collateralKey2].collateralReservesBefore.add(collateralsState[collateralKey2].seizeAmount));
     });
 
     it('comet total supply base is unchanged', async () => {
@@ -750,7 +751,8 @@ describe('partial liquidation', function() {
     const ldoAmount = exp(37.5, 18); // 37.5 LDO, worth $75 before the price drop
     const borrowAmount = exp(75, 6); // $75
 
-    const collateralKeys = ['AAVE', 'LDO'];
+    const collateralKey1 = 'AAVE';
+    const collateralKey2 = 'LDO';
     let collateralsState: Record<string, CollateralState>;
     let absorbTx: ContractTransaction;
     let totalSupplyBaseBefore: BigNumber;
@@ -763,15 +765,15 @@ describe('partial liquidation', function() {
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['AAVE'].address, aaveAmount);
-      await comet.connect(alice).supply(tokens['LDO'].address, ldoAmount);
+      await comet.connect(alice).supply(tokens[collateralKey1].address, aaveAmount);
+      await comet.connect(alice).supply(tokens[collateralKey2].address, ldoAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Drop both assets by 20%. AAVE is now worth $48 and LDO is worth $60.
-      const aavePrice = (await priceFeeds['AAVE'].latestRoundData())[1].toBigInt();
-      const ldoPrice = (await priceFeeds['LDO'].latestRoundData())[1].toBigInt();
-      await priceFeeds['AAVE'].connect(alice).setRoundData(0, aavePrice * 80n / 100n, 0, 0, 0);
-      await priceFeeds['LDO'].connect(alice).setRoundData(0, ldoPrice * 80n / 100n, 0, 0, 0);
+      const aavePrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+      const ldoPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
+      await priceFeeds[collateralKey1].connect(alice).setRoundData(0, aavePrice * 80n / 100n, 0, 0, 0);
+      await priceFeeds[collateralKey2].connect(alice).setRoundData(0, ldoPrice * 80n / 100n, 0, 0, 0);
       await comet.accrueAccount(alice.address);
 
       const principal = (await comet.userBasic(alice.address)).principal;
@@ -782,7 +784,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
+      collateralsState = await makeCollateralStates(comet, tokens, [collateralKey1, collateralKey2]);
     });
 
     after(async () => await snapshot.restore());
@@ -797,10 +799,10 @@ describe('partial liquidation', function() {
     });
 
     it('calculates AAVE full seizure values', async () => {
-      const aaveInfo = await comet.getAssetInfoByAddress(tokens['AAVE'].address);
-      const ldoInfo = await comet.getAssetInfoByAddress(tokens['LDO'].address);
-      const aavePrice = (await priceFeeds['AAVE'].latestRoundData())[1].toBigInt();
-      const ldoPrice = (await priceFeeds['LDO'].latestRoundData())[1].toBigInt();
+      const aaveInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
+      const ldoInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+      const aavePrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+      const ldoPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
 
       debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
 
@@ -816,17 +818,17 @@ describe('partial liquidation', function() {
         / (mulFactor(aaveInfo.liquidationFactor, targetHealthFactor) - aaveInfo.borrowCollateralFactor.toBigInt());
       expect(wantedAaveCollateralValue).to.be.greaterThan(aaveCollateralValue);
 
-      collateralsState['AAVE'].seizeAmount = aaveAmount;
-      collateralsState['AAVE'].seizedValue = mulFactor(aaveCollateralValue, aaveInfo.liquidationFactor);
+      collateralsState[collateralKey1].seizeAmount = aaveAmount;
+      collateralsState[collateralKey1].seizedValue = mulFactor(aaveCollateralValue, aaveInfo.liquidationFactor);
     });
 
     it('calculates LDO partial seizure values', async () => {
-      const ldoInfo = await comet.getAssetInfoByAddress(tokens['LDO'].address);
-      const ldoPrice = (await priceFeeds['LDO'].latestRoundData())[1].toBigInt();
+      const ldoInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+      const ldoPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
       const ldoCollateralValue = mulPrice(ldoAmount, ldoPrice, ldoInfo.scale);
 
       // After AAVE full seizure, debt is $75 - $40.80 = $34.20.
-      debtRemainingValue -= collateralsState['AAVE'].seizedValue;
+      debtRemainingValue -= collateralsState[collateralKey1].seizedValue;
 
       // LDO is worth $60, with $33 of borrow-CF collateral value.
       const totalCollateralizedValue = mulFactor(ldoCollateralValue, ldoInfo.borrowCollateralFactor);
@@ -837,12 +839,12 @@ describe('partial liquidation', function() {
         / (mulFactor(ldoInfo.liquidationFactor, targetHealthFactor) - ldoInfo.borrowCollateralFactor.toBigInt());
       expect(wantedLdoCollateralValue).to.be.lessThan(ldoCollateralValue);
 
-      collateralsState['LDO'].seizeAmount = divPrice(wantedLdoCollateralValue, ldoPrice, ldoInfo.scale);
-      collateralsState['LDO'].seizedValue = mulFactor(wantedLdoCollateralValue, ldoInfo.liquidationFactor);
+      collateralsState[collateralKey2].seizeAmount = divPrice(wantedLdoCollateralValue, ldoPrice, ldoInfo.scale);
+      collateralsState[collateralKey2].seizedValue = mulFactor(wantedLdoCollateralValue, ldoInfo.liquidationFactor);
     });
 
     it('calculates newBalance after AAVE and LDO reduce debt', async () => {
-      const debtRemainingValueAfterSeize = debtRemainingValue - collateralsState['LDO'].seizedValue;
+      const debtRemainingValueAfterSeize = debtRemainingValue - collateralsState[collateralKey2].seizedValue;
       newBalance = -(debtRemainingValueAfterSeize * baseScale / baseTokenPrice);
     });
 
@@ -873,11 +875,11 @@ describe('partial liquidation', function() {
     });
 
     it('comet ERC20 AAVE token balance does not change during absorb', async () => {
-      expect(await tokens['AAVE'].balanceOf(comet.address)).to.be.equal(collateralsState['AAVE'].tokenBalanceBefore);
+      expect(await tokens[collateralKey1].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey1].tokenBalanceBefore);
     });
 
     it('comet ERC20 LDO token balance does not change during absorb', async () => {
-      expect(await tokens['LDO'].balanceOf(comet.address)).to.be.equal(collateralsState['LDO'].tokenBalanceBefore);
+      expect(await tokens[collateralKey2].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey2].tokenBalanceBefore);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -889,11 +891,11 @@ describe('partial liquidation', function() {
     });
 
     it('alice AAVE collateral balance is zero', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['AAVE'].address)).to.be.equal(0);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey1].address)).to.be.equal(0);
     });
 
     it('alice LDO collateral balance is reduced by the seized amount', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['LDO'].address)).to.be.equal(ldoAmount - collateralsState['LDO'].seizeAmount);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey2].address)).to.be.equal(ldoAmount - collateralsState[collateralKey2].seizeAmount);
     });
 
     it('alice assetsIn is zero after AAVE is fully seized', async () => {
@@ -905,16 +907,16 @@ describe('partial liquidation', function() {
     });
 
     it('comet total supplied AAVE is zero', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['AAVE'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey1].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['AAVE'].totalsCollateralBefore.sub(collateralsState['AAVE'].seizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey1].totalsCollateralBefore.sub(collateralsState[collateralKey1].seizeAmount));
       expect(totalSupplyAsset).to.be.equal(0);
     });
 
     it('comet total supplied LDO is reduced by the seized amount', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['LDO'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey2].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['LDO'].totalsCollateralBefore.sub(collateralsState['LDO'].seizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey2].totalsCollateralBefore.sub(collateralsState[collateralKey2].seizeAmount));
       expect(totalSupplyAsset).to.not.be.equal(0);
     });
 
@@ -929,11 +931,11 @@ describe('partial liquidation', function() {
     });
 
     it('comet AAVE collateral reserves increase by all seized AAVE', async () => {
-      expect(await comet.getCollateralReserves(tokens['AAVE'].address)).to.be.equal(collateralsState['AAVE'].collateralReservesBefore.add(collateralsState['AAVE'].seizeAmount));
+      expect(await comet.getCollateralReserves(tokens[collateralKey1].address)).to.be.equal(collateralsState[collateralKey1].collateralReservesBefore.add(collateralsState[collateralKey1].seizeAmount));
     });
 
     it('comet LDO collateral reserves increase by seized LDO', async () => {
-      expect(await comet.getCollateralReserves(tokens['LDO'].address)).to.be.equal(collateralsState['LDO'].collateralReservesBefore.add(collateralsState['LDO'].seizeAmount));
+      expect(await comet.getCollateralReserves(tokens[collateralKey2].address)).to.be.equal(collateralsState[collateralKey2].collateralReservesBefore.add(collateralsState[collateralKey2].seizeAmount));
     });
 
     it('comet total supply base is unchanged', async () => {
@@ -946,7 +948,8 @@ describe('partial liquidation', function() {
     const susdeAmount = exp(75, 18); // 75 sUSDe, worth $75 before the price drop
     const borrowAmount = exp(90, 6); // $90
 
-    const collateralKeys = ['USDe', 'sUSDe'];
+    const collateralKey1 = 'USDe';
+    const collateralKey2 = 'sUSDe';
     let collateralsState: Record<string, CollateralState>;
     let absorbTx: ContractTransaction;
     let totalSupplyBaseBefore: BigNumber;
@@ -959,15 +962,15 @@ describe('partial liquidation', function() {
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['USDe'].address, usdeAmount);
-      await comet.connect(alice).supply(tokens['sUSDe'].address, susdeAmount);
+      await comet.connect(alice).supply(tokens[collateralKey1].address, usdeAmount);
+      await comet.connect(alice).supply(tokens[collateralKey2].address, susdeAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Drop both assets by 20%. USDe is now worth $48 and sUSDe is worth $60.
-      const usdePrice = (await priceFeeds['USDe'].latestRoundData())[1].toBigInt();
-      const susdePrice = (await priceFeeds['sUSDe'].latestRoundData())[1].toBigInt();
-      await priceFeeds['USDe'].connect(alice).setRoundData(0, usdePrice * 80n / 100n, 0, 0, 0);
-      await priceFeeds['sUSDe'].connect(alice).setRoundData(0, susdePrice * 80n / 100n, 0, 0, 0);
+      const usdePrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+      const susdePrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
+      await priceFeeds[collateralKey1].connect(alice).setRoundData(0, usdePrice * 80n / 100n, 0, 0, 0);
+      await priceFeeds[collateralKey2].connect(alice).setRoundData(0, susdePrice * 80n / 100n, 0, 0, 0);
       await comet.accrueAccount(alice.address);
 
       const principal = (await comet.userBasic(alice.address)).principal;
@@ -978,7 +981,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
+      collateralsState = await makeCollateralStates(comet, tokens, [collateralKey1, collateralKey2]);
     });
 
     after(async () => await snapshot.restore());
@@ -988,8 +991,8 @@ describe('partial liquidation', function() {
     });
 
     it('alice reserved includes USDe and sUSDe', async () => {
-      const usdeInfo = await comet.getAssetInfoByAddress(tokens['USDe'].address);
-      const susdeInfo = await comet.getAssetInfoByAddress(tokens['sUSDe'].address);
+      const usdeInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
+      const susdeInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
       const expectedReserved = (1 << (usdeInfo.offset - 16)) | (1 << (susdeInfo.offset - 16));
 
       expect((await comet.userBasic(alice.address))._reserved).to.be.equal(expectedReserved);
@@ -1001,10 +1004,10 @@ describe('partial liquidation', function() {
     });
 
     it('calculates USDe full seizure values', async () => {
-      const usdeInfo = await comet.getAssetInfoByAddress(tokens['USDe'].address);
-      const susdeInfo = await comet.getAssetInfoByAddress(tokens['sUSDe'].address);
-      const usdePrice = (await priceFeeds['USDe'].latestRoundData())[1].toBigInt();
-      const susdePrice = (await priceFeeds['sUSDe'].latestRoundData())[1].toBigInt();
+      const usdeInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
+      const susdeInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+      const usdePrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+      const susdePrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
 
       debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
 
@@ -1020,17 +1023,17 @@ describe('partial liquidation', function() {
         / (mulFactor(usdeInfo.liquidationFactor, targetHealthFactor) - usdeInfo.borrowCollateralFactor.toBigInt());
       expect(wantedUsdeCollateralValue).to.be.greaterThan(usdeCollateralValue);
 
-      collateralsState['USDe'].seizeAmount = usdeAmount;
-      collateralsState['USDe'].seizedValue = mulFactor(usdeCollateralValue, usdeInfo.liquidationFactor);
+      collateralsState[collateralKey1].seizeAmount = usdeAmount;
+      collateralsState[collateralKey1].seizedValue = mulFactor(usdeCollateralValue, usdeInfo.liquidationFactor);
     });
 
     it('calculates sUSDe partial seizure values', async () => {
-      const susdeInfo = await comet.getAssetInfoByAddress(tokens['sUSDe'].address);
-      const susdePrice = (await priceFeeds['sUSDe'].latestRoundData())[1].toBigInt();
+      const susdeInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+      const susdePrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
       const susdeCollateralValue = mulPrice(susdeAmount, susdePrice, susdeInfo.scale);
 
       // After USDe full seizure, debt is $90 - $44.16 = $45.84.
-      debtRemainingValue -= collateralsState['USDe'].seizedValue;
+      debtRemainingValue -= collateralsState[collateralKey1].seizedValue;
 
       // sUSDe is worth $60, with $43.20 of borrow-CF collateral value.
       const totalCollateralizedValue = mulFactor(susdeCollateralValue, susdeInfo.borrowCollateralFactor);
@@ -1041,12 +1044,12 @@ describe('partial liquidation', function() {
         / (mulFactor(susdeInfo.liquidationFactor, targetHealthFactor) - susdeInfo.borrowCollateralFactor.toBigInt());
       expect(wantedSusdeCollateralValue).to.be.lessThan(susdeCollateralValue);
 
-      collateralsState['sUSDe'].seizeAmount = divPrice(wantedSusdeCollateralValue, susdePrice, susdeInfo.scale);
-      collateralsState['sUSDe'].seizedValue = mulFactor(wantedSusdeCollateralValue, susdeInfo.liquidationFactor);
+      collateralsState[collateralKey2].seizeAmount = divPrice(wantedSusdeCollateralValue, susdePrice, susdeInfo.scale);
+      collateralsState[collateralKey2].seizedValue = mulFactor(wantedSusdeCollateralValue, susdeInfo.liquidationFactor);
     });
 
     it('calculates newBalance after USDe and sUSDe reduce debt', async () => {
-      const debtRemainingValueAfterSeize = debtRemainingValue - collateralsState['sUSDe'].seizedValue;
+      const debtRemainingValueAfterSeize = debtRemainingValue - collateralsState[collateralKey2].seizedValue;
       newBalance = -(debtRemainingValueAfterSeize * baseScale / baseTokenPrice);
     });
 
@@ -1077,11 +1080,11 @@ describe('partial liquidation', function() {
     });
 
     it('comet ERC20 USDe token balance does not change during absorb', async () => {
-      expect(await tokens['USDe'].balanceOf(comet.address)).to.be.equal(collateralsState['USDe'].tokenBalanceBefore);
+      expect(await tokens[collateralKey1].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey1].tokenBalanceBefore);
     });
 
     it('comet ERC20 sUSDe token balance does not change during absorb', async () => {
-      expect(await tokens['sUSDe'].balanceOf(comet.address)).to.be.equal(collateralsState['sUSDe'].tokenBalanceBefore);
+      expect(await tokens[collateralKey2].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey2].tokenBalanceBefore);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -1093,11 +1096,11 @@ describe('partial liquidation', function() {
     });
 
     it('alice USDe collateral balance is zero', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['USDe'].address)).to.be.equal(0);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey1].address)).to.be.equal(0);
     });
 
     it('alice sUSDe collateral balance is reduced by the seized amount', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['sUSDe'].address)).to.be.equal(susdeAmount - collateralsState['sUSDe'].seizeAmount);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey2].address)).to.be.equal(susdeAmount - collateralsState[collateralKey2].seizeAmount);
     });
 
     it('alice assetsIn remains zero', async () => {
@@ -1105,23 +1108,23 @@ describe('partial liquidation', function() {
     });
 
     it('alice reserved keeps only sUSDe', async () => {
-      const susdeInfo = await comet.getAssetInfoByAddress(tokens['sUSDe'].address);
+      const susdeInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
 
       expect((await comet.userBasic(alice.address))._reserved).to.not.be.equal(reservedBefore);
       expect((await comet.userBasic(alice.address))._reserved).to.be.equal(1 << (susdeInfo.offset - 16));
     });
 
     it('comet total supplied USDe is zero', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['USDe'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey1].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['USDe'].totalsCollateralBefore.sub(collateralsState['USDe'].seizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey1].totalsCollateralBefore.sub(collateralsState[collateralKey1].seizeAmount));
       expect(totalSupplyAsset).to.be.equal(0);
     });
 
     it('comet total supplied sUSDe is reduced by the seized amount', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['sUSDe'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey2].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['sUSDe'].totalsCollateralBefore.sub(collateralsState['sUSDe'].seizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey2].totalsCollateralBefore.sub(collateralsState[collateralKey2].seizeAmount));
       expect(totalSupplyAsset).to.not.be.equal(0);
     });
 
@@ -1136,11 +1139,11 @@ describe('partial liquidation', function() {
     });
 
     it('comet USDe collateral reserves increase by all seized USDe', async () => {
-      expect(await comet.getCollateralReserves(tokens['USDe'].address)).to.be.equal(collateralsState['USDe'].collateralReservesBefore.add(collateralsState['USDe'].seizeAmount));
+      expect(await comet.getCollateralReserves(tokens[collateralKey1].address)).to.be.equal(collateralsState[collateralKey1].collateralReservesBefore.add(collateralsState[collateralKey1].seizeAmount));
     });
 
     it('comet sUSDe collateral reserves increase by seized sUSDe', async () => {
-      expect(await comet.getCollateralReserves(tokens['sUSDe'].address)).to.be.equal(collateralsState['sUSDe'].collateralReservesBefore.add(collateralsState['sUSDe'].seizeAmount));
+      expect(await comet.getCollateralReserves(tokens[collateralKey2].address)).to.be.equal(collateralsState[collateralKey2].collateralReservesBefore.add(collateralsState[collateralKey2].seizeAmount));
     });
 
     it('comet total supply base is unchanged', async () => {
@@ -1153,7 +1156,8 @@ describe('partial liquidation', function() {
     const opAmount = exp(40, 18);      // 40 OP, worth $80 before the price drop
     const borrowAmount = exp(80, 6);   // $80
 
-    const collateralKeys = ['ezETH', 'OP'];
+    const collateralKey1 = 'ezETH';
+    const collateralKey2 = 'OP';
     let collateralsState: Record<string, CollateralState>;
     let absorbTx: ContractTransaction;
     let totalSupplyBaseBefore: BigNumber;
@@ -1166,15 +1170,15 @@ describe('partial liquidation', function() {
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['ezETH'].address, ezETHAmount);
-      await comet.connect(alice).supply(tokens['OP'].address, opAmount);
+      await comet.connect(alice).supply(tokens[collateralKey1].address, ezETHAmount);
+      await comet.connect(alice).supply(tokens[collateralKey2].address, opAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Drop both assets by 25%. ezETH is now worth $50.25 and OP is worth $60.
-      const ezETHPrice = (await priceFeeds['ezETH'].latestRoundData())[1].toBigInt();
-      const opPrice = (await priceFeeds['OP'].latestRoundData())[1].toBigInt();
-      await priceFeeds['ezETH'].connect(alice).setRoundData(0, ezETHPrice * 75n / 100n, 0, 0, 0);
-      await priceFeeds['OP'].connect(alice).setRoundData(0, opPrice * 75n / 100n, 0, 0, 0);
+      const ezETHPrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+      const opPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
+      await priceFeeds[collateralKey1].connect(alice).setRoundData(0, ezETHPrice * 75n / 100n, 0, 0, 0);
+      await priceFeeds[collateralKey2].connect(alice).setRoundData(0, opPrice * 75n / 100n, 0, 0, 0);
       await comet.accrueAccount(alice.address);
 
       const principal = (await comet.userBasic(alice.address)).principal;
@@ -1185,7 +1189,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
+      collateralsState = await makeCollateralStates(comet, tokens, [collateralKey1, collateralKey2]);
     });
 
     after(async () => await snapshot.restore());
@@ -1195,14 +1199,14 @@ describe('partial liquidation', function() {
     });
 
     it('alice assetsIn includes only ezETH', async () => {
-      const ezETHInfo = await comet.getAssetInfoByAddress(tokens['ezETH'].address);
+      const ezETHInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
 
       expect(ezETHInfo.offset).to.be.equal(10);
       expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(1 << ezETHInfo.offset);
     });
 
     it('alice reserved includes only OP', async () => {
-      const opInfo = await comet.getAssetInfoByAddress(tokens['OP'].address);
+      const opInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
 
       expect(opInfo.offset).to.be.equal(20);
       expect((await comet.userBasic(alice.address))._reserved).to.be.equal(1 << (opInfo.offset - 16));
@@ -1214,10 +1218,10 @@ describe('partial liquidation', function() {
     });
 
     it('calculates ezETH full seizure values', async () => {
-      const ezETHInfo = await comet.getAssetInfoByAddress(tokens['ezETH'].address);
-      const opInfo = await comet.getAssetInfoByAddress(tokens['OP'].address);
-      const ezETHPrice = (await priceFeeds['ezETH'].latestRoundData())[1].toBigInt();
-      const opPrice = (await priceFeeds['OP'].latestRoundData())[1].toBigInt();
+      const ezETHInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
+      const opInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+      const ezETHPrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+      const opPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
 
       debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
 
@@ -1233,17 +1237,17 @@ describe('partial liquidation', function() {
         / (mulFactor(ezETHInfo.liquidationFactor, targetHealthFactor) - ezETHInfo.borrowCollateralFactor.toBigInt());
       expect(wantedEzETHCollateralValue).to.be.greaterThan(ezETHCollateralValue);
 
-      collateralsState['ezETH'].seizeAmount = ezETHAmount;
-      collateralsState['ezETH'].seizedValue = mulFactor(ezETHCollateralValue, ezETHInfo.liquidationFactor);
+      collateralsState[collateralKey1].seizeAmount = ezETHAmount;
+      collateralsState[collateralKey1].seizedValue = mulFactor(ezETHCollateralValue, ezETHInfo.liquidationFactor);
     });
 
     it('calculates OP partial seizure values', async () => {
-      const opInfo = await comet.getAssetInfoByAddress(tokens['OP'].address);
-      const opPrice = (await priceFeeds['OP'].latestRoundData())[1].toBigInt();
+      const opInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+      const opPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
       const opCollateralValue = mulPrice(opAmount, opPrice, opInfo.scale);
 
       // After ezETH full seizure, debt is $80 − $45.73 = $34.27.
-      debtRemainingValue -= collateralsState['ezETH'].seizedValue;
+      debtRemainingValue -= collateralsState[collateralKey1].seizedValue;
 
       // OP is worth $60, with $33 of borrow-CF collateral value.
       const totalCollateralizedValue = mulFactor(opCollateralValue, opInfo.borrowCollateralFactor);
@@ -1254,12 +1258,12 @@ describe('partial liquidation', function() {
         / (mulFactor(opInfo.liquidationFactor, targetHealthFactor) - opInfo.borrowCollateralFactor.toBigInt());
       expect(wantedOPCollateralValue).to.be.lessThan(opCollateralValue);
 
-      collateralsState['OP'].seizeAmount = divPrice(wantedOPCollateralValue, opPrice, opInfo.scale);
-      collateralsState['OP'].seizedValue = mulFactor(wantedOPCollateralValue, opInfo.liquidationFactor);
+      collateralsState[collateralKey2].seizeAmount = divPrice(wantedOPCollateralValue, opPrice, opInfo.scale);
+      collateralsState[collateralKey2].seizedValue = mulFactor(wantedOPCollateralValue, opInfo.liquidationFactor);
     });
 
     it('calculates newBalance after ezETH and OP reduce debt', async () => {
-      const debtRemainingValueAfterSeize = debtRemainingValue - collateralsState['OP'].seizedValue;
+      const debtRemainingValueAfterSeize = debtRemainingValue - collateralsState[collateralKey2].seizedValue;
       newBalance = -(debtRemainingValueAfterSeize * baseScale / baseTokenPrice);
     });
 
@@ -1290,11 +1294,11 @@ describe('partial liquidation', function() {
     });
 
     it('comet ERC20 ezETH token balance does not change during absorb', async () => {
-      expect(await tokens['ezETH'].balanceOf(comet.address)).to.be.equal(collateralsState['ezETH'].tokenBalanceBefore);
+      expect(await tokens[collateralKey1].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey1].tokenBalanceBefore);
     });
 
     it('comet ERC20 OP token balance does not change during absorb', async () => {
-      expect(await tokens['OP'].balanceOf(comet.address)).to.be.equal(collateralsState['OP'].tokenBalanceBefore);
+      expect(await tokens[collateralKey2].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey2].tokenBalanceBefore);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -1306,11 +1310,11 @@ describe('partial liquidation', function() {
     });
 
     it('alice ezETH collateral balance is zero', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['ezETH'].address)).to.be.equal(0);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey1].address)).to.be.equal(0);
     });
 
     it('alice OP collateral balance is reduced by the seized amount', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['OP'].address)).to.be.equal(opAmount - collateralsState['OP'].seizeAmount);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey2].address)).to.be.equal(opAmount - collateralsState[collateralKey2].seizeAmount);
     });
 
     it('alice assetsIn is zero after ezETH is fully seized', async () => {
@@ -1322,16 +1326,16 @@ describe('partial liquidation', function() {
     });
 
     it('comet total supplied ezETH is zero', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['ezETH'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey1].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['ezETH'].totalsCollateralBefore.sub(collateralsState['ezETH'].seizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey1].totalsCollateralBefore.sub(collateralsState[collateralKey1].seizeAmount));
       expect(totalSupplyAsset).to.be.equal(0);
     });
 
     it('comet total supplied OP is reduced by the seized amount', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['OP'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey2].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['OP'].totalsCollateralBefore.sub(collateralsState['OP'].seizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey2].totalsCollateralBefore.sub(collateralsState[collateralKey2].seizeAmount));
       expect(totalSupplyAsset).to.not.be.equal(0);
     });
 
@@ -1346,11 +1350,11 @@ describe('partial liquidation', function() {
     });
 
     it('comet ezETH collateral reserves increase by all seized ezETH', async () => {
-      expect(await comet.getCollateralReserves(tokens['ezETH'].address)).to.be.equal(collateralsState['ezETH'].collateralReservesBefore.add(collateralsState['ezETH'].seizeAmount));
+      expect(await comet.getCollateralReserves(tokens[collateralKey1].address)).to.be.equal(collateralsState[collateralKey1].collateralReservesBefore.add(collateralsState[collateralKey1].seizeAmount));
     });
 
     it('comet OP collateral reserves increase by seized OP', async () => {
-      expect(await comet.getCollateralReserves(tokens['OP'].address)).to.be.equal(collateralsState['OP'].collateralReservesBefore.add(collateralsState['OP'].seizeAmount));
+      expect(await comet.getCollateralReserves(tokens[collateralKey2].address)).to.be.equal(collateralsState[collateralKey2].collateralReservesBefore.add(collateralsState[collateralKey2].seizeAmount));
     });
 
     it('comet total supply base is unchanged', async () => {
@@ -1366,7 +1370,12 @@ describe('partial liquidation', function() {
     const gmxAmount = exp(6, 18);       // 6 GMX, worth $240 before the price drop
     const borrowAmount = exp(80, 6);    // $80
 
-    const collateralKeys = ['WBTC', 'rsETH', 'cbETH', 'CRV', 'GMX'];
+    const collateralKey1 = 'WBTC';
+    const collateralKey2 = 'rsETH';
+    const collateralKey3 = 'cbETH';
+    const collateralKey4 = 'CRV';
+    const collateralKey5 = 'GMX';
+    const collateralKeys = [collateralKey1, collateralKey2, collateralKey3, collateralKey4, collateralKey5];
     let collateralsState: Record<string, CollateralState>;
     let totalSupplyBaseBefore: BigNumber;
     let totalBorrowBaseBefore: BigNumber;
@@ -1376,11 +1385,11 @@ describe('partial liquidation', function() {
     let innerSnapshot: SnapshotRestorer;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['WBTC'].address, wbtcAmount);
-      await comet.connect(alice).supply(tokens['rsETH'].address, rsETHAmount);
-      await comet.connect(alice).supply(tokens['cbETH'].address, cbETHAmount);
-      await comet.connect(alice).supply(tokens['CRV'].address, crvAmount);
-      await comet.connect(alice).supply(tokens['GMX'].address, gmxAmount);
+      await comet.connect(alice).supply(tokens[collateralKey1].address, wbtcAmount);
+      await comet.connect(alice).supply(tokens[collateralKey2].address, rsETHAmount);
+      await comet.connect(alice).supply(tokens[collateralKey3].address, cbETHAmount);
+      await comet.connect(alice).supply(tokens[collateralKey4].address, crvAmount);
+      await comet.connect(alice).supply(tokens[collateralKey5].address, gmxAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Drop all five assets by 50%.
@@ -1422,16 +1431,16 @@ describe('partial liquidation', function() {
       });
 
       it('calculates WBTC full seizure values', async () => {
-        const wbtcInfo = await comet.getAssetInfoByAddress(tokens['WBTC'].address);
-        const rsETHInfo = await comet.getAssetInfoByAddress(tokens['rsETH'].address);
-        const cbETHInfo = await comet.getAssetInfoByAddress(tokens['cbETH'].address);
-        const crvInfo = await comet.getAssetInfoByAddress(tokens['CRV'].address);
-        const gmxInfo = await comet.getAssetInfoByAddress(tokens['GMX'].address);
-        const wbtcPrice = (await priceFeeds['WBTC'].latestRoundData())[1].toBigInt();
-        const rsETHPrice = (await priceFeeds['rsETH'].latestRoundData())[1].toBigInt();
-        const cbETHPrice = (await priceFeeds['cbETH'].latestRoundData())[1].toBigInt();
-        const crvPrice = (await priceFeeds['CRV'].latestRoundData())[1].toBigInt();
-        const gmxPrice = (await priceFeeds['GMX'].latestRoundData())[1].toBigInt();
+        const wbtcInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
+        const rsETHInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+        const cbETHInfo = await comet.getAssetInfoByAddress(tokens[collateralKey3].address);
+        const crvInfo = await comet.getAssetInfoByAddress(tokens[collateralKey4].address);
+        const gmxInfo = await comet.getAssetInfoByAddress(tokens[collateralKey5].address);
+        const wbtcPrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+        const rsETHPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
+        const cbETHPrice = (await priceFeeds[collateralKey3].latestRoundData())[1].toBigInt();
+        const crvPrice = (await priceFeeds[collateralKey4].latestRoundData())[1].toBigInt();
+        const gmxPrice = (await priceFeeds[collateralKey5].latestRoundData())[1].toBigInt();
 
         debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
 
@@ -1453,21 +1462,21 @@ describe('partial liquidation', function() {
           / (mulFactor(wbtcInfo.liquidationFactor, targetHealthFactor) - wbtcInfo.borrowCollateralFactor.toBigInt());
         expect(wantedWbtcCollateralValue).to.be.greaterThan(wbtcCollateralValue);
 
-        collateralsState['WBTC'].seizedValue = mulFactor(wbtcCollateralValue, wbtcInfo.liquidationFactor);
+        collateralsState[collateralKey1].seizedValue = mulFactor(wbtcCollateralValue, wbtcInfo.liquidationFactor);
       });
 
       it('calculates rsETH full seizure values', async () => {
-        const rsETHInfo = await comet.getAssetInfoByAddress(tokens['rsETH'].address);
-        const cbETHInfo = await comet.getAssetInfoByAddress(tokens['cbETH'].address);
-        const crvInfo = await comet.getAssetInfoByAddress(tokens['CRV'].address);
-        const gmxInfo = await comet.getAssetInfoByAddress(tokens['GMX'].address);
-        const rsETHPrice = (await priceFeeds['rsETH'].latestRoundData())[1].toBigInt();
-        const cbETHPrice = (await priceFeeds['cbETH'].latestRoundData())[1].toBigInt();
-        const crvPrice = (await priceFeeds['CRV'].latestRoundData())[1].toBigInt();
-        const gmxPrice = (await priceFeeds['GMX'].latestRoundData())[1].toBigInt();
+        const rsETHInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+        const cbETHInfo = await comet.getAssetInfoByAddress(tokens[collateralKey3].address);
+        const crvInfo = await comet.getAssetInfoByAddress(tokens[collateralKey4].address);
+        const gmxInfo = await comet.getAssetInfoByAddress(tokens[collateralKey5].address);
+        const rsETHPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
+        const cbETHPrice = (await priceFeeds[collateralKey3].latestRoundData())[1].toBigInt();
+        const crvPrice = (await priceFeeds[collateralKey4].latestRoundData())[1].toBigInt();
+        const gmxPrice = (await priceFeeds[collateralKey5].latestRoundData())[1].toBigInt();
 
         // After WBTC full seizure, debt reduces.
-        debtRemainingValue -= collateralsState['WBTC'].seizedValue;
+        debtRemainingValue -= collateralsState[collateralKey1].seizedValue;
 
         // rsETH is asset index 6. After the 50% price drop, 0.001 rsETH is worth $1.70.
         const rsETHCollateralValue = mulPrice(rsETHAmount, rsETHPrice, rsETHInfo.scale);
@@ -1485,19 +1494,19 @@ describe('partial liquidation', function() {
           / (mulFactor(rsETHInfo.liquidationFactor, targetHealthFactor) - rsETHInfo.borrowCollateralFactor.toBigInt());
         expect(wantedRsETHCollateralValue).to.be.greaterThan(rsETHCollateralValue);
 
-        collateralsState['rsETH'].seizedValue = mulFactor(rsETHCollateralValue, rsETHInfo.liquidationFactor);
+        collateralsState[collateralKey2].seizedValue = mulFactor(rsETHCollateralValue, rsETHInfo.liquidationFactor);
       });
 
       it('calculates cbETH full seizure values', async () => {
-        const cbETHInfo = await comet.getAssetInfoByAddress(tokens['cbETH'].address);
-        const crvInfo = await comet.getAssetInfoByAddress(tokens['CRV'].address);
-        const gmxInfo = await comet.getAssetInfoByAddress(tokens['GMX'].address);
-        const cbETHPrice = (await priceFeeds['cbETH'].latestRoundData())[1].toBigInt();
-        const crvPrice = (await priceFeeds['CRV'].latestRoundData())[1].toBigInt();
-        const gmxPrice = (await priceFeeds['GMX'].latestRoundData())[1].toBigInt();
+        const cbETHInfo = await comet.getAssetInfoByAddress(tokens[collateralKey3].address);
+        const crvInfo = await comet.getAssetInfoByAddress(tokens[collateralKey4].address);
+        const gmxInfo = await comet.getAssetInfoByAddress(tokens[collateralKey5].address);
+        const cbETHPrice = (await priceFeeds[collateralKey3].latestRoundData())[1].toBigInt();
+        const crvPrice = (await priceFeeds[collateralKey4].latestRoundData())[1].toBigInt();
+        const gmxPrice = (await priceFeeds[collateralKey5].latestRoundData())[1].toBigInt();
 
         // After rsETH full seizure, debt reduces further.
-        debtRemainingValue -= collateralsState['rsETH'].seizedValue;
+        debtRemainingValue -= collateralsState[collateralKey2].seizedValue;
 
         // cbETH is asset index 7. After the 50% price drop, 0.001 cbETH is worth $1.65.
         const cbETHCollateralValue = mulPrice(cbETHAmount, cbETHPrice, cbETHInfo.scale);
@@ -1513,17 +1522,17 @@ describe('partial liquidation', function() {
           / (mulFactor(cbETHInfo.liquidationFactor, targetHealthFactor) - cbETHInfo.borrowCollateralFactor.toBigInt());
         expect(wantedCbETHCollateralValue).to.be.greaterThan(cbETHCollateralValue);
 
-        collateralsState['cbETH'].seizedValue = mulFactor(cbETHCollateralValue, cbETHInfo.liquidationFactor);
+        collateralsState[collateralKey3].seizedValue = mulFactor(cbETHCollateralValue, cbETHInfo.liquidationFactor);
       });
 
       it('calculates CRV full seizure values', async () => {
-        const crvInfo = await comet.getAssetInfoByAddress(tokens['CRV'].address);
-        const gmxInfo = await comet.getAssetInfoByAddress(tokens['GMX'].address);
-        const crvPrice = (await priceFeeds['CRV'].latestRoundData())[1].toBigInt();
-        const gmxPrice = (await priceFeeds['GMX'].latestRoundData())[1].toBigInt();
+        const crvInfo = await comet.getAssetInfoByAddress(tokens[collateralKey4].address);
+        const gmxInfo = await comet.getAssetInfoByAddress(tokens[collateralKey5].address);
+        const crvPrice = (await priceFeeds[collateralKey4].latestRoundData())[1].toBigInt();
+        const gmxPrice = (await priceFeeds[collateralKey5].latestRoundData())[1].toBigInt();
 
         // After cbETH full seizure, debt reduces further.
-        debtRemainingValue -= collateralsState['cbETH'].seizedValue;
+        debtRemainingValue -= collateralsState[collateralKey3].seizedValue;
 
         // CRV is asset index 17. After the 50% price drop, 3 CRV is worth $1.50.
         const crvCollateralValue = mulPrice(crvAmount, crvPrice, crvInfo.scale);
@@ -1537,16 +1546,16 @@ describe('partial liquidation', function() {
           / (mulFactor(crvInfo.liquidationFactor, targetHealthFactor) - crvInfo.borrowCollateralFactor.toBigInt());
         expect(wantedCrvCollateralValue).to.be.greaterThan(crvCollateralValue);
 
-        collateralsState['CRV'].seizedValue = mulFactor(crvCollateralValue, crvInfo.liquidationFactor);
+        collateralsState[collateralKey4].seizedValue = mulFactor(crvCollateralValue, crvInfo.liquidationFactor);
       });
 
       it('calculates GMX partial seizure values', async () => {
-        const gmxInfo = await comet.getAssetInfoByAddress(tokens['GMX'].address);
-        const gmxPrice = (await priceFeeds['GMX'].latestRoundData())[1].toBigInt();
+        const gmxInfo = await comet.getAssetInfoByAddress(tokens[collateralKey5].address);
+        const gmxPrice = (await priceFeeds[collateralKey5].latestRoundData())[1].toBigInt();
         const gmxCollateralValue = mulPrice(gmxAmount, gmxPrice, gmxInfo.scale);
 
         // After CRV full seizure, debt reduces to about $72.79.
-        debtRemainingValue -= collateralsState['CRV'].seizedValue;
+        debtRemainingValue -= collateralsState[collateralKey4].seizedValue;
 
         // GMX is worth $120, with $60 of borrow-CF collateral value.
         const totalCollateralizedValue = mulFactor(gmxCollateralValue, gmxInfo.borrowCollateralFactor);
@@ -1557,12 +1566,12 @@ describe('partial liquidation', function() {
           / (mulFactor(gmxInfo.liquidationFactor, targetHealthFactor) - gmxInfo.borrowCollateralFactor.toBigInt());
         expect(wantedGmxCollateralValue).to.be.lessThan(gmxCollateralValue);
 
-        collateralsState['GMX'].seizeAmount = divPrice(wantedGmxCollateralValue, gmxPrice, gmxInfo.scale);
-        collateralsState['GMX'].seizedValue = mulFactor(wantedGmxCollateralValue, gmxInfo.liquidationFactor);
+        collateralsState[collateralKey5].seizeAmount = divPrice(wantedGmxCollateralValue, gmxPrice, gmxInfo.scale);
+        collateralsState[collateralKey5].seizedValue = mulFactor(wantedGmxCollateralValue, gmxInfo.liquidationFactor);
       });
 
       it('calculates newBalance after all five assets reduce debt', async () => {
-        const debtRemainingValueAfterSeize = debtRemainingValue - collateralsState['GMX'].seizedValue;
+        const debtRemainingValueAfterSeize = debtRemainingValue - collateralsState[collateralKey5].seizedValue;
         newBalance = -(debtRemainingValueAfterSeize * baseScale / baseTokenPrice);
       });
 
@@ -1593,23 +1602,23 @@ describe('partial liquidation', function() {
       });
 
       it('comet ERC20 WBTC token balance does not change during absorb', async () => {
-        expect(await tokens['WBTC'].balanceOf(comet.address)).to.be.equal(collateralsState['WBTC'].tokenBalanceBefore);
+        expect(await tokens[collateralKey1].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey1].tokenBalanceBefore);
       });
 
       it('comet ERC20 rsETH token balance does not change during absorb', async () => {
-        expect(await tokens['rsETH'].balanceOf(comet.address)).to.be.equal(collateralsState['rsETH'].tokenBalanceBefore);
+        expect(await tokens[collateralKey2].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey2].tokenBalanceBefore);
       });
 
       it('comet ERC20 cbETH token balance does not change during absorb', async () => {
-        expect(await tokens['cbETH'].balanceOf(comet.address)).to.be.equal(collateralsState['cbETH'].tokenBalanceBefore);
+        expect(await tokens[collateralKey3].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey3].tokenBalanceBefore);
       });
 
       it('comet ERC20 CRV token balance does not change during absorb', async () => {
-        expect(await tokens['CRV'].balanceOf(comet.address)).to.be.equal(collateralsState['CRV'].tokenBalanceBefore);
+        expect(await tokens[collateralKey4].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey4].tokenBalanceBefore);
       });
 
       it('comet ERC20 GMX token balance does not change during absorb', async () => {
-        expect(await tokens['GMX'].balanceOf(comet.address)).to.be.equal(collateralsState['GMX'].tokenBalanceBefore);
+        expect(await tokens[collateralKey5].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey5].tokenBalanceBefore);
       });
 
       it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -1621,23 +1630,23 @@ describe('partial liquidation', function() {
       });
 
       it('alice WBTC collateral balance is zero', async () => {
-        expect(await comet.collateralBalanceOf(alice.address, tokens['WBTC'].address)).to.be.equal(0);
+        expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey1].address)).to.be.equal(0);
       });
 
       it('alice rsETH collateral balance is zero', async () => {
-        expect(await comet.collateralBalanceOf(alice.address, tokens['rsETH'].address)).to.be.equal(0);
+        expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey2].address)).to.be.equal(0);
       });
 
       it('alice cbETH collateral balance is zero', async () => {
-        expect(await comet.collateralBalanceOf(alice.address, tokens['cbETH'].address)).to.be.equal(0);
+        expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey3].address)).to.be.equal(0);
       });
 
       it('alice CRV collateral balance is zero', async () => {
-        expect(await comet.collateralBalanceOf(alice.address, tokens['CRV'].address)).to.be.equal(0);
+        expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey4].address)).to.be.equal(0);
       });
 
       it('alice GMX collateral balance is reduced by the seized amount', async () => {
-        expect(await comet.collateralBalanceOf(alice.address, tokens['GMX'].address)).to.be.equal(gmxAmount - collateralsState['GMX'].seizeAmount);
+        expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey5].address)).to.be.equal(gmxAmount - collateralsState[collateralKey5].seizeAmount);
       });
 
       it('alice assetsIn is zero after WBTC, rsETH, and cbETH are fully seized', async () => {
@@ -1645,44 +1654,44 @@ describe('partial liquidation', function() {
       });
 
       it('alice reserved keeps only GMX after CRV is fully seized', async () => {
-        const gmxInfo = await comet.getAssetInfoByAddress(tokens['GMX'].address);
+        const gmxInfo = await comet.getAssetInfoByAddress(tokens[collateralKey5].address);
 
         expect((await comet.userBasic(alice.address))._reserved).to.not.be.equal(reservedBefore);
         expect((await comet.userBasic(alice.address))._reserved).to.be.equal(1 << (gmxInfo.offset - 16));
       });
 
       it('comet total supplied WBTC is zero', async () => {
-        const totalSupplyAsset = (await comet.totalsCollateral(tokens['WBTC'].address)).totalSupplyAsset;
+        const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey1].address)).totalSupplyAsset;
 
-        expect(totalSupplyAsset).to.be.equal(collateralsState['WBTC'].totalsCollateralBefore.sub(wbtcAmount));
+        expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey1].totalsCollateralBefore.sub(wbtcAmount));
         expect(totalSupplyAsset).to.be.equal(0);
       });
 
       it('comet total supplied rsETH is zero', async () => {
-        const totalSupplyAsset = (await comet.totalsCollateral(tokens['rsETH'].address)).totalSupplyAsset;
+        const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey2].address)).totalSupplyAsset;
 
-        expect(totalSupplyAsset).to.be.equal(collateralsState['rsETH'].totalsCollateralBefore.sub(rsETHAmount));
+        expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey2].totalsCollateralBefore.sub(rsETHAmount));
         expect(totalSupplyAsset).to.be.equal(0);
       });
 
       it('comet total supplied cbETH is zero', async () => {
-        const totalSupplyAsset = (await comet.totalsCollateral(tokens['cbETH'].address)).totalSupplyAsset;
+        const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey3].address)).totalSupplyAsset;
 
-        expect(totalSupplyAsset).to.be.equal(collateralsState['cbETH'].totalsCollateralBefore.sub(cbETHAmount));
+        expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey3].totalsCollateralBefore.sub(cbETHAmount));
         expect(totalSupplyAsset).to.be.equal(0);
       });
 
       it('comet total supplied CRV is zero', async () => {
-        const totalSupplyAsset = (await comet.totalsCollateral(tokens['CRV'].address)).totalSupplyAsset;
+        const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey4].address)).totalSupplyAsset;
 
-        expect(totalSupplyAsset).to.be.equal(collateralsState['CRV'].totalsCollateralBefore.sub(crvAmount));
+        expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey4].totalsCollateralBefore.sub(crvAmount));
         expect(totalSupplyAsset).to.be.equal(0);
       });
 
       it('comet total supplied GMX is reduced by the seized amount', async () => {
-        const totalSupplyAsset = (await comet.totalsCollateral(tokens['GMX'].address)).totalSupplyAsset;
+        const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey5].address)).totalSupplyAsset;
 
-        expect(totalSupplyAsset).to.be.equal(collateralsState['GMX'].totalsCollateralBefore.sub(collateralsState['GMX'].seizeAmount));
+        expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey5].totalsCollateralBefore.sub(collateralsState[collateralKey5].seizeAmount));
         expect(totalSupplyAsset).to.not.be.equal(0);
       });
 
@@ -1697,23 +1706,23 @@ describe('partial liquidation', function() {
       });
 
       it('comet WBTC collateral reserves increase by all seized WBTC', async () => {
-        expect(await comet.getCollateralReserves(tokens['WBTC'].address)).to.be.equal(collateralsState['WBTC'].collateralReservesBefore.add(wbtcAmount));
+        expect(await comet.getCollateralReserves(tokens[collateralKey1].address)).to.be.equal(collateralsState[collateralKey1].collateralReservesBefore.add(wbtcAmount));
       });
 
       it('comet rsETH collateral reserves increase by all seized rsETH', async () => {
-        expect(await comet.getCollateralReserves(tokens['rsETH'].address)).to.be.equal(collateralsState['rsETH'].collateralReservesBefore.add(rsETHAmount));
+        expect(await comet.getCollateralReserves(tokens[collateralKey2].address)).to.be.equal(collateralsState[collateralKey2].collateralReservesBefore.add(rsETHAmount));
       });
 
       it('comet cbETH collateral reserves increase by all seized cbETH', async () => {
-        expect(await comet.getCollateralReserves(tokens['cbETH'].address)).to.be.equal(collateralsState['cbETH'].collateralReservesBefore.add(cbETHAmount));
+        expect(await comet.getCollateralReserves(tokens[collateralKey3].address)).to.be.equal(collateralsState[collateralKey3].collateralReservesBefore.add(cbETHAmount));
       });
 
       it('comet CRV collateral reserves increase by all seized CRV', async () => {
-        expect(await comet.getCollateralReserves(tokens['CRV'].address)).to.be.equal(collateralsState['CRV'].collateralReservesBefore.add(crvAmount));
+        expect(await comet.getCollateralReserves(tokens[collateralKey4].address)).to.be.equal(collateralsState[collateralKey4].collateralReservesBefore.add(crvAmount));
       });
 
       it('comet GMX collateral reserves increase by seized GMX', async () => {
-        expect(await comet.getCollateralReserves(tokens['GMX'].address)).to.be.equal(collateralsState['GMX'].collateralReservesBefore.add(collateralsState['GMX'].seizeAmount));
+        expect(await comet.getCollateralReserves(tokens[collateralKey5].address)).to.be.equal(collateralsState[collateralKey5].collateralReservesBefore.add(collateralsState[collateralKey5].seizeAmount));
       });
 
       it('comet total supply base is unchanged', async () => {
@@ -1738,52 +1747,52 @@ describe('partial liquidation', function() {
       });
 
       it('emits AbsorbCollateral for WBTC full seizure', async () => {
-        const wbtcInfo = await comet.getAssetInfoByAddress(tokens['WBTC'].address);
-        const wbtcPrice = (await priceFeeds['WBTC'].latestRoundData())[1].toBigInt();
+        const wbtcInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
+        const wbtcPrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
         const wbtcCollateralValue = mulPrice(wbtcAmount, wbtcPrice, wbtcInfo.scale);
 
         await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
-          absorber.address, alice.address, tokens['WBTC'].address, wbtcAmount, wbtcCollateralValue
+          absorber.address, alice.address, tokens[collateralKey1].address, wbtcAmount, wbtcCollateralValue
         );
         debtRemainingValue -= mulFactor(wbtcCollateralValue, wbtcInfo.liquidationFactor);
       });
 
       it('emits AbsorbCollateral for rsETH full seizure', async () => {
-        const rsETHInfo = await comet.getAssetInfoByAddress(tokens['rsETH'].address);
-        const rsETHPrice = (await priceFeeds['rsETH'].latestRoundData())[1].toBigInt();
+        const rsETHInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+        const rsETHPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
         const rsETHCollateralValue = mulPrice(rsETHAmount, rsETHPrice, rsETHInfo.scale);
 
         await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
-          absorber.address, alice.address, tokens['rsETH'].address, rsETHAmount, rsETHCollateralValue
+          absorber.address, alice.address, tokens[collateralKey2].address, rsETHAmount, rsETHCollateralValue
         );
         debtRemainingValue -= mulFactor(rsETHCollateralValue, rsETHInfo.liquidationFactor);
       });
 
       it('emits AbsorbCollateral for cbETH full seizure', async () => {
-        const cbETHInfo = await comet.getAssetInfoByAddress(tokens['cbETH'].address);
-        const cbETHPrice = (await priceFeeds['cbETH'].latestRoundData())[1].toBigInt();
+        const cbETHInfo = await comet.getAssetInfoByAddress(tokens[collateralKey3].address);
+        const cbETHPrice = (await priceFeeds[collateralKey3].latestRoundData())[1].toBigInt();
         const cbETHCollateralValue = mulPrice(cbETHAmount, cbETHPrice, cbETHInfo.scale);
 
         await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
-          absorber.address, alice.address, tokens['cbETH'].address, cbETHAmount, cbETHCollateralValue
+          absorber.address, alice.address, tokens[collateralKey3].address, cbETHAmount, cbETHCollateralValue
         );
         debtRemainingValue -= mulFactor(cbETHCollateralValue, cbETHInfo.liquidationFactor);
       });
 
       it('emits AbsorbCollateral for CRV full seizure', async () => {
-        const crvInfo = await comet.getAssetInfoByAddress(tokens['CRV'].address);
-        const crvPrice = (await priceFeeds['CRV'].latestRoundData())[1].toBigInt();
+        const crvInfo = await comet.getAssetInfoByAddress(tokens[collateralKey4].address);
+        const crvPrice = (await priceFeeds[collateralKey4].latestRoundData())[1].toBigInt();
         const crvCollateralValue = mulPrice(crvAmount, crvPrice, crvInfo.scale);
 
         await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
-          absorber.address, alice.address, tokens['CRV'].address, crvAmount, crvCollateralValue
+          absorber.address, alice.address, tokens[collateralKey4].address, crvAmount, crvCollateralValue
         );
         debtRemainingValue -= mulFactor(crvCollateralValue, crvInfo.liquidationFactor);
       });
 
       it('emits AbsorbCollateral for GMX partial seizure', async () => {
-        const gmxInfo = await comet.getAssetInfoByAddress(tokens['GMX'].address);
-        const gmxPrice = (await priceFeeds['GMX'].latestRoundData())[1].toBigInt();
+        const gmxInfo = await comet.getAssetInfoByAddress(tokens[collateralKey5].address);
+        const gmxPrice = (await priceFeeds[collateralKey5].latestRoundData())[1].toBigInt();
         const gmxCollateralValue = mulPrice(gmxAmount, gmxPrice, gmxInfo.scale);
 
         // At GMX's turn, totalCollateralizedValue holds only GMX's BCF contribution.
@@ -1794,7 +1803,7 @@ describe('partial liquidation', function() {
         const gmxSeizeAmount = divPrice(wantedGmxCollateralValue, gmxPrice, gmxInfo.scale);
 
         await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
-          absorber.address, alice.address, tokens['GMX'].address, gmxSeizeAmount, wantedGmxCollateralValue
+          absorber.address, alice.address, tokens[collateralKey5].address, gmxSeizeAmount, wantedGmxCollateralValue
         );
       });
     });
@@ -1811,7 +1820,8 @@ describe('partial liquidation', function() {
     const compDroppedPrice = exp(90, 8); // $90 per COMP
     const wethPrice = exp(2000, 8); // $2000 per WETH
 
-    const collateralKeys = ['COMP', 'WETH'];
+    const collateralKey0 = 'COMP';
+    const collateralKey1 = 'WETH';
     let collateralsState: Record<string, CollateralState>;
     let absorbTx: ContractTransaction;
 
@@ -1835,13 +1845,13 @@ describe('partial liquidation', function() {
     let totalCVAfterComp: bigint;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['COMP'].address, compAmount);
-      await comet.connect(alice).supply(tokens['WETH'].address, wethAmount);
+      await comet.connect(alice).supply(tokens[collateralKey0].address, compAmount);
+      await comet.connect(alice).supply(tokens[collateralKey1].address, wethAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Drop COMP 10%: $100 → $90. Position becomes liquidatable:
       // LCF_weighted = 0.85×$90 + 0.80×$2 = $78.1 < debt $80
-      await priceFeeds['COMP'].connect(alice).setRoundData(0, compDroppedPrice, 0, 0, 0);
+      await priceFeeds[collateralKey0].connect(alice).setRoundData(0, compDroppedPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
 
       const principal = (await comet.userBasic(alice.address)).principal;
@@ -1853,7 +1863,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
+      collateralsState = await makeCollateralStates(comet, tokens, [collateralKey0, collateralKey1]);
     });
 
     after(async () => await snapshot.restore());
@@ -1868,8 +1878,8 @@ describe('partial liquidation', function() {
     });
 
     it('calculates expected partial seizure amounts for COMP', async () => {
-      const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
-      const wethInfo = await comet.getAssetInfoByAddress(tokens['WETH'].address);
+      const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey0].address);
+      const wethInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
 
       // debtRemainingValue = $80 in Chainlink 8-decimal price units = 8000000000
       debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
@@ -1944,13 +1954,13 @@ describe('partial liquidation', function() {
     });
 
     it('alice COMP balance is reduced by the seized amount', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['COMP'].address)).to.be.equal(
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey0].address)).to.be.equal(
         compAmount - compSeizeAmount
       );
     });
 
     it('alice WETH balance is unchanged: WETH was not seized', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['WETH'].address)).to.be.equal(wethAmount);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey1].address)).to.be.equal(wethAmount);
     });
 
     it('alice still has remaining debt after absorb', async () => {
@@ -1971,13 +1981,13 @@ describe('partial liquidation', function() {
     });
 
     it('comet total supplied COMP is reduced by the seized amount', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['COMP'].address)).totalSupplyAsset;
-      expect(totalSupplyAsset).to.be.equal(collateralsState['COMP'].totalsCollateralBefore.sub(compSeizeAmount));
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey0].address)).totalSupplyAsset;
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey0].totalsCollateralBefore.sub(compSeizeAmount));
     });
 
     it('comet total supplied WETH is unchanged', async () => {
-      expect((await comet.totalsCollateral(tokens['WETH'].address)).totalSupplyAsset).to.be.equal(
-        collateralsState['WETH'].totalsCollateralBefore
+      expect((await comet.totalsCollateral(tokens[collateralKey1].address)).totalSupplyAsset).to.be.equal(
+        collateralsState[collateralKey1].totalsCollateralBefore
       );
     });
 
@@ -1991,13 +2001,13 @@ describe('partial liquidation', function() {
     });
 
     it('comet COMP collateral reserves increase by the seized amount', async () => {
-      expect(await comet.getCollateralReserves(tokens['COMP'].address)).to.be.equal(
-        collateralsState['COMP'].collateralReservesBefore.add(compSeizeAmount)
+      expect(await comet.getCollateralReserves(tokens[collateralKey0].address)).to.be.equal(
+        collateralsState[collateralKey0].collateralReservesBefore.add(compSeizeAmount)
       );
     });
 
     it('comet WETH collateral reserves remain zero', async () => {
-      expect(await comet.getCollateralReserves(tokens['WETH'].address)).to.be.equal(0);
+      expect(await comet.getCollateralReserves(tokens[collateralKey1].address)).to.be.equal(0);
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
@@ -2005,11 +2015,11 @@ describe('partial liquidation', function() {
     });
 
     it('comet ERC20 COMP token balance does not change during absorb', async () => {
-      expect(await tokens['COMP'].balanceOf(comet.address)).to.be.equal(collateralsState['COMP'].tokenBalanceBefore);
+      expect(await tokens[collateralKey0].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey0].tokenBalanceBefore);
     });
 
     it('comet ERC20 WETH token balance does not change during absorb', async () => {
-      expect(await tokens['WETH'].balanceOf(comet.address)).to.be.equal(collateralsState['WETH'].tokenBalanceBefore);
+      expect(await tokens[collateralKey1].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey1].tokenBalanceBefore);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -2022,7 +2032,8 @@ describe('partial liquidation', function() {
     const ldoAmount = exp(10, 18); // $20
     const borrowAmount = exp(66, 6);
 
-    const collateralKeys = ['AAVE', 'LDO'];
+    const collateralKey1 = 'AAVE';
+    const collateralKey2 = 'LDO';
     let collateralsState: Record<string, CollateralState>;
     let absorbTx: ContractTransaction;
 
@@ -2046,14 +2057,14 @@ describe('partial liquidation', function() {
     let totalCVAfterAave: bigint;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['AAVE'].address, aaveAmount);
-      await comet.connect(alice).supply(tokens['LDO'].address, ldoAmount);
+      await comet.connect(alice).supply(tokens[collateralKey1].address, aaveAmount);
+      await comet.connect(alice).supply(tokens[collateralKey2].address, ldoAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Drop AAVE 20%: $100 -> $80. Position becomes liquidatable:
       // LCF_weighted = 0.65*$80 + 0.62*$20 = $64.40 < debt $66.
-      const aavePrice = (await priceFeeds['AAVE'].latestRoundData())[1].toBigInt();
-      await priceFeeds['AAVE'].connect(alice).setRoundData(0, aavePrice * 80n / 100n, 0, 0, 0);
+      const aavePrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+      await priceFeeds[collateralKey1].connect(alice).setRoundData(0, aavePrice * 80n / 100n, 0, 0, 0);
       await comet.accrueAccount(alice.address);
 
       const principal = (await comet.userBasic(alice.address)).principal;
@@ -2065,7 +2076,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
+      collateralsState = await makeCollateralStates(comet, tokens, [collateralKey1, collateralKey2]);
     });
 
     after(async () => await snapshot.restore());
@@ -2080,10 +2091,10 @@ describe('partial liquidation', function() {
     });
 
     it('calculates expected partial seizure amounts for AAVE', async () => {
-      const aaveInfo = await comet.getAssetInfoByAddress(tokens['AAVE'].address);
-      const ldoInfo = await comet.getAssetInfoByAddress(tokens['LDO'].address);
-      const aavePrice = (await priceFeeds['AAVE'].latestRoundData())[1].toBigInt();
-      const ldoPrice = (await priceFeeds['LDO'].latestRoundData())[1].toBigInt();
+      const aaveInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
+      const ldoInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+      const aavePrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+      const ldoPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
 
       debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
 
@@ -2138,13 +2149,13 @@ describe('partial liquidation', function() {
     });
 
     it('alice AAVE balance is reduced by the seized amount', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['AAVE'].address)).to.be.equal(
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey1].address)).to.be.equal(
         aaveAmount - aaveSeizeAmount
       );
     });
 
     it('alice LDO balance is unchanged: LDO was not seized', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['LDO'].address)).to.be.equal(ldoAmount);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey2].address)).to.be.equal(ldoAmount);
     });
 
     it('alice still has remaining debt after absorb', async () => {
@@ -2173,13 +2184,13 @@ describe('partial liquidation', function() {
     });
 
     it('comet total supplied AAVE is reduced by the seized amount', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['AAVE'].address)).totalSupplyAsset;
-      expect(totalSupplyAsset).to.be.equal(collateralsState['AAVE'].totalsCollateralBefore.sub(aaveSeizeAmount));
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey1].address)).totalSupplyAsset;
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey1].totalsCollateralBefore.sub(aaveSeizeAmount));
     });
 
     it('comet total supplied LDO is unchanged', async () => {
-      expect((await comet.totalsCollateral(tokens['LDO'].address)).totalSupplyAsset).to.be.equal(
-        collateralsState['LDO'].totalsCollateralBefore
+      expect((await comet.totalsCollateral(tokens[collateralKey2].address)).totalSupplyAsset).to.be.equal(
+        collateralsState[collateralKey2].totalsCollateralBefore
       );
     });
 
@@ -2193,13 +2204,13 @@ describe('partial liquidation', function() {
     });
 
     it('comet AAVE collateral reserves increase by the seized amount', async () => {
-      expect(await comet.getCollateralReserves(tokens['AAVE'].address)).to.be.equal(
-        collateralsState['AAVE'].collateralReservesBefore.add(aaveSeizeAmount)
+      expect(await comet.getCollateralReserves(tokens[collateralKey1].address)).to.be.equal(
+        collateralsState[collateralKey1].collateralReservesBefore.add(aaveSeizeAmount)
       );
     });
 
     it('comet LDO collateral reserves remain zero', async () => {
-      expect(await comet.getCollateralReserves(tokens['LDO'].address)).to.be.equal(0);
+      expect(await comet.getCollateralReserves(tokens[collateralKey2].address)).to.be.equal(0);
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
@@ -2207,11 +2218,11 @@ describe('partial liquidation', function() {
     });
 
     it('comet ERC20 AAVE token balance does not change during absorb', async () => {
-      expect(await tokens['AAVE'].balanceOf(comet.address)).to.be.equal(collateralsState['AAVE'].tokenBalanceBefore);
+      expect(await tokens[collateralKey1].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey1].tokenBalanceBefore);
     });
 
     it('comet ERC20 LDO token balance does not change during absorb', async () => {
-      expect(await tokens['LDO'].balanceOf(comet.address)).to.be.equal(collateralsState['LDO'].tokenBalanceBefore);
+      expect(await tokens[collateralKey2].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey2].tokenBalanceBefore);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -2224,7 +2235,8 @@ describe('partial liquidation', function() {
     const ldoAmount = exp(10, 18); // $20
     const borrowAmount = exp(70, 6);
 
-    const collateralKeys = ['rETH', 'LDO'];
+    const collateralKey1 = 'rETH';
+    const collateralKey2 = 'LDO';
     let collateralsState: Record<string, CollateralState>;
     let absorbTx: ContractTransaction;
 
@@ -2248,14 +2260,14 @@ describe('partial liquidation', function() {
     let totalCVAfterREth: bigint;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['rETH'].address, rEthAmount);
-      await comet.connect(alice).supply(tokens['LDO'].address, ldoAmount);
+      await comet.connect(alice).supply(tokens[collateralKey1].address, rEthAmount);
+      await comet.connect(alice).supply(tokens[collateralKey2].address, ldoAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Drop rETH 20%: $87.50 -> $70. Position becomes liquidatable:
       // LCF_weighted = 0.78*$70 + 0.62*$20 = $67 < debt $70.
-      const rEthPrice = (await priceFeeds['rETH'].latestRoundData())[1].toBigInt();
-      await priceFeeds['rETH'].connect(alice).setRoundData(0, rEthPrice * 80n / 100n, 0, 0, 0);
+      const rEthPrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+      await priceFeeds[collateralKey1].connect(alice).setRoundData(0, rEthPrice * 80n / 100n, 0, 0, 0);
       await comet.accrueAccount(alice.address);
 
       const principal = (await comet.userBasic(alice.address)).principal;
@@ -2267,7 +2279,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
+      collateralsState = await makeCollateralStates(comet, tokens, [collateralKey1, collateralKey2]);
     });
 
     after(async () => await snapshot.restore());
@@ -2282,10 +2294,10 @@ describe('partial liquidation', function() {
     });
 
     it('calculates expected partial seizure amounts for rETH', async () => {
-      const rEthInfo = await comet.getAssetInfoByAddress(tokens['rETH'].address);
-      const ldoInfo = await comet.getAssetInfoByAddress(tokens['LDO'].address);
-      const rEthPrice = (await priceFeeds['rETH'].latestRoundData())[1].toBigInt();
-      const ldoPrice = (await priceFeeds['LDO'].latestRoundData())[1].toBigInt();
+      const rEthInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
+      const ldoInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+      const rEthPrice = (await priceFeeds[collateralKey1].latestRoundData())[1].toBigInt();
+      const ldoPrice = (await priceFeeds[collateralKey2].latestRoundData())[1].toBigInt();
 
       debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
 
@@ -2339,13 +2351,13 @@ describe('partial liquidation', function() {
     });
 
     it('alice rETH balance is reduced by the seized amount', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['rETH'].address)).to.be.equal(
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey1].address)).to.be.equal(
         rEthAmount - rEthSeizeAmount
       );
     });
 
     it('alice LDO balance is unchanged: LDO was not seized', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['LDO'].address)).to.be.equal(ldoAmount);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey2].address)).to.be.equal(ldoAmount);
     });
 
     it('alice still has remaining debt after absorb', async () => {
@@ -2374,13 +2386,13 @@ describe('partial liquidation', function() {
     });
 
     it('comet total supplied rETH is reduced by the seized amount', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['rETH'].address)).totalSupplyAsset;
-      expect(totalSupplyAsset).to.be.equal(collateralsState['rETH'].totalsCollateralBefore.sub(rEthSeizeAmount));
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey1].address)).totalSupplyAsset;
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey1].totalsCollateralBefore.sub(rEthSeizeAmount));
     });
 
     it('comet total supplied LDO is unchanged', async () => {
-      expect((await comet.totalsCollateral(tokens['LDO'].address)).totalSupplyAsset).to.be.equal(
-        collateralsState['LDO'].totalsCollateralBefore
+      expect((await comet.totalsCollateral(tokens[collateralKey2].address)).totalSupplyAsset).to.be.equal(
+        collateralsState[collateralKey2].totalsCollateralBefore
       );
     });
 
@@ -2394,13 +2406,13 @@ describe('partial liquidation', function() {
     });
 
     it('comet rETH collateral reserves increase by the seized amount', async () => {
-      expect(await comet.getCollateralReserves(tokens['rETH'].address)).to.be.equal(
-        collateralsState['rETH'].collateralReservesBefore.add(rEthSeizeAmount)
+      expect(await comet.getCollateralReserves(tokens[collateralKey1].address)).to.be.equal(
+        collateralsState[collateralKey1].collateralReservesBefore.add(rEthSeizeAmount)
       );
     });
 
     it('comet LDO collateral reserves remain zero', async () => {
-      expect(await comet.getCollateralReserves(tokens['LDO'].address)).to.be.equal(0);
+      expect(await comet.getCollateralReserves(tokens[collateralKey2].address)).to.be.equal(0);
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
@@ -2408,11 +2420,11 @@ describe('partial liquidation', function() {
     });
 
     it('comet ERC20 rETH token balance does not change during absorb', async () => {
-      expect(await tokens['rETH'].balanceOf(comet.address)).to.be.equal(collateralsState['rETH'].tokenBalanceBefore);
+      expect(await tokens[collateralKey1].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey1].tokenBalanceBefore);
     });
 
     it('comet ERC20 LDO token balance does not change during absorb', async () => {
-      expect(await tokens['LDO'].balanceOf(comet.address)).to.be.equal(collateralsState['LDO'].tokenBalanceBefore);
+      expect(await tokens[collateralKey2].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey2].tokenBalanceBefore);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -2428,7 +2440,9 @@ describe('partial liquidation', function() {
     const rEthDroppedPrice = exp(3000, 8);
     const aaveDroppedPrice = exp(80, 8);
 
-    const collateralKeys = ['rETH', 'AAVE', 'LDO'];
+    const collateralKey1 = 'rETH';
+    const collateralKey2 = 'AAVE';
+    const collateralKey3 = 'LDO';
     let collateralsState: Record<string, CollateralState>;
     let absorbTx: ContractTransaction;
 
@@ -2458,15 +2472,15 @@ describe('partial liquidation', function() {
     let totalCVAfterAave: bigint;
 
     before(async function() {
-      await comet.connect(alice).supply(tokens['rETH'].address, rEthAmount);
-      await comet.connect(alice).supply(tokens['AAVE'].address, aaveAmount);
-      await comet.connect(alice).supply(tokens['LDO'].address, ldoAmount);
+      await comet.connect(alice).supply(tokens[collateralKey1].address, rEthAmount);
+      await comet.connect(alice).supply(tokens[collateralKey2].address, aaveAmount);
+      await comet.connect(alice).supply(tokens[collateralKey3].address, ldoAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // rETH becomes worth $30 and AAVE becomes worth $80.
       // LCF_weighted = 0.78*$30 + 0.65*$80 + 0.62*$20 = $87.80 < debt $90.
-      await priceFeeds['rETH'].connect(alice).setRoundData(0, rEthDroppedPrice, 0, 0, 0);
-      await priceFeeds['AAVE'].connect(alice).setRoundData(0, aaveDroppedPrice, 0, 0, 0);
+      await priceFeeds[collateralKey1].connect(alice).setRoundData(0, rEthDroppedPrice, 0, 0, 0);
+      await priceFeeds[collateralKey2].connect(alice).setRoundData(0, aaveDroppedPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
 
       const principal = (await comet.userBasic(alice.address)).principal;
@@ -2479,7 +2493,7 @@ describe('partial liquidation', function() {
       oldPrincipal = principal.toBigInt();
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
+      collateralsState = await makeCollateralStates(comet, tokens, [collateralKey1, collateralKey2, collateralKey3]);
     });
 
     after(async () => await snapshot.restore());
@@ -2494,10 +2508,10 @@ describe('partial liquidation', function() {
     });
 
     it('calculates rETH full seizure values', async () => {
-      const rEthInfo = await comet.getAssetInfoByAddress(tokens['rETH'].address);
-      const aaveInfo = await comet.getAssetInfoByAddress(tokens['AAVE'].address);
-      const ldoInfo = await comet.getAssetInfoByAddress(tokens['LDO'].address);
-      const ldoPrice = (await priceFeeds['LDO'].latestRoundData())[1].toBigInt();
+      const rEthInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
+      const aaveInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
+      const ldoInfo = await comet.getAssetInfoByAddress(tokens[collateralKey3].address);
+      const ldoPrice = (await priceFeeds[collateralKey3].latestRoundData())[1].toBigInt();
 
       debtRemainingValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
       rEthValue = mulPrice(rEthAmount, rEthDroppedPrice, rEthInfo.scale);
@@ -2521,8 +2535,8 @@ describe('partial liquidation', function() {
     });
 
     it('calculates AAVE partial seizure values', async () => {
-      const rEthInfo = await comet.getAssetInfoByAddress(tokens['rETH'].address);
-      const aaveInfo = await comet.getAssetInfoByAddress(tokens['AAVE'].address);
+      const rEthInfo = await comet.getAssetInfoByAddress(tokens[collateralKey1].address);
+      const aaveInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
 
       debtAfterREth = debtRemainingValue - rEthSeizedValue;
       const totalCVAfterREth = totalCollateralizedValue - mulFactor(rEthValue, rEthInfo.borrowCollateralFactor);
@@ -2567,17 +2581,17 @@ describe('partial liquidation', function() {
     });
 
     it('alice rETH balance is zero after full seizure', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['rETH'].address)).to.be.equal(0);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey1].address)).to.be.equal(0);
     });
 
     it('alice AAVE balance is reduced by the seized amount', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['AAVE'].address)).to.be.equal(
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey2].address)).to.be.equal(
         aaveAmount - aaveSeizeAmount
       );
     });
 
     it('alice LDO balance is unchanged: LDO was not seized', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens['LDO'].address)).to.be.equal(ldoAmount);
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey3].address)).to.be.equal(ldoAmount);
     });
 
     it('alice still has remaining debt after absorb', async () => {
@@ -2590,7 +2604,7 @@ describe('partial liquidation', function() {
     });
 
     it('alice assetsIn keeps only AAVE after rETH full seizure', async () => {
-      const aaveInfo = await comet.getAssetInfoByAddress(tokens['AAVE'].address);
+      const aaveInfo = await comet.getAssetInfoByAddress(tokens[collateralKey2].address);
 
       expect(assetsInBefore).to.not.be.equal(1 << aaveInfo.offset);
       expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(1 << aaveInfo.offset);
@@ -2609,20 +2623,20 @@ describe('partial liquidation', function() {
     });
 
     it('comet total supplied rETH is zero', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['rETH'].address)).totalSupplyAsset;
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey1].address)).totalSupplyAsset;
 
-      expect(totalSupplyAsset).to.be.equal(collateralsState['rETH'].totalsCollateralBefore.sub(rEthSeizeAmount));
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey1].totalsCollateralBefore.sub(rEthSeizeAmount));
       expect(totalSupplyAsset).to.be.equal(0);
     });
 
     it('comet total supplied AAVE is reduced by the seized amount', async () => {
-      const totalSupplyAsset = (await comet.totalsCollateral(tokens['AAVE'].address)).totalSupplyAsset;
-      expect(totalSupplyAsset).to.be.equal(collateralsState['AAVE'].totalsCollateralBefore.sub(aaveSeizeAmount));
+      const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralKey2].address)).totalSupplyAsset;
+      expect(totalSupplyAsset).to.be.equal(collateralsState[collateralKey2].totalsCollateralBefore.sub(aaveSeizeAmount));
     });
 
     it('comet total supplied LDO is unchanged', async () => {
-      expect((await comet.totalsCollateral(tokens['LDO'].address)).totalSupplyAsset).to.be.equal(
-        collateralsState['LDO'].totalsCollateralBefore
+      expect((await comet.totalsCollateral(tokens[collateralKey3].address)).totalSupplyAsset).to.be.equal(
+        collateralsState[collateralKey3].totalsCollateralBefore
       );
     });
 
@@ -2637,19 +2651,19 @@ describe('partial liquidation', function() {
     });
 
     it('comet rETH collateral reserves increase by all seized rETH', async () => {
-      expect(await comet.getCollateralReserves(tokens['rETH'].address)).to.be.equal(
-        collateralsState['rETH'].collateralReservesBefore.add(rEthSeizeAmount)
+      expect(await comet.getCollateralReserves(tokens[collateralKey1].address)).to.be.equal(
+        collateralsState[collateralKey1].collateralReservesBefore.add(rEthSeizeAmount)
       );
     });
 
     it('comet AAVE collateral reserves increase by the seized amount', async () => {
-      expect(await comet.getCollateralReserves(tokens['AAVE'].address)).to.be.equal(
-        collateralsState['AAVE'].collateralReservesBefore.add(aaveSeizeAmount)
+      expect(await comet.getCollateralReserves(tokens[collateralKey2].address)).to.be.equal(
+        collateralsState[collateralKey2].collateralReservesBefore.add(aaveSeizeAmount)
       );
     });
 
     it('comet LDO collateral reserves remain zero', async () => {
-      expect(await comet.getCollateralReserves(tokens['LDO'].address)).to.be.equal(0);
+      expect(await comet.getCollateralReserves(tokens[collateralKey3].address)).to.be.equal(0);
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
@@ -2657,15 +2671,15 @@ describe('partial liquidation', function() {
     });
 
     it('comet ERC20 rETH token balance does not change during absorb', async () => {
-      expect(await tokens['rETH'].balanceOf(comet.address)).to.be.equal(collateralsState['rETH'].tokenBalanceBefore);
+      expect(await tokens[collateralKey1].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey1].tokenBalanceBefore);
     });
 
     it('comet ERC20 AAVE token balance does not change during absorb', async () => {
-      expect(await tokens['AAVE'].balanceOf(comet.address)).to.be.equal(collateralsState['AAVE'].tokenBalanceBefore);
+      expect(await tokens[collateralKey2].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey2].tokenBalanceBefore);
     });
 
     it('comet ERC20 LDO token balance does not change during absorb', async () => {
-      expect(await tokens['LDO'].balanceOf(comet.address)).to.be.equal(collateralsState['LDO'].tokenBalanceBefore);
+      expect(await tokens[collateralKey3].balanceOf(comet.address)).to.be.equal(collateralsState[collateralKey3].tokenBalanceBefore);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
