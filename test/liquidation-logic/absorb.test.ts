@@ -1,5 +1,5 @@
-import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, divPrice, presentValue, CollateralState, makeCollateralStates } from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
+import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, divPrice, presentValue, CollateralState, makeCollateralStates, deployAndUpdateDefaultLiquidationModule } from '../helpers';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, DefaultLiquidationModule, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -10,6 +10,7 @@ describe('absorb: general logic', function () {
   let cometProxyAdmin: CometProxyAdmin;
   let configuratorProxyAddress: string;
   let cometProxyAddress: string;
+  let liquidationModule: DefaultLiquidationModule;
 
   const initialBaseFunding = exp(1, 8) * 10_000n;
   const baseBorrowMin = exp(10, 6);
@@ -25,6 +26,7 @@ describe('absorb: general logic', function () {
 
   let alice: SignerWithAddress;
   let absorber: SignerWithAddress;
+  let governor: SignerWithAddress;
 
   let snapshot: SnapshotRestorer;
 
@@ -40,10 +42,11 @@ describe('absorb: general logic', function () {
       baseBorrowMin: baseBorrowMin,
     });
     configuratorProxyAddress = protocol.configuratorProxy.address;
-    cometProxyAddress = protocol.cometProxy.address;
+    cometProxyAddress = protocol.cometProxyWithExtendedAssetList.address;
     configurator = protocol.configurator.attach(configuratorProxyAddress);
     comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
     cometProxyAdmin = protocol.proxyAdmin;
+    liquidationModule = protocol.defaultLiquidationModule;
 
     for (let asset in protocol.tokens) {
       if (asset === 'USDC') continue;
@@ -54,7 +57,8 @@ describe('absorb: general logic', function () {
     priceFeeds['USDC'] = protocol.priceFeeds['USDC'];
 
     [alice, absorber] = protocol.users;
-
+    governor = protocol.governor;
+    
     const allocateAmount = exp(1_000_000, 18);
     for (const token of Object.values(protocol.tokens)) {
       await (token as FaucetToken).allocateTo(alice.address, allocateAmount);
@@ -164,7 +168,7 @@ describe('absorb: general logic', function () {
     it('AbsorbDebt event is emitted', async () => {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('comet ERC20 collateral token balance does not change during absorb', async () => {
@@ -299,7 +303,7 @@ describe('absorb: general logic', function () {
     it('AbsorbDebt event is emitted', async () => {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('comet ERC20 collateral token balance does not change during absorb', async () => {
@@ -436,7 +440,7 @@ describe('absorb: general logic', function () {
     it('AbsorbDebt event is emitted', async () => {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('comet ERC20 collateral token balance does not change during absorb', async () => {
@@ -589,7 +593,7 @@ describe('absorb: general logic', function () {
     it('AbsorbDebt event is emitted', async () => {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('comet ERC20 COMP token balance does not change during absorb', async () => {
@@ -753,7 +757,7 @@ describe('absorb: general logic', function () {
     it('AbsorbDebt event is emitted', async () => {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('comet ERC20 AAVE token balance does not change during absorb', async () => {
@@ -919,7 +923,7 @@ describe('absorb: general logic', function () {
     it('AbsorbDebt event is emitted', async () => {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('comet ERC20 USDe token balance does not change during absorb', async () => {
@@ -1082,7 +1086,7 @@ describe('absorb: general logic', function () {
     it('AbsorbDebt event is emitted', async () => {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('comet ERC20 ezETH token balance does not change during absorb', async () => {
@@ -1288,7 +1292,7 @@ describe('absorb: general logic', function () {
     it('AbsorbDebt event is emitted', async () => {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('comet ERC20 base token balance does not change during absorb', async () => {
@@ -1560,6 +1564,7 @@ describe('absorb: general logic', function () {
 
         await configurator.updateAssetPriceFeed(cometProxyAddress, tokens['COMP'].address, priceFeedWithRevert.address);
         await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
+        liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
       });
 
       after(async () => await snapshot.restore());

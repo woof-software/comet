@@ -1,6 +1,7 @@
 import { ethers, expect, exp, presentValue, mulPrice, mulFactor, default24Assets,
-  makeConfigurator } from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
+  makeConfigurator, 
+  deployAndUpdateDefaultLiquidationModule} from '../helpers';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, DefaultLiquidationModule, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -12,6 +13,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
   let cometProxyAdmin: CometProxyAdmin;
   let configuratorProxyAddress: string;
   let cometProxyAddress: string;
+  let liquidationModule: DefaultLiquidationModule;
 
   const baseTokenPrice = exp(1, 8);
   const initialBaseFunding = baseTokenPrice * 10_000n;
@@ -27,6 +29,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
   let pauseGuardian: SignerWithAddress;
   let alice: SignerWithAddress;
   let absorber: SignerWithAddress;
+  let governor: SignerWithAddress;
 
   // Math
   const baseScale: bigint = 10n ** 6n;
@@ -57,6 +60,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
     priceFeeds['USDC'] = protocol.priceFeeds['USDC'];
 
     pauseGuardian = protocol.pauseGuardian;
+    governor = protocol.governor;
     [alice, absorber] = protocol.users;
 
     const allocateAmount = exp(1_000_000, 18);
@@ -85,6 +89,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
     before(async function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
+      await deployAndUpdateDefaultLiquidationModule(comet, governor);
     });
 
     after(async () => await snapshot.restore());
@@ -119,6 +124,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       const userBasic = await comet.userBasic(alice.address);
       const principal = userBasic.principal;
@@ -172,14 +178,14 @@ describe('collateral price oracle reverts across varying collateral factors duri
     });
 
     it('AbsorbCollateral seizes all COMP at value 0 because the price was never fetched', async () => {
-      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens['COMP'].address, collateralAmount, wantedCollateralValue
       );
     });
 
     it('AbsorbDebt writes off the full debt as bad debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -263,6 +269,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       const userBasic = await comet.userBasic(alice.address);
       const principal = userBasic.principal;
@@ -308,7 +315,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
       // LF = 0 causes the loop to skip COMP, so debtRemainingValue never decreases;
       // bad-debt branch zeroes newBalance, absorbing the entire debt from protocol reserves
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -375,6 +382,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
   context('deactivated, all factors > 0', function() {
     before(async function() {
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
+      await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
@@ -396,6 +404,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
     before(async function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
+      await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
@@ -418,6 +427,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
+      await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
@@ -444,6 +454,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
+      await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);

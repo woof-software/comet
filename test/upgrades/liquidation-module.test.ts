@@ -345,7 +345,6 @@ describe('liquidation module upgrade', function () {
     });
 
     it('uses the configured target health factor and liquidation module', async function () {
-      expect(await comet.targetHealthFactor()).to.equal(TARGET_HEALTH_FACTOR);
       expect(await comet.liquidationModule()).to.equal(LIQUIDATION_MODULE);
     });
 

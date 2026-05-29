@@ -39,23 +39,25 @@ import {
   NonStandardFaucetFeeToken__factory,
   AssetListFactory,
   AssetListFactory__factory,
-  CometHarnessExtendedAssetList,
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
   MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
   DefaultLiquidationModule,
-  DefaultLiquidationModule__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarness';
 import { defaultAssets, default24Assets } from './helpers/default-assets';
+import { deployAndUpdateDefaultLiquidationModule } from './helpers/liquidation-module';
 
 // Snapshot
 export { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
 // Network helpers
 export * from './helpers/network-helpers';
+
+// DefaultLiquidationModule helpers
+export { deployAndUpdateDefaultLiquidationModule } from './helpers/liquidation-module';
 
 export { Comet, ethers, expect, hre, default24Assets, defaultAssets };
 
@@ -131,7 +133,6 @@ export type Protocol = {
   priceFeeds: {
     [symbol: string]: SimplePriceFeed;
   };
-  liquidationModule: string;
   defaultLiquidationModule: DefaultLiquidationModule;
 };
 
@@ -143,6 +144,8 @@ export type ConfiguratorAndProtocol = {
   cometFactoryWithExtendedAssetList: CometFactoryWithExtendedAssetList;
   cometProxy: TransparentUpgradeableProxy;
   cometProxyWithExtendedAssetList: TransparentUpgradeableProxy;
+  defaultLiquidationModuleForProxy: DefaultLiquidationModule;
+  defaultLiquidationModuleForExtProxy: DefaultLiquidationModule;
 } & Protocol;
 
 export type RewardsOpts = {
@@ -411,10 +414,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   await comet.initializeStorage();
   await cometWithExtendedAssetList.initializeStorage();
 
-  const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-  const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(cometWithExtendedAssetList.address);
-  await defaultLiquidationModule.deployed();
-  await cometWithExtendedAssetList.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
+  const defaultLiquidationModule = await deployAndUpdateDefaultLiquidationModule(cometWithExtendedAssetList, governor);
 
   const baseTokenBalance = opts.baseTokenBalance;
   if (baseTokenBalance) {
@@ -437,7 +437,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     tokens,
     unsupportedToken,
     priceFeeds,
-    liquidationModule,
     defaultLiquidationModule,
   };
 }
@@ -453,7 +452,7 @@ export async function getConfigurationForConfigurator(
   },
   base: string,
   priceFeeds: { [p: string]: SimplePriceFeed },
-  liquidationModule: string) {
+) {
 
   const assets = opts.assets || defaultAssets();
 
@@ -491,7 +490,7 @@ export async function getConfigurationForConfigurator(
     governor: governor.address,
     pauseGuardian: pauseGuardian.address,
     extensionDelegate: extensionDelegate.address,
-    liquidationModule,
+    liquidationModule: '0x1111111111111111111111111111111111111111', // at this moment, we do not have address of the comet for liquidation modue, thus we use a dummy address
     baseToken: tokens[base].address,
     baseTokenPriceFeed: priceFeeds[base].address,
     supplyKink,
@@ -544,7 +543,6 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
-    liquidationModule,
   } = await makeProtocol(opts);
 
   // Deploy ProxyAdmin
@@ -569,7 +567,6 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     base,
     priceFeeds,
-    liquidationModule,
   );
   configuration.extensionDelegate = extensionDelegateAssetList.address;
 
@@ -629,21 +626,11 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
   configuration.extensionDelegate = extensionDelegateAssetList.address;
   configuration.targetHealthFactor = exp(1.05, 18);
 
-  const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-
-  const defaultLiquidationModuleForProxy = await DefaultLiquidationModuleFactory.deploy(cometProxy.address);
-  await defaultLiquidationModuleForProxy.deployed();
-  const cometProxyAsImpl = await ethers.getContractAt('CometHarnessExtendedAssetList', cometProxy.address) as CometHarnessExtendedAssetList;
-  await cometProxyAsImpl.connect(governor).setLiquidationModule(defaultLiquidationModuleForProxy.address);
-
-  const defaultLiquidationModuleForExtProxy = await DefaultLiquidationModuleFactory.deploy(cometProxyWithExtendedAssetList.address);
-  await defaultLiquidationModuleForExtProxy.deployed();
-  const cometExtProxyAsImpl = await ethers.getContractAt('CometHarnessExtendedAssetList', cometProxyWithExtendedAssetList.address) as CometHarnessExtendedAssetList;
-  await cometExtProxyAsImpl.connect(governor).setLiquidationModule(defaultLiquidationModuleForExtProxy.address);
-
-  // Update config in configurator
-  await configuratorAsProxy.connect(governor).setLiquidationModule(cometProxy.address, defaultLiquidationModuleForProxy.address);
-  await configuratorAsProxy.connect(governor).setLiquidationModule(cometProxyWithExtendedAssetList.address, defaultLiquidationModuleForExtProxy.address);
+  // Now we know addresses of the comet proxies, we can deploy the default liquidation modules
+  const cometAsProxy = cometWithExtendedAssetList.attach(cometProxy.address);
+  const cometAsExtProxy = cometWithExtendedAssetList.attach(cometProxyWithExtendedAssetList.address);
+  const defaultLiquidationModuleForProxy = await deployAndUpdateDefaultLiquidationModule(cometAsProxy, governor);
+  const defaultLiquidationModuleForExtProxy = await deployAndUpdateDefaultLiquidationModule(cometAsExtProxy, governor);
 
   return {
     opts,
@@ -667,8 +654,9 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
-    liquidationModule,
     defaultLiquidationModule: defaultLiquidationModuleForExtProxy,
+    defaultLiquidationModuleForProxy,
+    defaultLiquidationModuleForExtProxy,
   };
 }
 

@@ -1,7 +1,8 @@
 import { ethers, expect, exp, presentValue, mulPrice, mulFactor, divPrice, default24Assets, CollateralState, makeCollateralStates,
   makeConfigurator, 
-  principalValue} from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, DefaultLiquidationModule, DefaultLiquidationModule__factory, FaucetToken, SimplePriceFeed } from 'build/types';
+  principalValue,
+  deployAndUpdateDefaultLiquidationModule} from '../helpers';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, DefaultLiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -10,7 +11,7 @@ import { AssetInfoStructOutput } from 'build/types/CometWithExtendedAssetList';
 // These flows cover absorption after a collateral is soft-delisted by setting BCF to 0.
 // The collateral no longer contributes to the borrow-side health value, but if LCF and LF
 // remain positive it is still liquidatable and must reduce the account's debt when seized.
-describe.only('absorb logic with delisted collaterals', function() {
+describe('absorb logic with delisted collaterals', function() {
   // Protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
   let configurator: Configurator;
@@ -56,7 +57,6 @@ describe.only('absorb logic with delisted collaterals', function() {
     comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
     cometProxyAdmin = protocol.proxyAdmin;
     liquidationModule = protocol.defaultLiquidationModule;
-    governor = protocol.governor;
 
     for (let asset in protocol.tokens) {
       if (asset === 'USDC') continue;
@@ -68,6 +68,7 @@ describe.only('absorb logic with delisted collaterals', function() {
 
     [alice, absorber] = protocol.users;
     pauseGuardian = protocol.pauseGuardian;
+    governor = protocol.governor;
 
     const allocateAmount = exp(1_000_000, 18);
     for (const token of Object.values(protocol.tokens)) {
@@ -80,7 +81,7 @@ describe.only('absorb logic with delisted collaterals', function() {
 
     await comet.connect(alice).supply(tokens['COMP'].address, collateralAmount);
     await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
-    targetHealthFactor = (await liquidationModule.targetHealthFactor()).toBigInt();
+    targetHealthFactor = (await liquidationModule.TARGET_HEALTH_FACTOR()).toBigInt();
 
     snapshot = await takeSnapshot();
   });
@@ -111,11 +112,7 @@ describe.only('absorb logic with delisted collaterals', function() {
     before(async function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       await priceFeeds['COMP'].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -339,11 +336,7 @@ describe.only('absorb logic with delisted collaterals', function() {
     before(async function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       await priceFeeds['COMP'].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -529,11 +522,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await comet.connect(alice).supply(tokens['WETH'].address, wethAmount);
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       await priceFeeds['COMP'].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -771,11 +760,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await comet.connect(alice).supply(tokens['WETH'].address, wethAmount);
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['WETH'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       await priceFeeds['COMP'].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -1024,12 +1009,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
-      await comet.accrueAccount(alice.address);
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       const userBasic = await comet.userBasic(alice.address);
       const totalsBasic = await comet.totalsBasic();
@@ -1184,12 +1164,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
-      await comet.accrueAccount(alice.address);
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       const userBasic = await comet.userBasic(alice.address);
       const totalsBasic = await comet.totalsBasic();
@@ -1379,11 +1354,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['WETH'].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['WETH'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       await priceFeeds['COMP'].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -1565,11 +1536,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['WETH'].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['WETH'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       await priceFeeds['COMP'].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -1755,12 +1722,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['WETH'].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['WETH'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
-      await comet.accrueAccount(alice.address);
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       const userBasic = await comet.userBasic(alice.address);
       const totalsBasic = await comet.totalsBasic();
@@ -1928,11 +1890,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
       await comet.accrueAccount(alice.address);
 
       const userBasic = await comet.userBasic(alice.address);
@@ -2065,11 +2023,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens['COMP'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
       await comet.accrueAccount(alice.address);
 
       const userBasic = await comet.userBasic(alice.address);
@@ -2261,11 +2215,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['WETH'].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens['WETH'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       await priceFeeds['COMP'].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -2443,11 +2393,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['WETH'].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens['WETH'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
       await comet.accrueAccount(alice.address);
 
       const userBasic = await comet.userBasic(alice.address);
@@ -2610,11 +2556,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens['WBTC'].address, 0);
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['DAI'].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      // Deploy new DefaultLiquidationModule for the comet
-      const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-      const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-      await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-      liquidationModule = defaultLiquidationModule;
+      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
       await priceFeeds['COMP'].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -2827,11 +2769,7 @@ describe.only('absorb logic with delisted collaterals', function() {
       before(async function() {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
         await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-        // Deploy new DefaultLiquidationModule for the comet
-        const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-        const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-        await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-        liquidationModule = defaultLiquidationModule;
+        liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
     
         await priceFeeds['COMP'].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
         await comet.accrueAccount(alice.address);
@@ -2864,11 +2802,7 @@ describe.only('absorb logic with delisted collaterals', function() {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
         await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-        // Deploy new DefaultLiquidationModule for the comet
-        const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-        const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-        await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-        liquidationModule = defaultLiquidationModule;
+        liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
         const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
         await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
@@ -2899,11 +2833,7 @@ describe.only('absorb logic with delisted collaterals', function() {
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens['COMP'].address, 0);
         await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens['COMP'].address, 0);
         await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-        // Deploy new DefaultLiquidationModule for the comet
-        const DefaultLiquidationModuleFactory = (await ethers.getContractFactory('DefaultLiquidationModule')) as DefaultLiquidationModule__factory;
-        const defaultLiquidationModule = await DefaultLiquidationModuleFactory.deploy(comet.address);
-        await comet.connect(governor).setLiquidationModule(defaultLiquidationModule.address);
-        liquidationModule = defaultLiquidationModule;
+        liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
 
         const compInfo = await comet.getAssetInfoByAddress(tokens['COMP'].address);
         await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);

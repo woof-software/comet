@@ -71,9 +71,6 @@ abstract contract CometCore is CometConfiguration, CometStorage, CometMath {
     /// @dev The scale for prices (in USD)
     uint64 internal constant PRICE_SCALE = uint64(10 ** PRICE_FEED_DECIMALS);
 
-    /// @dev The scale for factors
-    uint64 internal constant FACTOR_SCALE = 1e18;
-
     /// @dev The storage slot for reentrancy guard flags
     bytes32 internal constant REENTRANCY_GUARD_FLAG_SLOT = bytes32(keccak256("comet.reentrancy.guard"));
 

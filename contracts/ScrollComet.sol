@@ -677,38 +677,10 @@ contract ScrollComet is CometMainInterface {
     }
 
     /**
-     * @dev Multiply a number by a factor
-     */
-    function mulFactor(uint n, uint factor) internal pure returns (uint) {
-        return n * factor / FACTOR_SCALE;
-    }
-
-    /**
      * @dev Divide a number by an amount of base
      */
     function divBaseWei(uint n, uint baseWei) internal view returns (uint) {
         return n * baseScale / baseWei;
-    }
-
-    /**
-     * @dev Multiply a `fromScale` quantity by a price, returning a common price quantity
-     */
-    function mulPrice(uint n, uint price, uint64 fromScale) internal pure returns (uint) {
-        return n * price / fromScale;
-    }
-
-    /**
-     * @dev Multiply a signed `fromScale` quantity by a price, returning a common price quantity
-     */
-    function signedMulPrice(int n, uint price, uint64 fromScale) internal pure returns (int) {
-        return n * signed256(price) / int256(uint256(fromScale));
-    }
-
-    /**
-     * @dev Divide a common price quantity by a price, returning a `toScale` quantity
-     */
-    function divPrice(uint n, uint price, uint64 toScale) internal pure returns (uint) {
-        return n * toScale / price;
     }
 
     /**
@@ -1327,4 +1299,6 @@ contract ScrollComet is CometMainInterface {
     function updateCollateral(address account, AssetInfo memory collateralInfo, uint128 seizedAmount) external override {}
     function updateDebtAndPrincipal(address account, int104 oldPrincipal, int256 newBalance) external override returns (int256 oldBalance) {}
     function assetList() external view override returns (address) {}
+    function presentValueExternal(int104 principalValue_) external view override returns (int256) {}
+    function isInAssetExternal(uint16 assetsIn, uint8 assetOffset, uint8 _reserved) external pure override returns (bool) {}
 }

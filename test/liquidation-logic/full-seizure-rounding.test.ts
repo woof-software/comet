@@ -1,5 +1,5 @@
 import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, divPrice, default24Assets, factorScale, CollateralState, makeCollateralStates } from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
+import { CometHarnessInterfaceExtendedAssetList, DefaultLiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -15,6 +15,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
   const baseScale = 10n ** 6n;
 
   let comet: CometHarnessInterfaceExtendedAssetList;
+  let liquidationModule: DefaultLiquidationModule;
   let tokens: { [symbol: string]: FaucetToken } = {};
   let baseToken: FaucetToken;
   let priceFeeds: { [symbol: string]: SimplePriceFeed } = {};
@@ -40,6 +41,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     });
 
     comet = protocol.cometWithExtendedAssetList;
+    liquidationModule = protocol.defaultLiquidationModule;
     for (let asset in protocol.tokens) {
       if (asset === 'USDC') continue;
       tokens[asset] = protocol.tokens[asset] as FaucetToken;
@@ -175,14 +177,14 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     });
 
     it('AbsorbCollateral emits the expected partial seizure', async () => {
-      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[SYMBOL].address, expectedSeizeAmount, expectedWantedCollateralValue
       );
     });
 
     it('AbsorbDebt closes the debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -353,14 +355,14 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     });
 
     it('AbsorbCollateral emits the expected partial seizure', async () => {
-      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[SYMBOL].address, expectedSeizeAmount, expectedWantedCollateralValue
       );
     });
 
     it('AbsorbDebt closes the debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -531,14 +533,14 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     });
 
     it('AbsorbCollateral emits the expected partial seizure', async () => {
-      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[SYMBOL].address, expectedSeizeAmount, expectedWantedCollateralValue
       );
     });
 
     it('AbsorbDebt closes the debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -709,14 +711,14 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     });
 
     it('AbsorbCollateral emits the expected partial seizure', async () => {
-      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[SYMBOL].address, expectedSeizeAmount, expectedWantedCollateralValue
       );
     });
 
     it('AbsorbDebt closes the debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -875,18 +877,18 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     it('AbsorbDebt event is emitted', async () => {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('AbsorbCollateral event is emitted for COMP full seizure', async () => {
-      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens['COMP'].address,
         collateralsState['COMP'].seizeAmount, compWantedCollateralValue
       );
     });
 
     it('AbsorbCollateral event is emitted for WETH full seizure', async () => {
-      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens['WETH'].address,
         collateralsState['WETH'].seizeAmount, wethWantedCollateralValue
       );

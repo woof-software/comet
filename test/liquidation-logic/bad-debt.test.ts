@@ -62,7 +62,7 @@ describe('partial liquidation: bad debt', function() {
     // Make reserves on comet for borrowings
     await baseToken.allocateTo(comet.address, initialBaseFunding);
 
-    targetHealthFactor = (await liquidationModule.targetHealthFactor()).toBigInt();
+    targetHealthFactor = (await liquidationModule.TARGET_HEALTH_FACTOR()).toBigInt();
     snapshot = await takeSnapshot();
   });
 
@@ -1177,7 +1177,7 @@ describe('partial liquidation: bad debt', function() {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('alice UNI collateral balance is zero', async () => {
@@ -1361,7 +1361,7 @@ describe('partial liquidation: bad debt', function() {
         basePaidOut = newBalance - oldBalance;
         const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
   
-        await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+        await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
       });
   
       for (const config of collateralConfigs) {
@@ -1457,7 +1457,7 @@ describe('partial liquidation: bad debt', function() {
           expect(wantedCollateralValue).to.be.greaterThan(collateralValue);
   
           await expect(absorbTx)
-            .to.emit(comet, 'AbsorbCollateral')
+            .to.emit(liquidationModule, 'AbsorbCollateral')
             .withArgs(absorber.address, alice.address, tokens[config.symbol].address, config.amount, collateralValue);
   
           debtRemainingValue -= mulFactor(collateralValue, assetInfo.liquidationFactor);
@@ -1586,7 +1586,7 @@ describe('partial liquidation: bad debt', function() {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('alice COMP collateral balance is zero', async () => {
@@ -1743,7 +1743,7 @@ describe('partial liquidation: bad debt', function() {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('alice collateral balance is zero', async () => {
@@ -1918,7 +1918,7 @@ describe('partial liquidation: bad debt', function() {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('alice COMP collateral balance is zero', async () => {
@@ -2149,7 +2149,7 @@ describe('partial liquidation: bad debt', function() {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('alice WBTC collateral balance is zero', async () => {
@@ -2324,7 +2324,7 @@ describe('partial liquidation: bad debt', function() {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('alice collateral balance is zero', async () => {
@@ -2563,7 +2563,7 @@ describe('partial liquidation: bad debt', function() {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('all alice collateral balances are zero', async () => {
