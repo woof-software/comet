@@ -1456,10 +1456,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
                                     
     //////////////////////////////////////////////////////////////*/
 
-    receive() external payable {
-        revert("Can not receive ETH");
-    }
-
     /**
      * @notice Fallback to calling the extension delegate for everything else
      */
