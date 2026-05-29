@@ -1649,3 +1649,28 @@ export function applyL1ToL2Alias(address: string) {
 export function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
   return !!log?.raw?.topics && !!log?.raw?.data;
 }
+
+export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
+  try {
+    const configurator = await ctx.getConfigurator();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    // Use function selector to probe existence without reverting on unsupported networks
+    const iface = new ethers.utils.Interface([
+      'function marketAdminPermissionChecker() public view returns (address)'
+    ]);
+    const functionSelector = iface.getSighash('marketAdminPermissionChecker');
+    
+    const result = await ethers.provider.call({
+      to: configurator.address,
+      data: functionSelector
+    });
+    
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
