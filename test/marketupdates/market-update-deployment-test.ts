@@ -5,7 +5,7 @@ import {
   advanceTimeAndMineBlock,
 } from './market-updates-helper';
 import {
-  CometFactory__factory,
+  CometFactoryWithExtendedAssetList__factory,
   CometProxyAdmin__factory,
   CometProxyAdminOld__factory,
   Configurator__factory,
@@ -388,7 +388,7 @@ describe('MarketUpdateDeployment', function() {
     // Derive the rest of the Configurator configuration values
 
     // Deploy CometFactory
-    const CometFactoryFactory = (await ethers.getContractFactory('CometFactory')) as CometFactory__factory;
+    const CometFactoryFactory = (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')) as CometFactoryWithExtendedAssetList__factory;
     const cometFactory = await CometFactoryFactory.deploy();
     await cometFactory.deployed();
 

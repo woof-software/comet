@@ -226,7 +226,7 @@ describe('isLiquidatable', function () {
       configuratorProxyAddress = protocol.configuratorProxy.address;
       proxyAdmin = protocol.proxyAdmin;
       cometProxyAddress = protocol.cometProxy.address;
-      comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress) as CometWithExtendedAssetList;
+      comet = protocol.comet.attach(cometProxyAddress) as CometWithExtendedAssetList;
 
       baseSymbol = protocol.base;
       baseToken = protocol.tokens[baseSymbol];

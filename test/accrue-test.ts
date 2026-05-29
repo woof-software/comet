@@ -203,15 +203,21 @@ describe('accrue', function () {
       totalBorrowBase: 13000, // needs to have positive utilization for supply rate to be > 0
     });
     await fastForward(998);
-    const _s0 = await wait(comet.setTotalsBasic(t1));
+    await comet.setTotalsBasic(t1);
     await fastForward(2);
     await expect(wait(comet.accrue())).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
 
     const t2 = Object.assign({}, t0, {
       baseBorrowIndex: 2n ** 64n - 1n,
+      // totalBorrowBase must be non-zero: getBorrowRate() short-circuits to 0 when totalBorrowBase == 0
+      // totalSupplyBase must be large enough that presentValueSupply > presentValueBorrow
+      // (presentValueBorrow = 1 * (2^64-1) / 1e15 ≈ 18440), so utilization stays < 100% and
+      // borrow rate stays moderate enough that mulFactor < 2^64, letting the uint64 += itself overflow
+      totalSupplyBase: 20000,
+      totalBorrowBase: 1,
     });
     await fastForward(998);
-    const _s1 = await wait(comet.setTotalsBasic(t2));
+    await comet.setTotalsBasic(t2);
     await fastForward(2);
     await expect(wait(comet.accrue())).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
   });

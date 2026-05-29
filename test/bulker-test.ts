@@ -77,7 +77,7 @@ describe('bulker', function () {
       },
       reward: 'COMP',
     });
-    const { cometWithExtendedAssetList : comet, tokens: {
+    const { comet, tokens: {
       COMP,
       WETH,
       USDC,
@@ -392,7 +392,7 @@ describe('bulker', function () {
       },
       reward: 'COMP',
     });
-    const { cometWithExtendedAssetList : comet, tokens: {
+    const { comet, tokens: {
       COMP,
       WETH,
     }, users: [alice] } = protocol;

@@ -61,7 +61,7 @@ describe('interest calculation', function () {
       },
     });
 
-    comet = protocol.cometWithExtendedAssetList;
+    comet = protocol.comet;
     baseToken = protocol.tokens['USDC'] as FaucetToken;
 
     lastUpdatedTime = (await comet.totalsBasic()).lastAccrualTime;
@@ -1852,7 +1852,7 @@ describe('interest calculation', function () {
 
       before(async function () {
         const protocol = await makeProtocol(interestRateParams);
-        testComet = protocol.cometWithExtendedAssetList;
+        testComet = protocol.comet;
         baseToken = protocol.tokens['USDC'] as FaucetToken;
         collateral = protocol.tokens['COMP'] as FaucetToken;
 
@@ -1990,7 +1990,7 @@ describe('interest calculation', function () {
 
       before(async function () {
         const protocol = await makeProtocol({ base: 'USDC' });
-        testComet = protocol.cometWithExtendedAssetList;
+        testComet = protocol.comet;
         baseToken = protocol.tokens['USDC'] as FaucetToken;
         collateral = protocol.tokens['COMP'] as FaucetToken;
 
@@ -2063,7 +2063,7 @@ describe('interest calculation', function () {
             },
           },
         });
-        testComet = protocol.cometWithExtendedAssetList;
+        testComet = protocol.comet;
         baseToken = protocol.tokens['USDC'] as FaucetToken;
         collateral = protocol.tokens['COMP'] as FaucetToken;
 

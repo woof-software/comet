@@ -344,7 +344,14 @@ describe('liquidation module upgrade', function () {
       expect(await proxyAdmin.getProxyImplementation(COMET_ADDRESS)).to.equal(newCometImplementation);
     });
 
-    it('uses the configured target health factor and liquidation module', async function () {
+    it('initializes the liquidation module in the proxy storage', async function () {
+      // liquidationModule is a storage variable: the constructor wrote it to the
+      // implementation's own storage, not the proxy's. The governor must call
+      // setLiquidationModule on the proxy to write it into the proxy's storage slot.
+      await expect(comet.connect(governor).setLiquidationModule(LIQUIDATION_MODULE)).to.not.be.reverted;
+    });
+
+    it('uses the configured liquidation module', async function () {
       expect(await comet.liquidationModule()).to.equal(LIQUIDATION_MODULE);
     });
 

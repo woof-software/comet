@@ -196,7 +196,7 @@ describe('isBorrowCollateralized', function () {
       configuratorProxyAddress = protocol.configuratorProxy.address;
       proxyAdmin = protocol.proxyAdmin;
       cometProxyAddress = protocol.cometProxy.address;
-      comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress) as CometWithExtendedAssetList;
+      comet = protocol.comet.attach(cometProxyAddress) as CometWithExtendedAssetList;
       tokens = protocol.tokens;
 
       baseSymbol = protocol.base;

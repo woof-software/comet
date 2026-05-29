@@ -236,7 +236,7 @@ describe('quoteCollateral', function () {
       const configuratorAndProtocol = await makeConfigurator({ assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals }});
 
       cometProxyAddress = configuratorAndProtocol.cometProxy.address;
-      comet = configuratorAndProtocol.cometWithExtendedAssetList.attach(cometProxyAddress) as CometWithExtendedAssetList;
+      comet = configuratorAndProtocol.comet.attach(cometProxyAddress) as CometWithExtendedAssetList;
       configurator = configuratorAndProtocol.configurator;
       configuratorProxy = configuratorAndProtocol.configuratorProxy;
       proxyAdmin = configuratorAndProtocol.proxyAdmin;

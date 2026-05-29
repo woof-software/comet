@@ -1,5 +1,5 @@
 import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS, UserCollateral } from './helpers';
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, CometHarnessInterface, FaucetToken, CometHarnessInterfaceExtendedAssetList, SimplePriceFeed } from '../build/types';
+import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList, SimplePriceFeed } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { TotalsCollateralStruct } from 'build/types/CometHarnessInterfaceExtendedAssetList';
@@ -40,7 +40,7 @@ describe('withdraw', function () {
   before(async function () {
     const protocol = await makeProtocol({ base: 'USDC' });
 
-    comet = protocol.cometWithExtendedAssetList;
+    comet = protocol.comet;
     baseToken = protocol.tokens[protocol.base] as FaucetToken;
     collaterals = Object.fromEntries(
       Object.entries(protocol.tokens).filter(([_symbol, token]) => token.address !== baseToken.address)
@@ -71,7 +71,7 @@ describe('withdraw', function () {
     const protocolWith24Collaterals = await makeProtocol({
       assets: { USDC: {initialPrice: 1, decimals: 6 }, ...collaterals24Assets, },
     });
-    cometWith24Collaterals = protocolWith24Collaterals.cometWithExtendedAssetList;
+    cometWith24Collaterals = protocolWith24Collaterals.comet;
     baseTokenWith24Collaterals = protocolWith24Collaterals.tokens[protocolWith24Collaterals.base] as FaucetToken;
     for (const asset in protocolWith24Collaterals.tokens) {
       if (asset === 'USDC') continue;
@@ -1387,7 +1387,7 @@ describe('withdraw', function () {
     const COLLATERAL_SUPPLY = exp(100, 6);
     const ALICE_COLLATERAL_BALANCE = exp(1, 6);
 
-    let evilComet: CometHarnessInterface;
+    let evilComet: CometHarnessInterfaceExtendedAssetList;
     let USDC: FaucetToken;
     let EVIL: EvilToken;
     let evilAlice: SignerWithAddress;
@@ -1464,7 +1464,7 @@ describe('withdraw', function () {
 
   describe('non-standard tokens', function () {
     describe('USDT-like token (no return value)', function () {
-      let nstComet: CometHarnessInterface;
+      let nstComet: CometHarnessInterfaceExtendedAssetList;
       let alice: SignerWithAddress;
       let bob: SignerWithAddress;
       let usdt: NonStandardFaucetFeeToken;
@@ -1527,7 +1527,7 @@ describe('withdraw', function () {
       const NUMERATOR = 10;
       const DENOMINATOR = 10000;
 
-      let feeComet: CometHarnessInterface;
+      let feeComet: CometHarnessInterfaceExtendedAssetList;
       let feeBaseToken: NonStandardFaucetFeeToken;
       let feeCollateral: NonStandardFaucetFeeToken;
       let alice: SignerWithAddress;
@@ -1778,7 +1778,7 @@ describe('withdraw', function () {
         await cometWith24Collaterals.connect(alice).withdraw(baseTokenWith24Collaterals.address, borrowAmount);
 
         expect(await baseTokenWith24Collaterals.balanceOf(alice.address)).to.equal(aliceBalanceBefore.add(borrowAmount));
-        expect(await baseBalanceOf(cometWith24Collaterals as unknown as CometHarnessInterface, alice.address)).to.equal(BigInt(-borrowAmount));
+        expect(await baseBalanceOf(cometWith24Collaterals as unknown as CometHarnessInterfaceExtendedAssetList, alice.address)).to.equal(BigInt(-borrowAmount));
       });
     });
   });
@@ -1800,7 +1800,7 @@ describe('withdraw', function () {
       const protocolMaxAssets = await makeProtocol({
         assets: { USDC: {}, ...maxAssetsCollaterals },
       });
-      cometExtendedMaxAssets = protocolMaxAssets.cometWithExtendedAssetList;
+      cometExtendedMaxAssets = protocolMaxAssets.comet;
       extTokensWithMaxAssets = protocolMaxAssets.tokens as { [symbol: string]: FaucetToken };
       extPauseGuardian = protocolMaxAssets.pauseGuardian;
       [extAlice, extBob] = protocolMaxAssets.users;

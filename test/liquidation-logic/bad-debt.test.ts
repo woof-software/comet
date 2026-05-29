@@ -41,7 +41,7 @@ describe('partial liquidation: bad debt', function() {
       baseTrackingBorrowSpeed: 0,
       baseBorrowMin: baseBorrowMin,
     });
-    comet = protocol.cometWithExtendedAssetList;
+    comet = protocol.comet;
     liquidationModule = protocol.defaultLiquidationModule;
     for (let asset in protocol.tokens) {
       if (asset === 'USDC') continue;

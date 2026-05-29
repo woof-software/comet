@@ -1,8 +1,9 @@
-import { Comet, ethers, event, expect, makeProtocol, wait } from './helpers';
+import { ethers, event, expect, makeProtocol, wait } from './helpers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { CometHarnessInterfaceExtendedAssetList } from 'build/types';
 import { BigNumber, Signature } from 'ethers';
 
-let comet: Comet;
+let comet: CometHarnessInterfaceExtendedAssetList;
 let _admin: SignerWithAddress;
 let pauseGuardian: SignerWithAddress;
 let signer: SignerWithAddress;
@@ -29,7 +30,7 @@ const types = {
 
 describe('allowBySig', function () {
   beforeEach(async () => {
-    comet = (await makeProtocol()).cometWithExtendedAssetList;
+    comet = (await makeProtocol()).comet;
     [_admin, pauseGuardian, signer, manager] = await ethers.getSigners();
 
     domain = {

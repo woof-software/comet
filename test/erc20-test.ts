@@ -20,12 +20,18 @@ describe('erc20', function () {
   });
 
   it('has correct totalSupply', async () => {
-    const { comet } = await makeProtocol();
+    const { comet, tokens } = await makeProtocol();
+    const { USDC } = tokens;
 
     await setTotalsBasic(comet, {
       baseSupplyIndex: 2e15,
       totalSupplyBase: 50e6,
     });
+
+    // Allocate base token equal to presentValueSupply(2e15, 50e6) = 100e6 so the
+    // supply-index cap (fired when totalBorrowBase == 0 and balance < totalSupply)
+    // does not clamp the index to 0.
+    await USDC.allocateTo(comet.address, 100e6);
 
     const totalSupply = await comet.totalSupply();
 

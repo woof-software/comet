@@ -48,7 +48,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
     configuratorProxyAddress = protocol.configuratorProxy.address;
     cometProxyAddress = protocol.cometProxy.address;
     configurator = protocol.configurator.attach(configuratorProxyAddress);
-    comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
+    comet = protocol.comet.attach(cometProxyAddress);
     cometProxyAdmin = protocol.proxyAdmin;
 
     for (let asset in protocol.tokens) {

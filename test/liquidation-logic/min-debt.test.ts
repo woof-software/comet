@@ -35,7 +35,7 @@ describe('partial liquidation: min debt', function() {
       baseTrackingBorrowSpeed: 0,
       baseBorrowMin: baseBorrowMin,
     });
-    comet = protocol.cometWithExtendedAssetList;
+    comet = protocol.comet;
     liquidationModule = protocol.defaultLiquidationModule;
 
     for (let asset in protocol.tokens) {

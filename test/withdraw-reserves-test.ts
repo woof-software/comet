@@ -90,7 +90,9 @@ describe('withdrawReserves', function () {
 
     await setTotalsBasic(comet, {
       baseSupplyIndex: 2e15,
-      totalSupplyBase: 50n,
+      baseBorrowIndex: 3e15,
+      totalSupplyBase: 53n,
+      totalBorrowBase: 2n, // non-zero prevents supply-index cap; reserves = 0 - 53*2 + 2*3 = -100
     });
 
     expect(await comet.getReserves()).to.be.equal(-100);

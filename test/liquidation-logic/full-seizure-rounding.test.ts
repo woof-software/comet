@@ -40,7 +40,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
       baseBorrowMin: baseBorrowMin,
     });
 
-    comet = protocol.cometWithExtendedAssetList;
+    comet = protocol.comet;
     liquidationModule = protocol.defaultLiquidationModule;
     for (let asset in protocol.tokens) {
       if (asset === 'USDC') continue;

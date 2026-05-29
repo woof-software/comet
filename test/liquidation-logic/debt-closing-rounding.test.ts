@@ -38,7 +38,7 @@ describe.skip('partial liquidation: debt closing rounding', function() {
       baseBorrowMin: baseBorrowMin,
     });
 
-    comet = protocol.cometWithExtendedAssetList;
+    comet = protocol.comet;
     liquidationModule = protocol.defaultLiquidationModule;
     for (let asset in protocol.tokens) {
       if (asset === 'USDC') continue;
@@ -722,7 +722,7 @@ context('rsETH-denominated base (18 decimals): dust and min-borrow edge cases', 
         borrowInterestRateSlopeHigh: 0,
         baseBorrowMin: rsEthBaseBorrowMin,
       });
-      rsEthComet = protocol.cometWithExtendedAssetList;
+      rsEthComet = protocol.comet;
       liquidationModule = protocol.defaultLiquidationModule;
       rsEthBaseToken = protocol.tokens['rsETH'] as FaucetToken;
       compAsset = protocol.tokens['COMP'] as FaucetToken;
@@ -968,7 +968,7 @@ context('rsETH-denominated base (18 decimals): dust and min-borrow edge cases', 
         borrowInterestRateSlopeHigh: 0,
         baseBorrowMin: rsEthBaseBorrowMin,
       });
-      rsEthComet = protocol.cometWithExtendedAssetList;
+      rsEthComet = protocol.comet;
       liquidationModule = protocol.defaultLiquidationModule;
       rsEthBaseToken = protocol.tokens['rsETH'] as FaucetToken;
       compAsset = protocol.tokens['COMP'] as FaucetToken;

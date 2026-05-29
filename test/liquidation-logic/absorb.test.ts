@@ -42,9 +42,9 @@ describe('absorb: general logic', function () {
       baseBorrowMin: baseBorrowMin,
     });
     configuratorProxyAddress = protocol.configuratorProxy.address;
-    cometProxyAddress = protocol.cometProxyWithExtendedAssetList.address;
+    cometProxyAddress = protocol.cometProxy.address;
     configurator = protocol.configurator.attach(configuratorProxyAddress);
-    comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
+    comet = protocol.comet.attach(cometProxyAddress);
     cometProxyAdmin = protocol.proxyAdmin;
     liquidationModule = protocol.defaultLiquidationModule;
 
