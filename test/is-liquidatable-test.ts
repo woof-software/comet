@@ -14,7 +14,7 @@ describe('isLiquidatable', function () {
   it('defaults to false', async () => {
     const protocol = await makeProtocol();
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [alice],
     } = protocol;
 
@@ -23,7 +23,7 @@ describe('isLiquidatable', function () {
 
   it('is false when user is owed principal', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [alice],
     } = await makeProtocol();
     await comet.setBasePrincipal(alice.address, 1_000_000);
@@ -33,7 +33,7 @@ describe('isLiquidatable', function () {
 
   it('is true when user owes principal', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [alice],
     } = await makeProtocol();
     await comet.setBasePrincipal(alice.address, -1_000_000);
@@ -43,7 +43,7 @@ describe('isLiquidatable', function () {
 
   it('is false when collateral can cover the borrowed principal', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice],
     } = await makeProtocol({
@@ -68,7 +68,7 @@ describe('isLiquidatable', function () {
 
   it('is true when the collateral cannot cover the borrowed principal', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice],
     } = await makeProtocol({
@@ -93,7 +93,7 @@ describe('isLiquidatable', function () {
 
   it('takes liquidateCollateralFactor into account when comparing principal to collateral', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice],
     } = await makeProtocol({
@@ -120,7 +120,7 @@ describe('isLiquidatable', function () {
 
   it('changes when the underlying asset price changes', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice],
       priceFeeds,
