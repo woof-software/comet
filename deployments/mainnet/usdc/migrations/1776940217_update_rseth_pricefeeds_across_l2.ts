@@ -383,7 +383,7 @@ On execution, the liquidation pause on rsETH/wrsETH collateral in these markets 
   },
 
   async enacted(): Promise<boolean> {
-    return false;
+    return true;
   },
 
   async verify(deploymentManager: DeploymentManager) {
