@@ -669,7 +669,7 @@ The fifth action sends a message to the Mantle network to update supply caps on 
   },
 
   async enacted(): Promise<boolean> {
-    return false;
+    return true;
   },
 
   async verify(deploymentManager: DeploymentManager) {

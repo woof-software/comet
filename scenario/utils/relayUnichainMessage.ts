@@ -124,7 +124,7 @@ export async function relayUnichainMessage(
       }
     } else if (target === bridgeReceiver.address) {
       // Cross-chain message passing
-      if (!tenderlyLogs && relayMessageTxn) {
+      if (relayMessageTxn) {
         const proposalCreatedEvent = relayMessageTxn.events.find(event => event.address === bridgeReceiver.address);
         const { args: { id, eta } } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
 

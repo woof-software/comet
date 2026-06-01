@@ -375,7 +375,7 @@ export default migration('1778758319_update_supply_caps_on_l2', {
   },
 
   async enacted(): Promise<boolean> {
-    return false;
+    return true;
   },
 
   async verify(deploymentManager: DeploymentManager, govDeploymentManager) {

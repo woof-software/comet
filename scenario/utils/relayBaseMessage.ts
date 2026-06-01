@@ -142,7 +142,7 @@ export default async function relayBaseMessage(
       }
     } else if (target === bridgeReceiver.address) {
       // Cross-chain message passing
-      if (!tenderlyLogs && relayMessageTxn) {
+      if (relayMessageTxn) {
         const proposalCreatedEvent = relayMessageTxn.events.find(
           (event) => event.address === bridgeReceiver.address
         );
@@ -212,8 +212,7 @@ export default async function relayBaseMessage(
 export async function simulateL2ToL1TokenBridging(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
-  tenderlyLogs?: any[],
-  proposalId?: BigNumber
+  tenderlyLogs?: any[]
 ) {
   if(tenderlyLogs) {
     return;
@@ -245,11 +244,8 @@ export async function simulateL2ToL1TokenBridging(
 
   for (const event of proposalCreatedEvents) {
     const decodedEvent = bridgeReceiver.interface.parseLog(event);
-    const { id, signatures, calldatas } = decodedEvent.args;
+    const { signatures, calldatas } = decodedEvent.args;
 
-    if (proposalId && id.toString() !== proposalId.toString()) {
-      continue;
-    }
 
     for (let i = 0; i < signatures.length; i++) {
       if (signatures[i] === bridgeERC20ToSignature) {
@@ -268,24 +264,6 @@ export async function simulateL2ToL1TokenBridging(
           BASE_L1_PORTAL,
           utils.hexZeroPad('0x32', 32),
           utils.hexZeroPad(l2CrossDomainMessenger.address, 32)
-        ]);
-
-        // Set deposits[_localToken][_remoteToken] on L1StandardBridge so finalizeBridgeERC20 won't underflow
-        // deposits mapping is at base slot 2 in L1StandardBridge storage layout
-        // In finalizeBridgeERC20 context: _localToken = remoteToken (L1), _remoteToken = localToken (L2)
-        const depositsBaseSlot = 2;
-        const innerSlot = utils.keccak256(
-          utils.defaultAbiCoder.encode(['address', 'uint256'], [remoteToken, depositsBaseSlot])
-        );
-        const depositsSlot = utils.keccak256(
-          utils.defaultAbiCoder.encode(['address', 'bytes32'], [localToken, innerSlot])
-        );
-
-        console.log(`Setting deposits[${remoteToken}][${localToken}] to ${amount.toString()} at slot ${depositsSlot} on ${baseL1Bridge.address}`);
-        await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
-          baseL1Bridge.address,
-          depositsSlot,
-          utils.hexZeroPad(amount.toHexString(), 32)
         ]);
 
         await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
