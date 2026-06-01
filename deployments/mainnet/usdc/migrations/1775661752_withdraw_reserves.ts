@@ -838,7 +838,7 @@ Full proposal details, fund source methodology, on-chain controls, and TMC compo
   },
 
   async enacted(): Promise<boolean> {
-    return false;
+    return true;
   },
 
   async verify(deploymentManager: DeploymentManager) {
