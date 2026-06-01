@@ -396,7 +396,7 @@ Borrow kink is held at 90% across all markets. The base rate is held constant at
   },
 
   async enacted(): Promise<boolean> {
-    return false;
+    return true;
   },
 
   async verify(deploymentManager: DeploymentManager) {
