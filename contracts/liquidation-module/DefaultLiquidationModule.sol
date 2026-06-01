@@ -35,6 +35,9 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
     /// @notice The amount of assets in the comet; required for looping over assets
     uint8 public immutable NUM_ASSETS;
 
+    /// @notice Whether partial liquidation or full liquidation is enabled. Enabled by default.
+    bool public partialLiquidationEnabled;
+
     constructor(address comet) {
         if(comet == address(0)) revert ZeroAddress();
         COMET = CometMainInterface(comet);
@@ -42,6 +45,8 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
         ASSET_LIST = IAssetList(COMET.assetList());
         NUM_ASSETS = COMET.numAssets();
         BASE_SCALE = uint64(COMET.baseScale());
+
+        partialLiquidationEnabled = true;
     }
 
     /**
@@ -94,9 +99,14 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
             (collateralAmount, ) = COMET.userCollateral(account, collateralInfo.asset);
             collateralValue = mulPrice(collateralAmount, collateralPrices[i], collateralInfo.scale);
 
+            // fully close the account's debt.
+            // If collateral is sufficient to cover the remaining debt, seize only as much as needed; otherwise seize all and move to the next asset.
+            if (!partialLiquidationEnabled) {
+                (seizedAmount, seizedValue, wantedCollateralValue) = _processDebtClosing(debtRemainingValue, collateralInfo, collateralPrices[i], collateralAmount);
+            }
             // we derive value from the baseBorrowMin instead of comparing it directly with balance 
             // as this branch can be taken at any cycle step, not just the 1st step
-            if (debtRemainingValue <= minDebtValue) {
+            else if (debtRemainingValue <= minDebtValue) {
                 (seizedAmount, seizedValue, wantedCollateralValue) = _processDebtClosing(debtRemainingValue, collateralInfo, collateralPrices[i], collateralAmount);
             }
             else if (mulFactor(debtRemainingValue, TARGET_HEALTH_FACTOR) <= totalCollateralizedValue) {
@@ -172,6 +182,18 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
         uint256 valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, BASE_SCALE);
 
         emit AbsorbDebt(absorber, account, basePaidOut, valueOfBasePaidOut);
+    }
+
+    /**
+     * @notice Toggle the liquidation mode
+     */
+    function liquidationModeToggle(bool _partialLiquidationEnabled) external {
+        if (msg.sender != COMET.governor()) revert Unauthorized();
+        if (partialLiquidationEnabled == _partialLiquidationEnabled) revert LiquidationModeAlreadySet();
+
+        partialLiquidationEnabled = _partialLiquidationEnabled;
+
+        emit LiquidationModeToggled(_partialLiquidationEnabled);
     }
 
     /**

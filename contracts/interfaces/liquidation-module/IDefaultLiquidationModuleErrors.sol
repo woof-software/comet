@@ -20,4 +20,7 @@ interface IDefaultLiquidationModuleErrors {
 
     /// @notice Reverts when collateral that must be checked for borrower solvency is deactivated.
     error TokenIsDeactivated(address asset);
+
+    /// @notice Reverts in toggle and wanted mode already set
+    error LiquidationModeAlreadySet();
 }

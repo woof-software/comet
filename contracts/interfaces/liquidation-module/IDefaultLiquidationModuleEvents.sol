@@ -37,4 +37,10 @@ interface IDefaultLiquidationModuleEvents {
         uint256 collateralAbsorbed,
         uint256 usdValue
     );
+
+    /**
+     * @notice Emitted when the liquidation mode is toggled.
+     * @param partialLiquidationEnabled Whether partial liquidation is enabled.
+     */
+    event LiquidationModeToggled(bool partialLiquidationEnabled);
 }

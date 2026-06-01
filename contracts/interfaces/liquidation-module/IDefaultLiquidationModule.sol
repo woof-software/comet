@@ -15,4 +15,6 @@ interface IDefaultLiquidationModule is IDefaultLiquidationModuleErrors, IDefault
     function liquidate(address absorber, address account) external;
 
     function isLiquidatable(address account) external view returns (bool);
+
+    function liquidationModeToggle(bool _partialLiquidationEnabled) external;
 }
