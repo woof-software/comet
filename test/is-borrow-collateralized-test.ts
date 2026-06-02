@@ -4,7 +4,7 @@ describe('isBorrowCollateralized', function () {
   it('defaults to true', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [alice],
     } = protocol;
 
@@ -13,7 +13,7 @@ describe('isBorrowCollateralized', function () {
 
   it('is true when user is owed principal', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [alice],
     } = await makeProtocol({ base: 'USDC' });
     await comet.setBasePrincipal(alice.address, 1_000_000);
@@ -23,7 +23,7 @@ describe('isBorrowCollateralized', function () {
 
   it('is false when user owes principal', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [alice],
     } = await makeProtocol({ base: 'USDC' });
 
@@ -34,7 +34,7 @@ describe('isBorrowCollateralized', function () {
 
   it('is true when value of collateral is greater than principal owed', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice],
     } = await makeProtocol({
@@ -59,7 +59,7 @@ describe('isBorrowCollateralized', function () {
 
   it('takes borrow collateral factor into account when valuing collateral', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice],
     } = await makeProtocol({
@@ -86,7 +86,7 @@ describe('isBorrowCollateralized', function () {
 
   it('changes when the underlying asset price changes', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice],
       priceFeeds,

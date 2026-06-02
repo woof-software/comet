@@ -4,7 +4,7 @@ import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonS
 describe('supplyTo', function () {
   it('supplies base from sender if the asset is base', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     const _i0 = await USDC.allocateTo(bob.address, 100e6);
@@ -57,7 +57,7 @@ describe('supplyTo', function () {
 
   it('supplies max base borrow balance (including accrued) from sender if the asset is base', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(bob.address, 100e6);
@@ -115,7 +115,7 @@ describe('supplyTo', function () {
 
   it('supply max base should supply 0 if user has no borrow position', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(bob.address, 100e6);
@@ -162,7 +162,7 @@ describe('supplyTo', function () {
 
   it('does not emit Transfer for 0 mint', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(bob.address, 100e6);
@@ -204,7 +204,7 @@ describe('supplyTo', function () {
   // violated.
   it('supplies 0 and does not revert when dstPrincipalNew < dstPrincipal', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice] } = protocol;
     const { USDC } = tokens;
 
     await comet.setBasePrincipal(alice.address, 99999992291226);
@@ -234,7 +234,7 @@ describe('supplyTo', function () {
 
   it('user supply is same as total supply', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [bob] } = protocol;
     const { USDC } = tokens;
 
     await setTotalsBasic(comet, {
@@ -264,7 +264,7 @@ describe('supplyTo', function () {
 
   it('supplies collateral from sender if the asset is collateral', async () => {
     const protocol = await makeProtocol();
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { COMP } = tokens;
 
     const _i0 = await COMP.allocateTo(bob.address, 8e8);
@@ -310,7 +310,7 @@ describe('supplyTo', function () {
 
   it('calculates base principal correctly', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(bob.address, 100e6);
@@ -352,7 +352,7 @@ describe('supplyTo', function () {
         USDC: { initial: 1e6, decimals: 6 },
       }
     });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { COMP } = tokens;
 
     const _i0 = await COMP.allocateTo(bob.address, 8e8);
@@ -365,7 +365,7 @@ describe('supplyTo', function () {
 
   it('reverts if the asset is neither collateral nor base', async () => {
     const protocol = await makeProtocol();
-    const { comet, users: [alice, bob], unsupportedToken: USUP } = protocol;
+    const { cometWithExtendedAssetList: comet, users: [alice, bob], unsupportedToken: USUP } = protocol;
 
     const _i0 = await USUP.allocateTo(bob.address, 1);
     const baseAsB = USUP.connect(bob);
@@ -377,7 +377,7 @@ describe('supplyTo', function () {
 
   it('reverts if supply is paused', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, pauseGuardian, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, pauseGuardian, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(bob.address, 1);
@@ -394,7 +394,7 @@ describe('supplyTo', function () {
 
   it('reverts if supply max for a collateral asset', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { COMP } = tokens;
 
     await COMP.allocateTo(bob.address, 100e6);
@@ -414,7 +414,7 @@ describe('supplyTo', function () {
       factory: (await ethers.getContractFactory('NonStandardFaucetFeeToken')) as NonStandardFaucetFeeToken__factory,
     };
     const protocol = await makeProtocol({ base: 'USDT', assets: assets });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDT } = tokens;
 
     // Set fee to 0.1%
@@ -479,7 +479,7 @@ describe('supplyTo', function () {
     };
 
     const protocol = await makeProtocol({ base: 'USDC', assets: assets });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { FeeToken } = tokens;
 
     // Set fee to 0.1%
@@ -528,7 +528,7 @@ describe('supplyTo', function () {
   });
 
   it('blocks reentrancy from exceeding the supply cap', async () => {
-    const { comet, tokens, users: [alice, bob] } = await makeProtocol({
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = await makeProtocol({
       assets: {
         USDC: {
           decimals: 6
@@ -565,7 +565,7 @@ describe('supplyTo', function () {
 describe('supply', function () {
   it('supplies to sender by default', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [bob] } = protocol;
     const { USDC } = tokens;
 
     const _i0 = await USDC.allocateTo(bob.address, 100e6);
@@ -587,7 +587,7 @@ describe('supply', function () {
 
   it('reverts if supply is paused', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, pauseGuardian, users: [bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, pauseGuardian, users: [bob] } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(bob.address, 100e6);
@@ -606,7 +606,7 @@ describe('supply', function () {
 describe('supplyFrom', function () {
   it('supplies from `from` if specified and sender has permission', async () => {
     const protocol = await makeProtocol();
-    const { comet, tokens, users: [alice, bob, charlie] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob, charlie] } = protocol;
     const { COMP } = tokens;
 
     const _i0 = await COMP.allocateTo(bob.address, 7);
@@ -634,7 +634,7 @@ describe('supplyFrom', function () {
 
   it('reverts if `from` is specified and sender does not have permission', async () => {
     const protocol = await makeProtocol();
-    const { comet, tokens, users: [alice, bob, charlie] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob, charlie] } = protocol;
     const { COMP } = tokens;
 
     const _i0 = await COMP.allocateTo(bob.address, 7);
@@ -646,7 +646,7 @@ describe('supplyFrom', function () {
 
   it('reverts if supply is paused', async () => {
     const protocol = await makeProtocol();
-    const { comet, tokens, pauseGuardian, users: [alice, bob, charlie] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, pauseGuardian, users: [alice, bob, charlie] } = protocol;
     const { COMP } = tokens;
 
     await COMP.allocateTo(bob.address, 7);

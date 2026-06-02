@@ -4,7 +4,7 @@ import { baseBalanceOf, ethers, event, expect, exp, makeProtocol, portfolio, Ree
 describe('withdrawTo', function () {
   it('withdraws base from sender if the asset is base', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     const _i0 = await USDC.allocateTo(comet.address, 100e6);
@@ -59,7 +59,7 @@ describe('withdrawTo', function () {
 
   it('does not emit Transfer for 0 burn', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC, WETH } = tokens;
 
     await USDC.allocateTo(comet.address, 110e6);
@@ -89,7 +89,7 @@ describe('withdrawTo', function () {
 
   it('withdraws max base balance (including accrued) from sender if the asset is base', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(comet.address, 110e6);
@@ -149,7 +149,7 @@ describe('withdrawTo', function () {
 
   it('withdraw max base should withdraw 0 if user has a borrow position', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC, WETH } = tokens;
 
     await comet.setBasePrincipal(bob.address, -100e6);
@@ -196,7 +196,7 @@ describe('withdrawTo', function () {
   // This demonstrates a weird quirk of the present value/principal value rounding down math.
   it('withdraws 0 but Comet Transfer event amount is 1', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice] } = protocol;
     const { USDC } = tokens;
 
     await comet.setBasePrincipal(alice.address, 99999992291226);
@@ -235,7 +235,7 @@ describe('withdrawTo', function () {
 
   it('withdraws collateral from sender if the asset is collateral', async () => {
     const protocol = await makeProtocol();
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { COMP } = tokens;
 
     const _i0 = await COMP.allocateTo(comet.address, 8e8);
@@ -279,12 +279,12 @@ describe('withdrawTo', function () {
     expect(q1.internal).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
     expect(q1.external).to.be.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
     expect(t1.totalSupplyAsset).to.be.equal(0n);
-    expect(Number(s0.receipt.gasUsed)).to.be.lessThan(85000);
+    expect(Number(s0.receipt.gasUsed)).to.be.lessThan(87000);
   });
 
   it('calculates base principal correctly', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(comet.address, 100e6);
@@ -318,7 +318,7 @@ describe('withdrawTo', function () {
 
   it('reverts if withdrawing base exceeds the total supply', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     const _i0 = await USDC.allocateTo(comet.address, 100e6);
@@ -330,7 +330,7 @@ describe('withdrawTo', function () {
 
   it('reverts if withdrawing collateral exceeds the total supply', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { COMP } = tokens;
 
     const _i0 = await COMP.allocateTo(comet.address, 8e8);
@@ -342,7 +342,7 @@ describe('withdrawTo', function () {
 
   it('reverts if the asset is neither collateral nor base', async () => {
     const protocol = await makeProtocol();
-    const { comet, users: [alice, bob], unsupportedToken: USUP } = protocol;
+    const { cometWithExtendedAssetList: comet, users: [alice, bob], unsupportedToken: USUP } = protocol;
 
     const _i0 = await USUP.allocateTo(comet.address, 1);
     const cometAsB = comet.connect(bob);
@@ -352,7 +352,7 @@ describe('withdrawTo', function () {
 
   it('reverts if withdraw is paused', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, pauseGuardian, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, pauseGuardian, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(comet.address, 1);
@@ -367,7 +367,7 @@ describe('withdrawTo', function () {
 
   it('reverts if withdraw max for a collateral asset', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { COMP } = tokens;
 
     await COMP.allocateTo(bob.address, 100e6);
@@ -377,7 +377,7 @@ describe('withdrawTo', function () {
   });
 
   it('borrows to withdraw if necessary/possible', async () => {
-    const { comet, tokens, users: [alice, bob] } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = await makeProtocol();
     const { WETH, USDC } = tokens;
 
     await USDC.allocateTo(comet.address, 1e6);
@@ -398,7 +398,7 @@ describe('withdrawTo', function () {
 describe('withdraw', function () {
   it('withdraws to sender by default', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [bob] } = protocol;
     const { USDC } = tokens;
 
     const _i0 = await USDC.allocateTo(comet.address, 100e6);
@@ -422,7 +422,7 @@ describe('withdraw', function () {
 
   it('reverts if withdraw is paused', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, pauseGuardian, users: [bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, pauseGuardian, users: [bob] } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(comet.address, 100e6);
@@ -436,7 +436,7 @@ describe('withdraw', function () {
   });
 
   it('reverts if withdraw amount is less than baseBorrowMin', async () => {
-    const { comet, tokens, users: [alice] } = await makeProtocol({
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice] } = await makeProtocol({
       baseBorrowMin: exp(1, 6)
     });
     const { USDC } = tokens;
@@ -447,7 +447,7 @@ describe('withdraw', function () {
   });
 
   it('reverts if base withdraw amount is not collateralzed', async () => {
-    const { comet, tokens, users: [alice] } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice] } = await makeProtocol();
     const { USDC } = tokens;
 
     await expect(
@@ -456,7 +456,7 @@ describe('withdraw', function () {
   });
 
   it('reverts if collateral withdraw amount is not collateralized', async () => {
-    const { comet, tokens, users: [alice] } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice] } = await makeProtocol();
     const { WETH } = tokens;
 
     const totalsCollateral = Object.assign({}, await comet.totalsCollateral(WETH.address), {
@@ -476,7 +476,7 @@ describe('withdraw', function () {
 
   describe('reentrancy', function () {
     it('blocks malicious reentrant transferFrom', async () => {
-      const { comet, tokens, users: [alice, bob] } = await makeProtocol({
+      const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = await makeProtocol({
         assets: {
           USDC: {
             decimals: 6
@@ -522,7 +522,7 @@ describe('withdraw', function () {
     });
 
     it('blocks malicious reentrant withdrawFrom', async () => {
-      const { comet, tokens, users: [alice, bob] } = await makeProtocol({
+      const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = await makeProtocol({
         assets: {
           USDC: {
             decimals: 6
@@ -574,7 +574,7 @@ describe('withdraw', function () {
 describe('withdrawFrom', function () {
   it('withdraws from src if specified and sender has permission', async () => {
     const protocol = await makeProtocol();
-    const { comet, tokens, users: [alice, bob, charlie] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob, charlie] } = protocol;
     const { COMP } = tokens;
 
     const _i0 = await COMP.allocateTo(comet.address, 7);
@@ -607,7 +607,7 @@ describe('withdrawFrom', function () {
 
   it('reverts if src is specified and sender does not have permission', async () => {
     const protocol = await makeProtocol();
-    const { comet, tokens, users: [alice, bob, charlie] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob, charlie] } = protocol;
     const { COMP } = tokens;
 
     const cometAsC = comet.connect(charlie);
@@ -618,7 +618,7 @@ describe('withdrawFrom', function () {
 
   it('reverts if withdraw is paused', async () => {
     const protocol = await makeProtocol();
-    const { comet, tokens, pauseGuardian, users: [alice, bob, charlie] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, pauseGuardian, users: [alice, bob, charlie] } = protocol;
     const { COMP } = tokens;
 
     await COMP.allocateTo(comet.address, 7);

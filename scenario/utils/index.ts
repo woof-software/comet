@@ -435,7 +435,7 @@ export async function fetchLogs(
   filter: EventFilter,
   fromBlock: number,
   toBlock: number,
-  BLOCK_SPAN = 2047 // NB: sadly max for fuji is LESS than 2048
+  BLOCK_SPAN = 2047
 ): Promise<Event[]> {
   if (toBlock - fromBlock > BLOCK_SPAN) {
     const midBlock = fromBlock + BLOCK_SPAN;
