@@ -188,17 +188,27 @@ describe('collateral price oracle reverts across varying collateral factors duri
       );
     });
 
+    // User base balances
+    it('alice principal is zero', async () => {
+      expect((await comet.userBasic(alice.address)).principal).to.be.equal(0);
+    });
+
+    it('alice borrow balance is zero', async () => {
+      expect(await comet.borrowBalanceOf(alice.address)).to.be.equal(0);
+    });
+
+    it('alice base balance is zero', async () => {
+      expect(await comet.balanceOf(alice.address)).to.be.equal(0);
+    });
+
+    // User collateral state
     it('alice COMP collateral balance is zero', async () => {
       expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address)).to.be.equal(0);
+      expect((await comet.userCollateral(alice.address, tokens[collateralKey].address)).balance).to.be.equal(0n);
     });
 
-    it('comet total supplied COMP is reduced by the seized collateral', async () => {
-      const totalSupplyAssetAfter = (await comet.totalsCollateral(tokens[collateralKey].address)).totalSupplyAsset.toBigInt();
-      expect(totalSupplyAssetAfter).to.be.equal(totalSupplyCompBefore - collateralAmount);
-    });
-
-    it('comet COMP reserves increase by the seized collateral', async () => {
-      expect((await comet.getCollateralReserves(tokens[collateralKey].address)).toBigInt()).to.be.equal(compReservesBefore + collateralAmount);
+    it('alice is no longer liquidatable after absorb', async () => {
+      expect(await comet.isLiquidatable(alice.address)).to.be.false;
     });
 
     it('asset removed from the assetIn list of the user', async () => {
@@ -210,6 +220,21 @@ describe('collateral price oracle reverts across varying collateral factors duri
       expect(reservedBefore).to.be.equal(0);
     });
 
+    // Comet borrow state
+    it('comet total borrow base is reduced by the absorbed base amount', async () => {
+      expect((await comet.totalsBasic()).totalBorrowBase).to.be.equal(totalBorrowBaseBefore - basePaidOut);
+    });
+
+    it('comet total supply base is unchanged', async () => {
+      expect((await comet.totalsBasic()).totalSupplyBase).to.be.equal(totalSupplyBaseBefore);
+    });
+
+    // Comet collateral balances
+    it('comet total supplied COMP is reduced by the seized collateral', async () => {
+      const totalSupplyAssetAfter = (await comet.totalsCollateral(tokens[collateralKey].address)).totalSupplyAsset.toBigInt();
+      expect(totalSupplyAssetAfter).to.be.equal(totalSupplyCompBefore - collateralAmount);
+    });
+
     it('comet ERC20 base token balance is unchanged', async () => {
       expect(await baseToken.balanceOf(comet.address)).to.be.equal(cometBaseTokenBalanceBefore);
     });
@@ -218,24 +243,8 @@ describe('collateral price oracle reverts across varying collateral factors duri
       expect(await tokens[collateralKey].balanceOf(comet.address)).to.be.equal(cometCompTokenBalanceBefore);
     });
 
-    it('alice borrow balance is zero', async () => {
-      expect(await comet.borrowBalanceOf(alice.address)).to.be.equal(0);
-    });
-
-    it('alice base balance is zero', async () => {
-      expect(await comet.balanceOf(alice.address)).to.be.equal(0);
-    });
-
-    it('alice principal is zero', async () => {
-      expect((await comet.userBasic(alice.address)).principal).to.be.equal(0);
-    });
-
-    it('comet total supply base is unchanged', async () => {
-      expect((await comet.totalsBasic()).totalSupplyBase).to.be.equal(totalSupplyBaseBefore);
-    });
-
-    it('comet total borrow base is reduced by the absorbed base amount', async () => {
-      expect((await comet.totalsBasic()).totalBorrowBase).to.be.equal(totalBorrowBaseBefore - basePaidOut);
+    it('comet COMP reserves increase by the seized collateral', async () => {
+      expect((await comet.getCollateralReserves(tokens[collateralKey].address)).toBigInt()).to.be.equal(compReservesBefore + collateralAmount);
     });
 
     it('comet base reserves are reduced by the absorbed base amount', async () => {
@@ -319,33 +328,9 @@ describe('collateral price oracle reverts across varying collateral factors duri
       );
     });
 
-    it('alice COMP collateral balance is unchanged because the asset was not seized', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address)).to.be.equal(collateralAmount);
-    });
-
-    it('comet total supplied COMP is unchanged because LF = 0 skips collateral seizure', async () => {
-      const totalSupplyAssetAfter = (await comet.totalsCollateral(tokens[collateralKey].address)).totalSupplyAsset;
-      expect(totalSupplyAssetAfter).to.be.equal(totalSupplyCompBefore);
-    });
-
-    it('comet COMP reserves are unchanged because LF = 0 skips collateral seizure', async () => {
-      expect(await comet.getCollateralReserves(tokens[collateralKey].address)).to.be.equal(compReservesBefore);
-    });
-
-    it('asset remains in the assetIn list of the user', async () => {
-      expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(assetsInBefore);
-    });
-
-    it('alice reserved bits are unchanged', async () => {
-      expect((await comet.userBasic(alice.address))._reserved).to.be.equal(reservedBefore);
-    });
-
-    it('comet ERC20 base token balance is unchanged', async () => {
-      expect(await baseToken.balanceOf(comet.address)).to.be.equal(cometBaseTokenBalanceBefore);
-    });
-
-    it('comet ERC20 COMP token balance is unchanged', async () => {
-      expect(await tokens[collateralKey].balanceOf(comet.address)).to.be.equal(cometCompTokenBalanceBefore);
+    // User base balances
+    it('alice principal is zero', async () => {
+      expect((await comet.userBasic(alice.address)).principal).to.be.equal(0);
     });
 
     it('alice borrow balance is zero', async () => {
@@ -356,16 +341,49 @@ describe('collateral price oracle reverts across varying collateral factors duri
       expect(await comet.balanceOf(alice.address)).to.be.equal(0);
     });
 
-    it('alice principal is zero', async () => {
-      expect((await comet.userBasic(alice.address)).principal).to.be.equal(0);
+    // User collateral state
+    it('alice COMP collateral balance is unchanged because the asset was not seized', async () => {
+      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address)).to.be.equal(collateralAmount);
+      expect((await comet.userCollateral(alice.address, tokens[collateralKey].address)).balance).to.be.equal(collateralAmount);
+    });
+
+    it('alice is no longer liquidatable after absorb', async () => {
+      expect(await comet.isLiquidatable(alice.address)).to.be.false;
+    });
+
+    it('asset remains in the assetIn list of the user', async () => {
+      expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(assetsInBefore);
+    });
+
+    it('alice reserved bits are unchanged', async () => {
+      expect((await comet.userBasic(alice.address))._reserved).to.be.equal(reservedBefore);
+    });
+
+    // Comet borrow state
+    it('comet total borrow base is reduced by the absorbed base amount', async () => {
+      expect((await comet.totalsBasic()).totalBorrowBase).to.be.equal(totalBorrowBaseBefore - basePaidOut);
     });
 
     it('comet total supply base is unchanged', async () => {
       expect((await comet.totalsBasic()).totalSupplyBase).to.be.equal(totalSupplyBaseBefore);
     });
 
-    it('comet total borrow base is reduced by the absorbed base amount', async () => {
-      expect((await comet.totalsBasic()).totalBorrowBase).to.be.equal(totalBorrowBaseBefore - basePaidOut);
+    // Comet collateral balances
+    it('comet total supplied COMP is unchanged because LF = 0 skips collateral seizure', async () => {
+      const totalSupplyAssetAfter = (await comet.totalsCollateral(tokens[collateralKey].address)).totalSupplyAsset;
+      expect(totalSupplyAssetAfter).to.be.equal(totalSupplyCompBefore);
+    });
+
+    it('comet ERC20 base token balance is unchanged', async () => {
+      expect(await baseToken.balanceOf(comet.address)).to.be.equal(cometBaseTokenBalanceBefore);
+    });
+
+    it('comet ERC20 COMP token balance is unchanged', async () => {
+      expect(await tokens[collateralKey].balanceOf(comet.address)).to.be.equal(cometCompTokenBalanceBefore);
+    });
+
+    it('comet COMP reserves are unchanged because LF = 0 skips collateral seizure', async () => {
+      expect(await comet.getCollateralReserves(tokens[collateralKey].address)).to.be.equal(compReservesBefore);
     });
 
     it('comet base reserves are reduced by the absorbed base amount', async () => {
