@@ -6,12 +6,11 @@ import { constants } from 'ethers';
 scenario(
   'Comet#allowBySig > allows a user to authorize a manager by signature',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _context, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const expiry = (await world.timestamp()) + 1_000;
 
@@ -255,10 +254,8 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    // await context.mineBlocks(1); // note: in case init took a while
-    await context.world.deploymentManager.hre.network.provider.send('evm_mine', []);
     const nonce = await comet.userNonce(albert.address);
-    const expiry = (await world.timestamp()) + 10000;
+    const expiry = (await world.timestamp()) + 10_000;
 
     const signature = await albert.signAuthorization({
       manager: betty.address,
@@ -403,12 +400,11 @@ scenario(
 scenario(
   'Comet#allowBySig > increments user nonce after a successful authorization',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _context, world) => {
     const { albert, betty, charles } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const expiry = (await world.timestamp()) + 1_000;
 
@@ -440,12 +436,11 @@ scenario(
 scenario(
   'Comet#allowBySig > allows a user to rescind authorization by signature',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _context, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
     const chainId = await world.chainId();
     const initialNonce = await comet.userNonce(albert.address);
     const allowExpiry = (await world.timestamp()) + 1_000;
@@ -526,7 +521,7 @@ scenario(
   }
 );
 
-scenario.only(
+scenario(
   'Comet#allowBySig > fails if signature was signed for a different chain id',
   {},
   async ({ comet, actors }, _context, world) => {
