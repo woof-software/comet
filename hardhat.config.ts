@@ -18,8 +18,6 @@ import './tasks/scenario/task.ts';
 
 // Relation Config
 import relationConfigMap from './deployments/relations';
-import sepoliaUsdcRelationConfigMap from './deployments/sepolia/usdc/relations';
-import sepoliaWethRelationConfigMap from './deployments/sepolia/weth/relations';
 import mainnetRelationConfigMap from './deployments/mainnet/usdc/relations';
 import mainnetWethRelationConfigMap from './deployments/mainnet/weth/relations';
 import mainnetUsdtRelationConfigMap from './deployments/mainnet/usdt/relations';
@@ -63,9 +61,7 @@ const {
   ETHERSCAN_KEY_FOR_ARBITRUM,
   ETHERSCAN_KEY_FOR_POLYGON,
   ETHERSCAN_KEY_FOR_LINEA,
-  SNOWTRACE_KEY,
   MAINNET_QUICKNODE_LINK,
-  SEPOLIA_QUICKNODE_LINK,
   RONIN_QUICKNODE_LINK,
   POLYGON_QUICKNODE_LINK,
   OPTIMISM_QUICKNODE_LINK,
@@ -102,7 +98,6 @@ export function requireEnv(varName, msg?: string): string {
 // required environment variables
 [
   'ETHERSCAN_KEY',
-  'SNOWTRACE_KEY',
   'MAINNET_QUICKNODE_LINK',
   'UNICHAIN_QUICKNODE_LINK',
   'LINEA_QUICKNODE_LINK'
@@ -141,11 +136,6 @@ export const networkConfigs: NetworkConfig[] = [
     network: 'mainnet',
     chainId: 1,
     url: `${MAINNET_QUICKNODE_LINK}`,
-  },
-  {
-    network: 'sepolia',
-    chainId: 11155111,
-    url: `${SEPOLIA_QUICKNODE_LINK}`,
   },
   {
     network: 'ronin',
@@ -189,16 +179,6 @@ export const networkConfigs: NetworkConfig[] = [
     network: 'arbitrum',
     chainId: 42161,
     url: `${ARBITRUM_QUICKNODE_LINK}`,
-  },
-  {
-    network: 'avalanche',
-    chainId: 43114,
-    url: 'https://api.avax.network/ext/bc/C/rpc',
-  },
-  {
-    network: 'fuji',
-    chainId: 43113,
-    url: 'https://api.avax-test.network/ext/bc/C/rpc',
   },
   {
     network: 'scroll',
@@ -250,18 +230,6 @@ const config: HardhatUserConfig = {
   },
 
   networks: {
-    optimismSepolia: {
-      url: 'https://sepolia.optimism.io',
-      chainId: 11155420
-    },
-    arbitrumSepolia: {
-      url: 'https://arbitrum-sepolia.blockpi.network/v1/rpc/public',
-      chainId: 421614
-    },
-    mainnetSepolia: {
-      url: 'https://ethereum-sepolia.blockpi.network/v1/rpc/public',
-      chainId: 11155111
-    },
     hardhat: {
       chainId: 1337,
       loggingEnabled: !!process.env['LOGGING'],
@@ -370,10 +338,6 @@ const config: HardhatUserConfig = {
     apiKey: {
       // Ethereum
       mainnet: ETHERSCAN_KEY,
-      sepolia: ETHERSCAN_KEY,
-      // Avalanche
-      avalanche: SNOWTRACE_KEY,
-      avalancheFujiTestnet: SNOWTRACE_KEY,
       // Polygon
       polygon: ETHERSCAN_KEY_FOR_POLYGON,
       // Arbitrum
@@ -466,10 +430,6 @@ const config: HardhatUserConfig = {
   deploymentManager: {
     relationConfigMap,
     networks: {
-      sepolia: {
-        usdc: sepoliaUsdcRelationConfigMap,
-        weth: sepoliaWethRelationConfigMap
-      },
       mainnet: {
         usdc: mainnetRelationConfigMap,
         weth: mainnetWethRelationConfigMap,
@@ -558,21 +518,6 @@ const config: HardhatUserConfig = {
         name: 'development',
         network: 'hardhat',
         deployment: 'dai'
-      },
-      {
-        name: 'fuji',
-        network: 'fuji',
-        deployment: 'usdc'
-      },
-      {
-        name: 'sepolia-usdc',
-        network: 'sepolia',
-        deployment: 'usdc'
-      },
-      {
-        name: 'sepolia-weth',
-        network: 'sepolia',
-        deployment: 'weth'
       },
       {
         name: 'polygon',
