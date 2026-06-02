@@ -25,7 +25,7 @@ const interestRateParams = {
 
 describe('interest rates', function () {
   it('when below kink utilization', async () => {
-    const { comet } = await makeProtocol(interestRateParams);
+    const { cometWithExtendedAssetList: comet } = await makeProtocol(interestRateParams);
 
     // 10% utilization
     const totals = {
@@ -56,7 +56,7 @@ describe('interest rates', function () {
   });
 
   it('when above kink utilization', async () => {
-    const { comet } = await makeProtocol(interestRateParams);
+    const { cometWithExtendedAssetList: comet } = await makeProtocol(interestRateParams);
 
     // 90% utilization
     const totals = {
@@ -87,7 +87,7 @@ describe('interest rates', function () {
   });
 
   it('when 0 utilization', async () => {
-    const { comet } = await makeProtocol(interestRateParams);
+    const { cometWithExtendedAssetList: comet } = await makeProtocol(interestRateParams);
 
     // 0% utilization
     const totals = {

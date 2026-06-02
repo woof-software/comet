@@ -14,7 +14,7 @@ describe('configurator', function() {
     const {
       configurator,
       configuratorProxy,
-      cometProxy,
+      cometProxyWithExtendedAssetList: cometProxy,
       users: [alice]
     } = await makeConfigurator({
       governor: signer
@@ -55,7 +55,7 @@ describe('configurator', function() {
     const {
       configurator,
       configuratorProxy,
-      cometProxy,
+      cometProxyWithExtendedAssetList: cometProxy,
       users: [alice]
     } = await makeConfigurator({ governor: signer });
 
@@ -86,7 +86,7 @@ describe('configurator', function() {
       governor,
       configurator,
       configuratorProxy,
-      cometProxy,
+      cometProxyWithExtendedAssetList: cometProxy,
       users: [alice]
     } = await makeConfigurator({ governor: signer });
 
@@ -114,7 +114,7 @@ describe('configurator', function() {
     const {
       configuratorProxy,
       proxyAdmin,
-      cometProxy
+      cometProxyWithExtendedAssetList: cometProxy
     } = await makeConfigurator({ governor: signer });
 
     let deployAndUpgradeToCalldata = ethers.utils.defaultAbiCoder.encode(
@@ -166,7 +166,7 @@ describe('configurator', function() {
     const {
       configuratorProxy,
       proxyAdmin,
-      cometProxy,
+      cometProxyWithExtendedAssetList: cometProxy,
       users: [alice]
     } = await makeConfigurator({ governor: signer });
 
@@ -192,8 +192,8 @@ describe('configurator', function() {
       configurator,
       configuratorProxy,
       proxyAdmin,
-      comet,
-      cometProxy,
+      cometWithExtendedAssetList: comet,
+      cometProxyWithExtendedAssetList: cometProxy,
       users: [alice]
     } = await makeConfigurator();
 
@@ -233,7 +233,7 @@ describe('configurator', function() {
     const {
       configuratorProxy,
       proxyAdmin,
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [_alice, bob]
     } = await makeConfigurator();
 
@@ -269,8 +269,8 @@ describe('configurator', function() {
       governor,
       configuratorProxy,
       proxyAdmin,
-      cometProxy,
-      comet,
+      cometProxyWithExtendedAssetList: cometProxy,
+      cometWithExtendedAssetList: comet,
       users: [_alice]
     } = await makeConfigurator({ governor: signer });
     const GovernorFactory = (await ethers.getContractFactory(

@@ -4,7 +4,7 @@ describe('transfer', function () {
   it('transfers base from sender if the asset is base', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice, bob],
     } = protocol;
@@ -48,7 +48,7 @@ describe('transfer', function () {
   it('does not emit Transfer if 0 mint/burn', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice, bob],
     } = protocol;
@@ -70,7 +70,7 @@ describe('transfer', function () {
 
   it('transfers max base balance (including accrued) from sender if the asset is base', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     await USDC.allocateTo(comet.address, 100e6);
@@ -122,7 +122,7 @@ describe('transfer', function () {
 
   it('transfer max base should transfer 0 if user has a borrow position', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC, WETH } = tokens;
 
     await comet.setBasePrincipal(bob.address, -100e6);
@@ -150,7 +150,7 @@ describe('transfer', function () {
   it('transfers collateral from sender if the asset is collateral', async () => {
     const protocol = await makeProtocol();
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice, bob],
     } = protocol;
@@ -186,7 +186,7 @@ describe('transfer', function () {
 
   it('calculates base principal correctly', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     await comet.setBasePrincipal(bob.address, 50e6); // 100e6 in present value
@@ -215,7 +215,7 @@ describe('transfer', function () {
   it('reverts if the asset is neither collateral nor base', async () => {
     const protocol = await makeProtocol();
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [alice, bob],
       unsupportedToken: USUP,
     } = protocol;
@@ -227,7 +227,7 @@ describe('transfer', function () {
 
   it('reverts if transfer is paused', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, pauseGuardian, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, pauseGuardian, users: [alice, bob] } = protocol;
     const { USDC } = tokens;
 
     const cometAsB = comet.connect(bob);
@@ -241,7 +241,7 @@ describe('transfer', function () {
 
   it('reverts if transfer max for a collateral asset', async () => {
     const protocol = await makeProtocol({ base: 'USDC' });
-    const { comet, tokens, users: [alice, bob] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
     const { COMP } = tokens;
 
     await COMP.allocateTo(bob.address, 100e6);
@@ -251,7 +251,7 @@ describe('transfer', function () {
   });
 
   it('borrows base if collateralized', async () => {
-    const { comet, tokens, users: [alice, bob] } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = await makeProtocol();
     const { WETH, USDC } = tokens;
 
     await comet.setCollateralBalance(alice.address, WETH.address, exp(1, 18));
@@ -269,7 +269,7 @@ describe('transfer', function () {
   it('cant borrow less than the minimum', async () => {
     const protocol = await makeProtocol();
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice, bob],
     } = protocol;
@@ -285,7 +285,7 @@ describe('transfer', function () {
 
   it('reverts on self-transfer of base token', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice],
     } = await makeProtocol({ base: 'USDC' });
@@ -298,7 +298,7 @@ describe('transfer', function () {
 
   it('reverts on self-transfer of collateral', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice],
     } = await makeProtocol();
@@ -310,7 +310,7 @@ describe('transfer', function () {
   });
 
   it('reverts if transferring base results in an under collateralized borrow', async () => {
-    const { comet, tokens, users: [alice, bob] } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = await makeProtocol();
     const { USDC } = tokens;
 
     await expect(
@@ -319,7 +319,7 @@ describe('transfer', function () {
   });
 
   it('reverts if transferring collateral results in an under collateralized borrow', async () => {
-    const { comet, tokens, users: [alice, bob] } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = await makeProtocol();
     const { WETH } = tokens;
 
     // user has a borrow, but with collateral to cover
@@ -337,7 +337,7 @@ describe('transferFrom', function () {
   it('transfers from src if specified and sender has permission', async () => {
     const protocol = await makeProtocol();
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice, bob, charlie],
     } = protocol;
@@ -363,7 +363,7 @@ describe('transferFrom', function () {
   it('reverts if src is specified and sender does not have permission', async () => {
     const protocol = await makeProtocol();
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice, bob, charlie],
     } = protocol;
@@ -379,7 +379,7 @@ describe('transferFrom', function () {
 
   it('reverts on transfer of base token from address to itself', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice, bob],
     } = await makeProtocol({ base: 'USDC' });
@@ -394,7 +394,7 @@ describe('transferFrom', function () {
 
   it('reverts on transfer of collateral from address to itself', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [alice, bob],
     } = await makeProtocol();
@@ -409,7 +409,7 @@ describe('transferFrom', function () {
 
   it('reverts if transfer is paused', async () => {
     const protocol = await makeProtocol();
-    const { comet, tokens, pauseGuardian, users: [alice, bob, charlie] } = protocol;
+    const { cometWithExtendedAssetList: comet, tokens, pauseGuardian, users: [alice, bob, charlie] } = protocol;
     const { COMP } = tokens;
 
     await comet.setCollateralBalance(bob.address, COMP.address, 7);
