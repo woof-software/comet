@@ -74,6 +74,14 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     config.liquidationAsset = 100;
   }
 
+  if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'usdc') {
+    config.bulkerBase = 1000;
+    config.bulkerAsset = 100;
+    config.bulkerComet = 500;
+    config.bulkerBorrowBase = 101;
+    config.bulkerBorrowAsset = 1;
+  }
+
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'usdt') {
     if(i == 12) {
       config.supplyCollateral = 0;
@@ -228,10 +236,6 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     }
   }
 
-  if (ctx.world.base.network === 'sepolia' && ctx.world.base.deployment === 'usdc') {
-    config.bulkerAsset1 = 10;
-  }
-
   if(ctx.world.base.network === 'mantle' && ctx.world.base.deployment === 'usde') {
     if(i == 2) { // FBTC
       config.supplyCollateral = 2;
@@ -279,10 +283,6 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     config.transferBase = 100;
     config.transferAsset = 500;
     config.transferAsset1 = 500;
-  }
-
-  if (ctx.world.base.network === 'fuji' && ctx.world.base.deployment === 'usdc') {
-    config.liquidationAsset = 100;
   }
 
   return config;

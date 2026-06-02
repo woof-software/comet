@@ -1,4 +1,4 @@
-import { BigNumber, BigNumberish, Contract } from 'ethers';
+import { BigNumber, BigNumberish } from 'ethers';
 import { Loader, World, debug } from '../../plugins/scenario';
 import { Migration } from '../../plugins/deployment_manager';
 import {
@@ -155,23 +155,9 @@ export class CometContext {
 
     const currentComet = await this.getComet();
     const admin = await world.impersonateAddress(await currentComet.governor(), { value: 20n ** 18n });
-    const oldComet = new Contract(currentComet.address,
-      [
-        'function governor() view returns (address)',
-        'function assetList() view returns (address)',
-        'function assetListFactory() view returns (address)'
-      ], admin);
 
     const deploySpec = { cometMain: true, cometExt: true };
-    let withAssetList = false;
-    try {
-      await oldComet.assetList();
-      withAssetList = true;
-    }
-    catch (e) {
-      withAssetList = false;
-    }
-    const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, withAssetList, admin);
+    const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, admin);
 
     await this.world.deploymentManager.spider(deployed);
     await this.setAssets();
