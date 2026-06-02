@@ -228,10 +228,6 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     }
   }
 
-  if (ctx.world.base.network === 'sepolia' && ctx.world.base.deployment === 'usdc') {
-    config.bulkerAsset1 = 10;
-  }
-
   if(ctx.world.base.network === 'mantle' && ctx.world.base.deployment === 'usde') {
     if(i == 2) { // FBTC
       config.supplyCollateral = 2;
@@ -279,10 +275,6 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     config.transferBase = 100;
     config.transferAsset = 500;
     config.transferAsset1 = 500;
-  }
-
-  if (ctx.world.base.network === 'fuji' && ctx.world.base.deployment === 'usdc') {
-    config.liquidationAsset = 100;
   }
 
   return config;
