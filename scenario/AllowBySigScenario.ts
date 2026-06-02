@@ -525,3 +525,40 @@ scenario(
     expect(await comet.isAllowed(constants.AddressZero, betty.address)).to.be.false;
   }
 );
+
+scenario.only(
+  'Comet#allowBySig > fails if signature was signed for a different chain id',
+  {},
+  async ({ comet, actors }, _context, world) => {
+    const { albert, betty } = actors;
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+
+    const chainId = await world.chainId();
+    const nonce = await comet.userNonce(albert.address);
+    const expiry = (await world.timestamp()) + 1_000;
+
+    const signature = await albert.signAuthorization({
+      manager: betty.address,
+      isAllowed: true,
+      nonce,
+      expiry,
+      chainId: chainId + 1,
+    });
+
+    await expectRevertCustom(
+      betty.allowBySig({
+        owner: albert.address,
+        manager: betty.address,
+        isAllowed: true,
+        nonce,
+        expiry,
+        signature,
+      }),
+      'BadSignatory()'
+    );
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+  }
+);
