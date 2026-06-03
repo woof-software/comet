@@ -142,16 +142,20 @@ export default async function relayBaseMessage(
       }
     } else if (target === bridgeReceiver.address) {
       // Cross-chain message passing
-      if (relayMessageTxn) {
-        const proposalCreatedEvent = relayMessageTxn.events.find(
-          (event) => event.address === bridgeReceiver.address
-        );
-        const {
-          args: { id, eta },
-        } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+      try {
+        if (relayMessageTxn) {
+          const proposalCreatedEvent = relayMessageTxn.events.find(
+            (event) => event.address === bridgeReceiver.address
+          );
+          const {
+            args: { id, eta },
+          } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
 
-        // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
-        openBridgedProposals.push({ id, eta });
+          // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
+          openBridgedProposals.push({ id, eta });
+        }
+      } catch (e) {
+        throw new Error(`[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Failed to parse proposal created event from tx: ${relayMessageTxn} for cross-chain message. Error: ${e}`);
       }
     } else {
       // throw error only on last relay message and no proposal created event found

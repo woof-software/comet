@@ -10,175 +10,96 @@ const config = {
   arbitrum: {
     USDC: {
       comet: '0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf',
-      newExt: '',
+      newExt: '0x690cBF4a7283426d6de43F3D76A1129933C3cc6c',
     },
     USDCe: {
       comet: '0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA',
-      newExt: '',
+      newExt: '0x5E30043080A3ba9733Ea5f2d676B453b14B6E877',
     },
     USDT: {
       comet: '0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07',
-      newExt: '',
+      newExt: '0x806F0cfD59Ba074Edcb57a1e6F65399764eDF9CF',
     },
     WETH: {
       comet: '0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486',
-      newExt: '',
+      newExt: '0x8784991D96653bCF7808d3c2100F8a7D00D55068',
     },
   },
   base: {
     AERO: {
-      comet: '0x9e1028F5F1D5eDE59748FFceE5532509976840E0',
-      newExt: '',
+      comet: '0x784efeB622244d2348d4F2522f8860B96fbEcE89',
+      newExt: '0x68da9e5360129A74AD99993faFF282726d6e8165',
     },
     USDbC: {
       comet: '0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf',
-      newExt: '',
+      newExt: '0xFE9af7911DaFcf614901EAa5Ad5e28b3eFcBbeD3',
     },
     USDC: {
       comet: '0xb125E6687d4313864e53df431d5425969c15Eb2F',
-      newExt: '',
+      newExt: '0xa7d85850FBb7e3d188CF45a4A8Aab79Ff2A7EECE',
     },
     USDS: {
       comet: '0x2c776041CCFe903071AF44aa147368a9c8EEA518',
-      newExt: '',
+      newExt: '0xcA324510c90A14E0329285fd29d4ebA654612B62',
     },
     WETH: {
       comet: '0x46e6b214b524310239732D51387075E0e70970bf',
-      newExt: '',
+      newExt: '0x90Bf44022627155395251422D7Ea2AdCf7458638',
     },
   },
   optimism: {
     USDC: {
       comet: '0x2e44e174f7D53F0212823acC11C01A11d58c5bCB',
-      newExt: '',
+      newExt: '0xA5344c37a75CfF9F79e3dDe1eE9f9784A427dba2',
     },
     USDT: {
       comet: '0x995E394b8B2437aC8Ce61Ee0bC610D617962B214',
-      newExt: '',
+      newExt: '0xddB3B341c4036bF0cFFE3C7fAacF4873D9132998',
     },
     WETH: {
       comet: '0xE36A30D249f7761327fd973001A32010b521b6Fd',
-      newExt: '',
+      newExt: '0xD79B56AD7f8586C3fe2546A31c877044e595aeE5',
     },
   },
   polygon: {
     USDC: {
       comet: '0xF25212E676D1F7F89Cd72fFEe66158f541246445',
-      newExt: '',
+      newExt: '0x73FEA263A1b44896af1BdB0dD983849297D3f4a7',
     },
     USDT: {
       comet: '0xaeB318360f27748Acb200CE616E389A6C9409a07',
-      newExt: '',
-    },
-  },
-  ronin: {
-    WETH: {
-      comet: '0x4006eD4097Ee51c09A04c3B0951D28CCf19e6DFE',
-      newExt: '',
-    },
-    WRON: {
-      comet: '0xc0Afdbd1cEB621Ef576BA969ce9D4ceF78Dbc0c0',
-      newExt: '',
+      newExt: '0x3a0f520513ad11DA868D1f4C6b7fe36944f8825d',
     },
   },
   mantle: {
     USDe: {
       comet: '0x606174f62cd968d8e684c645080fa694c1D7786E',
-      newExt: '',
+      newExt: '0xb9740Aee0640165794AD68b29F3809020A41FaAa',
     },
   },
   unichain: {
     USDC: {
       comet: '0x2c7118c4C88B9841FCF839074c26Ae8f035f2921',
-      newExt: '',
+      newExt: '0x6A21249675101b33A76b0fF341f6892B17A7548e',
     },
     WETH: {
       comet: '0x6C987dDE50dB1dcDd32Cd4175778C2a291978E2a',
-      newExt: '',
+      newExt: '0x7E19148AF7b27910CEE1e502d2D1e867E990468D',
     },
   },
 };
 
 const factoryConfig = {
-  arbitrum: '',
-  base: '',
-  optimism: '',
-  polygon: '',
-  ronin: '',
-  mantle: '',
-  unichain: '',
+  arbitrum: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
+  base: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
+  optimism: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
+  polygon: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
+  mantle: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
+  unichain: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
 };
 
-const roninDestinationChainSelector = '6916147374840168594';
-const GHO_STABLE_TOKEN = '0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f';
-
 export default migration('1779894796_update_l2_markets_to_v2_factory', {
-  async prepare(
-    // deploymentManager: DeploymentManager
-  ) {
-
-    // const cometUSDC = new Contract(
-    //   USDC_COMET_LINEA,
-    //   ['function extensionDelegate() external view returns (address)'],
-    //   await deploymentManager.getSigner()
-    // );
-
-    // const lineaAssetListFactoryAddress = '0x2F4eAF29dfeeF4654bD091F7112926E108eF4Ed0';
-
-    // const extensionDelegateUSDC = new Contract(
-    //   await cometUSDC.extensionDelegate(),
-    //   [
-    //     'function name() external view returns (string)',
-    //     'function symbol() external view returns (string)',
-    //   ],
-    //   await deploymentManager.getSigner()
-    // );
-    // const nameUSDC = await extensionDelegateUSDC.name();
-    // const symbolUSDC = await extensionDelegateUSDC.symbol();
-
-    // console.log('USDC constructor args',
-    //   utils.defaultAbiCoder.encode(
-    //     ['tuple(bytes32,bytes32)', 'address'],
-    //     [
-    //       [
-    //         utils.formatBytes32String(nameUSDC),
-    //         utils.formatBytes32String(symbolUSDC)
-    //       ],
-    //       lineaAssetListFactoryAddress
-    //     ]
-    //   )
-    // );
-
-    // const cometWETH = new Contract(
-    //   WETH_COMET_LINEA,
-    //   ['function extensionDelegate() external view returns (address)'],
-    //   await deploymentManager.getSigner()
-    // );
-
-    // const extensionDelegateWETH = new Contract(
-    //   await cometWETH.extensionDelegate(),
-    //   [
-    //     'function name() external view returns (string)',
-    //     'function symbol() external view returns (string)',
-    //   ],
-    //   await deploymentManager.getSigner()
-    // );
-    // const nameWETH = await extensionDelegateWETH.name();
-    // const symbolWETH = await extensionDelegateWETH.symbol();
-
-    // console.log('WETH constructor args',
-    //   utils.defaultAbiCoder.encode(
-    //     ['(bytes32,bytes32)', 'address'],
-    //     [
-    //       [
-    //         utils.formatBytes32String(nameWETH),
-    //         utils.formatBytes32String(symbolWETH)
-    //       ],
-    //       lineaAssetListFactoryAddress
-    //     ]
-    //   )
-    // );
-    
+  async prepare() {    
     return {};
   },
 
@@ -192,7 +113,6 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       baseL1CrossDomainMessenger,
       opL1CrossDomainMessenger,
       fxRoot,
-      l1CCIPRouter,
       unichainL1CrossDomainMessenger,
       mantleL1CrossDomainMessenger,
     } = await deploymentManager.getContracts();
@@ -251,7 +171,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
         ],
         [
           setFactoryCalldataArbitrumUsdc, setExtensionDelegateCalldataArbitrumUsdc, deployAndUpgradeToCalldataArbitrumUsdc,
-          setFactoryCalldataArbitrumUsdcE, setExtensionDelegateCalldataArbitrumUsdcE,  deployAndUpgradeToCalldataArbitrumUsdcE
+          setFactoryCalldataArbitrumUsdcE, setExtensionDelegateCalldataArbitrumUsdcE, deployAndUpgradeToCalldataArbitrumUsdcE
         ]
       ]
     );
@@ -333,7 +253,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
     } = await baseDmUsdc.getContracts();
 
     // USDC, USDbC and USDS
-    const setConfigurationCalldataBaseUsdc = await calldata(
+    const setFactoryCalldataBaseUsdc = await calldata(
       baseConfigurator.populateTransaction.setFactory(config.base.USDC.comet, factoryConfig.base)
     );
     const setExtensionDelegateCalldataBaseUsdc = await calldata(
@@ -344,7 +264,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       [baseConfigurator.address, config.base.USDC.comet]
     );
 
-    const setConfigurationCalldataBaseUsdbc = await calldata(
+    const setFactoryCalldataBaseUsdbc = await calldata(
       baseConfigurator.populateTransaction.setFactory(config.base.USDbC.comet, factoryConfig.base)
     );
     const setExtensionDelegateCalldataBaseUsdbc = await calldata(
@@ -355,7 +275,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       [baseConfigurator.address, config.base.USDbC.comet]
     );
 
-    const setConfigurationCalldataBaseUsds = await calldata(
+    const setFactoryCalldataBaseUsds = await calldata(
       baseConfigurator.populateTransaction.setFactory(config.base.USDS.comet, factoryConfig.base)
     );
     const setExtensionDelegateCalldataBaseUsds = await calldata(
@@ -391,15 +311,15 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
           'deployAndUpgradeTo(address,address)',
         ],
         [
-          setConfigurationCalldataBaseUsdc, setExtensionDelegateCalldataBaseUsdc, deployAndUpgradeToCalldataBaseUsdc,
-          setConfigurationCalldataBaseUsdbc, setExtensionDelegateCalldataBaseUsdbc, deployAndUpgradeToCalldataBaseUsdbc,
-          setConfigurationCalldataBaseUsds, setExtensionDelegateCalldataBaseUsds, deployAndUpgradeToCalldataBaseUsds,
+          setFactoryCalldataBaseUsdc, setExtensionDelegateCalldataBaseUsdc, deployAndUpgradeToCalldataBaseUsdc,
+          setFactoryCalldataBaseUsdbc, setExtensionDelegateCalldataBaseUsdbc, deployAndUpgradeToCalldataBaseUsdbc,
+          setFactoryCalldataBaseUsds, setExtensionDelegateCalldataBaseUsds, deployAndUpgradeToCalldataBaseUsds,
         ]
       ]
     );
 
     // AERO and WETH
-    const setConfigurationCalldataBaseAero = await calldata(
+    const setFactoryCalldataBaseAero = await calldata(
       baseConfigurator.populateTransaction.setFactory(config.base.AERO.comet, factoryConfig.base)
     );
     const setExtensionDelegateCalldataBaseAero = await calldata(
@@ -410,7 +330,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       [baseConfigurator.address, config.base.AERO.comet]
     );
 
-    const setConfigurationCalldataBaseWeth = await calldata(
+    const setFactoryCalldataBaseWeth = await calldata(
       baseConfigurator.populateTransaction.setFactory(config.base.WETH.comet, factoryConfig.base)
     );
     const setExtensionDelegateCalldataBaseWeth = await calldata(
@@ -441,8 +361,8 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
           'deployAndUpgradeTo(address,address)',
         ],
         [
-          setConfigurationCalldataBaseAero, setExtensionDelegateCalldataBaseAero, deployAndUpgradeToCalldataBaseAero,
-          setConfigurationCalldataBaseWeth, setExtensionDelegateCalldataBaseWeth, deployAndUpgradeToCalldataBaseWeth,
+          setFactoryCalldataBaseAero, setExtensionDelegateCalldataBaseAero, deployAndUpgradeToCalldataBaseAero,
+          setFactoryCalldataBaseWeth, setExtensionDelegateCalldataBaseWeth, deployAndUpgradeToCalldataBaseWeth,
         ]
       ]
     );
@@ -578,72 +498,6 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ]
     );
 
-    // Ronin
-    const roninHre = await forkedHreForBase({ name: 'ronin-wron', network: 'ronin', deployment: 'wron' });
-    const roninDm = await deploymentManager.addBridgedDeploymentManager('ronin', 'wron', roninHre);
-    const {
-      bridgeReceiver: roninBridgeReceiver,
-      configurator: roninConfigurator,
-      cometAdmin: roninCometAdmin,
-    } = await roninDm.getContracts();
-
-    const setFactoryCalldataRoninWeth = await calldata(
-      roninConfigurator.populateTransaction.setFactory(config.ronin.WETH.comet, factoryConfig.ronin)
-    );
-    const setExtensionDelegateCalldataRoninWeth = await calldata(
-      roninConfigurator.populateTransaction.setExtensionDelegate(config.ronin.WETH.comet, config.ronin.WETH.newExt)
-    );
-    const deployAndUpgradeToCalldataRoninWeth = utils.defaultAbiCoder.encode(
-      ['address', 'address'],
-      [roninConfigurator.address, config.ronin.WETH.comet]
-    );
-
-    const setFactoryCalldataRoninWron = await calldata(
-      roninConfigurator.populateTransaction.setFactory(config.ronin.WRON.comet, factoryConfig.ronin)
-    );
-    const setExtensionDelegateCalldataRoninWron = await calldata(
-      roninConfigurator.populateTransaction.setExtensionDelegate(config.ronin.WRON.comet, config.ronin.WRON.newExt)
-    );
-    const deployAndUpgradeToCalldataRoninWron = utils.defaultAbiCoder.encode(
-      ['address', 'address'],
-      [roninConfigurator.address, config.ronin.WRON.comet]
-    );
-
-    const roninProposalData = utils.defaultAbiCoder.encode(
-      ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
-      [
-        [
-          roninConfigurator.address, roninConfigurator.address, roninCometAdmin.address,
-          roninConfigurator.address, roninConfigurator.address, roninCometAdmin.address,
-        ],
-        [
-          0, 0, 0,
-          0, 0, 0,
-        ],
-        [
-          'setFactory(address,address)',
-          'setExtensionDelegate(address,address)',
-          'deployAndUpgradeTo(address,address)',
-          'setFactory(address,address)',
-          'setExtensionDelegate(address,address)',
-          'deployAndUpgradeTo(address,address)',
-        ],
-        [
-          setFactoryCalldataRoninWeth, setExtensionDelegateCalldataRoninWeth, deployAndUpgradeToCalldataRoninWeth,
-          setFactoryCalldataRoninWron, setExtensionDelegateCalldataRoninWron, deployAndUpgradeToCalldataRoninWron,
-        ]
-      ]
-    );
-
-    
-    const roninFee = await l1CCIPRouter.getFee(roninDestinationChainSelector, [
-      utils.defaultAbiCoder.encode(['address'], [roninBridgeReceiver.address]),
-      roninProposalData,
-      [],
-      GHO_STABLE_TOKEN,
-      '0x'
-    ]);
-  
     // Mantle
     const mantleHre = await forkedHreForBase({ name: 'mantle-usde', network: 'mantle', deployment: 'usde' });
     const mantleDm = await deploymentManager.addBridgedDeploymentManager('mantle', 'usde', mantleHre);
@@ -790,7 +644,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       {
         contract: opL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [optimismBridgeReceiver.address, optimismProposalData, 3_000_000]
+        args: [optimismBridgeReceiver.address, optimismProposalData, 2_500_000]
       },
       // 6. Polygon proposal
       {
@@ -798,39 +652,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
         signature: 'sendMessageToChild(address,bytes)',
         args: [polygonBridgeReceiver.address, polygonProposalData],
       },
-      // 7. Approve GHO stable token transfer to pay for the proposal execution fee on Ronin.
-      {
-        target: GHO_STABLE_TOKEN,
-        signature: 'approve(address,uint256)',
-        calldata: utils.defaultAbiCoder.encode(['address', 'uint256'], [l1CCIPRouter.address, roninFee.mul(12).div(10)]) // approve 20% more than the estimated fee to account for potential fluctuations in fee estimation
-      },
-      // 8. Set Comet configuration and deployAndUpgradeTo WETH Comet on Ronin.
-      {
-        contract: l1CCIPRouter,
-        signature: 'ccipSend(uint64,(bytes,bytes,(address,uint256)[],address,bytes))',
-        args:
-          [
-            roninDestinationChainSelector,
-            [
-              utils.defaultAbiCoder.encode(['address'], [roninBridgeReceiver.address]),
-              roninProposalData,
-              [],
-              GHO_STABLE_TOKEN,
-              '0x'
-            ]
-          ],
-      },
-      // 9. Mantle proposal
+      // 7. Mantle proposal
       {
         contract: mantleL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [mantleBridgeReceiver.address, mantleProposalData, 2_500_000],
+        args: [mantleBridgeReceiver.address, mantleProposalData, 1_500_000],
       },
-      // 10. Unichain proposal
+      // 8. Unichain proposal
       {
         contract: unichainL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [unichainBridgeReceiver.address, unichainProposalData, 3_000_000],
+        args: [unichainBridgeReceiver.address, unichainProposalData, 2_000_000],
       },
     ];
 
@@ -844,7 +676,6 @@ WOOF! proposes upgrading next Comet markets:
 - Base: USDC, USDbC, USDS, AERO and WETH
 - Optimism: USDC, USDT and WETH
 - Polygon: USDC and USDT
-- Ronin: WETH and WRON
 - Mantle: USDe
 - Unichain: USDC and WETH
 
@@ -862,7 +693,7 @@ To a new service patch version introducing several improvements and security enh
 
 This proposal takes the governance steps recommended and necessary to update Compound III markets. Simulations have confirmed the market’s readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario).
 
-Detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/<>) and [forum discussion](<>).
+Detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/1132).
 
 ### Bytecode Repository
 
@@ -891,13 +722,9 @@ The fifth action sets the factory to the newly deployed factory, extension deleg
 
 The sixth action sets the factory to the newly deployed factory, extension delegate to the newly deployed contract and deploys and upgrades Polygon USDC and USDT Comets to a new version.
 
-The seventh action approves GHO stable token transfer to pay for the proposal execution fee on Ronin.
+The seventh action sets the factory to the newly deployed factory, extension delegate to the newly deployed contract and deploys and upgrades Mantle USDe Comet to a new version.
 
-The eighth action sets the factory to the newly deployed factory, extension delegate to the newly deployed contract and deploys and upgrades Ronin WETH and WRON Comets to a new version.
-
-The ninth action sets the factory to the newly deployed factory, extension delegate to the newly deployed contract and deploys and upgrades Mantle USDe Comet to a new version.
-
-The tenth action sets the factory to the newly deployed factory, extension delegate to the newly deployed contract and deploys and upgrades Unichain USDC and WETH Comets to a new version.
+The eighth action sets the factory to the newly deployed factory, extension delegate to the newly deployed contract and deploys and upgrades Unichain USDC and WETH Comets to a new version.
 `;
     const txn = await deploymentManager.retry(async () =>
       trace(
@@ -960,8 +787,8 @@ The tenth action sets the factory to the newly deployed factory, extension deleg
     );
 
     expect(await newCometArbitrumUsdcE.MAX_SUPPORTED_UTILIZATION()).to.equal(expectedMaxUtilization);
-    expect(await newCometArbitrumUsdcE.symbol()).to.equal('cUSDCv3');
-    expect(await newCometArbitrumUsdcE.name()).to.equal('Compound USDC');
+    expect(await newCometArbitrumUsdcE.symbol()).to.equal('cUSDCev3');
+    expect(await newCometArbitrumUsdcE.name()).to.equal('Compound USDCe');
     expect(await newCometArbitrumUsdcE.extensionDelegate()).to.equal(config.arbitrum.USDCe.newExt);
 
     const newCometArbitrumUsdt = new Contract(
@@ -1145,42 +972,6 @@ The tenth action sets the factory to the newly deployed factory, extension deleg
     expect(await newCometPolygonUsdt.symbol()).to.equal('cUSDTv3');
     expect(await newCometPolygonUsdt.name()).to.equal('Compound USDT');
     expect(await newCometPolygonUsdt.extensionDelegate()).to.equal(config.polygon.USDT.newExt);
-
-    // Ronin
-    const roninDm = deploymentManager.bridgedDeploymentManagers.get('ronin:wron') as DeploymentManager;
-    const {
-      configurator: roninConfigurator,
-    } = await roninDm.getContracts();
- 
-    expect(await roninConfigurator.factory(config.ronin.WETH.comet)).to.equal(factoryConfig.ronin);
-    expect(await roninConfigurator.factory(config.ronin.WRON.comet)).to.equal(factoryConfig.ronin);
- 
-    expect((await roninConfigurator.getConfiguration(config.ronin.WETH.comet)).extensionDelegate).to.equal(config.ronin.WETH.newExt);
-    expect((await roninConfigurator.getConfiguration(config.ronin.WRON.comet)).extensionDelegate).to.equal(config.ronin.WRON.newExt);
- 
-    const roninSigner = await roninDm.getSigner();
- 
-    const newCometRoninWeth = new Contract(
-      config.ronin.WETH.comet, 
-      newCometAbi,
-      roninSigner
-    );
- 
-    expect(await newCometRoninWeth.MAX_SUPPORTED_UTILIZATION()).to.equal(expectedMaxUtilization);
-    expect(await newCometRoninWeth.symbol()).to.equal('cWETHv3');
-    expect(await newCometRoninWeth.name()).to.equal('Compound WETH');
-    expect(await newCometRoninWeth.extensionDelegate()).to.equal(config.ronin.WETH.newExt);
- 
-    const newCometRoninWron = new Contract(
-      config.ronin.WRON.comet, 
-      newCometAbi,
-      roninSigner
-    );
- 
-    expect(await newCometRoninWron.MAX_SUPPORTED_UTILIZATION()).to.equal(expectedMaxUtilization);
-    expect(await newCometRoninWron.symbol()).to.equal('cWRONv3');
-    expect(await newCometRoninWron.name()).to.equal('Compound WRON');
-    expect(await newCometRoninWron.extensionDelegate()).to.equal(config.ronin.WRON.newExt);
 
     // Mantle
     const mantleDm = deploymentManager.bridgedDeploymentManagers.get('mantle:usde') as DeploymentManager;
