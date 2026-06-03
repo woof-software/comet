@@ -1545,17 +1545,28 @@ describe('absorb: general logic', function () {
     // entire absorb path and reverts the whole call.
     context('BCF, LCF and LF > 0: zero collateral price feed blocks absorb', function () {
       const collateralKey = 'COMP';
+      let wasLiquidatable: boolean;
 
       before(async function() {
         await comet.connect(alice).supply(tokens[collateralKey].address, collateralAmount);
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
+
         // Drop COMP to $70 via the still-active SimplePriceFeed — comet still uses it
         // because deployAndUpgradeTo has not been called yet.
+        await priceFeeds[collateralKey].connect(alice).setRoundData(0, exp(70, 8), 0, 0, 0);
+        await comet.accrueAccount(alice.address);
+
+        wasLiquidatable = await comet.isLiquidatable(alice.address);
+
         await priceFeeds[collateralKey].connect(alice).setRoundData(0, 0, 0, 0, 0);
         await comet.accrueAccount(alice.address);
       });
 
       after(async () => await snapshot.restore());
+
+      it('sanity check: alice was liquidatable before the collateral price feed was set to zero', () => {
+        expect(wasLiquidatable).to.be.true;
+      });
 
       it('sanity check: isLiquidatable reverts because the collateral price feed is zero', async () => {
         await expect(comet.isLiquidatable(alice.address))
