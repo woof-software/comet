@@ -1325,7 +1325,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
     */
     function absorbInternal(address absorber, address account) internal {
         UserBasic memory accountUser = userBasic[account];
-        if (accountUser.principal > 0) revert NotLiquidatable();
+        if (accountUser.principal >= 0) revert NotLiquidatable();
 
         // replicate isLiquidatable() and cache collateral prices for this function execution
         // liquidity represents value of all collateral's weighted by LCF
