@@ -1373,6 +1373,10 @@ describe('partial liquidation: bad debt', function() {
       expect((await comet.userBasic(alice.address)).principal).to.be.equal(0);
     });
 
+    it('alice simple base balance is zero after full seizure', async () => {
+      expect(await comet.balanceOf(alice.address)).to.be.equal(0);
+    });
+
     // User collateral state
     it('alice collateral balance is zero', async () => {
       expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address)).to.be.equal(0);
@@ -1531,6 +1535,10 @@ describe('partial liquidation: bad debt', function() {
       expect((await comet.userBasic(alice.address)).principal).to.be.equal(0);
     });
 
+    it('alice simple base balance is zero after both assets are fully seized', async () => {
+      expect(await comet.balanceOf(alice.address)).to.be.equal(0);
+    });
+
     // User collateral state
     for (const config of collateralConfigs) {
       it(`alice ${config.symbol} collateral balance is zero`, async () => {
@@ -1669,6 +1677,10 @@ describe('partial liquidation: bad debt', function() {
 
     it('alice principal is zero after absorb', async () => {
       expect((await comet.userBasic(alice.address)).principal).to.be.equal(0);
+    });
+
+    it('alice simple base balance is zero after absorb', async () => {
+      expect(await comet.balanceOf(alice.address)).to.be.equal(0);
     });
 
     // User collateral state
@@ -1841,12 +1853,24 @@ describe('partial liquidation: bad debt', function() {
       expect((await comet.userBasic(alice.address)).principal).to.be.equal(0);
     });
 
+    it('alice simple base balance is zero after absorb', async () => {
+      expect(await comet.balanceOf(alice.address)).to.be.equal(0);
+    });
+
     // User collateral state
     it('all alice collateral balances are zero', async () => {
       for (const config of collateralConfigs) {
         expect(await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address)).to.be.equal(0);
         expect((await comet.userCollateral(alice.address, tokens[config.symbol].address)).balance).to.be.equal(0);
       }
+    });
+
+    it('alice assetsIn is cleared', async () => {
+      expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(0);
+    });
+
+    it('alice reserved bits are cleared', async () => {
+      expect((await comet.userBasic(alice.address))._reserved).to.be.equal(0);
     });
 
     // Comet borrow state
