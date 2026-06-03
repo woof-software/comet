@@ -1557,16 +1557,17 @@ describe('absorb: general logic', function () {
 
       after(async () => await snapshot.restore());
 
+      it('sanity check: isLiquidatable reverts because the collateral price feed is zero', async () => {
+        await expect(comet.isLiquidatable(alice.address))
+          .to.be.revertedWithCustomError(comet, 'BadPrice');
+      });
+
       it('absorb reverts because the collateral price feed is zero', async () => {
         await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
           .to.be.revertedWithCustomError(comet, 'BadPrice');
       });
     });
 
-    // absorbInternal unconditionally computes uint256(-presentValue(principal)) before
-    // the principal > 0 guard. When principal is positive the negation produces a negative
-    // int256, and casting it to uint256 panics (Solidity 0.8+ overflow). The net effect
-    // is still a revert — a net supplier cannot be absorbed.
     context('absorb reverts when user principal is positive', function () {
       before(async function() {
         await comet.connect(alice).supply(baseToken.address, exp(100, 6));
@@ -1578,11 +1579,32 @@ describe('absorb: general logic', function () {
         expect((await comet.userBasic(alice.address)).principal).to.be.greaterThan(0);
       });
 
+      it('sanity check: isLiquidatable returns false', async () => {
+        expect(await comet.isLiquidatable(alice.address)).to.be.false;
+      });
+
       // Contract computes uint256(-presentValue(positive_principal)) before the principal > 0
       // guard fires, which overflows in Solidity 0.8+. Absorb still reverts — just with panic.
       it('absorb reverts because alice has a positive principal', async () => {
         await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
-          .to.be.reverted;
+          .to.be.revertedWithCustomError(comet, 'NotLiquidatable');
+      });
+    });
+
+    context('absorb reverts when user principal is zero', function () {
+      after(async () => await snapshot.restore());
+
+      it('sanity check: principal is zero', async () => {
+        expect((await comet.userBasic(alice.address)).principal).to.be.equal(0);
+      });
+
+      it('sanity check: isLiquidatable returns false', async () => {
+        expect(await comet.isLiquidatable(alice.address)).to.be.false;
+      });
+
+      it('absorb reverts because alice has zero principal', async () => {
+        await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
+          .to.be.revertedWithCustomError(comet, 'NotLiquidatable');
       });
     });
 
@@ -1608,6 +1630,10 @@ describe('absorb: general logic', function () {
       it('sanity check: alice is borrow collateralized', async () => {
       // Note: we do not check isLiqquidatable here as BCF < LCF
         expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
+      });
+
+      it('sanity check: isLiquidatable returns false', async () => {
+        expect(await comet.isLiquidatable(alice.address)).to.be.false;
       });
 
       it('absorb reverts because alice has debt but is not liquidatable', async () => {
@@ -1653,7 +1679,41 @@ describe('absorb: general logic', function () {
       });
     });
 
-    context('absorb reverts when liquidation is on pause', function () {
+    context('absorb reverts when liquidation is on pause and user is not liquidatable', function () {
+      after(async () => await snapshot.restore());
+
+      it('sanity check: alice is not liquidatable', async () => {
+        expect(await comet.isLiquidatable(alice.address)).to.be.false;
+      });
+
+      it('set liquidation to pause', async () => {
+        await comet.connect(governor).pause(false, false, false, true, false);
+      });
+
+      it('absorb reverts because liquidation is on pause before liquidatability matters', async () => {
+        await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
+          .to.be.revertedWithCustomError(comet, 'Paused');
+      });
+    });
+
+    context('absorb reverts when liquidation is on pause and user is liquidatable', function () {
+      const collateralKey = 'COMP';
+
+      before(async function() {
+        await comet.connect(alice).supply(tokens[collateralKey].address, collateralAmount);
+        await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
+
+        // Drop COMP to $70: LCF-weighted value = $70 * 0.85 = $59.5 < $70 debt.
+        await priceFeeds[collateralKey].connect(alice).setRoundData(0, exp(70, 8), 0, 0, 0);
+        await comet.accrueAccount(alice.address);
+      });
+
+      after(async () => await snapshot.restore());
+
+      it('sanity check: alice is liquidatable', async () => {
+        expect(await comet.isLiquidatable(alice.address)).to.be.true;
+      });
+
       it('set liquidation to pause', async () => {
         await comet.connect(governor).pause(false, false, false, true, false);
       });
