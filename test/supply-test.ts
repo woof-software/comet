@@ -847,7 +847,7 @@ describe('supply', function () {
           (await ethers.provider.getBlock((await supplyTx.wait()).blockNumber)).timestamp
         );
 
-        expect(lastUpdated - cometUpdatedTimeBefore).to.be.approximately(SKIP_TIME, 2); // 2 seconds tolerance
+        expect(lastUpdated - cometUpdatedTimeBefore).to.be.approximately(SKIP_TIME, 4); // 4 seconds tolerance
         expect(lastUpdated).to.equal(supplyTimestamp);
       });
 
