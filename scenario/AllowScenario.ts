@@ -12,10 +12,8 @@ scenario('Comet#allow > has default permission state', {}, async ({ comet, actor
   expect(await comet.allowance(albert.address, betty.address)).to.be.equal(0);
 });
 
-scenario('Comet#allow > allows a user to authorize a manager', {}, async ({ comet, actors }, context) => {
+scenario('Comet#allow > allows a user to authorize a manager', {}, async ({ comet, actors }) => {
   const { albert, betty } = actors;
-
-  await context.world.deploymentManager.hre.network.provider.send('evm_mine', []);
 
   const txn = await albert.allow(betty, true);
 
@@ -52,6 +50,8 @@ scenario('Comet#allow > allows a user to rescind authorization', {}, async ({ co
       amount: 0n,
     }
   });
+
+  return txn; // return txn to measure gas
 });
 
 scenario('Comet#approve > updates permission state through ERC20-style approvals', {}, async ({ comet, actors }) => {
