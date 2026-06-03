@@ -16,6 +16,7 @@ import { TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS } from 'hardhat/builtin-tasks/ta
 import './tasks/deployment_manager/task.ts';
 import './tasks/spider/task.ts';
 import './tasks/scenario/task.ts';
+import './tasks/test-coverage/task.ts';
 
 // Relation Config
 import relationConfigMap from './deployments/relations';
