@@ -73,7 +73,7 @@ describe('partial liquidation: bad debt', function() {
     let cometBaseTokenBalanceBefore: BigNumber;
     let assetsInBefore: number;
     let reservedBefore: number;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
 
     before(async function() {
@@ -94,7 +94,7 @@ describe('partial liquidation: bad debt', function() {
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       assetsInBefore = userBasic.assetsIn;
       reservedBefore = userBasic._reserved;
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
       collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
     });
@@ -113,7 +113,7 @@ describe('partial liquidation: bad debt', function() {
         mulPrice(collateralAmount, compPrice, assetInfo.scale.toBigInt()),
         assetInfo.liquidationFactor.toBigInt()
       );
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(collateralValueAfterLF).to.be.lessThan(debtValue);
     });
 
@@ -134,8 +134,8 @@ describe('partial liquidation: bad debt', function() {
     });
 
     it('emits AbsorbDebt for the full absorbed debt', async () => {
-      // basePaidOut = newBalance(0) - oldBalance = -oldBalance (bad debt written off to zero)
-      const basePaidOut = -oldBalance;
+      // basePaidOut = newBalance(0) - balanceBefore = -balanceBefore (bad debt written off to zero)
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
 
       await expect(absorbTx)
@@ -204,8 +204,8 @@ describe('partial liquidation: bad debt', function() {
 
     it('comet base reserves decrease by the absorbed debt', async () => {
       // getReserves = balance - totalSupply + totalBorrow; after absorb totalBorrow=0, totalSupply=0
-      // balance = initialBaseFunding - borrowAmount; oldBalance ≈ -borrowAmount
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + oldBalance);
+      // balance = initialBaseFunding - borrowAmount; balanceBefore ≈ -borrowAmount
+      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + balanceBefore);
     });
   });
 
@@ -221,7 +221,7 @@ describe('partial liquidation: bad debt', function() {
     let cometBaseTokenBalanceBefore: BigNumber;
     let assetsInBefore: number;
     let reservedBefore: number;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
 
     before(async function() {
@@ -240,7 +240,7 @@ describe('partial liquidation: bad debt', function() {
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       assetsInBefore = userBasic.assetsIn;
       reservedBefore = userBasic._reserved;
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
       collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
     });
@@ -259,7 +259,7 @@ describe('partial liquidation: bad debt', function() {
         mulPrice(collateralAmount, ldoPrice, assetInfo.scale.toBigInt()),
         assetInfo.liquidationFactor.toBigInt()
       );
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(collateralValueAfterLF).to.be.lessThan(debtValue);
     });
 
@@ -279,7 +279,7 @@ describe('partial liquidation: bad debt', function() {
     });
 
     it('emits AbsorbDebt for the full absorbed debt', async () => {
-      const basePaidOut = -oldBalance;
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
 
       await expect(absorbTx)
@@ -349,7 +349,7 @@ describe('partial liquidation: bad debt', function() {
     });
 
     it('comet base reserves decrease by the absorbed debt', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + oldBalance);
+      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + balanceBefore);
     });
   });
 
@@ -365,7 +365,7 @@ describe('partial liquidation: bad debt', function() {
     let cometBaseTokenBalanceBefore: BigNumber;
     let assetsInBefore: number;
     let reservedBefore: number;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
 
     before(async function() {
@@ -384,7 +384,7 @@ describe('partial liquidation: bad debt', function() {
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       assetsInBefore = userBasic.assetsIn;
       reservedBefore = userBasic._reserved;
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
       collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
     });
@@ -403,7 +403,7 @@ describe('partial liquidation: bad debt', function() {
         mulPrice(collateralAmount, susdePrice, assetInfo.scale.toBigInt()),
         assetInfo.liquidationFactor.toBigInt()
       );
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(collateralValueAfterLF).to.be.lessThan(debtValue);
     });
 
@@ -423,7 +423,7 @@ describe('partial liquidation: bad debt', function() {
     });
 
     it('emits AbsorbDebt for the full absorbed debt', async () => {
-      const basePaidOut = -oldBalance;
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
 
       await expect(absorbTx)
@@ -493,7 +493,7 @@ describe('partial liquidation: bad debt', function() {
     });
 
     it('comet base reserves decrease by the absorbed debt', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + oldBalance);
+      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + balanceBefore);
     });
   });
 
@@ -511,7 +511,7 @@ describe('partial liquidation: bad debt', function() {
     let totalBorrowBaseBefore: BigNumber;
     let assetsInBefore: number;
     let reservedBefore: number;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
 
     before(async function() {
@@ -536,7 +536,7 @@ describe('partial liquidation: bad debt', function() {
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       assetsInBefore = userBasic.assetsIn;
       reservedBefore = userBasic._reserved;
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(c => c.symbol));
     });
@@ -555,7 +555,7 @@ describe('partial liquidation: bad debt', function() {
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         totalCollateralValueAfterLF += mulFactor(mulPrice(config.amount, price, assetInfo.scale.toBigInt()), assetInfo.liquidationFactor.toBigInt());
       }
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(totalCollateralValueAfterLF).to.be.lessThan(debtValue);
     });
 
@@ -575,7 +575,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('emits AbsorbDebt for the full absorbed debt', async () => {
-      const basePaidOut = -oldBalance;
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
       await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
         .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
@@ -649,7 +649,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('comet base reserves decrease by the absorbed debt', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + oldBalance);
+      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + balanceBefore);
     });
   });
 
@@ -667,7 +667,7 @@ describe('partial liquidation: bad debt', function() {
     let totalBorrowBaseBefore: BigNumber;
     let assetsInBefore: number;
     let reservedBefore: number;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
 
     before(async function() {
@@ -690,7 +690,7 @@ describe('partial liquidation: bad debt', function() {
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       assetsInBefore = userBasic.assetsIn;
       reservedBefore = userBasic._reserved;
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(c => c.symbol));
     });
@@ -709,7 +709,7 @@ describe('partial liquidation: bad debt', function() {
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         totalCollateralValueAfterLF += mulFactor(mulPrice(config.amount, price, assetInfo.scale.toBigInt()), assetInfo.liquidationFactor.toBigInt());
       }
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(totalCollateralValueAfterLF).to.be.lessThan(debtValue);
     });
 
@@ -729,7 +729,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('emits AbsorbDebt for the full absorbed debt', async () => {
-      const basePaidOut = -oldBalance;
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
       await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
         .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
@@ -806,7 +806,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('comet base reserves decrease by the absorbed debt', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + oldBalance);
+      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + balanceBefore);
     });
   });
 
@@ -824,7 +824,7 @@ describe('partial liquidation: bad debt', function() {
     let totalBorrowBaseBefore: BigNumber;
     let assetsInBefore: number;
     let reservedBefore: number;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
 
     before(async function() {
@@ -847,7 +847,7 @@ describe('partial liquidation: bad debt', function() {
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       assetsInBefore = userBasic.assetsIn;
       reservedBefore = userBasic._reserved;
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(c => c.symbol));
     });
@@ -866,7 +866,7 @@ describe('partial liquidation: bad debt', function() {
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         totalCollateralValueAfterLF += mulFactor(mulPrice(config.amount, price, assetInfo.scale.toBigInt()), assetInfo.liquidationFactor.toBigInt());
       }
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(totalCollateralValueAfterLF).to.be.lessThan(debtValue);
     });
 
@@ -886,7 +886,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('emits AbsorbDebt for the full absorbed debt', async () => {
-      const basePaidOut = -oldBalance;
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
       await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
         .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
@@ -962,7 +962,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('comet base reserves decrease by the absorbed debt', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + oldBalance);
+      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + balanceBefore);
     });
   });
 
@@ -980,7 +980,7 @@ describe('partial liquidation: bad debt', function() {
     let totalBorrowBaseBefore: BigNumber;
     let assetsInBefore: number;
     let reservedBefore: number;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
 
     before(async function() {
@@ -1003,7 +1003,7 @@ describe('partial liquidation: bad debt', function() {
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       assetsInBefore = userBasic.assetsIn;
       reservedBefore = userBasic._reserved;
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(c => c.symbol));
     });
@@ -1022,7 +1022,7 @@ describe('partial liquidation: bad debt', function() {
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         totalCollateralValueAfterLF += mulFactor(mulPrice(config.amount, price, assetInfo.scale.toBigInt()), assetInfo.liquidationFactor.toBigInt());
       }
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(totalCollateralValueAfterLF).to.be.lessThan(debtValue);
     });
 
@@ -1042,7 +1042,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('emits AbsorbDebt for the full absorbed debt', async () => {
-      const basePaidOut = -oldBalance;
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
       await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
         .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
@@ -1119,7 +1119,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('comet base reserves decrease by the absorbed debt', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + oldBalance);
+      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + balanceBefore);
     });
   });
 
@@ -1141,7 +1141,7 @@ describe('partial liquidation: bad debt', function() {
     let totalBorrowBaseBefore: BigNumber;
     let assetsInBefore: number;
     let reservedBefore: number;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
 
     before(async function() {
@@ -1164,7 +1164,7 @@ describe('partial liquidation: bad debt', function() {
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       assetsInBefore = userBasic.assetsIn;
       reservedBefore = userBasic._reserved;
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
       collateralsState = await makeCollateralStates(comet, tokens, collateralKeys);
     });
@@ -1183,7 +1183,7 @@ describe('partial liquidation: bad debt', function() {
         totalCollateralValueAfterLF +=
           mulFactor(mulPrice(config.amount, price, assetInfo.scale.toBigInt()), assetInfo.liquidationFactor.toBigInt());
       }
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(totalCollateralValueAfterLF).to.be.lessThan(debtValue);
     });
 
@@ -1203,7 +1203,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('emits AbsorbDebt for the full absorbed debt', async () => {
-      const basePaidOut = -oldBalance;
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
       await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
         .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
@@ -1278,7 +1278,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('comet base reserves decrease by the absorbed debt', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + oldBalance);
+      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + balanceBefore);
     });
   });
 
@@ -1293,7 +1293,7 @@ describe('partial liquidation: bad debt', function() {
     let totalBorrowBaseBefore: BigNumber;
     let cometBaseTokenBalanceBefore: BigNumber;
     let assetsInBefore: number;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
 
     before(async function() {
@@ -1319,7 +1319,7 @@ describe('partial liquidation: bad debt', function() {
       totalSupplyBaseBefore = totalsBasic.totalSupplyBase;
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       assetsInBefore = userBasic.assetsIn;
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
       collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
     });
@@ -1335,12 +1335,12 @@ describe('partial liquidation: bad debt', function() {
       const compPrice = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
       const collateralValue = mulPrice(collateralAmount, compPrice, assetInfo.scale.toBigInt());
       const seizedValue = mulFactor(collateralValue, assetInfo.liquidationFactor.toBigInt());
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(seizedValue).to.be.equal(debtValue);
     });
 
     it('sanity check: debt is greater than baseBorrowMin', async () => {
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(debtValue).to.be.greaterThan(mulPrice(baseBorrowMin, baseTokenPrice, baseScale));
     });
 
@@ -1358,7 +1358,7 @@ describe('partial liquidation: bad debt', function() {
     });
 
     it('emits AbsorbDebt for the full absorbed debt', async () => {
-      const basePaidOut = -oldBalance;
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
       await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
         .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
@@ -1420,7 +1420,7 @@ describe('partial liquidation: bad debt', function() {
     });
 
     it('comet base reserves decrease by the absorbed debt', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + oldBalance);
+      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + balanceBefore);
     });
   });
 
@@ -1437,7 +1437,7 @@ describe('partial liquidation: bad debt', function() {
     let totalSupplyBaseBefore: BigNumber;
     let totalBorrowBaseBefore: BigNumber;
     let assetsInBefore: number;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
 
     before(async function() {
@@ -1472,7 +1472,7 @@ describe('partial liquidation: bad debt', function() {
       totalSupplyBaseBefore = totalsBasic.totalSupplyBase;
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       assetsInBefore = userBasic.assetsIn;
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(c => c.symbol));
     });
@@ -1491,7 +1491,7 @@ describe('partial liquidation: bad debt', function() {
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         totalSeizedValue += mulFactor(mulPrice(config.amount, price, assetInfo.scale.toBigInt()), assetInfo.liquidationFactor.toBigInt());
       }
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(totalSeizedValue).to.be.equal(debtValue);
     });
 
@@ -1500,7 +1500,7 @@ describe('partial liquidation: bad debt', function() {
       const compPrice = (await priceFeeds[collateralConfigs[0].symbol].latestRoundData())[1].toBigInt();
       // compSeizedValue = $36; debtValue = $54; remaining = $18 > baseBorrowMin ($10)
       const compSeizedValue = mulFactor(mulPrice(collateralConfigs[0].amount, compPrice, compInfo.scale.toBigInt()), compInfo.liquidationFactor.toBigInt());
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(debtValue - compSeizedValue).to.be.greaterThan(mulPrice(baseBorrowMin, baseTokenPrice, baseScale));
     });
 
@@ -1520,7 +1520,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('emits AbsorbDebt for the full absorbed debt', async () => {
-      const basePaidOut = -oldBalance;
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
       await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
         .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
@@ -1590,7 +1590,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('comet base reserves decrease by the absorbed debt', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + oldBalance);
+      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + balanceBefore);
     });
   });
 
@@ -1607,7 +1607,7 @@ describe('partial liquidation: bad debt', function() {
     let totalBorrowBaseBefore: BigNumber;
     let cometBaseTokenBalanceBefore: BigNumber;
     let assetsInBefore: number;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
 
     before(async function () {
@@ -1626,7 +1626,7 @@ describe('partial liquidation: bad debt', function() {
       totalSupplyBaseBefore = totalsBasic.totalSupplyBase;
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       assetsInBefore = userBasic.assetsIn;
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
       collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
     });
@@ -1639,7 +1639,7 @@ describe('partial liquidation: bad debt', function() {
 
     it('sanity check: debt is below baseBorrowMin (triggers minDebt path)', async () => {
       // debtValue = $8e8, minDebtValue = $10e8 — enters _processDebtClosing
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(debtValue).to.be.lessThan(mulPrice(baseBorrowMin, baseTokenPrice, baseScale));
     });
 
@@ -1647,7 +1647,7 @@ describe('partial liquidation: bad debt', function() {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       // AAVE value = $5, after LF 0.85 = $4.25 < $8 debt — full seizure still leaves residual bad debt
       const seizedValue = mulFactor(mulPrice(collateralAmount, droppedAavePrice, assetInfo.scale.toBigInt()), assetInfo.liquidationFactor.toBigInt());
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(seizedValue).to.be.lessThan(debtValue);
     });
 
@@ -1664,7 +1664,7 @@ describe('partial liquidation: bad debt', function() {
     });
 
     it('emits AbsorbDebt for the full remaining borrow amount', async () => {
-      const basePaidOut = -oldBalance;
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
       await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
         .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
@@ -1726,7 +1726,7 @@ describe('partial liquidation: bad debt', function() {
     });
 
     it('comet base reserves decrease by the absorbed debt', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + oldBalance);
+      expect(await comet.getReserves()).to.be.equal(initialBaseFunding + balanceBefore);
     });
   });
 
@@ -1765,7 +1765,7 @@ describe('partial liquidation: bad debt', function() {
     let totalSupplyBaseBefore: BigNumber;
     let totalBorrowBaseBefore: BigNumber;
     let cometBaseTokenBalanceBefore: BigNumber;
-    let oldBalance: bigint;
+    let balanceBefore: bigint;
     let principalBefore: BigNumber;
     let borrowAmount: bigint;
     let collateralsState: Record<string, CollateralState> = {};
@@ -1802,7 +1802,7 @@ describe('partial liquidation: bad debt', function() {
       totalSupplyBaseBefore = totalsBasic.totalSupplyBase;
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
-      oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, baseBorrowIndex);
+      balanceBefore = presentValue(principalBefore, totalsBasic.baseSupplyIndex, baseBorrowIndex);
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(c => c.symbol));
     });
 
@@ -1819,7 +1819,7 @@ describe('partial liquidation: bad debt', function() {
         const collateralValue = mulPrice(config.amount, config.droppedPrice, assetInfo.scale);
         totalCollateralValueAfterLF += mulFactor(collateralValue, assetInfo.liquidationFactor);
       }
-      const debtValue = mulPrice(-oldBalance, baseTokenPrice, baseScale);
+      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       expect(totalCollateralValueAfterLF).to.be.lessThan(debtValue);
     });
 
@@ -1838,7 +1838,7 @@ describe('partial liquidation: bad debt', function() {
     }
 
     it('emits AbsorbDebt for the full absorbed borrow amount', async () => {
-      const basePaidOut = -oldBalance;
+      const basePaidOut = -balanceBefore;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
       await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
         .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
@@ -1912,7 +1912,7 @@ describe('partial liquidation: bad debt', function() {
     });
 
     it('comet base reserves decrease by the absorbed debt', async () => {
-      // ERC20 balance of comet only moved by borrowAmount (not projected-interest-inflated oldBalance)
+      // ERC20 balance of comet only moved by borrowAmount (not projected-interest-inflated balanceBefore)
       expect(await comet.getReserves()).to.be.equal(initialBaseFunding - borrowAmount);
     });
   });
