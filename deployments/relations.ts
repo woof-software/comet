@@ -124,6 +124,10 @@ const relationConfigMap: RelationConfigMap = {
       field: async (comet) => comet.extensionDelegate(),
     },
   },
+  // Ext delegate — always use CometExt ABI so new interface is included, even if the implementation contract doesn't have it (e.g., old markets)
+  'comet:implementation:implementation': {
+    artifact: 'contracts/CometExt.sol:CometExt',
+  },
   configurator: {
     delegates: {
       field: {

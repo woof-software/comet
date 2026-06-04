@@ -428,7 +428,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       tokenBalances: async (ctx) => ({
         albert: { $base: '== 0' },
         $comet: {
-          $base: getConfigForScenario(ctx).withdrawBase
+          $base: getConfigForScenario(ctx, i).withdrawBase
         }
       }),
     },
@@ -469,7 +469,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 
       // Set up betty's base token supply for forcing accrue
       // Betty needs base tokens supplied to Comet to be able to withdraw them
-      const bettyBaseAmount = BigInt(getConfigForScenario(context).withdrawBase) * baseScale;
+      const bettyBaseAmount = BigInt(getConfigForScenario(context, i).withdrawBase) * baseScale;
       const baseAsset = context.getAssetByAddress(baseToken);
       await context.sourceTokens(bettyBaseAmount, baseAsset, betty);
       await baseAsset.approve(betty, comet.address);
@@ -488,7 +488,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       }
 
       // Force accrue to ensure state is up to date
-      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).withdrawBase) / 100n * baseScale });
+      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, i).withdrawBase) / 100n * baseScale });
 
       // Verify account is liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.true;

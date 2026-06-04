@@ -140,12 +140,18 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   if (ctx.world.base.network === 'arbitrum' && ctx.world.base.deployment === 'usdc') {
     config.bulkerAsset = 100000;
     config.bulkerAsset1 = 100000;
-    config.withdrawAsset = 10000;
+    config.rewardsAsset = 200000;
+    config.withdrawAsset = 200000;
     config.transferAsset = 500000;
     config.transferAsset1 = 500000;
     config.transferBase = 100;
     config.rewardsBase = 100;
     config.withdrawBase = 100;
+    if(i == 5) { // ezETH
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
     if(i == 7) { // tETH
       config.supplyCollateral = 2;
       config.transferCollateral = 2;
@@ -159,8 +165,8 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   }
 
   if (ctx.world.base.network === 'arbitrum' && ctx.world.base.deployment === 'usdt') {
-    config.rewardsAsset = 20000;
-    config.withdrawAsset = 20000;
+    config.rewardsAsset = 200000;
+    config.withdrawAsset = 200000;
     config.bulkerAsset = 100000;
     config.bulkerAsset1 = 10000;
     config.transferAsset = 100000;
@@ -170,10 +176,16 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
       config.transferCollateral = 2;
       config.withdrawCollateral = 2;
     }
+    if(i == 6) { // tETH
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
   }
 
   if (ctx.world.base.network === 'arbitrum' && ctx.world.base.deployment === 'usdc.e') {
-    config.withdrawAsset = 10000;
+    config.rewardsAsset = 200000;
+    config.withdrawAsset = 200000;
     config.bulkerAsset = 100000;
     config.bulkerAsset1 = 100000;
     config.transferAsset = 500000;
@@ -186,6 +198,19 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
 
   if (ctx.world.base.network === 'arbitrum' && ctx.world.base.deployment === 'weth') {
     config.liquidationBase = 1000;
+    config.bulkerBorrowBase = 100;
+    if(i == 7) { // ezETH
+      config.withdrawBase = 10;
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
+    if(i == 8) { // tETH
+      config.withdrawBase = 10;
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
   }
 
   if (ctx.world.base.network === 'ronin' && ctx.world.base.deployment === 'weth') {
