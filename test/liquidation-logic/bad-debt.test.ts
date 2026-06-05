@@ -5,7 +5,7 @@ import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 
-describe.only('partial liquidation: bad debt', function() {
+describe('partial liquidation: bad debt', function() {
   // Protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
   let liquidationModule: DefaultLiquidationModule;
@@ -29,7 +29,6 @@ describe.only('partial liquidation: bad debt', function() {
   const baseScale: bigint = 10n ** 6n;
   const factorScale: bigint = 10n ** 18n;
   let snapshot: SnapshotRestorer;
-  let baseSnapshot: SnapshotRestorer;
 
   before(async function() {
     const protocol = await makeProtocol({
@@ -62,21 +61,17 @@ describe.only('partial liquidation: bad debt', function() {
 
     // Make reserves on comet for borrowings
     await baseToken.allocateTo(comet.address, initialBaseFunding);
-
-    baseSnapshot = await takeSnapshot();
+    
+    snapshot = await takeSnapshot();
   });
 
-  runBadDebtTests({ partialLiquidationEnabled: true });
   runBadDebtTests({ partialLiquidationEnabled: false });
+  runBadDebtTests({ partialLiquidationEnabled: true });
 
   function runBadDebtTests({ partialLiquidationEnabled }: { partialLiquidationEnabled: boolean }) {
     describe(`partialLiquidationEnabled = ${partialLiquidationEnabled}`, function() {
       before(async function() {
-        await baseSnapshot.restore();
-
-        if (!partialLiquidationEnabled) {
-          await liquidationModule.connect(governor).liquidationModeToggle(false);
-        }
+        await liquidationModule.connect(governor).liquidationModeToggle(partialLiquidationEnabled);
 
         snapshot = await takeSnapshot();
       });
@@ -117,6 +112,7 @@ describe.only('partial liquidation: bad debt', function() {
           oldBalance = presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
           cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
           collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
+          console.log(await liquidationModule.partialLiquidationEnabled());
         });
 
         after(async () => await snapshot.restore());

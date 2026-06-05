@@ -4,7 +4,7 @@ import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 
-describe.only('partial liquidation (close debt mode)', function() {
+describe('partial liquidation (close debt mode)', function() {
   // Protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
   let liquidationModule: DefaultLiquidationModule;
