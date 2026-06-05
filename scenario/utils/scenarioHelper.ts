@@ -278,9 +278,9 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   if (ctx.world.base.network === 'polygon' && ctx.world.base.deployment === 'usdt') {
     config.withdrawAsset = 20000;
     config.withdrawBase = 100;
-    config.transferAsset = 500000;
+    config.transferAsset = 10000000;
     config.transferBase = 100;
-    config.rewardsAsset = 20000;
+    config.rewardsAsset = 10000000;
     config.rewardsBase = 1000;
   }
 
