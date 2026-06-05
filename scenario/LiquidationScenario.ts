@@ -575,7 +575,7 @@ scenario(
 
     // Calculate how much of each collateral to supply so that combined they cover the borrow.
     // We split the borrow coverage roughly 50/50 between the two assets.
-    const targetBorrowBase = BigInt(getConfigForScenario(context).withdrawBase);
+    const targetBorrowBase = BigInt(getConfigForScenario(context, 1).withdrawBase);
     const targetBorrowBaseWei = targetBorrowBase * baseScale;
     const halfBorrowWei = targetBorrowBaseWei / 2n;
 
@@ -610,7 +610,7 @@ scenario(
     expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
     // Set up betty with base tokens so she can force accrue later
-    const bettyBaseAmount = BigInt(getConfigForScenario(context).withdrawBase) * baseScale;
+    const bettyBaseAmount = BigInt(getConfigForScenario(context, 1).withdrawBase) * baseScale;
     const baseAsset = context.getAssetByAddress(baseToken);
     await context.sourceTokens(bettyBaseAmount, baseAsset, betty);
     await baseAsset.approve(betty, comet.address);
@@ -629,7 +629,7 @@ scenario(
     }
 
     // Force accrue to ensure state is up to date
-    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).withdrawBase) / 100n * baseScale });
+    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, 1).withdrawBase) / 100n * baseScale });
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
 

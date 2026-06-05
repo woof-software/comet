@@ -1014,6 +1014,7 @@ scenario(
     const { admin, albert, betty, charles, pauseGuardian } = actors;
 
     // Fund pause guardian account for gas fees
+    await fundAccount(world, admin);
     await fundAccount(world, pauseGuardian);
 
     // Allow betty to act on behalf of albert
@@ -1093,6 +1094,7 @@ scenario(
     const { admin, albert, betty, pauseGuardian } = actors;
 
     // Fund pause guardian account for gas fees
+    await fundAccount(world, admin);
     await fundAccount(world, pauseGuardian);
 
     for (let i = 0; i < MAX_ASSETS; i++) {

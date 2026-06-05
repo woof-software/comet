@@ -110,6 +110,12 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
 
   if (ctx.world.base.network === 'base' && ctx.world.base.deployment === 'weth') {
     config.liquidationBase = 1000;
+    if(i == 1) { // ezETH
+      config.withdrawBase = 10;
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
   }
 
   if (ctx.world.base.network === 'optimism' && ctx.world.base.deployment === 'usdc') {

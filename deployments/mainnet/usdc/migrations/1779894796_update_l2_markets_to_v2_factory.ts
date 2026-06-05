@@ -750,6 +750,9 @@ The eighth action sets the factory to the newly deployed factory, extension dele
       'function name() external view returns (string)',
       'function extensionDelegate() external view returns (address)',
     ];
+
+    const expectedMaxUtilization = exp(2, 18);
+
     // Arbitrum
     const arbitrumDm = deploymentManager.bridgedDeploymentManagers.get('arbitrum:usdc') as DeploymentManager;
     const {
@@ -766,7 +769,6 @@ The eighth action sets the factory to the newly deployed factory, extension dele
     expect((await arbitrumConfigurator.getConfiguration(config.arbitrum.USDT.comet)).extensionDelegate).to.equal(config.arbitrum.USDT.newExt);
     expect((await arbitrumConfigurator.getConfiguration(config.arbitrum.WETH.comet)).extensionDelegate).to.equal(config.arbitrum.WETH.newExt);
 
-    const expectedMaxUtilization = exp(2, 18);
     const arbitrumSigner = await arbitrumDm.getSigner();
 
     const newCometArbitrumUsdc = new Contract(
