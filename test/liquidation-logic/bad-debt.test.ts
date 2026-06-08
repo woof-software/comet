@@ -28,6 +28,8 @@ describe('partial liquidation: bad debt', function() {
   // Math
   const baseScale: bigint = 10n ** 6n;
   const factorScale: bigint = 10n ** 18n;
+
+  let baseSnapshot: SnapshotRestorer;
   let snapshot: SnapshotRestorer;
 
   before(async function() {
@@ -62,7 +64,7 @@ describe('partial liquidation: bad debt', function() {
     // Make reserves on comet for borrowings
     await baseToken.allocateTo(comet.address, initialBaseFunding);
     
-    snapshot = await takeSnapshot();
+    baseSnapshot = await takeSnapshot();
   });
 
   runBadDebtTests({ partialLiquidationEnabled: false });
@@ -71,7 +73,18 @@ describe('partial liquidation: bad debt', function() {
   function runBadDebtTests({ partialLiquidationEnabled }: { partialLiquidationEnabled: boolean }) {
     describe(`partialLiquidationEnabled = ${partialLiquidationEnabled}`, function() {
       before(async function() {
-        await liquidationModule.connect(governor).liquidationModeToggle(partialLiquidationEnabled);
+        // Reset to the clean protocol baseline so state (and the canonical
+        // liquidationModule reference) from the previous run does not leak in.
+        await baseSnapshot.restore();
+
+        // The module defaults to partialLiquidationEnabled = true; toggling to the
+        // value it already holds reverts with LiquidationModeAlreadySet.
+        if ((await liquidationModule.partialLiquidationEnabled()) !== partialLiquidationEnabled) {
+          await liquidationModule.connect(governor).liquidationModeToggle(partialLiquidationEnabled);
+        }
+
+        // sanity check
+        expect(await liquidationModule.partialLiquidationEnabled()).to.be.equal(partialLiquidationEnabled);
 
         snapshot = await takeSnapshot();
       });

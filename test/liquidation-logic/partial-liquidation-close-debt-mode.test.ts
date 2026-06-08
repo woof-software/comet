@@ -67,6 +67,7 @@ describe('partial liquidation (close debt mode)', function() {
 
     // Enable close debt mode
     await liquidationModule.connect(governor).liquidationModeToggle(false);
+    expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
 
     snapshot = await takeSnapshot();
   });
@@ -112,10 +113,6 @@ describe('partial liquidation (close debt mode)', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
 
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
@@ -275,10 +272,6 @@ describe('partial liquidation (close debt mode)', function() {
 
     after(async () => await snapshot.restore());
 
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
-
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
@@ -435,10 +428,6 @@ describe('partial liquidation (close debt mode)', function() {
 
     after(async () => await snapshot.restore());
 
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
-
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
@@ -594,10 +583,6 @@ describe('partial liquidation (close debt mode)', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
 
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
@@ -798,10 +783,6 @@ describe('partial liquidation (close debt mode)', function() {
 
     after(async () => await snapshot.restore());
 
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
-
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
@@ -1000,10 +981,6 @@ describe('partial liquidation (close debt mode)', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
 
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
@@ -1214,10 +1191,6 @@ describe('partial liquidation (close debt mode)', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
 
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
@@ -1434,10 +1407,6 @@ describe('partial liquidation (close debt mode)', function() {
 
     after(async () => await snapshot.restore());
 
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
-
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
@@ -1464,10 +1433,6 @@ describe('partial liquidation (close debt mode)', function() {
       let absorbTx: ContractTransaction;
       let basePaidOut: bigint;
       let debtRemainingValue: bigint;
-
-      it('sanity check: enabled close debt mode', async () => {
-        expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-      });
 
       it('absorb is successful', async () => {
         absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
@@ -1710,10 +1675,6 @@ describe('partial liquidation (close debt mode)', function() {
       });
       after(async () => await innerSnapshot.restore());
 
-      it('sanity check: enabled close debt mode', async () => {
-        expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-      });
-
       it('absorb is successful', async () => {
         absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
         await expect(absorbTx).to.not.be.reverted;
@@ -1828,10 +1789,6 @@ describe('partial liquidation (close debt mode)', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
 
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
@@ -2011,10 +1968,6 @@ describe('partial liquidation (close debt mode)', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
 
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
@@ -2196,10 +2149,6 @@ describe('partial liquidation (close debt mode)', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
 
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
@@ -2386,10 +2335,6 @@ describe('partial liquidation (close debt mode)', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
 
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
@@ -2645,10 +2590,6 @@ describe('partial liquidation (close debt mode)', function() {
 
     after(async () => await snapshot.restore());
 
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
-
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
@@ -2889,10 +2830,6 @@ describe('partial liquidation (close debt mode)', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: enabled close debt mode', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-    });
 
     it('sanity check: user is liquidatable', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
