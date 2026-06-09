@@ -36,27 +36,19 @@ import {
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
   MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
-  DefaultLiquidationModule,
   CometHarnessInterfaceExtendedAssetList,
+  LiquidationModule,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarnessExtendedAssetList';
-import { defaultAssets, default24Assets } from './helpers/default-assets';
-import { deployAndUpdateDefaultLiquidationModule } from './helpers/liquidation-module';
 
-// Snapshot
-export { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
+// Helpers
+import type { Numeric } from './helpers/index';
+import { exp, dfn, defaultAssets, deployAndUpdateLiquidationModule, mulPrice, toBigInt, convertToBigInt } from './helpers/index';
 
-// Network helpers
-export * from './helpers/network-helpers';
-
-// DefaultLiquidationModule helpers
-export { deployAndUpdateDefaultLiquidationModule } from './helpers/liquidation-module';
-
-export { ethers, expect, hre, default24Assets, defaultAssets };
-
-export type Numeric = number | bigint;
+export * from './helpers/index';
+export { ethers, expect, hre };
 
 export enum ReentryAttack {
   TransferFrom = 0,
@@ -126,7 +118,7 @@ export type Protocol = {
   priceFeeds: {
     [symbol: string]: SimplePriceFeed;
   };
-  defaultLiquidationModule: DefaultLiquidationModule;
+  defaultLiquidationModule: LiquidationModule;
 };
 
 export type ConfiguratorAndProtocol = {
@@ -135,7 +127,7 @@ export type ConfiguratorAndProtocol = {
   proxyAdmin: CometProxyAdmin;
   cometFactory: CometFactoryWithExtendedAssetList;
   cometProxy: TransparentUpgradeableProxy;
-  defaultLiquidationModuleForProxy: DefaultLiquidationModule;
+  defaultLiquidationModuleForProxy: LiquidationModule;
 } & Protocol;
 
 export type RewardsOpts = {
@@ -199,58 +191,10 @@ export async function makeCollateralStates(
   return col;
 }
 
-export function dfn<T>(x: T | undefined | null, dflt: T): T {
-  return x == undefined ? dflt : x;
-}
-
-export function exp(i: number, d: Numeric = 0, r: Numeric = 6): bigint {
-  const sign = i < 0 ? -1n : 1n;
-  const parts = Math.abs(i).toString().split('.');
-  const intPart = parts[0];
-  const fracPart = (parts[1] || '').padEnd(Number(r), '0').slice(0, Number(r));
-  const scaled = BigInt(intPart + fracPart);
-  return sign * (scaled * 10n ** BigInt(d)) / 10n ** BigInt(r);
-}
-
-export function factor(f: number): bigint {
-  return exp(f, factorDecimals);
-}
-
-export function defactor(f: bigint | BigNumber): number {
-  return Number(toBigInt(f)) / 1e18;
-}
-
-// Truncates a factor to a certain number of decimals
-export function truncateDecimals(factor: bigint | BigNumber, decimals = 4) {
-  const descaleFactor = factorScale / exp(1, decimals);
-  return (toBigInt(factor) / descaleFactor) * descaleFactor;
-}
-
-export function mulPrice(n: bigint | BigNumber, price: bigint | BigNumber, fromScale: bigint | BigNumber): bigint {
-  return toBigInt(n) * toBigInt(price) / toBigInt(fromScale);
-}
-
-export function toBigInt(f: bigint | BigNumber): bigint {
-  if (typeof f === 'bigint') {
-    return f;
-  } else {
-    return f.toBigInt();
-  }
-}
-
-export function annualize(n: bigint | BigNumber, secondsPerYear = 31536000n): number {
-  return defactor(toBigInt(n) * secondsPerYear);
-}
-
-export function toYears(seconds: number, secondsPerYear = 31536000): number {
-  return seconds / secondsPerYear;
-}
-
-
 export const factorDecimals = 18;
-export const factorScale = factor(1);
+export const factorScale = exp(1, factorDecimals);
 export const ONE = factorScale;
-export const ZERO = factor(0);
+export const ZERO = exp(0, factorDecimals);
 export const BASE_INDEX_SCALE = 1e15;
 export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const DEFAULT_PRICEFEED_DECIMALS = 8;
@@ -392,7 +336,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   if (opts.start) await ethers.provider.send('evm_setNextBlockTimestamp', [opts.start]);
   await comet.initializeStorage();
 
-  const defaultLiquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+  const defaultLiquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
   const baseTokenBalance = opts.baseTokenBalance;
   if (baseTokenBalance) {
@@ -572,9 +516,9 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     await proxyAdmin.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
   }
 
-  // Now we know addresses of the comet proxies, we can deploy the default liquidation modules
+  // Now we know addresses of the comet proxies, we can deploy the liquidation modules
   const cometAsProxy = comet.attach(cometProxy.address);
-  const defaultLiquidationModuleForProxy = await deployAndUpdateDefaultLiquidationModule(cometAsProxy, governor);
+  const defaultLiquidationModuleForProxy = await deployAndUpdateLiquidationModule({comet: cometAsProxy, governor});
 
   return {
     opts,
@@ -772,19 +716,6 @@ export function event(tx, index) {
   return { [ev.event]: args };
 }
 
-// Convert all BigNumbers in an array into BigInts
-function convertToBigInt(arr) {
-  const newArr = [];
-  for (const v of arr) {
-    if (Array.isArray(v)) {
-      newArr.push(convertToBigInt(v));
-    } else {
-      newArr.push(v._isBigNumber ? BigInt(v) : v);
-    }
-  }
-  return newArr;
-}
-
 export function getGasUsed(tx: TransactionResponseExt): bigint {
   return tx.receipt.gasUsed.mul(tx.receipt.effectiveGasPrice).toBigInt();
 }
@@ -812,14 +743,6 @@ export function presentValue(
   } else {
     return -presentValueBorrow(baseBorrowIndex, -principal);
   }
-}
-
-export function mulFactor(n: bigint | BigNumber, factor: bigint | BigNumber):bigint {
-  return toBigInt(n) * toBigInt(factor) / factorScale;
-}
-
-export function divPrice(n: bigint | BigNumber, price: bigint | BigNumber, toScale: bigint | BigNumber): bigint {
-  return toBigInt(n) * toBigInt(toScale) / toBigInt(price);
 }
 
 function principalValueSupply(baseSupplyIndex: bigint, presentValue: bigint): bigint {
