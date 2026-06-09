@@ -1,0 +1,164 @@
+import { expect } from 'chai';
+import { Contract, utils } from 'ethers';
+import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
+import { migration } from '../../../../plugins/deployment_manager/Migration';
+import { exp, proposal, calldata } from '../../../../src/deploy';
+
+const config = {
+  unichain: {
+    USDC: {
+      comet: '0x2c7118c4C88B9841FCF839074c26Ae8f035f2921',
+      newExt: '0x6A21249675101b33A76b0fF341f6892B17A7548e',
+    },
+    WETH: {
+      comet: '0x6C987dDE50dB1dcDd32Cd4175778C2a291978E2a',
+      newExt: '0x7E19148AF7b27910CEE1e502d2D1e867E990468D',
+    },
+  },
+};
+
+const factoryConfig = {
+  unichain: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
+};
+
+export default migration('1779894796_update_l2_markets_to_v2_factory', {
+  async prepare() {    
+    return {};
+  },
+
+  async enact(deploymentManager: DeploymentManager, govDeploymentManager: DeploymentManager) {
+    const trace = deploymentManager.tracer();
+
+    const {
+      governor,
+      unichainL1CrossDomainMessenger,
+    } = await govDeploymentManager.getContracts();
+
+    // Unichain
+    const {
+      bridgeReceiver: unichainBridgeReceiver,
+      configurator: unichainConfigurator,
+      cometAdmin: unichainCometAdmin,
+    } = await deploymentManager.getContracts();
+
+    const setFactoryCalldataUnichainUsdc = await calldata(
+      unichainConfigurator.populateTransaction.setFactory(config.unichain.USDC.comet, factoryConfig.unichain)
+    );
+    const setExtensionDelegateCalldataUnichainUsdc = await calldata(
+      unichainConfigurator.populateTransaction.setExtensionDelegate(config.unichain.USDC.comet, config.unichain.USDC.newExt)
+    );
+    const deployAndUpgradeToCalldataUnichainUsdc = utils.defaultAbiCoder.encode(
+      ['address', 'address'],
+      [unichainConfigurator.address, config.unichain.USDC.comet]
+    );
+
+    const setFactoryCalldataUnichainWeth = await calldata(
+      unichainConfigurator.populateTransaction.setFactory(config.unichain.WETH.comet, factoryConfig.unichain)
+    );
+    const setExtensionDelegateCalldataUnichainWeth = await calldata(
+      unichainConfigurator.populateTransaction.setExtensionDelegate(config.unichain.WETH.comet, config.unichain.WETH.newExt)
+    );
+    const deployAndUpgradeToCalldataUnichainWeth = utils.defaultAbiCoder.encode(
+      ['address', 'address'],
+      [unichainConfigurator.address, config.unichain.WETH.comet]
+    );
+
+    const unichainProposalData = utils.defaultAbiCoder.encode(
+      ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
+      [
+        [
+          unichainConfigurator.address, unichainConfigurator.address, unichainCometAdmin.address,
+          unichainConfigurator.address, unichainConfigurator.address, unichainCometAdmin.address,
+        ],
+        [
+          0, 0, 0,
+          0, 0, 0,
+        ],
+        [
+          'setFactory(address,address)',
+          'setExtensionDelegate(address,address)',
+          'deployAndUpgradeTo(address,address)',
+          'setFactory(address,address)',
+          'setExtensionDelegate(address,address)',
+          'deployAndUpgradeTo(address,address)',
+        ],
+        [
+          setFactoryCalldataUnichainUsdc, setExtensionDelegateCalldataUnichainUsdc, deployAndUpgradeToCalldataUnichainUsdc,
+          setFactoryCalldataUnichainWeth, setExtensionDelegateCalldataUnichainWeth, deployAndUpgradeToCalldataUnichainWeth,
+        ]
+      ]
+    );
+
+    const mainnetActions = [
+      // 1. Unichain proposal
+      {
+        contract: unichainL1CrossDomainMessenger,
+        signature: 'sendMessage(address,bytes,uint32)',
+        args: [unichainBridgeReceiver.address, unichainProposalData, 2_000_000],
+      },
+    ];
+
+    const description = `DESCRIPTION`;
+    const txn = await deploymentManager.retry(async () =>
+      trace(
+        await governor.propose(...(await proposal(mainnetActions, description)))
+      ), 0, 300_000
+    );
+
+    const event = txn.events.find(
+      (event: { event: string }) => event.event === 'ProposalCreated'
+    );
+    const [proposalId] = event.args;
+    trace(`Created proposal ${proposalId}.`);
+  },
+
+  async enacted(): Promise<boolean> {
+    return false;
+  },
+
+  async verify(deploymentManager: DeploymentManager): Promise<void> {
+    const newCometAbi = [
+      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint256)',
+      'function symbol() external view returns (string)',
+      'function name() external view returns (string)',
+      'function extensionDelegate() external view returns (address)',
+    ];
+
+    const expectedMaxUtilization = exp(2, 18);
+
+    // Unichain
+    const {
+      configurator: unichainConfigurator,
+    } = await deploymentManager.getContracts();
+ 
+    expect(await unichainConfigurator.factory(config.unichain.USDC.comet)).to.equal(factoryConfig.unichain);
+    expect(await unichainConfigurator.factory(config.unichain.WETH.comet)).to.equal(factoryConfig.unichain);
+ 
+    expect((await unichainConfigurator.getConfiguration(config.unichain.USDC.comet)).extensionDelegate).to.equal(config.unichain.USDC.newExt);
+    expect((await unichainConfigurator.getConfiguration(config.unichain.WETH.comet)).extensionDelegate).to.equal(config.unichain.WETH.newExt);
+ 
+    const unichainSigner = await deploymentManager.getSigner();
+ 
+    const newCometUnichainUsdc = new Contract(
+      config.unichain.USDC.comet, 
+      newCometAbi,
+      unichainSigner
+    );
+ 
+    expect(await newCometUnichainUsdc.MAX_SUPPORTED_UTILIZATION()).to.equal(expectedMaxUtilization);
+    expect(await newCometUnichainUsdc.symbol()).to.equal('cUSDCv3');
+    expect(await newCometUnichainUsdc.name()).to.equal('Compound USDC');
+    expect(await newCometUnichainUsdc.extensionDelegate()).to.equal(config.unichain.USDC.newExt);
+ 
+    const newCometUnichainWeth = new Contract(
+      config.unichain.WETH.comet, 
+      newCometAbi,
+      unichainSigner
+    );
+ 
+    expect(await newCometUnichainWeth.MAX_SUPPORTED_UTILIZATION()).to.equal(expectedMaxUtilization);
+    expect(await newCometUnichainWeth.symbol()).to.equal('cWETHv3');
+    expect(await newCometUnichainWeth.name()).to.equal('Compound WETH');
+    expect(await newCometUnichainWeth.extensionDelegate()).to.equal(config.unichain.WETH.newExt);
+  },
+});
