@@ -102,6 +102,9 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     }
   }
 
+  if (ctx.world.base.network === 'base' && ctx.world.base.deployment === 'usdbc') {
+    config.bulkerBase = 100000;
+  }
 
   if (ctx.world.base.network === 'base' && ctx.world.base.deployment === 'usds') {
     config.liquidationBase2 = 100;
@@ -221,6 +224,7 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   if (ctx.world.base.network === 'arbitrum' && ctx.world.base.deployment === 'usdc.e') {
     config.rewardsAsset = 200000;
     config.withdrawAsset = 200000;
+    config.bulkerBase = 100000;
     config.bulkerAsset = 100000;
     config.bulkerAsset1 = 100000;
     config.transferAsset = 500000;
