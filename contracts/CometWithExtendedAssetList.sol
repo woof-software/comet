@@ -8,7 +8,7 @@ import "./IAssetListFactory.sol";
 import "./IAssetListFactoryHolder.sol";
 import "./IAssetList.sol";
 
-import { IDefaultLiquidationModule } from "./interfaces/liquidation-module/IDefaultLiquidationModule.sol";
+import { ICoreLiquidationModule } from "./interfaces/liquidation-module/ICoreLiquidationModule.sol";
 
 /**
  * @title Compound's Comet Contract
@@ -1331,7 +1331,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         accrueInternal();
 
         for (uint i = 0; i < accounts.length; ) {
-            IDefaultLiquidationModule(liquidationModule).liquidate(absorber, accounts[i]);
+            ICoreLiquidationModule(liquidationModule).liquidate(absorber, accounts[i]);
             unchecked { ++i; }
         }
         uint gasUsed = startGas - gasleft();
