@@ -49,7 +49,7 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
+    //await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const expiry = (await world.timestamp()) + 10;
 
@@ -83,7 +83,7 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
+    //await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const expiry = (await world.timestamp()) + 10;
 
@@ -117,7 +117,7 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
+    //await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const expiry = (await world.timestamp()) + 10;
 
@@ -151,7 +151,7 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
+    //await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const expiry = (await world.timestamp()) + 10;
 
@@ -185,7 +185,7 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
+    //await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const expiry = (await world.timestamp()) + 10;
 
@@ -219,7 +219,7 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
+    //await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const invalidNonce = nonce.add(1);
     const expiry = (await world.timestamp()) + 10;
@@ -298,7 +298,7 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
+    //await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const invalidExpiry = (await world.timestamp()) - 1;
 
@@ -332,7 +332,7 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
+    //await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const expiry = (await world.timestamp()) + 10;
 
@@ -368,7 +368,7 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
-    await context.mineBlocks(1); // note: in case init took a while
+    //await context.mineBlocks(1); // note: in case init took a while
     const nonce = await comet.userNonce(albert.address);
     const expiry = (await world.timestamp()) + 10;
 
