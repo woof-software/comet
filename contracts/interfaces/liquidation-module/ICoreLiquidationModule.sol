@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity =0.8.15;
 
-import { IDefaultLiquidationModuleErrors } from "./IDefaultLiquidationModuleErrors.sol";
-import { IDefaultLiquidationModuleEvents } from "./IDefaultLiquidationModuleEvents.sol";
+import { ICoreLiquidationModuleErrors } from "./ICoreLiquidationModuleErrors.sol";
+import { ICoreLiquidationModuleEvents } from "./ICoreLiquidationModuleEvents.sol";
 
 /**
- * @title Default Liquidation Module Interface
+ * @title Core Liquidation Module Interface
  * @author Woof
- * @notice Interface for the default liquidation module used by Comet.
+ * @notice Interface for the core liquidation module used by Comet.
  * @dev Function documentation is maintained in the module implementation contract.
  * @custom:security-contact dmitriy@woof.software
  */
-interface IDefaultLiquidationModule is IDefaultLiquidationModuleErrors, IDefaultLiquidationModuleEvents {
+interface ICoreLiquidationModule is ICoreLiquidationModuleErrors, ICoreLiquidationModuleEvents {
     function liquidate(address absorber, address account) external;
 
     function isLiquidatable(address account) external view returns (bool);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity =0.8.15;
 
-import { IDefaultLiquidationModule } from "../interfaces/liquidation-module/IDefaultLiquidationModule.sol";
+import { ICoreLiquidationModule } from "../interfaces/liquidation-module/ICoreLiquidationModule.sol";
 
 import { IAssetList } from "../IAssetList.sol";
 import { CometMainInterface, CometCore, CometStorage } from "../CometMainInterface.sol";
@@ -10,7 +10,7 @@ import { IPriceFeed } from "../IPriceFeed.sol";
 import { CometExtInterface } from "../CometExtInterface.sol";
 
 /**
- * @title Default Liquidation Module
+ * @title Core Liquidation Module
  * @author Woof
  * @notice Implements Comet's default account absorption and liquidation checks.
  * @dev The module is called only by its bound Comet instance and writes state back through
@@ -21,32 +21,46 @@ import { CometExtInterface } from "../CometExtInterface.sol";
  *      - minimum debt handling when the remaining borrow falls below the configured borrow minimum.
  * @custom:security-contact dmitriy@woof.software
  */
-contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
+abstract contract CoreLiquidationModule is ICoreLiquidationModule, CometMath {
     /// @notice The target health factor for partial liquidation
     uint256 public constant TARGET_HEALTH_FACTOR = 105e16;
 
-    CometMainInterface public immutable COMET;
+    CometMainInterface public immutable comet;
 
-    IAssetList immutable public ASSET_LIST;
+    IAssetList immutable public assetList;
 
     /// @notice Decimals of the base token
-    uint64 public immutable BASE_SCALE;
+    uint64 public immutable baseScale;
 
     /// @notice The amount of assets in the comet; required for looping over assets
-    uint8 public immutable NUM_ASSETS;
+    uint8 public immutable numAssets;
 
     /// @notice Whether partial liquidation or full liquidation is enabled. Enabled by default.
     bool public partialLiquidationEnabled;
 
-    constructor(address comet) {
-        if(comet == address(0)) revert ZeroAddress();
-        COMET = CometMainInterface(comet);
+    modifier onlyGovernor() {
+        if (msg.sender != comet.governor()) revert OnlyGovernor();
+        _;
+    }
+
+    modifier onlyComet() {
+        if (msg.sender != address(comet)) revert OnlyComet();
+        _;
+    }
+
+    constructor(address _comet) {
+        if(_comet == address(0)) revert ZeroAddress();
         
-        ASSET_LIST = IAssetList(COMET.assetList());
-        NUM_ASSETS = COMET.numAssets();
-        BASE_SCALE = uint64(COMET.baseScale());
+        comet = CometMainInterface(_comet);
+        assetList = IAssetList(comet.assetList());
+        numAssets = comet.numAssets();
+        baseScale = uint64(comet.baseScale());
 
         partialLiquidationEnabled = true;
+    }
+
+    function liquidate(address absorber, address account) external onlyComet {
+        _liquidate(absorber, account);
     }
 
     /**
@@ -57,24 +71,22 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
     * @param absorber The recipient of the incentive paid to the caller of absorb()
     * @param account  The underwater account whose collateral and debt are being absorbed
     */
-    function liquidate(address absorber, address account) external override {
-        if (msg.sender != address(COMET)) revert Unauthorized();
-
-        CometStorage.UserBasic memory accountUser = COMET.getUserBasic(account);
+    function _liquidate(address absorber, address account) internal {
+        CometStorage.UserBasic memory accountUser = comet.getUserBasic(account);
         if (accountUser.principal > 0) revert NotLiquidatable();
 
         // replicate isLiquidatable() and cache collateral prices for this function execution
         // liquidity represents value of all collateral's weighted by LCF
         (uint256 liquidity, uint256[] memory collateralPrices) = _getLiquidity(accountUser,account, true, new uint256[](0));
         // cache base asset price
-        uint256 basePrice = getPrice(COMET.baseTokenPriceFeed());
+        uint256 basePrice = getPrice(comet.baseTokenPriceFeed());
         
-        uint256 debtRemainingValue = mulPrice(uint256(-COMET.presentValueExternal(accountUser.principal)), basePrice, BASE_SCALE);
+        uint256 debtRemainingValue = mulPrice(uint256(-comet.presentValueExternal(accountUser.principal)), basePrice, baseScale);
         if (debtRemainingValue <= liquidity) revert NotLiquidatable();
 
         // Account's value of all collaterals weighted by BCF - using cached prices
         (uint256 totalCollateralizedValue, ) = _getLiquidity(accountUser,account, false, collateralPrices);
-        uint256 minDebtValue = mulPrice(COMET.baseBorrowMin(), basePrice, BASE_SCALE);
+        uint256 minDebtValue = mulPrice(comet.baseBorrowMin(), basePrice, baseScale);
         
         CometCore.AssetInfo memory collateralInfo;
         uint256 collateralAmount;
@@ -83,11 +95,11 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
         uint256 seizedAmount;
         uint256 seizedValue;
         
-        for (uint8 i; i < NUM_ASSETS; ++i) {
+        for (uint8 i; i < numAssets; ++i) {
             if (debtRemainingValue == 0) break;
-            if (!COMET.isInAssetExternal(accountUser.assetsIn, i, accountUser._reserved)) continue;
+            if (!comet.isInAssetExternal(accountUser.assetsIn, i, accountUser._reserved)) continue;
 
-            collateralInfo = ASSET_LIST.getAssetInfo(i);
+            collateralInfo = assetList.getAssetInfo(i);
             
             // Skip non-liquidatable assets - we must not sieze collaterals with LF = 0:
             // 1. The collateral remains with the borrower: non-liquidatable assets should
@@ -96,7 +108,7 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
             //    it would otherwise block liquidation even for assets that *should* be seized.
             if (collateralInfo.liquidationFactor == 0) continue;
 
-            (collateralAmount, ) = COMET.userCollateral(account, collateralInfo.asset);
+            (collateralAmount, ) = comet.userCollateral(account, collateralInfo.asset);
             collateralValue = mulPrice(collateralAmount, collateralPrices[i], collateralInfo.scale);
 
             // fully close the account's debt.
@@ -158,7 +170,7 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
             emit AbsorbCollateral(absorber, account, collateralInfo.asset, seizedAmount, wantedCollateralValue);
             
             // Collaterals storage update
-            COMET.updateCollateral(account, collateralInfo, uint128(seizedAmount));
+            comet.updateCollateral(account, collateralInfo, uint128(seizedAmount));
 
             // cycle values update
             totalCollateralizedValue -= mulFactor(wantedCollateralValue, collateralInfo.borrowCollateralFactor);
@@ -168,7 +180,7 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
         int104 oldPrincipal = accountUser.principal;
 
         // After the liquidation user can either have debt closed (balance == 0) or "healthy" debt (negative balance)
-        int256 newBalance = -signed256(divPrice(debtRemainingValue, basePrice, BASE_SCALE));
+        int256 newBalance = -signed256(divPrice(debtRemainingValue, basePrice, baseScale));
 
         // If balance is negative but not "healthy" - bad debt occured. (no asset brought HF to targetHF)
         // Zero out any residual shortfall as bad debt absorbed by the protocol.
@@ -176,10 +188,10 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
             newBalance = 0;
         }
 
-        int256 oldBalance = COMET.updateDebtAndPrincipal(account, oldPrincipal, newBalance);
+        int256 oldBalance = comet.updateDebtAndPrincipal(account, oldPrincipal, newBalance);
 
         uint256 basePaidOut = unsigned256(newBalance - oldBalance); // Base tokens effectively paid out to the account
-        uint256 valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, BASE_SCALE);
+        uint256 valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, baseScale);
 
         emit AbsorbDebt(absorber, account, basePaidOut, valueOfBasePaidOut);
     }
@@ -187,8 +199,7 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
     /**
      * @notice Toggle the liquidation mode
      */
-    function liquidationModeToggle(bool _partialLiquidationEnabled) external {
-        if (msg.sender != COMET.governor()) revert Unauthorized();
+    function liquidationModeToggle(bool _partialLiquidationEnabled) external onlyGovernor {
         if (partialLiquidationEnabled == _partialLiquidationEnabled) revert LiquidationModeAlreadySet();
 
         partialLiquidationEnabled = _partialLiquidationEnabled;
@@ -212,14 +223,14 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
      *      nothing to the liquidity calculation, making the account easier to liquidate.
      */
     function isLiquidatable(address account) public view returns (bool) {
-        CometCore.UserBasic memory accountUser = COMET.getUserBasic(account);
+        CometCore.UserBasic memory accountUser = comet.getUserBasic(account);
 
         if (accountUser.principal >= 0) return false;
 
         int256 debt = signedMulPrice(
-            COMET.presentValueExternal(accountUser.principal),
-            getPrice(COMET.baseTokenPriceFeed()),
-            BASE_SCALE
+            comet.presentValueExternal(accountUser.principal),
+            getPrice(comet.baseTokenPriceFeed()),
+            baseScale
         );
 
         (uint256 liquidity, ) = _getLiquidity(accountUser, account, true, new uint256[](0));
@@ -252,10 +263,10 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
         uint128 collateralBalance;
         CometCore.AssetInfo memory asset;
 
-        fetchedCollateralPrices.length == 0 ? collateralPrices = new uint256[](NUM_ASSETS) : collateralPrices = fetchedCollateralPrices;
-        for (uint8 i; i < NUM_ASSETS; ++i) {
-            if (COMET.isInAssetExternal(assetsIn, i, _reserved)) {
-                asset = ASSET_LIST.getAssetInfo(i);
+        fetchedCollateralPrices.length == 0 ? collateralPrices = new uint256[](numAssets) : collateralPrices = fetchedCollateralPrices;
+        for (uint8 i; i < numAssets; ++i) {
+            if (comet.isInAssetExternal(assetsIn, i, _reserved)) {
+                asset = assetList.getAssetInfo(i);
                 
                 if (liquidation) {
                     // Skip assets that do not count toward the liquidation threshold. It avoids getPrice() call for price feed
@@ -272,7 +283,7 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
                     //
                     // If the borrower cannot withdraw the deactivated collateral without becoming
                     // under-collateralized, they are stuck and must wait for liquidation.
-                    if (CometExtInterface(address(COMET)).isCollateralDeactivated(asset.offset)) revert TokenIsDeactivated(asset.asset);
+                    if (CometExtInterface(address(comet)).isCollateralDeactivated(asset.offset)) revert TokenIsDeactivated(asset.asset);
 
                     // Mechanism to skip assets with no borrowing power. It avoids getPrice() call price feed,
                     // so in case if excluded asset's oracle reverts (e.g. stale, broken, decommissioned),
@@ -284,7 +295,7 @@ contract DefaultLiquidationModule is IDefaultLiquidationModule, CometMath {
 
                 if (fetchedCollateralPrices.length == 0) collateralPrices[i] = getPrice(asset.priceFeed);
 
-                (collateralBalance, ) = COMET.userCollateral(accountAddress, asset.asset);
+                (collateralBalance, ) = comet.userCollateral(accountAddress, asset.asset);
 
                 newAmount = mulPrice(
                     collateralBalance,

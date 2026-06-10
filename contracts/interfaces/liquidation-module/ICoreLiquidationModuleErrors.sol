@@ -2,14 +2,15 @@
 pragma solidity =0.8.15;
 
 /**
- * @title Default Liquidation Module Errors
+ * @title Core Liquidation Module Errors
  * @author Woof
  * @notice Interface of errors emitted by the DefaultLiquidationModule.
  * @custom:security-contact dmitriy@woof.software
  */
-interface IDefaultLiquidationModuleErrors {
-    /// @notice Reverts when the caller is not the bound Comet instance.
-    error Unauthorized();
+interface ICoreLiquidationModuleErrors {
+    error OnlyGovernor();
+    
+    error OnlyComet();
 
     error NotLiquidatable();
 

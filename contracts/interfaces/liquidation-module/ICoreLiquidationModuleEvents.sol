@@ -2,12 +2,12 @@
 pragma solidity =0.8.15;
 
 /**
- * @title Default Liquidation Module Events
+ * @title Core Liquidation Module Events
  * @author Woof
  * @notice Interface of events emitted by the DefaultLiquidationModule.
  * @custom:security-contact dmitriy@woof.software
  */
-interface IDefaultLiquidationModuleEvents {
+interface ICoreLiquidationModuleEvents {
     /**
      * @notice Emitted when a borrower's base debt is absorbed during liquidation.
      * @param absorber The recipient of the liquidation incentive. Defined by the caller, not msg.sender.
