@@ -43,7 +43,7 @@ scenario(
 // Related: https://github.com/NomicFoundation/hardhat/issues/1875
 scenario(
   'Comet#allowBySig > fails if owner argument is altered',
-  { },
+  {},
   async ({ comet, actors }, context, world) => {
     const { albert, betty, charles } = actors;
 
@@ -77,7 +77,7 @@ scenario(
 
 scenario(
   'Comet#allowBySig > fails if manager argument is altered',
-  { },
+  {},
   async ({ comet, actors }, context, world) => {
     const { albert, betty, charles } = actors;
 
@@ -111,7 +111,7 @@ scenario(
 
 scenario(
   'Comet#allowBySig > fails if isAllowed argument is altered',
-  { },
+  {},
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
 
@@ -145,7 +145,7 @@ scenario(
 
 scenario(
   'Comet#allowBySig > fails if nonce argument is altered',
-  { },
+  {},
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
 
@@ -179,7 +179,7 @@ scenario(
 
 scenario(
   'Comet#allowBySig > fails if expiry argument is altered',
-  { },
+  {},
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
 
@@ -213,7 +213,7 @@ scenario(
 
 scenario(
   'Comet#allowBySig > fails if signature contains invalid nonce',
-  { },
+  {},
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
 
@@ -248,7 +248,7 @@ scenario(
 
 scenario(
   'Comet#allowBySig > rejects a repeated message',
-  { },
+  {},
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
 
@@ -292,7 +292,7 @@ scenario(
 
 scenario(
   'Comet#allowBySig > fails for invalid expiry',
-  { },
+  {},
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
 
@@ -326,7 +326,7 @@ scenario(
 
 scenario(
   'Comet#allowBySig > fails if v not in {27,28}',
-  { },
+  {},
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
 
@@ -362,7 +362,7 @@ scenario(
 
 scenario(
   'Comet#allowBySig > fails if s is too high',
-  { },
+  {},
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
 
