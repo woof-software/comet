@@ -1,6 +1,7 @@
 import { ethers, expect, exp, presentValue, mulPrice, mulFactor, divPrice, default24Assets, CollateralState, makeCollateralStates,
   makeConfigurator, 
-  principalValue} from '../helpers';
+  principalValue,
+  seedMarketActivity} from '../helpers';
 import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
@@ -63,6 +64,7 @@ describe('absorb logic with delisted collaterals', function() {
     priceFeeds['USDC'] = protocol.priceFeeds['USDC'];
 
     [alice, absorber] = protocol.users;
+    const [bob, dave] = protocol.users.slice(2);
     pauseGuardian = protocol.pauseGuardian;
 
     const allocateAmount = exp(1_000_000, 18);
@@ -71,8 +73,7 @@ describe('absorb logic with delisted collaterals', function() {
       await (token as FaucetToken).connect(alice).approve(comet.address, ethers.constants.MaxUint256);
     }
 
-    // Make reserves on comet for borrowings
-    await baseToken.allocateTo(comet.address, initialBaseFunding);
+    await seedMarketActivity(comet, tokens, priceFeeds, bob, dave, baseToken,  initialBaseFunding );
 
     await comet.connect(alice).supply(tokens['COMP'].address, collateralAmount);
     await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
@@ -308,7 +309,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -495,7 +497,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -736,7 +739,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -1021,7 +1025,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -1182,7 +1187,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -1383,7 +1389,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed WETH value only', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -1581,7 +1588,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves())).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -1778,7 +1786,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed COMP value only', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -1969,7 +1978,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -2106,7 +2116,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -2306,7 +2317,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed WETH value only', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -2501,7 +2513,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -2657,7 +2670,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -2933,7 +2947,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 

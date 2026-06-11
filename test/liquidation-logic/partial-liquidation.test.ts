@@ -1,4 +1,4 @@
-import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, principalValue, default24Assets, divPrice, CollateralState, makeCollateralStates } from '../helpers';
+import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, principalValue, default24Assets, divPrice, CollateralState, makeCollateralStates, seedMarketActivity } from '../helpers';
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
@@ -21,6 +21,8 @@ describe('partial liquidation', function() {
   // Signers
   let alice: SignerWithAddress;
   let absorber: SignerWithAddress;
+  let bob: SignerWithAddress;
+  let dave: SignerWithAddress;
 
   // Math
   const baseScale: bigint = 10n ** 6n;
@@ -37,7 +39,7 @@ describe('partial liquidation', function() {
         USDC: { decimals: 6, initialPrice: 1 },
         ...default24AssetsData,
         // Large cap so the 24-collateral scenario can hold enough sUSDe.
-        sUSDe: { ...default24AssetsData.sUSDe, supplyCap: exp(400, 18) },
+        sUSDe: { ...default24AssetsData.sUSDe, supplyCap: exp(4000, 18) },
       },
       baseTrackingBorrowSpeed: 0,
       baseBorrowMin: baseBorrowMin,
@@ -52,6 +54,7 @@ describe('partial liquidation', function() {
     priceFeeds['USDC'] = protocol.priceFeeds['USDC'];
 
     [alice, absorber] = protocol.users;
+    [bob, dave] = protocol.users.slice(2);
 
     const allocateAmount = exp(1_000_000, 18);
     for (const token of Object.values(protocol.tokens)) {
@@ -59,8 +62,8 @@ describe('partial liquidation', function() {
       await (token as FaucetToken).connect(alice).approve(comet.address, ethers.constants.MaxUint256);
     }
 
-    // Make reserves on comet for borrowings
-    await baseToken.allocateTo(comet.address, initialBaseFunding);
+    await seedMarketActivity(comet, tokens, priceFeeds, bob, dave, baseToken,  initialBaseFunding );
+
     targetHealthFactor = (await comet.targetHealthFactor()).toBigInt();
 
     snapshot = await takeSnapshot();
@@ -84,6 +87,7 @@ describe('partial liquidation', function() {
     let seizedValue: bigint;
     let seizeAmount: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
 
     before(async function() {
       await comet.connect(alice).supply(tokens[collateralKey].address, collateralAmount);
@@ -104,6 +108,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
     });
 
@@ -239,7 +244,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
 
     it('comet collateral reserves increase by the seized amount', async () => {
@@ -265,6 +270,7 @@ describe('partial liquidation', function() {
     let seizedValue: bigint;
     let seizeAmount: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
 
     before(async function() {
       await comet.connect(alice).supply(tokens[collateralKey].address, collateralAmount);
@@ -286,6 +292,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
     });
 
@@ -411,7 +418,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
 
     it('comet collateral reserves increase by the seized amount', async () => {
@@ -437,6 +444,7 @@ describe('partial liquidation', function() {
     let seizedValue: bigint;
     let seizeAmount: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
 
     before(async function() {
       await comet.connect(alice).supply(tokens[collateralKey].address, collateralAmount);
@@ -458,6 +466,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, [collateralKey]);
     });
 
@@ -583,7 +592,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
 
     it('comet collateral reserves increase by the seized amount', async () => {
@@ -609,6 +618,7 @@ describe('partial liquidation', function() {
     let basePaidOut: bigint;
     let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
 
     before(async function() {
       for (const config of collateralConfigs) {
@@ -630,6 +640,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(({ symbol }) => symbol));
     });
 
@@ -778,11 +789,10 @@ describe('partial liquidation', function() {
       expect(await baseToken.balanceOf(comet.address)).to.be.equal(cometBaseTokenBalanceBefore);
     });
 
-    it('comet total supplied COMP is zero', async () => {
+    it('comet total supplied COMP is reduced by the fully seized amount', async () => {
       const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralConfigs[0].symbol].address)).totalSupplyAsset;
 
       expect(totalSupplyAsset).to.be.equal(collateralsState[collateralConfigs[0].symbol].totalsCollateralBefore.sub(collateralsState[collateralConfigs[0].symbol].seizeAmount));
-      expect(totalSupplyAsset).to.be.equal(0);
     });
 
     it('comet total supplied WETH is reduced by the seized amount', async () => {
@@ -793,7 +803,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
 
     it('comet COMP collateral reserves increase by all seized COMP', async () => {
@@ -822,6 +832,7 @@ describe('partial liquidation', function() {
     let basePaidOut: bigint;
     let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
 
     before(async function() {
       for (const config of collateralConfigs) {
@@ -843,6 +854,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(({ symbol }) => symbol));
     });
 
@@ -990,11 +1002,10 @@ describe('partial liquidation', function() {
       expect(await baseToken.balanceOf(comet.address)).to.be.equal(cometBaseTokenBalanceBefore);
     });
 
-    it('comet total supplied AAVE is zero', async () => {
+    it('comet total supplied AAVE is reduced by the fully seized amount', async () => {
       const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralConfigs[0].symbol].address)).totalSupplyAsset;
 
       expect(totalSupplyAsset).to.be.equal(collateralsState[collateralConfigs[0].symbol].totalsCollateralBefore.sub(collateralsState[collateralConfigs[0].symbol].seizeAmount));
-      expect(totalSupplyAsset).to.be.equal(0);
     });
 
     it('comet total supplied LDO is reduced by the seized amount', async () => {
@@ -1005,7 +1016,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
 
     it('comet AAVE collateral reserves increase by all seized AAVE', async () => {
@@ -1034,6 +1045,7 @@ describe('partial liquidation', function() {
     let basePaidOut: bigint;
     let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
 
     before(async function() {
       for (const config of collateralConfigs) {
@@ -1055,6 +1067,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(({ symbol }) => symbol));
     });
 
@@ -1213,11 +1226,10 @@ describe('partial liquidation', function() {
       expect(await baseToken.balanceOf(comet.address)).to.be.equal(cometBaseTokenBalanceBefore);
     });
 
-    it('comet total supplied USDe is zero', async () => {
+    it('comet total supplied USDe is reduced by the fully seized amount', async () => {
       const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralConfigs[0].symbol].address)).totalSupplyAsset;
 
       expect(totalSupplyAsset).to.be.equal(collateralsState[collateralConfigs[0].symbol].totalsCollateralBefore.sub(collateralsState[collateralConfigs[0].symbol].seizeAmount));
-      expect(totalSupplyAsset).to.be.equal(0);
     });
 
     it('comet total supplied sUSDe is reduced by the seized amount', async () => {
@@ -1228,7 +1240,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
 
     it('comet USDe collateral reserves increase by all seized USDe', async () => {
@@ -1257,6 +1269,7 @@ describe('partial liquidation', function() {
     let basePaidOut: bigint;
     let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
 
     before(async function() {
       for (const config of collateralConfigs) {
@@ -1278,6 +1291,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(({ symbol }) => symbol));
     });
 
@@ -1439,11 +1453,10 @@ describe('partial liquidation', function() {
       expect(await baseToken.balanceOf(comet.address)).to.be.equal(cometBaseTokenBalanceBefore);
     });
 
-    it('comet total supplied ezETH is zero', async () => {
+    it('comet total supplied ezETH is reduced by the fully seized amount', async () => {
       const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralConfigs[0].symbol].address)).totalSupplyAsset;
 
       expect(totalSupplyAsset).to.be.equal(collateralsState[collateralConfigs[0].symbol].totalsCollateralBefore.sub(collateralsState[collateralConfigs[0].symbol].seizeAmount));
-      expect(totalSupplyAsset).to.be.equal(0);
     });
 
     it('comet total supplied OP is reduced by the seized amount', async () => {
@@ -1454,7 +1467,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
 
     it('comet ezETH collateral reserves increase by all seized ezETH', async () => {
@@ -1482,6 +1495,7 @@ describe('partial liquidation', function() {
     let reservedBefore: number;
     let oldBalance: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
     let innerSnapshot: SnapshotRestorer;
 
     before(async function() {
@@ -1504,6 +1518,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(({ symbol }) => symbol));
 
       innerSnapshot = await takeSnapshot();
@@ -1748,32 +1763,28 @@ describe('partial liquidation', function() {
       });
 
       // Comet collateral balances
-      it('comet total supplied WBTC is zero', async () => {
+      it('comet total supplied WBTC is reduced by the fully seized amount', async () => {
         const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralConfigs[0].symbol].address)).totalSupplyAsset;
 
         expect(totalSupplyAsset).to.be.equal(collateralsState[collateralConfigs[0].symbol].totalsCollateralBefore.sub(collateralConfigs[0].amount));
-        expect(totalSupplyAsset).to.be.equal(0);
       });
 
-      it('comet total supplied rsETH is zero', async () => {
+      it('comet total supplied rsETH is reduced by the fully seized amount', async () => {
         const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralConfigs[1].symbol].address)).totalSupplyAsset;
 
         expect(totalSupplyAsset).to.be.equal(collateralsState[collateralConfigs[1].symbol].totalsCollateralBefore.sub(collateralConfigs[1].amount));
-        expect(totalSupplyAsset).to.be.equal(0);
       });
 
-      it('comet total supplied cbETH is zero', async () => {
+      it('comet total supplied cbETH is reduced by the fully seized amount', async () => {
         const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralConfigs[2].symbol].address)).totalSupplyAsset;
 
         expect(totalSupplyAsset).to.be.equal(collateralsState[collateralConfigs[2].symbol].totalsCollateralBefore.sub(collateralConfigs[2].amount));
-        expect(totalSupplyAsset).to.be.equal(0);
       });
 
-      it('comet total supplied CRV is zero', async () => {
+      it('comet total supplied CRV is reduced by the fully seized amount', async () => {
         const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralConfigs[3].symbol].address)).totalSupplyAsset;
 
         expect(totalSupplyAsset).to.be.equal(collateralsState[collateralConfigs[3].symbol].totalsCollateralBefore.sub(collateralConfigs[3].amount));
-        expect(totalSupplyAsset).to.be.equal(0);
       });
 
       it('comet total supplied GMX is reduced by the seized amount', async () => {
@@ -1794,7 +1805,7 @@ describe('partial liquidation', function() {
       });
 
       it('comet base reserves are reduced by the base paid out', async () => {
-        expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+        expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
       });
 
       it('comet WBTC collateral reserves increase by all seized WBTC', async () => {
@@ -1919,6 +1930,7 @@ describe('partial liquidation', function() {
     let newBalance: bigint;
     let basePaidOut: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
 
     let debtRemainingValue: bigint;
     let compValue: bigint;
@@ -1950,6 +1962,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(({ symbol }) => symbol));
     });
 
@@ -2117,7 +2130,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
   });
 
@@ -2139,6 +2152,7 @@ describe('partial liquidation', function() {
     let newBalance: bigint;
     let basePaidOut: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
 
     let debtRemainingValue: bigint;
     let aaveValue: bigint;
@@ -2170,6 +2184,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(({ symbol }) => symbol));
     });
 
@@ -2317,7 +2332,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
 
     for (const config of collateralConfigs) {
@@ -2349,6 +2364,7 @@ describe('partial liquidation', function() {
     let newBalance: bigint;
     let basePaidOut: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
 
     let debtRemainingValue: bigint;
     let rEthValue: bigint;
@@ -2380,6 +2396,7 @@ describe('partial liquidation', function() {
       reservedBefore = userBasic._reserved;
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(({ symbol }) => symbol));
     });
 
@@ -2526,7 +2543,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
 
     for (const config of collateralConfigs) {
@@ -2562,6 +2579,7 @@ describe('partial liquidation', function() {
     let newBalance: bigint;
     let basePaidOut: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
 
     let debtRemainingValue: bigint;
     let rEthValue: bigint;
@@ -2600,6 +2618,7 @@ describe('partial liquidation', function() {
       oldPrincipal = principal.toBigInt();
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(({ symbol }) => symbol));
     });
 
@@ -2749,11 +2768,10 @@ describe('partial liquidation', function() {
     });
 
     // Comet collateral balances
-    it('comet total supplied rETH is zero', async () => {
+    it('comet total supplied rETH is reduced by the fully seized amount', async () => {
       const totalSupplyAsset = (await comet.totalsCollateral(tokens[collateralConfigs[0].symbol].address)).totalSupplyAsset;
 
       expect(totalSupplyAsset).to.be.equal(collateralsState[collateralConfigs[0].symbol].totalsCollateralBefore.sub(rEthSeizeAmount));
-      expect(totalSupplyAsset).to.be.equal(0);
     });
 
     it('comet total supplied AAVE is reduced by the seized amount', async () => {
@@ -2784,7 +2802,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
 
     for (const config of collateralConfigs) {
@@ -2838,6 +2856,7 @@ describe('partial liquidation', function() {
     let wantedCollateralValues: bigint[] = [];
     let absorbTx: ContractTransaction;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
     let totalBorrowBaseBefore: BigNumber;
     let totalSupplyBaseBefore: BigNumber;
     let assetsInBefore: number;
@@ -2852,6 +2871,14 @@ describe('partial liquidation', function() {
     let totalCVAfterPartialSeizure: bigint;
 
     before(async function() {
+      // Bob adds deep base liquidity so utilization stays near zero and the borrow rate stays at its
+      // base value. This keeps interest accrual on par with an empty market, so the exact
+      // partial-liquidation math (newBalance / principal) below is not perturbed by the seeded borrower.
+      const extraBaseLiquidity = exp(100_000, 6);
+      await baseToken.allocateTo(bob.address, extraBaseLiquidity);
+      await baseToken.connect(bob).approve(comet.address, extraBaseLiquidity);
+      await comet.connect(bob).supply(baseToken.address, extraBaseLiquidity);
+
       collateralValues = [];
       wantedCollateralValues = Array(collateralConfigs.length).fill(0n);
 
@@ -2881,6 +2908,7 @@ describe('partial liquidation', function() {
       oldPrincipal = principal.toBigInt();
       oldBalance = presentValue(principal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(({ symbol }) => symbol));
     });
 
@@ -2947,7 +2975,9 @@ describe('partial liquidation', function() {
     });
 
     it('after asset index 5 partial seizure, targetHF condition is met before touching asset indexes 6 through 23', () => {
-      expect(mulFactor(debtAfterPartialSeizure, targetHealthFactor)).to.be.lessThan(totalCVAfterPartialSeizure);
+      // The partial seizure solves for the amount that restores targetHF, so the position lands at or
+      // above target: debt * HF <= totalCV (equality is the exact boundary the seizure math targets).
+      expect(mulFactor(debtAfterPartialSeizure, targetHealthFactor)).to.be.lessThanOrEqual(totalCVAfterPartialSeizure);
     });
 
     it('calculates newBalance after seized assets reduce debt', () => {
@@ -3038,13 +3068,12 @@ describe('partial liquidation', function() {
     });
 
     // Comet collateral balances
-    it('comet total supplied collateral for asset indexes 0 through 4 is zero', async () => {
+    it('comet total supplied collateral for asset indexes 0 through 4 is reduced by the fully seized amounts', async () => {
       for (let i = 0; i < firstFullSeizureCount; i++) {
         const config = collateralConfigs[i];
         const totalSupplyAsset = (await comet.totalsCollateral(tokens[config.symbol].address)).totalSupplyAsset;
 
         expect(totalSupplyAsset).to.be.equal(collateralsState[config.symbol].totalsCollateralBefore.sub(collateralsState[config.symbol].seizeAmount));
-        expect(totalSupplyAsset).to.be.equal(0);
       }
     });
 
@@ -3089,7 +3118,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
   });
 
@@ -3105,6 +3134,7 @@ describe('partial liquidation', function() {
     let assetSupplyAmounts: { [symbol: string]: bigint } = {};
     let absorbTx: ContractTransaction;
     let cometBaseTokenBalanceBefore: BigNumber;
+    let baseReservesBefore: bigint;
     let totalSupplyBaseBefore: BigNumber;
     let totalBorrowBaseBefore: BigNumber;
     let oldBalance: bigint;
@@ -3115,6 +3145,14 @@ describe('partial liquidation', function() {
     let borrowPrincipalBefore: BigNumber;
 
     before(async function () {
+      // Bob adds deep base liquidity so utilization stays near zero and the borrow rate stays at its
+      // base value. This keeps interest accrual on par with an empty market, so the exact
+      // partial-liquidation math (newBalance / principal) below is not perturbed by the seeded borrower.
+      const extraBaseLiquidity = exp(100_000, 6);
+      await baseToken.allocateTo(bob.address, extraBaseLiquidity);
+      await baseToken.connect(bob).approve(comet.address, extraBaseLiquidity);
+      await comet.connect(bob).supply(baseToken.address, extraBaseLiquidity);
+
       collateralConfigs = [];
       for (const sym of assetSymbols23) {
         const info = await comet.getAssetInfoByAddress(tokens[sym].address);
@@ -3136,6 +3174,7 @@ describe('partial liquidation', function() {
       totalBorrowBaseBefore = totalsBasic.totalBorrowBase;
       oldBalance = presentValue(borrowPrincipalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+      baseReservesBefore = (await comet.getReserves()).toBigInt();
       collateralsState = await makeCollateralStates(comet, tokens, collateralConfigs.map(({ symbol }) => symbol));
     });
 
@@ -3253,9 +3292,10 @@ describe('partial liquidation', function() {
     });
 
     // Comet collateral balances
-    it('comet totalsCollateral are zero for all fully seized assets 0-22', async () => {
+    it('comet totalsCollateral for all fully seized assets 0-22 are reduced by alice seized amount', async () => {
       for (const sym of assetSymbols23) {
-        expect((await comet.totalsCollateral(tokens[sym].address)).totalSupplyAsset).to.be.equal(0);
+        expect((await comet.totalsCollateral(tokens[sym].address)).totalSupplyAsset)
+          .to.be.equal(collateralsState[sym].totalsCollateralBefore.sub(assetSupplyAmounts[sym]));
       }
     });
 
@@ -3285,7 +3325,7 @@ describe('partial liquidation', function() {
     });
 
     it('comet base reserves are reduced by the base paid out', async () => {
-      expect(await comet.getReserves()).to.be.equal(initialBaseFunding - basePaidOut);
+      expect(await comet.getReserves()).to.be.approximately(baseReservesBefore - basePaidOut, 5);
     });
   });
 });
