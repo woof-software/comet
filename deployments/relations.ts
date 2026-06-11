@@ -65,6 +65,10 @@ const relationConfigMap: RelationConfigMap = {
             if (address.toLowerCase() === '0x87eee96d50fb761ad85b1c982d28a042169d61b1') {
               return 'wrsETH';
             }
+            // Mantle-specific known contract mapping
+            if (address === '0xcda86a272531e8640cd7f1a92c01839911b90bb0') {
+              return 'mETH';
+            }
 
             throw new Error(`Failed to get symbol for token ${token.address}: ${e.message}`);
           }
@@ -97,6 +101,10 @@ const relationConfigMap: RelationConfigMap = {
             if (address === '0x87eee96d50fb761ad85b1c982d28a042169d61b1') {
               return 'wrsETH:priceFeed';
             }
+            // Known contract mapping for Mantle
+            if (address === '0xcda86a272531e8640cd7f1a92c01839911b90bb0') {
+              return 'mETH:priceFeed';
+            }
             
             throw new Error(`Failed to get symbol for token ${assets[i].address}: ${e.message}`);
           }
@@ -110,7 +118,7 @@ const relationConfigMap: RelationConfigMap = {
     },
   },
   'comet:implementation': {
-    artifact: 'contracts/Comet.sol:Comet',
+    artifact: 'contracts/CometWithExtendedAssetList.sol:CometWithExtendedAssetList',
     delegates: {
       field: async (comet) => comet.extensionDelegate(),
     },
