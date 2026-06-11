@@ -81,7 +81,6 @@ describe('absorb: general logic', function () {
     let assetsInBefore: number;
     let reservedBefore: number;
     let balanceBefore: bigint;
-    let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function () {
@@ -114,7 +113,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
       expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
     });
@@ -128,6 +127,7 @@ describe('absorb: general logic', function () {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       const compPrice = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
       const lf = assetInfo.liquidationFactor.toBigInt();
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // _processDebtClosing: C × LF = $71.10 > D = $70 → seize exactly D / LF of COMP.
       // Debt reduction = D (full debt repaid); seizeAmount = D / LF / compPrice (in COMP tokens).
@@ -164,11 +164,7 @@ describe('absorb: general logic', function () {
     });
 
     // User collateral state
-    it('alice collateral balance is positive — surplus stays with user', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address)).to.be.greaterThan(0);
-      expect((await comet.userCollateral(alice.address, tokens[collateralKey].address)).balance).to.be.greaterThan(0n);
-    });
-
+    
     // We check that surplus is collateral amount - debt / (LP * collateral price).
     it('alice collateral balance is reduced by the seized amount', async () => {
       expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address)).to.be.equal(collateralAmount - collateralsState[collateralKey].seizeAmount);
@@ -229,7 +225,6 @@ describe('absorb: general logic', function () {
     let assetsInBefore: number;
     let reservedBefore: number;
     let balanceBefore: bigint;
-    let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function () {
@@ -261,7 +256,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
       expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
     });
@@ -275,6 +270,7 @@ describe('absorb: general logic', function () {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       const ldoPrice = (await priceFeeds['LDO'].latestRoundData())[1].toBigInt();
       const lf = assetInfo.liquidationFactor.toBigInt();
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // D ≤ minDebt → outer branch → _processDebtClosing.
       // C × LF = $13.60 > D = $10 → seize exactly D / LF of LDO; surplus stays.
@@ -311,10 +307,6 @@ describe('absorb: general logic', function () {
     });
 
     // User collateral state
-    it('alice collateral balance is positive — surplus stays with user', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address)).to.be.greaterThan(0);
-      expect((await comet.userCollateral(alice.address, tokens[collateralKey].address)).balance).to.be.greaterThan(0n);
-    });
 
     // We check that surplus is collateral amount - debt / (LP * collateral price).
     it('alice collateral balance is reduced by the seized amount', async () => {
@@ -376,7 +368,6 @@ describe('absorb: general logic', function () {
     let assetsInBefore: number;
     let reservedBefore: number;
     let balanceBefore: bigint;
-    let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function () {
@@ -408,7 +399,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
       expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
     });
@@ -422,6 +413,7 @@ describe('absorb: general logic', function () {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       const sUsdePrice = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
       const lf = assetInfo.liquidationFactor.toBigInt();
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // D ≤ minDebt → outer branch → _processDebtClosing.
       // C × LF = $11.78 > D = $11 → seize exactly D / LF of sUSDe; surplus stays.
@@ -458,10 +450,6 @@ describe('absorb: general logic', function () {
     });
 
     // User collateral state
-    it('alice collateral balance is positive — surplus stays with user', async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address)).to.be.greaterThan(0);
-      expect((await comet.userCollateral(alice.address, tokens[collateralKey].address)).balance).to.be.greaterThan(0n);
-    });
 
     // We check that surplus is collateral amount - debt / (LP * collateral price).
     it('alice collateral balance is reduced by the seized amount', async () => {
@@ -525,7 +513,6 @@ describe('absorb: general logic', function () {
     let assetsInBefore: number;
     let reservedBefore: number;
     let balanceBefore: bigint;
-    let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function () {
@@ -560,7 +547,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
       expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
     });
@@ -577,6 +564,7 @@ describe('absorb: general logic', function () {
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
       const lf_comp = compInfo.liquidationFactor.toBigInt();
       const lf_weth = wethInfo.liquidationFactor.toBigInt();
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // Iter 1 (COMP): wantedCV ≈ $91.72 > collateralValue $85 → else branch → seize all COMP.
       // Debt reduction = C × LF = $85 × 0.90 = $76.50
@@ -626,11 +614,6 @@ describe('absorb: general logic', function () {
     it(`alice ${collateralConfigs[0].symbol} collateral balance is zero — fully seized`, async () => {
       expect(await comet.collateralBalanceOf(alice.address, tokens[collateralConfigs[0].symbol].address)).to.equal(0);
       expect((await comet.userCollateral(alice.address, tokens[collateralConfigs[0].symbol].address)).balance).to.be.equal(0n);
-    });
-
-    it(`alice ${collateralConfigs[1].symbol} collateral balance is positive — surplus stays with user`, async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralConfigs[1].symbol].address)).to.be.greaterThan(0);
-      expect((await comet.userCollateral(alice.address, tokens[collateralConfigs[1].symbol].address)).balance).to.be.greaterThan(0n);
     });
 
     // We check that surplus is collateral amount - debt / (LP * collateral price).
@@ -702,7 +685,6 @@ describe('absorb: general logic', function () {
     let assetsInBefore: number;
     let reservedBefore: number;
     let balanceBefore: bigint;
-    let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function () {
@@ -737,7 +719,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
       expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
     });
@@ -754,6 +736,7 @@ describe('absorb: general logic', function () {
       const ldoPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
       const lf_aave = aaveInfo.liquidationFactor.toBigInt();
       const lf_ldo = ldoInfo.liquidationFactor.toBigInt();
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // Iter 1 (AAVE): wantedCV ~ $8.72 < $10, partial branch taken.
       // D - target debt reduction ~ $8.59 <= $10 -> inner minDebt -> _processDebtClosing(D, AAVE).
@@ -804,11 +787,6 @@ describe('absorb: general logic', function () {
     it(`alice ${collateralConfigs[0].symbol} collateral balance is zero - fully seized`, async () => {
       expect(await comet.collateralBalanceOf(alice.address, tokens[collateralConfigs[0].symbol].address)).to.equal(0);
       expect((await comet.userCollateral(alice.address, tokens[collateralConfigs[0].symbol].address)).balance).to.be.equal(0n);
-    });
-
-    it(`alice ${collateralConfigs[1].symbol} collateral balance is positive - surplus stays with user`, async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralConfigs[1].symbol].address)).to.be.greaterThan(0n);
-      expect((await comet.userCollateral(alice.address, tokens[collateralConfigs[1].symbol].address)).balance).to.be.greaterThan(0n);
     });
 
     // We check that surplus is collateral amount - debt / (LP * collateral price).
@@ -880,7 +858,6 @@ describe('absorb: general logic', function () {
     let assetsInBefore: number;
     let balanceBefore: bigint;
     let reservedBefore: number;
-    let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function () {
@@ -916,7 +893,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
       expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
     });
@@ -933,6 +910,7 @@ describe('absorb: general logic', function () {
       const sUsdePrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
       const lf_usde = usdeInfo.liquidationFactor.toBigInt();
       const lf_susde = sUsdeInfo.liquidationFactor.toBigInt();
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // Iter 1 (USDe): D=$11 > minDebtValue, but D > CxLF -> seize all USDe.
       // C_USDe x LF = $3.40 x 0.92 = $3.13 < D -> seize all USDe; debt reduction = C_USDe x LF.
@@ -982,11 +960,6 @@ describe('absorb: general logic', function () {
     it(`alice ${collateralConfigs[0].symbol} collateral balance is zero - fully seized`, async () => {
       expect(await comet.collateralBalanceOf(alice.address, tokens[collateralConfigs[0].symbol].address)).to.equal(0);
       expect((await comet.userCollateral(alice.address, tokens[collateralConfigs[0].symbol].address)).balance).to.be.equal(0n);
-    });
-
-    it(`alice ${collateralConfigs[1].symbol} collateral balance is positive - surplus stays with user`, async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralConfigs[1].symbol].address)).to.be.greaterThan(0n);
-      expect((await comet.userCollateral(alice.address, tokens[collateralConfigs[1].symbol].address)).balance).to.be.greaterThan(0n);
     });
 
     // We check that surplus is collateral amount - debt / (LP * collateral price).
@@ -1060,7 +1033,6 @@ describe('absorb: general logic', function () {
     let assetsInBefore: number;
     let reservedBefore: number;
     let balanceBefore: bigint;
-    let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function () {
@@ -1095,7 +1067,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
       expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
     });
@@ -1110,6 +1082,7 @@ describe('absorb: general logic', function () {
       const opInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
       const ezethPrice = (await priceFeeds[collateralConfigs[0].symbol].latestRoundData())[1].toBigInt();
       const opPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // Iter 1 (ezETH): wantedCV ~ $266 > C_ezETH -> else branch -> seize all ezETH.
       const ezethCV = mulPrice(collateralConfigs[0].amount, ezethPrice, ezethInfo.scale);
@@ -1159,11 +1132,6 @@ describe('absorb: general logic', function () {
     it(`alice ${collateralConfigs[0].symbol} collateral balance is zero - fully seized`, async () => {
       expect(await comet.collateralBalanceOf(alice.address, tokens[collateralConfigs[0].symbol].address)).to.equal(0);
       expect((await comet.userCollateral(alice.address, tokens[collateralConfigs[0].symbol].address)).balance).to.be.equal(0n);
-    });
-
-    it(`alice ${collateralConfigs[1].symbol} collateral balance is positive - surplus stays with user`, async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralConfigs[1].symbol].address)).to.be.greaterThan(0n);
-      expect((await comet.userCollateral(alice.address, tokens[collateralConfigs[1].symbol].address)).balance).to.be.greaterThan(0n);
     });
 
     // We check that surplus is collateral amount - debt / (LP * collateral price).
@@ -1242,7 +1210,6 @@ describe('absorb: general logic', function () {
     let assetsInBefore: number;
     let reservedBefore: number;
     let balanceBefore: bigint;
-    let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function () {
@@ -1278,7 +1245,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
       expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
     });
@@ -1289,6 +1256,8 @@ describe('absorb: general logic', function () {
     });
 
     it('calculates seize amounts: first 4 fully seized (outer minDebt), sUSDe partial', async () => {
+      let debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
+
       // Each of the first 4: outer minDebt -> _processDebtClosing -> CxLF < D -> seize all.
       for (const config of collateralConfigs.slice(0, 4)) {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
@@ -1346,11 +1315,6 @@ describe('absorb: general logic', function () {
         expect((await comet.userCollateral(alice.address, tokens[config.symbol].address)).balance).to.be.equal(0n);
       });
     }
-
-    it(`alice ${collateralConfigs[4].symbol} collateral balance is positive - surplus stays with user`, async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralConfigs[4].symbol].address)).to.be.greaterThan(0n);
-      expect((await comet.userCollateral(alice.address, tokens[collateralConfigs[4].symbol].address)).balance).to.be.greaterThan(0n);
-    });
 
     // We check that surplus is collateral amount - debt / (LP * collateral price).
     it(`alice ${collateralConfigs[4].symbol} collateral balance is reduced by the seized amount`, async () => {
@@ -1443,7 +1407,6 @@ describe('absorb: general logic', function () {
     let assetsInBefore: number;
     let reservedBefore: number;
     let balanceBefore: bigint;
-    let debtRemainingValue: bigint;
     let cometBaseTokenBalanceBefore: BigNumber;
 
     before(async function () {
@@ -1479,7 +1442,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
+      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
       expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
     });
@@ -1490,6 +1453,8 @@ describe('absorb: general logic', function () {
     });
 
     it('calculates seize amounts: first 23 fully seized (outer minDebt), sUSDe partial', async () => {
+      let debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
+
       // Each of the first 23: outer minDebt → _processDebtClosing → C×LF < D → seize all.
       for (const config of collateralConfigs.slice(0, 23)) {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
@@ -1549,11 +1514,6 @@ describe('absorb: general logic', function () {
         expect((await comet.userCollateral(alice.address, tokens[config.symbol].address)).balance).to.be.equal(0n);
       });
     }
-
-    it(`alice ${collateralConfigs[23].symbol} collateral balance is positive — surplus stays with user`, async () => {
-      expect(await comet.collateralBalanceOf(alice.address, tokens[collateralConfigs[23].symbol].address)).to.be.greaterThan(0n);
-      expect((await comet.userCollateral(alice.address, tokens[collateralConfigs[23].symbol].address)).balance).to.be.greaterThan(0n);
-    });
 
     // We check that surplus is collateral amount - debt / (LP * collateral price).
     it(`alice ${collateralConfigs[23].symbol} collateral balance is reduced by the seized amount`, async () => {
@@ -1742,6 +1702,11 @@ describe('absorb: general logic', function () {
         expect(wasLiquidatable).to.be.true;
       });
 
+      it('isLiquidatable reverts because base token price feed returns bad price', async () => {
+        await expect(comet.isLiquidatable(alice.address))
+          .to.be.revertedWithCustomError(comet, 'BadPrice');
+      });
+
       it('absorb reverts because base token price feed returns bad price', async () => {
         await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
           .to.be.revertedWithCustomError(comet, 'BadPrice');
@@ -1775,6 +1740,11 @@ describe('absorb: general logic', function () {
         expect(wasLiquidatable).to.be.true;
       });
 
+      it('isLiquidatable reverts because base token price feed reverts', async () => {
+        await expect(comet.isLiquidatable(alice.address))
+          .to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
+      });
+
       it('absorb reverts because base token price feed reverts', async () => {
         await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
           .to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
@@ -1806,6 +1776,11 @@ describe('absorb: general logic', function () {
 
       it('sanity check: alice was liquidatable before switching to the reverting oracle', () => {
         expect(wasLiquidatable).to.be.true;
+      });
+
+      it('isLiquidatable reverts because the collateral price feed reverts', async () => {
+        await expect(comet.isLiquidatable(alice.address))
+          .to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
       });
 
       it('absorb reverts because the collateral price feed reverts', async () => {
@@ -1965,14 +1940,16 @@ describe('absorb: general logic', function () {
     });
 
     context('absorb reverts when liquidation is on pause and user is not liquidatable', function () {
+      before(async function() {
+        await comet.connect(alice).supply(tokens['COMP'].address, collateralAmount);
+        
+        await comet.connect(governor).pause(false, false, false, true, false);
+      });
+
       after(async () => await snapshot.restore());
 
       it('sanity check: alice is not liquidatable', async () => {
         expect(await comet.isLiquidatable(alice.address)).to.be.false;
-      });
-
-      it('set liquidation to pause', async () => {
-        await comet.connect(governor).pause(false, false, false, true, false);
       });
 
       it('absorb reverts because liquidation is on pause before liquidatability matters', async () => {
@@ -1991,16 +1968,14 @@ describe('absorb: general logic', function () {
         // Drop COMP to $70: LCF-weighted value = $70 * 0.85 = $59.5 < $70 debt.
         await priceFeeds[collateralKey].connect(alice).setRoundData(0, exp(70, 8), 0, 0, 0);
         await comet.accrueAccount(alice.address);
+
+        await comet.connect(governor).pause(false, false, false, true, false);
       });
 
       after(async () => await snapshot.restore());
 
       it('sanity check: alice is liquidatable', async () => {
         expect(await comet.isLiquidatable(alice.address)).to.be.true;
-      });
-
-      it('set liquidation to pause', async () => {
-        await comet.connect(governor).pause(false, false, false, true, false);
       });
 
       it('absorb reverts because liquidation is on pause', async () => {
