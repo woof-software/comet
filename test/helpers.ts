@@ -96,9 +96,14 @@ export type ProtocolOpts = {
   baseBorrowMin?: Numeric;
   targetReserves?: Numeric;
   targetHealthFactor?: Numeric;
-  liquidationModule?: string;
   baseTokenBalance?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
+  liquidationModule?: string;
+  liquidationModuleOpts?: {
+    dexAdapter?: string;
+    borderHF?: bigint;
+    healthPositionHF?: bigint;
+  };
 };
 
 export type Protocol = {
@@ -336,7 +341,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   if (opts.start) await ethers.provider.send('evm_setNextBlockTimestamp', [opts.start]);
   await comet.initializeStorage();
 
-  const defaultLiquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
+  const defaultLiquidationModule = await deployAndUpdateLiquidationModule({comet, governor, ...(opts.liquidationModuleOpts || {})});
 
   const baseTokenBalance = opts.baseTokenBalance;
   if (baseTokenBalance) {
@@ -518,7 +523,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
 
   // Now we know addresses of the comet proxies, we can deploy the liquidation modules
   const cometAsProxy = comet.attach(cometProxy.address);
-  const defaultLiquidationModuleForProxy = await deployAndUpdateLiquidationModule({comet: cometAsProxy, governor});
+  const defaultLiquidationModuleForProxy = await deployAndUpdateLiquidationModule({comet: cometAsProxy, governor, ...(opts.liquidationModuleOpts || {})});
 
   return {
     opts,

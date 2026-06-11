@@ -85,7 +85,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, CometMath {
         if (debtRemainingValue <= liquidity) revert NotLiquidatable();
 
         // Account's value of all collaterals weighted by BCF - using cached prices
-        (uint256 totalCollateralizedValue, ) = _getLiquidity(accountUser,account, false, collateralPrices);
+        (uint256 totalCollateralizedValue, ) = _getLiquidity(accountUser, account, false, collateralPrices);
         uint256 minDebtValue = mulPrice(comet.baseBorrowMin(), basePrice, baseScale);
         
         CometCore.AssetInfo memory collateralInfo;

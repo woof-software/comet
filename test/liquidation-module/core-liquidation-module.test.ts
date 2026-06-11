@@ -1,12 +1,16 @@
 import { ethers, exp, expect, makeProtocol } from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, DefaultLiquidationModule } from 'build/types';
+import { CometHarnessInterfaceExtendedAssetList, LiquidationModule, LiquidationModule__factory } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 
-describe.only('DefaultLiquidationModule', function () {
+describe('core liquidation module', function () {
+  const DEX_ADAPTER = '0x1111111111111111111111111111111111111111';
+  const BORDER_HF: bigint = exp(102, 16); // 1.02e18
+  const HEALTH_POSITION_HF: bigint = exp(110, 16); // 1.10e18
+
   let comet: CometHarnessInterfaceExtendedAssetList;
-  let liquidationModule: DefaultLiquidationModule;
+  let liquidationModule: LiquidationModule;
 
   let governor: SignerWithAddress;
   let alice: SignerWithAddress;
@@ -24,37 +28,40 @@ describe.only('DefaultLiquidationModule', function () {
   });
 
   context('constructor', function () {
-    it('sets COMET to the provided comet address', async () => {
-      expect(await liquidationModule.COMET()).to.equal(comet.address);
-    });
+    context('happy path', function () {
+      it('sets COMET to the provided comet address', async () => {
+        expect(await liquidationModule.comet()).to.equal(comet.address);
+      });
 
-    it('sets ASSET_LIST to the comet asset list', async () => {
-      expect(await liquidationModule.ASSET_LIST()).to.equal(await comet.assetList());
-    });
+      it('sets ASSET_LIST to the comet asset list', async () => {
+        expect(await liquidationModule.assetList()).to.equal(await comet.assetList());
+      });
 
-    it('sets NUM_ASSETS to the comet asset count', async () => {
-      expect(await liquidationModule.NUM_ASSETS()).to.equal(await comet.numAssets());
-    });
+      it('sets NUM_ASSETS to the comet asset count', async () => {
+        expect(await liquidationModule.numAssets()).to.equal(await comet.numAssets());
+      });
 
-    it('sets BASE_SCALE to the comet base scale', async () => {
-      expect(await liquidationModule.BASE_SCALE()).to.equal(await comet.baseScale());
-    });
+      it('sets BASE_SCALE to the comet base scale', async () => {
+        expect(await liquidationModule.baseScale()).to.equal(await comet.baseScale());
+      });
 
-    it('enables partial liquidation by default', async () => {
-      expect(await liquidationModule.partialLiquidationEnabled()).to.be.true;
-    });
+      it('enables partial liquidation by default', async () => {
+        expect(await liquidationModule.partialLiquidationEnabled()).to.be.true;
+      });
 
-    // TARGET_HEALTH_FACTOR is a constant 105e16 = 1.05e18 (105%).
-    it('exposes a target health factor of 105%', async () => {
-      expect(await liquidationModule.TARGET_HEALTH_FACTOR()).to.equal(exp(1.05, 18));
+      // TARGET_HEALTH_FACTOR is a constant 105e16 = 1.05e18 (105%).
+      it('exposes a target health factor of 105%', async () => {
+        expect(await liquidationModule.TARGET_HEALTH_FACTOR()).to.equal(exp(1.05, 18));
+      });
     });
 
     context('revert when', function () {
       it('comet address is zero', async () => {
-        const DefaultLiquidationModuleFactory = await ethers.getContractFactory('DefaultLiquidationModule');
+        const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
 
-        await expect(DefaultLiquidationModuleFactory.deploy(ethers.constants.AddressZero))
-          .to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
+        await expect(
+          LiquidationModuleFactory.deploy(ethers.constants.AddressZero, DEX_ADAPTER, BORDER_HF, HEALTH_POSITION_HF)
+        ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
     });
   });
@@ -108,7 +115,7 @@ describe.only('DefaultLiquidationModule', function () {
 
       it('caller is not the governor', async () => {
         await expect(liquidationModule.connect(alice).liquidationModeToggle(false))
-          .to.be.revertedWithCustomError(liquidationModule, 'Unauthorized');
+          .to.be.revertedWithCustomError(liquidationModule, 'OnlyGovernor');
       });
 
       it('the wanted value is already set (true -> true)', async () => {
@@ -121,6 +128,18 @@ describe.only('DefaultLiquidationModule', function () {
 
         await expect(liquidationModule.connect(governor).liquidationModeToggle(false))
           .to.be.revertedWithCustomError(liquidationModule, 'LiquidationModeAlreadySet');
+      });
+    });
+  });
+
+  context('liquidate', function () {
+    context('revert when', function () {
+      it('caller is not the comet', async () => {
+        // sanity check 
+        expect(await liquidationModule.comet()).to.not.equal(alice.address);
+
+        await expect(liquidationModule.connect(alice)['liquidate(address,address)'](alice.address, alice.address))
+          .to.be.revertedWithCustomError(liquidationModule, 'OnlyComet');
       });
     });
   });

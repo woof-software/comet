@@ -1,5 +1,5 @@
-import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, divPrice, presentValue, CollateralState, makeCollateralStates, deployAndUpdateDefaultLiquidationModule } from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, DefaultLiquidationModule, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
+import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, divPrice, presentValue, CollateralState, makeCollateralStates, deployAndUpdateLiquidationModule } from '../helpers';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, LiquidationModule, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -10,7 +10,7 @@ describe('absorb: general logic', function () {
   let cometProxyAdmin: CometProxyAdmin;
   let configuratorProxyAddress: string;
   let cometProxyAddress: string;
-  let liquidationModule: DefaultLiquidationModule;
+  let liquidationModule: LiquidationModule;
 
   const initialBaseFunding = exp(1, 8) * 10_000n;
   const baseBorrowMin = exp(10, 6);
@@ -41,6 +41,10 @@ describe('absorb: general logic', function () {
       baseTrackingSupplySpeed: exp(1, 15),
       baseTrackingBorrowSpeed: exp(1, 15),
       baseBorrowMin: baseBorrowMin,
+      liquidationModuleOpts: {
+        borderHF: exp(102, 16), // 1.02
+        healthPositionHF: exp(110, 16), // 1.10
+      }
     });
     configuratorProxyAddress = protocol.configuratorProxy.address;
     cometProxyAddress = protocol.cometProxy.address;
@@ -74,11 +78,16 @@ describe('absorb: general logic', function () {
     baseSnapshot = await takeSnapshot();
   });
 
-  runAbsorbTests({ partialLiquidationEnabled: false }); // full debt close case
-  runAbsorbTests({ partialLiquidationEnabled: true });
+  /*//////////////////////////////////////////////////////////////
+                              TESTS LOGIC
+  //////////////////////////////////////////////////////////////*/
+  // Note: tests running performs at the end of the file.
 
-  function runAbsorbTests({ partialLiquidationEnabled }: { partialLiquidationEnabled: boolean }) {
-    describe(`partialLiquidationEnabled = ${partialLiquidationEnabled}`, function() {
+  function runAbsorbTests({ partialLiquidationEnabled, viaLiquidationModule }: { 
+    partialLiquidationEnabled: boolean;
+    viaLiquidationModule: boolean; 
+  }) {
+    describe(`partialLiquidationEnabled = ${partialLiquidationEnabled} && viaLiquidationModule = ${viaLiquidationModule}`, function() {
       before(async function() {
         // Reset to the clean protocol baseline so state (and the canonical
         // liquidationModule reference) from the previous run does not leak in.
@@ -145,7 +154,11 @@ describe('absorb: general logic', function () {
         });
 
         it('absorb is successful', async () => {
-          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          if (viaLiquidationModule) {
+            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
+          } else {
+            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          }
           await expect(absorbTx).to.not.be.reverted;
         });
 
@@ -292,7 +305,11 @@ describe('absorb: general logic', function () {
         });
 
         it('absorb is successful', async () => {
-          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          if (viaLiquidationModule) {
+            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
+          } else {
+            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          }
           await expect(absorbTx).to.not.be.reverted;
         });
 
@@ -439,7 +456,11 @@ describe('absorb: general logic', function () {
         });
 
         it('absorb is successful', async () => {
-          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          if (viaLiquidationModule) {
+            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
+          } else {
+            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          }
           await expect(absorbTx).to.not.be.reverted;
         });
 
@@ -591,7 +612,11 @@ describe('absorb: general logic', function () {
         });
 
         it('absorb is successful', async () => {
-          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          if (viaLiquidationModule) {
+            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
+          } else {
+            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          }
           await expect(absorbTx).to.not.be.reverted;
         });
 
@@ -768,7 +793,11 @@ describe('absorb: general logic', function () {
         });
 
         it('absorb is successful', async () => {
-          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          if (viaLiquidationModule) {
+            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
+          } else {
+            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          }
           await expect(absorbTx).to.not.be.reverted;
         });
 
@@ -947,7 +976,11 @@ describe('absorb: general logic', function () {
         });
 
         it('absorb is successful', async () => {
-          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          if (viaLiquidationModule) {
+            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
+          } else {
+            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          }
           await expect(absorbTx).to.not.be.reverted;
         });
 
@@ -1126,7 +1159,11 @@ describe('absorb: general logic', function () {
         });
 
         it('absorb is successful', async () => {
-          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          if (viaLiquidationModule) {
+            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
+          } else {
+            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          }
           await expect(absorbTx).to.not.be.reverted;
         });
 
@@ -1309,7 +1346,11 @@ describe('absorb: general logic', function () {
         });
 
         it('absorb is successful', async () => {
-          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          if (viaLiquidationModule) {
+            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
+          } else {
+            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          }
           await expect(absorbTx).to.not.be.reverted;
         });
 
@@ -1510,7 +1551,11 @@ describe('absorb: general logic', function () {
         });
 
         it('absorb is successful', async () => {
-          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          if (viaLiquidationModule) {
+            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
+          } else {
+            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          }
           await expect(absorbTx).to.not.be.reverted;
         });
 
@@ -1697,9 +1742,11 @@ describe('absorb: general logic', function () {
         });
 
         it('absorb is successful', async () => {
-          await expect(
-            comet.connect(absorber).absorb(absorber.address, [alice.address])
-          ).to.not.be.reverted;
+          if (viaLiquidationModule) {
+            await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
+          } else {
+            await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          }
         });
 
         it('lastAccrualTime was advanced to the absorb block timestamp', async () => {
@@ -1828,7 +1875,7 @@ describe('absorb: general logic', function () {
             // Re-wire comet to a fresh module after the upgrade. Use a local: clobbering the
             // outer `liquidationModule` would leave a dangling reference after snapshot.restore()
             // reverts this deployment, breaking the next run's `before` hook.
-            await deployAndUpdateDefaultLiquidationModule(comet, governor);
+            await deployAndUpdateLiquidationModule({ comet, governor });
           });
 
           after(async () => await snapshot.restore());
@@ -2040,4 +2087,12 @@ describe('absorb: general logic', function () {
       });
     });
   }
+
+  /*//////////////////////////////////////////////////////////////
+                             TESTS SETUP
+  //////////////////////////////////////////////////////////////*/
+
+  runAbsorbTests({ partialLiquidationEnabled: false, viaLiquidationModule: false }); // full debt close case
+  runAbsorbTests({ partialLiquidationEnabled: true, viaLiquidationModule: false });
+  runAbsorbTests({ partialLiquidationEnabled: true, viaLiquidationModule: true}); // entry point on the liquidation module, not comet
 });
