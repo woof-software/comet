@@ -105,10 +105,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is greater than min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.greaterThan(minDebtValue);
+    it('sanity check: debt is greater than min debt', () => {
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('sanity check: collateral value after liquidation factor is below the debt (bad debt)', async () => {
@@ -257,10 +255,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is greater than min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.greaterThan(minDebtValue);
+    it('sanity check: debt is greater than min debt', () => {
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('sanity check: collateral value after liquidation factor is below the debt (bad debt)', async () => {
@@ -407,10 +403,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is greater than min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.greaterThan(minDebtValue);
+    it('sanity check: debt is greater than min debt', () => {
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('sanity check: collateral value after liquidation factor is below the debt (bad debt)', async () => {
@@ -565,10 +559,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is greater than min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.greaterThan(minDebtValue);
+    it('sanity check: debt is greater than min debt', () => {
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('sanity check: total collateral value after liquidation factors is below the debt (bad debt)', async () => {
@@ -725,10 +717,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is greater than min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.greaterThan(minDebtValue);
+    it('sanity check: debt is greater than min debt', () => {
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('sanity check: total collateral value after liquidation factors is below the debt (bad debt)', async () => {
@@ -888,10 +878,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is greater than min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.greaterThan(minDebtValue);
+    it('sanity check: debt is greater than min debt', () => {
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('sanity check: total collateral value after liquidation factors is below the debt (bad debt)', async () => {
@@ -1050,10 +1038,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is greater than min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.greaterThan(minDebtValue);
+    it('sanity check: debt is greater than min debt', () => {
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('sanity check: total collateral value after liquidation factors is below the debt (bad debt)', async () => {
@@ -1217,10 +1203,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is greater than min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.greaterThan(minDebtValue);
+    it('sanity check: debt is greater than min debt', () => {
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('sanity check: total collateral value after liquidation factors is below the debt (bad debt)', async () => {
@@ -1378,10 +1362,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is greater than min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.greaterThan(minDebtValue);
+    it('sanity check: debt is greater than min debt', () => {
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('sanity check: seized value exactly equals the debt (boundary: exact coverage)', async () => {
@@ -1541,10 +1523,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is greater than min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.greaterThan(minDebtValue);
+    it('sanity check: debt is greater than min debt', () => {
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('sanity check: COMP seized value plus WETH seized value exactly equals the debt (boundary: exact coverage)', async () => {
@@ -1705,10 +1685,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is below min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.lessThan(minDebtValue);
+    it('sanity check: debt is below min debt', () => {
+      expect(-balanceBefore).to.be.lessThan(baseBorrowMin);
     });
 
     it('sanity check: collateral value after liquidation factor cannot cover the debt (bad debt)', async () => {
@@ -1884,10 +1862,8 @@ describe('partial liquidation: bad debt', function() {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
     });
 
-    it('sanity check: debt is greater than min debt', async () => {
-      const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtValue).to.be.greaterThan(minDebtValue);
+    it('sanity check: debt is greater than min debt', () => {
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('sanity check: post-drop collateral cannot cover the debt after liquidation factors', async () => {

@@ -113,9 +113,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('absorb is successful', async () => {
@@ -256,9 +254,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('absorb is successful', async () => {
@@ -399,9 +395,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('absorb is successful', async () => {
@@ -547,9 +541,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('absorb is successful', async () => {
@@ -719,9 +711,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('absorb is successful', async () => {
@@ -893,9 +883,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('absorb is successful', async () => {
@@ -1067,9 +1055,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('absorb is successful', async () => {
@@ -1245,9 +1231,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('absorb is successful', async () => {
@@ -1442,9 +1426,7 @@ describe('absorb: general logic', function () {
     });
 
     it('sanity check: debt value is greater than base borrow min value', () => {
-      const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const minDebtValue = mulPrice(baseBorrowMin, baseTokenPrice, baseScale);
-      expect(debtRemainingValue).to.be.greaterThan(minDebtValue);
+      expect(-balanceBefore).to.be.greaterThan(baseBorrowMin);
     });
 
     it('absorb is successful', async () => {
