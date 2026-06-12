@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity =0.8.15;
 
+import { ICoreDexAdapter } from "../interfaces/dex-adapters/ICoreDexAdapter.sol";
 import { CometMainInterface } from "../CometMainInterface.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -15,7 +16,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
  * @dev Configuration is immutable; changing it requires a redeployment of the adapter and pointing liquidation module to a new adapter.
  * @custom:security-contact dmitriy@woof.software
  */
-abstract contract CoreDexAdapter {
+abstract contract CoreDexAdapter is ICoreDexAdapter {
     using SafeERC20 for IERC20;
 
     /// @notice Basis-points denominator (100%).
@@ -32,21 +33,6 @@ abstract contract CoreDexAdapter {
     address public immutable redundantRouter;
     /// @notice Slippage applied to the oracle-derived minimum output, in basis points.
     uint16 public immutable slippageBps;
-
-    /// @notice Emitted after collateral is successfully swapped into the base asset.
-    /// @param collateral Address of the collateral swapped.
-    /// @param amountIn Amount of the `collateral` swapped.
-    /// @param amountOut Amount of the `baseAsset` sent to the liquidation module after swap.
-    event Swap(address collateral, uint256 amountIn, uint256 amountOut);
-
-    /// @notice Thrown when a required address is zero address.
-    error ZeroAddress();
-    /// @notice Thrown when the configured slippage is zero or greater than BPS.
-    error SlippageOutOfBounds(uint256 _slippageBps);
-    /// @notice Thrown when swap() is called by an address other than the liquidation module.
-    error Unathorized();
-    /// @notice Thrown when the realized base-asset output is below the required minimum.
-    error InvalidAmountOut();
 
     /**
      * @notice Binds the adapter to a Comet market and its core/redundant routers.
@@ -69,14 +55,7 @@ abstract contract CoreDexAdapter {
         baseAsset = IERC20(_comet.baseToken());
     }
 
-    /**
-     * @notice Swaps the adapter's entire `collateral` balance into the base asset and sends it to the caller.
-     * @dev Only callable by the liquidation module. Tries _coreSwap, then _redundantSwap on failure, and
-     *      reverts if the realized output is below the oracle-derived minimum.
-     * @dev Collateral `amountIn` must be be pre-transferred before swap() is called.
-     * @param collateral The collateral token to swap.
-     * @param swapData Protocol-specific calldata for the core router swap.
-     */
+    /// @inheritdoc ICoreDexAdapter
     function swap(address collateral, bytes calldata swapData) external {
         if (msg.sender != module) revert Unathorized();
 
@@ -97,11 +76,11 @@ abstract contract CoreDexAdapter {
     }
 
     /**
-     * @notice Computes the minimum acceptable base-asset output for swapping `amountIn` of `collateral`
-     * @dev Values collateral and base asset via Comet's price feeds and applies slippage BPS to the converted base asset value
-     * @param collateral Address of the collateral token being swapped
-     * @param amountIn The amount of `collateral` (in its native units) being swapped
-     * @return minAmountOut The minimum base-asset amount the swap must return
+     * @notice Computes the minimum acceptable base-asset output for swapping `amountIn` of `collateral`.
+     * @dev Values collateral and base asset via Comet's price feeds and applies slippage BPS to the converted base asset value.
+     * @param collateral Address of the collateral token being swapped.
+     * @param amountIn The amount of `collateral` (in its native units) being swapped.
+     * @return minAmountOut The minimum base-asset amount the swap must return.
      */
     function calculateMinAmountOut(address collateral, uint256 amountIn) public view returns (uint256 minAmountOut) {
         CometMainInterface.AssetInfo memory assetInfo = comet.getAssetInfoByAddress(collateral);

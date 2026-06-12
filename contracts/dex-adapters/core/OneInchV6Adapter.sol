@@ -3,6 +3,7 @@ pragma solidity =0.8.15;
 
 import { CometMainInterface } from "../../CometMainInterface.sol";
 import { CoreDexAdapter } from "../CoreDexAdapter.sol";
+import { IOneInchV6AdapterErrors } from "../../interfaces/dex-adapters/IOneInchV6AdapterErrors.sol";
 import { UniswapAdapter } from "../redundant/UniswapAdapter.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -16,23 +17,11 @@ import { SwapDescription, IOneInchV6 } from "../../vendor/OneInchV6/IOneInchV6.s
  * @dev Validates the off-chain 1inch swap calldata against the requested swap before forwarding it to the router.
  * @custom:security-contact dmitriy@woof.software
  */
-contract OneInchV6CoreAdapter is UniswapAdapter {
+contract OneInchV6CoreAdapter is UniswapAdapter, IOneInchV6AdapterErrors {
     using SafeERC20 for IERC20;
 
     /// @notice Selector of IOneInchV6.swap, the only 1inch router call accepted as core swap data.
     bytes4 public constant SWAP_SELECTOR = IOneInchV6.swap.selector;
-    /// @notice Thrown when the swap calldata is shorter than a 4-byte selector.
-    error InvalidSwapData();
-    /// @notice Thrown when the swap calldata selector is not IOneInchV6.swap.
-    error InvalidSelector();
-    /// @notice Thrown when the calldata src/dst tokens do not match the collateral and base asset.
-    error InvalidTokens();
-    /// @notice Thrown when the swap recipient is not this adapter.
-    error InvalidReceiver();
-    /// @notice Thrown when the calldata input amount does not match the swap amount.
-    error InvalidAmountIn();
-    /// @notice Thrown when the calldata minimum return is below the required minimum output.
-    error InvalidMinAmountOut();
 
     /// @dev Parameters are forwarded to {UniswapAdapter} and {CoreDexAdapter}.
     constructor(
@@ -46,8 +35,7 @@ contract OneInchV6CoreAdapter is UniswapAdapter {
 
     /**
      * @inheritdoc CoreDexAdapter
-     * @dev Performs the core swap via the 1inch V6 router: decodes and validates `swapData` against the
-     *      requested swap, approves the router for `amountIn`, then forwards the calldata. Clears any leftover
+     * @dev Performs the core swap via the 1inch V6 router with necessary calldata validations. Clears any leftover
      *      allowance if the call fails so the redundant path starts from a zero allowance.
      */
     function _coreSwap(IERC20 collateralToken, uint256 amountIn, uint256 minAmountOut, bytes calldata swapData) internal override returns (bool status) {

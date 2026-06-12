@@ -2,6 +2,7 @@
 pragma solidity =0.8.15;
 
 import { CoreDexAdapter } from "../CoreDexAdapter.sol";
+import { IUniswapAdapterErrors } from "../../interfaces/dex-adapters/IUniswapAdapterErrors.sol";
 import { CometMainInterface } from "../../CometMainInterface.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -16,7 +17,7 @@ import { PoolKey, Currency, ExactInputSingleParams, IUniversalRouter } from "../
  * @dev This contract implements only a redundant swap. Core swap is implemented in a concrete core adapter.
  * @custom:security-contact dmitriy@woof.software
  */
-abstract contract UniswapAdapter is CoreDexAdapter {
+abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapterErrors {
     using SafeERC20 for IERC20;
 
     /// @dev Universal Router value meaning "use the full contract balance".
@@ -38,9 +39,6 @@ abstract contract UniswapAdapter is CoreDexAdapter {
     mapping(address => Route) public routes;
     /// @notice Encoded SETTLE action per collateral asset.
     mapping(address => bytes) public settleActions;
-
-    /// @notice Thrown when the provided routes count does not match the number of Comet collateral assets.
-    error InvalidRoutesNumber();
 
     /**
      * @notice Stores a V4 swap route and settle action for every Comet collateral asset.
@@ -70,8 +68,7 @@ abstract contract UniswapAdapter is CoreDexAdapter {
 
     /**
      * @inheritdoc CoreDexAdapter
-     * @dev Routes the fallback swap through the Uniswap V4 Universal Router: transfers the collateral to the
-     *      router and executes a single exact-input swap using the collateral's preconfigured Route.
+     * @dev Routes the fallback swap through the Uniswap V4 Universal Router using a pre-configured swap route.
      */
     function _redundantSwap(IERC20 collateralToken, uint256 amountIn, uint256 minAmountOut) internal override {
         bytes[] memory inputs = _buildInputs(address(collateralToken), amountIn, minAmountOut);
