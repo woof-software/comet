@@ -906,3 +906,59 @@ scenario(
     return txn; // return txn to measure gas
   }
 );
+
+scenario(
+  'Comet#allowBySig > revoked manager can no longer withdrawFrom owner',
+  {
+    cometBalances: {
+      albert: { $base: 2 }, // in units of asset, not wei
+    },
+  },
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty } = actors;
+    const baseAssetAddress = await comet.baseToken();
+    const baseAsset = context.getAssetByAddress(baseAssetAddress);
+    const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+
+    // 1. Authorize Betty by signature, then prove the grant works: she withdraws part
+    //    of Albert's base on his behalf.
+    await authorizeManagerBySig(context, albert, betty, world);
+
+    const firstWithdraw = baseSupplied / 2n;
+    await betty.withdrawAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: firstWithdraw });
+    expect(await baseAsset.balanceOf(betty.address)).to.be.equal(firstWithdraw);
+
+    // 2. Revoke the authorization by signature (fresh nonce, isAllowed: false).
+    const revokeNonce = await comet.userNonce(albert.address);
+    const revokeExpiry = (await world.timestamp()) + 1_000;
+    const revokeSignature = await albert.signAuthorization({
+      manager: betty.address,
+      isAllowed: false,
+      nonce: revokeNonce,
+      expiry: revokeExpiry,
+      chainId: await world.chainId(),
+    });
+    await betty.allowBySig({
+      owner: albert.address,
+      manager: betty.address,
+      isAllowed: false,
+      nonce: revokeNonce,
+      expiry: revokeExpiry,
+      signature: revokeSignature,
+    });
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+
+    // 3. The same operator action now reverts: permission is checked before balances,
+    //    so this fails with Unauthorized() even though Albert still has base supplied.
+    await expectRevertCustom(
+      betty.withdrawAssetFrom({
+        src: albert.address,
+        dst: betty.address,
+        asset: baseAsset.address,
+        amount: 1n,
+      }),
+      'Unauthorized()'
+    );
+  }
+);
