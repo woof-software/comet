@@ -32,6 +32,7 @@ scenario(
     });
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
 
     return txn; // return txn to measure gas
   }
@@ -72,6 +73,10 @@ scenario(
       }),
       'BadSignatory()'
     );
+
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+    expect(await comet.isAllowed(charles.address, betty.address)).to.be.false;
   }
 );
 
@@ -106,6 +111,10 @@ scenario(
       }),
       'BadSignatory()'
     );
+
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+    expect(await comet.isAllowed(charles.address, betty.address)).to.be.false;
   }
 );
 
@@ -140,6 +149,9 @@ scenario(
       }),
       'BadSignatory()'
     );
+
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
   }
 );
 
@@ -174,6 +186,9 @@ scenario(
       }),
       'BadSignatory()'
     );
+
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
   }
 );
 
@@ -208,6 +223,9 @@ scenario(
       }),
       'BadSignatory()'
     );
+
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
   }
 );
 
@@ -243,6 +261,9 @@ scenario(
       }),
       'BadNonce()'
     );
+
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
   }
 );
 
@@ -287,6 +308,8 @@ scenario(
       }),
       'BadNonce()'
     );
+
+    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
   }
 );
 
@@ -321,6 +344,9 @@ scenario(
       }),
       'SignatureExpired()'
     );
+
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
   }
 );
 
@@ -357,6 +383,9 @@ scenario(
       }),
       'InvalidValueV()'
     );
+
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
   }
 );
 
@@ -394,6 +423,9 @@ scenario(
       }),
       'InvalidValueS()'
     );
+
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
   }
 );
 
