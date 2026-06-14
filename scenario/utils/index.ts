@@ -65,7 +65,7 @@ export async function getSignerForProposal(
     usedSigners.set(key, []);
   }
   const signers = usedSigners.get(key);
-  if(signers.length == 0){
+  if (signers.length == 0) {
     const signer = (await gm.getSigners())[0];
     signers.push(signer.address);
     return signer;
@@ -352,8 +352,18 @@ export async function isValidAssetIndex(
   ctx: CometContext,
   assetNum: number
 ): Promise<boolean> {
+  // Sanity checks
+  if (assetNum < 0) return false;
+  if (assetNum >= MAX_ASSETS) return false;
+  // Asset info checks. If any of these are false, the asset is invalid. This means that the asset is deprecated.
   const comet = await ctx.getComet();
-  return assetNum < (await comet.numAssets());
+  const assetInfo = await comet.getAssetInfo(assetNum);
+  if (assetInfo.borrowCollateralFactor.toBigInt() == 0n) return false;
+  if (assetInfo.supplyCap.toBigInt() == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor.toBigInt() == 0n) return false;
+  if (assetInfo.liquidationFactor.toBigInt() == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor.toBigInt() <= assetInfo.borrowCollateralFactor.toBigInt()) return false;
+  return true;
 }
 
 export async function isTriviallySourceable(
@@ -656,8 +666,8 @@ export async function updateCCIPStats(
 
   const tokenPrices = [];
   const gasPrices = [];
-  for (const [network,, address] of tokens) {
-    if(network !== dm.network) continue;
+  for (const [network, , address] of tokens) {
+    if (network !== dm.network) continue;
     const price = await registryContract.getTokenPrice(address);
     tokenPrices.push([address, price.value]);
   }
@@ -671,7 +681,7 @@ export async function updateCCIPStats(
     }
   }
 
-  if(tenderlyLogs) {
+  if (tenderlyLogs) {
     dm.stashRelayMessage(
       priceRegistry,
       registryContract.interface.encodeFunctionData('updatePrices', [
@@ -929,7 +939,7 @@ export async function tenderlyExecute(
   console.log(` >>> PROPOSAL EXECUTED  ${id}`);
   console.log(`Simulation ${exec1.id} done, status: ${exec1.status}`);
   console.log(`Link: https://www.tdly.co/shared/simulation/${exec1.id} \n`);
-  
+
   const bdms = [bdm];
   for (const dm of gdm.bridgedDeploymentManagers.values()) {
     if (!bdms.includes(dm)) {
@@ -959,7 +969,7 @@ export async function tenderlyExecute(
       proposals = await relayMessage(gdm, currentBdm, parseFloat(B0.toString()), bundle[bundle.length - 1].transaction.transaction_info.logs);
 
       debug(`Proposals relayed to ${currentBdm.network}: ${proposals?.length ?? 0}`);
-      
+
       if (proposals && proposals.length > 0) {
         const timelockL2 = await currentBdm.getContractOrThrow('timelock');
         const delay = await timelockL2.delay();
@@ -1002,7 +1012,7 @@ export async function tenderlyExecute(
 
         if (simsL2.length > 0) {
           const bundle2 = await simulateBundle(currentBdm, simsL2, Number(B0L2));
-          
+
           // filter from bundle every entry with simulation.input that starts with 0x0d61b519 i.e. executeProposal(uint256)
           const filteredBundle = bundle2.filter(entry => entry.simulation.input.startsWith(executeProposalSig));
           for (const sim of filteredBundle) {
@@ -1033,7 +1043,7 @@ async function simulateBundle(
     const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
 
     // Merge rolling state changes with simulation's own state_objects
-    const stateObjects = sim.state_objects 
+    const stateObjects = sim.state_objects
       ? { ...rollingStateChanges, ...sim.state_objects }
       : rollingStateChanges;
 
@@ -1083,7 +1093,7 @@ async function simulateBundle(
 
     results.push(simResult);
   }
-  
+
   return results;
 }
 
@@ -1212,7 +1222,7 @@ export async function executeOpenProposal(
     const tx = await governor.execute(id, { gasPrice: 0, gasLimit: 120000000 });
     const receipt = await tx.wait();
 
-    if(receipt.gasUsed.toNumber() >= 16_777_215) {
+    if (receipt.gasUsed.toNumber() >= 16_777_215) {
       throw new Error('Execution may have failed due to hitting gas limit');
     }
   }
@@ -1637,7 +1647,7 @@ export async function timeUntilUnderwater({
   // XXX throw error if baseBalanceOf is positive and liquidationMargin is positive
   return Number(
     (-liquidationMargin * factorScale) / baseLiquidity / borrowRate +
-      fudgeFactor
+    fudgeFactor
   );
 }
 
