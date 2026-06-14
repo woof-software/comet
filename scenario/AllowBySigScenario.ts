@@ -1,7 +1,46 @@
-import { scenario } from './context/CometContext';
-import { expectRevertCustom } from './utils';
+// Integration scenarios for Comet#allowBySig:
+// - EIP-712 signature-based manager authorization (allow / revoke)
+// - Signature validation failures (tampered args, nonce, expiry, ECDSA, chain id)
+// - Operator actions on behalf of the owner (supplyFrom, withdrawFrom, transferAssetFrom)
+
+import { CometContext, scenario } from './context/CometContext';
+import { expectApproximately, expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils';
 import { expect } from 'chai';
 import { constants } from 'ethers';
+import CometActor from './context/CometActor';
+import { getConfigForScenario } from './utils/scenarioHelper';
+
+
+async function authorizeManagerBySig(
+  context: CometContext,
+  owner: CometActor,
+  manager: CometActor,
+  world
+): Promise<void> {
+  const comet = await context.getComet();
+
+  expect(await comet.isAllowed(owner.address, manager.address)).to.be.false;
+
+  const nonce = await comet.userNonce(owner.address);
+  const expiry = (await world.timestamp()) + 1_000;
+
+  const signature = await owner.signAuthorization({
+    manager: manager.address,
+    isAllowed: true,
+    nonce,
+    expiry,
+    chainId: await world.chainId(),
+  });
+
+  await manager.allowBySig({
+    owner: owner.address,
+    manager: manager.address,
+    isAllowed: true,
+    nonce,
+    expiry,
+    signature,
+  });
+}
 
 scenario(
   'Comet#allowBySig > allows a user to authorize a manager by signature',
@@ -578,5 +617,161 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
     expect(await comet.userNonce(albert.address)).to.equal(nonce);
+  }
+);
+
+scenario(
+  'Comet#allowBySig > authorized manager can supplyFrom base on behalf of owner',
+  {
+    tokenBalances: {
+      albert: { $base: 100 }, // in units of asset, not wei
+    },
+  },
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty } = actors;
+    const baseAssetAddress = await comet.baseToken();
+    const baseAsset = context.getAssetByAddress(baseAssetAddress);
+    const scale = (await comet.baseScale()).toBigInt();
+    const toSupply = 100n * scale;
+
+    expect(await baseAsset.balanceOf(albert.address)).to.be.equal(toSupply);
+    expect(await comet.balanceOf(betty.address)).to.be.equal(0n);
+
+    await baseAsset.approve(albert, comet.address);
+    await authorizeManagerBySig(context, albert, betty, world);
+
+    // Betty supplies Albert's base into Betty's own account
+    const txn = await betty.supplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: toSupply });
+
+    expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
+    expectApproximately(await betty.getCometBaseBalance(), toSupply, scale / 1_000_000n);
+
+    return txn; // return txn to measure gas
+  }
+);
+
+scenario(
+  'Comet#allowBySig > authorized manager can supplyFrom collateral on behalf of owner',
+  {
+    filter: async (ctx) => await isValidAssetIndex(ctx, 0) && await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx, 0).supplyCollateral),
+    tokenBalances: async (ctx) => (
+      {
+        albert: { $asset0: getConfigForScenario(ctx, 0).supplyCollateral }
+      }
+    ),
+  },
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty } = actors;
+    const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
+    const collateralAsset = context.getAssetByAddress(assetAddress);
+    const scale = scaleBN.toBigInt();
+    const toSupply = BigInt(getConfigForScenario(context, 0).supplyCollateral) * scale;
+
+    expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupply);
+    expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(0n);
+
+    await collateralAsset.approve(albert, comet.address);
+    await authorizeManagerBySig(context, albert, betty, world);
+
+    // Betty supplies Albert's collateral into Betty's own account
+    const txn = await betty.supplyAssetFrom({ src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: toSupply });
+
+    expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(0n);
+    expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(toSupply);
+
+    return txn; // return txn to measure gas
+  }
+);
+
+scenario(
+  'Comet#allowBySig > authorized manager can withdrawFrom base on behalf of owner',
+  {
+    cometBalances: {
+      albert: { $base: 2 }, // in units of asset, not wei
+    },
+  },
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty } = actors;
+    const baseAssetAddress = await comet.baseToken();
+    const baseAsset = context.getAssetByAddress(baseAssetAddress);
+    const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+
+    expect(await baseAsset.balanceOf(betty.address)).to.be.equal(0n);
+    expect(await comet.balanceOf(albert.address)).to.be.equal(baseSupplied);
+
+    await authorizeManagerBySig(context, albert, betty, world);
+
+    // Betty withdraws Albert's supplied base to Betty
+    const txn = await betty.withdrawAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: baseSupplied });
+
+    expect(await baseAsset.balanceOf(betty.address)).to.be.equal(baseSupplied);
+    expect(await comet.balanceOf(albert.address)).to.be.lessThan(baseSupplied / 100n);
+
+    return txn; // return txn to measure gas
+  }
+);
+
+scenario(
+  'Comet#allowBySig > authorized manager can withdrawFrom collateral on behalf of owner',
+  {
+    filter: async (ctx) => await isValidAssetIndex(ctx, 0) && await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx, 0).withdrawCollateral),
+    cometBalances: async (ctx) => (
+      {
+        albert: { $asset0: getConfigForScenario(ctx, 0).withdrawCollateral }
+      }
+    ),
+  },
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty } = actors;
+    const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
+    const collateralAsset = context.getAssetByAddress(assetAddress);
+    const scale = scaleBN.toBigInt();
+    const toWithdraw = BigInt(getConfigForScenario(context, 0).withdrawCollateral) * scale;
+
+    expect(await collateralAsset.balanceOf(betty.address)).to.be.equal(0n);
+    expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(toWithdraw);
+
+    await authorizeManagerBySig(context, albert, betty, world);
+
+    // Betty withdraws Albert's collateral to Betty
+    const txn = await betty.withdrawAssetFrom({ src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: toWithdraw });
+
+    expect(await collateralAsset.balanceOf(betty.address)).to.be.equal(toWithdraw);
+    expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(0n);
+
+    return txn; // return txn to measure gas
+  }
+);
+
+scenario(
+  'Comet#allowBySig > authorized manager can transferAssetFrom collateral on behalf of owner',
+  {
+    filter: async (ctx) => await isValidAssetIndex(ctx, 0) && await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx, 0).transferCollateral),
+    cometBalances: async (ctx) => (
+      {
+        albert: { $asset0: getConfigForScenario(ctx, 0).transferCollateral }
+      }
+    ),
+  },
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty, charles } = actors;
+    const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
+    const collateralAsset = context.getAssetByAddress(assetAddress);
+    const scale = scaleBN.toBigInt();
+    const supplied = BigInt(getConfigForScenario(context, 0).transferCollateral) * scale;
+    const toTransfer = supplied / 2n;
+
+    expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(supplied);
+    expect(await comet.collateralBalanceOf(charles.address, collateralAsset.address)).to.be.equal(0n);
+
+    // Albert authorizes Betty by signature; Betty moves Albert's collateral to Charles
+    await authorizeManagerBySig(context, albert, betty, world);
+
+    const txn = await betty.transferAssetFrom({ src: albert.address, dst: charles.address, asset: collateralAsset.address, amount: toTransfer });
+
+    expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(supplied - toTransfer);
+    expect(await comet.collateralBalanceOf(charles.address, collateralAsset.address)).to.be.equal(toTransfer);
+
+    return txn; // return txn to measure gas
   }
 );
