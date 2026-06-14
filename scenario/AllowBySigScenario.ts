@@ -45,7 +45,7 @@ async function authorizeManagerBySig(
 scenario(
   'Comet#allowBySig > allows a user to authorize a manager by signature',
   {},
-  async ({ comet, actors }, _context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -84,7 +84,7 @@ scenario(
 scenario(
   'Comet#allowBySig > fails if owner argument is altered',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty, charles } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -121,7 +121,7 @@ scenario(
 scenario(
   'Comet#allowBySig > fails if manager argument is altered',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty, charles } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -158,7 +158,7 @@ scenario(
 scenario(
   'Comet#allowBySig > fails if isAllowed argument is altered',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -194,7 +194,7 @@ scenario(
 scenario(
   'Comet#allowBySig > fails if nonce argument is altered',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -230,7 +230,7 @@ scenario(
 scenario(
   'Comet#allowBySig > fails if expiry argument is altered',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -266,7 +266,7 @@ scenario(
 scenario(
   'Comet#allowBySig > fails if signature contains invalid nonce',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -303,7 +303,7 @@ scenario(
 scenario(
   'Comet#allowBySig > rejects a repeated message',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -349,7 +349,7 @@ scenario(
 scenario(
   'Comet#allowBySig > fails for invalid expiry',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -385,7 +385,7 @@ scenario(
 scenario(
   'Comet#allowBySig > fails if v not in {27,28}',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -423,7 +423,7 @@ scenario(
 scenario(
   'Comet#allowBySig > fails if s is too high',
   {},
-  async ({ comet, actors }, context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -462,7 +462,7 @@ scenario(
 scenario(
   'Comet#allowBySig > increments user nonce after a successful authorization',
   {},
-  async ({ comet, actors }, _context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty, charles } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -498,7 +498,7 @@ scenario(
 scenario(
   'Comet#allowBySig > allows a user to rescind authorization by signature',
   {},
-  async ({ comet, actors }, _context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
@@ -556,7 +556,7 @@ scenario(
 scenario(
   'Comet#allowBySig > fails if owner is zero address',
   {},
-  async ({ comet, actors }, _context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { betty } = actors;
 
     expect(await comet.isAllowed(constants.AddressZero, betty.address)).to.be.false;
@@ -586,7 +586,7 @@ scenario(
 scenario(
   'Comet#allowBySig > fails if signature was signed for a different chain id',
   {},
-  async ({ comet, actors }, _context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
