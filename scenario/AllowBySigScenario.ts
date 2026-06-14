@@ -6,9 +6,43 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expectApproximately, expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils';
 import { expect } from 'chai';
-import { constants } from 'ethers';
+import { constants, ethers, Signature } from 'ethers';
 import CometActor from './context/CometActor';
 import { getConfigForScenario } from './utils/scenarioHelper';
+
+// EIP-712 type used by Comet#allowBySig. Mirrors the `types` table in CometActor;
+// duplicated here so domain-binding scenarios can sign with a deliberately wrong domain.
+const AUTHORIZATION_TYPES = {
+  Authorization: [
+    { name: 'owner', type: 'address' },
+    { name: 'manager', type: 'address' },
+    { name: 'isAllowed', type: 'bool' },
+    { name: 'nonce', type: 'uint256' },
+    { name: 'expiry', type: 'uint256' },
+  ],
+};
+
+// Signs an Authorization with the real domain except for the fields in `domainOverride`.
+// Used to prove the contract rejects signatures bound to the wrong EIP-712 domain
+// (name / version / verifyingContract), which CometActor.signAuthorization cannot express.
+async function signAuthorizationWithDomain(
+  context: CometContext,
+  owner: CometActor,
+  { manager, isAllowed, nonce, expiry, chainId },
+  domainOverride: { name?: string; version?: string; verifyingContract?: string }
+): Promise<Signature> {
+  const comet = await context.getComet();
+  const domain = {
+    name: await comet.name(),
+    version: await comet.version(),
+    chainId,
+    verifyingContract: comet.address,
+    ...domainOverride,
+  };
+  const value = { owner: owner.address, manager, isAllowed, nonce, expiry };
+  const rawSignature = await owner.signer._signTypedData(domain, AUTHORIZATION_TYPES, value);
+  return ethers.utils.splitSignature(rawSignature);
+}
 
 
 async function authorizeManagerBySig(
@@ -602,6 +636,115 @@ scenario(
       expiry,
       chainId: chainId + 1,
     });
+
+    await expectRevertCustom(
+      betty.allowBySig({
+        owner: albert.address,
+        manager: betty.address,
+        isAllowed: true,
+        nonce,
+        expiry,
+        signature,
+      }),
+      'BadSignatory()'
+    );
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+  }
+);
+
+scenario(
+  'Comet#allowBySig > fails if signed with wrong domain name',
+  {},
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty } = actors;
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+
+    const nonce = await comet.userNonce(albert.address);
+    const expiry = (await world.timestamp()) + 1_000;
+    const chainId = await world.chainId();
+
+    const signature = await signAuthorizationWithDomain(
+      context,
+      albert,
+      { manager: betty.address, isAllowed: true, nonce, expiry, chainId },
+      { name: 'Not The Real Market Name' }
+    );
+
+    await expectRevertCustom(
+      betty.allowBySig({
+        owner: albert.address,
+        manager: betty.address,
+        isAllowed: true,
+        nonce,
+        expiry,
+        signature,
+      }),
+      'BadSignatory()'
+    );
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+  }
+);
+
+scenario(
+  'Comet#allowBySig > fails if signed with wrong domain version',
+  {},
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty } = actors;
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+
+    const nonce = await comet.userNonce(albert.address);
+    const expiry = (await world.timestamp()) + 1_000;
+    const chainId = await world.chainId();
+
+    const signature = await signAuthorizationWithDomain(
+      context,
+      albert,
+      { manager: betty.address, isAllowed: true, nonce, expiry, chainId },
+      { version: '9999' }
+    );
+
+    await expectRevertCustom(
+      betty.allowBySig({
+        owner: albert.address,
+        manager: betty.address,
+        isAllowed: true,
+        nonce,
+        expiry,
+        signature,
+      }),
+      'BadSignatory()'
+    );
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+  }
+);
+
+scenario(
+  'Comet#allowBySig > fails if signed with wrong verifyingContract',
+  {},
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty } = actors;
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+
+    const nonce = await comet.userNonce(albert.address);
+    const expiry = (await world.timestamp()) + 1_000;
+    const chainId = await world.chainId();
+
+    // Sign for a different verifyingContract (betty's address is not the Comet proxy).
+    const signature = await signAuthorizationWithDomain(
+      context,
+      albert,
+      { manager: betty.address, isAllowed: true, nonce, expiry, chainId },
+      { verifyingContract: betty.address }
+    );
 
     await expectRevertCustom(
       betty.allowBySig({
