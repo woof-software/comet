@@ -93,6 +93,8 @@ scenario(
     });
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
+    // allowBySig drives the ERC20-style allowance view: max when allowed.
+    expect(await comet.allowance(albert.address, betty.address)).to.equal(constants.MaxUint256);
     expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
 
     return txn; // return txn to measure gas
@@ -547,6 +549,7 @@ scenario(
     });
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
+    expect(await comet.allowance(albert.address, betty.address)).to.equal(constants.MaxUint256);
 
     const revokeNonce = await comet.userNonce(albert.address);
     const revokeExpiry = (await world.timestamp()) + 1_000;
@@ -569,6 +572,8 @@ scenario(
     });
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+    // allowance view drops back to 0 once authorization is rescinded.
+    expect(await comet.allowance(albert.address, betty.address)).to.equal(0);
     expect(await comet.userNonce(albert.address)).to.equal(revokeNonce.add(1));
 
     return txn; // return txn to measure gas
@@ -960,5 +965,265 @@ scenario(
       }),
       'Unauthorized()'
     );
+  }
+);
+
+scenario(
+  'Comet#allowBySig > fails when reusing an already-consumed nonce',
+  {},
+  async ({ comet, actors }, _, world) => {
+    const { albert, betty } = actors;
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+
+    const chainId = await world.chainId();
+    const nonce = await comet.userNonce(albert.address);
+    const expiry = (await world.timestamp()) + 1_000;
+
+    // First authorization consumes nonce `n` (userNonce -> n+1).
+    const grantSignature = await albert.signAuthorization({
+      manager: betty.address,
+      isAllowed: true,
+      nonce,
+      expiry,
+      chainId,
+    });
+    await betty.allowBySig({
+      owner: albert.address,
+      manager: betty.address,
+      isAllowed: true,
+      nonce,
+      expiry,
+      signature: grantSignature,
+    });
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
+
+    // A brand-new message (a revoke) signed with the now-stale nonce `n` must be rejected.
+    const staleSignature = await albert.signAuthorization({
+      manager: betty.address,
+      isAllowed: false,
+      nonce, // stale: userNonce is already n+1
+      expiry,
+      chainId,
+    });
+    await expectRevertCustom(
+      betty.allowBySig({
+        owner: albert.address,
+        manager: betty.address,
+        isAllowed: false,
+        nonce,
+        expiry,
+        signature: staleSignature,
+      }),
+      'BadNonce()'
+    );
+
+    // The revoke did not take effect and the nonce is unchanged.
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
+  }
+);
+
+scenario(
+  'Comet#allowBySig > fails when block timestamp equals expiry',
+  {},
+  async ({ comet, actors }, _, world) => {
+    const { albert, betty } = actors;
+    const provider = world.deploymentManager.hre.network.provider;
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+
+    const nonce = await comet.userNonce(albert.address);
+    const expiry = (await world.timestamp()) + 100;
+
+    const signature = await albert.signAuthorization({
+      manager: betty.address,
+      isAllowed: true,
+      nonce,
+      expiry,
+      chainId: await world.chainId(),
+    });
+
+    // Next block's timestamp == expiry; reverts because the check is `>=`.
+    await provider.send('evm_setNextBlockTimestamp', [expiry]);
+
+    await expectRevertCustom(
+      betty.allowBySig({
+        owner: albert.address,
+        manager: betty.address,
+        isAllowed: true,
+        nonce,
+        expiry,
+        signature,
+      }),
+      'SignatureExpired()'
+    );
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+  }
+);
+
+scenario(
+  'Comet#allowBySig > fails when time advances past a valid expiry before submission',
+  {},
+  async ({ comet, actors }, _, world) => {
+    const { albert, betty } = actors;
+    const provider = world.deploymentManager.hre.network.provider;
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+
+    const nonce = await comet.userNonce(albert.address);
+    const expiry = (await world.timestamp()) + 100; // comfortably valid at signing time
+
+    const signature = await albert.signAuthorization({
+      manager: betty.address,
+      isAllowed: true,
+      nonce,
+      expiry,
+      chainId: await world.chainId(),
+    });
+
+    // Advance the next block well past expiry: a once-valid signature is now expired.
+    await provider.send('evm_setNextBlockTimestamp', [expiry + 60]);
+
+    await expectRevertCustom(
+      betty.allowBySig({
+        owner: albert.address,
+        manager: betty.address,
+        isAllowed: true,
+        nonce,
+        expiry,
+        signature,
+      }),
+      'SignatureExpired()'
+    );
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+  }
+);
+
+scenario(
+  'Comet#allowBySig > applies two pre-signed authorizations submitted in nonce order',
+  {},
+  async ({ comet, actors }, _, world) => {
+    const { albert, betty, charles } = actors;
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+    expect(await comet.isAllowed(albert.address, charles.address)).to.be.false;
+
+    const chainId = await world.chainId();
+    const nonce = await comet.userNonce(albert.address);
+    const expiry = (await world.timestamp()) + 1_000;
+
+    // Sign both messages up front, before either is submitted.
+    const firstSignature = await albert.signAuthorization({
+      manager: betty.address,
+      isAllowed: true,
+      nonce,
+      expiry,
+      chainId,
+    });
+    const secondSignature = await albert.signAuthorization({
+      manager: charles.address,
+      isAllowed: true,
+      nonce: nonce.add(1),
+      expiry,
+      chainId,
+    });
+
+    // Redeem in order: nonce n authorizes betty ...
+    await betty.allowBySig({
+      owner: albert.address,
+      manager: betty.address,
+      isAllowed: true,
+      nonce,
+      expiry,
+      signature: firstSignature,
+    });
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
+
+    // ... then nonce n+1 authorizes charles.
+    await charles.allowBySig({
+      owner: albert.address,
+      manager: charles.address,
+      isAllowed: true,
+      nonce: nonce.add(1),
+      expiry,
+      signature: secondSignature,
+    });
+    expect(await comet.isAllowed(albert.address, charles.address)).to.be.true;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(2));
+  }
+);
+
+scenario(
+  'Comet#allowBySig > rejects a pre-signed authorization submitted out of nonce order',
+  {},
+  async ({ comet, actors }, _, world) => {
+    const { albert, betty, charles } = actors;
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
+    expect(await comet.isAllowed(albert.address, charles.address)).to.be.false;
+
+    const chainId = await world.chainId();
+    const nonce = await comet.userNonce(albert.address);
+    const expiry = (await world.timestamp()) + 1_000;
+
+    const firstSignature = await albert.signAuthorization({
+      manager: betty.address,
+      isAllowed: true,
+      nonce,
+      expiry,
+      chainId,
+    });
+    const secondSignature = await albert.signAuthorization({
+      manager: charles.address,
+      isAllowed: true,
+      nonce: nonce.add(1),
+      expiry,
+      chainId,
+    });
+
+    // Submitting the second (nonce n+1) before the first reverts: userNonce is still n.
+    await expectRevertCustom(
+      charles.allowBySig({
+        owner: albert.address,
+        manager: charles.address,
+        isAllowed: true,
+        nonce: nonce.add(1),
+        expiry,
+        signature: secondSignature,
+      }),
+      'BadNonce()'
+    );
+
+    expect(await comet.isAllowed(albert.address, charles.address)).to.be.false;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce);
+
+    // Once order is restored, both apply: nonce n then n+1.
+    await betty.allowBySig({
+      owner: albert.address,
+      manager: betty.address,
+      isAllowed: true,
+      nonce,
+      expiry,
+      signature: firstSignature,
+    });
+    await charles.allowBySig({
+      owner: albert.address,
+      manager: charles.address,
+      isAllowed: true,
+      nonce: nonce.add(1),
+      expiry,
+      signature: secondSignature,
+    });
+
+    expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
+    expect(await comet.isAllowed(albert.address, charles.address)).to.be.true;
+    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(2));
   }
 );
