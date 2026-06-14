@@ -7,20 +7,8 @@ import { CometContext, scenario } from './context/CometContext';
 import { expectApproximately, expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils';
 import { expect } from 'chai';
 import { constants, ethers, Signature } from 'ethers';
-import CometActor from './context/CometActor';
+import CometActor, { types as AUTHORIZATION_TYPES } from './context/CometActor';
 import { getConfigForScenario } from './utils/scenarioHelper';
-
-// EIP-712 type used by Comet#allowBySig. Mirrors the `types` table in CometActor;
-// duplicated here so domain-binding scenarios can sign with a deliberately wrong domain.
-const AUTHORIZATION_TYPES = {
-  Authorization: [
-    { name: 'owner', type: 'address' },
-    { name: 'manager', type: 'address' },
-    { name: 'isAllowed', type: 'bool' },
-    { name: 'nonce', type: 'uint256' },
-    { name: 'expiry', type: 'uint256' },
-  ],
-};
 
 // Signs an Authorization with the real domain except for the fields in `domainOverride`.
 // Used to prove the contract rejects signatures bound to the wrong EIP-712 domain
@@ -796,19 +784,19 @@ scenario(
 scenario(
   'Comet#allowBySig > authorized manager can supplyFrom collateral on behalf of owner',
   {
-    filter: async (ctx) => await isValidAssetIndex(ctx, 0) && await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx, 0).supplyCollateral),
+    filter: async (ctx) => await isValidAssetIndex(ctx, 1) && await isTriviallySourceable(ctx, 1, getConfigForScenario(ctx, 1).supplyCollateral),
     tokenBalances: async (ctx) => (
       {
-        albert: { $asset0: getConfigForScenario(ctx, 0).supplyCollateral }
+        albert: { $asset1: getConfigForScenario(ctx, 1).supplyCollateral }
       }
     ),
   },
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
-    const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
+    const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(1);
     const collateralAsset = context.getAssetByAddress(assetAddress);
     const scale = scaleBN.toBigInt();
-    const toSupply = BigInt(getConfigForScenario(context, 0).supplyCollateral) * scale;
+    const toSupply = BigInt(getConfigForScenario(context, 1).supplyCollateral) * scale;
 
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupply);
     expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(0n);
@@ -857,19 +845,19 @@ scenario(
 scenario(
   'Comet#allowBySig > authorized manager can withdrawFrom collateral on behalf of owner',
   {
-    filter: async (ctx) => await isValidAssetIndex(ctx, 0) && await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx, 0).withdrawCollateral),
+    filter: async (ctx) => await isValidAssetIndex(ctx, 1) && await isTriviallySourceable(ctx, 1, getConfigForScenario(ctx, 1).withdrawCollateral),
     cometBalances: async (ctx) => (
       {
-        albert: { $asset0: getConfigForScenario(ctx, 0).withdrawCollateral }
+        albert: { $asset1: getConfigForScenario(ctx, 1).withdrawCollateral }
       }
     ),
   },
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
-    const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
+    const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(1);
     const collateralAsset = context.getAssetByAddress(assetAddress);
     const scale = scaleBN.toBigInt();
-    const toWithdraw = BigInt(getConfigForScenario(context, 0).withdrawCollateral) * scale;
+    const toWithdraw = BigInt(getConfigForScenario(context, 1).withdrawCollateral) * scale;
 
     expect(await collateralAsset.balanceOf(betty.address)).to.be.equal(0n);
     expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(toWithdraw);
@@ -889,19 +877,19 @@ scenario(
 scenario(
   'Comet#allowBySig > authorized manager can transferAssetFrom collateral on behalf of owner',
   {
-    filter: async (ctx) => await isValidAssetIndex(ctx, 0) && await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx, 0).transferCollateral),
+    filter: async (ctx) => await isValidAssetIndex(ctx, 1) && await isTriviallySourceable(ctx, 1, getConfigForScenario(ctx, 1).transferCollateral),
     cometBalances: async (ctx) => (
       {
-        albert: { $asset0: getConfigForScenario(ctx, 0).transferCollateral }
+        albert: { $asset1: getConfigForScenario(ctx, 1).transferCollateral }
       }
     ),
   },
   async ({ comet, actors }, context, world) => {
     const { albert, betty, charles } = actors;
-    const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
+    const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(1);
     const collateralAsset = context.getAssetByAddress(assetAddress);
     const scale = scaleBN.toBigInt();
-    const supplied = BigInt(getConfigForScenario(context, 0).transferCollateral) * scale;
+    const supplied = BigInt(getConfigForScenario(context, 1).transferCollateral) * scale;
     const toTransfer = supplied / 2n;
 
     expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(supplied);
