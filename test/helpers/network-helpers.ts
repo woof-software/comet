@@ -1,5 +1,6 @@
 import hre from 'hardhat';
 import { ethers } from 'hardhat';
+import { BigNumberish } from 'ethers';
 
 interface EthersBigNumberLike {
   toHexString(): string;
@@ -72,5 +73,23 @@ export async function impersonateAccount(address: string): Promise<void> {
     method: 'hardhat_impersonateAccount',
     params: [address],
   });
+}
+
+// Funds `to` with `amount` of `token` from `whale`'s balance.
+export async function fundFromWhale(
+  token: string,
+  whale: string,
+  to: string,
+  amount: BigNumberish
+): Promise<void> {
+  await impersonateAccount(whale);
+  await setBalance(whale, ethers.utils.parseEther('10').toBigInt());
+  const signer = await ethers.getSigner(whale);
+  const erc20 = new ethers.Contract(
+    token,
+    ['function transfer(address,uint256) returns (bool)'],
+    signer
+  );
+  await erc20.transfer(to, amount);
 }
 
