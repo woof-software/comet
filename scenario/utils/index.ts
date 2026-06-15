@@ -990,9 +990,11 @@ async function simulateBundle(
   const rollingStateChanges = {};
   const results = [];
 
-  for (const sim of simulations) {
-    const { username, project, accessKey } = (dm.hre.config as any).tenderly;
+  const project = 'comet';
+  const username = process.env.TENDERLY_USERNAME || '';
+  const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
 
+  for (const sim of simulations) {
     // Merge rolling state changes with simulation's own state_objects
     const stateObjects = sim.state_objects 
       ? { ...rollingStateChanges, ...sim.state_objects }
@@ -1048,8 +1050,11 @@ async function simulateBundle(
   return results;
 }
 
-async function shareSimulation(dm: DeploymentManager, simulationId: string) {
-  const { username, project, accessKey } = (dm.hre.config as any).tenderly;
+async function shareSimulation(dm: DeploymentManager, simulationId: string) {  
+  const project = 'comet';
+  const username = process.env.TENDERLY_USERNAME || '';
+  const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
+
   return axios.post(
     `https://api.tenderly.co/api/v1/account/${username}/project/${project}/simulations/${simulationId}/share`,
     {},
