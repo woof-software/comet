@@ -8,8 +8,8 @@ const OLD_FRANCHISER_FACTORY = '0xE696d89f4F378772f437F01FaaD70240abdf1854';
 const FRANCHISER_POOL_FACTORY = '0x4f858af44fD7f2B4BFe61ceee1560E4Dd5531896';
 
 const poolConfig = {
-  coordinator: '0xbbf3f1421d886e9b2c5d716b5192ac998af2012c',
-  guardian: '0xbbf3f1421d886e9b2c5d716b5192ac998af2012c',
+  coordinator: '0x9825413dd3875E01B34451A7A7e066b2225a234E',
+  guardian: '0xbbf3f1421D886E9b2c5D716B5192aC998af2012c',
   maxDelegatees: 30,
   freezePeriod: 10 * 24 * 60 * 60, // 10 days in seconds
   amount: exp(610000, 18), // 610,000 COMP
@@ -55,13 +55,14 @@ export default migration('1781520280_setup_franchiser', {
 
     for (const franchiser of oldFranchisers) {
       const balance = await COMP.balanceOf(franchiser);
-      
+
       const franchiserContract = new Contract(
         franchiser,
         ['function delegatee() view returns (address)'],
         await deploymentManager.getSigner()
       );      
       const delegatee = await franchiserContract.delegatee();
+
       trace(`Franchiser ${franchiser}, (delegatee ${delegatee}) has balance ${balance.toString()}`);
       delegateesConfig.push({ delegatee, balance: balance.toBigInt() });
       totalBalance += balance.toBigInt();
@@ -105,7 +106,49 @@ export default migration('1781520280_setup_franchiser', {
       },
     ];
 
-    const description = `DESCRIPTION`;
+    const description = `# Migrate to Franchiser V2
+
+## Proposal summary
+
+Woof proposes migrating the current franchiser program to Franchiser V2, which separates funding from day-to-day delegate management while preserving current delegate voting power.
+
+### Why this change
+
+- Governance currently must allocate COMP and choose delegatees in the same proposal.
+- Reassigning delegates requires a full governance cycle.
+- A delegate whose power is being revoked can still vote against that proposal.
+- The new design reduces operational overhead and improves incident response.
+
+### New operating model
+
+| Role / Component | Responsibility |
+| --- | --- |
+| FranchiserPoolFactory | Governance entry point for creating, funding, halting, and updating pools. |
+| FranchiserPool | Coordinator and Guardian entry point for delegate management and emergency controls. |
+| Franchiser | Holds delegated COMP for top-level delegatees and preserves the existing subdelegate model. |
+| Governance | Can create and fund pools, halt a pool, and update the coordinator, guardian, delegate cap, or freeze period. |
+| Coordinator | Can delegate, recall, and reassign COMP among top-level delegatees without moving COMP out of the program. |
+| Guardian | Can recall specific delegates, freeze the pool while recalling all delegates, or suspend the Coordinator without recalling delegates. |
+
+### Safety properties
+
+- Frozen pools block Coordinator actions, but Guardian actions remain available.
+- Governance can unfreeze a pool early or let the freeze expire automatically.
+- The minimum freeze period is 10 days, giving Governance time to replace compromised actors or fully shut down the program if needed.
+- Idle COMP remains in the pool, while delegated COMP is held by top-level Franchiser instances.
+
+## Note
+
+The migration preserves delegate voting power while moving administration to a more flexible operating model.
+
+## Proposal actions
+
+The first proposal action recalls COMP from the old franchisers back to the timelock.
+
+The second action approves the FranchiserPoolFactory to transfer COMP on behalf of the timelock.
+
+The third action creates a new pool for the franchisers, funding it with recalled 610,000 COMP and assigning the same delegatees as before.
+`;
 
     const txn = await deploymentManager.retry(async () =>
       trace(
@@ -148,8 +191,6 @@ export default migration('1781520280_setup_franchiser', {
     expect(await pool.guardian()).to.equal(poolConfig.guardian);
     expect(await pool.maxDelegatees()).to.equal(poolConfig.maxDelegatees);
     expect(await pool.freezePeriod()).to.equal(poolConfig.freezePeriod);
-
-    expect(await COMP.balanceOf(pools[0])).to.equal(poolConfig.amount);
 
     for (const franchiser of oldFranchisers) {
       expect(await COMP.balanceOf(franchiser)).to.equal(0);
