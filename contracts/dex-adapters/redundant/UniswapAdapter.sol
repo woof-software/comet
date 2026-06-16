@@ -21,16 +21,38 @@ import { PathKey, Currency, ExactInputSingleParams, ExactInputParams, IUniversal
 abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
     using SafeERC20 for IERC20;
 
-    /// @dev Universal Router value meaning "use the full contract balance".
+    /// @dev Universal Router / V4 value meaning "use the full contract balance".
     uint256 private constant CONTRACT_BALANCE = 0x8000000000000000000000000000000000000000000000000000000000000000;
-    /// @notice Universal Router command set: a single V4_SWAP command.
-    bytes public constant COMMANDS = abi.encodePacked(uint8(0x10));
+    /// @dev Universal Router / V4 recipient sentinel that resolves to the router itself.
+    address private constant ADDRESS_THIS = address(2);
+    /// @dev Universal Router command: execute a V4 swap.
+    uint8 private constant V4_SWAP = 0x10;
+    /// @dev Universal Router command: wrap the router's ETH into WETH.
+    uint8 private constant WRAP_ETH = 0x0b;
+    /// @dev Universal Router command: unwrap the router's WETH into ETH.
+    uint8 private constant UNWRAP_WETH = 0x0c;
+
+    /// @notice Universal Router commands for a swap with an ERC-20 input and output: V4_SWAP.
+    bytes public constant SWAP_COMMANDS = abi.encodePacked(V4_SWAP);
+    /// @notice Universal Router commands for a WETH (native) input: UNWRAP_WETH, V4_SWAP.
+    bytes public constant UNWRAP_SWAP_COMMANDS = abi.encodePacked(UNWRAP_WETH, V4_SWAP);
+    /// @notice Universal Router commands for a WETH (native) output: V4_SWAP, WRAP_ETH.
+    bytes public constant SWAP_WRAP_COMMANDS = abi.encodePacked(V4_SWAP, WRAP_ETH);
+
     /// @notice V4 action sequence for a single-pool swap: SWAP_EXACT_IN_SINGLE, SETTLE, TAKE.
     bytes public constant SINGLE_ACTIONS = abi.encodePacked(uint8(0x06), uint8(0x0b), uint8(0x0e));
     /// @notice V4 action sequence for a multi-hop swap: SWAP_EXACT_IN, SETTLE, TAKE.
     bytes public constant MULTI_ACTIONS = abi.encodePacked(uint8(0x07), uint8(0x0b), uint8(0x0e));
-    /// @notice Encoded TAKE action sending the base-asset output to this adapter.
+
+    /// @notice The wrapped native token. Collateral equal to it is swapped as native ETH.
+    address public immutable weth;
+    /// @notice True when the base asset is WETH, so swap output is taken as native ETH and wrapped to WETH.
+    bool public immutable baseIsNative;
+
+    /// @notice Encoded TAKE action sending the swap output to this adapter (or to the router when native).
     bytes public takeAction;
+    /// @notice Encoded input for the wrap/unwrap command.
+    bytes public nativeCommandInput;
 
     /// @notice Route kind per collateral asset.
     mapping(address => RouteKind) public routeKind;
@@ -46,6 +68,7 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
      * @dev Requires exactly one route per collateral, ordered to match the Comet asset list. Each route must
      *      be a single-pool or multi-hop route; multi-hop routes require a non-empty path. Remaining
      *      parameters are forwarded to {CoreDexAdapter}.
+     * @param _weth The wrapped native token for this chain.
      * @param _swapRoutes V4 routes, one per collateral asset in asset-list order.
      */
     constructor(
@@ -53,9 +76,12 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
         address _module,
         address _coreRouter,
         address _redundantRouter,
+        address _weth,
         uint16 _slippageBps,
         RouteConfig[] memory _swapRoutes
         ) CoreDexAdapter(_comet, _module, _coreRouter, _redundantRouter, _slippageBps) {
+        if (_weth == address(0)) revert ZeroAddress();
+
         uint8 numAssets = _comet.numAssets();
         if (_swapRoutes.length != numAssets) revert InvalidRoutesNumber();
         address collateral;
@@ -70,10 +96,19 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
                 _multiPaths[collateral] = cfg.path;
             }
             routeKind[collateral] = cfg.kind;
-            settleActions[collateral] = abi.encode(Currency.wrap(collateral), CONTRACT_BALANCE, false);
+            settleActions[collateral] = abi.encode(Currency.wrap(collateral == _weth ? address(0) : collateral), CONTRACT_BALANCE, false);
         }
 
-        takeAction = abi.encode(Currency.wrap(address(baseAsset)), address(this), 0);
+        weth = _weth;
+        baseIsNative = address(baseAsset) == _weth;
+        takeAction = abi.encode(
+            Currency.wrap(baseIsNative ? address(0) : address(baseAsset)),
+            baseIsNative ? ADDRESS_THIS : address(this),
+            uint256(0)
+        );
+        nativeCommandInput = baseIsNative
+            ? abi.encode(address(this), CONTRACT_BALANCE)
+            : abi.encode(ADDRESS_THIS, uint256(0));
     }
 
     /**
@@ -88,23 +123,58 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
 
     /**
      * @inheritdoc CoreDexAdapter
-     * @dev Routes the fallback swap through the Uniswap V4 Universal Router using a pre-configured route.
+     * @dev Routes the fallback swap through the Uniswap V4 Universal Router. A WETH collateral is unwrapped to
+     *      native ETH before the swap; a WETH base asset is produced by wrapping the native ETH output.
      */
     function _redundantSwap(IERC20 collateralToken, uint256 amountIn, uint256 minAmountOut) internal override {
-        bytes[] memory inputs = _buildInputs(address(collateralToken), amountIn, minAmountOut);
+        (bytes memory commands, bytes[] memory inputs) = _buildCommandsAndInputs(address(collateralToken), amountIn, minAmountOut);
         collateralToken.safeTransfer(redundantRouter, amountIn);
-        IUniversalRouter(redundantRouter).execute(COMMANDS, inputs, block.timestamp);
+        IUniversalRouter(redundantRouter).execute(commands, inputs, block.timestamp);
     }
 
     /**
-     * @notice Builds the Universal Router inputs for an exact-input V4 swap of `collateral`.
-     * @dev Selects single-pool or multi-hop based on the `kind` of the collateral's swap route.
+     * @notice Builds the Universal Router commands and inputs for an exact-input swap of `collateral`.
+     * @dev Wraps the V4 swap input with a leading UNWRAP_WETH (WETH collateral) or trailing WRAP_ETH (WETH
+     *      base).
      * @param collateral The collateral token being swapped.
      * @param amountIn The amount of collateral to swap.
      * @param minAmountOut The minimum acceptable base-asset output.
-     * @return inputs The encoded Universal Router inputs.
+     * @return commands The encoded Universal Router command sequence.
+     * @return inputs The encoded input for each command.
      */
-    function _buildInputs(address collateral, uint256 amountIn, uint256 minAmountOut) internal view returns (bytes[] memory inputs) {
+    function _buildCommandsAndInputs(address collateral, uint256 amountIn, uint256 minAmountOut)
+        internal
+        view
+        returns (bytes memory commands, bytes[] memory inputs)
+    {
+        bytes memory v4Input = _buildV4SwapInput(collateral, amountIn, minAmountOut);
+
+        if (collateral == weth) {
+            commands = UNWRAP_SWAP_COMMANDS;
+            inputs = new bytes[](2);
+            inputs[0] = nativeCommandInput;
+            inputs[1] = v4Input;
+        } else if (baseIsNative) {
+            commands = SWAP_WRAP_COMMANDS;
+            inputs = new bytes[](2);
+            inputs[0] = v4Input;
+            inputs[1] = nativeCommandInput;
+        } else {
+            commands = SWAP_COMMANDS;
+            inputs = new bytes[](1);
+            inputs[0] = v4Input;
+        }
+    }
+
+    /**
+     * @notice Builds the input for the V4_SWAP command for an exact-input swap of `collateral`.
+     * @dev Reverts if collateral is missing swap route.
+     * @param collateral The collateral token being swapped.
+     * @param amountIn The amount of collateral to swap.
+     * @param minAmountOut The minimum acceptable base-asset output.
+     * @return v4Input The encoded V4_SWAP command input (actions + params).
+     */
+    function _buildV4SwapInput(address collateral, uint256 amountIn, uint256 minAmountOut) internal view returns (bytes memory v4Input) {
         RouteKind kind = routeKind[collateral];
         bytes memory actions;
         bytes[] memory params = new bytes[](3);
@@ -122,7 +192,7 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
         } else if (kind == RouteKind.Multi) {
             actions = MULTI_ACTIONS;
             params[0] = abi.encode(ExactInputParams({
-                currencyIn: Currency.wrap(collateral),
+                currencyIn: Currency.wrap(collateral == weth ? address(0) : collateral),
                 path: _multiPaths[collateral],
                 amountIn: uint128(amountIn),
                 amountOutMinimum: uint128(minAmountOut)
@@ -133,7 +203,6 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
 
         params[1] = settleActions[collateral];
         params[2] = takeAction;
-        inputs = new bytes[](1);
-        inputs[0] = abi.encode(actions, params);
+        v4Input = abi.encode(actions, params);
     }
 }
