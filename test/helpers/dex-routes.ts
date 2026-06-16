@@ -70,6 +70,36 @@ export const WBTC_USDC_ROUTE: RouteConfig = singleRoute(
   true
 );
 
+export const WETH_USDC_ROUTE: RouteConfig = singleRoute(
+  {
+    currency0: ethers.constants.AddressZero, // Native coin
+    currency1: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+    fee: 3000,
+    tickSpacing: 60,
+    hooks: ethers.constants.AddressZero,
+  },
+  true
+);
+
+export const WSTETH_USDC_ROUTE: RouteConfig = multiRoute([
+  // hop 1: wstETH -> WBTC
+  {
+    intermediateCurrency: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', // WBTC
+    fee: 2500,
+    tickSpacing: 50,
+    hooks: ethers.constants.AddressZero,
+    hookData: '0x',
+  },
+  // hop 2: WBTC -> USDC
+  {
+    intermediateCurrency: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+    fee: 3000,
+    tickSpacing: 60,
+    hooks: ethers.constants.AddressZero,
+    hookData: '0x',
+  },
+]);
+
 // Builds swap routes for all Comet collaterals, leaving collaterals without a known route as unset.
 export async function buildRoutes(
   comet: CometInterface,
