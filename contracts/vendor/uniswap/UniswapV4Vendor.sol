@@ -35,6 +35,24 @@ struct PoolKey {
         bytes hookData;
     }
 
+/// @notice A single hop in a multi-hop path: the currency to swap into next and the parameters
+///         (fee, tick spacing, hooks) of the pool used to reach it.
+struct PathKey {
+    Currency intermediateCurrency;
+    uint24 fee;
+    int24 tickSpacing;
+    IHooks hooks;
+    bytes hookData;
+}
+
+/// @notice Parameters for a multi-hop exact-input swap.
+struct ExactInputParams {
+    Currency currencyIn;
+    PathKey[] path;
+    uint128 amountIn;
+    uint128 amountOutMinimum;
+}
+
 /// @notice Minimal interface for the Uniswap V4 router used by the redundant DEX adapter.
 interface IUniversalRouter {
     /// @notice Executes encoded commands against the router (UniversalRouter-style entrypoint).

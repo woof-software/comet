@@ -30,7 +30,7 @@ contract OneInchV6CoreAdapter is UniswapAdapter, IOneInchV6AdapterErrors {
         address _coreRouter,
         address _redundantRouter,
         uint16 _slippageBps,
-        Route[] memory _swapRoutes
+        RouteConfig[] memory _swapRoutes
     ) UniswapAdapter(_comet, _module, _coreRouter, _redundantRouter, _slippageBps, _swapRoutes) {}
 
     /**
