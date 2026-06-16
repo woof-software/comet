@@ -15,7 +15,8 @@ import {
   withCustomMinReturn,
   ONEINCH_V6_ROUTER_MAINNET,
   ONEINCH_V6_SWAP_ABI,
-  Route,
+  RouteConfig,
+  RouteKind,
   WBTC_USDC_ROUTE,
   buildRoutes,
   v4PoolId,
@@ -42,7 +43,7 @@ suite('OneInchV6CoreAdapter', function () {
   const COLLATERAL = '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'; // WBTC
   const COLLATERAL_WHALE = '0x58De44c4E1CBb802118d35e232F763D98Dc7c8CC';
   const COLLATERAL_AMOUNT = ethers.utils.parseUnits('1', 8); // 1 WBTC
-  const REAL_ROUTES: Record<string, Route> = { [COLLATERAL]: WBTC_USDC_ROUTE };
+  const REAL_ROUTES: Record<string, RouteConfig> = { [COLLATERAL]: WBTC_USDC_ROUTE };
   const POOL_MANAGER_SWAP_EVENT =
     'event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)';
 
@@ -60,7 +61,7 @@ suite('OneInchV6CoreAdapter', function () {
 
   let adapter: OneInchV6CoreAdapter;
   let adapterFactory: OneInchV6CoreAdapter__factory;
-  let routes: Route[];
+  let routes: RouteConfig[];
   let comet: CometInterface;
   let baseToken: string;
   let baseTokenErc20: ERC20;
@@ -85,7 +86,7 @@ suite('OneInchV6CoreAdapter', function () {
     baseTokenErc20 = ERC20__factory.connect(baseToken, ethers.provider);
     collateralErc20 = ERC20__factory.connect(COLLATERAL, ethers.provider);
 
-    routes = await buildRoutes(comet, baseToken, REAL_ROUTES);
+    routes = await buildRoutes(comet, REAL_ROUTES);
 
     adapterFactory = (await ethers.getContractFactory(
       'OneInchV6CoreAdapter'
@@ -130,12 +131,13 @@ suite('OneInchV6CoreAdapter', function () {
       });
 
       it('stores the swap route for the collateral', async () => {
-        const route = await adapter.routes(COLLATERAL);
+        expect(await adapter.routeKind(COLLATERAL)).to.equal(RouteKind.Single);
+        const route = await adapter.singleRoutes(COLLATERAL);
         const { currency0, currency1, fee, tickSpacing, hooks } = route.poolKey;
         expect({
           poolKey: { currency0, currency1, fee, tickSpacing, hooks },
           zeroForOne: route.zeroForOne,
-        }).to.deep.equal(WBTC_USDC_ROUTE);
+        }).to.deep.equal({ poolKey: WBTC_USDC_ROUTE.poolKey, zeroForOne: WBTC_USDC_ROUTE.zeroForOne });
       });
     });
 
