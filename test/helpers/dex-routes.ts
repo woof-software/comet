@@ -1,8 +1,18 @@
-import { ethers } from 'hardhat';
-import { CometInterface } from 'build/types';
+import hre, { ethers } from 'hardhat';
+import { Signer } from 'ethers';
+import {
+  CometInterface,
+  CometInterface__factory,
+  ERC20,
+  ERC20__factory,
+  OneInchV6CoreAdapter,
+  OneInchV6CoreAdapter__factory,
+} from '../../build/types';
+import { ONEINCH_V6_ROUTER_MAINNET } from './oneinch';
+import { takeSnapshot, SnapshotRestorer } from './snapshot';
 
 /**
- * Uniswap V4 swap-route helpers for the redundant path of {CoreDexAdapter}.
+ * Uniswap V4 swap-route helpers and the shared mainnet-fork fixture for the dex adapters.
  */
 
 // Mirrors UniswapAdapter.RouteKind.
@@ -128,4 +138,109 @@ export function v4PoolId(poolKey: PoolKey): string {
       [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks]
     )
   );
+}
+
+// Mainnet data
+export const COMET = '0xc3d688B66703497DAA19211EEdff47f25384cdc3'; // cUSDCv3
+export const CORE_ROUTER = ONEINCH_V6_ROUTER_MAINNET;
+export const REDUNDANT_ROUTER = '0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af';
+export const POOL_MANAGER = '0x000000000004444c5dc75cB358380D2e3dE08A90';
+
+export const WBTC = '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599';
+export const WBTC_WHALE = '0x58De44c4E1CBb802118d35e232F763D98Dc7c8CC';
+export const WBTC_AMOUNT = ethers.utils.parseUnits('1', 8); // 1 WBTC
+
+export const WSTETH = '0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0';
+export const WSTETH_WHALE = '0x5313b39bf226ced2332C81eB97BB28c6fD50d1a3';
+export const WSTETH_AMOUNT = ethers.utils.parseUnits('1', 18); // 1 wstETH
+
+export const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+export const WETH_WHALE = '0x4553e3Bc6327006A63C5aA4cdAC887f66b6A433E';
+export const WETH_AMOUNT = ethers.utils.parseUnits('1', 18); // 1 WETH
+
+export const SLIPPAGE_BPS = 500; // 5%
+export const ONEINCH_SLIPPAGE_PCT = 1; // 1%
+export const CHAIN_ID = 1;
+// Restrict 1inch routing to signature-free AMMs so the core calldata can be used on a fork.
+export const AMM_PROTOCOLS = 'UNISWAP_V3,UNISWAP_V2,SUSHI,CURVE';
+
+// Swap routes per collateral used by the fixture.
+export const REAL_ROUTES: Record<string, RouteConfig> = {
+  [WBTC]: WBTC_USDC_ROUTE,
+  [WSTETH]: WSTETH_USDC_ROUTE,
+  [WETH]: WETH_USDC_ROUTE,
+};
+
+export const POOL_MANAGER_SWAP_EVENT =
+  'event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)';
+export const ERC20_EVENTS_IFACE = new ethers.utils.Interface([
+  'event Transfer(address indexed from, address indexed to, uint256 value)',
+  'event Approval(address indexed owner, address indexed spender, uint256 value)',
+]);
+export const POOL_MANAGER_IFACE = new ethers.utils.Interface([POOL_MANAGER_SWAP_EVENT]);
+
+export interface DexAdapterFixture {
+  adapter: OneInchV6CoreAdapter;
+  adapterFactory: OneInchV6CoreAdapter__factory;
+  routes: RouteConfig[];
+  comet: CometInterface;
+  baseToken: string;
+  baseTokenErc20: ERC20;
+  wbtcErc20: ERC20;
+  wstethErc20: ERC20;
+  wethErc20: ERC20;
+  moduleSigner: Signer;
+  moduleAddress: string;
+  snapshot: SnapshotRestorer;
+}
+
+// Resets the mainnet fork, deploys a OneInchV6CoreAdapter, and snapshots the post-deploy state.
+export async function setupDexAdapter(): Promise<DexAdapterFixture> {
+  await hre.network.provider.request({
+    method: 'hardhat_reset',
+    params: [{ forking: { jsonRpcUrl: process.env.MAINNET_QUICKNODE_LINK } }],
+  });
+
+  const [, moduleSigner] = await ethers.getSigners();
+  const moduleAddress = await moduleSigner.getAddress();
+
+  const comet = CometInterface__factory.connect(COMET, ethers.provider);
+  const baseToken = await comet.baseToken();
+  const baseTokenErc20 = ERC20__factory.connect(baseToken, ethers.provider);
+  const wbtcErc20 = ERC20__factory.connect(WBTC, ethers.provider);
+  const wstethErc20 = ERC20__factory.connect(WSTETH, ethers.provider);
+  const wethErc20 = ERC20__factory.connect(WETH, ethers.provider);
+
+  const routes = await buildRoutes(comet, REAL_ROUTES);
+
+  const adapterFactory = (await ethers.getContractFactory(
+    'OneInchV6CoreAdapter'
+  )) as OneInchV6CoreAdapter__factory;
+  const adapter = await adapterFactory.deploy(
+    COMET,
+    moduleAddress,
+    CORE_ROUTER,
+    REDUNDANT_ROUTER,
+    WETH,
+    SLIPPAGE_BPS,
+    routes
+  );
+  await adapter.deployed();
+
+  const snapshot = await takeSnapshot();
+
+  return {
+    adapter,
+    adapterFactory,
+    routes,
+    comet,
+    baseToken,
+    baseTokenErc20,
+    wbtcErc20,
+    wstethErc20,
+    wethErc20,
+    moduleSigner,
+    moduleAddress,
+    snapshot,
+  };
 }
