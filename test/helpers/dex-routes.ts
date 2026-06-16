@@ -49,6 +49,11 @@ export function singleRoute(poolKey: PoolKey, zeroForOne: boolean): RouteConfig 
   return { kind: RouteKind.Single, poolKey, zeroForOne, path: [] };
 }
 
+// Builds a multi-hop RouteConfig from an ordered list of path hops.
+export function multiRoute(path: PathKey[]): RouteConfig {
+  return { kind: RouteKind.Multi, poolKey: ZERO_POOL_KEY, zeroForOne: false, path };
+}
+
 // Unset route for a collateral that has no configured Uniswap V4 route.
 export function unsetRoute(): RouteConfig {
   return { kind: RouteKind.Unset, poolKey: ZERO_POOL_KEY, zeroForOne: false, path: [] };
