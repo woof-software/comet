@@ -13,7 +13,7 @@ import { CoreLiquidationModule, CometStorage } from "./CoreLiquidationModule.sol
  */
 contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     /// @notice used for DEX-path liquidations.
-    address public immutable dexAdapter;
+    address public dexAdapter;
 
     /// @notice HF threshold (1e18 scale). Positions at or below this value are routed to the
     ///         default protocol liquidation. Must always be strictly less than healthPositionHF.
@@ -24,16 +24,17 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     uint256 public healthPositionHF;
 
     /**
-     * @param dexAdapter_       Used for DEX-path liquidations.
-     * @param borderHF_        Initial HF boundary (1e18 scale) for default liquidation.
+     * @param comet_           The address of the Comet for default liquidation path.
+     * @param dexAdapter_      The address of the DEX adapter for DEX-based liquidation.
+     * @param borderHF_        Initial HF boundary (1e18 scale) for DEX-based liquidation.
      * @param healthPositionHF_ Initial HF boundary (1e18 scale) above which the position is healthy.
      */
     constructor(
-        address comet,
+        address comet_,
         address dexAdapter_,
         uint256 borderHF_,
         uint256 healthPositionHF_
-    ) CoreLiquidationModule(comet) {
+    ) CoreLiquidationModule(comet_) {
         if (dexAdapter_ == address(0)) revert ZeroAddress();
         if (borderHF_ == 0 || borderHF_ >= healthPositionHF_) revert InvalidHFBoundaries();
 

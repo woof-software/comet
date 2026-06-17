@@ -59,6 +59,16 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, CometMath {
         partialLiquidationEnabled = true;
     }
 
+    
+    /**
+     * @notice Entry point for the protocol-driven liquidation path: it absorbs an underwater account.
+     * @dev Restricted to Comet — it can only be executed by `Comet.absorb()`, which routes each account
+     *      here. Any other caller reverts with `OnlyComet`. This is a thin wrapper that delegates to the
+     *      shared `_liquidate` routine; the alternative entry point is `LiquidationModule.liquidate`
+     *      (the keeper/DEX-driven path), which also funnels into `_liquidate`.
+     * @param absorber The recipient of the incentive paid to the caller of `Comet.absorb()`.
+     * @param account  The underwater account whose collateral and debt are being absorbed.
+     */
     function liquidate(address absorber, address account) external onlyComet {
         _liquidate(absorber, account);
     }
@@ -67,7 +77,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, CometMath {
     * @notice Seizes collateral assets one by one until the account reaches targetHealthFactor
     *         or all debt is fully repaid. Any unrecoverable shortfall is written off
     *         as bad debt absorbed by the protocol
-    * @dev Iterates over account collateral assets in index order. Accounts for baseBorrowMin limit
+    * @dev Iterates over account collateral assets in index order.
     * @param absorber The recipient of the incentive paid to the caller of absorb()
     * @param account  The underwater account whose collateral and debt are being absorbed
     */
