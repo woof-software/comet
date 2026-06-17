@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 import { OneInchV6CoreAdapter, OneInchV6CoreAdapter__factory } from '../../build/types';
 import {
   RouteConfig,
-  COMET,
+  COMET_USDC,
   CORE_ROUTER,
   REDUNDANT_ROUTER,
   WETH,
@@ -31,7 +31,7 @@ suite('CoreDexAdapter', function () {
   context('constructor', function () {
     context('happy path', function () {
       it('sets comet to the provided market', async () => {
-        expect(await adapter.comet()).to.equal(COMET);
+        expect(await adapter.comet()).to.equal(COMET_USDC);
       });
 
       it('sets baseAsset to the comet base token', async () => {
@@ -59,7 +59,7 @@ suite('CoreDexAdapter', function () {
       it('a constructor address is zero', async () => {
         await expect(
           adapterFactory.deploy(
-            COMET,
+            COMET_USDC,
             ethers.constants.AddressZero,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
@@ -74,7 +74,7 @@ suite('CoreDexAdapter', function () {
         const badSlippageBps = 10_001; // > BPS (100%)
         await expect(
           adapterFactory.deploy(
-            COMET,
+            COMET_USDC,
             moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,

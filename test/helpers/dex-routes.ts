@@ -91,6 +91,9 @@ export const WETH_USDC_ROUTE: RouteConfig = singleRoute(
   true
 );
 
+// USDC -> ETH reuses the ETH/USDC pool with the direction reversed (zeroForOne = false).
+export const USDC_WETH_ROUTE: RouteConfig = singleRoute(WETH_USDC_ROUTE.poolKey, false);
+
 export const WSTETH_USDC_ROUTE: RouteConfig = multiRoute([
   // hop 1: wstETH -> WBTC
   {
@@ -141,7 +144,8 @@ export function v4PoolId(poolKey: PoolKey): string {
 }
 
 // Mainnet data
-export const COMET = '0xc3d688B66703497DAA19211EEdff47f25384cdc3'; // cUSDCv3
+export const COMET_USDC = '0xc3d688B66703497DAA19211EEdff47f25384cdc3'; // cUSDCv3
+export const COMET_WETH = '0xA17581A9E3356d9A858b789D68B4d866e593aE94'; // cWETHv3 (base = WETH)
 export const CORE_ROUTER = ONEINCH_V6_ROUTER_MAINNET;
 export const REDUNDANT_ROUTER = '0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af';
 export const POOL_MANAGER = '0x000000000004444c5dc75cB358380D2e3dE08A90';
@@ -158,6 +162,10 @@ export const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 export const WETH_WHALE = '0x4553e3Bc6327006A63C5aA4cdAC887f66b6A433E';
 export const WETH_AMOUNT = ethers.utils.parseUnits('1', 18); // 1 WETH
 
+export const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+export const USDC_WHALE = '0x01b8697695EAb322A339c4bf75740Db75dc9375E';
+export const USDC_AMOUNT = ethers.utils.parseUnits('4000', 6); // 4,000 USDC
+
 export const SLIPPAGE_BPS = 500; // 5%
 export const ONEINCH_SLIPPAGE_PCT = 1; // 1%
 export const CHAIN_ID = 1;
@@ -169,6 +177,11 @@ export const REAL_ROUTES: Record<string, RouteConfig> = {
   [WBTC]: WBTC_USDC_ROUTE,
   [WSTETH]: WSTETH_USDC_ROUTE,
   [WETH]: WETH_USDC_ROUTE,
+};
+
+// Swap routes for the cWETHv3 (base WETH) market: USDC -> ETH exercises the native-output path.
+export const WETH_MARKET_ROUTES: Record<string, RouteConfig> = {
+  [USDC]: USDC_WETH_ROUTE,
 };
 
 export const POOL_MANAGER_SWAP_EVENT =
@@ -194,8 +207,17 @@ export interface DexAdapterFixture {
   snapshot: SnapshotRestorer;
 }
 
+// Points the fixture at a specific Comet market and route set (defaults to cUSDCv3).
+export interface SetupOptions {
+  comet?: string;
+  realRoutes?: Record<string, RouteConfig>;
+}
+
 // Resets the mainnet fork, deploys a OneInchV6CoreAdapter, and snapshots the post-deploy state.
-export async function setupDexAdapter(): Promise<DexAdapterFixture> {
+export async function setupDexAdapter(options: SetupOptions = {}): Promise<DexAdapterFixture> {
+  const cometAddress = options.comet ?? COMET_USDC;
+  const realRoutes = options.realRoutes ?? REAL_ROUTES;
+
   await hre.network.provider.request({
     method: 'hardhat_reset',
     params: [{ forking: { jsonRpcUrl: process.env.MAINNET_QUICKNODE_LINK } }],
@@ -204,20 +226,20 @@ export async function setupDexAdapter(): Promise<DexAdapterFixture> {
   const [, moduleSigner] = await ethers.getSigners();
   const moduleAddress = await moduleSigner.getAddress();
 
-  const comet = CometInterface__factory.connect(COMET, ethers.provider);
+  const comet = CometInterface__factory.connect(cometAddress, ethers.provider);
   const baseToken = await comet.baseToken();
   const baseTokenErc20 = ERC20__factory.connect(baseToken, ethers.provider);
   const wbtcErc20 = ERC20__factory.connect(WBTC, ethers.provider);
   const wstethErc20 = ERC20__factory.connect(WSTETH, ethers.provider);
   const wethErc20 = ERC20__factory.connect(WETH, ethers.provider);
 
-  const routes = await buildRoutes(comet, REAL_ROUTES);
+  const routes = await buildRoutes(comet, realRoutes);
 
   const adapterFactory = (await ethers.getContractFactory(
     'OneInchV6CoreAdapter'
   )) as OneInchV6CoreAdapter__factory;
   const adapter = await adapterFactory.deploy(
-    COMET,
+    cometAddress,
     moduleAddress,
     CORE_ROUTER,
     REDUNDANT_ROUTER,

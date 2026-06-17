@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import { ContractReceipt, ContractTransaction, Signer, BigNumber } from 'ethers';
-import { OneInchV6CoreAdapter, ERC20 } from '../../build/types';
+import { CometInterface, OneInchV6CoreAdapter, OneInchV6CoreAdapter__factory, ERC20, ERC20__factory } from '../../build/types';
 import {
   fundFromWhale,
   withCustomMinReturn,
@@ -30,6 +30,17 @@ import {
   WETH,
   WETH_WHALE,
   WETH_AMOUNT,
+  COMET_USDC,
+  COMET_WETH,
+  CORE_ROUTER,
+  SLIPPAGE_BPS,
+  multiRoute,
+  ONEINCH_V6_SWAP_ABI,
+  RouteConfig,
+  USDC,
+  USDC_WHALE,
+  USDC_AMOUNT,
+  WETH_MARKET_ROUTES,
 } from '../helpers';
 
 const suite =
@@ -39,6 +50,9 @@ suite('UniswapAdapter', function () {
   this.timeout(180_000);
 
   let adapter: OneInchV6CoreAdapter;
+  let adapterFactory: OneInchV6CoreAdapter__factory;
+  let routes: RouteConfig[];
+  let comet: CometInterface;
   let baseToken: string;
   let baseTokenErc20: ERC20;
   let wbtcErc20: ERC20;
@@ -51,6 +65,9 @@ suite('UniswapAdapter', function () {
   before(async () => {
     ({
       adapter,
+      adapterFactory,
+      routes,
+      comet,
       baseToken,
       baseTokenErc20,
       wbtcErc20,
@@ -85,6 +102,77 @@ suite('UniswapAdapter', function () {
       }));
       expect(normalized).to.deep.equal(WSTETH_USDC_ROUTE.path);
     });
+
+    context('reverts when', function () {
+      it('weth is the zero address', async () => {
+        await expect(
+          adapterFactory.deploy(
+            COMET_USDC,
+            moduleAddress,
+            CORE_ROUTER,
+            REDUNDANT_ROUTER,
+            ethers.constants.AddressZero,
+            SLIPPAGE_BPS,
+            routes
+          )
+        ).to.be.revertedWithCustomError(adapter, 'ZeroAddress');
+      });
+
+      it('the routes count does not match the number of collaterals', async () => {
+        await expect(
+          adapterFactory.deploy(
+            COMET_USDC,
+            moduleAddress,
+            CORE_ROUTER,
+            REDUNDANT_ROUTER,
+            WETH,
+            SLIPPAGE_BPS,
+            routes.slice(1)
+          )
+        ).to.be.revertedWithCustomError(adapter, 'InvalidRoutesNumber');
+      });
+
+      it('a multi-hop route has an empty path', async () => {
+        const collateral = (await comet.getAssetInfo(0)).asset;
+        const badRoutes = [...routes];
+        badRoutes[0] = multiRoute([]);
+        await expect(
+          adapterFactory.deploy(
+            COMET_USDC,
+            moduleAddress,
+            CORE_ROUTER,
+            REDUNDANT_ROUTER,
+            WETH,
+            SLIPPAGE_BPS,
+            badRoutes
+          )
+        )
+          .to.be.revertedWithCustomError(adapter, 'EmptyPath')
+          .withArgs(collateral);
+      });
+    });
+  });
+
+  it('reverts swap() for a collateral without a configured route', async () => {
+    const unsetCollateral = "0x514910771AF9Ca656af840dff83E8264EcF986CA"; // LINK
+    const swapIface = new ethers.utils.Interface([ONEINCH_V6_SWAP_ABI]);
+    const swapData = swapIface.encodeFunctionData('swap', [
+      ethers.constants.AddressZero,
+      {
+        srcToken: unsetCollateral,
+        dstToken: baseToken,
+        srcReceiver: adapter.address,
+        dstReceiver: adapter.address,
+        amount: 0,
+        minReturnAmount: 0,
+        flags: 0,
+      },
+      '0x',
+    ]);
+
+    await expect(adapter.connect(moduleSigner).swap(unsetCollateral, swapData))
+      .to.be.revertedWithCustomError(adapter, 'MissingSwapRoute')
+      .withArgs(unsetCollateral);
   });
 
   context('redundant swap route (single-pool swap)', function () {
@@ -327,6 +415,111 @@ suite('UniswapAdapter', function () {
     it('leaves no tokens on the adapter balance', async () => {
       expect(await wethErc20.balanceOf(adapter.address)).to.equal(0);
       expect(await baseTokenErc20.balanceOf(adapter.address)).to.equal(0);
+    });
+  });
+
+  context('redundant swap route (native ETH output)', function () {
+    const poolKey = WETH_USDC_ROUTE.poolKey;
+
+    let wethAdapter: OneInchV6CoreAdapter;
+    let wethBaseToken: string;
+    let wethBaseErc20: ERC20;
+    let usdcErc20: ERC20;
+    let wethModuleSigner: Signer;
+    let wethModuleAddress: string;
+    let wethSnapshot: SnapshotRestorer;
+
+    let tx: ContractTransaction;
+    let receipt: ContractReceipt;
+    let amountIn: BigNumber;
+    let minOut: BigNumber;
+    let received: BigNumber;
+    let quote: string;
+
+    before(async () => {
+      ({
+        adapter: wethAdapter,
+        baseToken: wethBaseToken,
+        baseTokenErc20: wethBaseErc20,
+        moduleSigner: wethModuleSigner,
+        moduleAddress: wethModuleAddress,
+        snapshot: wethSnapshot,
+      } = await setupDexAdapter({ comet: COMET_WETH, realRoutes: WETH_MARKET_ROUTES }));
+      usdcErc20 = ERC20__factory.connect(USDC, ethers.provider);
+
+      await fundFromWhale(USDC, USDC_WHALE, wethAdapter.address, USDC_AMOUNT);
+      amountIn = await usdcErc20.balanceOf(wethAdapter.address);
+
+      quote = await withCustomMinReturn(
+        {
+          chainId: CHAIN_ID,
+          src: USDC,
+          dst: wethBaseToken,
+          amount: amountIn.toString(),
+          from: wethAdapter.address,
+          slippage: ONEINCH_SLIPPAGE_PCT,
+          protocols: AMM_PROTOCOLS,
+        },
+        ethers.constants.MaxUint256
+      );
+    });
+
+    after(async () => await wethSnapshot.restore());
+
+    it('falls back to the Uniswap V4 route when the core swap reverts', async () => {
+      minOut = await wethAdapter.calculateMinAmountOut(USDC, amountIn);
+      tx = await wethAdapter.connect(wethModuleSigner).swap(USDC, quote);
+      receipt = await tx.wait();
+      received = await wethBaseErc20.balanceOf(wethModuleAddress);
+    });
+
+    it('emits the adapter Swap event', async () => {
+      await expect(tx).to.emit(wethAdapter, 'Swap').withArgs(USDC, amountIn, received);
+    });
+
+    it('swaps to native ETH through the V4 pool and wraps it back to WETH', () => {
+      // The USDC collateral went to the UniversalRouter for exactly amountIn.
+      const collateralToRouter = findEvent(
+        receipt.logs,
+        ERC20_EVENTS_IFACE,
+        'Transfer',
+        (token, args) =>
+          eq(token, USDC) && eq(args.from, wethAdapter.address) && eq(args.to, REDUNDANT_ROUTER)
+      );
+      expect(collateralToRouter?.args.value).to.equal(amountIn);
+
+      // The swap ran on the native ETH/USDC pool (currency0 == address(0)).
+      const poolSwap = findEvent(
+        receipt.logs,
+        POOL_MANAGER_IFACE,
+        'Swap',
+        (emitter, args) => eq(emitter, POOL_MANAGER) && eq(args.id, v4PoolId(poolKey))
+      );
+      expect(poolSwap, 'expected a V4 PoolManager Swap on the ETH/USDC pool').to.not.be.undefined;
+      expect(poolSwap?.args.sender).to.equal(REDUNDANT_ROUTER);
+
+      // The native ETH output was wrapped to WETH and sent to the adapter (WRAP_ETH).
+      const wrappedToAdapter = findEvent(
+        receipt.logs,
+        ERC20_EVENTS_IFACE,
+        'Transfer',
+        (token, args) =>
+          eq(token, wethBaseToken) &&
+          eq(args.from, REDUNDANT_ROUTER) &&
+          eq(args.to, wethAdapter.address)
+      );
+      expect(wrappedToAdapter, 'expected wrapped WETH sent from the router to the adapter').to.not.be
+        .undefined;
+    });
+
+    it('forwards the realized base output to the module', () => {
+      expect(minOut).to.be.gt(0);
+      expect(received).to.be.gte(minOut);
+    });
+
+    it('leaves no tokens on the adapter balance', async () => {
+      expect(await usdcErc20.balanceOf(wethAdapter.address)).to.equal(0);
+      expect(await wethBaseErc20.balanceOf(wethAdapter.address)).to.equal(0);
     });
   });
 });
