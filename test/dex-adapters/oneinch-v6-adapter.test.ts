@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import { ContractReceipt, ContractTransaction, Signer, BigNumber } from 'ethers';
-import { OneInchV6CoreAdapter, ERC20 } from '../../build/types';
+import { OneInchV6CoreAdapter, ERC20, ERC20__factory } from '../../build/types';
 import {
   fundFromWhale,
   fetch1inchSwapData,
@@ -18,6 +18,14 @@ import {
   WBTC,
   WBTC_WHALE,
   WBTC_AMOUNT,
+  WETH,
+  WETH_WHALE,
+  WETH_AMOUNT,
+  COMET_WETH,
+  WETH_MARKET_ROUTES,
+  USDC,
+  USDC_WHALE,
+  USDC_AMOUNT,
 } from '../helpers';
 
 const suite =
@@ -30,12 +38,13 @@ suite('OneInchV6CoreAdapter', function () {
   let baseToken: string;
   let baseTokenErc20: ERC20;
   let wbtcErc20: ERC20;
+  let wethErc20: ERC20;
   let moduleSigner: Signer;
   let moduleAddress: string;
   let snapshot: SnapshotRestorer;
 
   before(async () => {
-    ({ adapter, baseToken, baseTokenErc20, wbtcErc20, moduleSigner, moduleAddress, snapshot } =
+    ({ adapter, baseToken, baseTokenErc20, wbtcErc20, wethErc20, moduleSigner, moduleAddress, snapshot } =
       await setupDexAdapter());
   });
 
@@ -171,6 +180,158 @@ suite('OneInchV6CoreAdapter', function () {
           adapter.connect(moduleSigner).swap(WBTC, encodeSwap({ ...validDesc(), minReturnAmount: minOut.sub(1) }))
         ).to.be.revertedWithCustomError(adapter, 'InvalidMinAmountOut');
       });
+    });
+  });
+
+  context('core swap router (WETH -> USDC)', function () {
+    let tx: ContractTransaction;
+    let receipt: ContractReceipt;
+    let amountIn: BigNumber;
+    let minOut: BigNumber;
+    let received: BigNumber;
+    let quote: string;
+
+    before(async () => {
+      await fundFromWhale(WETH, WETH_WHALE, adapter.address, WETH_AMOUNT);
+      amountIn = await wethErc20.balanceOf(adapter.address);
+
+      quote = await fetch1inchSwapData({
+        chainId: CHAIN_ID,
+        src: WETH,
+        dst: baseToken,
+        amount: amountIn.toString(),
+        from: adapter.address,
+        slippage: ONEINCH_SLIPPAGE_PCT,
+        protocols: AMM_PROTOCOLS,
+      });
+    });
+
+    after(async () => await snapshot.restore());
+
+    it('swaps collateral into the base asset using 1Inch swap quote', async () => {
+      minOut = await adapter.calculateMinAmountOut(WETH, amountIn);
+      tx = await adapter.connect(moduleSigner).swap(WETH, quote);
+      receipt = await tx.wait();
+      received = await baseTokenErc20.balanceOf(moduleAddress);
+    });
+
+    it('emits the adapter Swap event', async () => {
+      await expect(tx).to.emit(adapter, 'Swap').withArgs(WETH, amountIn, received);
+    });
+
+    it('routes the swap through the 1inch core router', async () => {
+      // The core path approves the 1inch router to pull the collateral.
+      await expect(tx)
+        .to.emit(wethErc20, 'Approval')
+        .withArgs(adapter.address, CORE_ROUTER, amountIn);
+
+      const fallbackAllowanceReset = findEvent(
+        receipt.logs,
+        ERC20_EVENTS_IFACE,
+        'Approval',
+        (token, args) =>
+          eq(token, WETH) &&
+          eq(args.owner, adapter.address) &&
+          eq(args.spender, CORE_ROUTER) &&
+          args.value.eq(0)
+      );
+      expect(fallbackAllowanceReset, 'core swap must not fall back to the redundant router').to.be
+        .undefined;
+    });
+
+    it('forwards the realized base output to the module', () => {
+      expect(minOut).to.be.gt(0);
+      expect(received).to.be.gte(minOut);
+    });
+
+    it('leaves no tokens on the adapter balance', async () => {
+      expect(await wethErc20.balanceOf(adapter.address)).to.equal(0);
+      expect(await baseTokenErc20.balanceOf(adapter.address)).to.equal(0);
+    });
+  });
+
+  context('core swap router (USDC -> WETH, WETH market)', function () {
+    let wethAdapter: OneInchV6CoreAdapter;
+    let wethBaseToken: string;
+    let wethBaseErc20: ERC20;
+    let usdcErc20: ERC20;
+    let wethModuleSigner: Signer;
+    let wethModuleAddress: string;
+    let wethSnapshot: SnapshotRestorer;
+
+    let tx: ContractTransaction;
+    let receipt: ContractReceipt;
+    let amountIn: BigNumber;
+    let minOut: BigNumber;
+    let received: BigNumber;
+    let quote: string;
+
+    before(async () => {
+      ({
+        adapter: wethAdapter,
+        baseToken: wethBaseToken,
+        baseTokenErc20: wethBaseErc20,
+        moduleSigner: wethModuleSigner,
+        moduleAddress: wethModuleAddress,
+        snapshot: wethSnapshot,
+      } = await setupDexAdapter({ comet: COMET_WETH, realRoutes: WETH_MARKET_ROUTES }));
+      usdcErc20 = ERC20__factory.connect(USDC, ethers.provider);
+
+      await fundFromWhale(USDC, USDC_WHALE, wethAdapter.address, USDC_AMOUNT);
+      amountIn = await usdcErc20.balanceOf(wethAdapter.address);
+
+      quote = await fetch1inchSwapData({
+        chainId: CHAIN_ID,
+        src: USDC,
+        dst: wethBaseToken,
+        amount: amountIn.toString(),
+        from: wethAdapter.address,
+        slippage: ONEINCH_SLIPPAGE_PCT,
+        protocols: AMM_PROTOCOLS,
+      });
+    });
+
+    after(async () => await wethSnapshot.restore());
+
+    it('swaps collateral into the base asset using 1Inch swap quote', async () => {
+      minOut = await wethAdapter.calculateMinAmountOut(USDC, amountIn);
+      tx = await wethAdapter.connect(wethModuleSigner).swap(USDC, quote);
+      receipt = await tx.wait();
+      received = await wethBaseErc20.balanceOf(wethModuleAddress);
+    });
+
+    it('emits the adapter Swap event', async () => {
+      await expect(tx).to.emit(wethAdapter, 'Swap').withArgs(USDC, amountIn, received);
+    });
+
+    it('routes the swap through the 1inch core router', async () => {
+      // The core path approves the 1inch router to pull the collateral.
+      await expect(tx)
+        .to.emit(usdcErc20, 'Approval')
+        .withArgs(wethAdapter.address, CORE_ROUTER, amountIn);
+
+      const fallbackAllowanceReset = findEvent(
+        receipt.logs,
+        ERC20_EVENTS_IFACE,
+        'Approval',
+        (token, args) =>
+          eq(token, USDC) &&
+          eq(args.owner, wethAdapter.address) &&
+          eq(args.spender, CORE_ROUTER) &&
+          args.value.eq(0)
+      );
+      expect(fallbackAllowanceReset, 'core swap must not fall back to the redundant router').to.be
+        .undefined;
+    });
+
+    it('forwards the realized base output to the module', () => {
+      expect(minOut).to.be.gt(0);
+      expect(received).to.be.gte(minOut);
+    });
+
+    it('leaves no tokens on the adapter balance', async () => {
+      expect(await usdcErc20.balanceOf(wethAdapter.address)).to.equal(0);
+      expect(await wethBaseErc20.balanceOf(wethAdapter.address)).to.equal(0);
     });
   });
 });
