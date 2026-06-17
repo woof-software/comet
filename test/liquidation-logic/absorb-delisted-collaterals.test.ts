@@ -1,8 +1,5 @@
-import { ethers, expect, exp, presentValue, mulPrice, mulFactor, divPrice, default24Assets, CollateralState, makeCollateralStates,
-  makeConfigurator, 
-  principalValue,
-  deployAndUpdateDefaultLiquidationModule} from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, DefaultLiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
+import { ethers, expect, exp, presentValue, mulPrice, mulFactor, divPrice, default24Assets, CollateralState, makeCollateralStates, makeConfigurator, principalValue, deployAndUpdateLiquidationModule, seedMarketActivity} from '../helpers';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, LiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -18,7 +15,7 @@ describe('absorb logic with delisted collaterals', function() {
   let cometProxyAdmin: CometProxyAdmin;
   let configuratorProxyAddress: string;
   let cometProxyAddress: string;
-  let liquidationModule: DefaultLiquidationModule;
+  let liquidationModule: LiquidationModule;
 
   const baseTokenPrice = exp(1, 8);
   const initialBaseFunding = baseTokenPrice * 10_000n;
@@ -67,6 +64,7 @@ describe('absorb logic with delisted collaterals', function() {
     priceFeeds['USDC'] = protocol.priceFeeds['USDC'];
 
     [alice, absorber] = protocol.users;
+    const [bob, dave] = protocol.users.slice(2);
     pauseGuardian = protocol.pauseGuardian;
     governor = protocol.governor;
 
@@ -76,8 +74,7 @@ describe('absorb logic with delisted collaterals', function() {
       await (token as FaucetToken).connect(alice).approve(comet.address, ethers.constants.MaxUint256);
     }
 
-    // Make reserves on comet for borrowings
-    await baseToken.allocateTo(comet.address, initialBaseFunding);
+    await seedMarketActivity(comet, tokens, priceFeeds, bob, dave, baseToken,  initialBaseFunding );
 
     await comet.connect(alice).supply(tokens['COMP'].address, collateralAmount);
     await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
@@ -112,7 +109,7 @@ describe('absorb logic with delisted collaterals', function() {
     before(async function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
       await priceFeeds[collateralKey].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -314,7 +311,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -342,7 +340,7 @@ describe('absorb logic with delisted collaterals', function() {
     before(async function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
       await priceFeeds[collateralKey].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -502,7 +500,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -539,7 +538,7 @@ describe('absorb logic with delisted collaterals', function() {
       await comet.connect(alice).supply(tokens[collateralConfigs[1].symbol].address, collateralConfigs[1].amount);
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -744,7 +743,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -783,7 +783,7 @@ describe('absorb logic with delisted collaterals', function() {
       await comet.connect(alice).supply(tokens[collateralConfigs[1].symbol].address, collateralConfigs[1].amount);
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -1030,7 +1030,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -1056,7 +1057,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
       const userBasic = await comet.userBasic(alice.address);
       const totalsBasic = await comet.totalsBasic();
@@ -1191,7 +1192,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -1225,7 +1227,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
       const userBasic = await comet.userBasic(alice.address);
       const totalsBasic = await comet.totalsBasic();
@@ -1392,7 +1394,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed WETH value only', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -1425,7 +1428,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -1591,7 +1594,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves())).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -1625,7 +1629,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -1789,7 +1793,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed COMP value only', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -1821,7 +1826,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
       const userBasic = await comet.userBasic(alice.address);
       const totalsBasic = await comet.totalsBasic();
@@ -1980,7 +1985,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -2005,7 +2011,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
       await comet.accrueAccount(alice.address);
 
       const userBasic = await comet.userBasic(alice.address);
@@ -2118,7 +2124,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -2152,7 +2159,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
       await comet.accrueAccount(alice.address);
 
       const userBasic = await comet.userBasic(alice.address);
@@ -2319,7 +2326,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the absorbed WETH value only', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -2354,7 +2362,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -2515,7 +2523,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -2547,7 +2556,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
       await comet.accrueAccount(alice.address);
 
       const userBasic = await comet.userBasic(alice.address);
@@ -2672,7 +2681,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -2723,7 +2733,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralConfigs[3].symbol].address, 0);
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[4].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+      liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -2949,7 +2959,8 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('comet base reserves are reduced by the full absorbed base amount', async () => {
-      expect((await comet.getReserves()).toBigInt()).to.be.equal(baseReservesBefore - basePaidOut);
+      // ±2 base units: present-value rounding and interest accrued on the seeded positions between the reserves snapshot and this check.
+      expect((await comet.getReserves()).toBigInt()).to.be.approximately(baseReservesBefore - basePaidOut, 2);
     });
   });
 
@@ -2961,7 +2972,7 @@ describe('absorb logic with delisted collaterals', function() {
       before(async function() {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
         await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-        liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+        liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
     
         await priceFeeds[collateralKey].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
         await comet.accrueAccount(alice.address);
@@ -2995,7 +3006,7 @@ describe('absorb logic with delisted collaterals', function() {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
         await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-        liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+        liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
         const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
         await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
@@ -3027,7 +3038,7 @@ describe('absorb logic with delisted collaterals', function() {
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
         await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralKey].address, 0);
         await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-        liquidationModule = await deployAndUpdateDefaultLiquidationModule(comet, governor);
+        liquidationModule = await deployAndUpdateLiquidationModule({comet, governor});
 
         const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
         await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);

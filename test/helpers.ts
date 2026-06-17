@@ -548,6 +548,54 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
   };
 }
 
+export async function seedMarketActivity(
+  comet: CometHarnessInterface,
+  tokens: { [symbol: string]: FaucetToken | NonStandardFaucetFeeToken },
+  priceFeeds: { [symbol: string]: SimplePriceFeed },
+  lenderUser: SignerWithAddress,
+  borrowerUser: SignerWithAddress,
+  baseToken: FaucetToken,
+  initialBaseFunding: bigint,
+): Promise<void> {
+  const collateralConfigs = [
+    { key: 'COMP', amount: exp(1.5, 18) }, // ~$150
+    { key: 'WETH', amount: exp(0.075, 18) }, // ~$150
+    { key: 'USDT', amount: exp(150, 6) }, // ~$150
+  ];
+
+  // Seed the market with other users so balances are non-empty, simulating a live
+  // market where reserves, supplies and borrows are already non-zero before the test acts.
+  // The lender supplies the first 3 collaterals (~$150 each) and base liquidity.
+  for (const config of collateralConfigs) {
+    await tokens[config.key].allocateTo(lenderUser.address, config.amount);
+    await tokens[config.key].connect(lenderUser).approve(comet.address, config.amount);
+    await comet.connect(lenderUser).supply(tokens[config.key].address, config.amount);
+  }
+
+  // Seed base liquidity
+  const baseTokenAmount = exp(2000, 6); // ~$2000
+  await baseToken.allocateTo(lenderUser.address, baseTokenAmount);
+  await baseToken.connect(lenderUser).approve(comet.address, baseTokenAmount);
+  await comet.connect(lenderUser).supply(baseToken.address, baseTokenAmount);
+
+  // seed reserves
+  await baseToken.allocateTo(comet.address, initialBaseFunding);
+
+  // The borrower supplies every collateral (~$100 each) and opens a ~$300 borrow.
+  // amount = targetValue * scale / price (targetValue and price both in 1e8 units).
+  const borrowerCollateralValue = exp(100, 8); // $100 in 1e8 price units
+  const borrowAmount = exp(300, 6); // ~$300
+  for (const symbol in tokens) {
+    const { scale } = await comet.getAssetInfoByAddress(tokens[symbol].address);
+    const price = (await priceFeeds[symbol].latestRoundData())[1].toBigInt();
+    const amount = borrowerCollateralValue * scale.toBigInt() / price;
+    await tokens[symbol].allocateTo(borrowerUser.address, amount);
+    await tokens[symbol].connect(borrowerUser).approve(comet.address, amount);
+    await comet.connect(borrowerUser).supply(tokens[symbol].address, amount);
+  }
+  await comet.connect(borrowerUser).withdraw(baseToken.address, borrowAmount); // ~$300
+}
+
 export async function makeRewards(opts: RewardsOpts = {}): Promise<Rewards> {
   const signers = await ethers.getSigners();
 
