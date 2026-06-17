@@ -19,28 +19,15 @@ import {
   AMM_PROTOCOLS,
   POOL_MANAGER,
   REDUNDANT_ROUTER,
-  ERC20_EVENTS_IFACE,
-  POOL_MANAGER_IFACE,
-  WBTC,
-  WBTC_WHALE,
-  WBTC_AMOUNT,
-  WSTETH,
-  WSTETH_WHALE,
-  WSTETH_AMOUNT,
-  WETH,
-  WETH_WHALE,
-  WETH_AMOUNT,
-  COMET_USDC,
-  COMET_WETH,
   CORE_ROUTER,
   SLIPPAGE_BPS,
+  ERC20_EVENTS_IFACE,
+  POOL_MANAGER_IFACE,
   multiRoute,
   ONEINCH_V6_SWAP_ABI,
   RouteConfig,
-  USDC,
-  USDC_WHALE,
-  USDC_AMOUNT,
-  WETH_MARKET_ROUTES,
+  TOKENS,
+  MARKETS,
 } from '../helpers';
 
 const suite =
@@ -48,6 +35,8 @@ const suite =
 
 suite('UniswapAdapter', function () {
   this.timeout(180_000);
+
+  const market = MARKETS.usdc;
 
   let adapter: OneInchV6CoreAdapter;
   let adapterFactory: OneInchV6CoreAdapter__factory;
@@ -76,13 +65,13 @@ suite('UniswapAdapter', function () {
       moduleSigner,
       moduleAddress,
       snapshot,
-    } = await setupDexAdapter());
+    } = await setupDexAdapter(market));
   });
 
   context('constructor', function () {
     it('stores the single-hop swap route for the collateral', async () => {
-      expect(await adapter.routeKind(WBTC)).to.equal(RouteKind.Single);
-      const route = await adapter.singleRoutes(WBTC);
+      expect(await adapter.routeKind(TOKENS.WBTC.address)).to.equal(RouteKind.Single);
+      const route = await adapter.singleRoutes(TOKENS.WBTC.address);
       const { currency0, currency1, fee, tickSpacing, hooks } = route.poolKey;
       expect({
         poolKey: { currency0, currency1, fee, tickSpacing, hooks },
@@ -91,8 +80,8 @@ suite('UniswapAdapter', function () {
     });
 
     it('stores the multi-hop swap route for the collateral', async () => {
-      expect(await adapter.routeKind(WSTETH)).to.equal(RouteKind.Multi);
-      const path = await adapter.multiPath(WSTETH);
+      expect(await adapter.routeKind(TOKENS.WSTETH.address)).to.equal(RouteKind.Multi);
+      const path = await adapter.multiPath(TOKENS.WSTETH.address);
       const normalized = path.map((hop) => ({
         intermediateCurrency: hop.intermediateCurrency,
         fee: hop.fee,
@@ -107,7 +96,7 @@ suite('UniswapAdapter', function () {
       it('weth is the zero address', async () => {
         await expect(
           adapterFactory.deploy(
-            COMET_USDC,
+            market.comet,
             moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
@@ -121,11 +110,11 @@ suite('UniswapAdapter', function () {
       it('the routes count does not match the number of collaterals', async () => {
         await expect(
           adapterFactory.deploy(
-            COMET_USDC,
+            market.comet,
             moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
-            WETH,
+            TOKENS.WETH.address,
             SLIPPAGE_BPS,
             routes.slice(1)
           )
@@ -138,11 +127,11 @@ suite('UniswapAdapter', function () {
         badRoutes[0] = multiRoute([]);
         await expect(
           adapterFactory.deploy(
-            COMET_USDC,
+            market.comet,
             moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
-            WETH,
+            TOKENS.WETH.address,
             SLIPPAGE_BPS,
             badRoutes
           )
@@ -154,7 +143,7 @@ suite('UniswapAdapter', function () {
   });
 
   it('reverts swap() for a collateral without a configured route', async () => {
-    const unsetCollateral = "0x514910771AF9Ca656af840dff83E8264EcF986CA"; // LINK
+    const unsetCollateral = '0x514910771AF9Ca656af840dff83E8264EcF986CA'; // LINK
     const swapIface = new ethers.utils.Interface([ONEINCH_V6_SWAP_ABI]);
     const swapData = swapIface.encodeFunctionData('swap', [
       ethers.constants.AddressZero,
@@ -176,6 +165,7 @@ suite('UniswapAdapter', function () {
   });
 
   context('redundant swap route (single-pool swap)', function () {
+    const wbtc = TOKENS.WBTC;
     const route = WBTC_USDC_ROUTE;
 
     let tx: ContractTransaction;
@@ -186,13 +176,13 @@ suite('UniswapAdapter', function () {
     let quote: string;
 
     before(async () => {
-      await fundFromWhale(WBTC, WBTC_WHALE, adapter.address, WBTC_AMOUNT);
+      await fundFromWhale(wbtc.address, wbtc.whale, adapter.address, wbtc.amount);
       amountIn = await wbtcErc20.balanceOf(adapter.address);
 
       quote = await withCustomMinReturn(
         {
           chainId: CHAIN_ID,
-          src: WBTC,
+          src: wbtc.address,
           dst: baseToken,
           amount: amountIn.toString(),
           from: adapter.address,
@@ -206,14 +196,14 @@ suite('UniswapAdapter', function () {
     after(async () => await snapshot.restore());
 
     it('falls back to the Uniswap V4 route when the 1inch core swap reverts', async () => {
-      minOut = await adapter.calculateMinAmountOut(WBTC, amountIn);
-      tx = await adapter.connect(moduleSigner).swap(WBTC, quote);
+      minOut = await adapter.calculateMinAmountOut(wbtc.address, amountIn);
+      tx = await adapter.connect(moduleSigner).swap(wbtc.address, quote);
       receipt = await tx.wait();
       received = await baseTokenErc20.balanceOf(moduleAddress);
     });
 
     it('emits the adapter Swap event', async () => {
-      await expect(tx).to.emit(adapter, 'Swap').withArgs(WBTC, amountIn, received);
+      await expect(tx).to.emit(adapter, 'Swap').withArgs(wbtc.address, amountIn, received);
     });
 
     it('routes the swap through the Uniswap V4 redundant router', () => {
@@ -234,7 +224,7 @@ suite('UniswapAdapter', function () {
         ERC20_EVENTS_IFACE,
         'Transfer',
         (token, args) =>
-          eq(token, WBTC) && eq(args.from, adapter.address) && eq(args.to, REDUNDANT_ROUTER)
+          eq(token, wbtc.address) && eq(args.from, adapter.address) && eq(args.to, REDUNDANT_ROUTER)
       );
       expect(collateralToRouter?.args.value).to.equal(amountIn);
     });
@@ -251,9 +241,10 @@ suite('UniswapAdapter', function () {
   });
 
   context('redundant swap route (multi-hop swap)', function () {
+    const wsteth = TOKENS.WSTETH;
     const firstHopPoolKey = {
       currency0: WBTC_USDC_ROUTE.poolKey.currency0,
-      currency1: WSTETH,
+      currency1: wsteth.address,
       fee: 2500,
       tickSpacing: 50,
       hooks: ethers.constants.AddressZero,
@@ -268,13 +259,13 @@ suite('UniswapAdapter', function () {
     let quote: string;
 
     before(async () => {
-      await fundFromWhale(WSTETH, WSTETH_WHALE, adapter.address, WSTETH_AMOUNT);
+      await fundFromWhale(wsteth.address, wsteth.whale, adapter.address, wsteth.amount);
       amountIn = await wstethErc20.balanceOf(adapter.address);
 
       quote = await withCustomMinReturn(
         {
           chainId: CHAIN_ID,
-          src: WSTETH,
+          src: wsteth.address,
           dst: baseToken,
           amount: amountIn.toString(),
           from: adapter.address,
@@ -288,14 +279,14 @@ suite('UniswapAdapter', function () {
     after(async () => await snapshot.restore());
 
     it('falls back to the Uniswap V4 route when the core swap reverts', async () => {
-      minOut = await adapter.calculateMinAmountOut(WSTETH, amountIn);
-      tx = await adapter.connect(moduleSigner).swap(WSTETH, quote);
+      minOut = await adapter.calculateMinAmountOut(wsteth.address, amountIn);
+      tx = await adapter.connect(moduleSigner).swap(wsteth.address, quote);
       receipt = await tx.wait();
       received = await baseTokenErc20.balanceOf(moduleAddress);
     });
 
     it('emits the adapter Swap event', async () => {
-      await expect(tx).to.emit(adapter, 'Swap').withArgs(WSTETH, amountIn, received);
+      await expect(tx).to.emit(adapter, 'Swap').withArgs(wsteth.address, amountIn, received);
     });
 
     it('routes the swap through both Uniswap V4 pools of the multi-hop path', () => {
@@ -327,7 +318,7 @@ suite('UniswapAdapter', function () {
         ERC20_EVENTS_IFACE,
         'Transfer',
         (token, args) =>
-          eq(token, WSTETH) && eq(args.from, adapter.address) && eq(args.to, REDUNDANT_ROUTER)
+          eq(token, wsteth.address) && eq(args.from, adapter.address) && eq(args.to, REDUNDANT_ROUTER)
       );
       expect(collateralToRouter?.args.value).to.equal(amountIn);
     });
@@ -345,6 +336,7 @@ suite('UniswapAdapter', function () {
   });
 
   context('redundant swap route (native ETH input)', function () {
+    const weth = TOKENS.WETH;
     const poolKey = WETH_USDC_ROUTE.poolKey;
 
     let tx: ContractTransaction;
@@ -355,13 +347,13 @@ suite('UniswapAdapter', function () {
     let quote: string;
 
     before(async () => {
-      await fundFromWhale(WETH, WETH_WHALE, adapter.address, WETH_AMOUNT);
+      await fundFromWhale(weth.address, weth.whale, adapter.address, weth.amount);
       amountIn = await wethErc20.balanceOf(adapter.address);
 
       quote = await withCustomMinReturn(
         {
           chainId: CHAIN_ID,
-          src: WETH,
+          src: weth.address,
           dst: baseToken,
           amount: amountIn.toString(),
           from: adapter.address,
@@ -375,14 +367,14 @@ suite('UniswapAdapter', function () {
     after(async () => await snapshot.restore());
 
     it('falls back to the Uniswap V4 route when the core swap reverts', async () => {
-      minOut = await adapter.calculateMinAmountOut(WETH, amountIn);
-      tx = await adapter.connect(moduleSigner).swap(WETH, quote);
+      minOut = await adapter.calculateMinAmountOut(weth.address, amountIn);
+      tx = await adapter.connect(moduleSigner).swap(weth.address, quote);
       receipt = await tx.wait();
       received = await baseTokenErc20.balanceOf(moduleAddress);
     });
 
     it('emits the adapter Swap event', async () => {
-      await expect(tx).to.emit(adapter, 'Swap').withArgs(WETH, amountIn, received);
+      await expect(tx).to.emit(adapter, 'Swap').withArgs(weth.address, amountIn, received);
     });
 
     it('unwraps the WETH collateral and swaps native ETH through the V4 pool', () => {
@@ -392,7 +384,7 @@ suite('UniswapAdapter', function () {
         ERC20_EVENTS_IFACE,
         'Transfer',
         (token, args) =>
-          eq(token, WETH) && eq(args.from, adapter.address) && eq(args.to, REDUNDANT_ROUTER)
+          eq(token, weth.address) && eq(args.from, adapter.address) && eq(args.to, REDUNDANT_ROUTER)
       );
       expect(collateralToRouter?.args.value).to.equal(amountIn);
 
@@ -419,11 +411,13 @@ suite('UniswapAdapter', function () {
   });
 
   context('redundant swap route (native ETH output)', function () {
-    const poolKey = WETH_USDC_ROUTE.poolKey;
+    // Separate cWETHv3 (base = WETH) deployment: USDC -> ETH exercises the WRAP_ETH (native output) path.
+    const usdc = TOKENS.USDC;
+    const poolKey = WETH_USDC_ROUTE.poolKey; // same ETH/USDC pool, reversed direction
 
     let wethAdapter: OneInchV6CoreAdapter;
     let wethBaseToken: string;
-    let wethBaseErc20: ERC20;
+    let wethBaseErc20: ERC20; // WETH
     let usdcErc20: ERC20;
     let wethModuleSigner: Signer;
     let wethModuleAddress: string;
@@ -444,16 +438,16 @@ suite('UniswapAdapter', function () {
         moduleSigner: wethModuleSigner,
         moduleAddress: wethModuleAddress,
         snapshot: wethSnapshot,
-      } = await setupDexAdapter({ comet: COMET_WETH, realRoutes: WETH_MARKET_ROUTES }));
-      usdcErc20 = ERC20__factory.connect(USDC, ethers.provider);
+      } = await setupDexAdapter(MARKETS.weth));
+      usdcErc20 = ERC20__factory.connect(usdc.address, ethers.provider);
 
-      await fundFromWhale(USDC, USDC_WHALE, wethAdapter.address, USDC_AMOUNT);
+      await fundFromWhale(usdc.address, usdc.whale, wethAdapter.address, usdc.amount);
       amountIn = await usdcErc20.balanceOf(wethAdapter.address);
 
       quote = await withCustomMinReturn(
         {
           chainId: CHAIN_ID,
-          src: USDC,
+          src: usdc.address,
           dst: wethBaseToken,
           amount: amountIn.toString(),
           from: wethAdapter.address,
@@ -467,14 +461,14 @@ suite('UniswapAdapter', function () {
     after(async () => await wethSnapshot.restore());
 
     it('falls back to the Uniswap V4 route when the core swap reverts', async () => {
-      minOut = await wethAdapter.calculateMinAmountOut(USDC, amountIn);
-      tx = await wethAdapter.connect(wethModuleSigner).swap(USDC, quote);
+      minOut = await wethAdapter.calculateMinAmountOut(usdc.address, amountIn);
+      tx = await wethAdapter.connect(wethModuleSigner).swap(usdc.address, quote);
       receipt = await tx.wait();
       received = await wethBaseErc20.balanceOf(wethModuleAddress);
     });
 
     it('emits the adapter Swap event', async () => {
-      await expect(tx).to.emit(wethAdapter, 'Swap').withArgs(USDC, amountIn, received);
+      await expect(tx).to.emit(wethAdapter, 'Swap').withArgs(usdc.address, amountIn, received);
     });
 
     it('swaps to native ETH through the V4 pool and wraps it back to WETH', () => {
@@ -484,7 +478,7 @@ suite('UniswapAdapter', function () {
         ERC20_EVENTS_IFACE,
         'Transfer',
         (token, args) =>
-          eq(token, USDC) && eq(args.from, wethAdapter.address) && eq(args.to, REDUNDANT_ROUTER)
+          eq(token, usdc.address) && eq(args.from, wethAdapter.address) && eq(args.to, REDUNDANT_ROUTER)
       );
       expect(collateralToRouter?.args.value).to.equal(amountIn);
 
