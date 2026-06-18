@@ -110,6 +110,9 @@ export type Protocol = {
   opts: ProtocolOpts;
   governor: SignerWithAddress;
   pauseGuardian: SignerWithAddress;
+  multisig: SignerWithAddress;
+  executor: SignerWithAddress;
+  pauser: SignerWithAddress;
   extensionDelegate: CometExtAssetList;
   users: SignerWithAddress[];
   base: string;
@@ -236,7 +239,12 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const governor = opts.governor || signers[0];
   const pauseGuardian = opts.pauseGuardian || signers[1];
   const liquidationModule = opts.liquidationModule ?? '0x1111111111111111111111111111111111111111';
-  const users = signers.slice(2); // guaranteed to not be governor or pause guardian
+  // Reserve dedicated signers for the liquidation module roles from the tail of the signer list so
+  // low-index `users` stay stable across the suite. These are returned so tests can drive the roles.
+  const multisig = signers[signers.length - 3];
+  const executor = signers[signers.length - 2];
+  const pauser = signers[signers.length - 1];
+  const users = signers.slice(2, signers.length - 3); // not governor, pause guardian, or a reserved role
   const base = opts.base || 'USDC';
   const reward = opts.reward || 'COMP';
   const supplyKink = dfn(opts.supplyKink, exp(0.8, 18));
@@ -341,7 +349,14 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   if (opts.start) await ethers.provider.send('evm_setNextBlockTimestamp', [opts.start]);
   await comet.initializeStorage();
 
-  const defaultLiquidationModule = await deployAndUpdateLiquidationModule({comet, governor, ...(opts.liquidationModuleOpts || {})});
+  const defaultLiquidationModule = await deployAndUpdateLiquidationModule({
+    comet,
+    governor,
+    multisig: multisig.address,
+    executors: [executor.address],
+    pausers: [pauser.address],
+    ...(opts.liquidationModuleOpts || {}),
+  });
 
   const baseTokenBalance = opts.baseTokenBalance;
   if (baseTokenBalance) {
@@ -353,6 +368,9 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     opts,
     governor,
     pauseGuardian,
+    multisig,
+    executor,
+    pauser,
     extensionDelegate: extensionDelegate as CometExtAssetList,
     users,
     base,
@@ -448,6 +466,9 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
   const {
     governor,
     pauseGuardian,
+    multisig,
+    executor,
+    pauser,
     extensionDelegate,
     users,
     base,
@@ -523,12 +544,22 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
 
   // Now we know addresses of the comet proxies, we can deploy the liquidation modules
   const cometAsProxy = comet.attach(cometProxy.address);
-  const defaultLiquidationModuleForProxy = await deployAndUpdateLiquidationModule({comet: cometAsProxy, governor, ...(opts.liquidationModuleOpts || {})});
+  const defaultLiquidationModuleForProxy = await deployAndUpdateLiquidationModule({
+    comet: cometAsProxy,
+    governor,
+    multisig: multisig.address,
+    executors: [executor.address],
+    pausers: [pauser.address],
+    ...(opts.liquidationModuleOpts || {}),
+  });
 
   return {
     opts,
     governor,
     pauseGuardian,
+    multisig,
+    executor,
+    pauser,
     extensionDelegate,
     users,
     base,
@@ -549,7 +580,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
 }
 
 export async function seedMarketActivity(
-  comet: CometHarnessInterface,
+  comet: CometHarnessInterfaceExtendedAssetList,
   tokens: { [symbol: string]: FaucetToken | NonStandardFaucetFeeToken },
   priceFeeds: { [symbol: string]: SimplePriceFeed },
   lenderUser: SignerWithAddress,

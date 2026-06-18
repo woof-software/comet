@@ -26,9 +26,13 @@ describe('liquidation module', function () {
 
     LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
 
+    // This suite drives the onlyMultisig setters through `governor`, so the governor also acts as the Multisig.
     liquidationModule = await deployAndUpdateLiquidationModule({
       comet,
       governor,
+      multisig: governor.address,
+      executors: [governor.address],
+      pausers: [governor.address],
       dexAdapter: DEX_ADAPTER,
       borderHF: BORDER_HF,
       healthPositionHF: HEALTH_POSITION_HF,
@@ -69,32 +73,32 @@ describe('liquidation module', function () {
 
     context('revert when', function () {
       it('dex adapter is the zero address', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, ethers.constants.AddressZero, BORDER_HF, HEALTH_POSITION_HF))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], ethers.constants.AddressZero, BORDER_HF, HEALTH_POSITION_HF))
           .to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
 
       it('borderHF is zero', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, DEX_ADAPTER, 0, HEALTH_POSITION_HF))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, 0, HEALTH_POSITION_HF))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
 
       it('healthPositionHF is zero', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, DEX_ADAPTER, BORDER_HF, 0))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, BORDER_HF, 0))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
 
       it('both borderHF and healthPositionHF are zero', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, DEX_ADAPTER, 0, 0))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, 0, 0))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
 
       it('borderHF is greater than healthPositionHF', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, DEX_ADAPTER, HEALTH_POSITION_HF + 1n, HEALTH_POSITION_HF))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, HEALTH_POSITION_HF + 1n, HEALTH_POSITION_HF))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
 
       it('borderHF equals healthPositionHF', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, DEX_ADAPTER, HEALTH_POSITION_HF, HEALTH_POSITION_HF))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, HEALTH_POSITION_HF, HEALTH_POSITION_HF))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
     });
@@ -126,9 +130,9 @@ describe('liquidation module', function () {
     context('revert when', function () {
       after(async () => await snapshot.restore());
 
-      it('caller is not the governor', async () => {
+      it('caller is not the multisig', async () => {
         await expect(liquidationModule.connect(alice).setBorderHF(NEW_BORDER_HF))
-          .to.be.revertedWithCustomError(liquidationModule, 'OnlyGovernor');
+          .to.be.revertedWithCustomError(liquidationModule, 'OnlyMultisig');
       });
 
       it('borderHF is zero', async () => {
@@ -174,9 +178,9 @@ describe('liquidation module', function () {
     context('revert when', function () {
       after(async () => await snapshot.restore());
 
-      it('caller is not the governor', async () => {
+      it('caller is not the multisig', async () => {
         await expect(liquidationModule.connect(alice).setHealthPositionHF(NEW_HEALTH_POSITION_HF))
-          .to.be.revertedWithCustomError(liquidationModule, 'OnlyGovernor');
+          .to.be.revertedWithCustomError(liquidationModule, 'OnlyMultisig');
       });
 
       it('healthPositionHF is zero', async () => {

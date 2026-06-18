@@ -13,6 +13,7 @@ describe('core liquidation module', function () {
   let liquidationModule: LiquidationModule;
 
   let governor: SignerWithAddress;
+  let multisig: SignerWithAddress;
   let alice: SignerWithAddress;
 
   let snapshot: SnapshotRestorer;
@@ -22,6 +23,7 @@ describe('core liquidation module', function () {
     comet = protocol.comet;
     liquidationModule = protocol.defaultLiquidationModule;
     governor = protocol.governor;
+    multisig = protocol.multisig;
     [alice] = protocol.users;
 
     snapshot = await takeSnapshot();
@@ -60,7 +62,15 @@ describe('core liquidation module', function () {
         const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
 
         await expect(
-          LiquidationModuleFactory.deploy(ethers.constants.AddressZero, DEX_ADAPTER, BORDER_HF, HEALTH_POSITION_HF)
+          LiquidationModuleFactory.deploy(
+            ethers.constants.AddressZero,
+            governor.address,
+            [governor.address],
+            [governor.address],
+            DEX_ADAPTER,
+            BORDER_HF,
+            HEALTH_POSITION_HF
+          )
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
     });
@@ -72,8 +82,8 @@ describe('core liquidation module', function () {
 
       after(async () => await snapshot.restore());
 
-      it('governor toggles partialLiquidationEnabled from true to false', async () => {
-        toggleTx = await liquidationModule.connect(governor).liquidationModeToggle(false);
+      it('multisig toggles partialLiquidationEnabled from true to false', async () => {
+        toggleTx = await liquidationModule.connect(multisig).liquidationModeToggle(false);
         await expect(toggleTx).to.not.be.reverted;
       });
 
@@ -91,13 +101,13 @@ describe('core liquidation module', function () {
 
       before(async () => {
         // Establish the disabled precondition so the toggle under test flips it back on.
-        await liquidationModule.connect(governor).liquidationModeToggle(false);
+        await liquidationModule.connect(multisig).liquidationModeToggle(false);
       });
 
       after(async () => await snapshot.restore());
 
-      it('governor toggles partialLiquidationEnabled from false to true', async () => {
-        toggleTx = await liquidationModule.connect(governor).liquidationModeToggle(true);
+      it('multisig toggles partialLiquidationEnabled from false to true', async () => {
+        toggleTx = await liquidationModule.connect(multisig).liquidationModeToggle(true);
         await expect(toggleTx).to.not.be.reverted;
       });
 
@@ -113,20 +123,20 @@ describe('core liquidation module', function () {
     context('revert when', function () {
       after(async () => await snapshot.restore());
 
-      it('caller is not the governor', async () => {
+      it('caller is not the multisig', async () => {
         await expect(liquidationModule.connect(alice).liquidationModeToggle(false))
-          .to.be.revertedWithCustomError(liquidationModule, 'OnlyGovernor');
+          .to.be.revertedWithCustomError(liquidationModule, 'OnlyMultisig');
       });
 
       it('the wanted value is already set (true -> true)', async () => {
-        await expect(liquidationModule.connect(governor).liquidationModeToggle(true))
+        await expect(liquidationModule.connect(multisig).liquidationModeToggle(true))
           .to.be.revertedWithCustomError(liquidationModule, 'LiquidationModeAlreadySet');
       });
 
       it('the wanted value is already set (false -> false)', async () => {
-        await liquidationModule.connect(governor).liquidationModeToggle(false);
+        await liquidationModule.connect(multisig).liquidationModeToggle(false);
 
-        await expect(liquidationModule.connect(governor).liquidationModeToggle(false))
+        await expect(liquidationModule.connect(multisig).liquidationModeToggle(false))
           .to.be.revertedWithCustomError(liquidationModule, 'LiquidationModeAlreadySet');
       });
     });
