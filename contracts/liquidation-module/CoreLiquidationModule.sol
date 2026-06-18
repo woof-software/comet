@@ -3,6 +3,7 @@ pragma solidity =0.8.15;
 
 import { ICoreLiquidationModule } from "../interfaces/liquidation-module/ICoreLiquidationModule.sol";
 
+import { LiquidationAccessControl } from "./LiquidationAccessControl.sol";
 import { IAssetList } from "../IAssetList.sol";
 import { CometMainInterface, CometCore, CometStorage } from "../CometMainInterface.sol";
 import { CometMath } from "../CometMath.sol";
@@ -21,7 +22,7 @@ import { CometExtInterface } from "../CometExtInterface.sol";
  *      - minimum debt handling when the remaining borrow falls below the configured borrow minimum.
  * @custom:security-contact dmitriy@woof.software
  */
-abstract contract CoreLiquidationModule is ICoreLiquidationModule, CometMath {
+abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAccessControl, CometMath {
     /// @notice The target health factor for partial liquidation
     uint256 public constant TARGET_HEALTH_FACTOR = 105e16;
 
@@ -38,28 +39,36 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, CometMath {
     /// @notice Whether partial liquidation or full liquidation is enabled. Enabled by default.
     bool public partialLiquidationEnabled;
 
-    modifier onlyGovernor() {
-        if (msg.sender != comet.governor()) revert OnlyGovernor();
-        _;
-    }
-
     modifier onlyComet() {
         if (msg.sender != address(comet)) revert OnlyComet();
         _;
     }
 
-    constructor(address _comet) {
-        if(_comet == address(0)) revert ZeroAddress();
-        
+    /**
+     * @param _comet     The Comet instance this module is bound to. The DAO is taken from its governor.
+     * @param _multisig  The Multisig address: controls parameter setters.
+     * @param _executors Initial set of Executor accounts (keeper liquidation callers).
+     * @param _pausers   Initial set of Pauser accounts (DEX pause switch).
+     */
+    constructor(
+        address _comet,
+        address _multisig,
+        address[] memory _executors,
+        address[] memory _pausers
+    ) LiquidationAccessControl(_multisig, _executors, _pausers) {
+        if (_comet == address(0)) revert ZeroAddress();
+
         comet = CometMainInterface(_comet);
         assetList = IAssetList(comet.assetList());
         numAssets = comet.numAssets();
         baseScale = uint64(comet.baseScale());
 
         partialLiquidationEnabled = true;
+
+        // The DAO is Comet's governor.
+        _setDAO(comet.governor());
     }
 
-    
     /**
      * @notice Entry point for the protocol-driven liquidation path: it absorbs an underwater account.
      * @dev Restricted to Comet — it can only be executed by `Comet.absorb()`, which routes each account
@@ -207,9 +216,9 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, CometMath {
     }
 
     /**
-     * @notice Toggle the liquidation mode
+     * @notice Toggle the liquidation mode. Multisig only (parameter setter).
      */
-    function liquidationModeToggle(bool _partialLiquidationEnabled) external onlyGovernor {
+    function liquidationModeToggle(bool _partialLiquidationEnabled) external onlyMultisig {
         if (partialLiquidationEnabled == _partialLiquidationEnabled) revert LiquidationModeAlreadySet();
 
         partialLiquidationEnabled = _partialLiquidationEnabled;

@@ -8,13 +8,9 @@ pragma solidity =0.8.15;
  * @custom:security-contact dmitriy@woof.software
  */
 interface ICoreLiquidationModuleErrors {
-    error OnlyGovernor();
-    
     error OnlyComet();
 
     error NotLiquidatable();
-
-    error ZeroAddress();
 
     /// @notice Reverts when a price feed returns a non-positive price.
     error BadPrice();

@@ -24,17 +24,23 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     uint256 public healthPositionHF;
 
     /**
-     * @param comet_           The address of the Comet for default liquidation path.
-     * @param dexAdapter_      The address of the DEX adapter for DEX-based liquidation.
-     * @param borderHF_        Initial HF boundary (1e18 scale) for DEX-based liquidation.
+     * @param comet_            The address of the Comet for default liquidation path. The DAO is taken from its governor.
+     * @param multisig_         The Multisig address: controls parameter setters.
+     * @param executors_        Initial set of Executor accounts (keeper liquidation callers).
+     * @param pausers_          Initial set of Pauser accounts (DEX pause switch).
+     * @param dexAdapter_       The address of the DEX adapter for DEX-based liquidation.
+     * @param borderHF_         Initial HF boundary (1e18 scale) for DEX-based liquidation.
      * @param healthPositionHF_ Initial HF boundary (1e18 scale) above which the position is healthy.
      */
     constructor(
         address comet_,
+        address multisig_,
+        address[] memory executors_,
+        address[] memory pausers_,
         address dexAdapter_,
         uint256 borderHF_,
         uint256 healthPositionHF_
-    ) CoreLiquidationModule(comet_) {
+    ) CoreLiquidationModule(comet_, multisig_, executors_, pausers_) {
         if (dexAdapter_ == address(0)) revert ZeroAddress();
         if (borderHF_ == 0 || borderHF_ >= healthPositionHF_) revert InvalidHFBoundaries();
 
@@ -59,8 +65,15 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @param absorber The recipient of the liquidation incentive.
      * @param account  The underwater account to liquidate.
      */
-    function liquidate(address absorber, address account, bytes calldata) external {
+    function liquidate(address absorber, address account, bytes calldata) external onlyExecutor {
         comet.accrueAccount(account);
+
+        // When the DEX path is paused, every keeper liquidation falls back to the default
+        // absorb flow regardless of the account's HF.
+        if (dexPaused) {
+            _liquidate(absorber, account);
+            return;
+        }
 
         CometStorage.UserBasic memory accountUser = comet.getUserBasic(account);
 
@@ -89,7 +102,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @dev Reverts if the new value is zero or not strictly less than the current healthPositionHF.
      * @param newBorderHF New BORDER_HF value in 1e18 scale.
      */
-    function setBorderHF(uint256 newBorderHF) external onlyGovernor {
+    function setBorderHF(uint256 newBorderHF) external onlyMultisig {
         if (newBorderHF == 0 || newBorderHF >= healthPositionHF) revert InvalidHFBoundaries();
 
         emit BorderHFUpdated(borderHF, newBorderHF);
@@ -101,7 +114,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @dev Reverts if the new value is zero or not strictly greater than the current borderHF.
      * @param newHealthPositionHF New HEALTH_POSITION_HF value in 1e18 scale.
      */
-    function setHealthPositionHF(uint256 newHealthPositionHF) external onlyGovernor {
+    function setHealthPositionHF(uint256 newHealthPositionHF) external onlyMultisig {
         if (newHealthPositionHF <= borderHF) revert InvalidHFBoundaries();
 
         emit HealthPositionHFUpdated(healthPositionHF, newHealthPositionHF);
