@@ -5,7 +5,7 @@ import { exp, proposal } from '../../../../src/deploy';
 import { Contract } from 'ethers';
 
 const OLD_FRANCHISER_FACTORY = '0xE696d89f4F378772f437F01FaaD70240abdf1854';
-const FRANCHISER_POOL_FACTORY = '0x4f858af44fD7f2B4BFe61ceee1560E4Dd5531896';
+const FRANCHISER_POOL_FACTORY = '0x219a69E60Eaf34A7658848664b907Fa6d72B5CEb';
 
 const poolConfig = {
   coordinator: '0x9825413dd3875E01B34451A7A7e066b2225a234E',
@@ -94,12 +94,13 @@ export default migration('1781520280_setup_franchiser', {
       // 3. Create a new pool for the franchisers
       {
         contract: franchiserPoolFactory,
-        signature: 'createPoolAndFund(address,address,uint256,uint256,address[],uint256[])',
+        signature: 'createPoolAndFund(address,address,uint256,uint256,uint256,address[],uint256[])',
         args: [
           poolConfig.coordinator,
           poolConfig.guardian,
           poolConfig.maxDelegatees,
           poolConfig.freezePeriod,
+          poolConfig.amount,
           delegateesConfig.map(({ delegatee }) => delegatee),
           delegateesConfig.map(({ balance }) => balance.toString())
         ],
@@ -111,6 +112,8 @@ export default migration('1781520280_setup_franchiser', {
 ## Proposal summary
 
 Woof proposes migrating the current franchiser program to Franchiser V2, which separates funding from day-to-day delegate management while preserving current delegate voting power.
+
+Further detailed information can be found in the [Franchiser repository](https://github.com/woof-software/compound-franchiser) and [proposal pull request](https://github.com/compound-finance/comet/pull/1134).
 
 ### Why this change
 
@@ -195,6 +198,9 @@ The third action creates a new pool for the franchisers, funding it with recalle
     for (const franchiser of oldFranchisers) {
       expect(await COMP.balanceOf(franchiser)).to.equal(0);
     }
+
+    // Check that all COMP is used for franchisers and none is left in the pool contract.
+    expect(await COMP.balanceOf(pools[0])).to.equal(0);
 
     // Verify that delegatees have the same voting power captured before migration.
     for (const delegatee of Object.keys(delegatePowerBefore)) {
