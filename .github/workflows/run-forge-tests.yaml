@@ -48,6 +48,3 @@ jobs:
           MANTLE_QUICKNODE_LINK: ${{ secrets.MANTLE_QUICKNODE_LINK }}
           SALT: ${{ secrets.SALT }}
 
-      - name: Build Comet with older solc versions
-        run: |
-          forge build --contracts contracts/CometWithExtendedAssetList.sol --use solc:0.8.15 --via-ir --optimizer-runs 1
