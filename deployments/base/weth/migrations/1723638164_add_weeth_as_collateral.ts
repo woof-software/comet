@@ -33,7 +33,7 @@ export default migration('1723638164_add_weeth_as_collateral', {
       'weETH',
       WEETH_ADDRESS,
       'base',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const weETHPricefeed = await deploymentManager.existing(
       'weETH:priceFeed',
