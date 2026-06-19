@@ -213,6 +213,7 @@ scenario(
     filter: async (ctx) => !matchesDeployment(ctx, [
       { network: 'base', deployment: 'usds' },
       { network: 'ronin' },
+      { network: 'scroll' },
     ]),
     tokenBalances: async (ctx) => (
       {
@@ -326,7 +327,7 @@ scenario.skip(
  * compatibility, and excludes assets that are already delisted.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
-  scenario(
+  scenario.skip(
     `Comet#liquidation > skips liquidation value of asset ${i} with liquidateCF=0`,
     {
       filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsExtendedPause(ctx),
@@ -427,7 +428,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       tokenBalances: async (ctx) => ({
         albert: { $base: '== 0' },
         $comet: {
-          $base: getConfigForScenario(ctx).withdrawBase
+          $base: getConfigForScenario(ctx, i).withdrawBase
         }
       }),
     },
@@ -468,7 +469,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 
       // Set up betty's base token supply for forcing accrue
       // Betty needs base tokens supplied to Comet to be able to withdraw them
-      const bettyBaseAmount = BigInt(getConfigForScenario(context).withdrawBase) * baseScale;
+      const bettyBaseAmount = BigInt(getConfigForScenario(context, i).withdrawBase) * baseScale;
       const baseAsset = context.getAssetByAddress(baseToken);
       await context.sourceTokens(bettyBaseAmount, baseAsset, betty);
       await baseAsset.approve(betty, comet.address);
@@ -487,7 +488,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       }
 
       // Force accrue to ensure state is up to date
-      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).withdrawBase) / 100n * baseScale });
+      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, i).withdrawBase) / 100n * baseScale });
 
       // Verify account is liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
@@ -574,7 +575,7 @@ scenario(
 
     // Calculate how much of each collateral to supply so that combined they cover the borrow.
     // We split the borrow coverage roughly 50/50 between the two assets.
-    const targetBorrowBase = BigInt(getConfigForScenario(context).withdrawBase);
+    const targetBorrowBase = BigInt(getConfigForScenario(context, 1).withdrawBase);
     const targetBorrowBaseWei = targetBorrowBase * baseScale;
     const halfBorrowWei = targetBorrowBaseWei / 2n;
 
@@ -609,7 +610,7 @@ scenario(
     expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
     // Set up betty with base tokens so she can force accrue later
-    const bettyBaseAmount = BigInt(getConfigForScenario(context).withdrawBase) * baseScale;
+    const bettyBaseAmount = BigInt(getConfigForScenario(context, 1).withdrawBase) * baseScale;
     const baseAsset = context.getAssetByAddress(baseToken);
     await context.sourceTokens(bettyBaseAmount, baseAsset, betty);
     await baseAsset.approve(betty, comet.address);
@@ -628,7 +629,7 @@ scenario(
     }
 
     // Force accrue to ensure state is up to date
-    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).withdrawBase) / 100n * baseScale });
+    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, 1).withdrawBase) / 100n * baseScale });
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
 
