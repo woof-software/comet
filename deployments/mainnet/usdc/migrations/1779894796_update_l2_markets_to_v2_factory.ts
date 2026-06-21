@@ -74,7 +74,7 @@ const config = {
   mantle: {
     USDe: {
       comet: '0x606174f62cd968d8e684c645080fa694c1D7786E',
-      newExt: '0x63fb5e296b9e7423b9281df31bcdb0282bbeee25',
+      newExt: '0x63fB5e296B9e7423B9281Df31bcdB0282BbeeE25',
     },
   },
   unichain: {
