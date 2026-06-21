@@ -8,11 +8,11 @@ const config = {
   polygon: {
     USDC: {
       comet: '0xF25212E676D1F7F89Cd72fFEe66158f541246445',
-      newExt: '0x73FEA263A1b44896af1BdB0dD983849297D3f4a7',
+      newExt: '0x0d4Bd55A755134950027cE1F43190A354e648e20',
     },
     USDT: {
       comet: '0xaeB318360f27748Acb200CE616E389A6C9409a07',
-      newExt: '0x3a0f520513ad11DA868D1f4C6b7fe36944f8825d',
+      newExt: '0x5F5406b32ca3Da65e40978190C88B9809A95c6Ba',
     },
   },
 };

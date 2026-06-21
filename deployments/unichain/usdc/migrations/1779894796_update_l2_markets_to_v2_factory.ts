@@ -8,11 +8,11 @@ const config = {
   unichain: {
     USDC: {
       comet: '0x2c7118c4C88B9841FCF839074c26Ae8f035f2921',
-      newExt: '0x6A21249675101b33A76b0fF341f6892B17A7548e',
+      newExt: '0x0d4Bd55A755134950027cE1F43190A354e648e20',
     },
     WETH: {
       comet: '0x6C987dDE50dB1dcDd32Cd4175778C2a291978E2a',
-      newExt: '0x7E19148AF7b27910CEE1e502d2D1e867E990468D',
+      newExt: '0xF3BBe5807feA997d540939Cbf138c134b11e3CF1',
     },
   },
 };

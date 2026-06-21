@@ -8,15 +8,15 @@ const config = {
   optimism: {
     USDC: {
       comet: '0x2e44e174f7D53F0212823acC11C01A11d58c5bCB',
-      newExt: '0xA5344c37a75CfF9F79e3dDe1eE9f9784A427dba2',
+      newExt: '0x0d4Bd55A755134950027cE1F43190A354e648e20',
     },
     USDT: {
       comet: '0x995E394b8B2437aC8Ce61Ee0bC610D617962B214',
-      newExt: '0xddB3B341c4036bF0cFFE3C7fAacF4873D9132998',
+      newExt: '0x5F5406b32ca3Da65e40978190C88B9809A95c6Ba',
     },
     WETH: {
       comet: '0xE36A30D249f7761327fd973001A32010b521b6Fd',
-      newExt: '0xD79B56AD7f8586C3fe2546A31c877044e595aeE5',
+      newExt: '0xF3BBe5807feA997d540939Cbf138c134b11e3CF1',
     },
   },
 };

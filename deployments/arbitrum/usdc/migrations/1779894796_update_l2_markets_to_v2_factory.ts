@@ -9,19 +9,19 @@ const config = {
   arbitrum: {
     USDC: {
       comet: '0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf',
-      newExt: '0x690cBF4a7283426d6de43F3D76A1129933C3cc6c',
+      newExt: '0x0d4Bd55A755134950027cE1F43190A354e648e20',
     },
     USDCe: {
       comet: '0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA',
-      newExt: '0x5E30043080A3ba9733Ea5f2d676B453b14B6E877',
+      newExt: '0xb971973b595C43cb59492dd0ec9b56c648daea33',
     },
     USDT: {
       comet: '0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07',
-      newExt: '0x806F0cfD59Ba074Edcb57a1e6F65399764eDF9CF',
+      newExt: '0x5F5406b32ca3Da65e40978190C88B9809A95c6Ba',
     },
     WETH: {
       comet: '0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486',
-      newExt: '0x8784991D96653bCF7808d3c2100F8a7D00D55068',
+      newExt: '0xF3BBe5807feA997d540939Cbf138c134b11e3CF1',
     },
   },
 };

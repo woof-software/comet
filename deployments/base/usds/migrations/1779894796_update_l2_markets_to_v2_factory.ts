@@ -8,23 +8,23 @@ const config = {
   base: {
     AERO: {
       comet: '0x784efeB622244d2348d4F2522f8860B96fbEcE89',
-      newExt: '0x68da9e5360129A74AD99993faFF282726d6e8165',
+      newExt: '0x7E5873DD6a92802b280D8d59DEc2aa6Ce0EEB13A',
     },
     USDbC: {
       comet: '0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf',
-      newExt: '0xFE9af7911DaFcf614901EAa5Ad5e28b3eFcBbeD3',
+      newExt: '0xD149132Db93C44e0B306493dC3021966167B1b02',
     },
     USDC: {
       comet: '0xb125E6687d4313864e53df431d5425969c15Eb2F',
-      newExt: '0xa7d85850FBb7e3d188CF45a4A8Aab79Ff2A7EECE',
+      newExt: '0x0d4Bd55A755134950027cE1F43190A354e648e20',
     },
     USDS: {
       comet: '0x2c776041CCFe903071AF44aa147368a9c8EEA518',
-      newExt: '0xcA324510c90A14E0329285fd29d4ebA654612B62',
+      newExt: '0xeCB8e46FcEa6339D68fdA37cC3FfBBC6838759Ff',
     },
     WETH: {
       comet: '0x46e6b214b524310239732D51387075E0e70970bf',
-      newExt: '0x90Bf44022627155395251422D7Ea2AdCf7458638',
+      newExt: '0xF3BBe5807feA997d540939Cbf138c134b11e3CF1',
     },
   },
 };
