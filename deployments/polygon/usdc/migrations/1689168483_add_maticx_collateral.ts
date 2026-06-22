@@ -25,7 +25,7 @@ export default migration("1689168483_add_maticx_collateral", {
       "MATICX",
       MATICX_ADDRESS,
       "polygon",
-      "contracts/ERC20.sol:ERC20"
+      "contracts/interfaces/ERC20.sol:ERC20"
     );
     const maticxPricefeed = await deploymentManager.existing(
       "MATICX:priceFeed",
