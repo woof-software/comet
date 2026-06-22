@@ -11,10 +11,7 @@ import {
   setupDexAdapter,
 } from '../helpers';
 
-const suite =
-  process.env.MAINNET_QUICKNODE_LINK && process.env.ONEINCH_API_KEY ? describe : describe.skip;
-
-suite('CoreDexAdapter', function () {
+describe('CoreDexAdapter', function () {
   this.timeout(180_000);
 
   const market = MARKETS.usdc;

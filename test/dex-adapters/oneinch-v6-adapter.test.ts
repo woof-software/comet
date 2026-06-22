@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 import { ContractReceipt, ContractTransaction, Signer, BigNumber } from 'ethers';
 import { OneInchV6CoreAdapter, ERC20, ERC20__factory } from '../../build/types';
 import {
-  fundFromWhale,
+  setErc20Balance,
   fetch1inchSwapData,
   ONEINCH_V6_SWAP_ABI,
   eq,
@@ -19,10 +19,7 @@ import {
   MARKETS,
 } from '../helpers';
 
-const suite =
-  process.env.MAINNET_QUICKNODE_LINK && process.env.ONEINCH_API_KEY ? describe : describe.skip;
-
-suite('OneInchV6CoreAdapter', function () {
+describe('OneInchV6CoreAdapter', function () {
   this.timeout(180_000);
 
   let adapter: OneInchV6CoreAdapter;
@@ -50,7 +47,7 @@ suite('OneInchV6CoreAdapter', function () {
     let quote: string;
 
     before(async () => {
-      await fundFromWhale(wbtc.address, wbtc.whale, adapter.address, wbtc.amount);
+      await setErc20Balance(wbtc.address, adapter.address, wbtc.amount, wbtc.slot);
       amountIn = await wbtcErc20.balanceOf(adapter.address);
 
       quote = await fetch1inchSwapData({
@@ -126,7 +123,7 @@ suite('OneInchV6CoreAdapter', function () {
       });
 
       before(async () => {
-        await fundFromWhale(wbtc.address, wbtc.whale, adapter.address, wbtc.amount);
+        await setErc20Balance(wbtc.address, adapter.address, wbtc.amount, wbtc.slot);
         amountIn = await wbtcErc20.balanceOf(adapter.address);
         minOut = await adapter.calculateMinAmountOut(wbtc.address, amountIn);
       });
@@ -187,7 +184,7 @@ suite('OneInchV6CoreAdapter', function () {
     let quote: string;
 
     before(async () => {
-      await fundFromWhale(weth.address, weth.whale, adapter.address, weth.amount);
+      await setErc20Balance(weth.address, adapter.address, weth.amount, weth.slot);
       amountIn = await wethErc20.balanceOf(adapter.address);
 
       quote = await fetch1inchSwapData({
@@ -275,7 +272,7 @@ suite('OneInchV6CoreAdapter', function () {
       } = await setupDexAdapter(MARKETS.weth));
       usdcErc20 = ERC20__factory.connect(usdc.address, ethers.provider);
 
-      await fundFromWhale(usdc.address, usdc.whale, wethAdapter.address, usdc.amount);
+      await setErc20Balance(usdc.address, wethAdapter.address, usdc.amount, usdc.slot);
       amountIn = await usdcErc20.balanceOf(wethAdapter.address);
 
       quote = await fetch1inchSwapData({

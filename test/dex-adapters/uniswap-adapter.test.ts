@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 import { ContractReceipt, ContractTransaction, Signer, BigNumber } from 'ethers';
 import { CometInterface, OneInchV6CoreAdapter, OneInchV6CoreAdapter__factory, ERC20, ERC20__factory } from '../../build/types';
 import {
-  fundFromWhale,
+  setErc20Balance,
   withCustomMinReturn,
   RouteKind,
   WBTC_USDC_ROUTE,
@@ -30,10 +30,7 @@ import {
   MARKETS,
 } from '../helpers';
 
-const suite =
-  process.env.MAINNET_QUICKNODE_LINK && process.env.ONEINCH_API_KEY ? describe : describe.skip;
-
-suite('UniswapAdapter', function () {
+describe('UniswapAdapter', function () {
   this.timeout(180_000);
 
   const market = MARKETS.usdc;
@@ -143,7 +140,7 @@ suite('UniswapAdapter', function () {
   });
 
   it('reverts swap() for a collateral without a configured route', async () => {
-    const unsetCollateral = '0x514910771AF9Ca656af840dff83E8264EcF986CA'; // LINK
+    const unsetCollateral = "0xc00e94Cb662C3520282E6f5717214004A7f26888"; // COMP
     const swapIface = new ethers.utils.Interface([ONEINCH_V6_SWAP_ABI]);
     const swapData = swapIface.encodeFunctionData('swap', [
       ethers.constants.AddressZero,
@@ -176,7 +173,7 @@ suite('UniswapAdapter', function () {
     let quote: string;
 
     before(async () => {
-      await fundFromWhale(wbtc.address, wbtc.whale, adapter.address, wbtc.amount);
+      await setErc20Balance(wbtc.address, adapter.address, wbtc.amount, wbtc.slot);
       amountIn = await wbtcErc20.balanceOf(adapter.address);
 
       quote = await withCustomMinReturn(
@@ -259,7 +256,7 @@ suite('UniswapAdapter', function () {
     let quote: string;
 
     before(async () => {
-      await fundFromWhale(wsteth.address, wsteth.whale, adapter.address, wsteth.amount);
+      await setErc20Balance(wsteth.address, adapter.address, wsteth.amount, wsteth.slot);
       amountIn = await wstethErc20.balanceOf(adapter.address);
 
       quote = await withCustomMinReturn(
@@ -347,7 +344,7 @@ suite('UniswapAdapter', function () {
     let quote: string;
 
     before(async () => {
-      await fundFromWhale(weth.address, weth.whale, adapter.address, weth.amount);
+      await setErc20Balance(weth.address, adapter.address, weth.amount, weth.slot);
       amountIn = await wethErc20.balanceOf(adapter.address);
 
       quote = await withCustomMinReturn(
@@ -441,7 +438,7 @@ suite('UniswapAdapter', function () {
       } = await setupDexAdapter(MARKETS.weth));
       usdcErc20 = ERC20__factory.connect(usdc.address, ethers.provider);
 
-      await fundFromWhale(usdc.address, usdc.whale, wethAdapter.address, usdc.amount);
+      await setErc20Balance(usdc.address, wethAdapter.address, usdc.amount, usdc.slot);
       amountIn = await usdcErc20.balanceOf(wethAdapter.address);
 
       quote = await withCustomMinReturn(

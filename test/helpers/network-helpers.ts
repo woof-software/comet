@@ -1,6 +1,6 @@
 import hre from 'hardhat';
 import { ethers } from 'hardhat';
-import { BigNumberish } from 'ethers';
+import { BigNumber, BigNumberish } from 'ethers';
 
 interface EthersBigNumberLike {
   toHexString(): string;
@@ -91,5 +91,31 @@ export async function fundFromWhale(
     signer
   );
   await erc20.transfer(to, amount);
+}
+
+// Sets an ERC-20 balance directly via storage (no whale needed) using `hardhat_setStorageAt`.
+export async function setErc20Balance(
+  token: string,
+  account: string,
+  balance: BigNumberish,
+  slot: BigNumberish = 0
+): Promise<void> {
+  if (!ethers.utils.isAddress(token)) {
+    throw new Error(`${token} is not a valid address`);
+  }
+  if (!ethers.utils.isAddress(account)) {
+    throw new Error(`${account} is not a valid address`);
+  }
+
+  const index = ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(['address', 'uint256'], [account, slot])
+  );
+  const value = ethers.utils.hexZeroPad(BigNumber.from(balance).toHexString(), 32);
+
+  await hre.network.provider.request({
+    method: 'hardhat_setStorageAt',
+    params: [token, index, value],
+  });
+  await hre.network.provider.request({ method: 'evm_mine', params: [] });
 }
 
