@@ -84,23 +84,32 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
 
         uint8 numAssets = _comet.numAssets();
         if (_swapRoutes.length != numAssets) revert InvalidRoutesNumber();
+
+        bool baseNative = address(baseAsset) == _weth;
+        address expectedDstAsset = baseNative ? address(0) : address(baseAsset);
         address collateral;
         RouteConfig memory cfg;
         for (uint8 i; i < numAssets; ++i) {
             collateral = _comet.getAssetInfo(i).asset;
             cfg = _swapRoutes[i];
+            address expectedSrcAsset = collateral == _weth ? address(0) : collateral;
             if (cfg.kind == RouteKind.Single) {
+                address srcCurrency = Currency.unwrap(cfg.zeroForOne ? cfg.poolKey.currency0 : cfg.poolKey.currency1);
+                address dstCurrency = Currency.unwrap(cfg.zeroForOne ? cfg.poolKey.currency1 : cfg.poolKey.currency0);
+                if (srcCurrency != expectedSrcAsset || dstCurrency != expectedDstAsset) revert InvalidRoute(collateral);
                 singleRoutes[collateral] = SingleRoute({ poolKey: cfg.poolKey, zeroForOne: cfg.zeroForOne });
             } else if (cfg.kind == RouteKind.Multi) {
                 if (cfg.path.length == 0) revert EmptyPath(collateral);
+                // The final hop of a multi-hop route must land in the base asset.
+                if (Currency.unwrap(cfg.path[cfg.path.length - 1].intermediateCurrency) != expectedDstAsset) revert InvalidRoute(collateral);
                 _multiPaths[collateral] = cfg.path;
             }
             routeKind[collateral] = cfg.kind;
-            settleActions[collateral] = abi.encode(Currency.wrap(collateral == _weth ? address(0) : collateral), CONTRACT_BALANCE, false);
+            settleActions[collateral] = abi.encode(Currency.wrap(expectedSrcAsset), CONTRACT_BALANCE, false);
         }
 
         weth = _weth;
-        baseIsNative = address(baseAsset) == _weth;
+        baseIsNative = baseNative;
         takeAction = abi.encode(
             Currency.wrap(baseIsNative ? address(0) : address(baseAsset)),
             baseIsNative ? ADDRESS_THIS : address(this),

@@ -24,6 +24,7 @@ import {
   ERC20_EVENTS_IFACE,
   POOL_MANAGER_IFACE,
   multiRoute,
+  poolRoute,
   ONEINCH_V6_SWAP_ABI,
   RouteConfig,
   TOKENS,
@@ -134,6 +135,74 @@ describe('UniswapAdapter', function () {
           )
         )
           .to.be.revertedWithCustomError(adapter, 'EmptyPath')
+          .withArgs(collateral);
+      });
+
+      const WRONG_TOKEN = ethers.utils.getAddress('0x000000000000000000000000000000000000dead');
+      const singleIndex = Object.keys(market.routes).indexOf(TOKENS.WBTC.address);
+      const multiIndex = Object.keys(market.routes).indexOf(TOKENS.WSTETH.address);
+
+      it('a single-pool route src token is not the collateral', async () => {
+        const collateral = (await comet.getAssetInfo(singleIndex)).asset;
+        const badRoutes = [...routes];
+        // src = WRONG_TOKEN, dst = base asset.
+        badRoutes[singleIndex] = poolRoute(baseToken, WRONG_TOKEN, 3000, 60);
+        await expect(
+          adapterFactory.deploy(
+            market.comet,
+            moduleAddress,
+            CORE_ROUTER,
+            REDUNDANT_ROUTER,
+            TOKENS.WETH.address,
+            SLIPPAGE_BPS,
+            badRoutes
+          )
+        )
+          .to.be.revertedWithCustomError(adapter, 'InvalidRoute')
+          .withArgs(collateral);
+      });
+
+      it('a single-pool route dst token is not the base asset', async () => {
+        const collateral = (await comet.getAssetInfo(singleIndex)).asset;
+        const badRoutes = [...routes];
+        // src = collateral, dst = WRONG_TOKEN.
+        badRoutes[singleIndex] = poolRoute(WRONG_TOKEN, collateral, 3000, 60);
+        await expect(
+          adapterFactory.deploy(
+            market.comet,
+            moduleAddress,
+            CORE_ROUTER,
+            REDUNDANT_ROUTER,
+            TOKENS.WETH.address,
+            SLIPPAGE_BPS,
+            badRoutes
+          )
+        )
+          .to.be.revertedWithCustomError(adapter, 'InvalidRoute')
+          .withArgs(collateral);
+      });
+
+      it('a multi-hop route final hop dst token is not the base asset', async () => {
+        const collateral = (await comet.getAssetInfo(multiIndex)).asset;
+        const original = routes[multiIndex];
+        // Keep the path intact but point the final hop at WRONG_TOKEN instead of the base asset.
+        const badPath = original.path.map((hop, i) =>
+          i === original.path.length - 1 ? { ...hop, intermediateCurrency: WRONG_TOKEN } : hop
+        );
+        const badRoutes = [...routes];
+        badRoutes[multiIndex] = multiRoute(badPath);
+        await expect(
+          adapterFactory.deploy(
+            market.comet,
+            moduleAddress,
+            CORE_ROUTER,
+            REDUNDANT_ROUTER,
+            TOKENS.WETH.address,
+            SLIPPAGE_BPS,
+            badRoutes
+          )
+        )
+          .to.be.revertedWithCustomError(adapter, 'InvalidRoute')
           .withArgs(collateral);
       });
     });
