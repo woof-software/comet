@@ -1,4 +1,5 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { ContractReceipt } from 'ethers';
 import { Comet, ethers, event, expect, makeProtocol } from './helpers';
 
 describe('CometExt allow / approve permissions', function () {
@@ -10,7 +11,7 @@ describe('CometExt allow / approve permissions', function () {
   let baseId: string; // snapshot of the prepared env
 
   // shared across the sequential happy-path `it`s
-  let receipt: ethers.ContractReceipt;
+  let receipt: ContractReceipt;
 
   const snapshot = (): Promise<string> => ethers.provider.send('evm_snapshot', []);
   const revert = (id: string): Promise<void> => ethers.provider.send('evm_revert', [id]);
