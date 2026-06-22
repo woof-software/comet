@@ -85,8 +85,9 @@ export async function requestRaw1inchSwap(params: OneInchSwapParams): Promise<On
     } catch (err) {
       lastErr = err;
       const status = axios.isAxiosError(err) ? err.response?.status : undefined;
-      if (status === 429 && attempt < maxAttempts) {
-        await sleep(1500 * attempt); // linear backoff for rate limiting
+      // Retry on rate limiting (429) and transient server errors (5xx).
+      if ((status === 429 || (status !== undefined && status >= 500)) && attempt < maxAttempts) {
+        await sleep(1500 * attempt); // linear backoff
         continue;
       }
       if (axios.isAxiosError(err) && err.response) {

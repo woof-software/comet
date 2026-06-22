@@ -105,7 +105,7 @@ export function v4PoolId(poolKey: PoolKey): string {
 
 // Global infrastructure.
 export const CORE_ROUTER = ONEINCH_V6_ROUTER_MAINNET;
-export const REDUNDANT_ROUTER = "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af";
+export const REDUNDANT_ROUTER = "0x4C82D1fBFe28C977cBB58D8C7FF8FCF9F70a2cCA";
 export const POOL_MANAGER = "0x000000000004444c5dc75cB358380D2e3dE08A90";
 
 // Swap parameters.
