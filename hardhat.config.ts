@@ -125,6 +125,7 @@ subtask(TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS).setAction(async (_, __, runSuper
     return !(
       p.includes('contracts/capo/contracts/test/') ||
       p.includes('contracts/capo/test/') ||
+      p.includes('contracts/compound-governance/') ||
       p.includes('forge-std') ||
       p.endsWith('.t.sol')
     );

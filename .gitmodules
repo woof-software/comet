@@ -5,3 +5,7 @@
 	path = contracts/capo
 	url = git@github.com:woof-software/compound-capo.git
 	branch = main
+[submodule "contracts/compound-governance"]
+	path = contracts/compound-governance
+	url = https://github.com/woof-software/compound-governance.git
+	branch = main
