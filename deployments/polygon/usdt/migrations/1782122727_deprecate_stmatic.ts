@@ -127,9 +127,9 @@ export default migration('1782122727_deprecate_maticx', {
 
 ## Proposal summary
 
-Woof propose to deprecate MaticX as collateral in cUSDCv3 and cUSDTv3 on Polygon by updating its price feed to a constant price feed with a price of 1 wei and set its supply cap to 0.
+Woof proposes to deprecate MaticX as collateral in cUSDCv3 and cUSDTv3 on Polygon by updating its price feed to a constant price feed with a price of 1 wei and set its supply cap to 0.
 
-Further detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/<>) and [forum discussion](<>).
+Further detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/1136) and [forum discussion](<>).
 
 ## Proposal actions
 
