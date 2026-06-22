@@ -24,6 +24,7 @@ import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
 import {
   mineBlocks,
+  setEtherBalance,
   setNextBaseFeeToZero,
   setNextBlockTimestamp,
 } from './hreUtils';
@@ -32,7 +33,7 @@ import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
-export { mineBlocks, setNextBaseFeeToZero, setNextBlockTimestamp };
+export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
 
@@ -1616,4 +1617,29 @@ export function applyL1ToL2Alias(address: string) {
 
 export function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
   return !!log?.raw?.topics && !!log?.raw?.data;
+}
+
+export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
+  try {
+    const configurator = await ctx.getConfigurator();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    // Use function selector to probe existence without reverting on unsupported networks
+    const iface = new ethers.utils.Interface([
+      'function marketAdminPermissionChecker() public view returns (address)'
+    ]);
+    const functionSelector = iface.getSighash('marketAdminPermissionChecker');
+    
+    const result = await ethers.provider.call({
+      to: configurator.address,
+      data: functionSelector
+    });
+    
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
 }
