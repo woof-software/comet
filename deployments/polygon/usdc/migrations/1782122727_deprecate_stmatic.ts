@@ -5,32 +5,17 @@ import { calldata, proposal } from '../../../../src/deploy';
 import { utils, Contract } from 'ethers';
 
 
-let newMaticXPriceFeed: string;
+let minPricePriceFeed: string;
 
 const USDC_COMET = '0xF25212E676D1F7F89Cd72fFEe66158f541246445';
 const USDT_COMET = '0xaeB318360f27748Acb200CE616E389A6C9409a07';
 
 export default migration('1782122727_deprecate_maticx', {
-  async prepare(deploymentManager: DeploymentManager) {
-    const _maticXConstantPriceFeed = await deploymentManager.deploy(
-      'MaticX:priceFeed',
-      'pricefeeds/ConstantPriceFeed.sol',
-      [
-        8, // decimals
-        1  // constantPrice
-      ],
-      true
-    );
-
-    return {
-      maticXConstantPriceFeedAddress: _maticXConstantPriceFeed.address
-    };
+  async prepare() {
+    return {};
   },
 
-  async enact(deploymentManager: DeploymentManager, govDeploymentManager: DeploymentManager, {
-    maticXConstantPriceFeedAddress
-  }) {
-    newMaticXPriceFeed = maticXConstantPriceFeedAddress;
+  async enact(deploymentManager: DeploymentManager, govDeploymentManager: DeploymentManager) {
 
     const trace = deploymentManager.tracer();
 
@@ -38,8 +23,10 @@ export default migration('1782122727_deprecate_maticx', {
       configurator,
       bridgeReceiver,
       cometAdmin,
-      MaticX
+      MaticX,
+      'stMATIC:priceFeed': stMaticPriceFeed
     } = await deploymentManager.getContracts();
+    minPricePriceFeed = stMaticPriceFeed.address;
 
     const {
       governor,
@@ -50,7 +37,7 @@ export default migration('1782122727_deprecate_maticx', {
       configurator.populateTransaction.updateAssetPriceFeed(
         USDC_COMET,
         MaticX.address,
-        newMaticXPriceFeed
+        minPricePriceFeed
       )
     );
 
@@ -73,7 +60,7 @@ export default migration('1782122727_deprecate_maticx', {
       configurator.populateTransaction.updateAssetPriceFeed(
         USDT_COMET,
         MaticX.address,
-        newMaticXPriceFeed
+        minPricePriceFeed
       )
     );
 
@@ -170,9 +157,9 @@ The first action updates MaticX price feed to the constant price feed with a pri
     const maticXInUsdcCometInfo = await usdcComet.getAssetInfoByAddress(MaticX.address);
     const maticXInUsdcConfiguratorInfo = (await configurator.getConfiguration(usdcComet.address)).assetConfigs[maticXIndexInUsdcComet];
 
-    expect(maticXInUsdcCometInfo.priceFeed).to.eq(newMaticXPriceFeed);
-    expect(maticXInUsdcConfiguratorInfo.priceFeed).to.eq(newMaticXPriceFeed);
-    expect(await usdcComet.getPrice(newMaticXPriceFeed)).to.equal(1);
+    expect(maticXInUsdcCometInfo.priceFeed).to.eq(minPricePriceFeed);
+    expect(maticXInUsdcConfiguratorInfo.priceFeed).to.eq(minPricePriceFeed);
+    expect(await usdcComet.getPrice(minPricePriceFeed)).to.equal(1);
 
     expect(maticXInUsdcCometInfo.supplyCap).to.eq(0);
     expect(maticXInUsdcConfiguratorInfo.supplyCap).to.eq(0);
@@ -192,9 +179,9 @@ The first action updates MaticX price feed to the constant price feed with a pri
     const maticXInUsdtCometInfo = await usdtComet.getAssetInfoByAddress(MaticX.address);
     const maticXInUsdtConfiguratorInfo = (await configurator.getConfiguration(usdtComet.address)).assetConfigs[maticXIndexInUsdtComet];
 
-    expect(maticXInUsdtCometInfo.priceFeed).to.eq(newMaticXPriceFeed);
-    expect(maticXInUsdtConfiguratorInfo.priceFeed).to.eq(newMaticXPriceFeed);
-    expect(await usdtComet.getPrice(newMaticXPriceFeed)).to.equal(1);
+    expect(maticXInUsdtCometInfo.priceFeed).to.eq(minPricePriceFeed);
+    expect(maticXInUsdtConfiguratorInfo.priceFeed).to.eq(minPricePriceFeed);
+    expect(await usdtComet.getPrice(minPricePriceFeed)).to.equal(1);
 
     expect(maticXInUsdtCometInfo.supplyCap).to.eq(0);
     expect(maticXInUsdtConfiguratorInfo.supplyCap).to.eq(0);
