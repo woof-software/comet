@@ -196,6 +196,7 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
                 zeroForOne: r.zeroForOne,
                 amountIn: uint128(amountIn),
                 amountOutMinimum: uint128(minAmountOut),
+                minHopPriceX36: 0,
                 hookData: ""
             }));
         } else if (kind == RouteKind.Multi) {
@@ -203,6 +204,7 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
             params[0] = abi.encode(ExactInputParams({
                 currencyIn: Currency.wrap(collateral == weth ? address(0) : collateral),
                 path: _multiPaths[collateral],
+                minHopPriceX36: new uint256[](_multiPaths[collateral].length),
                 amountIn: uint128(amountIn),
                 amountOutMinimum: uint128(minAmountOut)
             }));

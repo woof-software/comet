@@ -32,6 +32,7 @@ struct PoolKey {
         bool zeroForOne;
         uint128 amountIn;
         uint128 amountOutMinimum;
+        uint256 minHopPriceX36;
         bytes hookData;
     }
 
@@ -49,6 +50,7 @@ struct PathKey {
 struct ExactInputParams {
     Currency currencyIn;
     PathKey[] path;
+    uint256[] minHopPriceX36;
     uint128 amountIn;
     uint128 amountOutMinimum;
 }
