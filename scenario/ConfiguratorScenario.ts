@@ -318,7 +318,7 @@ scenario(
 scenario(
   'Configurator#setConfiguration updates existing configuration if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
     const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
 
@@ -459,7 +459,7 @@ scenario(
 scenario(
   'Configurator#setPauseGuardian updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const newPauseGuardian = await ethers.Wallet.createRandom().getAddress();
@@ -476,7 +476,7 @@ scenario(
 scenario(
   'Configurator#setPauseGuardian can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const firstNewPauseGuardian = await ethers.Wallet.createRandom().getAddress();
@@ -666,7 +666,7 @@ scenario(
 scenario(
   'Configurator#setStoreFrontPriceFactor updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldStoreFrontPriceFactor = normalizeStructOutput(
@@ -688,7 +688,7 @@ scenario(
 scenario(
   'Configurator#setStoreFrontPriceFactor can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const initialStoreFrontPriceFactor = normalizeStructOutput(
@@ -734,7 +734,7 @@ scenario(
 scenario(
   'Configurator#setBaseMinForRewards updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
     const oldBaseMinForRewards = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -756,7 +756,7 @@ scenario(
 scenario(
   'Configurator#setBaseMinForRewards can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const initialBaseMinForRewards = normalizeStructOutput(
@@ -802,7 +802,7 @@ scenario(
 scenario(
   'Configurator#setTargetReserves updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
     const oldTargetReserves = normalizeStructOutput(await configurator.getConfiguration(comet.address)).targetReserves;
 
@@ -822,7 +822,7 @@ scenario(
 scenario(
   'Configurator#setTargetReserves can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
     const initialTargetReserves = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -946,7 +946,7 @@ scenario(
 scenario(
   'Configurator#updateAsset succeeds if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const assetIndex = -1;
@@ -977,7 +977,7 @@ scenario(
 scenario(
   'Configurator#updateAsset can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const assetIndex = -1;
@@ -1134,7 +1134,7 @@ scenario(
 scenario(
   'Configurator#setSupplyKink updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
@@ -1155,7 +1155,7 @@ scenario(
 scenario(
   'Configurator#setSupplyKink can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
@@ -1219,7 +1219,7 @@ scenario(
 scenario(
   'Configurator#setSupplyPerYearInterestRateSlopeLow updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateSlopeLow = normalizeStructOutput(
@@ -1247,7 +1247,7 @@ scenario(
 scenario(
   'Configurator#setSupplyPerYearInterestRateSlopeLow can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateSlopeLow = normalizeStructOutput(
@@ -1330,7 +1330,7 @@ scenario(
 scenario(
   'Configurator#setSupplyPerYearInterestRateSlopeHigh updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateSlopeHigh = normalizeStructOutput(
@@ -1358,7 +1358,7 @@ scenario(
 scenario(
   'Configurator#setSupplyPerYearInterestRateSlopeHigh can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateSlopeHigh = normalizeStructOutput(
@@ -1442,7 +1442,7 @@ scenario(
 scenario(
   'Configurator#setSupplyPerYearInterestRateBase updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateBase = normalizeStructOutput(
@@ -1470,7 +1470,7 @@ scenario(
 scenario(
   'Configurator#setSupplyPerYearInterestRateBase can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateBase = normalizeStructOutput(
@@ -1554,7 +1554,7 @@ scenario(
 scenario(
   'Configurator#setBorrowKink updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
@@ -1575,7 +1575,7 @@ scenario(
 scenario(
   'Configurator#setBorrowKink can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
@@ -1639,7 +1639,7 @@ scenario(
 scenario(
   'Configurator#setBorrowPerYearInterestRateSlopeLow updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateSlopeLow = normalizeStructOutput(
@@ -1667,7 +1667,7 @@ scenario(
 scenario(
   'Configurator#setBorrowPerYearInterestRateSlopeLow can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateSlopeLow = normalizeStructOutput(
@@ -1751,7 +1751,7 @@ scenario(
 scenario(
   'Configurator#setBorrowPerYearInterestRateSlopeHigh updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateSlopeHigh = normalizeStructOutput(
@@ -1779,7 +1779,7 @@ scenario(
 scenario(
   'Configurator#setBorrowPerYearInterestRateSlopeHigh can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateSlopeHigh = normalizeStructOutput(
@@ -1863,7 +1863,7 @@ scenario(
 scenario(
   'Configurator#setBorrowPerYearInterestRateBase updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateBase = normalizeStructOutput(
@@ -1891,7 +1891,7 @@ scenario(
 scenario(
   'Configurator#setBorrowPerYearInterestRateBase can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateBase = normalizeStructOutput(
@@ -1975,7 +1975,7 @@ scenario(
 scenario(
   'Configurator#setBaseTrackingSupplySpeed updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBaseTrackingSupplySpeed = normalizeStructOutput(
@@ -1999,7 +1999,7 @@ scenario(
 scenario(
   'Configurator#setBaseTrackingSupplySpeed can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBaseTrackingSupplySpeed = normalizeStructOutput(
@@ -2079,7 +2079,7 @@ scenario(
 scenario(
   'Configurator#setBaseTrackingBorrowSpeed updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBaseTrackingBorrowSpeed = normalizeStructOutput(
@@ -2103,7 +2103,7 @@ scenario(
 scenario(
   'Configurator#setBaseTrackingBorrowSpeed can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBaseTrackingBorrowSpeed = normalizeStructOutput(
@@ -2183,7 +2183,7 @@ scenario(
 scenario(
   'Configurator#setBaseBorrowMin updates value if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
@@ -2204,7 +2204,7 @@ scenario(
 scenario(
   'Configurator#setBaseBorrowMin can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
@@ -2297,7 +2297,7 @@ scenario(
 scenario(
   'Configurator#updateAssetBorrowCollateralFactor can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const assetIndex = -1;
@@ -2420,7 +2420,7 @@ scenario(
 scenario(
   'Configurator#updateAssetBorrowCollateralFactor reverts if called by unauthorized caller',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(-1);
@@ -2439,7 +2439,7 @@ scenario(
 scenario(
   'Configurator#updateAssetBorrowCollateralFactor reverts if asset does not exist',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
     // use the existing config to get a valid factor value
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(-1);
@@ -2460,7 +2460,7 @@ scenario(
 scenario(
   'Configurator#updateAssetLiquidateCollateralFactor succeeds if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const assetIndex = -1;
@@ -2490,7 +2490,7 @@ scenario(
 scenario(
   'Configurator#updateAssetLiquidateCollateralFactor can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const assetIndex = -1;
@@ -2589,7 +2589,7 @@ scenario(
 scenario(
   'Configurator#updateAssetLiquidationFactor succeeds if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const assetIndex = -1;
@@ -2619,7 +2619,7 @@ scenario(
 scenario(
   'Configurator#updateAssetLiquidationFactor can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const assetIndex = -1;
@@ -2716,7 +2716,7 @@ scenario(
 scenario(
   'Configurator#updateAssetSupplyCap succeeds if called by governor',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const assetIndex = -1;
@@ -2745,7 +2745,7 @@ scenario(
 scenario(
   'Configurator#updateAssetSupplyCap can be overwritten multiple times',
   {},
-  async ({ comet, configurator, actors }, context) => {
+  async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
     const assetIndex = -1;

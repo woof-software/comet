@@ -17,7 +17,7 @@ async function signAuthorizationWithDomain(
   context: CometContext,
   owner: CometActor,
   { manager, isAllowed, nonce, expiry, chainId },
-  domainOverride: { name?: string; version?: string; verifyingContract?: string }
+  domainOverride: { name?: string, version?: string, verifyingContract?: string }
 ): Promise<Signature> {
   const comet = await context.getComet();
   const domain = {
