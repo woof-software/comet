@@ -24,6 +24,7 @@ import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
 import {
   mineBlocks,
+  setEtherBalance,
   setNextBaseFeeToZero,
   setNextBlockTimestamp,
 } from './hreUtils';
@@ -32,7 +33,7 @@ import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
-export { mineBlocks, setNextBaseFeeToZero, setNextBlockTimestamp };
+export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
 

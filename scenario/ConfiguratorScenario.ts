@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import { BigNumber, ethers } from 'ethers';
 import { CometContext, scenario } from './context/CometContext';
 import { exp } from '../test/helpers';
-import { expectRevertCustom, supportsMarketAdminPermissionChecker } from './utils';
+import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker } from './utils';
 import { MarketAdminPermissionChecker } from '../build/types';
 
 const SECONDS_PER_YEAR = 31_536_000n;
@@ -88,7 +88,10 @@ async function getMarketAdminSigner(context: CometContext): Promise<SignerWithAd
     await configurator.marketAdminPermissionChecker()
   )) as MarketAdminPermissionChecker;
 
-  return context.world.impersonateAddress(await marketAdminPermissionChecker.marketAdmin());
+  const marketAdmin = await marketAdminPermissionChecker.marketAdmin();
+  const marketAdminSigner = await context.world.impersonateAddress(marketAdmin);
+  await setEtherBalance(dm, marketAdmin, exp(1, 18));
+  return marketAdminSigner;
 }
 
 async function deployMarketAdminPermissionChecker(context: CometContext, force?: boolean): Promise<string> {
@@ -231,8 +234,7 @@ scenario(
     const { admin } = actors;
 
     const newGovernor = await deployTimelock(context);
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).transferGovernor(newGovernor, { gasPrice: 0 });
+    await configurator.connect(admin.signer).transferGovernor(newGovernor);
 
     expect(await configurator.governor()).to.be.equal(newGovernor);
   }
@@ -246,11 +248,10 @@ scenario(
 
     const newGovernor = await deployTimelock(context);
     const newGovernorSigner = await context.world.impersonateAddress(newGovernor);
+    await setEtherBalance(context.world.deploymentManager, newGovernor, exp(1, 18));
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).transferGovernor(newGovernor, { gasPrice: 0 });
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(newGovernorSigner).transferGovernor(admin.address, { gasPrice: 0 });
+    await configurator.connect(admin.signer).transferGovernor(newGovernor);
+    await configurator.connect(newGovernorSigner).transferGovernor(admin.address);
 
     expect(await configurator.governor()).to.be.equal(admin.address);
   }
@@ -273,11 +274,9 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    await context.setNextBaseFeeToZero();
     const newFactory = await deployCometFactory(context);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setFactory(comet.address, newFactory, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setFactory(comet.address, newFactory);
 
     expect(await configurator.factory(comet.address)).to.be.equal(newFactory);
   }
@@ -292,13 +291,11 @@ scenario(
     const firstNewFactory = await deployCometFactory(context);
     const secondNewFactory = await deployCometFactory(context, true);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setFactory(comet.address, firstNewFactory, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setFactory(comet.address, firstNewFactory);
 
     expect(await configurator.factory(comet.address)).to.be.equal(firstNewFactory);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setFactory(comet.address, secondNewFactory, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setFactory(comet.address, secondNewFactory);
 
     expect(await configurator.factory(comet.address)).to.be.equal(secondNewFactory);
   }
@@ -330,8 +327,7 @@ scenario(
       baseBorrowMin: existingConfiguration.baseBorrowMin + 1n
     };
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address))).to.be.deep.equal(
       updatedConfiguration
@@ -347,8 +343,7 @@ scenario(
     const newCometProxy = await deployComet(context);
     const configuration = normalizeStructOutput(await configurator.getConfiguration(newCometProxy));
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setConfiguration(newCometProxy, configuration, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setConfiguration(newCometProxy, configuration);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(newCometProxy))).to.be.deep.equal(configuration);
   }
@@ -385,9 +380,8 @@ scenario(
       baseToken: await deployMockERC20(context, 'baseToken')
     };
 
-    await context.setNextBaseFeeToZero();
     await expectRevertCustom(
-      configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration, { gasPrice: 0 }),
+      configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration),
       'ConfigurationAlreadyExists()'
     );
   }
@@ -419,13 +413,11 @@ scenario(
     const { admin } = actors;
 
     const newGovernor = await deployTimelock(context);
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setGovernor(comet.address, newGovernor, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setGovernor(comet.address, newGovernor);
 
     expect((await configurator.getConfiguration(comet.address)).governor).to.be.equal(newGovernor);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect(await comet.governor()).to.be.equal(newGovernor);
   }
@@ -440,13 +432,11 @@ scenario(
     const firstNewGovernor = await deployTimelock(context);
     const secondNewGovernor = await deployTimelock(context, true);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setGovernor(comet.address, firstNewGovernor, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setGovernor(comet.address, firstNewGovernor);
 
     expect((await configurator.getConfiguration(comet.address)).governor).to.be.equal(firstNewGovernor);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setGovernor(comet.address, secondNewGovernor, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setGovernor(comet.address, secondNewGovernor);
 
     expect((await configurator.getConfiguration(comet.address)).governor).to.be.equal(secondNewGovernor);
   }
@@ -473,13 +463,11 @@ scenario(
     const { admin } = actors;
 
     const newPauseGuardian = await ethers.Wallet.createRandom().getAddress();
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setPauseGuardian(comet.address, newPauseGuardian, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setPauseGuardian(comet.address, newPauseGuardian);
 
     expect((await configurator.getConfiguration(comet.address)).pauseGuardian).to.be.equal(newPauseGuardian);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect(await comet.pauseGuardian()).to.be.equal(newPauseGuardian);
   }
@@ -494,13 +482,11 @@ scenario(
     const firstNewPauseGuardian = await ethers.Wallet.createRandom().getAddress();
     const secondNewPauseGuardian = await ethers.Wallet.createRandom().getAddress();
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setPauseGuardian(comet.address, firstNewPauseGuardian, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setPauseGuardian(comet.address, firstNewPauseGuardian);
 
     expect((await configurator.getConfiguration(comet.address)).pauseGuardian).to.be.equal(firstNewPauseGuardian);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setPauseGuardian(comet.address, secondNewPauseGuardian, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setPauseGuardian(comet.address, secondNewPauseGuardian);
 
     expect((await configurator.getConfiguration(comet.address)).pauseGuardian).to.be.equal(secondNewPauseGuardian);
   }
@@ -530,9 +516,7 @@ scenario(
     const { admin } = actors;
 
     const newMarketAdminPermissionChecker = await deployMarketAdminPermissionChecker(context);
-    await configurator.connect(admin.signer).setMarketAdminPermissionChecker(newMarketAdminPermissionChecker, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setMarketAdminPermissionChecker(newMarketAdminPermissionChecker);
 
     expect(await configurator.marketAdminPermissionChecker()).to.be.equal(newMarketAdminPermissionChecker);
   }
@@ -549,17 +533,11 @@ scenario(
     const firstNewMarketAdminPermissionChecker = await deployMarketAdminPermissionChecker(context);
     const secondNewMarketAdminPermissionChecker = await deployMarketAdminPermissionChecker(context, true);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setMarketAdminPermissionChecker(firstNewMarketAdminPermissionChecker, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setMarketAdminPermissionChecker(firstNewMarketAdminPermissionChecker);
 
     expect(await configurator.marketAdminPermissionChecker()).to.be.equal(firstNewMarketAdminPermissionChecker);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setMarketAdminPermissionChecker(secondNewMarketAdminPermissionChecker, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setMarketAdminPermissionChecker(secondNewMarketAdminPermissionChecker);
 
     expect(await configurator.marketAdminPermissionChecker()).to.be.equal(secondNewMarketAdminPermissionChecker);
   }
@@ -589,15 +567,11 @@ scenario(
     const { admin } = actors;
     const newPriceFeed = await deployPriceFeed(context, 'baseToken');
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, newPriceFeed, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, newPriceFeed);
 
     expect((await configurator.getConfiguration(comet.address)).baseTokenPriceFeed).to.be.equal(newPriceFeed);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect(await comet.baseTokenPriceFeed()).to.be.equal(newPriceFeed);
   }
@@ -612,17 +586,11 @@ scenario(
     const firstNewPriceFeed = await deployPriceFeed(context, 'baseToken');
     const secondNewPriceFeed = await deployPriceFeed(context, 'baseToken', true);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, firstNewPriceFeed, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, firstNewPriceFeed);
 
     expect((await configurator.getConfiguration(comet.address)).baseTokenPriceFeed).to.be.equal(firstNewPriceFeed);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, secondNewPriceFeed, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, secondNewPriceFeed);
 
     expect((await configurator.getConfiguration(comet.address)).baseTokenPriceFeed).to.be.equal(secondNewPriceFeed);
   }
@@ -651,10 +619,7 @@ scenario(
 
     const newExtensionDelegate = await deployCometExt(context);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setExtensionDelegate(comet.address, newExtensionDelegate, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setExtensionDelegate(comet.address, newExtensionDelegate);
 
     expect((await configurator.getConfiguration(comet.address)).extensionDelegate).to.be.equal(newExtensionDelegate);
   }
@@ -669,19 +634,13 @@ scenario(
     const firstNewExtensionDelegate = await deployCometExt(context);
     const secondNewExtensionDelegate = await deployCometExt(context, true);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setExtensionDelegate(comet.address, firstNewExtensionDelegate, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setExtensionDelegate(comet.address, firstNewExtensionDelegate);
 
     expect((await configurator.getConfiguration(comet.address)).extensionDelegate).to.be.equal(
       firstNewExtensionDelegate
     );
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setExtensionDelegate(comet.address, secondNewExtensionDelegate, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setExtensionDelegate(comet.address, secondNewExtensionDelegate);
 
     expect((await configurator.getConfiguration(comet.address)).extensionDelegate).to.be.equal(
       secondNewExtensionDelegate
@@ -715,17 +674,13 @@ scenario(
     ).storeFrontPriceFactor;
 
     const newStoreFrontPriceFactor = oldStoreFrontPriceFactor + 1n;
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setStoreFrontPriceFactor(comet.address, newStoreFrontPriceFactor, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setStoreFrontPriceFactor(comet.address, newStoreFrontPriceFactor);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).storeFrontPriceFactor).to.be.equal(
       newStoreFrontPriceFactor
     );
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect(await comet.storeFrontPriceFactor()).to.be.equal(newStoreFrontPriceFactor);
   }
@@ -743,19 +698,13 @@ scenario(
     const firstStoreFrontPriceFactor = initialStoreFrontPriceFactor + 1n;
     const secondStoreFrontPriceFactor = firstStoreFrontPriceFactor + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setStoreFrontPriceFactor(comet.address, firstStoreFrontPriceFactor, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setStoreFrontPriceFactor(comet.address, firstStoreFrontPriceFactor);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).storeFrontPriceFactor).to.be.equal(
       firstStoreFrontPriceFactor
     );
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setStoreFrontPriceFactor(comet.address, secondStoreFrontPriceFactor, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setStoreFrontPriceFactor(comet.address, secondStoreFrontPriceFactor);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).storeFrontPriceFactor).to.be.equal(
       secondStoreFrontPriceFactor
@@ -792,17 +741,13 @@ scenario(
     ).baseMinForRewards;
 
     const newBaseMinForRewards = oldBaseMinForRewards + 1n;
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBaseMinForRewards(comet.address, newBaseMinForRewards, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setBaseMinForRewards(comet.address, newBaseMinForRewards);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseMinForRewards).to.be.equal(
       newBaseMinForRewards
     );
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect(await comet.baseMinForRewards()).to.be.equal(newBaseMinForRewards);
   }
@@ -821,19 +766,13 @@ scenario(
     const firstBaseMinForRewards = initialBaseMinForRewards + 1n;
     const secondBaseMinForRewards = firstBaseMinForRewards + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBaseMinForRewards(comet.address, firstBaseMinForRewards, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setBaseMinForRewards(comet.address, firstBaseMinForRewards);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseMinForRewards).to.be.equal(
       firstBaseMinForRewards
     );
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBaseMinForRewards(comet.address, secondBaseMinForRewards, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setBaseMinForRewards(comet.address, secondBaseMinForRewards);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseMinForRewards).to.be.equal(
       secondBaseMinForRewards
@@ -868,15 +807,13 @@ scenario(
     const oldTargetReserves = normalizeStructOutput(await configurator.getConfiguration(comet.address)).targetReserves;
 
     const newTargetReserves = oldTargetReserves + 1n;
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setTargetReserves(comet.address, newTargetReserves, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setTargetReserves(comet.address, newTargetReserves);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).targetReserves).to.be.equal(
       newTargetReserves
     );
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect(await comet.targetReserves()).to.be.equal(newTargetReserves);
   }
@@ -894,15 +831,13 @@ scenario(
     const firstTargetReserves = initialTargetReserves + 1n;
     const secondTargetReserves = firstTargetReserves + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setTargetReserves(comet.address, firstTargetReserves, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setTargetReserves(comet.address, firstTargetReserves);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).targetReserves).to.be.equal(
       firstTargetReserves
     );
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setTargetReserves(comet.address, secondTargetReserves, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setTargetReserves(comet.address, secondTargetReserves);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).targetReserves).to.be.equal(
       secondTargetReserves
@@ -945,8 +880,7 @@ scenario(
       supplyCap: exp(5e6, 18)
     };
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).addAsset(comet.address, newAssetConfig, { gasPrice: 0 });
+    await configurator.connect(admin.signer).addAsset(comet.address, newAssetConfig);
     const assetConfigsAfter = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs;
 
     expect(assetConfigsAfter.length).to.be.equal(numAssetsBefore + 1);
@@ -979,10 +913,8 @@ scenario('Configurator#addAsset can add multiple assets', {}, async ({ comet, co
     supplyCap: exp(5e6, 6)
   };
 
-  await context.setNextBaseFeeToZero();
-  await configurator.connect(admin.signer).addAsset(comet.address, firstNewAssetConfig, { gasPrice: 0 });
-  await context.setNextBaseFeeToZero();
-  await configurator.connect(admin.signer).addAsset(comet.address, secondNewAssetConfig, { gasPrice: 0 });
+  await configurator.connect(admin.signer).addAsset(comet.address, firstNewAssetConfig);
+  await configurator.connect(admin.signer).addAsset(comet.address, secondNewAssetConfig);
   const assetConfigsAfter = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs;
 
   expect(assetConfigsAfter.length).to.be.equal(numAssetsBefore + 2);
@@ -1027,15 +959,13 @@ scenario(
       liquidateCollateralFactor: existingAssetConfig.liquidateCollateralFactor + MIN_FACTOR_INCREMENT
     };
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).updateAsset(comet.address, updatedAssetConfig, { gasPrice: 0 });
+    await configurator.connect(admin.signer).updateAsset(comet.address, updatedAssetConfig);
     const assetConfigsAfter = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs;
 
     expect(assetConfigsAfter.length).to.be.equal(assetConfigsBefore.length);
     expect(assetConfigsAfter.at(assetIndex)).to.be.deep.equal(updatedAssetConfig);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const updatedAssetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(existingAssetConfig.asset));
 
@@ -1065,14 +995,12 @@ scenario(
       borrowCollateralFactor: firstUpdatedAssetConfig.borrowCollateralFactor + MIN_FACTOR_INCREMENT
     };
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).updateAsset(comet.address, firstUpdatedAssetConfig, { gasPrice: 0 });
+    await configurator.connect(admin.signer).updateAsset(comet.address, firstUpdatedAssetConfig);
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
     ).to.be.deep.equal(firstUpdatedAssetConfig);
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).updateAsset(comet.address, secondUpdatedAssetConfig, { gasPrice: 0 });
+    await configurator.connect(admin.signer).updateAsset(comet.address, secondUpdatedAssetConfig);
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
     ).to.be.deep.equal(secondUpdatedAssetConfig);
@@ -1125,10 +1053,9 @@ scenario(
     const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).asset;
     const newPriceFeed = await deployPriceFeed(context, 'asset');
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetPriceFeed(comet.address, existingAsset, newPriceFeed, { gasPrice: 0 });
+      .updateAssetPriceFeed(comet.address, existingAsset, newPriceFeed);
 
     expect((await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).priceFeed).to.be.equal(
       newPriceFeed
@@ -1148,19 +1075,17 @@ scenario(
     const firstNewPriceFeed = await deployPriceFeed(context, 'asset');
     const secondNewPriceFeed = await deployPriceFeed(context, 'asset', true);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetPriceFeed(comet.address, existingAsset, firstNewPriceFeed, { gasPrice: 0 });
+      .updateAssetPriceFeed(comet.address, existingAsset, firstNewPriceFeed);
 
     expect((await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).priceFeed).to.be.equal(
       firstNewPriceFeed
     );
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetPriceFeed(comet.address, existingAsset, secondNewPriceFeed, { gasPrice: 0 });
+      .updateAssetPriceFeed(comet.address, existingAsset, secondNewPriceFeed);
 
     expect((await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).priceFeed).to.be.equal(
       secondNewPriceFeed
@@ -1215,15 +1140,13 @@ scenario(
     const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
     const newSupplyKink = oldSupplyKink + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setSupplyKink(comet.address, newSupplyKink, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setSupplyKink(comet.address, newSupplyKink);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink).to.be.equal(
       newSupplyKink
     );
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.supplyKink()).toBigInt()).to.be.equal(newSupplyKink);
   }
@@ -1239,15 +1162,13 @@ scenario(
     const firstNewSupplyKink = oldSupplyKink + 1n;
     const secondNewSupplyKink = firstNewSupplyKink + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setSupplyKink(comet.address, firstNewSupplyKink, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setSupplyKink(comet.address, firstNewSupplyKink);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink).to.be.equal(
       firstNewSupplyKink
     );
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setSupplyKink(comet.address, secondNewSupplyKink, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setSupplyKink(comet.address, secondNewSupplyKink);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink).to.be.equal(
       secondNewSupplyKink
@@ -1267,15 +1188,13 @@ scenario(
     const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
     const newSupplyKink = oldSupplyKink + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(marketAdminSigner).setSupplyKink(comet.address, newSupplyKink, { gasPrice: 0 });
+    await configurator.connect(marketAdminSigner).setSupplyKink(comet.address, newSupplyKink);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink).to.be.equal(
       newSupplyKink
     );
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.supplyKink()).toBigInt()).to.be.equal(newSupplyKink);
   }
@@ -1309,17 +1228,15 @@ scenario(
 
     const newSupplyPerYearInterestRateSlopeLow = oldSupplyPerYearInterestRateSlopeLow + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeLow(comet.address, newSupplyPerYearInterestRateSlopeLow, { gasPrice: 0 });
+      .setSupplyPerYearInterestRateSlopeLow(comet.address, newSupplyPerYearInterestRateSlopeLow);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeLow
     ).to.be.equal(newSupplyPerYearInterestRateSlopeLow);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.supplyPerSecondInterestRateSlopeLow()).toBigInt()).to.be.equal(
       newSupplyPerYearInterestRateSlopeLow / SECONDS_PER_YEAR
@@ -1340,19 +1257,17 @@ scenario(
     const firstNewSupplyPerYearInterestRateSlopeLow = oldSupplyPerYearInterestRateSlopeLow + 1n;
     const secondNewSupplyPerYearInterestRateSlopeLow = firstNewSupplyPerYearInterestRateSlopeLow + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeLow(comet.address, firstNewSupplyPerYearInterestRateSlopeLow, { gasPrice: 0 });
+      .setSupplyPerYearInterestRateSlopeLow(comet.address, firstNewSupplyPerYearInterestRateSlopeLow);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeLow
     ).to.be.equal(firstNewSupplyPerYearInterestRateSlopeLow);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeLow(comet.address, secondNewSupplyPerYearInterestRateSlopeLow, { gasPrice: 0 });
+      .setSupplyPerYearInterestRateSlopeLow(comet.address, secondNewSupplyPerYearInterestRateSlopeLow);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeLow
@@ -1375,17 +1290,15 @@ scenario(
 
     const newSupplyPerYearInterestRateSlopeLow = oldSupplyPerYearInterestRateSlopeLow + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .setSupplyPerYearInterestRateSlopeLow(comet.address, newSupplyPerYearInterestRateSlopeLow, { gasPrice: 0 });
+      .setSupplyPerYearInterestRateSlopeLow(comet.address, newSupplyPerYearInterestRateSlopeLow);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeLow
     ).to.be.equal(newSupplyPerYearInterestRateSlopeLow);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.supplyPerSecondInterestRateSlopeLow()).toBigInt()).to.be.equal(
       newSupplyPerYearInterestRateSlopeLow / SECONDS_PER_YEAR
@@ -1426,19 +1339,15 @@ scenario(
 
     const newSupplyPerYearInterestRateSlopeHigh = oldSupplyPerYearInterestRateSlopeHigh + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeHigh(comet.address, newSupplyPerYearInterestRateSlopeHigh, {
-        gasPrice: 0
-      });
+      .setSupplyPerYearInterestRateSlopeHigh(comet.address, newSupplyPerYearInterestRateSlopeHigh);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeHigh
     ).to.be.equal(newSupplyPerYearInterestRateSlopeHigh);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.supplyPerSecondInterestRateSlopeHigh()).toBigInt()).to.be.equal(
       newSupplyPerYearInterestRateSlopeHigh / SECONDS_PER_YEAR
@@ -1459,23 +1368,17 @@ scenario(
     const firstNewSupplyPerYearInterestRateSlopeHigh = oldSupplyPerYearInterestRateSlopeHigh + 1n;
     const secondNewSupplyPerYearInterestRateSlopeHigh = firstNewSupplyPerYearInterestRateSlopeHigh + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeHigh(comet.address, firstNewSupplyPerYearInterestRateSlopeHigh, {
-        gasPrice: 0
-      });
+      .setSupplyPerYearInterestRateSlopeHigh(comet.address, firstNewSupplyPerYearInterestRateSlopeHigh);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeHigh
     ).to.be.equal(firstNewSupplyPerYearInterestRateSlopeHigh);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeHigh(comet.address, secondNewSupplyPerYearInterestRateSlopeHigh, {
-        gasPrice: 0
-      });
+      .setSupplyPerYearInterestRateSlopeHigh(comet.address, secondNewSupplyPerYearInterestRateSlopeHigh);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeHigh
@@ -1499,19 +1402,15 @@ scenario(
 
     const newSupplyPerYearInterestRateSlopeHigh = oldSupplyPerYearInterestRateSlopeHigh + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .setSupplyPerYearInterestRateSlopeHigh(comet.address, newSupplyPerYearInterestRateSlopeHigh, {
-        gasPrice: 0
-      });
+      .setSupplyPerYearInterestRateSlopeHigh(comet.address, newSupplyPerYearInterestRateSlopeHigh);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeHigh
     ).to.be.equal(newSupplyPerYearInterestRateSlopeHigh);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.supplyPerSecondInterestRateSlopeHigh()).toBigInt()).to.be.equal(
       newSupplyPerYearInterestRateSlopeHigh / SECONDS_PER_YEAR
@@ -1552,17 +1451,15 @@ scenario(
 
     const newSupplyPerYearInterestRateBase = oldSupplyPerYearInterestRateBase + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateBase(comet.address, newSupplyPerYearInterestRateBase, { gasPrice: 0 });
+      .setSupplyPerYearInterestRateBase(comet.address, newSupplyPerYearInterestRateBase);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateBase
     ).to.be.equal(newSupplyPerYearInterestRateBase);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.supplyPerSecondInterestRateBase()).toBigInt()).to.be.equal(
       newSupplyPerYearInterestRateBase / SECONDS_PER_YEAR
@@ -1583,19 +1480,17 @@ scenario(
     const firstNewSupplyPerYearInterestRateBase = oldSupplyPerYearInterestRateBase + 1n;
     const secondNewSupplyPerYearInterestRateBase = firstNewSupplyPerYearInterestRateBase + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateBase(comet.address, firstNewSupplyPerYearInterestRateBase, { gasPrice: 0 });
+      .setSupplyPerYearInterestRateBase(comet.address, firstNewSupplyPerYearInterestRateBase);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateBase
     ).to.be.equal(firstNewSupplyPerYearInterestRateBase);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateBase(comet.address, secondNewSupplyPerYearInterestRateBase, { gasPrice: 0 });
+      .setSupplyPerYearInterestRateBase(comet.address, secondNewSupplyPerYearInterestRateBase);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateBase
@@ -1619,17 +1514,15 @@ scenario(
 
     const newSupplyPerYearInterestRateBase = oldSupplyPerYearInterestRateBase + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .setSupplyPerYearInterestRateBase(comet.address, newSupplyPerYearInterestRateBase, { gasPrice: 0 });
+      .setSupplyPerYearInterestRateBase(comet.address, newSupplyPerYearInterestRateBase);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateBase
     ).to.be.equal(newSupplyPerYearInterestRateBase);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.supplyPerSecondInterestRateBase()).toBigInt()).to.be.equal(
       newSupplyPerYearInterestRateBase / SECONDS_PER_YEAR
@@ -1667,15 +1560,13 @@ scenario(
     const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
     const newBorrowKink = oldBorrowKink + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBorrowKink(comet.address, newBorrowKink, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setBorrowKink(comet.address, newBorrowKink);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink).to.be.equal(
       newBorrowKink
     );
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.borrowKink()).toBigInt()).to.be.equal(newBorrowKink);
   }
@@ -1691,15 +1582,13 @@ scenario(
     const firstNewBorrowKink = oldBorrowKink + 1n;
     const secondNewBorrowKink = firstNewBorrowKink + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBorrowKink(comet.address, firstNewBorrowKink, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setBorrowKink(comet.address, firstNewBorrowKink);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink).to.be.equal(
       firstNewBorrowKink
     );
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBorrowKink(comet.address, secondNewBorrowKink, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setBorrowKink(comet.address, secondNewBorrowKink);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink).to.be.equal(
       secondNewBorrowKink
@@ -1719,15 +1608,13 @@ scenario(
     const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
     const newBorrowKink = oldBorrowKink + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(marketAdminSigner).setBorrowKink(comet.address, newBorrowKink, { gasPrice: 0 });
+    await configurator.connect(marketAdminSigner).setBorrowKink(comet.address, newBorrowKink);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink).to.be.equal(
       newBorrowKink
     );
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.borrowKink()).toBigInt()).to.be.equal(newBorrowKink);
   }
@@ -1761,17 +1648,15 @@ scenario(
 
     const newBorrowPerYearInterestRateSlopeLow = oldBorrowPerYearInterestRateSlopeLow + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeLow(comet.address, newBorrowPerYearInterestRateSlopeLow, { gasPrice: 0 });
+      .setBorrowPerYearInterestRateSlopeLow(comet.address, newBorrowPerYearInterestRateSlopeLow);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeLow
     ).to.be.equal(newBorrowPerYearInterestRateSlopeLow);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.borrowPerSecondInterestRateSlopeLow()).toBigInt()).to.be.equal(
       newBorrowPerYearInterestRateSlopeLow / SECONDS_PER_YEAR
@@ -1792,19 +1677,17 @@ scenario(
     const firstNewBorrowPerYearInterestRateSlopeLow = oldBorrowPerYearInterestRateSlopeLow + 1n;
     const secondNewBorrowPerYearInterestRateSlopeLow = firstNewBorrowPerYearInterestRateSlopeLow + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeLow(comet.address, firstNewBorrowPerYearInterestRateSlopeLow, { gasPrice: 0 });
+      .setBorrowPerYearInterestRateSlopeLow(comet.address, firstNewBorrowPerYearInterestRateSlopeLow);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeLow
     ).to.be.equal(firstNewBorrowPerYearInterestRateSlopeLow);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeLow(comet.address, secondNewBorrowPerYearInterestRateSlopeLow, { gasPrice: 0 });
+      .setBorrowPerYearInterestRateSlopeLow(comet.address, secondNewBorrowPerYearInterestRateSlopeLow);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeLow
@@ -1828,17 +1711,15 @@ scenario(
 
     const newBorrowPerYearInterestRateSlopeLow = oldBorrowPerYearInterestRateSlopeLow + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .setBorrowPerYearInterestRateSlopeLow(comet.address, newBorrowPerYearInterestRateSlopeLow, { gasPrice: 0 });
+      .setBorrowPerYearInterestRateSlopeLow(comet.address, newBorrowPerYearInterestRateSlopeLow);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeLow
     ).to.be.equal(newBorrowPerYearInterestRateSlopeLow);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.borrowPerSecondInterestRateSlopeLow()).toBigInt()).to.be.equal(
       newBorrowPerYearInterestRateSlopeLow / SECONDS_PER_YEAR
@@ -1879,19 +1760,15 @@ scenario(
 
     const newBorrowPerYearInterestRateSlopeHigh = oldBorrowPerYearInterestRateSlopeHigh + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeHigh(comet.address, newBorrowPerYearInterestRateSlopeHigh, {
-        gasPrice: 0
-      });
+      .setBorrowPerYearInterestRateSlopeHigh(comet.address, newBorrowPerYearInterestRateSlopeHigh);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeHigh
     ).to.be.equal(newBorrowPerYearInterestRateSlopeHigh);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.borrowPerSecondInterestRateSlopeHigh()).toBigInt()).to.be.equal(
       newBorrowPerYearInterestRateSlopeHigh / SECONDS_PER_YEAR
@@ -1912,23 +1789,17 @@ scenario(
     const firstNewBorrowPerYearInterestRateSlopeHigh = oldBorrowPerYearInterestRateSlopeHigh + 1n;
     const secondNewBorrowPerYearInterestRateSlopeHigh = oldBorrowPerYearInterestRateSlopeHigh + 2n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeHigh(comet.address, firstNewBorrowPerYearInterestRateSlopeHigh, {
-        gasPrice: 0
-      });
+      .setBorrowPerYearInterestRateSlopeHigh(comet.address, firstNewBorrowPerYearInterestRateSlopeHigh);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeHigh
     ).to.be.equal(firstNewBorrowPerYearInterestRateSlopeHigh);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeHigh(comet.address, secondNewBorrowPerYearInterestRateSlopeHigh, {
-        gasPrice: 0
-      });
+      .setBorrowPerYearInterestRateSlopeHigh(comet.address, secondNewBorrowPerYearInterestRateSlopeHigh);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeHigh
@@ -1952,19 +1823,15 @@ scenario(
 
     const newBorrowPerYearInterestRateSlopeHigh = oldBorrowPerYearInterestRateSlopeHigh + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .setBorrowPerYearInterestRateSlopeHigh(comet.address, newBorrowPerYearInterestRateSlopeHigh, {
-        gasPrice: 0
-      });
+      .setBorrowPerYearInterestRateSlopeHigh(comet.address, newBorrowPerYearInterestRateSlopeHigh);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeHigh
     ).to.be.equal(newBorrowPerYearInterestRateSlopeHigh);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.borrowPerSecondInterestRateSlopeHigh()).toBigInt()).to.be.equal(
       newBorrowPerYearInterestRateSlopeHigh / SECONDS_PER_YEAR
@@ -2005,17 +1872,15 @@ scenario(
 
     const newBorrowPerYearInterestRateBase = oldBorrowPerYearInterestRateBase + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateBase(comet.address, newBorrowPerYearInterestRateBase, { gasPrice: 0 });
+      .setBorrowPerYearInterestRateBase(comet.address, newBorrowPerYearInterestRateBase);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateBase
     ).to.be.equal(newBorrowPerYearInterestRateBase);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.borrowPerSecondInterestRateBase()).toBigInt()).to.be.equal(
       newBorrowPerYearInterestRateBase / SECONDS_PER_YEAR
@@ -2036,19 +1901,17 @@ scenario(
     const firstNewBorrowPerYearInterestRateBase = oldBorrowPerYearInterestRateBase + 1n;
     const secondNewBorrowPerYearInterestRateBase = firstNewBorrowPerYearInterestRateBase + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateBase(comet.address, firstNewBorrowPerYearInterestRateBase, { gasPrice: 0 });
+      .setBorrowPerYearInterestRateBase(comet.address, firstNewBorrowPerYearInterestRateBase);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateBase
     ).to.be.equal(firstNewBorrowPerYearInterestRateBase);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateBase(comet.address, secondNewBorrowPerYearInterestRateBase, { gasPrice: 0 });
+      .setBorrowPerYearInterestRateBase(comet.address, secondNewBorrowPerYearInterestRateBase);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateBase
@@ -2072,17 +1935,15 @@ scenario(
 
     const newBorrowPerYearInterestRateBase = oldBorrowPerYearInterestRateBase + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .setBorrowPerYearInterestRateBase(comet.address, newBorrowPerYearInterestRateBase, { gasPrice: 0 });
+      .setBorrowPerYearInterestRateBase(comet.address, newBorrowPerYearInterestRateBase);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateBase
     ).to.be.equal(newBorrowPerYearInterestRateBase);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.borrowPerSecondInterestRateBase()).toBigInt()).to.be.equal(
       newBorrowPerYearInterestRateBase / SECONDS_PER_YEAR
@@ -2123,17 +1984,13 @@ scenario(
 
     const newBaseTrackingSupplySpeed = oldBaseTrackingSupplySpeed + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBaseTrackingSupplySpeed(comet.address, newBaseTrackingSupplySpeed, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setBaseTrackingSupplySpeed(comet.address, newBaseTrackingSupplySpeed);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingSupplySpeed
     ).to.be.equal(newBaseTrackingSupplySpeed);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.baseTrackingSupplySpeed()).toBigInt()).to.be.equal(newBaseTrackingSupplySpeed);
   }
@@ -2152,23 +2009,17 @@ scenario(
     const firstNewBaseTrackingSupplySpeed = oldBaseTrackingSupplySpeed + 1n;
     const secondNewBaseTrackingSupplySpeed = firstNewBaseTrackingSupplySpeed + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBaseTrackingSupplySpeed(comet.address, firstNewBaseTrackingSupplySpeed, {
-        gasPrice: 0
-      });
+      .setBaseTrackingSupplySpeed(comet.address, firstNewBaseTrackingSupplySpeed);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingSupplySpeed
     ).to.be.equal(firstNewBaseTrackingSupplySpeed);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBaseTrackingSupplySpeed(comet.address, secondNewBaseTrackingSupplySpeed, {
-        gasPrice: 0
-      });
+      .setBaseTrackingSupplySpeed(comet.address, secondNewBaseTrackingSupplySpeed);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingSupplySpeed
@@ -2192,19 +2043,15 @@ scenario(
 
     const newBaseTrackingSupplySpeed = oldBaseTrackingSupplySpeed + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .setBaseTrackingSupplySpeed(comet.address, newBaseTrackingSupplySpeed, {
-        gasPrice: 0
-      });
+      .setBaseTrackingSupplySpeed(comet.address, newBaseTrackingSupplySpeed);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingSupplySpeed
     ).to.be.equal(newBaseTrackingSupplySpeed);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.baseTrackingSupplySpeed()).toBigInt()).to.be.equal(newBaseTrackingSupplySpeed);
   }
@@ -2241,17 +2088,13 @@ scenario(
 
     const newBaseTrackingBorrowSpeed = oldBaseTrackingBorrowSpeed + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBaseTrackingBorrowSpeed(comet.address, newBaseTrackingBorrowSpeed, {
-      gasPrice: 0
-    });
+    await configurator.connect(admin.signer).setBaseTrackingBorrowSpeed(comet.address, newBaseTrackingBorrowSpeed);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingBorrowSpeed
     ).to.be.equal(newBaseTrackingBorrowSpeed);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.baseTrackingBorrowSpeed()).toBigInt()).to.be.equal(newBaseTrackingBorrowSpeed);
   }
@@ -2270,23 +2113,17 @@ scenario(
     const firstNewBaseTrackingBorrowSpeed = oldBaseTrackingBorrowSpeed + 1n;
     const secondNewBaseTrackingBorrowSpeed = firstNewBaseTrackingBorrowSpeed + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBaseTrackingBorrowSpeed(comet.address, firstNewBaseTrackingBorrowSpeed, {
-        gasPrice: 0
-      });
+      .setBaseTrackingBorrowSpeed(comet.address, firstNewBaseTrackingBorrowSpeed);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingBorrowSpeed
     ).to.be.equal(firstNewBaseTrackingBorrowSpeed);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .setBaseTrackingBorrowSpeed(comet.address, secondNewBaseTrackingBorrowSpeed, {
-        gasPrice: 0
-      });
+      .setBaseTrackingBorrowSpeed(comet.address, secondNewBaseTrackingBorrowSpeed);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingBorrowSpeed
@@ -2310,19 +2147,15 @@ scenario(
 
     const newBaseTrackingBorrowSpeed = oldBaseTrackingBorrowSpeed + 1n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .setBaseTrackingBorrowSpeed(comet.address, newBaseTrackingBorrowSpeed, {
-        gasPrice: 0
-      });
+      .setBaseTrackingBorrowSpeed(comet.address, newBaseTrackingBorrowSpeed);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingBorrowSpeed
     ).to.be.equal(newBaseTrackingBorrowSpeed);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.baseTrackingBorrowSpeed()).toBigInt()).to.be.equal(newBaseTrackingBorrowSpeed);
   }
@@ -2356,15 +2189,13 @@ scenario(
     const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
     const newBaseBorrowMin = oldBaseBorrowMin + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBaseBorrowMin(comet.address, newBaseBorrowMin, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setBaseBorrowMin(comet.address, newBaseBorrowMin);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin).to.be.equal(
       newBaseBorrowMin
     );
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.baseBorrowMin()).toBigInt()).to.be.equal(newBaseBorrowMin);
   }
@@ -2380,15 +2211,13 @@ scenario(
     const firstNewBaseBorrowMin = oldBaseBorrowMin + 1n;
     const secondNewBaseBorrowMin = firstNewBaseBorrowMin + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBaseBorrowMin(comet.address, firstNewBaseBorrowMin, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setBaseBorrowMin(comet.address, firstNewBaseBorrowMin);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin).to.be.equal(
       firstNewBaseBorrowMin
     );
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).setBaseBorrowMin(comet.address, secondNewBaseBorrowMin, { gasPrice: 0 });
+    await configurator.connect(admin.signer).setBaseBorrowMin(comet.address, secondNewBaseBorrowMin);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin).to.be.equal(
       secondNewBaseBorrowMin
@@ -2408,15 +2237,13 @@ scenario(
     const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
     const newBaseBorrowMin = oldBaseBorrowMin + 1n;
 
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(marketAdminSigner).setBaseBorrowMin(comet.address, newBaseBorrowMin, { gasPrice: 0 });
+    await configurator.connect(marketAdminSigner).setBaseBorrowMin(comet.address, newBaseBorrowMin);
 
     expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin).to.be.equal(
       newBaseBorrowMin
     );
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.baseBorrowMin()).toBigInt()).to.be.equal(newBaseBorrowMin);
   }
@@ -2450,20 +2277,16 @@ scenario(
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
     const newAssetBorrowCollateralFactor = oldAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor, {
-        gasPrice: 0
-      });
+      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
         .borrowCollateralFactor
     ).to.be.equal(newAssetBorrowCollateralFactor);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2485,24 +2308,18 @@ scenario(
     const firstNewAssetBorrowCollateralFactor = oldAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
     const secondNewAssetBorrowCollateralFactor = firstNewAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, firstNewAssetBorrowCollateralFactor, {
-        gasPrice: 0
-      });
+      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, firstNewAssetBorrowCollateralFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
         .borrowCollateralFactor
     ).to.be.equal(firstNewAssetBorrowCollateralFactor);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, secondNewAssetBorrowCollateralFactor, {
-        gasPrice: 0
-      });
+      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, secondNewAssetBorrowCollateralFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
@@ -2522,20 +2339,16 @@ scenario(
     const { assetIndex, assetConfig } = await getActiveAsset(context);
     const newAssetBorrowCollateralFactor = 0n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor, {
-        gasPrice: 0
-      });
+      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
         .borrowCollateralFactor
     ).to.be.equal(newAssetBorrowCollateralFactor);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2557,20 +2370,16 @@ scenario(
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
     const newAssetBorrowCollateralFactor = oldAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor, {
-        gasPrice: 0
-      });
+      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
         .borrowCollateralFactor
     ).to.be.equal(newAssetBorrowCollateralFactor);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2591,20 +2400,16 @@ scenario(
     const { assetIndex, assetConfig } = await getActiveAsset(context);
     const newAssetBorrowCollateralFactor = 0n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor, {
-        gasPrice: 0
-      });
+      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
         .borrowCollateralFactor
     ).to.be.equal(newAssetBorrowCollateralFactor);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2665,20 +2470,16 @@ scenario(
     const oldAssetLiquidateCollateralFactor = assetConfig.liquidateCollateralFactor;
     const newAssetLiquidateCollateralFactor = oldAssetLiquidateCollateralFactor + MIN_FACTOR_INCREMENT;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, newAssetLiquidateCollateralFactor, {
-        gasPrice: 0
-      });
+      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, newAssetLiquidateCollateralFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
         .liquidateCollateralFactor
     ).to.be.equal(newAssetLiquidateCollateralFactor);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2700,24 +2501,18 @@ scenario(
     const firstNewAssetLiquidateCollateralFactor = oldAssetLiquidateCollateralFactor + MIN_FACTOR_INCREMENT;
     const secondNewAssetLiquidateCollateralFactor = firstNewAssetLiquidateCollateralFactor + MIN_FACTOR_INCREMENT;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, firstNewAssetLiquidateCollateralFactor, {
-        gasPrice: 0
-      });
+      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, firstNewAssetLiquidateCollateralFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
         .liquidateCollateralFactor
     ).to.be.equal(firstNewAssetLiquidateCollateralFactor);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, secondNewAssetLiquidateCollateralFactor, {
-        gasPrice: 0
-      });
+      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, secondNewAssetLiquidateCollateralFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
@@ -2742,20 +2537,16 @@ scenario(
     const oldAssetLiquidateCollateralFactor = assetConfig.liquidateCollateralFactor;
     const newAssetLiquidateCollateralFactor = oldAssetLiquidateCollateralFactor + MIN_FACTOR_INCREMENT;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, newAssetLiquidateCollateralFactor, {
-        gasPrice: 0
-      });
+      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, newAssetLiquidateCollateralFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
         .liquidateCollateralFactor
     ).to.be.equal(newAssetLiquidateCollateralFactor);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2808,20 +2599,16 @@ scenario(
     const oldAssetLiquidationFactor = assetConfig.liquidationFactor;
     const newAssetLiquidationFactor = oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, newAssetLiquidationFactor, {
-        gasPrice: 0
-      });
+      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, newAssetLiquidationFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
         .liquidationFactor
     ).to.be.equal(newAssetLiquidationFactor);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2843,24 +2630,18 @@ scenario(
     const firstNewAssetLiquidationFactor = oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
     const secondNewAssetLiquidationFactor = firstNewAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, firstNewAssetLiquidationFactor, {
-        gasPrice: 0
-      });
+      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, firstNewAssetLiquidationFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
         .liquidationFactor
     ).to.be.equal(firstNewAssetLiquidationFactor);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, secondNewAssetLiquidationFactor, {
-        gasPrice: 0
-      });
+      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, secondNewAssetLiquidationFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
@@ -2885,20 +2666,16 @@ scenario(
     const oldAssetLiquidationFactor = assetConfig.liquidationFactor;
     const newAssetLiquidationFactor = oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, newAssetLiquidationFactor, {
-        gasPrice: 0
-      });
+      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, newAssetLiquidationFactor);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
         .liquidationFactor
     ).to.be.equal(newAssetLiquidationFactor);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2949,17 +2726,15 @@ scenario(
     const oldAssetSupplyCap = assetConfig.supplyCap;
     const newAssetSupplyCap = oldAssetSupplyCap + getMinSupplyCapIncrement(assetConfig.decimals);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap, { gasPrice: 0 });
+      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(newAssetSupplyCap);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2981,19 +2756,17 @@ scenario(
     const firstNewAssetSupplyCap = oldAssetSupplyCap + getMinSupplyCapIncrement(assetConfig.decimals);
     const secondNewAssetSupplyCap = firstNewAssetSupplyCap + getMinSupplyCapIncrement(assetConfig.decimals);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, firstNewAssetSupplyCap, { gasPrice: 0 });
+      .updateAssetSupplyCap(comet.address, assetConfig.asset, firstNewAssetSupplyCap);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(firstNewAssetSupplyCap);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, secondNewAssetSupplyCap, { gasPrice: 0 });
+      .updateAssetSupplyCap(comet.address, assetConfig.asset, secondNewAssetSupplyCap);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
@@ -3012,17 +2785,15 @@ scenario(
     const { assetIndex, assetConfig } = await getActiveAsset(context);
     const newAssetSupplyCap = 0n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(admin.signer)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap, { gasPrice: 0 });
+      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(newAssetSupplyCap);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -3046,17 +2817,15 @@ scenario(
     const oldAssetSupplyCap = assetConfig.supplyCap;
     const newAssetSupplyCap = oldAssetSupplyCap + getMinSupplyCapIncrement(assetConfig.decimals);
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap, { gasPrice: 0 });
+      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(newAssetSupplyCap);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -3077,17 +2846,15 @@ scenario(
     const { assetIndex, assetConfig } = await getActiveAsset(context);
     const newAssetSupplyCap = 0n;
 
-    await context.setNextBaseFeeToZero();
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap, { gasPrice: 0 });
+      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap);
 
     expect(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(newAssetSupplyCap);
 
-    await context.setNextBaseFeeToZero();
-    await admin.deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
