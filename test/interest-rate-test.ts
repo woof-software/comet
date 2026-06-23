@@ -92,7 +92,7 @@ describe('interest calculation', function () {
     await collaterals['COMP'].allocateTo(charlie.address, exp(1e10, 18));
   });
 
-  /// Note: testcases in "regular logic" testset are dependent as they form a single flow which can be
+  /// Note: test cases in "regular logic" test set are dependent as they form a single flow which can be
   /// often met in the work of the protocol:
   /// create market -> supply -> supply collateral -> borrow -> borrow more to higher utilization ->
   /// -> supply to decrease utilization
@@ -210,7 +210,7 @@ describe('interest calculation', function () {
         lastUpdatedTime = curUpdatedTime;
       });
 
-      it('but does not change supply indexe (as accrue is performed before supply state changes)', async () => {
+      it('but does not change supply index (as accrue is performed before supply state changes)', async () => {
         expect((await comet.totalsBasic()).baseSupplyIndex).to.equal(exp(1, 15));
       });
 
@@ -309,7 +309,7 @@ describe('interest calculation', function () {
         lastUpdatedTime = curUpdatedTime;
       });
 
-      it('but does not change supply indexe (as accrue is performed before supply state changes)', async () => {
+      it('but does not change supply index (as accrue is performed before supply state changes)', async () => {
         expect((await comet.totalsBasic()).baseSupplyIndex).to.equal(
           exp(1, 15)
         );
@@ -826,7 +826,7 @@ describe('interest calculation', function () {
         expect(index).to.equal(accruedIndex);
       });
 
-      it('utiization corresponds to the market state', async () => {
+      it('utilization corresponds to the market state', async () => {
         const curSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
         const curBorrowIndex = (await comet.totalsBasic()).baseBorrowIndex;
 
@@ -1122,7 +1122,7 @@ describe('interest calculation', function () {
           expect(index).to.equal(accruedIndex);
         });
 
-        it('utiization corresponds to the market state (> 100%)', async () => {
+        it('utilization corresponds to the market state (> 100%)', async () => {
           expect(await comet.getUtilization()).to.be.greaterThanOrEqual(
             exp(1, 18)
           ); // > 100%
@@ -1203,7 +1203,7 @@ describe('interest calculation', function () {
             .transfer(eve.address, BORROW_AMOUNT_TRANSFER)).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
         });
 
-        it('exceeds supported utilization is reached during tranfer', async () => {
+        it('exceeds supported utilization is reached during transfer', async () => {
           // Check that total supply is greater than 0
           expect(currTotalSupplyBase).to.be.greaterThan(0);
 
@@ -1421,7 +1421,7 @@ describe('interest calculation', function () {
           expect(index).to.equal(accruedIndex);
         });
 
-        it('utiization corresponds to the market state (> 100%)', async () => {
+        it('utilization corresponds to the market state (> 100%)', async () => {
           const curSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
           const curBorrowIndex = (await comet.totalsBasic()).baseBorrowIndex;
 
@@ -1563,7 +1563,7 @@ describe('interest calculation', function () {
         lastUpdatedTime = curUpdatedTime;
       });
 
-      it('supply index grows based on the high slope of the interest curve (as supply state is updated after acrrual)', async () => {
+      it('supply index grows based on the high slope of the interest curve (as supply state is updated after accrual)', async () => {
         let expectedSupplyRate = baseSupplyRate;
         expectedSupplyRate = expectedSupplyRate.add(
           supplyLowSlope.mul(supplyKink).div(exp(1, 18))
@@ -1583,7 +1583,7 @@ describe('interest calculation', function () {
         expect(index).to.equal(accruedIndex);
       });
 
-      it('borrow index grows based on the high slope of the interest curve (as supply state is updated after acrrual)', async () => {
+      it('borrow index grows based on the high slope of the interest curve (as supply state is updated after accrual)', async () => {
         let expectedBorrowRate = baseBorrowRate;
         expectedBorrowRate = expectedBorrowRate.add(
           borrowLowSlope.mul(borrowKink).div(exp(1, 18))
@@ -1619,7 +1619,7 @@ describe('interest calculation', function () {
           .div(scaledSupply); // 50% +
         const currentUtilization: BigNumber = await comet.getUtilization();
 
-        /// we can loose some weis of accuracy based on rounding errors
+        /// we can lose some weis of accuracy based on rounding errors
         expect(currentUtilization).to.be.approximately(
           expectedUtilization,
           exp(1, 4)
@@ -1705,7 +1705,7 @@ describe('interest calculation', function () {
         expect(index).to.equal(accruedIndex);
       });
 
-      it('utiization corresponds to the market state (< kink%)', async () => {
+      it('utilization corresponds to the market state (< kink%)', async () => {
         const curSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
         const curBorrowIndex = (await comet.totalsBasic()).baseBorrowIndex;
 
@@ -1721,7 +1721,7 @@ describe('interest calculation', function () {
           .div(scaledSupply); // 100% +
         const currentUtilization: BigNumber = await comet.getUtilization();
 
-        /// we can loose some weis of accuracy based on rounding errors
+        /// we can lose some weis of accuracy based on rounding errors
         expect(currentUtilization).to.be.approximately(
           expectedUtilization,
           exp(1, 4)
@@ -1832,7 +1832,7 @@ describe('interest calculation', function () {
 
         // 2k supplied, 8k borrowed -> withdraw of 2k - 1$ will spike utilization over 8000%, exceeding uint64 limit
         const curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.greaterThanOrEqual(exp(80, 18)); // > 8000%, far exceedint uint64 limit
+        expect(curUtilization).to.be.greaterThanOrEqual(exp(80, 18)); // > 8000%, far exceeding uint64 limit
       });
     });
   });
@@ -2146,7 +2146,7 @@ describe('interest calculation', function () {
         expect(currentUtilization).to.be.approximately(exp(56e16), exp(1, 12));
       });
 
-      it('increase time to bring alice and bob to 1% from liqudiation', async () => {
+      it('increase time to bring alice and bob to 1% from liquidation', async () => {
         await ethers.provider.send('evm_increaseTime', [3600 * 24 * 360]);
         await ethers.provider.send('evm_mine', []);
         await testComet.accrueAccount(ethers.constants.AddressZero);
