@@ -89,14 +89,14 @@ export default migration('1722937909_update_wsteth_and_weeth_price_feeds_on_arbi
       'wstETH',
       WSTETH_ADDRESS,
       'arbitrum',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     const weETH = await deploymentManager.existing(
       'weETH',
       WEETH_ADDRESS,
       'arbitrum',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     newWstETHToETHPriceFeed = wstETHToETHPriceFeed;

@@ -41,7 +41,7 @@ export default migration('1722416736_add_usdc_as_collateral', {
       'USDC',
       USDC_ADDRESS,
       'base',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     const usdcPricefeed = await deploymentManager.existing(
@@ -136,7 +136,7 @@ export default migration('1722416736_add_usdc_as_collateral', {
       'USDC',
       USDC_ADDRESS,
       'base',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     const usdcAssetConfig = {
