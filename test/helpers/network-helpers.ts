@@ -1,5 +1,6 @@
 import hre from 'hardhat';
 import { ethers } from 'hardhat';
+import { BigNumber, BigNumberish } from 'ethers';
 
 interface EthersBigNumberLike {
   toHexString(): string;
@@ -72,5 +73,49 @@ export async function impersonateAccount(address: string): Promise<void> {
     method: 'hardhat_impersonateAccount',
     params: [address],
   });
+}
+
+// Funds `to` with `amount` of `token` from `whale`'s balance.
+export async function fundFromWhale(
+  token: string,
+  whale: string,
+  to: string,
+  amount: BigNumberish
+): Promise<void> {
+  await impersonateAccount(whale);
+  await setBalance(whale, ethers.utils.parseEther('10').toBigInt());
+  const signer = await ethers.getSigner(whale);
+  const erc20 = new ethers.Contract(
+    token,
+    ['function transfer(address,uint256) returns (bool)'],
+    signer
+  );
+  await erc20.transfer(to, amount);
+}
+
+// Sets an ERC-20 balance directly via storage (no whale needed) using `hardhat_setStorageAt`.
+export async function setErc20Balance(
+  token: string,
+  account: string,
+  balance: BigNumberish,
+  slot: BigNumberish = 0
+): Promise<void> {
+  if (!ethers.utils.isAddress(token)) {
+    throw new Error(`${token} is not a valid address`);
+  }
+  if (!ethers.utils.isAddress(account)) {
+    throw new Error(`${account} is not a valid address`);
+  }
+
+  const index = ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(['address', 'uint256'], [account, slot])
+  );
+  const value = ethers.utils.hexZeroPad(BigNumber.from(balance).toHexString(), 32);
+
+  await hre.network.provider.request({
+    method: 'hardhat_setStorageAt',
+    params: [token, index, value],
+  });
+  await hre.network.provider.request({ method: 'evm_mine', params: [] });
 }
 
