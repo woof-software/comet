@@ -106,7 +106,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
     uint internal immutable accrualDescaleFactor;
     
     /// @notice The address of the asset list
-    address immutable public override assetList;
+    address immutable public assetList;
 
     uint8 internal constant MAX_ASSETS_FOR_ASSET_LIST = 24;
 
@@ -433,9 +433,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
             uint64(baseScale)
         );
 
-        (uint256 liquidity, ) = _getLiquidity(account, false, new uint256[](0));
-
-        return (debt + int256(liquidity) >= 0);
+        return (debt + int256( _getCollaterizedLiquidity(account)) >= 0);
     }
 
     /**
@@ -454,18 +452,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
      *      nothing to the liquidity calculation, making the account easier to liquidate.
      */
     function isLiquidatable(address account) override public view returns (bool) {
-        int104 principal = userBasic[account].principal;
-
-        if (principal >= 0) return false;
-
-        int256 debt = signedMulPrice(
-            presentValue(principal),
-            getPrice(baseTokenPriceFeed),
-            uint64(baseScale)
-        );
-
-        (uint256 liquidity, ) = _getLiquidity(account, true, new uint256[](0));
-        return debt + int256(liquidity) < 0;
+        return ICoreLiquidationModule(liquidationModule).isLiquidatable(account);
     }
 
     /**
@@ -680,21 +667,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
      */
     function divBaseWei(uint n, uint baseWei) internal view returns (uint) {
         return n * baseScale / baseWei;
-    }
-
-    /**
-     * @dev Whether user has a non-zero balance of an asset, given assetsIn flags
-     * @dev _reserved is used to check bits 16-23 of assetsIn
-     */
-    function isInAsset(uint16 assetsIn, uint8 assetOffset, uint8 _reserved) internal pure returns (bool) {
-        if (assetOffset < 16) {
-            // check bit in assetsIn (for bits 0-15)
-            return (assetsIn & (uint16(1) << assetOffset)) != 0;
-        } else if (assetOffset < 24) {
-            // check bit in reserved (for bits 16-23)
-            return (_reserved & (uint8(1) << (assetOffset - 16))) != 0;
-        }
-        return false; // if assetOffset >= 24 (should not happen)
     }
 
     /**
@@ -1348,29 +1320,29 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /// @notice Liquidation module hook for updating collateral balance of an account
-    function updateCollateral(address account, AssetInfo memory collateralInfo, uint128 seizedAmount) external override onlyLiquidationModule {
+    function updateCollateral(address account, uint8 index, uint128 seizedAmount) external onlyLiquidationModule {
+        AssetInfo memory collateralInfo = IAssetList(assetList).getAssetInfo(index);
         uint128 initialUserBalance = userCollateral[account][collateralInfo.asset].balance;
 
         userCollateral[account][collateralInfo.asset].balance -= seizedAmount;
         totalsCollateral[collateralInfo.asset].totalSupplyAsset -= seizedAmount;
 
-        updateAssetsIn(account, collateralInfo, initialUserBalance, userCollateral[account][collateralInfo.asset].balance);
+        updateAssetsIn(account, collateralInfo, initialUserBalance, initialUserBalance - seizedAmount);
     }
 
     /// @notice Liquidation module hook for updating debt and principal of an account
     function updateDebtAndPrincipal(
         address account,
-        int104 oldPrincipal,
         int256 newBalance
-    ) external override onlyLiquidationModule returns (int256 oldBalance) {
+    ) external onlyLiquidationModule {
+        UserBasic memory accountUser = userBasic[account];
+        int104 oldPrincipal = accountUser.principal;
         int104 newPrincipal = principalValue(newBalance);
 
-        UserBasic memory accountUser = userBasic[account];
+
         updateBasePrincipal(account, accountUser, newPrincipal);
 
         totalBorrowBase -= uint104(newPrincipal - oldPrincipal);
-
-        oldBalance = presentValue(oldPrincipal);
     }
 
     function setLiquidationModule(address newLiquidationModule) external {
@@ -1378,76 +1350,46 @@ contract CometWithExtendedAssetList is CometMainInterface {
         liquidationModule = newLiquidationModule;
     }
 
-    /// @notice Helper for getting the user basic information as a struct, not tuple
-    function getUserBasic(address account) override external view returns (UserBasic memory) {
-        return userBasic[account];
-    }
-
-    /// @notice external wrapper for the internal isInAsset function
-    function isInAssetExternal(uint16 assetsIn, uint8 assetOffset, uint8 _reserved) override external pure returns (bool) {
-        return isInAsset(assetsIn, assetOffset, _reserved);
-    }
-
-    /// @notice external wrapper for the internal presentValue function
-    function presentValueExternal(int104 principalValue_) override external view returns (int256) {
-        return presentValue(principalValue_);
-    }
-
     /**
     * @notice The internal method which abstracts the account's collateral value calculation
     * @param account The address of the account
-    * @param liquidation Whether to use liquidation factors or borrow factors in the calculation
-    * @param fetchedCollateralPrices Optional array of collateral prices to use instead of fetching them from the price feeds
     * @return liquidity collateral-factor-weighted sum of collateral USD value for the account
-    * @return collateralPrices array of cached collaterals prices
     */
-    function _getLiquidity(address account, bool liquidation, uint256[] memory fetchedCollateralPrices) internal view returns (uint256 liquidity, uint256[] memory collateralPrices) {
+    function _getCollaterizedLiquidity(address account) internal view returns (uint256 liquidity) {
         uint16 assetsIn = userBasic[account].assetsIn;
         uint8 _reserved = userBasic[account]._reserved;
         uint256 newAmount;
         AssetInfo memory asset;
 
-        fetchedCollateralPrices.length == 0 ? collateralPrices = new uint256[](numAssets) : collateralPrices = fetchedCollateralPrices;
         for (uint8 i; i < numAssets; ++i) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 asset = getAssetInfo(i);
                 
-                if (liquidation) {
-                    // Skip assets that do not count toward the liquidation threshold. It avoids getPrice() call for price feed
-                    // so in case if excluded asset's oracle reverts (e.g. stale, broken, decommissioned),
-                    // it won't block the entire liquidation check, and won't paralyze liquidations of accounts which hold it.
-                    if (asset.liquidateCollateralFactor == 0) continue;
-                } else {
-                    // Block ALL borrow-side actions when the borrower still holds deactivated collateral.
-                    // This revert is intentionally broad: it prevents borrowing, withdrawing other
-                    // collateral, and transferring — even if the remaining active collateral would
-                    // pass the collateralization check on its own. The purpose is to force the
-                    // borrower to withdraw the deactivated collateral FIRST before doing anything
-                    // else (see the deactivation lifecycle comment on isCollateralDeactivated).
-                    //
-                    // If the borrower cannot withdraw the deactivated collateral without becoming
-                    // under-collateralized, they are stuck and must wait for liquidation.
-                    if (isCollateralDeactivated(asset.offset)) revert TokenIsDeactivated(asset.asset);
+                // Block ALL borrow-side actions when the borrower still holds deactivated collateral.
+                // This revert is intentionally broad: it prevents borrowing, withdrawing other
+                // collateral, and transferring — even if the remaining active collateral would
+                // pass the collateralization check on its own. The purpose is to force the
+                // borrower to withdraw the deactivated collateral FIRST before doing anything
+                // else (see the deactivation lifecycle comment on isCollateralDeactivated).
+                //
+                // If the borrower cannot withdraw the deactivated collateral without becoming
+                // under-collateralized, they are stuck and must wait for liquidation.
+                if (isCollateralDeactivated(asset.offset)) revert TokenIsDeactivated(asset.asset);
 
-                    // Mechanism to skip assets with no borrowing power. It avoids getPrice() call price feed,
-                    // so in case if excluded asset's oracle reverts (e.g. stale, broken, decommissioned),
-                    // it won't block the entire collateralization check, and won't paralyze borrows and transfers.
-                    if (asset.borrowCollateralFactor == 0) { 
-                        continue; 
-                    }
+                // Mechanism to skip assets with no borrowing power. It avoids getPrice() call price feed,
+                // so in case if excluded asset's oracle reverts (e.g. stale, broken, decommissioned),
+                // it won't block the entire collateralization check, and won't paralyze borrows and transfers.
+                if (asset.borrowCollateralFactor == 0) { 
+                    continue; 
                 }
-
-                if (fetchedCollateralPrices.length == 0) collateralPrices[i] = getPrice(asset.priceFeed);
 
                 newAmount = mulPrice(
                     userCollateral[account][asset.asset].balance,
-                    collateralPrices[i],
+                    getPrice(asset.priceFeed),
                     asset.scale
                 );
-                liquidity += mulFactor(
-                    newAmount,
-                    liquidation ? asset.liquidateCollateralFactor : asset.borrowCollateralFactor
-                );
+                
+                liquidity += mulFactor(newAmount, asset.borrowCollateralFactor);
             }
         }
     }

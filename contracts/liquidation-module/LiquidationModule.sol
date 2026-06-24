@@ -2,7 +2,7 @@
 pragma solidity =0.8.15;
 
 import { ILiquidationModule } from "../interfaces/liquidation-module/ILiquidationModule.sol";
-import { CoreLiquidationModule, CometStorage } from "./CoreLiquidationModule.sol";
+import { CoreLiquidationModule, ICometData } from "./CoreLiquidationModule.sol";
 
 /**
  * @title Liquidation Module
@@ -75,10 +75,10 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
             return;
         }
 
-        CometStorage.UserBasic memory accountUser = comet.getUserBasic(account);
+        ICometData.UserBasic memory accountUser = comet.userBasic(account);
 
         uint256 debtValue = mulPrice(
-            uint256(-comet.presentValueExternal(accountUser.principal)),
+            uint256(-comet.presentValue(accountUser.principal)),
             getPrice(comet.baseTokenPriceFeed()),
             baseScale
         );

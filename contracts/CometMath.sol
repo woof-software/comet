@@ -89,4 +89,19 @@ contract CometMath {
     function signedMulPrice(int256 n, uint256 price, uint64 fromScale) internal pure returns (int256) {
         return n * signed256(price) / int256(uint256(fromScale));
     }
+
+    /**
+     * @dev Whether user has a non-zero balance of an asset, given assetsIn flags
+     * @dev _reserved is used to check bits 16-23 of assetsIn
+     */
+    function isInAsset(uint16 assetsIn, uint8 assetOffset, uint8 _reserved) internal pure returns (bool) {
+        if (assetOffset < 16) {
+            // check bit in assetsIn (for bits 0-15)
+            return (assetsIn & (uint16(1) << assetOffset)) != 0;
+        } else if (assetOffset < 24) {
+            // check bit in reserved (for bits 16-23)
+            return (_reserved & (uint8(1) << (assetOffset - 16))) != 0;
+        }
+        return false; // if assetOffset >= 24 (should not happen)
+    }
 }
