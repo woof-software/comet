@@ -16,6 +16,7 @@ interface ICoreLiquidationModule is ICoreLiquidationModuleErrors, ICoreLiquidati
         address asset;
         uint8 index;
         uint256 seizedAmount;
+        uint256 seizedValue;
         uint256 wantedCollateralValue;
     }
 

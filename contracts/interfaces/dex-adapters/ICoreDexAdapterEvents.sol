@@ -12,4 +12,9 @@ interface ICoreDexAdapterEvents {
     /// @param amountIn Amount of the `collateral` swapped.
     /// @param amountOut Amount of the `baseAsset` sent to the liquidation module after swap.
     event Swap(address collateral, uint256 amountIn, uint256 amountOut);
+
+    /// @notice Emitted when the redundant swap fails and the collateral is swept back to Comet for absorption.
+    /// @param collateral Address of the collateral that could not be swapped.
+    /// @param amountIn Amount of the `collateral` swept back to Comet.
+    event RedundantSwapFailed(address collateral, uint256 amountIn);
 }

@@ -21,7 +21,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     uint256 internal constant BPS = 10_000;
 
     /// @notice used for DEX-path liquidations.
-    address public dexAdapter;
+    ICoreDexAdapter public dexAdapter;
 
     /// @notice Executor penalty on the DEX route.
     uint256 public penaltyBps;
@@ -49,12 +49,12 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         address multisig_,
         address[] memory executors_,
         address[] memory pausers_,
-        address dexAdapter_,
+        ICoreDexAdapter dexAdapter_,
         uint256 borderHF_,
         uint256 healthPositionHF_,
         uint256 penaltyBps_
     ) CoreLiquidationModule(comet_, multisig_, executors_, pausers_) {
-        if (dexAdapter_ == address(0)) revert ZeroAddress();
+        if (address(dexAdapter_) == address(0)) revert ZeroAddress();
         if (borderHF_ == 0 || borderHF_ >= healthPositionHF_) revert InvalidHFBoundaries();
         if (penaltyBps_ > BPS) revert InvalidPenaltyBps();
 
@@ -115,8 +115,9 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     /**
      * @notice Seizes and swaps collaterals into the base asset through the DEX adapter, pays the executor a
      *         `penaltyBps` cut of the realized base, and sends the remainder to Comet to clear the debt.
-     * @dev Reverts if a swap fails, bad debt occurs, or if the base left for Comet after the penalty cannot
-     *      cover the cleared debt.
+     * @dev If an individual swap fails, the adapter sweeps that collateral back to Comet and it is absorbed
+     *      instead of sold; Reverts if bad debt occurs, or if the base left for Comet after the penalty cannot cover
+     *      the debt.
      * @param absorber The recipient of the incentive.
      * @param account  The account being liquidated.
      * @param swapData Per-collateral router calldata, aligned to the seizure plan order.
@@ -134,10 +135,16 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         if (swapData.length != plan.length) revert InvalidSwapDataLength();
 
         uint256 baseBefore = baseToken.balanceOf(address(this));
+        uint256 unswappedBaseAmount;
+        uint256 basePrice = getPrice(comet.baseTokenPriceFeed());
 
         for (uint8 i; i < plan.length; ++i) {
-            ICometLiquidationInterface(address(comet)).seizeCollateralForDex(account, plan[i].index, uint128(plan[i].seizedAmount), dexAdapter);
-            ICoreDexAdapter(dexAdapter).swap(plan[i].asset, swapData[i]);
+            if (plan[i].seizedAmount == 0) continue;
+            ICometLiquidationInterface(address(comet)).seizeCollateralForDex(account, plan[i].index, uint128(plan[i].seizedAmount), address(dexAdapter));
+            // A failed swap means the adapter swept that collateral back to Comet (it is absorbed instead of
+            // sold), so its debt-offset value must not be expected back in base.
+            if (!dexAdapter.swap(plan[i].asset, swapData[i]))
+                unswappedBaseAmount += divPrice(plan[i].seizedValue, basePrice, baseScale);
         }
 
         uint256 baseReceived = baseToken.balanceOf(address(this)) - baseBefore;
@@ -146,11 +153,14 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
         if (badDebt) revert DexBadDebt();
 
+        uint256 requiredBase = basePaidOut > unswappedBaseAmount ? basePaidOut - unswappedBaseAmount : 0;
+
+        // Penalty is taken only from the realized swap amount.
         uint256 penalty = baseReceived * penaltyBps / BPS;
         uint256 baseForComet = baseReceived - penalty;
-        if (baseForComet < basePaidOut) revert SwapProceedsTooLow(baseReceived, basePaidOut + penalty);
+        if (baseForComet < requiredBase) revert SwapProceedsTooLow(baseReceived, requiredBase + penalty);
 
-        baseToken.safeTransfer(address(comet), baseForComet);
+        if (baseForComet > 0) baseToken.safeTransfer(address(comet), baseForComet);
         if (penalty > 0) baseToken.safeTransfer(msg.sender, penalty);
 
         emit DexLiquidate(absorber, account, msg.sender, baseReceived, baseForComet, penalty);

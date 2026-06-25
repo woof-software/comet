@@ -31,6 +31,8 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
     uint8 private constant WRAP_ETH = 0x0b;
     /// @dev Universal Router command: unwrap the router's WETH into ETH.
     uint8 private constant UNWRAP_WETH = 0x0c;
+    /// @dev Universal Router command: transfer token to a specified recipient.
+    uint8 private constant TRANSFER = 0x05;
 
     /// @notice Universal Router commands for a swap with an ERC-20 input and output: V4_SWAP.
     bytes public constant SWAP_COMMANDS = abi.encodePacked(V4_SWAP);
@@ -38,6 +40,8 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
     bytes public constant UNWRAP_SWAP_COMMANDS = abi.encodePacked(UNWRAP_WETH, V4_SWAP);
     /// @notice Universal Router commands for a WETH (native) output: V4_SWAP, WRAP_ETH.
     bytes public constant SWAP_WRAP_COMMANDS = abi.encodePacked(V4_SWAP, WRAP_ETH);
+    /// @notice Universal Router command to return the router's pre-transferred collateral to Comet on swap failure: TRANSFER.
+    bytes public constant TRANSFER_COMMAND = abi.encodePacked(TRANSFER);
 
     /// @notice V4 action sequence for a single-pool swap: SWAP_EXACT_IN_SINGLE, SETTLE, TAKE.
     bytes public constant SINGLE_ACTIONS = abi.encodePacked(uint8(0x06), uint8(0x0b), uint8(0x0e));
@@ -136,12 +140,34 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
     /**
      * @inheritdoc CoreDexAdapter
      * @dev Routes the fallback swap through the Uniswap V4 Universal Router. A WETH collateral is unwrapped to
-     *      native ETH before the swap; a WETH base asset is produced by wrapping the native ETH output.
+     *      native ETH before the swap; a WETH base asset is produced by wrapping the native ETH output. If no
+     *      route is configured, or the router swap reverts (including its own amountOutMinimum enforcement),
+     *      the collateral is sent to Comet for absorption and the function returns false instead of reverting.
      */
-    function _redundantSwap(IERC20 collateralToken, uint256 amountIn, uint256 minAmountOut) internal override {
-        (bytes memory commands, bytes[] memory inputs) = _buildCommandsAndInputs(address(collateralToken), amountIn, minAmountOut);
+    function _redundantSwap(IERC20 collateralToken, uint256 amountIn, uint256 minAmountOut) internal override returns (bool) {
+        address collateral = address(collateralToken);
+
+        // No redundant route configured for this collateral: sweep it straight to Comet for absorption.
+        if (routeKind[collateral] == RouteKind.Unset) {
+            collateralToken.safeTransfer(address(comet), amountIn);
+            emit RedundantSwapFailed(collateral, amountIn);
+            return false;
+        }
+
+        (bytes memory commands, bytes[] memory inputs) = _buildCommandsAndInputs(collateral, amountIn, minAmountOut);
         collateralToken.safeTransfer(redundantRouter, amountIn);
-        IUniversalRouter(redundantRouter).execute(commands, inputs, block.timestamp);
+
+        try IUniversalRouter(redundantRouter).execute(commands, inputs, block.timestamp) {
+            return true;
+        } catch {
+            // Transfer collateral back to the Comet.
+            bytes[] memory transferInputs = new bytes[](1);
+            transferInputs[0] = abi.encode(collateral, address(comet), amountIn);
+            IUniversalRouter(redundantRouter).execute(TRANSFER_COMMAND, transferInputs, block.timestamp);
+
+            emit RedundantSwapFailed(collateral, amountIn);
+            return false;
+        }
     }
 
     /**

@@ -11,8 +11,9 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
  * @author Woof
  * @notice Base adapter that swaps collateral seized during liquidation into the Comet base asset via an external DEX.
  * @dev Bound 1:1 to a Comet market and callable only by its liquidation module. Each swap tries the core
- *      router first (_coreSwap) and falls back to the redundant router (_redundantSwap) on failure. Concrete
- *      adapters implement the protocol-specific swap routines.
+ *      router first (_coreSwap) and falls back to the redundant router (executeRedundantSwap) on failure or empty swap data. If
+ *      the redundant route also fails, the collateral is swept back to Comet and swap() returns false so the
+ *      module can absorb it. Concrete adapters implement the protocol-specific swap routines.
  * @dev Configuration is immutable; changing it requires a redeployment of the adapter and pointing liquidation module to a new adapter.
  * @custom:security-contact dmitriy@woof.software
  */
@@ -56,7 +57,7 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
     }
 
     /// @inheritdoc ICoreDexAdapter
-    function swap(address collateral, bytes calldata swapData) external {
+    function swap(address collateral, bytes calldata swapData) external returns (bool) {
         if (msg.sender != module) revert Unathorized();
 
         IERC20 collateralToken = IERC20(collateral);
@@ -64,10 +65,16 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
         if (amountIn == 0) revert ZeroAmountIn();
 
         uint256 minAmountOut = calculateMinAmountOut(collateral, amountIn);
-
         uint256 baseBalBefore = baseAsset.balanceOf(address(this));
-        bool status = _coreSwap(collateralToken, amountIn, minAmountOut, swapData);
-        if (!status) _redundantSwap(collateralToken, amountIn, minAmountOut);
+
+        bool coreStatus;
+        if (swapData.length != 0) {
+            coreStatus = _coreSwap(collateralToken, amountIn, minAmountOut, swapData);
+        }
+
+        if (!coreStatus && !_redundantSwap(collateralToken, amountIn, minAmountOut)) {
+            return false;
+        }
 
         uint256 baseBalAfter = baseAsset.balanceOf(address(this));
         uint256 amountOut = baseBalAfter - baseBalBefore;
@@ -75,6 +82,7 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
         baseAsset.safeTransfer(msg.sender, baseBalAfter);
 
         emit Swap(collateral, amountIn, amountOut);
+        return true;
     }
 
     /**
@@ -99,7 +107,7 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
     /**
      * @notice Swaps `collateralToken` into the base asset on the core (primary) router.
      * @dev Implemented per DEX by concrete adapters. Should return false rather than revert on a failed
-     *      swap, so the caller can fall back to the redundant router.
+     *      swap, so the swap can fall back to the redundant router.
      * @param collateralToken The collateral token being swapped.
      * @param amountIn The amount of collateral to swap.
      * @param minAmountOut The minimum acceptable base-asset output.
@@ -110,10 +118,12 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
 
     /**
      * @notice Swaps `collateralToken` into the base asset on the redundant (fallback) router.
-     * @dev Implemented per DEX by concrete adapters. Called only when _coreSwap returns false.
+     * @dev Implemented per DEX by concrete adapters. Called when the core swap is skipped or fails.
+     * @dev On failed swap, must return false and sweep the collateral back to the Comet to proceed with absorb liquidation route.
      * @param collateralToken The collateral token being swapped.
      * @param amountIn The amount of collateral to swap.
      * @param minAmountOut The minimum acceptable base-asset output.
+     * @return status True if the collateral was swapped into the base asset; false if it was swept to Comet.
      */
-    function _redundantSwap(IERC20 collateralToken, uint256 amountIn, uint256 minAmountOut) internal virtual;
+    function _redundantSwap(IERC20 collateralToken, uint256 amountIn, uint256 minAmountOut) internal virtual returns (bool status);
 }

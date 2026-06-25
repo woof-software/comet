@@ -220,7 +220,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
                     wantedCollateralValue = collateralValue;
                 }
             }
-            seizures[seizuresCount] = Seizure({ asset: collateralInfo.asset, index: i, seizedAmount: seizedAmount, wantedCollateralValue: wantedCollateralValue });
+            seizures[seizuresCount] = Seizure({ asset: collateralInfo.asset, index: i, seizedAmount: seizedAmount, seizedValue: seizedValue, wantedCollateralValue: wantedCollateralValue });
             unchecked { ++seizuresCount; }
 
             // cycle values update
