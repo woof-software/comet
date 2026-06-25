@@ -70,9 +70,6 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         baseToken = IERC20(comet.baseToken());
 
         partialLiquidationEnabled = true;
-
-        // The DAO is Comet's governor.
-        _setDAO(comet.governor());
     }
 
     /**
@@ -106,6 +103,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         ) = _computeSeizurePlan(account);
 
         for (uint8 i; i < plan.length; ++i) {
+            if (plan[i].seizedAmount == 0 ) continue;
             emit AbsorbCollateral(absorber, account, plan[i].asset, plan[i].seizedAmount, plan[i].wantedCollateralValue);
             // Collaterals storage update
             ICometLiquidationInterface(address(comet)).updateCollateral(account, plan[i].index, uint128(plan[i].seizedAmount));
@@ -129,7 +127,6 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     {
         ICometData.UserBasic memory accountUser = comet.userBasic(account);
         if (accountUser.principal > 0) revert NotLiquidatable();
-        int104 oldPrincipal = accountUser.principal;
 
         // replicate isLiquidatable() and cache collateral prices for this function execution
         // liquidity represents value of all collateral's weighted by LCF
@@ -145,7 +142,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         uint256 minDebtValue = mulPrice(comet.baseBorrowMin(), basePrice, baseScale);
         
         Seizure[] memory seizures = new Seizure[](numAssets);
-        uint256 count;
+        uint256 seizuresCount;
 
         ICometData.AssetInfo memory collateralInfo;
         uint256 collateralAmount;
@@ -224,18 +221,18 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
                     wantedCollateralValue = collateralValue;
                 }
             }
-            seizures[count] = Seizure({ asset: collateralInfo.asset, index: i, seizedAmount: seizedAmount, wantedCollateralValue: wantedCollateralValue });
-            unchecked { ++count; }
+            seizures[seizuresCount] = Seizure({ asset: collateralInfo.asset, index: i, seizedAmount: seizedAmount, wantedCollateralValue: wantedCollateralValue });
+            unchecked { ++seizuresCount; }
 
             // cycle values update
             totalCollateralizedValue -= mulFactor(wantedCollateralValue, collateralInfo.borrowCollateralFactor);
             debtRemainingValue -= seizedValue;
         }
 
-        Seizure[] memory plan = new Seizure[](count);
-        for (uint256 j; j < count; ++j) plan[j] = seizures[j];
+        Seizure[] memory plan = new Seizure[](seizuresCount);
+        for (uint256 j; j < seizuresCount; ++j) plan[j] = seizures[j];
 
-        return (plan, oldPrincipal, debtRemainingValue, totalCollateralizedValue, basePrice);
+        return (plan, accountUser.principal, debtRemainingValue, totalCollateralizedValue, basePrice);
     }
 
     /**
@@ -259,22 +256,23 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         // After the liquidation user can either have debt closed (balance == 0) or "healthy" debt (negative balance)
         int256 newBalance = -signed256(divPrice(debtRemainingValue, basePrice, baseScale));
 
-        // If balance is negative but not "healthy" - bad debt occured (no asset brought HF to targetHF).
+        // If balance is negative but not "healthy" - bad debt occured. (no asset brought HF to targetHF)
+        // Zero out any residual shortfall as bad debt absorbed by the protocol.
         if (newBalance < 0 && totalCollateralizedValue == 0) {
             badDebt = true;
             newBalance = 0;
         }
 
-        int256 oldBalance = comet.presentValue(oldPrincipal);
         ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(account, newBalance);
 
+        int256 oldBalance = comet.presentValue(oldPrincipal);
         basePaidOut = unsigned256(newBalance - oldBalance); // Base tokens effectively paid out to the account
     }
 
     /**
      * @notice Toggle the liquidation mode. Multisig only (parameter setter).
      */
-    function liquidationModeToggle(bool _partialLiquidationEnabled) external onlyMultisig {
+    function liquidationModeToggle(bool _partialLiquidationEnabled) external onlyRole(PAUSER_ROLE) {
         if (partialLiquidationEnabled == _partialLiquidationEnabled) revert LiquidationModeAlreadySet();
 
         partialLiquidationEnabled = _partialLiquidationEnabled;

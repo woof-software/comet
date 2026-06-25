@@ -82,12 +82,12 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @param account  The underwater account to liquidate.
      * @param swapData Per-collateral router calldata for the DEX route, aligned to the seizure plan order.
      */
-    function liquidate(address absorber, address account, bytes[] calldata swapData) external onlyExecutor {
+    function liquidate(address absorber, address account, bytes[] calldata swapData) external onlyRole(EXECUTOR_ROLE) {
         comet.accrueAccount(account);
 
         // When the DEX path is paused, every keeper liquidation falls back to the default
         // absorb flow regardless of the account's HF.
-        if (dexPaused) {
+        if (dexRoutePaused) {
             _liquidate(absorber, account);
             return;
         }
@@ -159,7 +159,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @dev Reverts if the new value is zero or not strictly less than the current healthPositionHF.
      * @param newBorderHF New BORDER_HF value in 1e18 scale.
      */
-    function setBorderHF(uint256 newBorderHF) external onlyMultisig {
+    function setBorderHF(uint256 newBorderHF) external onlyRole(MULTISIG_ROLE) {
         if (newBorderHF == 0 || newBorderHF >= healthPositionHF) revert InvalidHFBoundaries();
 
         emit BorderHFUpdated(borderHF, newBorderHF);
@@ -171,7 +171,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @dev Reverts if the new value is zero or not strictly greater than the current borderHF.
      * @param newHealthPositionHF New HEALTH_POSITION_HF value in 1e18 scale.
      */
-    function setHealthPositionHF(uint256 newHealthPositionHF) external onlyMultisig {
+    function setHealthPositionHF(uint256 newHealthPositionHF) external onlyRole(MULTISIG_ROLE) {
         if (newHealthPositionHF <= borderHF) revert InvalidHFBoundaries();
 
         emit HealthPositionHFUpdated(healthPositionHF, newHealthPositionHF);
@@ -183,7 +183,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @dev Reverts if the new value exceeds BPS (100%).
      * @param newPenaltyBps New penalty in BPS (1e4 scale).
      */
-    function setPenaltyBps(uint256 newPenaltyBps) external onlyMultisig {
+    function setPenaltyBps(uint256 newPenaltyBps) external onlyRole(MULTISIG_ROLE) {
         if (newPenaltyBps > BPS) revert InvalidPenaltyBps();
 
         emit PenaltyBpsUpdated(penaltyBps, newPenaltyBps);
