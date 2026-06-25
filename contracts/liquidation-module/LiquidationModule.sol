@@ -125,9 +125,10 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         (
             Seizure[] memory plan,
             int104 oldPrincipal,
-            uint256 debtRemainingValue,
-            uint256 totalCollateralizedValue,
-            uint256 basePrice
+            int104 newPrincipal,
+            uint256 basePayout,
+            uint256 basePayoutValue,
+            bool badDebt
         ) = _computeSeizurePlan(account);
 
         if (swapData.length != plan.length) revert InvalidSwapDataLength();
@@ -141,7 +142,8 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
         uint256 baseReceived = baseToken.balanceOf(address(this)) - baseBefore;
 
-        (uint256 basePaidOut, bool badDebt) = _updateDebt(account, oldPrincipal, debtRemainingValue, totalCollateralizedValue, basePrice);
+        ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(account, newBalance);
+        emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
         if (badDebt) revert DexBadDebt();
 
         uint256 penalty = baseReceived * penaltyBps / BPS;
