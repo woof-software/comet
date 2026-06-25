@@ -13,5 +13,5 @@ import { ILiquidationModuleEvents } from "./ILiquidationModuleEvents.sol";
  * @custom:security-contact dmitriy@woof.software
  */
 interface ILiquidationModule is ILiquidationModuleErrors, ILiquidationModuleEvents {
-    function liquidate(address absorber, address account, bytes calldata swapData) external;
+    function liquidate(address absorber, address account, bytes[] calldata swapData) external;
 }

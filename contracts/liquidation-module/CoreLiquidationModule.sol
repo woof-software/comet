@@ -10,6 +10,7 @@ import { IAssetList } from "../IAssetList.sol";
 import { CometMath } from "../CometMath.sol";
 import { IPriceFeed } from "../IPriceFeed.sol";
 import { CometExtInterface } from "../CometExtInterface.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title Core Liquidation Module
@@ -30,6 +31,9 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     ICometInterface public immutable comet;
 
     IAssetList immutable public assetList;
+
+    /// @notice The Comet base asset; collateral is swapped into it on the DEX route.
+    IERC20 public immutable baseToken;
 
     /// @notice Decimals of the base token
     uint64 public immutable baseScale;
@@ -63,6 +67,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         assetList = IAssetList(comet.assetList());
         numAssets = comet.numAssets();
         baseScale = uint64(comet.baseScale());
+        baseToken = IERC20(comet.baseToken());
 
         partialLiquidationEnabled = true;
 
@@ -92,8 +97,39 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     * @param account  The underwater account whose collateral and debt are being absorbed
     */
     function _liquidate(address absorber, address account) internal {
+        (
+            Seizure[] memory plan,
+            int104 oldPrincipal,
+            uint256 debtRemainingValue,
+            uint256 totalCollateralizedValue,
+            uint256 basePrice
+        ) = _computeSeizurePlan(account);
+
+        for (uint8 i; i < plan.length; ++i) {
+            emit AbsorbCollateral(absorber, account, plan[i].asset, plan[i].seizedAmount, plan[i].wantedCollateralValue);
+            // Collaterals storage update
+            ICometLiquidationInterface(address(comet)).updateCollateral(account, plan[i].index, uint128(plan[i].seizedAmount));
+        }
+
+        (uint256 basePaidOut, ) = _updateDebt(account, oldPrincipal, debtRemainingValue, totalCollateralizedValue, basePrice);
+
+        emit AbsorbDebt(absorber, account, basePaidOut, mulPrice(basePaidOut, basePrice, baseScale));
+    }
+
+    /**
+     * @notice Computes the per-collateral seizure plan for an underwater account.
+     * @param account The underwater account to plan a seizure for.
+     * @return The ordered seizure plan, the account's old principal, the remaining debt value, the remaining
+     *         BCF-weighted collateral value, and the cached base price.
+     */
+    function _computeSeizurePlan(address account)
+        internal
+        view
+        returns (Seizure[] memory, int104, uint256, uint256, uint256)
+    {
         ICometData.UserBasic memory accountUser = comet.userBasic(account);
         if (accountUser.principal > 0) revert NotLiquidatable();
+        int104 oldPrincipal = accountUser.principal;
 
         // replicate isLiquidatable() and cache collateral prices for this function execution
         // liquidity represents value of all collateral's weighted by LCF
@@ -108,6 +144,9 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         (uint256 totalCollateralizedValue, ) = _getLiquidity(accountUser, account, false, collateralPrices);
         uint256 minDebtValue = mulPrice(comet.baseBorrowMin(), basePrice, baseScale);
         
+        Seizure[] memory seizures = new Seizure[](numAssets);
+        uint256 count;
+
         ICometData.AssetInfo memory collateralInfo;
         uint256 collateralAmount;
         uint256 collateralValue;
@@ -185,34 +224,51 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
                     wantedCollateralValue = collateralValue;
                 }
             }
-            emit AbsorbCollateral(absorber, account, collateralInfo.asset, seizedAmount, wantedCollateralValue);
-            
-            // Collaterals storage update
-            ICometLiquidationInterface(address(comet)).updateCollateral(account, i, uint128(seizedAmount));
+            seizures[count] = Seizure({ asset: collateralInfo.asset, index: i, seizedAmount: seizedAmount, wantedCollateralValue: wantedCollateralValue });
+            unchecked { ++count; }
 
             // cycle values update
             totalCollateralizedValue -= mulFactor(wantedCollateralValue, collateralInfo.borrowCollateralFactor);
             debtRemainingValue -= seizedValue;
         }
 
-        int104 oldPrincipal = accountUser.principal;
-        int256 oldBalance = comet.presentValue(oldPrincipal);
+        Seizure[] memory plan = new Seizure[](count);
+        for (uint256 j; j < count; ++j) plan[j] = seizures[j];
 
+        return (plan, oldPrincipal, debtRemainingValue, totalCollateralizedValue, basePrice);
+    }
+
+    /**
+     * @notice Applies the debt/principal update after a liquidation.
+     * @dev Writes off any residual shortfall as bad debt by zeroing the balance.
+     * @param account The liquidated account.
+     * @param oldPrincipal The account's principal before liquidation.
+     * @param debtRemainingValue The remaining debt value after seizing collateral (USD, price-scaled).
+     * @param totalCollateralizedValue The remaining BCF-weighted collateral value.
+     * @param basePrice The base asset price.
+     * @return basePaidOut The base amount paid out to the account.
+     * @return badDebt True when residual debt was written off as bad debt absorbed by the protocol.
+     */
+    function _updateDebt(
+        address account,
+        int104 oldPrincipal,
+        uint256 debtRemainingValue,
+        uint256 totalCollateralizedValue,
+        uint256 basePrice
+    ) internal returns (uint256 basePaidOut, bool badDebt) {
         // After the liquidation user can either have debt closed (balance == 0) or "healthy" debt (negative balance)
         int256 newBalance = -signed256(divPrice(debtRemainingValue, basePrice, baseScale));
 
-        // If balance is negative but not "healthy" - bad debt occured. (no asset brought HF to targetHF)
-        // Zero out any residual shortfall as bad debt absorbed by the protocol.
+        // If balance is negative but not "healthy" - bad debt occured (no asset brought HF to targetHF).
         if (newBalance < 0 && totalCollateralizedValue == 0) {
+            badDebt = true;
             newBalance = 0;
         }
 
+        int256 oldBalance = comet.presentValue(oldPrincipal);
         ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(account, newBalance);
 
-        uint256 basePaidOut = unsigned256(newBalance - oldBalance); // Base tokens effectively paid out to the account
-        uint256 valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, baseScale);
-
-        emit AbsorbDebt(absorber, account, basePaidOut, valueOfBasePaidOut);
+        basePaidOut = unsigned256(newBalance - oldBalance); // Base tokens effectively paid out to the account
     }
 
     /**

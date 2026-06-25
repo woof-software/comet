@@ -1321,6 +1321,18 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
     /// @notice Liquidation module hook for updating collateral balance of an account
     function updateCollateral(address account, uint8 index, uint128 seizedAmount) external onlyLiquidationModule {
+        _updateCollateral(account, index, seizedAmount);
+    }
+
+    /// @notice Liquidation module hook for the DEX route: seizes collateral and transfers it to `recipient`
+    ///         (the DEX adapter) so it can be swapped into the base asset.
+    function seizeCollateralForDex(address account, uint8 index, uint128 seizedAmount, address recipient) external onlyLiquidationModule nonReentrant {
+        address asset = _updateCollateral(account, index, seizedAmount);
+
+        doTransferOut(asset, recipient, seizedAmount);
+    }
+
+    function _updateCollateral(address account, uint8 index, uint128 seizedAmount) internal returns (address) {
         AssetInfo memory collateralInfo = IAssetList(assetList).getAssetInfo(index);
         uint128 initialUserBalance = userCollateral[account][collateralInfo.asset].balance;
 
@@ -1328,6 +1340,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         totalsCollateral[collateralInfo.asset].totalSupplyAsset -= seizedAmount;
 
         updateAssetsIn(account, collateralInfo, initialUserBalance, initialUserBalance - seizedAmount);
+
+        return collateralInfo.asset;
     }
 
     /// @notice Liquidation module hook for updating debt and principal of an account

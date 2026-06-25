@@ -12,6 +12,13 @@ import { ICoreLiquidationModuleEvents } from "./ICoreLiquidationModuleEvents.sol
  * @custom:security-contact dmitriy@woof.software
  */
 interface ICoreLiquidationModule is ICoreLiquidationModuleErrors, ICoreLiquidationModuleEvents {
+    struct Seizure {
+        address asset;
+        uint8 index;
+        uint256 seizedAmount;
+        uint256 wantedCollateralValue;
+    }
+
     function liquidate(address absorber, address account) external;
 
     function isLiquidatable(address account) external view returns (bool);
