@@ -124,8 +124,8 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     function _dexLiquidate(address absorber, address account, bytes[] calldata swapData) internal {
         (
             Seizure[] memory plan,
-            int104 oldPrincipal,
-            int104 newPrincipal,
+            int256 oldBalance,
+            int256 newBalance,
             uint256 basePayout,
             uint256 basePayoutValue,
             bool badDebt
