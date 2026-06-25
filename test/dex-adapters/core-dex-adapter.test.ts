@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
+import { Signer } from 'ethers';
 import { OneInchV6CoreAdapter, OneInchV6CoreAdapter__factory } from '../../build/types';
 import {
   RouteConfig,
@@ -20,10 +21,11 @@ describe('CoreDexAdapter', function () {
   let adapterFactory: OneInchV6CoreAdapter__factory;
   let routes: RouteConfig[];
   let baseToken: string;
+  let moduleSigner: Signer;
   let moduleAddress: string;
 
   before(async () => {
-    ({ adapter, adapterFactory, routes, baseToken, moduleAddress } = await setupDexAdapter(market));
+    ({ adapter, adapterFactory, routes, baseToken, moduleSigner, moduleAddress } = await setupDexAdapter(market));
   });
 
   context('constructor', function () {
@@ -92,5 +94,12 @@ describe('CoreDexAdapter', function () {
     await expect(
       adapter.connect(outsider).swap(TOKENS.WBTC.address, '0x')
     ).to.be.revertedWithCustomError(adapter, 'Unathorized');
+  });
+
+  it('reverts swap() when the adapter holds no collateral (amountIn is zero)', async () => {
+    // The freshly deployed adapter holds no WBTC, so balanceOf == 0.
+    await expect(
+      adapter.connect(moduleSigner).swap(TOKENS.WBTC.address, '0x')
+    ).to.be.revertedWithCustomError(adapter, 'ZeroAmountIn');
   });
 });

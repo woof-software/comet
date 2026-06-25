@@ -61,6 +61,8 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
 
         IERC20 collateralToken = IERC20(collateral);
         uint256 amountIn = collateralToken.balanceOf(address(this));
+        if (amountIn == 0) revert ZeroAmountIn();
+
         uint256 minAmountOut = calculateMinAmountOut(collateral, amountIn);
 
         uint256 baseBalBefore = baseAsset.balanceOf(address(this));

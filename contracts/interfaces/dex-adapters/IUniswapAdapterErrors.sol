@@ -23,4 +23,8 @@ interface IUniswapAdapterErrors {
     ///         does not land in the base asset. Native currency (WETH) must be encoded as address(0).
     /// @param collateral The collateral asset whose route is invalid.
     error InvalidRoute(address collateral);
+
+    /// @notice Thrown when provided hook or hook data is not zero.
+    /// @param collateral The collateral asset whose hook is not zero address.
+    error NonZeroHooks(address collateral);
 }

@@ -97,11 +97,14 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
                 address srcCurrency = Currency.unwrap(cfg.zeroForOne ? cfg.poolKey.currency0 : cfg.poolKey.currency1);
                 address dstCurrency = Currency.unwrap(cfg.zeroForOne ? cfg.poolKey.currency1 : cfg.poolKey.currency0);
                 if (srcCurrency != expectedSrcAsset || dstCurrency != expectedDstAsset) revert InvalidRoute(collateral);
+                if (address(cfg.poolKey.hooks) != address(0)) revert NonZeroHooks(collateral);
                 singleRoutes[collateral] = SingleRoute({ poolKey: cfg.poolKey, zeroForOne: cfg.zeroForOne });
             } else if (cfg.kind == RouteKind.Multi) {
                 if (cfg.path.length == 0) revert EmptyPath(collateral);
                 // The final hop of a multi-hop route must land in the base asset.
                 if (Currency.unwrap(cfg.path[cfg.path.length - 1].intermediateCurrency) != expectedDstAsset) revert InvalidRoute(collateral);
+                for (uint8 j; j < cfg.path.length; ++j) 
+                    if (address(cfg.path[j].hooks) != address(0) || cfg.path[j].hookData.length != 0) revert NonZeroHooks(collateral);
                 _multiPaths[collateral] = cfg.path;
             }
             routeKind[collateral] = cfg.kind;
