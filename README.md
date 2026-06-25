@@ -88,6 +88,16 @@ An example deployment command looks like:
 
 **[CometRewards.sol](https://github.com/compound-finance/comet/blob/main/contracts/CometRewards.sol)** - Contract that allows Comet users to claim rewards based on their protocol participation.
 
+## DEX adapter contracts
+
+DEX adapters swap the collateral seized during a DEX-route liquidation into the Comet base asset. Each adapter is bound 1:1 to a Comet market and is callable only by that market's liquidation module. Every swap tries a core router first and falls back to a redundant router, enforcing an oracle-derived minimum output with a configurable slippage.
+
+**[CoreDexAdapter.sol](contracts/dex-adapters/CoreDexAdapter.sol)** - Abstract base adapter that inherits `ICoreDexAdapter.sol`. Implements a `swap` function with virtual `_coreSwap` and `_redundantSwap` routines. Configuration is immutable, so changing it requires deploying a new adapter and pointing the liquidation module at it.
+
+**[UniswapAdapter.sol](contracts/dex-adapters/redundant/UniswapAdapter.sol)** - Abstract adapter that inherits `CoreDexAdapter.sol` and implements the redundant (fallback) swap through the Uniswap V4 Universal Router.
+
+**[OneInchV6Adapter.sol](contracts/dex-adapters/core/OneInchV6Adapter.sol)** - Concrete adapter (`OneInchV6CoreAdapter`) that inherits `UniswapAdapter.sol` and implements the core swap through the 1inch V6 aggregation router. Uniswap V4 remains the redundant path.
+
 ## Vendor contracts
 
 Third-party contracts (e.g. OZ proxies) live under `contracts/vendor`.
