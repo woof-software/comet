@@ -126,8 +126,8 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
             Seizure[] memory plan,
             int256 oldBalance,
             int256 newBalance,
-            uint256 basePayout,
-            uint256 basePayoutValue,
+            uint256 basePaidOut,
+            uint256 basePaidOutValue,
             bool badDebt
         ) = _computeSeizurePlan(account);
 
