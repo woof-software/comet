@@ -140,6 +140,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
         for (uint8 i; i < plan.length; ++i) {
             if (plan[i].seizedAmount == 0) continue;
+            emit AbsorbCollateral(absorber, account, plan[i].asset, plan[i].seizedAmount, plan[i].wantedCollateralValue);
             ICometLiquidationInterface(address(comet)).seizeCollateralForDex(account, plan[i].index, uint128(plan[i].seizedAmount), address(dexAdapter));
             // A failed swap means the adapter swept that collateral back to Comet (it is absorbed instead of
             // sold), so its debt-offset value must not be expected back in base.
