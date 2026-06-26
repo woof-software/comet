@@ -11,13 +11,11 @@ type DeployLiquidationModuleOpts = {
   pausers: string[];
   dexAdapter: string;
   borderHF?: bigint;
-  healthPositionHF?: bigint;
   penaltyBps?: bigint;
 };
 
 export const DEFAULT_DEX_ADAPTER = ethers.constants.AddressZero;
 const DEFAULT_BORDER_HF = exp(102, 16); // 1.02e18
-const DEFAULT_HEALTH_POSITION_HF = exp(110, 16); // 1.10e18
 const DEFAULT_PENALTY_BPS: bigint = BigInt(500);
 
 /**
@@ -38,7 +36,6 @@ export async function deployAndUpdateLiquidationModule(
     opts.executors,
     opts.pausers,
     opts.borderHF ?? DEFAULT_BORDER_HF,
-    opts.healthPositionHF ?? DEFAULT_HEALTH_POSITION_HF,
     opts.penaltyBps ?? DEFAULT_PENALTY_BPS
   );
   await liquidationModule.deployed();

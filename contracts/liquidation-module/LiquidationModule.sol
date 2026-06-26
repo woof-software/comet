@@ -27,17 +27,12 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     ///         default protocol liquidation. Must always be strictly less than healthPositionHF.
     uint256 public borderHF;
 
-    /// @notice HF threshold (1e18 scale). Positions above this value are considered healthy and
-    ///         cannot be liquidated. Must always be strictly greater than borderHF.
-    uint256 public healthPositionHF;
-
     /**
      * @param multisig_         The Multisig address: controls parameter setters.
      * @param executors_        Initial set of Executor accounts (keeper liquidation callers).
      * @param pausers_          Initial set of Pauser accounts (DEX pause switch).
      * @param dexAdapter_       The address of the DEX adapter for DEX-based liquidation.
      * @param borderHF_         Initial HF boundary (1e18 scale) for DEX-based liquidation.
-     * @param healthPositionHF_ Initial HF boundary (1e18 scale) above which the position is healthy.
      * @param penaltyBps_       Initial executor penalty (in BPS) taken on the DEX route.
      */
     constructor(
@@ -46,18 +41,15 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         address[] memory executors_,
         address[] memory pausers_,
         uint256 borderHF_,
-        uint256 healthPositionHF_,
         uint256 penaltyBps_
     ) CoreLiquidationModule(multisig_, dexAdapter_, executors_, pausers_) {
-        if (borderHF_ == 0 || borderHF_ >= healthPositionHF_) revert InvalidHFBoundaries();
+        if (borderHF_ == 0 ) revert InvalidHFBoundaries();
         if (penaltyBps_ > BPS) revert InvalidPenaltyBps();
 
         borderHF = borderHF_;
-        healthPositionHF = healthPositionHF_;
         penaltyBps = penaltyBps_;
 
         emit BorderHFUpdated(0, borderHF_);
-        emit HealthPositionHFUpdated(0, healthPositionHF_);
         emit PenaltyBpsUpdated(0, penaltyBps_);
     }
 
@@ -80,30 +72,11 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
         // When the DEX path is paused, every keeper liquidation falls back to the default
         // absorb flow regardless of the account's HF.
-        if (dexRoutePaused) {
+        if (dexRoutePaused || address(dexAdapter) == address(0)) {
             _liquidate(absorber, account);
             return;
         }
-
-        ICometData.UserBasic memory accountUser = comet.userBasic(account);
-
-        uint256 debtValue = mulPrice(
-            uint256(-comet.presentValue(accountUser.principal)),
-            getPrice(comet.baseTokenPriceFeed()),
-            baseScale
-        );
-        (uint256 liquidityValue, ) = _getLiquidity(accountUser, account, true, new uint256[](0));
-
-        uint256 currentHF = liquidityValue * FACTOR_SCALE / debtValue;
-
-        if (currentHF > healthPositionHF) {
-            revert NotLiquidatable();
-        } else if (currentHF > borderHF) {
-            if (address(dexAdapter) == address(0)) revert ZeroAddress();
-            _dexLiquidate(absorber, account, swapData);
-        } else {
-            _liquidate(absorber, account);
-        }
+        _dexLiquidate(absorber, account, swapData);
     }
 
     /**
@@ -119,11 +92,9 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     function _dexLiquidate(address absorber, address account, bytes[] calldata swapData) internal {
         (
             Seizure[] memory plan,
-            int256 oldBalance,
             int256 newBalance,
             uint256 basePaidOut,
-            uint256 basePaidOutValue,
-            bool badDebt
+            uint256 basePaidOutValue
         ) = _computeSeizurePlan(account);
 
         if (swapData.length != plan.length) revert InvalidSwapDataLength();
@@ -134,6 +105,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
         for (uint8 i; i < plan.length; ++i) {
             if (plan[i].seizedAmount == 0) continue;
+
             emit AbsorbCollateral(absorber, account, plan[i].asset, plan[i].seizedAmount, plan[i].wantedCollateralValue);
             ICometLiquidationInterface(address(comet)).seizeCollateralForDex(account, plan[i].index, uint128(plan[i].seizedAmount), address(dexAdapter));
             // A failed swap means the adapter swept that collateral back to Comet (it is absorbed instead of
@@ -146,7 +118,6 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
         ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(account, newBalance);
         emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
-        if (badDebt) revert DexBadDebt();
 
         uint256 requiredBase = basePaidOut > unswappedBaseAmount ? basePaidOut - unswappedBaseAmount : 0;
 
@@ -167,22 +138,10 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @param newBorderHF New BORDER_HF value in 1e18 scale.
      */
     function setBorderHF(uint256 newBorderHF) external onlyRole(MULTISIG_ROLE) {
-        if (newBorderHF == 0 || newBorderHF >= healthPositionHF) revert InvalidHFBoundaries();
+        if (newBorderHF == 0) revert InvalidHFBoundaries();
 
         emit BorderHFUpdated(borderHF, newBorderHF);
         borderHF = newBorderHF;
-    }
-
-    /**
-     * @notice Updates the healthy position health factor threshold.
-     * @dev Reverts if the new value is zero or not strictly greater than the current borderHF.
-     * @param newHealthPositionHF New HEALTH_POSITION_HF value in 1e18 scale.
-     */
-    function setHealthPositionHF(uint256 newHealthPositionHF) external onlyRole(MULTISIG_ROLE) {
-        if (newHealthPositionHF <= borderHF) revert InvalidHFBoundaries();
-
-        emit HealthPositionHFUpdated(healthPositionHF, newHealthPositionHF);
-        healthPositionHF = newHealthPositionHF;
     }
 
     /**

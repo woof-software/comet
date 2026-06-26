@@ -57,6 +57,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
 
     /**
      * @param _multisig  The Multisig address: controls parameter setters.
+     * @param _dexAdapter Address of the adapter for swap() related operatios.
      * @param _executors Initial set of Executor accounts (keeper liquidation callers).
      * @param _pausers   Initial set of Pauser accounts (DEX pause switch).
      */
@@ -112,11 +113,9 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     function _liquidate(address absorber, address account) internal {
         (
             Seizure[] memory plan,
-            int256 oldBalance,
             int256 newBalance,
             uint256 basePaidOut,
-            uint256 basePaidOutValue,
-            bool badDebt
+            uint256 basePaidOutValue
         ) = _computeSeizurePlan(account);
 
         for (uint8 i; i < plan.length; ++i) {
@@ -133,12 +132,12 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     /**
      * @notice Computes the per-collateral seizure plan for an underwater account.
      * @param account The underwater account to plan a seizure for.
-     * @return The ordered seizure plan, the account's old balance, new balance, debt payout, its value, and bad debt indicator
+     * @return The ordered seizure plan, the account's new balance, debt payout, its value
      */
     function _computeSeizurePlan(address account)
         internal
         view
-        returns (Seizure[] memory, int256, int256, uint256, uint256, bool)
+        returns (Seizure[] memory, int256, uint256, uint256)
     {
         ICometData.UserBasic memory accountUser = comet.userBasic(account);
         if (accountUser.principal > 0) revert NotLiquidatable();
@@ -250,8 +249,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
 
         // If balance is negative but not "healthy" - bad debt occured. (no asset brought HF to targetHF)
         // Zero out any residual shortfall as bad debt absorbed by the protocol.
-        bool badDebt = (newBalance < 0 && totalCollateralizedValue == 0);
-        if (badDebt) {
+        if (newBalance < 0 && totalCollateralizedValue == 0) {
             newBalance = 0;
         }
         uint256 basePaidOut = unsigned256(newBalance - oldBalance); // Base tokens effectively paid out to the account
@@ -259,7 +257,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         Seizure[] memory plan = new Seizure[](seizuresCount);
         for (uint256 j; j < seizuresCount; ++j) plan[j] = seizures[j];
 
-        return (plan, oldBalance, newBalance, basePaidOut, mulPrice(basePaidOut, basePrice, baseScale), badDebt);
+        return (plan, newBalance, basePaidOut, mulPrice(basePaidOut, basePrice, baseScale));
     }
 
     /**

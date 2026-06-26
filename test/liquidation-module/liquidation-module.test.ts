@@ -51,44 +51,15 @@ describe('liquidation module', function () {
         expect(await liquidationModule.borderHF()).to.equal(BORDER_HF);
       });
 
-      it('sets healthPositionHF to the provided value', async () => {
-        expect(await liquidationModule.healthPositionHF()).to.equal(HEALTH_POSITION_HF);
-      });
-
       // The constructor reports the initial thresholds as transitions from 0.
       it('emits BorderHFUpdated with the initial border value', async () => {
         await expect(liquidationModule.deployTransaction)
           .to.emit(liquidationModule, 'BorderHFUpdated').withArgs(0, BORDER_HF);
       });
-
-      it('emits HealthPositionHFUpdated with the initial health value', async () => {
-        await expect(liquidationModule.deployTransaction)
-          .to.emit(liquidationModule, 'HealthPositionHFUpdated').withArgs(0, HEALTH_POSITION_HF);
-      });
     });
 
       it('borderHF is zero', async () => {
-        await expect(LiquidationModuleFactory.deploy(governor.address, DEFAULT_DEX_ADAPTER, [governor.address], [governor.address], 0, HEALTH_POSITION_HF, PENALTY_BPS))
-          .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
-      });
-
-      it('healthPositionHF is zero', async () => {
-        await expect(LiquidationModuleFactory.deploy(governor.address, DEFAULT_DEX_ADAPTER, [governor.address], [governor.address], BORDER_HF, 0, PENALTY_BPS))
-          .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
-      });
-
-      it('both borderHF and healthPositionHF are zero', async () => {
-        await expect(LiquidationModuleFactory.deploy(governor.address, DEFAULT_DEX_ADAPTER, [governor.address], [governor.address], 0, 0, PENALTY_BPS))
-          .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
-      });
-
-      it('borderHF is greater than healthPositionHF', async () => {
-        await expect(LiquidationModuleFactory.deploy(governor.address, DEFAULT_DEX_ADAPTER, [governor.address], [governor.address], HEALTH_POSITION_HF + 1n, HEALTH_POSITION_HF, PENALTY_BPS))
-          .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
-      });
-
-      it('borderHF equals healthPositionHF', async () => {
-        await expect(LiquidationModuleFactory.deploy(governor.address, DEFAULT_DEX_ADAPTER, [governor.address], [governor.address], HEALTH_POSITION_HF, HEALTH_POSITION_HF, PENALTY_BPS))
+        await expect(LiquidationModuleFactory.deploy(governor.address, DEFAULT_DEX_ADAPTER, [governor.address], [governor.address], 0, PENALTY_BPS))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
     });
@@ -126,64 +97,6 @@ describe('liquidation module', function () {
 
       it('borderHF is zero', async () => {
         await expect(liquidationModule.connect(governor).setBorderHF(0))
-          .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
-      });
-
-      it('borderHF equals healthPositionHF', async () => {
-        await expect(liquidationModule.connect(governor).setBorderHF(HEALTH_POSITION_HF))
-          .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
-      });
-
-      it('borderHF is greater than healthPositionHF', async () => {
-        await expect(liquidationModule.connect(governor).setBorderHF(HEALTH_POSITION_HF + 1n))
-          .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
-      });
-    });
-  });
-
-  context('setHealthPositionHF', function () {
-    // New health threshold must stay strictly above the current borderHF (1.02e18).
-    const NEW_HEALTH_POSITION_HF: bigint = exp(120, 16); // 1.20e18
-
-    context('happy path: governor updates the health threshold', function () {
-      let setTx: ContractTransaction;
-
-      after(async () => await snapshot.restore());
-
-      it('governor updates healthPositionHF to a value above borderHF', async () => {
-        setTx = await liquidationModule.connect(governor).setHealthPositionHF(NEW_HEALTH_POSITION_HF);
-        await expect(setTx).to.not.be.reverted;
-      });
-
-      it('emits HealthPositionHFUpdated with old and new values', async () => {
-        await expect(setTx).to.emit(liquidationModule, 'HealthPositionHFUpdated').withArgs(HEALTH_POSITION_HF, NEW_HEALTH_POSITION_HF);
-      });
-
-      it('healthPositionHF is now the new value', async () => {
-        expect(await liquidationModule.healthPositionHF()).to.equal(NEW_HEALTH_POSITION_HF);
-      });
-    });
-
-    context('revert when', function () {
-      after(async () => await snapshot.restore());
-
-      it('caller is not the multisig', async () => {
-        await expect(liquidationModule.connect(alice).setHealthPositionHF(NEW_HEALTH_POSITION_HF))
-          .to.be.revertedWith(missingRole(alice.address, MULTISIG_ROLE));
-      });
-
-      it('healthPositionHF is zero', async () => {
-        await expect(liquidationModule.connect(governor).setHealthPositionHF(0))
-          .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
-      });
-
-      it('healthPositionHF equals borderHF', async () => {
-        await expect(liquidationModule.connect(governor).setHealthPositionHF(BORDER_HF))
-          .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
-      });
-
-      it('healthPositionHF is less than borderHF', async () => {
-        await expect(liquidationModule.connect(governor).setHealthPositionHF(BORDER_HF - 1n))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
     });

@@ -9,8 +9,7 @@ pragma solidity =0.8.15;
  * @custom:security-contact dmitriy@woof.software
  */
 interface ILiquidationModuleErrors {
-    /// @notice Reverts when the new BORDER_HF or HEALTH_POSITION_HF value would violate the
-    ///         invariant BORDER_HF < HEALTH_POSITION_HF, or when either value is zero.
+    /// @notice Reverts when the new BORDER_HF value is zero.
     error InvalidHFBoundaries();
 
     /// @notice Reverts when the number of provided swap calldatas does not match the number of seized
@@ -22,10 +21,6 @@ interface ILiquidationModuleErrors {
     /// @param baseReceived The base amount realized from the swaps.
     /// @param baseRequired The minimum base required (debt cleared plus the executor penalty).
     error SwapProceedsTooLow(uint256 baseReceived, uint256 baseRequired);
-
-    /// @notice Reverts when the DEX route would write off bad debt; such positions must use the default
-    ///         absorb path instead.
-    error DexBadDebt();
 
     /// @notice Reverts when penaltyBps is set above BPS (100%).
     error InvalidPenaltyBps();
