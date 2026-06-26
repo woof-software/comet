@@ -67,6 +67,4 @@ contract CometStorage is ICometData {
      * @dev Each bit represents whether a collateral asset is deactivated
      */
     uint24 public deactivatedCollaterals;
-
-    address public liquidationModule;
 }

@@ -108,6 +108,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
     /// @notice The address of the asset list
     address immutable public assetList;
 
+    /// @notice The address od the module with absorb, partial liquidation and liquidation logic
+    address immutable public liquidationModule;
+
     uint8 internal constant MAX_ASSETS_FOR_ASSET_LIST = 24;
 
     /// @dev The protocol only supports 200% utilization on which borrows are allowed
@@ -169,6 +172,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         numAssets = uint8(config.assetConfigs.length);
 
         assetList = IAssetListFactory(IAssetListFactoryHolder(extensionDelegate).assetListFactory()).createAssetList(config.assetConfigs);
+        ICoreLiquidationModule(liquidationModule).initiateModule();
     }
 
     /**
@@ -1299,14 +1303,14 @@ contract CometWithExtendedAssetList is CometMainInterface {
     function absorb(address absorber, address[] calldata accounts) override external {
         if (isAbsorbPaused()) revert Paused();
 
-        uint startGas = gasleft();
+        uint256 startGas = gasleft();
         accrueInternal();
 
-        for (uint i = 0; i < accounts.length; ) {
+        for (uint8 i; i < accounts.length; ) {
             ICoreLiquidationModule(liquidationModule).liquidate(absorber, accounts[i]);
             unchecked { ++i; }
         }
-        uint gasUsed = startGas - gasleft();
+        uint256 gasUsed = startGas - gasleft();
 
         // Note: liquidator points are an imperfect tool for governance,
         //  to be used while evaluating strategies for incentivizing absorption.
@@ -1357,11 +1361,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
         updateBasePrincipal(account, accountUser, newPrincipal);
 
         totalBorrowBase -= uint104(newPrincipal - oldPrincipal);
-    }
-
-    function setLiquidationModule(address newLiquidationModule) external {
-        if (msg.sender != governor) revert Unauthorized();
-        liquidationModule = newLiquidationModule;
     }
 
     /**

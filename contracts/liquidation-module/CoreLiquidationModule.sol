@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity =0.8.15;
 
-import { ICoreLiquidationModule } from "../interfaces/liquidation-module/ICoreLiquidationModule.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { ICometInterface, ICometData } from "../interfaces/ICometInterface.sol";
 import { ICometLiquidationInterface } from "../interfaces/ICometLiquidationInterface.sol";
+import { IPriceFeed } from "../IPriceFeed.sol";
+import { IAssetList } from "../IAssetList.sol";
+
+import { CometExtInterface } from "../CometExtInterface.sol";
+import { CometMath } from "../CometMath.sol";
 
 import { LiquidationAccessControl } from "./LiquidationAccessControl.sol";
-import { IAssetList } from "../IAssetList.sol";
-import { CometMath } from "../CometMath.sol";
-import { IPriceFeed } from "../IPriceFeed.sol";
-import { CometExtInterface } from "../CometExtInterface.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ICoreLiquidationModule } from "../interfaces/liquidation-module/ICoreLiquidationModule.sol";
 
 /**
  * @title Core Liquidation Module
@@ -28,18 +30,18 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     /// @notice The target health factor for partial liquidation
     uint256 public constant TARGET_HEALTH_FACTOR = 105e16;
 
-    ICometInterface public immutable comet;
+    ICometInterface public comet;
 
-    IAssetList immutable public assetList;
+    IAssetList public assetList;
 
     /// @notice The Comet base asset; collateral is swapped into it on the DEX route.
-    IERC20 public immutable baseToken;
+    IERC20 public baseToken;
 
     /// @notice Decimals of the base token
-    uint64 public immutable baseScale;
+    uint64 public baseScale;
 
     /// @notice The amount of assets in the comet; required for looping over assets
-    uint8 public immutable numAssets;
+    uint8 public numAssets;
 
     /// @notice Whether partial liquidation or full liquidation is enabled. Enabled by default.
     bool public partialLiquidationEnabled;
@@ -50,26 +52,32 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     }
 
     /**
-     * @param _comet     The Comet instance this module is bound to. The DAO is taken from its governor.
      * @param _multisig  The Multisig address: controls parameter setters.
      * @param _executors Initial set of Executor accounts (keeper liquidation callers).
      * @param _pausers   Initial set of Pauser accounts (DEX pause switch).
      */
     constructor(
-        address _comet,
         address _multisig,
         address[] memory _executors,
         address[] memory _pausers
     ) LiquidationAccessControl(_multisig, _executors, _pausers) {
-        if (_comet == address(0)) revert ZeroAddress();
+        partialLiquidationEnabled = true;
+    }
 
-        comet = ICometInterface(_comet);
+    /**
+     * @notice initialization method which will be called just once from the Comet during its costructio
+     *         It is safe to assume that only comet will initiate the method, as otherwise Comet update proposal will revert
+     *         in case if this method is called before proposal.
+     */
+    function initiateModule() external {
+        if (address(comet) != address(0)) revert AlreadySet();
+
+        comet = ICometInterface(msg.sender);
+
         assetList = IAssetList(comet.assetList());
         numAssets = comet.numAssets();
         baseScale = uint64(comet.baseScale());
         baseToken = IERC20(comet.baseToken());
-
-        partialLiquidationEnabled = true;
     }
 
     /**

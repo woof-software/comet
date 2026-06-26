@@ -35,7 +35,6 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     uint256 public healthPositionHF;
 
     /**
-     * @param comet_            The address of the Comet for default liquidation path. The DAO is taken from its governor.
      * @param multisig_         The Multisig address: controls parameter setters.
      * @param executors_        Initial set of Executor accounts (keeper liquidation callers).
      * @param pausers_          Initial set of Pauser accounts (DEX pause switch).
@@ -45,7 +44,6 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @param penaltyBps_       Initial executor penalty (in BPS) taken on the DEX route.
      */
     constructor(
-        address comet_,
         address multisig_,
         address[] memory executors_,
         address[] memory pausers_,
@@ -53,7 +51,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         uint256 borderHF_,
         uint256 healthPositionHF_,
         uint256 penaltyBps_
-    ) CoreLiquidationModule(comet_, multisig_, executors_, pausers_) {
+    ) CoreLiquidationModule(multisig_, executors_, pausers_) {
         if (address(dexAdapter_) == address(0)) revert ZeroAddress();
         if (borderHF_ == 0 || borderHF_ >= healthPositionHF_) revert InvalidHFBoundaries();
         if (penaltyBps_ > BPS) revert InvalidPenaltyBps();
