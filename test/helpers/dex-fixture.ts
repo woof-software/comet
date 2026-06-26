@@ -62,7 +62,6 @@ export async function setupDexAdapter(market: MarketConfig): Promise<DexAdapterF
     "OneInchV6CoreAdapter"
   )) as OneInchV6CoreAdapter__factory;
   const adapter = await adapterFactory.deploy(
-    market.comet,
     CORE_ROUTER,
     REDUNDANT_ROUTER,
     TOKENS.WETH.address,
@@ -70,7 +69,7 @@ export async function setupDexAdapter(market: MarketConfig): Promise<DexAdapterF
     routes
   );
   await adapter.deployed();
-  await adapter.connect(moduleSigner).initiateAdapter();
+  await adapter.connect(moduleSigner).initiateAdapter(market.comet, market.comet, baseToken);
 
   const snapshot = await takeSnapshot();
 
