@@ -91,70 +91,49 @@ describe('UniswapAdapter', function () {
     });
 
     context('reverts when', function () {
-      it('weth is the zero address', async () => {
-        await expect(
-          adapterFactory.deploy(
-            market.comet,
-            CORE_ROUTER,
-            REDUNDANT_ROUTER,
-            ethers.constants.AddressZero,
-            SLIPPAGE_BPS,
-            routes
-          )
-        ).to.be.revertedWithCustomError(adapter, 'ZeroAddress');
-      });
-
-      it('the routes count does not match the number of collaterals', async () => {
-        await expect(
-          adapterFactory.deploy(
-            market.comet,
-            CORE_ROUTER,
-            REDUNDANT_ROUTER,
-            TOKENS.WETH.address,
-            SLIPPAGE_BPS,
-            routes.slice(1)
-          )
-        ).to.be.revertedWithCustomError(adapter, 'InvalidRoutesNumber');
-      });
-
-      it('a multi-hop route has an empty path', async () => {
-        const collateral = (await comet.getAssetInfo(0)).asset;
-        const badRoutes = [...routes];
-        badRoutes[0] = multiRoute([]);
-        await expect(
-          adapterFactory.deploy(
-            market.comet,
-            CORE_ROUTER,
-            REDUNDANT_ROUTER,
-            TOKENS.WETH.address,
-            SLIPPAGE_BPS,
-            badRoutes
-          )
-        )
-          .to.be.revertedWithCustomError(adapter, 'EmptyPath')
-          .withArgs(collateral);
-      });
-
       const WRONG_TOKEN = ethers.utils.getAddress('0x000000000000000000000000000000000000dead');
       const HOOK = ethers.utils.getAddress('0x000000000000000000000000000000000000beef');
       const singleIndex = Object.keys(market.routes).indexOf(TOKENS.WBTC.address);
       const multiIndex = Object.keys(market.routes).indexOf(TOKENS.WSTETH.address);
 
+      const deployAndInitiate = async (badRoutes: RouteConfig[]): Promise<ContractTransaction> => {
+        const badAdapter = await adapterFactory.deploy(
+          CORE_ROUTER,
+          REDUNDANT_ROUTER,
+          TOKENS.WETH.address,
+          SLIPPAGE_BPS,
+          badRoutes
+        );
+        await badAdapter.deployed();
+        return badAdapter.connect(moduleSigner).initiateAdapter(comet.address, comet.address, baseToken);
+      };
+
+      it('weth is the zero address', async () => {
+        await expect(
+          adapterFactory.deploy(CORE_ROUTER, REDUNDANT_ROUTER, ethers.constants.AddressZero, SLIPPAGE_BPS, routes)
+        ).to.be.revertedWithCustomError(adapter, 'ZeroAddress');
+      });
+
+      it('the routes count does not match the number of collaterals', async () => {
+        await expect(deployAndInitiate(routes.slice(1)))
+          .to.be.revertedWithCustomError(adapter, 'InvalidRoutesNumber');
+      });
+
+      it('a multi-hop route has an empty path', async () => {
+        const collateral = (await comet.getAssetInfo(0)).asset;
+        const badRoutes = [...routes];
+        badRoutes[0] = { ...multiRoute([]), collateral };
+        await expect(deployAndInitiate(badRoutes))
+          .to.be.revertedWithCustomError(adapter, 'EmptyPath')
+          .withArgs(collateral);
+      });
+
       it('a single-pool route src token is not the collateral', async () => {
         const collateral = (await comet.getAssetInfo(singleIndex)).asset;
         const badRoutes = [...routes];
-        // src = WRONG_TOKEN, dst = base asset.
-        badRoutes[singleIndex] = poolRoute(baseToken, WRONG_TOKEN, 3000, 60);
-        await expect(
-          adapterFactory.deploy(
-            market.comet,
-            CORE_ROUTER,
-            REDUNDANT_ROUTER,
-            TOKENS.WETH.address,
-            SLIPPAGE_BPS,
-            badRoutes
-          )
-        )
+        // src = WRONG_TOKEN, dst = base asset; keyed under the real collateral.
+        badRoutes[singleIndex] = { ...poolRoute(baseToken, WRONG_TOKEN, 3000, 60), collateral };
+        await expect(deployAndInitiate(badRoutes))
           .to.be.revertedWithCustomError(adapter, 'InvalidRoute')
           .withArgs(collateral);
       });
@@ -163,17 +142,8 @@ describe('UniswapAdapter', function () {
         const collateral = (await comet.getAssetInfo(singleIndex)).asset;
         const badRoutes = [...routes];
         // src = collateral, dst = WRONG_TOKEN.
-        badRoutes[singleIndex] = poolRoute(WRONG_TOKEN, collateral, 3000, 60);
-        await expect(
-          adapterFactory.deploy(
-            market.comet,
-            CORE_ROUTER,
-            REDUNDANT_ROUTER,
-            TOKENS.WETH.address,
-            SLIPPAGE_BPS,
-            badRoutes
-          )
-        )
+        badRoutes[singleIndex] = { ...poolRoute(WRONG_TOKEN, collateral, 3000, 60), collateral };
+        await expect(deployAndInitiate(badRoutes))
           .to.be.revertedWithCustomError(adapter, 'InvalidRoute')
           .withArgs(collateral);
       });
@@ -186,17 +156,8 @@ describe('UniswapAdapter', function () {
           i === original.path.length - 1 ? { ...hop, intermediateCurrency: WRONG_TOKEN } : hop
         );
         const badRoutes = [...routes];
-        badRoutes[multiIndex] = multiRoute(badPath);
-        await expect(
-          adapterFactory.deploy(
-            market.comet,
-            CORE_ROUTER,
-            REDUNDANT_ROUTER,
-            TOKENS.WETH.address,
-            SLIPPAGE_BPS,
-            badRoutes
-          )
-        )
+        badRoutes[multiIndex] = { ...multiRoute(badPath), collateral };
+        await expect(deployAndInitiate(badRoutes))
           .to.be.revertedWithCustomError(adapter, 'InvalidRoute')
           .withArgs(collateral);
       });
@@ -205,17 +166,8 @@ describe('UniswapAdapter', function () {
         const collateral = (await comet.getAssetInfo(singleIndex)).asset;
         const badRoutes = [...routes];
         // Valid currencies (collateral -> base) but a non-zero hook on the pool key.
-        badRoutes[singleIndex] = poolRoute(baseToken, collateral, 3000, 60, HOOK);
-        await expect(
-          adapterFactory.deploy(
-            market.comet,
-            CORE_ROUTER,
-            REDUNDANT_ROUTER,
-            TOKENS.WETH.address,
-            SLIPPAGE_BPS,
-            badRoutes
-          )
-        )
+        badRoutes[singleIndex] = { ...poolRoute(baseToken, collateral, 3000, 60, HOOK), collateral };
+        await expect(deployAndInitiate(badRoutes))
           .to.be.revertedWithCustomError(adapter, 'NonZeroHooks')
           .withArgs(collateral);
       });
@@ -226,17 +178,8 @@ describe('UniswapAdapter', function () {
         // Keep the currencies valid; set a non-zero hook on the first hop.
         const badPath = original.path.map((hop, i) => (i === 0 ? { ...hop, hooks: HOOK } : hop));
         const badRoutes = [...routes];
-        badRoutes[multiIndex] = multiRoute(badPath);
-        await expect(
-          adapterFactory.deploy(
-            market.comet,
-            CORE_ROUTER,
-            REDUNDANT_ROUTER,
-            TOKENS.WETH.address,
-            SLIPPAGE_BPS,
-            badRoutes
-          )
-        )
+        badRoutes[multiIndex] = { ...multiRoute(badPath), collateral };
+        await expect(deployAndInitiate(badRoutes))
           .to.be.revertedWithCustomError(adapter, 'NonZeroHooks')
           .withArgs(collateral);
       });
@@ -247,17 +190,8 @@ describe('UniswapAdapter', function () {
         // Keep the currencies valid; set non-empty hook data on the first hop.
         const badPath = original.path.map((hop, i) => (i === 0 ? { ...hop, hookData: '0x01' } : hop));
         const badRoutes = [...routes];
-        badRoutes[multiIndex] = multiRoute(badPath);
-        await expect(
-          adapterFactory.deploy(
-            market.comet,
-            CORE_ROUTER,
-            REDUNDANT_ROUTER,
-            TOKENS.WETH.address,
-            SLIPPAGE_BPS,
-            badRoutes
-          )
-        )
+        badRoutes[multiIndex] = { ...multiRoute(badPath), collateral };
+        await expect(deployAndInitiate(badRoutes))
           .to.be.revertedWithCustomError(adapter, 'NonZeroHooks')
           .withArgs(collateral);
       });
@@ -296,11 +230,10 @@ describe('UniswapAdapter', function () {
     const wbtc = TOKENS.WBTC;
     const wbtcIndex = Object.keys(market.routes).indexOf(wbtc.address);
 
-    // Tamper WBTC's route to a pool that does not exist.
+    // Tamper WBTC's route to a pool that does not exist (valid currencies so it passes validation).
     const badRoutes = [...routes];
-    badRoutes[wbtcIndex] = poolRoute(baseToken, wbtc.address, 999, 13);
+    badRoutes[wbtcIndex] = { ...poolRoute(baseToken, wbtc.address, 999, 13), collateral: wbtc.address };
     const badAdapter = await adapterFactory.deploy(
-      market.comet,
       CORE_ROUTER,
       REDUNDANT_ROUTER,
       TOKENS.WETH.address,
@@ -308,7 +241,7 @@ describe('UniswapAdapter', function () {
       badRoutes
     );
     await badAdapter.deployed();
-    await badAdapter.connect(moduleSigner).initiateAdapter();
+    await badAdapter.connect(moduleSigner).initiateAdapter(comet.address, comet.address, baseToken);
 
     const amountIn = wbtc.amount;
     await setErc20Balance(wbtc.address, badAdapter.address, amountIn, wbtc.slot);

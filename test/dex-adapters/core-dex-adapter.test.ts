@@ -60,7 +60,6 @@ describe('CoreDexAdapter', function () {
         await expect(
           adapterFactory.deploy(
             ethers.constants.AddressZero,
-            CORE_ROUTER,
             REDUNDANT_ROUTER,
             TOKENS.WETH.address,
             SLIPPAGE_BPS,
@@ -73,7 +72,6 @@ describe('CoreDexAdapter', function () {
         const badSlippageBps = 10_001; // > BPS (100%)
         await expect(
           adapterFactory.deploy(
-            market.comet,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
             TOKENS.WETH.address,

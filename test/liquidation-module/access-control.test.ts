@@ -15,7 +15,6 @@ import { setBalance, DEFAULT_DEX_ADAPTER } from '../helpers';
 describe('liquidation module access control', function () {
   // Any non-zero address satisfies the DEX adapter check; the adapter itself is not exercised here.
   const BORDER_HF: bigint = exp(102, 16); // 1.02e18
-  const HEALTH_POSITION_HF: bigint = exp(110, 16); // 1.10e18
   const PENALTY_BPS: bigint = BigInt(500);
   const ZERO = ethers.constants.AddressZero;
 
@@ -107,19 +106,19 @@ describe('liquidation module access control', function () {
     describe('revert when', function () {
       it('the Multisig is the zero address', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(ZERO, DEFAULT_DEX_ADAPTER, executors, pausers, BORDER_HF, HEALTH_POSITION_HF, PENALTY_BPS)
+          LiquidationModuleFactory.deploy(ZERO, DEFAULT_DEX_ADAPTER, executors, pausers, BORDER_HF, PENALTY_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
 
       it('the Executors list is empty', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(multisig.address, DEFAULT_DEX_ADAPTER, [], pausers, BORDER_HF, HEALTH_POSITION_HF, PENALTY_BPS)
+          LiquidationModuleFactory.deploy(multisig.address, DEFAULT_DEX_ADAPTER, [], pausers, BORDER_HF, PENALTY_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
       });
 
       it('the Pausers list is empty', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(multisig.address, DEFAULT_DEX_ADAPTER, executors, [], BORDER_HF, HEALTH_POSITION_HF, PENALTY_BPS)
+          LiquidationModuleFactory.deploy(multisig.address, DEFAULT_DEX_ADAPTER, executors, [], BORDER_HF, PENALTY_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
       });
 
@@ -131,7 +130,6 @@ describe('liquidation module access control', function () {
             [executors[0], executors[1], executors[0]],
             pausers,
             BORDER_HF,
-            HEALTH_POSITION_HF,
             PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
@@ -145,7 +143,6 @@ describe('liquidation module access control', function () {
             executors,
             [pausers[0], pausers[1], pausers[0]],
             BORDER_HF,
-            HEALTH_POSITION_HF,
             PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
@@ -159,7 +156,6 @@ describe('liquidation module access control', function () {
             [executors[0], executors[1], ZERO],
             pausers,
             BORDER_HF,
-            HEALTH_POSITION_HF,
             PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
@@ -173,7 +169,6 @@ describe('liquidation module access control', function () {
             executors,
             [pausers[0], pausers[1], ZERO],
             BORDER_HF,
-            HEALTH_POSITION_HF,
             PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');

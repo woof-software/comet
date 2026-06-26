@@ -43,7 +43,6 @@ describe('absorb: general logic', function () {
       baseBorrowMin: baseBorrowMin,
       liquidationModuleOpts: {
         borderHF: exp(102, 16), // 1.02
-        healthPositionHF: exp(110, 16), // 1.10
       }
     });
     configuratorProxyAddress = protocol.configuratorProxy.address;

@@ -31,6 +31,7 @@ export interface PathKey {
 
 // Mirrors UniswapAdapter.RouteConfig.
 export interface RouteConfig {
+  collateral: string;
   kind: RouteKind;
   poolKey: PoolKey;
   zeroForOne: boolean;
@@ -45,19 +46,20 @@ const ZERO_POOL_KEY: PoolKey = {
   hooks: ethers.constants.AddressZero,
 };
 
-// Builds a single-pool RouteConfig from an explicit poolKey.
+// Builds a single-pool RouteConfig from an explicit poolKey. `collateral` defaults to zero (set by
+// `buildRoutes`, or overridden by tests building bad routes).
 export function singleRoute(poolKey: PoolKey, zeroForOne: boolean): RouteConfig {
-  return { kind: RouteKind.Single, poolKey, zeroForOne, path: [] };
+  return { collateral: ethers.constants.AddressZero, kind: RouteKind.Single, poolKey, zeroForOne, path: [] };
 }
 
 // Builds a multi-hop RouteConfig from an ordered list of path hops.
 export function multiRoute(path: PathKey[]): RouteConfig {
-  return { kind: RouteKind.Multi, poolKey: ZERO_POOL_KEY, zeroForOne: false, path };
+  return { collateral: ethers.constants.AddressZero, kind: RouteKind.Multi, poolKey: ZERO_POOL_KEY, zeroForOne: false, path };
 }
 
 // Unset route for a collateral that has no configured Uniswap V4 route.
 export function unsetRoute(): RouteConfig {
-  return { kind: RouteKind.Unset, poolKey: ZERO_POOL_KEY, zeroForOne: false, path: [] };
+  return { collateral: ethers.constants.AddressZero, kind: RouteKind.Unset, poolKey: ZERO_POOL_KEY, zeroForOne: false, path: [] };
 }
 
 // Builds a single-pool route that sells `collateral` into `base`.
@@ -88,7 +90,8 @@ export async function buildRoutes(
   for (let i = 0; i < numAssets; ++i) {
     const info = await comet.getAssetInfo(i);
     const asset: string = info.asset;
-    routes.push(lowercasedRoutes[asset.toLowerCase()] ?? unsetRoute());
+    // Key each route by its Comet collateral (the adapter stores routes by `RouteConfig.collateral`).
+    routes.push({ ...(lowercasedRoutes[asset.toLowerCase()] ?? unsetRoute()), collateral: asset });
   }
   return routes;
 }

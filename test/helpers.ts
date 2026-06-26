@@ -109,7 +109,6 @@ export type ProtocolOpts = {
     executors?: string[],
     pausers?: string[],
     borderHF?: bigint;
-    healthPositionHF?: bigint;
     penaltyBps?: bigint;
   };
 };
@@ -308,8 +307,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     pausers: pausers.map((x: SignerWithAddress) => x.address),
     ...(opts.liquidationModuleOpts || {}),
   });
-  console.log("defaultLiquidationModule: ", defaultLiquidationModule.address);
-  console.log("Dex adapter: ", await defaultLiquidationModule.dexAdapter());
 
   const config = {
     governor: governor.address,
@@ -480,8 +477,8 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     governor,
     pauseGuardian,
     multisig,
-    executor,
-    pauser,
+    executors,
+    pausers,
     extensionDelegate,
     users,
     base,

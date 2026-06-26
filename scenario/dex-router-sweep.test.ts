@@ -79,8 +79,6 @@ describe('OneInchV6CoreAdapter core swap sweep', function () {
               'OneInchV6CoreAdapter'
             )) as OneInchV6CoreAdapter__factory;
             adapter = await factory.deploy(
-              market.comet,
-              moduleAddress,
               CORE_ROUTER,
               net.redundantRouter,
               net.weth,
@@ -88,6 +86,9 @@ describe('OneInchV6CoreAdapter core swap sweep', function () {
               routes
             );
             await adapter.deployed();
+            // The Comet exposes numAssets()/getAssetInfo(), so it doubles as the IAssetList for route
+            // validation. `moduleSigner` stands in for the liquidation module that calls initiateAdapter.
+            await adapter.connect(moduleSigner).initiateAdapter(market.comet, market.comet, baseToken);
 
             snapshot = await takeSnapshot();
           });
