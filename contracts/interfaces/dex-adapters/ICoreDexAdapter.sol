@@ -21,4 +21,6 @@ interface ICoreDexAdapter is ICoreDexAdapterErrors, ICoreDexAdapterEvents {
      * @return swapped True if the collateral was swapped into the base asset; false if it was swept to Comet.
      */
     function swap(address collateral, bytes calldata swapData) external returns (bool swapped);
+
+    function initiateAdapter() external;
 }

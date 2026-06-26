@@ -2,8 +2,8 @@
 pragma solidity =0.8.15;
 
 import { ILiquidationModule } from "../interfaces/liquidation-module/ILiquidationModule.sol";
-import { CoreLiquidationModule, ICometData, ICometLiquidationInterface } from "./CoreLiquidationModule.sol";
 import { ICoreDexAdapter } from "../interfaces/dex-adapters/ICoreDexAdapter.sol";
+import { CoreLiquidationModule, ICometData, ICometLiquidationInterface } from "./CoreLiquidationModule.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -19,9 +19,6 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
     /// @notice Basis-point denominator (100% = 10_000 bps).
     uint256 internal constant BPS = 10_000;
-
-    /// @notice used for DEX-path liquidations.
-    ICoreDexAdapter public dexAdapter;
 
     /// @notice Executor penalty on the DEX route.
     uint256 public penaltyBps;
@@ -45,18 +42,16 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      */
     constructor(
         address multisig_,
+        ICoreDexAdapter dexAdapter_,
         address[] memory executors_,
         address[] memory pausers_,
-        ICoreDexAdapter dexAdapter_,
         uint256 borderHF_,
         uint256 healthPositionHF_,
         uint256 penaltyBps_
-    ) CoreLiquidationModule(multisig_, executors_, pausers_) {
-        if (address(dexAdapter_) == address(0)) revert ZeroAddress();
+    ) CoreLiquidationModule(multisig_, dexAdapter_, executors_, pausers_) {
         if (borderHF_ == 0 || borderHF_ >= healthPositionHF_) revert InvalidHFBoundaries();
         if (penaltyBps_ > BPS) revert InvalidPenaltyBps();
 
-        dexAdapter = dexAdapter_;
         borderHF = borderHF_;
         healthPositionHF = healthPositionHF_;
         penaltyBps = penaltyBps_;
@@ -104,6 +99,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         if (currentHF > healthPositionHF) {
             revert NotLiquidatable();
         } else if (currentHF > borderHF) {
+            if (address(dexAdapter) == address(0)) revert ZeroAddress();
             _dexLiquidate(absorber, account, swapData);
         } else {
             _liquidate(absorber, account);

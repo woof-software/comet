@@ -77,13 +77,12 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
      */
     constructor(
         CometMainInterface _comet,
-        address _module,
         address _coreRouter,
         address _redundantRouter,
         address _weth,
         uint16 _slippageBps,
         RouteConfig[] memory _swapRoutes
-        ) CoreDexAdapter(_comet, _module, _coreRouter, _redundantRouter, _slippageBps) {
+        ) CoreDexAdapter(_comet, _coreRouter, _redundantRouter, _slippageBps) {
         if (_weth == address(0)) revert ZeroAddress();
 
         uint8 numAssets = _comet.numAssets();

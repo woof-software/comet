@@ -172,7 +172,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         numAssets = uint8(config.assetConfigs.length);
 
         assetList = IAssetListFactory(IAssetListFactoryHolder(extensionDelegate).assetListFactory()).createAssetList(config.assetConfigs);
-        ICoreLiquidationModule(liquidationModule).initiateModule();
+        ICoreLiquidationModule(liquidationModule).initiateModule(assetList, numAssets, uint64(baseScale), baseToken);
     }
 
     /**

@@ -24,5 +24,5 @@ interface ICoreLiquidationModule is ICoreLiquidationModuleErrors, ICoreLiquidati
 
     function isLiquidatable(address account) external view returns (bool);
 
-    function initiateModule() external;
+    function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) external;
 }

@@ -26,8 +26,6 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
     CometMainInterface public immutable comet;
     /// @notice The base asset that collateral is swapped into.
     IERC20 public immutable baseAsset;
-    /// @notice The liquidation module authorized to call swap().
-    address public immutable module;
     /// @notice Primary DEX router used by _coreSwap.
     address public immutable coreRouter;
     /// @notice Fallback DEX router used by _redundantSwap when the core swap fails.
@@ -35,25 +33,32 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
     /// @notice Slippage applied to the oracle-derived minimum output, in basis points.
     uint16 public immutable slippageBps;
 
+    /// @notice The liquidation module authorized to call swap().
+    address public module;
+
     /**
      * @notice Binds the adapter to a Comet market and its core/redundant routers.
      * @dev `baseAsset` is resolved through the provided Comet.
      * @param _comet The Comet market to serve.
-     * @param _module The liquidation module allowed to trigger swaps.
      * @param _coreRouter The primary DEX router.
      * @param _redundantRouter The fallback DEX router.
      * @param _slippageBps Allowed slippage in basis points (0 < value <= BPS).
      */
-    constructor(CometMainInterface _comet, address _module, address _coreRouter, address _redundantRouter, uint16 _slippageBps) {
-        if (address(_comet) == address(0) || _module == address(0) || _coreRouter == address(0) || _redundantRouter == address(0)) revert ZeroAddress();
+    constructor(CometMainInterface _comet, address _coreRouter, address _redundantRouter, uint16 _slippageBps) {
+        if (address(_comet) == address(0) || _coreRouter == address(0) || _redundantRouter == address(0)) revert ZeroAddress();
         if (_slippageBps == 0 || _slippageBps > BPS) revert SlippageOutOfBounds(_slippageBps);
 
         comet = _comet;
-        module = _module;
         coreRouter = _coreRouter;
         redundantRouter = _redundantRouter;
         slippageBps = _slippageBps;
         baseAsset = IERC20(_comet.baseToken());
+    }
+
+    function initiateAdapter() external {
+        if (module != address(0)) revert AlreadySet();
+
+        module = msg.sender;
     }
 
     /// @inheritdoc ICoreDexAdapter

@@ -13,7 +13,8 @@ import { CometMath } from "../CometMath.sol";
 
 import { LiquidationAccessControl } from "./LiquidationAccessControl.sol";
 import { ICoreLiquidationModule } from "../interfaces/liquidation-module/ICoreLiquidationModule.sol";
-
+import { ICoreDexAdapter } from "../interfaces/dex-adapters/ICoreDexAdapter.sol";
+import "hardhat/console.sol";
 /**
  * @title Core Liquidation Module
  * @author Woof
@@ -29,6 +30,9 @@ import { ICoreLiquidationModule } from "../interfaces/liquidation-module/ICoreLi
 abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAccessControl, CometMath {
     /// @notice The target health factor for partial liquidation
     uint256 public constant TARGET_HEALTH_FACTOR = 105e16;
+
+    /// @notice used for DEX-path liquidations. Zero address means module doesn't support DEX liquidation route.
+    ICoreDexAdapter public immutable dexAdapter;
 
     ICometInterface public comet;
 
@@ -58,9 +62,11 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
      */
     constructor(
         address _multisig,
+        ICoreDexAdapter _dexAdapter,
         address[] memory _executors,
         address[] memory _pausers
     ) LiquidationAccessControl(_multisig, _executors, _pausers) {
+        dexAdapter = _dexAdapter;
         partialLiquidationEnabled = true;
     }
 
@@ -69,15 +75,17 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
      *         It is safe to assume that only comet will initiate the method, as otherwise Comet update proposal will revert
      *         in case if this method is called before proposal.
      */
-    function initiateModule() external {
+    function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) external {
         if (address(comet) != address(0)) revert AlreadySet();
 
         comet = ICometInterface(msg.sender);
 
-        assetList = IAssetList(comet.assetList());
-        numAssets = comet.numAssets();
-        baseScale = uint64(comet.baseScale());
-        baseToken = IERC20(comet.baseToken());
+        assetList = IAssetList(_assetList);
+        numAssets = _numAssets;
+        baseScale = _baseScale;
+        baseToken = IERC20(_baseToken);
+
+        if (address(dexAdapter) != address(0)) dexAdapter.initiateAdapter();
     }
 
     /**
