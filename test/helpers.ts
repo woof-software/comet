@@ -45,7 +45,8 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 
 // Helpers
 import type { Numeric } from './helpers/index';
-import { exp, dfn, defaultAssets, deployAndUpdateLiquidationModule, mulPrice, toBigInt, convertToBigInt } from './helpers/index';
+import { exp, dfn, defaultAssets, deployAndUpdateLiquidationModule, DEFAULT_DEX_ADAPTER, mulPrice, toBigInt, convertToBigInt } from './helpers/index';
+import { Sign } from 'crypto';
 
 export * from './helpers/index';
 export { ethers, expect, hre };
@@ -71,11 +72,15 @@ export type ProtocolOpts = {
       initialPrice?: number;
       priceFeedDecimals?: number;
       factory?: FaucetToken__factory | EvilToken__factory | FaucetWETH__factory | NonStandardFaucetFeeToken__factory;
+      // When set, an already-deployed token at this address is used (e.g. a real mainnet token on a fork)
+      // instead of deploying a fresh mock. The price feed stays a mock SimplePriceFeed.
+      address?: string;
     };
   };
   name?: string;
   symbol?: string;
   governor?: SignerWithAddress;
+  multisig?: SignerWithAddress;
   pauseGuardian?: SignerWithAddress;
   extensionDelegate?: CometExt;
   base?: string;
@@ -98,11 +103,14 @@ export type ProtocolOpts = {
   targetHealthFactor?: Numeric;
   baseTokenBalance?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
-  liquidationModule?: string;
+  liquidationModule?: LiquidationModule;
+  dexAdapter?: string;
   liquidationModuleOpts?: {
-    dexAdapter?: string;
+    executors?: string[],
+    pausers?: string[],
     borderHF?: bigint;
     healthPositionHF?: bigint;
+    penaltyBps?: bigint;
   };
 };
 
@@ -111,8 +119,8 @@ export type Protocol = {
   governor: SignerWithAddress;
   pauseGuardian: SignerWithAddress;
   multisig: SignerWithAddress;
-  executor: SignerWithAddress;
-  pauser: SignerWithAddress;
+  executors: SignerWithAddress[];
+  pausers: SignerWithAddress[];
   extensionDelegate: CometExtAssetList;
   users: SignerWithAddress[];
   base: string;
@@ -238,13 +246,12 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const symbol32 = ethers.utils.formatBytes32String(opts.symbol || '📈BASE');
   const governor = opts.governor || signers[0];
   const pauseGuardian = opts.pauseGuardian || signers[1];
-  const liquidationModule = opts.liquidationModule ?? '0x1111111111111111111111111111111111111111';
   // Reserve dedicated signers for the liquidation module roles from the tail of the signer list so
   // low-index `users` stay stable across the suite. These are returned so tests can drive the roles.
-  const multisig = signers[signers.length - 3];
-  const executor = signers[signers.length - 2];
-  const pauser = signers[signers.length - 1];
-  const users = signers.slice(2, signers.length - 3); // not governor, pause guardian, or a reserved role
+  const multisig = opts.multisig ?? signers[signers.length - 7];
+  const executors = signers.slice(-3);
+  const pausers = signers.slice(-6, -3);
+  const users = signers.slice(2, signers.length - 7); // not governor, pause guardian, or a reserved role
   const base = opts.base || 'USDC';
   const reward = opts.reward || 'COMP';
   const supplyKink = dfn(opts.supplyKink, exp(0.8, 18));
@@ -267,6 +274,11 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const tokens = {};
   for (const symbol in assets) {
     const config = assets[symbol];
+    if (config.address) {
+      // Use an already-deployed token (e.g. a real mainnet token on a fork) instead of a fresh mock.
+      tokens[symbol] = (await ethers.getContractAt('FaucetToken', config.address)) as FaucetToken;
+      continue;
+    }
     const decimals = config.decimals || 18;
     const initial = config.initial || 1e6;
     const name = config.name || symbol;
@@ -289,11 +301,21 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     await extensionDelegate.deployed();
   }
 
+  const defaultLiquidationModule = opts.liquidationModule ?? await deployAndUpdateLiquidationModule({
+    multisig: multisig.address,
+    dexAdapter: opts.dexAdapter ?? DEFAULT_DEX_ADAPTER,
+    executors: executors.map((x: SignerWithAddress) => x.address),
+    pausers: pausers.map((x: SignerWithAddress) => x.address),
+    ...(opts.liquidationModuleOpts || {}),
+  });
+  console.log("defaultLiquidationModule: ", defaultLiquidationModule.address);
+  console.log("Dex adapter: ", await defaultLiquidationModule.dexAdapter());
+
   const config = {
     governor: governor.address,
     pauseGuardian: pauseGuardian.address,
     extensionDelegate: extensionDelegate.address,
-    liquidationModule,
+    liquidationModule: defaultLiquidationModule.address,
     baseToken: tokens[base].address,
     baseTokenPriceFeed: priceFeeds[base].address,
     supplyKink,
@@ -349,15 +371,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   if (opts.start) await ethers.provider.send('evm_setNextBlockTimestamp', [opts.start]);
   await comet.initializeStorage();
 
-  const defaultLiquidationModule = await deployAndUpdateLiquidationModule({
-    comet,
-    governor,
-    multisig: multisig.address,
-    executors: [executor.address],
-    pausers: [pauser.address],
-    ...(opts.liquidationModuleOpts || {}),
-  });
-
   const baseTokenBalance = opts.baseTokenBalance;
   if (baseTokenBalance) {
     const baseToken = tokens[base];
@@ -369,8 +382,8 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     governor,
     pauseGuardian,
     multisig,
-    executor,
-    pauser,
+    executors,
+    pausers,
     extensionDelegate: extensionDelegate as CometExtAssetList,
     users,
     base,
