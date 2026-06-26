@@ -273,9 +273,10 @@ describe('UniswapAdapter', function () {
     });
   });
 
-  it('reverts swap() for a collateral without a configured route', async () => {
+  it('sends collateral back to comet for a collateral without a configured route', async () => {
     const unsetCollateral = TOKENS.COMP.address;
     const amountIn = TOKENS.COMP.amount;
+    const unsetColErc20 = ERC20__factory.connect(unsetCollateral, ethers.provider);
     await setErc20Balance(unsetCollateral, adapter.address, amountIn, TOKENS.COMP.slot);
     const minOut = await adapter.calculateMinAmountOut(unsetCollateral, amountIn);
     const swapIface = new ethers.utils.Interface([ONEINCH_V6_SWAP_ABI]);
@@ -292,10 +293,43 @@ describe('UniswapAdapter', function () {
       },
       '0x',
     ]);
+    const cometBalBefore = await unsetColErc20.balanceOf(comet.address);
+    await expect(
+      adapter.connect(moduleSigner).swap(unsetCollateral, swapData)
+    ).to.emit(adapter, "RedundantSwapFailed").withArgs(unsetCollateral, amountIn);
+    
+    expect(await unsetColErc20.balanceOf(comet.address)).to.equal(cometBalBefore.add(amountIn));
+  });
 
-    await expect(adapter.connect(moduleSigner).swap(unsetCollateral, swapData))
-      .to.be.revertedWithCustomError(adapter, 'MissingSwapRoute')
-      .withArgs(unsetCollateral);
+  it('sends collateral back to comet when redundant router fails', async () => {
+    const wbtc = TOKENS.WBTC;
+    const wbtcIndex = Object.keys(market.routes).indexOf(wbtc.address);
+
+    // Tamper WBTC's route to a pool that does not exist.
+    const badRoutes = [...routes];
+    badRoutes[wbtcIndex] = poolRoute(baseToken, wbtc.address, 999, 13);
+    const badAdapter = await adapterFactory.deploy(
+      market.comet,
+      moduleAddress,
+      CORE_ROUTER,
+      REDUNDANT_ROUTER,
+      TOKENS.WETH.address,
+      SLIPPAGE_BPS,
+      badRoutes
+    );
+    await badAdapter.deployed();
+
+    const amountIn = wbtc.amount;
+    await setErc20Balance(wbtc.address, badAdapter.address, amountIn, wbtc.slot);
+
+    const cometBalBefore = await wbtcErc20.balanceOf(comet.address);
+    // Empty swap data skips the core route and goes straight to the redundant route. The router swap reverts
+    // on the non-existent pool, so the adapter returns the pre-transferred collateral from the router to Comet.
+    await expect(
+      badAdapter.connect(moduleSigner).swap(wbtc.address, '0x')
+    ).to.emit(badAdapter, 'RedundantSwapFailed').withArgs(wbtc.address, amountIn);
+
+    expect(await wbtcErc20.balanceOf(comet.address)).to.equal(cometBalBefore.add(amountIn));
   });
 
   context('redundant swap route (single-pool swap)', function () {

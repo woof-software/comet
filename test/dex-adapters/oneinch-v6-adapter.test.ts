@@ -130,7 +130,7 @@ describe('OneInchV6CoreAdapter', function () {
 
       it('swapData is too short to hold a selector', async () => {
         await expect(
-          adapter.connect(moduleSigner).swap(wbtc.address, '0x')
+          adapter.connect(moduleSigner).swap(wbtc.address, '0xaa')
         ).to.be.revertedWithCustomError(adapter, 'InvalidSwapData');
       });
 
