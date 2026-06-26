@@ -3,27 +3,39 @@ import { CometHarnessInterfaceExtendedAssetList, LiquidationModule, LiquidationM
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
 import { takeSnapshot, SnapshotRestorer } from '../helpers/snapshot';
+import { setBalance } from '../helpers';
 
 // Role-based access control for the liquidation module:
-//   - Multisig (one):  controls parameter setters.
-//   - DAO      (one):  controls roles and the pause switch; derived from comet.governor().
-//   - Executor (many): the only accounts allowed to call the keeper liquidate() entry point.
-//   - Pauser   (many): toggle the DEX pause switch.
-// This file covers the constructor wiring and the DAO-only role-management surface
-// (setExecutors / setPausers / setMultisig / transferDAO).
+//   - DEFAULT_ADMIN_ROLE (DAO): the hardcoded governance timelock; admin of every role and the only
+//                               account that can grant/revoke roles.
+//   - MULTISIG_ROLE: controls parameter setters.
+//   - EXECUTOR_ROLE: the only accounts allowed to call the keeper liquidate() entry point.
+//   - PAUSER_ROLE:   toggle the DEX pause switch.
+// This file covers the constructor wiring and the DAO-only role-management surface (grantRole / revokeRole).
 describe('liquidation module access control', function () {
   // Any non-zero address satisfies the DEX adapter check; the adapter itself is not exercised here.
   const DEX_ADAPTER = '0x1111111111111111111111111111111111111111';
   const BORDER_HF: bigint = exp(102, 16); // 1.02e18
   const HEALTH_POSITION_HF: bigint = exp(110, 16); // 1.10e18
+  const PENALTY_BPS: bigint = BigInt(500);
   const ZERO = ethers.constants.AddressZero;
+
+  // OZ AccessControl role identifiers.
+  const ADMIN_ROLE = ethers.constants.HashZero; // DEFAULT_ADMIN_ROLE, held by the DAO
+  const EXECUTOR_ROLE = ethers.utils.id('EXECUTOR_ROLE');
+  const PAUSER_ROLE = ethers.utils.id('PAUSER_ROLE');
+  const MULTISIG_ROLE = ethers.utils.id('MULTISIG_ROLE');
+
+  // OZ v4 AccessControl revert message for a caller missing `role`.
+  const missingRole = (account: string, role: string) =>
+    `AccessControl: account ${account.toLowerCase()} is missing role ${role}`;
 
   let comet: CometHarnessInterfaceExtendedAssetList;
   let LiquidationModuleFactory: LiquidationModule__factory;
   let liquidationModule: LiquidationModule;
 
   let governor: SignerWithAddress;
-  let dao: SignerWithAddress; // equals the governor; derived in the constructor
+  let dao: SignerWithAddress; // holds DEFAULT_ADMIN_ROLE; equals the hardcoded DAO timelock
   let multisig: SignerWithAddress;
   let executor1: SignerWithAddress;
   let executor2: SignerWithAddress;
@@ -32,11 +44,7 @@ describe('liquidation module access control', function () {
   let pauser2: SignerWithAddress;
   let pauser3: SignerWithAddress;
   let other: SignerWithAddress; // holds no role
-  let fresh1: SignerWithAddress; // unused accounts granted roles during the tests
-  let fresh2: SignerWithAddress;
-  let fresh3: SignerWithAddress;
-  let newMultisig: SignerWithAddress;
-  let newDAO: SignerWithAddress;
+  let fresh1: SignerWithAddress; // unused account granted roles during the tests
 
   let executors: string[];
   let pausers: string[];
@@ -44,10 +52,11 @@ describe('liquidation module access control', function () {
   let snapshot: SnapshotRestorer;
 
   before(async () => {
-    const protocol = await makeProtocol({ base: 'USDC' });
+    governor = await ethers.getImpersonatedSigner("0x6d903f6003cca6255D85CcA4D3B5E5146dC33925");
+    await setBalance(governor.address, ethers.utils.parseEther("10"));
+    const protocol = await makeProtocol({ base: 'USDC', governor });
     comet = protocol.comet;
-    governor = protocol.governor;
-    // The DAO is derived from comet.governor() in the constructor.
+    // The DAO is the hardcoded governance timelock that holds DEFAULT_ADMIN_ROLE.
     dao = governor;
 
     [
@@ -60,10 +69,6 @@ describe('liquidation module access control', function () {
       pauser3,
       other,
       fresh1,
-      fresh2,
-      fresh3,
-      newMultisig,
-      newDAO,
     ] = protocol.users;
 
     executors = [executor1.address, executor2.address, executor3.address];
@@ -78,7 +83,8 @@ describe('liquidation module access control', function () {
       pausers,
       DEX_ADAPTER,
       BORDER_HF,
-      HEALTH_POSITION_HF
+      HEALTH_POSITION_HF,
+      PENALTY_BPS
     );
 
     snapshot = await takeSnapshot();
@@ -89,53 +95,37 @@ describe('liquidation module access control', function () {
   //////////////////////////////////////////////////////////////*/
 
   describe('constructor', function () {
-    // The constructor wires the Multisig, the initial Executors/Pausers and derives the DAO from Comet.
+    // The constructor wires the Multisig, the initial Executors/Pausers and the DAO (DEFAULT_ADMIN_ROLE).
     describe('happy path', function () {
       it('sets the Multisig', async () => {
         expect(await liquidationModule.multisig()).to.equal(multisig.address);
       });
 
-      it('derives the DAO from comet.governor()', async () => {
-        expect(await liquidationModule.dao()).to.equal(dao.address);
+      it('exposes the hardcoded DAO timelock', async () => {
+        expect(await liquidationModule.DAO()).to.equal(dao.address);
+      });
+
+      it('grants the DAO the admin role', async () => {
+        expect(await liquidationModule.hasRole(ADMIN_ROLE, dao.address)).to.be.true;
+      });
+
+      it('grants the Multisig the multisig role', async () => {
+        expect(await liquidationModule.hasRole(MULTISIG_ROLE, multisig.address)).to.be.true;
       });
 
       it('starts with the DEX unpaused', async () => {
-        expect(await liquidationModule.dexPaused()).to.be.false;
+        expect(await liquidationModule.dexRoutePaused()).to.be.false;
       });
 
       [0, 1, 2].forEach((i) => {
         it(`grants the initial Executor #${i + 1}`, async () => {
-          expect(await liquidationModule.isExecutor(executors[i])).to.be.true;
+          expect(await liquidationModule.hasRole(EXECUTOR_ROLE, executors[i])).to.be.true;
         });
       });
 
       [0, 1, 2].forEach((i) => {
         it(`grants the initial Pauser #${i + 1}`, async () => {
-          expect(await liquidationModule.isPauser(pausers[i])).to.be.true;
-        });
-      });
-
-      it('emits MultisigUpdated from the zero address', async () => {
-        await expect(liquidationModule.deployTransaction)
-          .to.emit(liquidationModule, 'MultisigUpdated').withArgs(ZERO, multisig.address);
-      });
-
-      it('emits DAOTransferred from the zero address', async () => {
-        await expect(liquidationModule.deployTransaction)
-          .to.emit(liquidationModule, 'DAOTransferred').withArgs(ZERO, dao.address);
-      });
-
-      [0, 1, 2].forEach((i) => {
-        it(`emits ExecutorSet for the initial Executor #${i + 1}`, async () => {
-          await expect(liquidationModule.deployTransaction)
-            .to.emit(liquidationModule, 'ExecutorSet').withArgs(executors[i], true);
-        });
-      });
-
-      [0, 1, 2].forEach((i) => {
-        it(`emits PauserSet for the initial Pauser #${i + 1}`, async () => {
-          await expect(liquidationModule.deployTransaction)
-            .to.emit(liquidationModule, 'PauserSet').withArgs(pausers[i], true);
+          expect(await liquidationModule.hasRole(PAUSER_ROLE, pausers[i])).to.be.true;
         });
       });
     });
@@ -143,19 +133,19 @@ describe('liquidation module access control', function () {
     describe('revert when', function () {
       it('the Multisig is the zero address', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(comet.address, ZERO, executors, pausers, DEX_ADAPTER, BORDER_HF, HEALTH_POSITION_HF)
+          LiquidationModuleFactory.deploy(comet.address, ZERO, executors, pausers, DEX_ADAPTER, BORDER_HF, HEALTH_POSITION_HF, PENALTY_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
 
       it('the Executors list is empty', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(comet.address, multisig.address, [], pausers, DEX_ADAPTER, BORDER_HF, HEALTH_POSITION_HF)
+          LiquidationModuleFactory.deploy(comet.address, multisig.address, [], pausers, DEX_ADAPTER, BORDER_HF, HEALTH_POSITION_HF, PENALTY_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
       });
 
       it('the Pausers list is empty', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(comet.address, multisig.address, executors, [], DEX_ADAPTER, BORDER_HF, HEALTH_POSITION_HF)
+          LiquidationModuleFactory.deploy(comet.address, multisig.address, executors, [], DEX_ADAPTER, BORDER_HF, HEALTH_POSITION_HF, PENALTY_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
       });
 
@@ -168,7 +158,8 @@ describe('liquidation module access control', function () {
             pausers,
             DEX_ADAPTER,
             BORDER_HF,
-            HEALTH_POSITION_HF
+            HEALTH_POSITION_HF,
+            PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
       });
@@ -182,7 +173,8 @@ describe('liquidation module access control', function () {
             [pauser1.address, pauser2.address, pauser1.address],
             DEX_ADAPTER,
             BORDER_HF,
-            HEALTH_POSITION_HF
+            HEALTH_POSITION_HF,
+            PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
       });
@@ -196,7 +188,8 @@ describe('liquidation module access control', function () {
             pausers,
             DEX_ADAPTER,
             BORDER_HF,
-            HEALTH_POSITION_HF
+            HEALTH_POSITION_HF,
+            PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
@@ -210,7 +203,8 @@ describe('liquidation module access control', function () {
             [pauser1.address, pauser2.address, ZERO],
             DEX_ADAPTER,
             BORDER_HF,
-            HEALTH_POSITION_HF
+            HEALTH_POSITION_HF,
+            PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
@@ -218,289 +212,117 @@ describe('liquidation module access control', function () {
   });
 
   /*//////////////////////////////////////////////////////////////
-                            SET EXECUTORS
+                      EXECUTOR ROLE (grant / revoke)
   //////////////////////////////////////////////////////////////*/
 
-  describe('setExecutors', function () {
-    // Granting a single, previously unset account.
-    describe('grants a single Executor', function () {
+  describe('EXECUTOR_ROLE', function () {
+    describe('the DAO grants the role', function () {
       let setTx: ContractTransaction;
 
       after(async () => await snapshot.restore());
 
-      it('the DAO sets the account', async () => {
-        setTx = await liquidationModule.connect(dao).setExecutors([fresh1.address], [true]);
+      it('the DAO grants a fresh account', async () => {
+        setTx = await liquidationModule.connect(dao).grantRole(EXECUTOR_ROLE, fresh1.address);
         await expect(setTx).to.not.be.reverted;
       });
 
-      it('emits ExecutorSet', async () => {
-        await expect(setTx).to.emit(liquidationModule, 'ExecutorSet').withArgs(fresh1.address, true);
+      it('emits RoleGranted', async () => {
+        await expect(setTx)
+          .to.emit(liquidationModule, 'RoleGranted').withArgs(EXECUTOR_ROLE, fresh1.address, dao.address);
       });
 
       it('marks the account as an Executor', async () => {
-        expect(await liquidationModule.isExecutor(fresh1.address)).to.be.true;
+        expect(await liquidationModule.hasRole(EXECUTOR_ROLE, fresh1.address)).to.be.true;
       });
     });
 
-    // Granting three accounts in a single call emits one event per account.
-    describe('grants three Executors in one call', function () {
-      let setTx: ContractTransaction;
+    describe('the DAO revokes the role', function () {
+      let revokeTx: ContractTransaction;
 
       after(async () => await snapshot.restore());
 
-      it('the DAO sets the accounts', async () => {
-        setTx = await liquidationModule
-          .connect(dao)
-          .setExecutors([fresh1.address, fresh2.address, fresh3.address], [true, true, true]);
-        await expect(setTx).to.not.be.reverted;
+      it('the DAO revokes an existing Executor', async () => {
+        revokeTx = await liquidationModule.connect(dao).revokeRole(EXECUTOR_ROLE, executor1.address);
+        await expect(revokeTx).to.not.be.reverted;
       });
 
-      it('emits ExecutorSet for the first account', async () => {
-        await expect(setTx).to.emit(liquidationModule, 'ExecutorSet').withArgs(fresh1.address, true);
+      it('emits RoleRevoked', async () => {
+        await expect(revokeTx)
+          .to.emit(liquidationModule, 'RoleRevoked').withArgs(EXECUTOR_ROLE, executor1.address, dao.address);
       });
 
-      it('emits ExecutorSet for the second account', async () => {
-        await expect(setTx).to.emit(liquidationModule, 'ExecutorSet').withArgs(fresh2.address, true);
-      });
-
-      it('emits ExecutorSet for the third account', async () => {
-        await expect(setTx).to.emit(liquidationModule, 'ExecutorSet').withArgs(fresh3.address, true);
-      });
-
-      it('marks the first account as an Executor', async () => {
-        expect(await liquidationModule.isExecutor(fresh1.address)).to.be.true;
-      });
-
-      it('marks the second account as an Executor', async () => {
-        expect(await liquidationModule.isExecutor(fresh2.address)).to.be.true;
-      });
-
-      it('marks the third account as an Executor', async () => {
-        expect(await liquidationModule.isExecutor(fresh3.address)).to.be.true;
+      it('clears the Executor role', async () => {
+        expect(await liquidationModule.hasRole(EXECUTOR_ROLE, executor1.address)).to.be.false;
       });
     });
 
     describe('revert when', function () {
-      it('the caller is not the DAO', async () => {
-        await expect(liquidationModule.connect(other).setExecutors([fresh1.address], [true]))
-          .to.be.revertedWithCustomError(liquidationModule, 'OnlyDAO');
+      it('a non-DAO grants the role', async () => {
+        await expect(liquidationModule.connect(other).grantRole(EXECUTOR_ROLE, fresh1.address))
+          .to.be.revertedWith(missingRole(other.address, ADMIN_ROLE));
       });
 
-      it('the accounts list is empty', async () => {
-        await expect(liquidationModule.connect(dao).setExecutors([], []))
-          .to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
-      });
-
-      it('the accounts and statuses lengths differ', async () => {
-        await expect(liquidationModule.connect(dao).setExecutors([fresh1.address], [true, false]))
-          .to.be.revertedWithCustomError(liquidationModule, 'ArrayLengthMismatch');
-      });
-
-      it('an account is the zero address', async () => {
-        await expect(liquidationModule.connect(dao).setExecutors([fresh1.address, ZERO], [true, true]))
-          .to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
-      });
-
-      it('the accounts list has duplicates', async () => {
-        await expect(liquidationModule.connect(dao).setExecutors([fresh1.address, fresh1.address], [true, true]))
-          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
-      });
-
-      it('an account is already an Executor (true -> true)', async () => {
-        await expect(liquidationModule.connect(dao).setExecutors([executor1.address], [true]))
-          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
-      });
-
-      it('an account is already not an Executor (false -> false)', async () => {
-        await expect(liquidationModule.connect(dao).setExecutors([other.address], [false]))
-          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
+      it('a non-DAO revokes the role', async () => {
+        await expect(liquidationModule.connect(other).revokeRole(EXECUTOR_ROLE, executor1.address))
+          .to.be.revertedWith(missingRole(other.address, ADMIN_ROLE));
       });
     });
   });
 
   /*//////////////////////////////////////////////////////////////
-                            SET PAUSERS
+                      PAUSER ROLE (grant / revoke)
   //////////////////////////////////////////////////////////////*/
 
-  describe('setPausers', function () {
-    // Granting a single, previously unset account.
-    describe('grants a single Pauser', function () {
+  describe('PAUSER_ROLE', function () {
+    describe('the DAO grants the role', function () {
       let setTx: ContractTransaction;
 
       after(async () => await snapshot.restore());
 
-      it('the DAO sets the account', async () => {
-        setTx = await liquidationModule.connect(dao).setPausers([fresh1.address], [true]);
+      it('the DAO grants a fresh account', async () => {
+        setTx = await liquidationModule.connect(dao).grantRole(PAUSER_ROLE, fresh1.address);
         await expect(setTx).to.not.be.reverted;
       });
 
-      it('emits PauserSet', async () => {
-        await expect(setTx).to.emit(liquidationModule, 'PauserSet').withArgs(fresh1.address, true);
+      it('emits RoleGranted', async () => {
+        await expect(setTx)
+          .to.emit(liquidationModule, 'RoleGranted').withArgs(PAUSER_ROLE, fresh1.address, dao.address);
       });
 
       it('marks the account as a Pauser', async () => {
-        expect(await liquidationModule.isPauser(fresh1.address)).to.be.true;
+        expect(await liquidationModule.hasRole(PAUSER_ROLE, fresh1.address)).to.be.true;
       });
     });
 
-    // Granting three accounts in a single call emits one event per account.
-    describe('grants three Pausers in one call', function () {
-      let setTx: ContractTransaction;
+    describe('the DAO revokes the role', function () {
+      let revokeTx: ContractTransaction;
 
       after(async () => await snapshot.restore());
 
-      it('the DAO sets the accounts', async () => {
-        setTx = await liquidationModule
-          .connect(dao)
-          .setPausers([fresh1.address, fresh2.address, fresh3.address], [true, true, true]);
-        await expect(setTx).to.not.be.reverted;
+      it('the DAO revokes an existing Pauser', async () => {
+        revokeTx = await liquidationModule.connect(dao).revokeRole(PAUSER_ROLE, pauser1.address);
+        await expect(revokeTx).to.not.be.reverted;
       });
 
-      it('emits PauserSet for the first account', async () => {
-        await expect(setTx).to.emit(liquidationModule, 'PauserSet').withArgs(fresh1.address, true);
+      it('emits RoleRevoked', async () => {
+        await expect(revokeTx)
+          .to.emit(liquidationModule, 'RoleRevoked').withArgs(PAUSER_ROLE, pauser1.address, dao.address);
       });
 
-      it('emits PauserSet for the second account', async () => {
-        await expect(setTx).to.emit(liquidationModule, 'PauserSet').withArgs(fresh2.address, true);
-      });
-
-      it('emits PauserSet for the third account', async () => {
-        await expect(setTx).to.emit(liquidationModule, 'PauserSet').withArgs(fresh3.address, true);
-      });
-
-      it('marks the first account as a Pauser', async () => {
-        expect(await liquidationModule.isPauser(fresh1.address)).to.be.true;
-      });
-
-      it('marks the second account as a Pauser', async () => {
-        expect(await liquidationModule.isPauser(fresh2.address)).to.be.true;
-      });
-
-      it('marks the third account as a Pauser', async () => {
-        expect(await liquidationModule.isPauser(fresh3.address)).to.be.true;
+      it('clears the Pauser role', async () => {
+        expect(await liquidationModule.hasRole(PAUSER_ROLE, pauser1.address)).to.be.false;
       });
     });
 
     describe('revert when', function () {
-      it('the caller is not the DAO', async () => {
-        await expect(liquidationModule.connect(other).setPausers([fresh1.address], [true]))
-          .to.be.revertedWithCustomError(liquidationModule, 'OnlyDAO');
+      it('a non-DAO grants the role', async () => {
+        await expect(liquidationModule.connect(other).grantRole(PAUSER_ROLE, fresh1.address))
+          .to.be.revertedWith(missingRole(other.address, ADMIN_ROLE));
       });
 
-      it('the accounts list is empty', async () => {
-        await expect(liquidationModule.connect(dao).setPausers([], []))
-          .to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
-      });
-
-      it('the accounts and statuses lengths differ', async () => {
-        await expect(liquidationModule.connect(dao).setPausers([fresh1.address], [true, false]))
-          .to.be.revertedWithCustomError(liquidationModule, 'ArrayLengthMismatch');
-      });
-
-      it('an account is the zero address', async () => {
-        await expect(liquidationModule.connect(dao).setPausers([fresh1.address, ZERO], [true, true]))
-          .to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
-      });
-
-      it('the accounts list has duplicates', async () => {
-        await expect(liquidationModule.connect(dao).setPausers([fresh1.address, fresh1.address], [true, true]))
-          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
-      });
-
-      it('an account is already a Pauser (true -> true)', async () => {
-        await expect(liquidationModule.connect(dao).setPausers([pauser1.address], [true]))
-          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
-      });
-
-      it('an account is already not a Pauser (false -> false)', async () => {
-        await expect(liquidationModule.connect(dao).setPausers([other.address], [false]))
-          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
-      });
-    });
-  });
-
-  /*//////////////////////////////////////////////////////////////
-                            SET MULTISIG
-  //////////////////////////////////////////////////////////////*/
-
-  describe('setMultisig', function () {
-    describe('happy path', function () {
-      let setTx: ContractTransaction;
-
-      after(async () => await snapshot.restore());
-
-      it('the DAO sets a new Multisig', async () => {
-        setTx = await liquidationModule.connect(dao).setMultisig(newMultisig.address);
-        await expect(setTx).to.not.be.reverted;
-      });
-
-      it('emits MultisigUpdated with the old and new addresses', async () => {
-        await expect(setTx)
-          .to.emit(liquidationModule, 'MultisigUpdated').withArgs(multisig.address, newMultisig.address);
-      });
-
-      it('updates the stored Multisig', async () => {
-        expect(await liquidationModule.multisig()).to.equal(newMultisig.address);
-      });
-    });
-
-    describe('revert when', function () {
-      it('the caller is not the DAO', async () => {
-        await expect(liquidationModule.connect(other).setMultisig(newMultisig.address))
-          .to.be.revertedWithCustomError(liquidationModule, 'OnlyDAO');
-      });
-
-      it('the new Multisig equals the current Multisig', async () => {
-        await expect(liquidationModule.connect(dao).setMultisig(multisig.address))
-          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
-      });
-
-      it('the new Multisig is the zero address', async () => {
-        await expect(liquidationModule.connect(dao).setMultisig(ZERO))
-          .to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
-      });
-    });
-  });
-
-  /*//////////////////////////////////////////////////////////////
-                            TRANSFER DAO
-  //////////////////////////////////////////////////////////////*/
-
-  describe('transferDAO', function () {
-    describe('happy path', function () {
-      let transferTx: ContractTransaction;
-
-      after(async () => await snapshot.restore());
-
-      it('the DAO transfers the role', async () => {
-        transferTx = await liquidationModule.connect(dao).transferDAO(newDAO.address);
-        await expect(transferTx).to.not.be.reverted;
-      });
-
-      it('emits DAOTransferred with the old and new addresses', async () => {
-        await expect(transferTx)
-          .to.emit(liquidationModule, 'DAOTransferred').withArgs(dao.address, newDAO.address);
-      });
-
-      it('updates the stored DAO', async () => {
-        expect(await liquidationModule.dao()).to.equal(newDAO.address);
-      });
-    });
-
-    describe('revert when', function () {
-      it('the caller is not the DAO', async () => {
-        await expect(liquidationModule.connect(other).transferDAO(newDAO.address))
-          .to.be.revertedWithCustomError(liquidationModule, 'OnlyDAO');
-      });
-
-      it('the new DAO is the zero address', async () => {
-        await expect(liquidationModule.connect(dao).transferDAO(ZERO))
-          .to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
-      });
-
-      it('the new DAO equals the current DAO', async () => {
-        await expect(liquidationModule.connect(dao).transferDAO(dao.address))
-          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
+      it('a non-DAO revokes the role', async () => {
+        await expect(liquidationModule.connect(other).revokeRole(PAUSER_ROLE, pauser1.address))
+          .to.be.revertedWith(missingRole(other.address, ADMIN_ROLE));
       });
     });
   });

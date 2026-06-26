@@ -2,12 +2,19 @@ import { deployAndUpdateLiquidationModule, ethers, exp, expect, makeProtocol, Sn
 import { CometHarnessInterfaceExtendedAssetList, LiquidationModule, LiquidationModule__factory } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
+import { setBalance } from '../helpers';
 
 describe('liquidation module', function () {
   // Any non-zero address satisfies the DEX adapter check; the adapter itself is not exercised here.
   const DEX_ADAPTER = '0x1111111111111111111111111111111111111111';
   const BORDER_HF: bigint = exp(102, 16); // 1.02e18
   const HEALTH_POSITION_HF: bigint = exp(110, 16); // 1.10e18
+  const PENALTY_BPS: bigint = BigInt(500);
+
+  // Parameter setters are gated by OZ AccessControl's MULTISIG_ROLE.
+  const MULTISIG_ROLE = ethers.utils.id('MULTISIG_ROLE');
+  const missingRole = (account: string, role: string) =>
+    `AccessControl: account ${account.toLowerCase()} is missing role ${role}`;
 
   let comet: CometHarnessInterfaceExtendedAssetList;
   let liquidationModule: LiquidationModule;
@@ -19,9 +26,10 @@ describe('liquidation module', function () {
   let snapshot: SnapshotRestorer;
 
   before(async () => {
-    const protocol = await makeProtocol({ base: 'USDC' });
+    governor = await ethers.getImpersonatedSigner("0x6d903f6003cca6255D85CcA4D3B5E5146dC33925");
+    await setBalance(governor.address, ethers.utils.parseEther("10"));
+    const protocol = await makeProtocol({ base: 'USDC', governor: governor });
     comet = protocol.comet;
-    governor = protocol.governor;
     [alice] = protocol.users;
 
     LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
@@ -36,6 +44,7 @@ describe('liquidation module', function () {
       dexAdapter: DEX_ADAPTER,
       borderHF: BORDER_HF,
       healthPositionHF: HEALTH_POSITION_HF,
+      penaltyBps: PENALTY_BPS
     });
 
     snapshot = await takeSnapshot();
@@ -73,32 +82,32 @@ describe('liquidation module', function () {
 
     context('revert when', function () {
       it('dex adapter is the zero address', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], ethers.constants.AddressZero, BORDER_HF, HEALTH_POSITION_HF))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], ethers.constants.AddressZero, BORDER_HF, HEALTH_POSITION_HF, PENALTY_BPS))
           .to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
 
       it('borderHF is zero', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, 0, HEALTH_POSITION_HF))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, 0, HEALTH_POSITION_HF, PENALTY_BPS))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
 
       it('healthPositionHF is zero', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, BORDER_HF, 0))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, BORDER_HF, 0, PENALTY_BPS))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
 
       it('both borderHF and healthPositionHF are zero', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, 0, 0))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, 0, 0, PENALTY_BPS))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
 
       it('borderHF is greater than healthPositionHF', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, HEALTH_POSITION_HF + 1n, HEALTH_POSITION_HF))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, HEALTH_POSITION_HF + 1n, HEALTH_POSITION_HF, PENALTY_BPS))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
 
       it('borderHF equals healthPositionHF', async () => {
-        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, HEALTH_POSITION_HF, HEALTH_POSITION_HF))
+        await expect(LiquidationModuleFactory.deploy(comet.address, governor.address, [governor.address], [governor.address], DEX_ADAPTER, HEALTH_POSITION_HF, HEALTH_POSITION_HF, PENALTY_BPS))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
     });
@@ -132,7 +141,7 @@ describe('liquidation module', function () {
 
       it('caller is not the multisig', async () => {
         await expect(liquidationModule.connect(alice).setBorderHF(NEW_BORDER_HF))
-          .to.be.revertedWithCustomError(liquidationModule, 'OnlyMultisig');
+          .to.be.revertedWith(missingRole(alice.address, MULTISIG_ROLE));
       });
 
       it('borderHF is zero', async () => {
@@ -180,7 +189,7 @@ describe('liquidation module', function () {
 
       it('caller is not the multisig', async () => {
         await expect(liquidationModule.connect(alice).setHealthPositionHF(NEW_HEALTH_POSITION_HF))
-          .to.be.revertedWithCustomError(liquidationModule, 'OnlyMultisig');
+          .to.be.revertedWith(missingRole(alice.address, MULTISIG_ROLE));
       });
 
       it('healthPositionHF is zero', async () => {
