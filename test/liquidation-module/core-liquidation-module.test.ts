@@ -31,7 +31,7 @@ describe('core liquidation module', function () {
     const protocol = await makeProtocol({ base: 'USDC', governor });
     comet = protocol.comet;
     liquidationModule = protocol.defaultLiquidationModule;
-    pauser = protocol.pauser;
+    pauser = protocol.pausers[0];
     [alice] = protocol.users;
 
     snapshot = await takeSnapshot();
@@ -63,25 +63,6 @@ describe('core liquidation module', function () {
       // TARGET_HEALTH_FACTOR is a constant 105e16 = 1.05e18 (105%).
       it('exposes a target health factor of 105%', async () => {
         expect(await liquidationModule.TARGET_HEALTH_FACTOR()).to.equal(exp(1.05, 18));
-      });
-    });
-
-    context('revert when', function () {
-      it('comet address is zero', async () => {
-        const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
-
-        await expect(
-          LiquidationModuleFactory.deploy(
-            ethers.constants.AddressZero,
-            governor.address,
-            [governor.address],
-            [governor.address],
-            DEX_ADAPTER,
-            BORDER_HF,
-            HEALTH_POSITION_HF,
-            PENALTY_BPS
-          )
-        ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
     });
   });

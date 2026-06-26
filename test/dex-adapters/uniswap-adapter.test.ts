@@ -95,7 +95,6 @@ describe('UniswapAdapter', function () {
         await expect(
           adapterFactory.deploy(
             market.comet,
-            moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
             ethers.constants.AddressZero,
@@ -109,7 +108,6 @@ describe('UniswapAdapter', function () {
         await expect(
           adapterFactory.deploy(
             market.comet,
-            moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
             TOKENS.WETH.address,
@@ -126,7 +124,6 @@ describe('UniswapAdapter', function () {
         await expect(
           adapterFactory.deploy(
             market.comet,
-            moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
             TOKENS.WETH.address,
@@ -151,7 +148,6 @@ describe('UniswapAdapter', function () {
         await expect(
           adapterFactory.deploy(
             market.comet,
-            moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
             TOKENS.WETH.address,
@@ -171,7 +167,6 @@ describe('UniswapAdapter', function () {
         await expect(
           adapterFactory.deploy(
             market.comet,
-            moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
             TOKENS.WETH.address,
@@ -195,7 +190,6 @@ describe('UniswapAdapter', function () {
         await expect(
           adapterFactory.deploy(
             market.comet,
-            moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
             TOKENS.WETH.address,
@@ -215,7 +209,6 @@ describe('UniswapAdapter', function () {
         await expect(
           adapterFactory.deploy(
             market.comet,
-            moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
             TOKENS.WETH.address,
@@ -237,7 +230,6 @@ describe('UniswapAdapter', function () {
         await expect(
           adapterFactory.deploy(
             market.comet,
-            moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
             TOKENS.WETH.address,
@@ -259,7 +251,6 @@ describe('UniswapAdapter', function () {
         await expect(
           adapterFactory.deploy(
             market.comet,
-            moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
             TOKENS.WETH.address,
@@ -310,7 +301,6 @@ describe('UniswapAdapter', function () {
     badRoutes[wbtcIndex] = poolRoute(baseToken, wbtc.address, 999, 13);
     const badAdapter = await adapterFactory.deploy(
       market.comet,
-      moduleAddress,
       CORE_ROUTER,
       REDUNDANT_ROUTER,
       TOKENS.WETH.address,
@@ -318,6 +308,7 @@ describe('UniswapAdapter', function () {
       badRoutes
     );
     await badAdapter.deployed();
+    await badAdapter.connect(moduleSigner).initiateAdapter();
 
     const amountIn = wbtc.amount;
     await setErc20Balance(wbtc.address, badAdapter.address, amountIn, wbtc.slot);

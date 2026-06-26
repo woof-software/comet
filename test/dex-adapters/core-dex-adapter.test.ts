@@ -59,7 +59,6 @@ describe('CoreDexAdapter', function () {
       it('a constructor address is zero', async () => {
         await expect(
           adapterFactory.deploy(
-            market.comet,
             ethers.constants.AddressZero,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
@@ -75,7 +74,6 @@ describe('CoreDexAdapter', function () {
         await expect(
           adapterFactory.deploy(
             market.comet,
-            moduleAddress,
             CORE_ROUTER,
             REDUNDANT_ROUTER,
             TOKENS.WETH.address,
