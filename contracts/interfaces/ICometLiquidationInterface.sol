@@ -15,6 +15,6 @@ interface ICometLiquidationInterface {
     //////////////////////////////////////////////////////////////*/
 
     function updateCollateral(address account, uint8 index, uint128 seizedAmount) external;
-    function seizeCollateralForDex(address account, uint8 index, uint128 seizedAmount, address recipient) external;
+    function updateAndSeizeCollateral(address account, uint8 index, uint128 seizedAmount) external;
     function updateDebtAndPrincipal(address account, int256 newBalance) external;
 }

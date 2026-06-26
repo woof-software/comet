@@ -1328,12 +1328,12 @@ contract CometWithExtendedAssetList is CometMainInterface {
         _updateCollateral(account, index, seizedAmount);
     }
 
-    /// @notice Liquidation module hook for the DEX route: seizes collateral and transfers it to `recipient`
-    ///         (the DEX adapter) so it can be swapped into the base asset.
-    function seizeCollateralForDex(address account, uint8 index, uint128 seizedAmount, address recipient) external onlyLiquidationModule nonReentrant {
+    /// @notice Liquidation module hook for the DEX route: seizes collateral and transfers it to the module
+    ///         which will re-rout it to the DEX adapter, so it can be swapped into the base asset.
+    function updateAndSeizeCollateral(address account, uint8 index, uint128 seizedAmount) external onlyLiquidationModule nonReentrant {
         address asset = _updateCollateral(account, index, seizedAmount);
 
-        doTransferOut(asset, recipient, seizedAmount);
+        doTransferOut(asset, liquidationModule, seizedAmount);
     }
 
     function _updateCollateral(address account, uint8 index, uint128 seizedAmount) internal returns (address) {
