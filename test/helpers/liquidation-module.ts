@@ -17,11 +17,13 @@ type DeployLiquidationModuleOpts = {
   dexAdapter?: string;
   borderHF?: bigint;
   healthPositionHF?: bigint;
+  penaltyBps?: bigint;
 };
 
 const DEFAULT_DEX_ADAPTER = '0x1111111111111111111111111111111111111111';
 const DEFAULT_BORDER_HF = exp(102, 16); // 1.02e18
 const DEFAULT_HEALTH_POSITION_HF = exp(110, 16); // 1.10e18
+const DEFAULT_PENALTY_BPS = 500n; // 5% executor penalty on the DEX route
 
 export async function deployAndUpdateLiquidationModule(
   opts: DeployLiquidationModuleOpts
@@ -38,7 +40,8 @@ export async function deployAndUpdateLiquidationModule(
     opts.pausers,
     opts.dexAdapter ?? DEFAULT_DEX_ADAPTER,
     opts.borderHF ?? DEFAULT_BORDER_HF,
-    opts.healthPositionHF ?? DEFAULT_HEALTH_POSITION_HF
+    opts.healthPositionHF ?? DEFAULT_HEALTH_POSITION_HF,
+    opts.penaltyBps ?? DEFAULT_PENALTY_BPS
   );
 
   await opts.comet.connect(opts.governor).setLiquidationModule(liquidationModule.address);
