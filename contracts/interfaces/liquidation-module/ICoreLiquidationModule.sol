@@ -24,5 +24,7 @@ interface ICoreLiquidationModule is ICoreLiquidationModuleErrors, ICoreLiquidati
 
     function isLiquidatable(address account) external view returns (bool);
 
+    function seizurePlan(address account) external view returns (Seizure[] memory plan);
+
     function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) external;
 }

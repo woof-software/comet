@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity =0.8.15;
 
-import { CometMainInterface } from "../../CometMainInterface.sol";
 import { CoreDexAdapter } from "../CoreDexAdapter.sol";
 import { IOneInchV6AdapterErrors } from "../../interfaces/dex-adapters/IOneInchV6AdapterErrors.sol";
 import { UniswapAdapter } from "../redundant/UniswapAdapter.sol";
@@ -25,13 +24,12 @@ contract OneInchV6CoreAdapter is UniswapAdapter, IOneInchV6AdapterErrors {
 
     /// @dev Parameters are forwarded to {UniswapAdapter} and {CoreDexAdapter}.
     constructor(
-        CometMainInterface _comet,
         address _coreRouter,
         address _redundantRouter,
         address _weth,
         uint16 _slippageBps,
         RouteConfig[] memory _swapRoutes
-    ) UniswapAdapter(_comet, _coreRouter, _redundantRouter, _weth, _slippageBps, _swapRoutes) {}
+    ) UniswapAdapter(_coreRouter, _redundantRouter, _weth, _slippageBps, _swapRoutes) {}
 
     /**
      * @inheritdoc CoreDexAdapter

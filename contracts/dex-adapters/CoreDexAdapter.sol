@@ -22,10 +22,10 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
 
     /// @notice Basis-points denominator (100%).
     uint16 public constant BPS = 10_000;
-    /// @notice The Comet market for this adapter; source of prices and asset config.
-    CometMainInterface public immutable comet;
-    /// @notice The base asset that collateral is swapped into.
-    IERC20 public immutable baseAsset;
+    /// @notice The Comet market for this adapter; source of prices and asset config. Set in initiateAdapter.
+    CometMainInterface public comet;
+    /// @notice The base asset that collateral is swapped into. Set in initiateAdapter.
+    IERC20 public baseAsset;
     /// @notice Primary DEX router used by _coreSwap.
     address public immutable coreRouter;
     /// @notice Fallback DEX router used by _redundantSwap when the core swap fails.
@@ -37,28 +37,33 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
     address public module;
 
     /**
-     * @notice Binds the adapter to a Comet market and its core/redundant routers.
-     * @dev `baseAsset` is resolved through the provided Comet.
-     * @param _comet The Comet market to serve.
+     * @notice Sets the adapter's core/redundant routers and slippage. The Comet is NOT bound here: at
+     *         deployment time the Comet does not exist yet, so it is resolved later in {initiateAdapter}.
      * @param _coreRouter The primary DEX router.
      * @param _redundantRouter The fallback DEX router.
      * @param _slippageBps Allowed slippage in basis points (0 < value <= BPS).
      */
-    constructor(CometMainInterface _comet, address _coreRouter, address _redundantRouter, uint16 _slippageBps) {
-        if (address(_comet) == address(0) || _coreRouter == address(0) || _redundantRouter == address(0)) revert ZeroAddress();
+    constructor(address _coreRouter, address _redundantRouter, uint16 _slippageBps) {
+        if (_coreRouter == address(0) || _redundantRouter == address(0)) revert ZeroAddress();
         if (_slippageBps == 0 || _slippageBps > BPS) revert SlippageOutOfBounds(_slippageBps);
 
-        comet = _comet;
         coreRouter = _coreRouter;
         redundantRouter = _redundantRouter;
         slippageBps = _slippageBps;
-        baseAsset = IERC20(_comet.baseToken());
     }
 
-    function initiateAdapter() external {
+    /**
+     * @notice Finalized the initialization of Dex Adapter.
+     * @param _comet The Comet market this adapter serves.
+     * @param _baseAsset The Comet base asset that collateral is swapped into.
+     */
+    function _initiateAdapter(address _comet, address _baseAsset) internal {
         if (module != address(0)) revert AlreadySet();
+        if (_comet == address(0) || _baseAsset == address(0)) revert ZeroAddress();
 
         module = msg.sender;
+        comet = CometMainInterface(_comet);
+        baseAsset = IERC20(_baseAsset);
     }
 
     /// @inheritdoc ICoreDexAdapter

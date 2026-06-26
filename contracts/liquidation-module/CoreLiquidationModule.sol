@@ -14,7 +14,7 @@ import { CometMath } from "../CometMath.sol";
 import { LiquidationAccessControl } from "./LiquidationAccessControl.sol";
 import { ICoreLiquidationModule } from "../interfaces/liquidation-module/ICoreLiquidationModule.sol";
 import { ICoreDexAdapter } from "../interfaces/dex-adapters/ICoreDexAdapter.sol";
-import "hardhat/console.sol";
+
 /**
  * @title Core Liquidation Module
  * @author Woof
@@ -86,7 +86,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         baseScale = _baseScale;
         baseToken = IERC20(_baseToken);
 
-        if (address(dexAdapter) != address(0)) dexAdapter.initiateAdapter();
+        if (address(dexAdapter) != address(0)) dexAdapter.initiateAdapter(msg.sender, _assetList, _baseToken);
     }
 
     /**
@@ -127,6 +127,15 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
 
         ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(account, newBalance);
         emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
+    }
+
+    /**
+     * @notice Returns the per-collateral seizure plan a liquidation would produce for `account`.
+     * @param account The underwater account to plan a seizure for.
+     * @return plan The ordered list of collateral seizures.
+     */
+    function seizurePlan(address account) external view returns (Seizure[] memory plan) {
+        (plan, , , ) = _computeSeizurePlan(account);
     }
 
     /**

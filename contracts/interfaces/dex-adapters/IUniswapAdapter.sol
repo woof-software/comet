@@ -24,8 +24,10 @@ interface IUniswapAdapter is IUniswapAdapterErrors {
     }
 
     /// @notice Per-collateral route configuration supplied at constructor.
-    /// @dev `poolKey`/`zeroForOne` are read only when `kind == Single`; `path` only when `kind == Multi`.
+    /// @dev `collateral` keys the route in storage; `poolKey`/`zeroForOne` are read only when
+    ///      `kind == Single`; `path` only when `kind == Multi`.
     struct RouteConfig {
+        address collateral;
         RouteKind kind;
         PoolKey poolKey;
         bool zeroForOne;

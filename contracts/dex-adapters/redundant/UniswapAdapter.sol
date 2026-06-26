@@ -3,7 +3,7 @@ pragma solidity =0.8.15;
 
 import { CoreDexAdapter } from "../CoreDexAdapter.sol";
 import { IUniswapAdapter } from "../../interfaces/dex-adapters/IUniswapAdapter.sol";
-import { CometMainInterface } from "../../CometMainInterface.sol";
+import { IAssetList } from "../../IAssetList.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { PathKey, Currency, ExactInputSingleParams, ExactInputParams, IUniversalRouter } from "../../vendor/uniswap/UniswapV4Vendor.sol";
@@ -51,7 +51,10 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
     /// @notice The wrapped native token. Collateral equal to it is swapped as native ETH.
     address public immutable weth;
     /// @notice True when the base asset is WETH, so swap output is taken as native ETH and wrapped to WETH.
-    bool public immutable baseIsNative;
+    /// @dev Set in initiateAdapter (depends on the base asset, unknown at construction).
+    bool public baseIsNative;
+    /// @notice Number of route entries provided at construction.
+    uint8 private _routesCount;
 
     /// @notice Encoded TAKE action sending the swap output to this adapter (or to the router when native).
     bytes public takeAction;
@@ -68,60 +71,89 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
     mapping(address => bytes) public settleActions;
 
     /**
-     * @notice Stores a V4 route and settle action for every Comet collateral asset.
-     * @dev Requires exactly one route per collateral, ordered to match the Comet asset list. Each route must
-     *      be a single-pool or multi-hop route; multi-hop routes require a non-empty path. Remaining
-     *      parameters are forwarded to {CoreDexAdapter}.
+     * @notice Stores a V4 route per collateral, keyed by `RouteConfig.collateral`. Router/slippage parameters are forwarded to {CoreDexAdapter}.
+     * @param _coreRouter The primary DEX router.
+     * @param _redundantRouter The fallback DEX router.
      * @param _weth The wrapped native token for this chain.
-     * @param _swapRoutes V4 routes, one per collateral asset in asset-list order.
+     * @param _slippageBps Allowed slippage in basis points.
+     * @param _swapRoutes V4 routes, one entry per collateral asset (each tagged with its collateral).
      */
     constructor(
-        CometMainInterface _comet,
         address _coreRouter,
         address _redundantRouter,
         address _weth,
         uint16 _slippageBps,
         RouteConfig[] memory _swapRoutes
-        ) CoreDexAdapter(_comet, _coreRouter, _redundantRouter, _slippageBps) {
+    ) CoreDexAdapter(_coreRouter, _redundantRouter, _slippageBps) {
         if (_weth == address(0)) revert ZeroAddress();
+        weth = _weth;
+        _routesCount = uint8(_swapRoutes.length);
 
-        uint8 numAssets = _comet.numAssets();
-        if (_swapRoutes.length != numAssets) revert InvalidRoutesNumber();
+        for (uint8 i; i < _swapRoutes.length; ++i) {
+            RouteConfig memory cfg = _swapRoutes[i];
+            address collateral = cfg.collateral;
 
-        bool baseNative = address(baseAsset) == _weth;
-        address expectedDstAsset = baseNative ? address(0) : address(baseAsset);
-        address collateral;
-        RouteConfig memory cfg;
-        for (uint8 i; i < numAssets; ++i) {
-            collateral = _comet.getAssetInfo(i).asset;
-            cfg = _swapRoutes[i];
-            address expectedSrcAsset = collateral == _weth ? address(0) : collateral;
+            routeKind[collateral] = cfg.kind;
             if (cfg.kind == RouteKind.Single) {
-                address srcCurrency = Currency.unwrap(cfg.zeroForOne ? cfg.poolKey.currency0 : cfg.poolKey.currency1);
-                address dstCurrency = Currency.unwrap(cfg.zeroForOne ? cfg.poolKey.currency1 : cfg.poolKey.currency0);
-                if (srcCurrency != expectedSrcAsset || dstCurrency != expectedDstAsset) revert InvalidRoute(collateral);
-                if (address(cfg.poolKey.hooks) != address(0)) revert NonZeroHooks(collateral);
                 singleRoutes[collateral] = SingleRoute({ poolKey: cfg.poolKey, zeroForOne: cfg.zeroForOne });
             } else if (cfg.kind == RouteKind.Multi) {
-                if (cfg.path.length == 0) revert EmptyPath(collateral);
-                // The final hop of a multi-hop route must land in the base asset.
-                if (Currency.unwrap(cfg.path[cfg.path.length - 1].intermediateCurrency) != expectedDstAsset) revert InvalidRoute(collateral);
-                for (uint8 j; j < cfg.path.length; ++j) 
-                    if (address(cfg.path[j].hooks) != address(0) || cfg.path[j].hookData.length != 0) revert NonZeroHooks(collateral);
                 _multiPaths[collateral] = cfg.path;
             }
-            routeKind[collateral] = cfg.kind;
-            settleActions[collateral] = abi.encode(Currency.wrap(expectedSrcAsset), CONTRACT_BALANCE, false);
+            // SETTLE pays the input currency (the collateral, or native ETH when it is WETH) from the router.
+            settleActions[collateral] = abi.encode(
+                Currency.wrap(collateral == _weth ? address(0) : collateral),
+                CONTRACT_BALANCE,
+                false
+            );
+        }
+    }
+
+    /**
+     * @notice Finalizes the initialization of Dex Adapter.
+     * @dev Can only be called once.
+     * @param _comet The Comet market this adapter serves.
+     * @param _assetList The Comet asset list used to enumerate and validate the collateral routes.
+     * @param _baseAsset The Comet base asset that collateral is swapped into.
+     */
+    function initiateAdapter(address _comet, address _assetList, address _baseAsset) external override {
+        _initiateAdapter(_comet, _baseAsset);
+
+        IAssetList assetList = IAssetList(_assetList);
+        uint8 numAssets = assetList.numAssets();
+        if (_routesCount != numAssets) revert InvalidRoutesNumber();
+
+        bool baseNative = _baseAsset == weth;
+        address expectedDstAsset = baseNative ? address(0) : _baseAsset;
+
+        for (uint8 i; i < numAssets; ++i) {
+            address collateral = assetList.getAssetInfo(i).asset;
+            address expectedSrcAsset = collateral == weth ? address(0) : collateral;
+            RouteKind kind = routeKind[collateral];
+
+            if (kind == RouteKind.Single) {
+                SingleRoute memory r = singleRoutes[collateral];
+                address srcCurrency = Currency.unwrap(r.zeroForOne ? r.poolKey.currency0 : r.poolKey.currency1);
+                address dstCurrency = Currency.unwrap(r.zeroForOne ? r.poolKey.currency1 : r.poolKey.currency0);
+                if (srcCurrency != expectedSrcAsset || dstCurrency != expectedDstAsset) revert InvalidRoute(collateral);
+                if (address(r.poolKey.hooks) != address(0)) revert NonZeroHooks(collateral);
+            } else if (kind == RouteKind.Multi) {
+                PathKey[] memory path = _multiPaths[collateral];
+                if (path.length == 0) revert EmptyPath(collateral);
+                // The final hop of a multi-hop route must land in the base asset.
+                if (Currency.unwrap(path[path.length - 1].intermediateCurrency) != expectedDstAsset) revert InvalidRoute(collateral);
+                for (uint8 j; j < path.length; ++j)
+                    if (address(path[j].hooks) != address(0) || path[j].hookData.length != 0) revert NonZeroHooks(collateral);
+            }
+            // RouteKind.Unset: no route for this collateral; the redundant swap sweeps it to Comet.
         }
 
-        weth = _weth;
         baseIsNative = baseNative;
         takeAction = abi.encode(
-            Currency.wrap(baseIsNative ? address(0) : address(baseAsset)),
-            baseIsNative ? ADDRESS_THIS : address(this),
+            Currency.wrap(baseNative ? address(0) : _baseAsset),
+            baseNative ? ADDRESS_THIS : address(this),
             uint256(0)
         );
-        nativeCommandInput = baseIsNative
+        nativeCommandInput = baseNative
             ? abi.encode(address(this), CONTRACT_BALANCE)
             : abi.encode(ADDRESS_THIS, uint256(0));
     }
