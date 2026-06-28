@@ -20,6 +20,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
     /// @notice Basis-point denominator (100% = 10_000 bps).
     uint256 internal constant BPS = 10_000;
+    uint256 internal constant MAX_PENALTY = 1_000; /// 10% as max allowed penalty
 
     /// @notice used for DEX-path liquidations. Zero address means module doesn't support DEX liquidation route.
     ICoreDexAdapter public immutable dexAdapter;
@@ -49,7 +50,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     ) CoreLiquidationModule(multisig_, executors_, pausers_) {
         if (address(dexAdapter_) == address(0)) revert ZeroAddress();
         if (borderHF_ == 0 ) revert InvalidHFBoundaries();
-        if (penaltyBps_ > BPS) revert InvalidPenaltyBps();
+        if (penaltyBps_ > MAX_PENALTY) revert InvalidPenaltyBps();
 
         dexAdapter = dexAdapter_;
         borderHF = borderHF_;
@@ -166,11 +167,11 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
     /**
      * @notice Updates the executor penalty (in BPS) taken on the DEX route.
-     * @dev Reverts if the new value exceeds BPS (100%).
+     * @dev Reverts if the new value exceeds MAX_PENALTY (10%).
      * @param newPenaltyBps New penalty in BPS (1e4 scale).
      */
     function setPenaltyBps(uint256 newPenaltyBps) external onlyRole(MULTISIG_ROLE) {
-        if (newPenaltyBps > BPS) revert InvalidPenaltyBps();
+        if (newPenaltyBps > MAX_PENALTY || newPenaltyBps == penaltyBps) revert InvalidPenaltyBps();
 
         emit PenaltyBpsUpdated(penaltyBps, newPenaltyBps);
         penaltyBps = newPenaltyBps;
