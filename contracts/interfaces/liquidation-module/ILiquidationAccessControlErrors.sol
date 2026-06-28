@@ -27,6 +27,6 @@ interface ILiquidationAccessControlErrors {
     /// @notice Reverts when a batch role update's `accounts` and `statuses` arrays differ in length.
     error ArrayLengthMismatch();
 
-    /// @notice Reverts when a role/address is already set to the requested value (no-op).
+    /// @notice Reverts when a role/address/value is already set to the requested value (no-op).
     error AlreadySet();
 }

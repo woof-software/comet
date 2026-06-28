@@ -13,7 +13,6 @@ import { CometMath } from "../CometMath.sol";
 
 import { LiquidationAccessControl } from "./LiquidationAccessControl.sol";
 import { ICoreLiquidationModule } from "../interfaces/liquidation-module/ICoreLiquidationModule.sol";
-import { ICoreDexAdapter } from "../interfaces/dex-adapters/ICoreDexAdapter.sol";
 
 /**
  * @title Core Liquidation Module
@@ -31,9 +30,6 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     /// @notice The target health factor for partial liquidation
     uint256 public constant TARGET_HEALTH_FACTOR = 105e16;
 
-    /// @notice used for DEX-path liquidations. Zero address means module doesn't support DEX liquidation route.
-    ICoreDexAdapter public immutable dexAdapter;
-
     ICometInterface public comet;
 
     IAssetList public assetList;
@@ -47,9 +43,6 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     /// @notice The amount of assets in the comet; required for looping over assets
     uint8 public numAssets;
 
-    /// @notice Whether partial liquidation or full liquidation is enabled. Enabled by default.
-    bool public partialLiquidationEnabled;
-
     modifier onlyComet() {
         if (msg.sender != address(comet)) revert OnlyComet();
         _;
@@ -57,26 +50,23 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
 
     /**
      * @param _multisig  The Multisig address: controls parameter setters.
-     * @param _dexAdapter Address of the adapter for swap() related operatios.
      * @param _executors Initial set of Executor accounts (keeper liquidation callers).
      * @param _pausers   Initial set of Pauser accounts (DEX pause switch).
      */
     constructor(
         address _multisig,
-        ICoreDexAdapter _dexAdapter,
         address[] memory _executors,
         address[] memory _pausers
     ) LiquidationAccessControl(_multisig, _executors, _pausers) {
-        dexAdapter = _dexAdapter;
-        partialLiquidationEnabled = true;
+
     }
 
     /**
-     * @notice initialization method which will be called just once from the Comet during its costructio
+     * @notice initialization method which will be called just once from the Comet during its costruction
      *         It is safe to assume that only comet will initiate the method, as otherwise Comet update proposal will revert
      *         in case if this method is called before proposal.
      */
-    function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) external {
+    function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) virtual public {
         if (address(comet) != address(0)) revert AlreadySet();
 
         comet = ICometInterface(msg.sender);
@@ -85,8 +75,6 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         numAssets = _numAssets;
         baseScale = _baseScale;
         baseToken = IERC20(_baseToken);
-
-        if (address(dexAdapter) != address(0)) dexAdapter.initiateAdapter(msg.sender, _assetList, _baseToken);
     }
 
     /**
@@ -267,17 +255,6 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         for (uint256 j; j < seizuresCount; ++j) plan[j] = seizures[j];
 
         return (plan, newBalance, basePaidOut, mulPrice(basePaidOut, basePrice, baseScale));
-    }
-
-    /**
-     * @notice Toggle the liquidation mode. Multisig only (parameter setter).
-     */
-    function liquidationModeToggle(bool _partialLiquidationEnabled) external onlyRole(PAUSER_ROLE) {
-        if (partialLiquidationEnabled == _partialLiquidationEnabled) revert LiquidationModeAlreadySet();
-
-        partialLiquidationEnabled = _partialLiquidationEnabled;
-
-        emit LiquidationModeToggled(_partialLiquidationEnabled);
     }
 
     /**

@@ -22,4 +22,10 @@ interface ILiquidationAccessControlEvents {
 
     /// @notice Emitted when the DEX pause switch is toggled by a Pauser or the DAO.
     event DexPausedSet(bool paused);
+
+    /**
+     * @notice Emitted when the liquidation mode is toggled.
+     * @param partialLiquidationEnabled Whether partial liquidation is enabled.
+     */
+    event LiquidationModeToggled(bool partialLiquidationEnabled);
 }

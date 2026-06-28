@@ -36,6 +36,8 @@ abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessC
     ///         to the default absorb flow regardless of the account's health factor.
     bool public dexRoutePaused;
 
+    /// @notice Whether partial liquidation or full liquidation is enabled. Enabled by default.
+    bool public partialLiquidationEnabled;
 
     /**
      * @param _multisig  The Multisig address: controls parameter setters.
@@ -48,6 +50,8 @@ abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessC
         address[] memory _executors,
         address[] memory _pausers
     ) {
+        partialLiquidationEnabled = true;
+        
         // The module must be deployed with at least one Executor and one Pauser.
         if (_executors.length == 0 || _pausers.length == 0) revert EmptyArray();
         if (_executors.length > type(uint8).max || _pausers.length > type(uint8).max) revert ArrayLengthMismatch();
@@ -83,5 +87,16 @@ abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessC
         dexRoutePaused = paused;
         
         emit DexPausedSet(paused);
+    }
+
+        /**
+     * @notice Toggle the liquidation mode. Multisig only (parameter setter).
+     */
+    function liquidationModeToggle(bool _partialLiquidationEnabled) external onlyRole(PAUSER_ROLE) {
+        if (partialLiquidationEnabled == _partialLiquidationEnabled) revert AlreadySet();
+
+        partialLiquidationEnabled = _partialLiquidationEnabled;
+
+        emit LiquidationModeToggled(_partialLiquidationEnabled);
     }
 }

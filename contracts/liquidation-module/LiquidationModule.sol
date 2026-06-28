@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity =0.8.15;
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { ILiquidationModule } from "../interfaces/liquidation-module/ILiquidationModule.sol";
 import { ICoreDexAdapter } from "../interfaces/dex-adapters/ICoreDexAdapter.sol";
+
 import { CoreLiquidationModule, ICometData, ICometLiquidationInterface } from "./CoreLiquidationModule.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title Liquidation Module
@@ -20,6 +21,9 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     /// @notice Basis-point denominator (100% = 10_000 bps).
     uint256 internal constant BPS = 10_000;
 
+    /// @notice used for DEX-path liquidations. Zero address means module doesn't support DEX liquidation route.
+    ICoreDexAdapter public immutable dexAdapter;
+
     /// @notice Executor penalty on the DEX route.
     uint256 public penaltyBps;
 
@@ -29,9 +33,9 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
     /**
      * @param multisig_         The Multisig address: controls parameter setters.
+     * @param dexAdapter_       The address of the DEX adapter for DEX-based liquidation.
      * @param executors_        Initial set of Executor accounts (keeper liquidation callers).
      * @param pausers_          Initial set of Pauser accounts (DEX pause switch).
-     * @param dexAdapter_       The address of the DEX adapter for DEX-based liquidation.
      * @param borderHF_         Initial HF boundary (1e18 scale) for DEX-based liquidation.
      * @param penaltyBps_       Initial executor penalty (in BPS) taken on the DEX route.
      */
@@ -42,15 +46,29 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         address[] memory pausers_,
         uint256 borderHF_,
         uint256 penaltyBps_
-    ) CoreLiquidationModule(multisig_, dexAdapter_, executors_, pausers_) {
+    ) CoreLiquidationModule(multisig_, executors_, pausers_) {
+        if (address(dexAdapter_) == address(0)) revert ZeroAddress();
         if (borderHF_ == 0 ) revert InvalidHFBoundaries();
         if (penaltyBps_ > BPS) revert InvalidPenaltyBps();
 
+        dexAdapter = dexAdapter_;
         borderHF = borderHF_;
         penaltyBps = penaltyBps_;
 
         emit BorderHFUpdated(0, borderHF_);
         emit PenaltyBpsUpdated(0, penaltyBps_);
+    }
+
+    /**
+     * @notice initialization method which will be called just once from the Comet during its costructio
+     *         It is safe to assume that only comet will initiate the method, as otherwise Comet update proposal will revert
+     *         in case if this method is called before proposal.
+     */
+    function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) override public {
+        super.initiateModule(_assetList, _numAssets, _baseScale, _baseToken);
+
+        /// @dev msg.sender is expected to be a comet address
+        dexAdapter.initiateAdapter(msg.sender, _assetList, _baseToken);
     }
 
     /**
@@ -72,7 +90,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
         // When the DEX path is paused, every keeper liquidation falls back to the default
         // absorb flow regardless of the account's HF.
-        if (dexRoutePaused || address(dexAdapter) == address(0)) {
+        if (dexRoutePaused) {
             _liquidate(absorber, account);
             return;
         }
