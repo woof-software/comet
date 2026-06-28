@@ -9,8 +9,6 @@ pragma solidity =0.8.15;
  * @custom:security-contact dmitriy@woof.software
  */
 interface ILiquidationModuleErrors {
-    /// @notice Reverts when the new BORDER_HF value is zero.
-    error InvalidHFBoundaries();
 
     /// @notice Reverts when the number of provided swap calldatas does not match the number of seized
     ///         collaterals in the computed seizure plan.

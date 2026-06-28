@@ -28,35 +28,27 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     /// @notice Executor penalty on the DEX route.
     uint256 public penaltyBps;
 
-    /// @notice HF threshold (1e18 scale). Positions at or below this value are routed to the
-    ///         default protocol liquidation. Must always be strictly less than healthPositionHF.
-    uint256 public borderHF;
-
     /**
-     * @param multisig_         The Multisig address: controls parameter setters.
      * @param dexAdapter_       The address of the DEX adapter for DEX-based liquidation.
+     * @param multisig_         The Multisig address: controls parameter setters.
      * @param executors_        Initial set of Executor accounts (keeper liquidation callers).
      * @param pausers_          Initial set of Pauser accounts (DEX pause switch).
-     * @param borderHF_         Initial HF boundary (1e18 scale) for DEX-based liquidation.
      * @param penaltyBps_       Initial executor penalty (in BPS) taken on the DEX route.
      */
     constructor(
-        address multisig_,
         ICoreDexAdapter dexAdapter_,
+        address multisig_,
         address[] memory executors_,
         address[] memory pausers_,
         uint256 borderHF_,
         uint256 penaltyBps_
     ) CoreLiquidationModule(multisig_, executors_, pausers_) {
         if (address(dexAdapter_) == address(0)) revert ZeroAddress();
-        if (borderHF_ == 0 ) revert InvalidHFBoundaries();
         if (penaltyBps_ > MAX_PENALTY) revert InvalidPenaltyBps();
 
         dexAdapter = dexAdapter_;
-        borderHF = borderHF_;
         penaltyBps = penaltyBps_;
 
-        emit BorderHFUpdated(0, borderHF_);
         emit PenaltyBpsUpdated(0, penaltyBps_);
     }
 
@@ -151,18 +143,6 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         if (penalty > 0) baseToken.safeTransfer(msg.sender, penalty);
 
         emit DexLiquidate(absorber, account, msg.sender, baseReceived, baseForComet, penalty);
-    }
-
-    /**
-     * @notice Updates the border health factor threshold.
-     * @dev Reverts if the new value is zero or not strictly less than the current healthPositionHF.
-     * @param newBorderHF New BORDER_HF value in 1e18 scale.
-     */
-    function setBorderHF(uint256 newBorderHF) external onlyRole(MULTISIG_ROLE) {
-        if (newBorderHF == 0) revert InvalidHFBoundaries();
-
-        emit BorderHFUpdated(borderHF, newBorderHF);
-        borderHF = newBorderHF;
     }
 
     /**

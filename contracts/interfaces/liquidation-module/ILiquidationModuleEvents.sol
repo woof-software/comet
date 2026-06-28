@@ -9,9 +9,6 @@ pragma solidity =0.8.15;
  * @custom:security-contact dmitriy@woof.software
  */
 interface ILiquidationModuleEvents {
-    /// @notice Emitted when the governor updates the border health factor threshold.
-    event BorderHFUpdated(uint256 oldBorderHF, uint256 newBorderHF);
-
     /// @notice Emitted when the multisig updates the executor penalty (in BPS) taken on the DEX route.
     event PenaltyBpsUpdated(uint256 oldPenaltyBps, uint256 newPenaltyBps);
 
