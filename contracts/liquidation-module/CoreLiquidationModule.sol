@@ -71,6 +71,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
 
         comet = ICometInterface(msg.sender);
 
+        /// @dev we dropped sanity checks as those are parameters directly from Comet's constructor
         assetList = IAssetList(_assetList);
         numAssets = _numAssets;
         baseScale = _baseScale;
@@ -79,19 +80,16 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
 
     /**
      * @notice Entry point for the protocol-driven liquidation path: it absorbs an underwater account.
-     * @dev Restricted to Comet — it can only be executed by `Comet.absorb()`, which routes each account
-     *      here. Any other caller reverts with `OnlyComet`. This is a thin wrapper that delegates to the
-     *      shared `_liquidate` routine; the alternative entry point is `LiquidationModule.liquidate`
-     *      (the keeper/DEX-driven path), which also funnels into `_liquidate`.
+     * @dev Restricted to Comet — it can only be executed by `Comet.absorb()`
      * @param absorber The recipient of the incentive paid to the caller of `Comet.absorb()`.
      * @param account  The underwater account whose collateral and debt are being absorbed.
      */
-    function liquidate(address absorber, address account) external onlyComet {
+    function absorb(address absorber, address account) external onlyComet {
         _liquidate(absorber, account);
     }
 
     /**
-    * @notice Seizes collateral assets one by one until the account reaches targetHealthFactor
+    * @notice Seizes collateral assets one by one until the account reaches target health factor
     *         or all debt is fully repaid. Any unrecoverable shortfall is written off
     *         as bad debt absorbed by the protocol
     * @dev Iterates over account collateral assets in index order.
@@ -129,7 +127,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     /**
      * @notice Computes the per-collateral seizure plan for an underwater account.
      * @param account The underwater account to plan a seizure for.
-     * @return The ordered seizure plan, the account's new balance, debt payout, its value
+     * @return values: the ordered seizure plan, the account's new balance, debt payout, its value
      */
     function _computeSeizurePlan(address account)
         internal
@@ -260,7 +258,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     /**
      * @notice Check whether an account has enough collateral to not be liquidated
      * @param account The address to check
-     * @return Whether the account is minimally collateralized enough to not be liquidated
+     * @return bool: whether the account is minimally collateralized enough to not be liquidated
      *
      * @dev Intentionally does NOT check isCollateralDeactivated. Unlike isBorrowCollateralized,
      *      which reverts on deactivated collateral to block borrower actions, this function
@@ -290,7 +288,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     /**
      * @notice Get the current price from a feed
      * @param priceFeed The address of a price feed
-     * @return The price, scaled by `PRICE_SCALE`
+     * @return price, scaled by `PRICE_SCALE`
      */
     function getPrice(address priceFeed) public view returns (uint256) {
         (, int256 price, , , ) = IPriceFeed(priceFeed).latestRoundData();

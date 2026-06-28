@@ -118,8 +118,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
     /// and keeps protocol reserves from exhaustion
     uint256 public constant MAX_SUPPORTED_UTILIZATION = 2e18;
 
-    uint64 internal constant MIN_TARGET_HEALTH_FACTOR = 105e16;
-
     /**
      * @notice Construct a new protocol instance
      * @param config The mapping of initial/constant parameters
@@ -1307,7 +1305,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         accrueInternal();
 
         for (uint8 i; i < accounts.length; ) {
-            ICoreLiquidationModule(liquidationModule).liquidate(absorber, accounts[i]);
+            ICoreLiquidationModule(liquidationModule).absorb(absorber, accounts[i]);
             unchecked { ++i; }
         }
         uint256 gasUsed = startGas - gasleft();

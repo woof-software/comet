@@ -32,8 +32,7 @@ contract CometConfiguration {
         uint64 baseTrackingBorrowSpeed;             // slot 8: 4 * 64 bits = 256 bits = 32 bytes
         uint104 baseMinForRewards;
         uint104 baseBorrowMin;                      // slot 9: 2 * 104 bits = 208 bits = 26 bytes
-        uint104 targetReserves;
-        uint64 targetHealthFactor;                  // slot 10: 104 bits + 64 bits = 168 bits = 21 bytes
+        uint104 targetReserves;                     // slot 10: 104 bits = 13 bytes
 
         AssetConfig[] assetConfigs;                 // slot 11: 32 bytes
         address liquidationModule;                  // slot 12: 20 bytes

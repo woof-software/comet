@@ -20,7 +20,7 @@ interface ICoreLiquidationModule is ICoreLiquidationModuleErrors, ICoreLiquidati
         uint256 wantedCollateralValue;
     }
 
-    function liquidate(address absorber, address account) external;
+    function absorb(address absorber, address account) external;
 
     function isLiquidatable(address account) external view returns (bool);
 
