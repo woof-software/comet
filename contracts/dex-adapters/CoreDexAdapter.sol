@@ -26,15 +26,20 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
     CometMainInterface public comet;
     /// @notice The base asset that collateral is swapped into. Set in initiateAdapter.
     IERC20 public baseAsset;
+    /// @notice Slippage applied to the oracle-derived minimum output, in basis points.
+    uint16 public slippageBps;
     /// @notice Primary DEX router used by _coreSwap.
     address public immutable coreRouter;
     /// @notice Fallback DEX router used by _redundantSwap when the core swap fails.
     address public immutable redundantRouter;
-    /// @notice Slippage applied to the oracle-derived minimum output, in basis points.
-    uint16 public immutable slippageBps;
 
     /// @notice The liquidation module authorized to call swap().
     address public module;
+
+    modifier onlyModule() {
+        if (msg.sender != module) revert Unathorized();
+        _;
+    }
 
     /**
      * @notice Sets the adapter's core/redundant routers and slippage. The Comet is NOT bound here: at
@@ -50,10 +55,12 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
         coreRouter = _coreRouter;
         redundantRouter = _redundantRouter;
         slippageBps = _slippageBps;
+
+        emit SlippageSet(0, _slippageBps);
     }
 
     /**
-     * @notice Finalized the initialization of Dex Adapter.
+     * @notice Finalize the initialization of Dex Adapter.
      * @param _comet The Comet market this adapter serves.
      * @param _baseAsset The Comet base asset that collateral is swapped into.
      */
@@ -61,15 +68,14 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
         if (module != address(0)) revert AlreadySet();
         if (_comet == address(0) || _baseAsset == address(0)) revert ZeroAddress();
 
+        /// @dev sender is supposed to be a liquidation module
         module = msg.sender;
         comet = CometMainInterface(_comet);
         baseAsset = IERC20(_baseAsset);
     }
 
     /// @inheritdoc ICoreDexAdapter
-    function swap(address collateral, bytes calldata swapData) external returns (bool) {
-        if (msg.sender != module) revert Unathorized();
-
+    function swap(address collateral, bytes calldata swapData) external onlyModule returns (bool) {
         IERC20 collateralToken = IERC20(collateral);
         uint256 amountIn = collateralToken.balanceOf(address(this));
         if (amountIn == 0) revert ZeroAmountIn();
@@ -112,6 +118,14 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
         uint256 baseAssetValue = amountIn * assetPrice * comet.baseScale() / assetInfo.scale / basePrice;
 
         minAmountOut = baseAssetValue * (BPS - slippageBps) / BPS;
+    }
+
+    function updateSlippage(uint16 _slippageBps) external onlyModule() {
+        if (_slippageBps == 0 || _slippageBps > BPS) revert SlippageOutOfBounds(_slippageBps);
+        if (_slippageBps == slippageBps) revert AlreadySet();
+
+        emit SlippageSet(slippageBps, _slippageBps);
+        slippageBps = _slippageBps;
     }
 
     /**

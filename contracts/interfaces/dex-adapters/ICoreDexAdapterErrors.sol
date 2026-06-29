@@ -17,6 +17,6 @@ interface ICoreDexAdapterErrors {
     error InvalidAmountOut();
     /// @notice Thrown when collateral exchange amount is zero.
     error ZeroAmountIn();
-    /// @notice Thrown when attempting to re-initialize adapter.
+    /// @notice Thrown when attempting to re-initialize adapter or set the same value.
     error AlreadySet();
 }

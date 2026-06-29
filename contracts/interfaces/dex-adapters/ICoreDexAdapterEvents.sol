@@ -17,4 +17,6 @@ interface ICoreDexAdapterEvents {
     /// @param collateral Address of the collateral that could not be swapped.
     /// @param amountIn Amount of the `collateral` swept back to Comet.
     event RedundantSwapFailed(address collateral, uint256 amountIn);
+
+    event SlippageSet(uint16 _oldBps, uint16 _newBps);
 }
