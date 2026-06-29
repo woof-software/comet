@@ -3,20 +3,16 @@ import {
   LiquidationModule__factory,
 } from 'build/types';
 import { ethers } from 'hardhat';
-import { exp } from './math';
 
 type DeployLiquidationModuleOpts = {
   multisig: string;
   executors: string[];
   pausers: string[];
   dexAdapter: string;
-  borderHF?: bigint;
-  penaltyBps?: bigint;
+  incentiveBps?: bigint;
 };
 
-export const DEFAULT_DEX_ADAPTER = ethers.constants.AddressZero;
-const DEFAULT_BORDER_HF = exp(102, 16); // 1.02e18
-const DEFAULT_PENALTY_BPS: bigint = BigInt(500);
+const DEFAULT_INCENTIVE_BPS: bigint = BigInt(500);
 
 /**
  * Deploys a LiquidationModule. Pass the returned module's address as
@@ -31,12 +27,11 @@ export async function deployAndUpdateLiquidationModule(
   const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
 
   const liquidationModule = await LiquidationModuleFactory.deploy(
+    opts.dexAdapter,
     opts.multisig,
-    opts.dexAdapter ?? DEFAULT_DEX_ADAPTER,
     opts.executors,
     opts.pausers,
-    opts.borderHF ?? DEFAULT_BORDER_HF,
-    opts.penaltyBps ?? DEFAULT_PENALTY_BPS
+    opts.incentiveBps ?? DEFAULT_INCENTIVE_BPS
   );
   await liquidationModule.deployed();
 

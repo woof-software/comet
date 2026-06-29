@@ -175,11 +175,6 @@ describe('extended pause upgrade test', function () {
       .connect(governor)
       .setFactory(COMET_ADDRESS, newFactory.address);
 
-    // Ensure configuration satisfies latest constructor checks.
-    await configurator
-      .connect(governor)
-      .setTargetHealthFactor(COMET_ADDRESS, BigNumber.from('1050000000000000000'));
-
     // Ensure liquidation module is set
     await configurator
       .connect(governor)

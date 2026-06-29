@@ -106,30 +106,29 @@ describe('liquidation module access control', function () {
     describe('revert when', function () {
       it('the Multisig is the zero address', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(ZERO, DEFAULT_DEX_ADAPTER, executors, pausers, BORDER_HF, PENALTY_BPS)
+          LiquidationModuleFactory.deploy(DEFAULT_DEX_ADAPTER, ZERO, executors, pausers, PENALTY_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
 
       it('the Executors list is empty', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(multisig.address, DEFAULT_DEX_ADAPTER, [], pausers, BORDER_HF, PENALTY_BPS)
+          LiquidationModuleFactory.deploy(DEFAULT_DEX_ADAPTER, multisig.address, [], pausers, PENALTY_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
       });
 
       it('the Pausers list is empty', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(multisig.address, DEFAULT_DEX_ADAPTER, executors, [], BORDER_HF, PENALTY_BPS)
+          LiquidationModuleFactory.deploy(DEFAULT_DEX_ADAPTER, multisig.address, executors, [], PENALTY_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
       });
 
       it('the Executors list has duplicates', async () => {
         await expect(
           LiquidationModuleFactory.deploy(
-            multisig.address,
             DEFAULT_DEX_ADAPTER,
+            multisig.address,
             [executors[0], executors[1], executors[0]],
             pausers,
-            BORDER_HF,
             PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
@@ -138,11 +137,10 @@ describe('liquidation module access control', function () {
       it('the Pausers list has duplicates', async () => {
         await expect(
           LiquidationModuleFactory.deploy(
-            multisig.address,
             DEFAULT_DEX_ADAPTER,
+            multisig.address,
             executors,
             [pausers[0], pausers[1], pausers[0]],
-            BORDER_HF,
             PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
@@ -151,11 +149,10 @@ describe('liquidation module access control', function () {
       it('an Executor address is the zero address', async () => {
         await expect(
           LiquidationModuleFactory.deploy(
-            multisig.address,
             DEFAULT_DEX_ADAPTER,
+            multisig.address,
             [executors[0], executors[1], ZERO],
             pausers,
-            BORDER_HF,
             PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
@@ -164,11 +161,10 @@ describe('liquidation module access control', function () {
       it('a Pauser address is the zero address', async () => {
         await expect(
           LiquidationModuleFactory.deploy(
-            multisig.address,
             DEFAULT_DEX_ADAPTER,
+            multisig.address,
             executors,
             [pausers[0], pausers[1], ZERO],
-            BORDER_HF,
             PENALTY_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');

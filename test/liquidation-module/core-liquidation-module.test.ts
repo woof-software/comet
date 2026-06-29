@@ -139,7 +139,7 @@ describe('core liquidation module', function () {
         // sanity check 
         expect(await liquidationModule.comet()).to.not.equal(alice.address);
 
-        await expect(liquidationModule.connect(alice)['liquidate(address,address)'](alice.address, alice.address))
+        await expect(liquidationModule.connect(alice)['absorb(address,address)'](alice.address, alice.address))
           .to.be.revertedWithCustomError(liquidationModule, 'OnlyComet');
       });
     });

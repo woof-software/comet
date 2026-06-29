@@ -13,6 +13,7 @@ import {
   MarketConfig,
   RouteConfig,
   buildRoutes,
+  buildEmptyRoutes,
   CORE_ROUTER,
   REDUNDANT_ROUTER,
   SLIPPAGE_BPS,
@@ -37,6 +38,23 @@ export interface DexAdapterFixture {
   moduleSigner: Signer;
   moduleAddress: string;
   snapshot: SnapshotRestorer;
+}
+
+
+export async function deployEmptyDexAdapter(): Promise<OneInchV6CoreAdapter> {
+  const adapterFactory = (await ethers.getContractFactory(
+    "OneInchV6CoreAdapter"
+  )) as OneInchV6CoreAdapter__factory;
+  const adapter = await adapterFactory.deploy(
+    CORE_ROUTER,
+    REDUNDANT_ROUTER,
+    TOKENS.WETH.address,
+    SLIPPAGE_BPS,
+    await buildEmptyRoutes()
+  );
+  await adapter.deployed();
+
+  return adapter;
 }
 
 // Resets the mainnet fork, deploys a OneInchV6CoreAdapter for `market`, and snapshots the post-deploy state.

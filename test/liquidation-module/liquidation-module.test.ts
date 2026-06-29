@@ -2,7 +2,7 @@ import { deployAndUpdateLiquidationModule, ethers, exp, expect, makeProtocol, Sn
 import { CometHarnessInterfaceExtendedAssetList, LiquidationModule, LiquidationModule__factory } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
-import { setBalance, DEFAULT_DEX_ADAPTER } from '../helpers';
+import { setBalance } from '../helpers';
 
 describe('liquidation module', function () {
   const BORDER_HF: bigint = exp(102, 16); // 1.02e18
@@ -26,8 +26,10 @@ describe('liquidation module', function () {
   before(async () => {
     governor = await ethers.getImpersonatedSigner("0x6d903f6003cca6255D85CcA4D3B5E5146dC33925");
     await setBalance(governor.address, ethers.utils.parseEther("10"));
+
     // This suite drives the onlyMultisig setters through `governor`, so the governor also acts as the Multisig.
     const protocol = await makeProtocol({ base: 'USDC', governor: governor, multisig: governor });
+
     comet = protocol.comet;
     [alice] = protocol.users;
 
@@ -47,10 +49,6 @@ describe('liquidation module', function () {
         expect(await liquidationModule.dexAdapter()).to.equal(DEFAULT_DEX_ADAPTER);
       });
 
-      it('sets borderHF to the provided value', async () => {
-        expect(await liquidationModule.borderHF()).to.equal(BORDER_HF);
-      });
-
       // The constructor reports the initial thresholds as transitions from 0.
       it('emits BorderHFUpdated with the initial border value', async () => {
         await expect(liquidationModule.deployTransaction)
@@ -59,7 +57,7 @@ describe('liquidation module', function () {
     });
 
       it('borderHF is zero', async () => {
-        await expect(LiquidationModuleFactory.deploy(governor.address, DEFAULT_DEX_ADAPTER, [governor.address], [governor.address], 0, PENALTY_BPS))
+        await expect(LiquidationModuleFactory.deploy(DEFAULT_DEX_ADAPTER, governor.address, [governor.address], [governor.address], 0, PENALTY_BPS))
           .to.be.revertedWithCustomError(liquidationModule, 'InvalidHFBoundaries');
       });
     });

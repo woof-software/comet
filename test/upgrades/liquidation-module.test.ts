@@ -153,7 +153,6 @@ describe('liquidation module upgrade', function () {
   let originalCometImplementation: string;
   let newCometImplementation: string;
   let newFactoryAddress: string;
-  let setTargetHealthFactorTx: ContractTransaction;
   let setLiquidationModuleTx: ContractTransaction;
   let deployCometTx: ContractTransaction;
   let upgradeCometTx: ContractTransaction;
@@ -246,7 +245,6 @@ describe('liquidation module upgrade', function () {
     it('starts the new configurator fields empty after upgrade', async function () {
       const configuration = await configurator.getConfiguration(COMET_ADDRESS);
 
-      expect(configuration.targetHealthFactor).to.equal(0);
       expect(configuration.liquidationModule).to.equal(ethers.constants.AddressZero);
     });
 
@@ -274,19 +272,6 @@ describe('liquidation module upgrade', function () {
   describe('when upgrading the Comet implementation', function () {
     it('grabs the Comet proxy values', async function () {
       cometValuesBefore = await getCometValuesSnapshot(comet, cometExt);
-    });
-
-    it('sets the target health factor in the configurator', async function () {
-      setTargetHealthFactorTx = await configurator
-        .connect(governor)
-        .setTargetHealthFactor(COMET_ADDRESS, TARGET_HEALTH_FACTOR);
-      await expect(setTargetHealthFactorTx).to.not.be.reverted;
-    });
-
-    it('emits SetTargetHealthFactor', async function () {
-      await expect(setTargetHealthFactorTx)
-        .to.emit(configurator, 'SetTargetHealthFactor')
-        .withArgs(COMET_ADDRESS, BigNumber.from(0), TARGET_HEALTH_FACTOR);
     });
 
     it('sets the liquidation module in the configurator', async function () {
@@ -318,7 +303,6 @@ describe('liquidation module upgrade', function () {
     it('stores the new deployment-only configuration', async function () {
       const configuration = await configurator.getConfiguration(COMET_ADDRESS);
 
-      expect(configuration.targetHealthFactor).to.equal(TARGET_HEALTH_FACTOR);
       expect(configuration.liquidationModule).to.equal(LIQUIDATION_MODULE);
       expect(await configurator.factory(COMET_ADDRESS)).to.equal(newFactoryAddress);
     });

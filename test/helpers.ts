@@ -45,7 +45,7 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 
 // Helpers
 import type { Numeric } from './helpers/index';
-import { exp, dfn, defaultAssets, deployAndUpdateLiquidationModule, DEFAULT_DEX_ADAPTER, mulPrice, toBigInt, convertToBigInt } from './helpers/index';
+import { exp, dfn, defaultAssets, deployAndUpdateLiquidationModule, deployEmptyDexAdapter, mulPrice, toBigInt, convertToBigInt } from './helpers/index';
 import { Sign } from 'crypto';
 
 export * from './helpers/index';
@@ -100,16 +100,14 @@ export type ProtocolOpts = {
   baseMinForRewards?: Numeric;
   baseBorrowMin?: Numeric;
   targetReserves?: Numeric;
-  targetHealthFactor?: Numeric;
   baseTokenBalance?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
   liquidationModule?: LiquidationModule;
   dexAdapter?: string;
   liquidationModuleOpts?: {
-    executors?: string[],
-    pausers?: string[],
-    borderHF?: bigint;
-    penaltyBps?: bigint;
+    executors?: string[];
+    pausers?: string[];
+    incentiveBps?: bigint;
   };
 };
 
@@ -248,8 +246,8 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   // Reserve dedicated signers for the liquidation module roles from the tail of the signer list so
   // low-index `users` stay stable across the suite. These are returned so tests can drive the roles.
   const multisig = opts.multisig ?? signers[signers.length - 7];
-  const executors = signers.slice(-3);
-  const pausers = signers.slice(-6, -3);
+  const executors = opts.liquidationModuleOpts?.executors ?? signers.slice(-3);
+  const pausers = opts.liquidationModuleOpts?.pausers ?? signers.slice(-6, -3);
   const users = signers.slice(2, signers.length - 7); // not governor, pause guardian, or a reserved role
   const base = opts.base || 'USDC';
   const reward = opts.reward || 'COMP';
@@ -301,11 +299,11 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   }
 
   const defaultLiquidationModule = opts.liquidationModule ?? await deployAndUpdateLiquidationModule({
+    dexAdapter: opts.dexAdapter ?? (await deployEmptyDexAdapter()).address,
     multisig: multisig.address,
-    dexAdapter: opts.dexAdapter ?? DEFAULT_DEX_ADAPTER,
     executors: executors.map((x: SignerWithAddress) => x.address),
     pausers: pausers.map((x: SignerWithAddress) => x.address),
-    ...(opts.liquidationModuleOpts || {}),
+    incentiveBps: opts.liquidationModuleOpts?.incentiveBps,
   });
 
   const config = {
@@ -330,7 +328,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
-    targetHealthFactor: dfn(opts.targetHealthFactor, exp(1.05, 18)),
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
       if (symbol != base) {
         acc.push({
@@ -452,7 +449,6 @@ export async function getConfigurationForConfigurator(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
-    targetHealthFactor: exp(1.05, 18),
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
       if (symbol != base) {
         acc.push({
