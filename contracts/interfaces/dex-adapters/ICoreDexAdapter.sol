@@ -24,5 +24,5 @@ interface ICoreDexAdapter is ICoreDexAdapterErrors, ICoreDexAdapterEvents {
 
     function initiateAdapter(address comet, address assetList, address baseAsset) external;
 
-    function updateSlippage(uint16 _slippageBPS) external;
+    function setSlippageBps(uint16 _slippageBPS) external;
 }

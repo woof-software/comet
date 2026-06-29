@@ -81,21 +81,24 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
         if (amountIn == 0) revert ZeroAmountIn();
 
         uint256 minAmountOut = calculateMinAmountOut(collateral, amountIn);
-        uint256 baseBalBefore = baseAsset.balanceOf(address(this));
+        uint256 baseBalanceBefore = baseAsset.balanceOf(address(this));
 
         bool coreStatus;
         if (swapData.length != 0) {
+            ///@dev if core swap does not succeed - collateral will still be on the adapter balance
             coreStatus = _coreSwap(collateralToken, amountIn, minAmountOut, swapData);
         }
 
+        ///@dev if redundant swap fails - adapter returns collateral directly to the Comet
         if (!coreStatus && !_redundantSwap(collateralToken, amountIn, minAmountOut)) {
             return false;
         }
 
-        uint256 baseBalAfter = baseAsset.balanceOf(address(this));
-        uint256 amountOut = baseBalAfter - baseBalBefore;
-        if (amountOut < minAmountOut) revert InvalidAmountOut();
-        baseAsset.safeTransfer(msg.sender, baseBalAfter);
+        uint256 baseBalanceAfter = baseAsset.balanceOf(address(this));
+        uint256 amountOut = baseBalanceAfter - baseBalanceBefore;
+        if (amountOut < minAmountOut) revert SwapSlippageExceeded();
+        /// @dev send base asset back to the module - it will re-route it to comet
+        baseAsset.safeTransfer(msg.sender, baseBalanceAfter);
 
         emit Swap(collateral, amountIn, amountOut);
         return true;
@@ -120,7 +123,7 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
         minAmountOut = baseAssetValue * (BPS - slippageBps) / BPS;
     }
 
-    function updateSlippage(uint16 _slippageBps) external onlyModule() {
+    function setSlippageBps(uint16 _slippageBps) external onlyModule() {
         if (_slippageBps == 0 || _slippageBps > BPS) revert SlippageOutOfBounds(_slippageBps);
         if (_slippageBps == slippageBps) revert AlreadySet();
 

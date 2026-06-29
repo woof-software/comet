@@ -14,7 +14,7 @@ interface ICoreDexAdapterErrors {
     /// @notice Thrown when swap() is called by an address other than the liquidation module.
     error Unathorized();
     /// @notice Thrown when the realized base-asset output is below the required minimum.
-    error InvalidAmountOut();
+    error SwapSlippageExceeded();
     /// @notice Thrown when collateral exchange amount is zero.
     error ZeroAmountIn();
     /// @notice Thrown when attempting to re-initialize adapter or set the same value.

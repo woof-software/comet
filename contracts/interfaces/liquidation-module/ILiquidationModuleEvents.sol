@@ -10,7 +10,7 @@ pragma solidity =0.8.15;
  */
 interface ILiquidationModuleEvents {
     /// @notice Emitted when the multisig updates the executor penalty (in BPS) taken on the DEX route.
-    event PenaltyBpsUpdated(uint256 oldPenaltyBps, uint256 newPenaltyBps);
+    event PenaltyBpsUpdated(uint16 oldPenaltyBps, uint16 newPenaltyBps);
 
     /// @notice Emitted when an account is liquidated through the DEX route.
     /// @param absorber The recipient of the liquidation incentive.

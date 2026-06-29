@@ -19,14 +19,14 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     using SafeERC20 for IERC20;
 
     /// @notice Basis-point denominator (100% = 10_000 bps).
-    uint256 internal constant BPS = 10_000;
-    uint256 internal constant MAX_PENALTY = 1_000; /// 10% as max allowed penalty
+    uint16 internal constant BPS = 10_000;
+    uint16 internal constant MAX_PENALTY = 1_000; /// 10% as max allowed penalty
 
     /// @notice used for DEX-path liquidations. Zero address means module doesn't support DEX liquidation route.
     ICoreDexAdapter public immutable dexAdapter;
 
     /// @notice Executor penalty on the DEX route.
-    uint256 public penaltyBps;
+    uint16 public penaltyBps;
 
     /**
      * @param dexAdapter_       The address of the DEX adapter for DEX-based liquidation.
@@ -40,8 +40,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         address multisig_,
         address[] memory executors_,
         address[] memory pausers_,
-        uint256 borderHF_,
-        uint256 penaltyBps_
+        uint16 penaltyBps_
     ) CoreLiquidationModule(multisig_, executors_, pausers_) {
         if (address(dexAdapter_) == address(0)) revert ZeroAddress();
         if (penaltyBps_ > MAX_PENALTY) revert InvalidPenaltyBps();
@@ -127,16 +126,18 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
                 unswappedBaseAmount += divPrice(plan[i].seizedValue, basePrice, baseScale);
         }
 
-        uint256 baseReceived = baseToken.balanceOf(address(this)) - baseBefore;
-
+        /// @dev Even if received amount is less than debt due to slippage, the DEX adapter verifies the slippage
+        ///      tolerance, so we can close the whole debt.
         ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(account, newBalance);
         emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
 
+        uint256 baseReceived = baseToken.balanceOf(address(this)) - baseBefore;
         uint256 requiredBase = basePaidOut > unswappedBaseAmount ? basePaidOut - unswappedBaseAmount : 0;
 
         // Penalty is taken only from the realized swap amount.
         uint256 penalty = baseReceived * penaltyBps / BPS;
         uint256 baseForComet = baseReceived - penalty;
+
         if (baseForComet < requiredBase) revert SwapProceedsTooLow(baseReceived, requiredBase + penalty);
 
         if (baseForComet > 0) baseToken.safeTransfer(address(comet), baseForComet);
@@ -150,10 +151,20 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @dev Reverts if the new value exceeds MAX_PENALTY (10%).
      * @param newPenaltyBps New penalty in BPS (1e4 scale).
      */
-    function setPenaltyBps(uint256 newPenaltyBps) external onlyRole(MULTISIG_ROLE) {
+    function setPenaltyBps(uint16 newPenaltyBps) external onlyRole(MULTISIG_ROLE) {
         if (newPenaltyBps > MAX_PENALTY || newPenaltyBps == penaltyBps) revert InvalidPenaltyBps();
 
         emit PenaltyBpsUpdated(penaltyBps, newPenaltyBps);
         penaltyBps = newPenaltyBps;
+    }
+
+    /**
+     * @notice Updates the slippage value for DEX adapter.
+     * @dev Reverts if the new value exceeds 100% (1e4).
+     * @param newSlippageBps New penalty in BPS (1e4 scale).
+     */
+    function setSlippageBps(uint16 newSlippageBps) external onlyRole(MULTISIG_ROLE) {
+        ///@dev event is emitted in DEX adapter
+        dexAdapter.setSlippageBps(newSlippageBps);
     }
 }
