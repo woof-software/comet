@@ -14,12 +14,6 @@ interface ILiquidationModuleErrors {
     ///         collaterals in the computed seizure plan.
     error InvalidSwapDataLength();
 
-    /// @notice Reverts when the base received from the DEX swaps cannot cover the base owed to Comet to
-    ///         clear the liquidated debt after the executor's penalty is taken.
-    /// @param baseReceived The base amount realized from the swaps.
-    /// @param baseRequired The minimum base required (debt cleared plus the executor penalty).
-    error SwapProceedsTooLow(uint256 baseReceived, uint256 baseRequired);
-
-    /// @notice Reverts when penaltyBps is set above BPS (100%).
-    error InvalidPenaltyBps();
+    /// @notice Reverts when incentiveBps is set above BPS (100%).
+    error InvalidIncentiveBps();
 }

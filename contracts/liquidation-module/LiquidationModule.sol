@@ -20,35 +20,35 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
     /// @notice Basis-point denominator (100% = 10_000 bps).
     uint16 internal constant BPS = 10_000;
-    uint16 internal constant MAX_PENALTY = 1_000; /// 10% as max allowed penalty
+    uint16 internal constant MAX_INCENTIVE = 1_000; /// 10% as max allowed incentive
 
     /// @notice used for DEX-path liquidations. Zero address means module doesn't support DEX liquidation route.
     ICoreDexAdapter public immutable dexAdapter;
 
-    /// @notice Executor penalty on the DEX route.
-    uint16 public penaltyBps;
+    /// @notice Executor incentive on the DEX route.
+    uint16 public incentiveBps;
 
     /**
      * @param dexAdapter_       The address of the DEX adapter for DEX-based liquidation.
      * @param multisig_         The Multisig address: controls parameter setters.
      * @param executors_        Initial set of Executor accounts (keeper liquidation callers).
      * @param pausers_          Initial set of Pauser accounts (DEX pause switch).
-     * @param penaltyBps_       Initial executor penalty (in BPS) taken on the DEX route.
+     * @param incentiveBps_     Initial executor incentive (in BPS) taken on the DEX route.
      */
     constructor(
         ICoreDexAdapter dexAdapter_,
         address multisig_,
         address[] memory executors_,
         address[] memory pausers_,
-        uint16 penaltyBps_
+        uint16 incentiveBps_
     ) CoreLiquidationModule(multisig_, executors_, pausers_) {
         if (address(dexAdapter_) == address(0)) revert ZeroAddress();
-        if (penaltyBps_ > MAX_PENALTY) revert InvalidPenaltyBps();
+        if (incentiveBps_ > MAX_INCENTIVE) revert InvalidIncentiveBps();
 
         dexAdapter = dexAdapter_;
-        penaltyBps = penaltyBps_;
+        incentiveBps = incentiveBps_;
 
-        emit PenaltyBpsUpdated(0, penaltyBps_);
+        emit IncentiveBpsUpdated(0, incentiveBps_);
     }
 
     /**
@@ -132,30 +132,45 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
 
         uint256 baseReceived = baseToken.balanceOf(address(this)) - baseBefore;
-        uint256 requiredBase = basePaidOut > unswappedBaseAmount ? basePaidOut - unswappedBaseAmount : 0;
+        uint256 baseRequired = basePaidOut > unswappedBaseAmount ? basePaidOut - unswappedBaseAmount : 0;
 
-        // Penalty is taken only from the realized swap amount.
-        uint256 penalty = baseReceived * penaltyBps / BPS;
-        uint256 baseForComet = baseReceived - penalty;
+        /// baseReceived: actually received amount of base asset after all swaps and after slippage checks
+        /// baseRequired: amount to be put into reserves to cover debt (as it is basically a difference in balances)
+        /// In general, we can assume baseReceived > baseRequired, as even due to slippage tolerance and swap fees
+        /// the protocol swaps collaterals for debt value + penalty, which covers those expenses.
+        ///
+        /// However, in case if baseReceived < baseRequired (in case we received less value even counting collateral's penalty)
+        /// the protocol has closed the bad debt (collateral's penalized value is less than balances difference)
 
-        if (baseForComet < requiredBase) revert SwapProceedsTooLow(baseReceived, requiredBase + penalty);
+        // Incentive is taken only in case of regular debts closed.
+        uint256 incentive;
+        uint256 baseForComet;
+
+        if (baseReceived < baseRequired) {
+            baseForComet = baseReceived;
+            emit BadDebtLiquidate(absorber, account, msg.sender, baseReceived);
+        }
+        else {
+            incentive = baseReceived * incentiveBps / BPS;
+            baseForComet = baseReceived - incentive;
+        }
 
         if (baseForComet > 0) baseToken.safeTransfer(address(comet), baseForComet);
-        if (penalty > 0) baseToken.safeTransfer(msg.sender, penalty);
+        if (incentive > 0) baseToken.safeTransfer(msg.sender, incentive);
 
-        emit DexLiquidate(absorber, account, msg.sender, baseReceived, baseForComet, penalty);
+        emit DexLiquidate(absorber, account, msg.sender, baseReceived, baseForComet, incentive);
     }
 
     /**
-     * @notice Updates the executor penalty (in BPS) taken on the DEX route.
-     * @dev Reverts if the new value exceeds MAX_PENALTY (10%).
-     * @param newPenaltyBps New penalty in BPS (1e4 scale).
+     * @notice Updates the executor incentive (in BPS) taken on the DEX route.
+     * @dev Reverts if the new value exceeds MAX_INCENTIVE (10%).
+     * @param newIncentiveBps New incentive in BPS (1e4 scale).
      */
-    function setPenaltyBps(uint16 newPenaltyBps) external onlyRole(MULTISIG_ROLE) {
-        if (newPenaltyBps > MAX_PENALTY || newPenaltyBps == penaltyBps) revert InvalidPenaltyBps();
+    function setIncentiveBps(uint16 newIncentiveBps) external onlyRole(MULTISIG_ROLE) {
+        if (newIncentiveBps > MAX_INCENTIVE || newIncentiveBps == incentiveBps) revert InvalidIncentiveBps();
 
-        emit PenaltyBpsUpdated(penaltyBps, newPenaltyBps);
-        penaltyBps = newPenaltyBps;
+        emit IncentiveBpsUpdated(incentiveBps, newIncentiveBps);
+        incentiveBps = newIncentiveBps;
     }
 
     /**
