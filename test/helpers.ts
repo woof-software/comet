@@ -45,8 +45,7 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 
 // Helpers
 import type { Numeric } from './helpers/index';
-import { exp, dfn, defaultAssets, deployAndUpdateLiquidationModule, deployEmptyDexAdapter, mulPrice, toBigInt, convertToBigInt } from './helpers/index';
-import { Sign } from 'crypto';
+import { exp, dfn, defaultAssets, deployAndUpdateLiquidationModule, deployEmptyDexAdapter, mulPrice, toBigInt, convertToBigInt, setBalance } from './helpers/index';
 
 export * from './helpers/index';
 export { ethers, expect, hre };
@@ -246,8 +245,8 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   // Reserve dedicated signers for the liquidation module roles from the tail of the signer list so
   // low-index `users` stay stable across the suite. These are returned so tests can drive the roles.
   const multisig = opts.multisig ?? signers[signers.length - 7];
-  const executors = opts.liquidationModuleOpts?.executors ?? signers.slice(-3);
-  const pausers = opts.liquidationModuleOpts?.pausers ?? signers.slice(-6, -3);
+  const executors = opts.liquidationModuleOpts?.executors ? await Promise.all(opts.liquidationModuleOpts?.executors.map(toSigner)) : signers.slice(-3);
+  const pausers = opts.liquidationModuleOpts?.pausers ? await Promise.all(opts.liquidationModuleOpts?.pausers.map(toSigner)) : signers.slice(-6, -3);
   const users = signers.slice(2, signers.length - 7); // not governor, pause guardian, or a reserved role
   const base = opts.base || 'USDC';
   const reward = opts.reward || 'COMP';
@@ -268,7 +267,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const targetReserves = dfn(opts.targetReserves, 0);
 
   const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
-  const tokens = {};
+  const tokens: Record<string, FaucetToken> = {};
   for (const symbol in assets) {
     const config = assets[symbol];
     if (config.address) {
@@ -299,10 +298,10 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   }
 
   const defaultLiquidationModule = opts.liquidationModule ?? await deployAndUpdateLiquidationModule({
-    dexAdapter: opts.dexAdapter ?? (await deployEmptyDexAdapter()).address,
+    dexAdapter: opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address}))).address,
     multisig: multisig.address,
-    executors: executors.map((x: SignerWithAddress) => x.address),
-    pausers: pausers.map((x: SignerWithAddress) => x.address),
+    executors: executors.map((x) => x.address),
+    pausers: pausers.map((x) => x.address),
     incentiveBps: opts.liquidationModuleOpts?.incentiveBps,
   });
 
@@ -875,3 +874,10 @@ export async function setupFork(blockNumber?: number, jsonRpcUrl?: string) {
     ],
   });
 }
+
+const toSigner = async (x: string | SignerWithAddress): Promise<SignerWithAddress> => {
+    if (typeof x !== 'string') return x;                 // already a signer (default slice)
+    const signer = await ethers.getImpersonatedSigner(x);
+    await setBalance(signer.address, ethers.utils.parseEther('10')); // gas to call the module
+    return signer;
+  };
