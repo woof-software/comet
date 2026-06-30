@@ -6,11 +6,6 @@ import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 import { setBalance } from '../helpers';
 
 describe('core liquidation module', function () {
-  const DEX_ADAPTER = '0x1111111111111111111111111111111111111111';
-  const BORDER_HF: bigint = exp(102, 16); // 1.02e18
-  const HEALTH_POSITION_HF: bigint = exp(110, 16); // 1.10e18
-  const PENALTY_BPS: bigint = BigInt(500);
-
   // liquidationModeToggle is gated by OZ AccessControl's PAUSER_ROLE.
   const PAUSER_ROLE = ethers.utils.id('PAUSER_ROLE');
   const missingRole = (account: string, role: string) =>
@@ -121,14 +116,14 @@ describe('core liquidation module', function () {
 
       it('the wanted value is already set (true -> true)', async () => {
         await expect(liquidationModule.connect(pauser).liquidationModeToggle(true))
-          .to.be.revertedWithCustomError(liquidationModule, 'LiquidationModeAlreadySet');
+          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
       });
 
       it('the wanted value is already set (false -> false)', async () => {
         await liquidationModule.connect(pauser).liquidationModeToggle(false);
 
         await expect(liquidationModule.connect(pauser).liquidationModeToggle(false))
-          .to.be.revertedWithCustomError(liquidationModule, 'LiquidationModeAlreadySet');
+          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
       });
     });
   });
@@ -139,7 +134,7 @@ describe('core liquidation module', function () {
         // sanity check 
         expect(await liquidationModule.comet()).to.not.equal(alice.address);
 
-        await expect(liquidationModule.connect(alice)['absorb(address,address)'](alice.address, alice.address))
+        await expect(liquidationModule.connect(alice).absorb(alice.address, alice.address))
           .to.be.revertedWithCustomError(liquidationModule, 'OnlyComet');
       });
     });

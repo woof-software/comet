@@ -13,7 +13,7 @@ import {
   MarketConfig,
   RouteConfig,
   buildRoutes,
-  buildEmptyRoutes,
+  buildRoutesFromList,
   CORE_ROUTER,
   REDUNDANT_ROUTER,
   SLIPPAGE_BPS,
@@ -41,7 +41,7 @@ export interface DexAdapterFixture {
 }
 
 
-export async function deployEmptyDexAdapter(): Promise<OneInchV6CoreAdapter> {
+export async function deployEmptyDexAdapter(collaterals: string[]): Promise<OneInchV6CoreAdapter> {
   const adapterFactory = (await ethers.getContractFactory(
     "OneInchV6CoreAdapter"
   )) as OneInchV6CoreAdapter__factory;
@@ -50,7 +50,7 @@ export async function deployEmptyDexAdapter(): Promise<OneInchV6CoreAdapter> {
     REDUNDANT_ROUTER,
     TOKENS.WETH.address,
     SLIPPAGE_BPS,
-    await buildEmptyRoutes()
+    buildRoutesFromList(collaterals, {})
   );
   await adapter.deployed();
 

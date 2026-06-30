@@ -3,7 +3,7 @@ import { CometHarnessInterfaceExtendedAssetList, LiquidationModule, LiquidationM
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
 import { takeSnapshot, SnapshotRestorer } from '../helpers/snapshot';
-import { setBalance, DEFAULT_DEX_ADAPTER } from '../helpers';
+import { setBalance } from '../helpers';
 
 // Role-based access control for the liquidation module:
 //   - DEFAULT_ADMIN_ROLE (DAO): the hardcoded governance timelock; admin of every role and the only
@@ -14,8 +14,7 @@ import { setBalance, DEFAULT_DEX_ADAPTER } from '../helpers';
 // This file covers the constructor wiring and the DAO-only role-management surface (grantRole / revokeRole).
 describe('liquidation module access control', function () {
   // Any non-zero address satisfies the DEX adapter check; the adapter itself is not exercised here.
-  const BORDER_HF: bigint = exp(102, 16); // 1.02e18
-  const PENALTY_BPS: bigint = BigInt(500);
+  const INCENTIVE_BPS: bigint = BigInt(500);
   const ZERO = ethers.constants.AddressZero;
 
   // OZ AccessControl role identifiers.
@@ -31,6 +30,7 @@ describe('liquidation module access control', function () {
   let comet: CometHarnessInterfaceExtendedAssetList;
   let LiquidationModuleFactory: LiquidationModule__factory;
   let liquidationModule: LiquidationModule;
+  let dexAdapter: string;
 
   let governor: SignerWithAddress;
   let dao: SignerWithAddress; // holds DEFAULT_ADMIN_ROLE; equals the hardcoded DAO timelock
@@ -51,6 +51,7 @@ describe('liquidation module access control', function () {
     // The DAO is the hardcoded governance timelock that holds DEFAULT_ADMIN_ROLE.
     dao = governor;
     liquidationModule = protocol.defaultLiquidationModule;
+    dexAdapter = await liquidationModule.dexAdapter();
     LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
     multisig = protocol.multisig;
     executors = protocol.executors.map((x: SignerWithAddress) => x.address);
@@ -106,30 +107,30 @@ describe('liquidation module access control', function () {
     describe('revert when', function () {
       it('the Multisig is the zero address', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(DEFAULT_DEX_ADAPTER, ZERO, executors, pausers, PENALTY_BPS)
+          LiquidationModuleFactory.deploy(dexAdapter, ZERO, executors, pausers, INCENTIVE_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
 
       it('the Executors list is empty', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(DEFAULT_DEX_ADAPTER, multisig.address, [], pausers, PENALTY_BPS)
+          LiquidationModuleFactory.deploy(dexAdapter, multisig.address, [], pausers, INCENTIVE_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
       });
 
       it('the Pausers list is empty', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(DEFAULT_DEX_ADAPTER, multisig.address, executors, [], PENALTY_BPS)
+          LiquidationModuleFactory.deploy(dexAdapter, multisig.address, executors, [], INCENTIVE_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
       });
 
       it('the Executors list has duplicates', async () => {
         await expect(
           LiquidationModuleFactory.deploy(
-            DEFAULT_DEX_ADAPTER,
+            dexAdapter,
             multisig.address,
             [executors[0], executors[1], executors[0]],
             pausers,
-            PENALTY_BPS
+            INCENTIVE_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
       });
@@ -137,11 +138,11 @@ describe('liquidation module access control', function () {
       it('the Pausers list has duplicates', async () => {
         await expect(
           LiquidationModuleFactory.deploy(
-            DEFAULT_DEX_ADAPTER,
+            dexAdapter,
             multisig.address,
             executors,
             [pausers[0], pausers[1], pausers[0]],
-            PENALTY_BPS
+            INCENTIVE_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
       });
@@ -149,11 +150,11 @@ describe('liquidation module access control', function () {
       it('an Executor address is the zero address', async () => {
         await expect(
           LiquidationModuleFactory.deploy(
-            DEFAULT_DEX_ADAPTER,
+            dexAdapter,
             multisig.address,
             [executors[0], executors[1], ZERO],
             pausers,
-            PENALTY_BPS
+            INCENTIVE_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
@@ -161,11 +162,11 @@ describe('liquidation module access control', function () {
       it('a Pauser address is the zero address', async () => {
         await expect(
           LiquidationModuleFactory.deploy(
-            DEFAULT_DEX_ADAPTER,
+            dexAdapter,
             multisig.address,
             executors,
             [pausers[0], pausers[1], ZERO],
-            PENALTY_BPS
+            INCENTIVE_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });

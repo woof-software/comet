@@ -75,25 +75,35 @@ export function poolRoute(
   return singleRoute({ currency0, currency1, fee, tickSpacing, hooks }, zeroForOne);
 }
 
+// Builds swap routes for an explicit list of collaterals (one route entry per collateral), leaving
+// collaterals without a known route as unset. Use this when the Comet does not exist yet (the adapter is
+// deployed before the Comet under the new init flow), so its asset list can't be read on-chain.
+export function buildRoutesFromList(
+  collaterals: string[],
+  realRoutes: Record<string, RouteConfig>
+): RouteConfig[] {
+  const lowercasedRoutes: Record<string, RouteConfig> = {};
+  for (const [asset, route] of Object.entries(realRoutes)) {
+    lowercasedRoutes[asset.toLowerCase()] = route;
+  }
+  // Key each route by its Comet collateral (the adapter stores routes by `RouteConfig.collateral`).
+  return collaterals.map((asset) => ({
+    ...(lowercasedRoutes[asset.toLowerCase()] ?? unsetRoute()),
+    collateral: asset,
+  }));
+}
+
 // Builds swap routes for all Comet collaterals, leaving collaterals without a known route as unset.
 export async function buildRoutes(
   comet: CometInterface,
   realRoutes: Record<string, RouteConfig>
 ): Promise<RouteConfig[]> {
-  const lowercasedRoutes: Record<string, RouteConfig> = {};
-  for (const [asset, route] of Object.entries(realRoutes)) {
-    lowercasedRoutes[asset.toLowerCase()] = route;
-  }
-
   const numAssets: number = await comet.numAssets();
-  const routes: RouteConfig[] = [];
+  const collaterals: string[] = [];
   for (let i = 0; i < numAssets; ++i) {
-    const info = await comet.getAssetInfo(i);
-    const asset: string = info.asset;
-    // Key each route by its Comet collateral (the adapter stores routes by `RouteConfig.collateral`).
-    routes.push({ ...(lowercasedRoutes[asset.toLowerCase()] ?? unsetRoute()), collateral: asset });
+    collaterals.push((await comet.getAssetInfo(i)).asset);
   }
-  return routes;
+  return buildRoutesFromList(collaterals, realRoutes);
 }
 
 // Computes the Uniswap V4 poolId for a PoolKey (`keccak256(abi.encode(poolKey))`).
