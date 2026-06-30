@@ -62,7 +62,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     }
 
     /**
-     * @notice initialization method which will be called just once from the Comet during its costruction
+     * @notice initialization method which will be called just once from the Comet during its construction
      *         It is safe to assume that only comet will initiate the method, as otherwise Comet update proposal will revert
      *         in case if this method is called before proposal.
      */
@@ -139,7 +139,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
 
         // replicate isLiquidatable() and cache collateral prices for this function execution
         // liquidity represents value of all collateral's weighted by LCF
-        (uint256 liquidity, uint256[] memory collateralPrices) = _getLiquidity(accountUser,account, true, new uint256[](0));
+        (uint256 liquidity, uint256[] memory collateralPrices) = _getLiquidity(accountUser, account, true, new uint256[](0));
         // cache base asset price
         uint256 basePrice = getPrice(comet.baseTokenPriceFeed());
         
@@ -166,7 +166,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
 
             collateralInfo = assetList.getAssetInfo(i);
             
-            // Skip non-liquidatable assets - we must not sieze collaterals with LF = 0:
+            // Skip non-liquidatable assets - we must not seize collaterals with LF = 0:
             // 1. The collateral remains with the borrower: non-liquidatable assets should
             //    not be absorbed, and their value should not offset the account's debt.
             // 2. Avoids calling getPrice(): if the oracle is disabled or reverting,
@@ -178,7 +178,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
 
             // fully close the account's debt.
             // If collateral is sufficient to cover the remaining debt, seize only as much as needed; otherwise seize all and move to the next asset.
-            // Otherise we derive value from the baseBorrowMin instead of comparing it directly with balance 
+            // Otherwise we derive value from the baseBorrowMin instead of comparing it directly with balance 
             // as this branch can be taken at any cycle step, not just the 1st step
 
             if (!partialLiquidationEnabled || debtRemainingValue <= minDebtValue) {
@@ -242,7 +242,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         // After the liquidation user can either have debt closed (balance == 0) or "healthy" debt (negative balance)
         int256 newBalance = -signed256(divPrice(debtRemainingValue, basePrice, baseScale));
 
-        // If balance is negative but not "healthy" - bad debt occured. (no asset brought HF to targetHF)
+        // If balance is negative but not "healthy" - bad debt occurred. (no asset brought HF to targetHF)
         // Zero out any residual shortfall as bad debt absorbed by the protocol.
         if (newBalance < 0 && totalCollateralizedValue == 0) {
             newBalance = 0;
@@ -359,7 +359,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     }
 
     /**
-    * @notice Internal helper used in absorbInternal() per-collateral cycle
+    * @notice Internal helper used in _computeSeizurePlan() per-collateral cycle
     * @return seizedAmount Collateral amount to cover the debt
     * @return seizedValue Collateral value scaled by LF, which covers the debt
     * @return wantedCollateralValue seizedAmount * collateral price

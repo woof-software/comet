@@ -52,7 +52,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     }
 
     /**
-     * @notice initialization method which will be called just once from the Comet during its costructio
+     * @notice initialization method which will be called just once from the Comet during its costruction
      *         It is safe to assume that only comet will initiate the method, as otherwise Comet update proposal will revert
      *         in case if this method is called before proposal.
      */

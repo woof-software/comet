@@ -20,7 +20,7 @@ import { ILiquidationAccessControlEvents } from "../interfaces/liquidation-modul
 abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessControlErrors, ILiquidationAccessControlEvents {
     /// @notice Executor is responsible for liquidations execution
     bytes32 public constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
-    /// @notice Multisig is responsible for cotract's settings
+    /// @notice Multisig is responsible for contract's settings
     bytes32 public constant MULTISIG_ROLE = keccak256("MULTISIG_ROLE");
     /// @notice Pauser is responsible for turning on/off partial liquidation
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
