@@ -65,7 +65,7 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
      * @param _baseAsset The Comet base asset that collateral is swapped into.
      */
     function _initiateAdapter(address _comet, address _baseAsset) internal {
-        if (module != address(0)) revert AlreadySet();
+        if (module != address(0) && msg.sender != module) revert AlreadySet();
         if (_comet == address(0) || _baseAsset == address(0)) revert ZeroAddress();
 
         /// @dev sender is supposed to be a liquidation module

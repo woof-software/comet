@@ -361,6 +361,7 @@ describe('MarketUpdateDeployment', function() {
       comet,
       tokens,
       priceFeeds,
+      defaultLiquidationModule
     } = await makeProtocol({
       governor: governorTimelockSigner,
     });
@@ -373,7 +374,8 @@ describe('MarketUpdateDeployment', function() {
       extensionDelegate,
       tokens,
       base,
-      priceFeeds
+      priceFeeds,
+      defaultLiquidationModule.address
     );
 
     // Deploy ProxyAdmin

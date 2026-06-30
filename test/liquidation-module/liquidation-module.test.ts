@@ -1,4 +1,4 @@
-import { deployAndUpdateLiquidationModule, ethers, exp, expect, makeProtocol, SnapshotRestorer, takeSnapshot } from '../helpers';
+import { deployDefaultLiquidationModule, ethers, exp, expect, makeProtocol, SnapshotRestorer, takeSnapshot } from '../helpers';
 import { CometHarnessInterfaceExtendedAssetList, LiquidationModule, LiquidationModule__factory } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';

@@ -45,7 +45,7 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 
 // Helpers
 import type { Numeric } from './helpers/index';
-import { exp, dfn, defaultAssets, deployAndUpdateLiquidationModule, deployEmptyDexAdapter, mulPrice, toBigInt, convertToBigInt, setBalance } from './helpers/index';
+import { exp, dfn, defaultAssets, deployDefaultLiquidationModule, deployEmptyDexAdapter, mulPrice, toBigInt, convertToBigInt, setBalance } from './helpers/index';
 
 export * from './helpers/index';
 export { ethers, expect, hre };
@@ -108,6 +108,7 @@ export type ProtocolOpts = {
     pausers?: string[];
     incentiveBps?: bigint;
   };
+  skipInitStorage?: boolean;
 };
 
 export type Protocol = {
@@ -244,10 +245,10 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const pauseGuardian = opts.pauseGuardian || signers[1];
   // Reserve dedicated signers for the liquidation module roles from the tail of the signer list so
   // low-index `users` stay stable across the suite. These are returned so tests can drive the roles.
-  const multisig = opts.multisig ?? signers[signers.length - 7];
-  const executors = opts.liquidationModuleOpts?.executors ? await Promise.all(opts.liquidationModuleOpts?.executors.map(toSigner)) : signers.slice(-3);
-  const pausers = opts.liquidationModuleOpts?.pausers ? await Promise.all(opts.liquidationModuleOpts?.pausers.map(toSigner)) : signers.slice(-6, -3);
-  const users = signers.slice(2, signers.length - 7); // not governor, pause guardian, or a reserved role
+  const multisig = opts.multisig ?? signers[2];
+  const executors = opts.liquidationModuleOpts?.executors ? await Promise.all(opts.liquidationModuleOpts?.executors.map(toSigner)) : signers.slice(-2);
+  const pausers = opts.liquidationModuleOpts?.pausers ? await Promise.all(opts.liquidationModuleOpts?.pausers.map(toSigner)) : signers.slice(-4, -2);
+  const users = signers.slice(3); // not governor, multisig, pause guardian - though some users may be pausers or executors
   const base = opts.base || 'USDC';
   const reward = opts.reward || 'COMP';
   const supplyKink = dfn(opts.supplyKink, exp(0.8, 18));
@@ -297,12 +298,12 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     await extensionDelegate.deployed();
   }
 
-  const defaultLiquidationModule = opts.liquidationModule ?? await deployAndUpdateLiquidationModule({
+  const defaultLiquidationModule = opts.liquidationModule ?? await deployDefaultLiquidationModule({
     dexAdapter: opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address}))).address,
     multisig: multisig.address,
-    executors: executors.map((x) => x.address),
-    pausers: pausers.map((x) => x.address),
-    incentiveBps: opts.liquidationModuleOpts?.incentiveBps,
+    executors: opts.liquidationModuleOpts?.executors ?? executors.map((x) => x.address),
+    pausers: opts.liquidationModuleOpts?.pausers ?? pausers.map((x) => x.address),
+    incentiveBps: opts.liquidationModuleOpts?.incentiveBps
   });
 
   const config = {
@@ -362,7 +363,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   }, []);
 
   if (opts.start) await ethers.provider.send('evm_setNextBlockTimestamp', [opts.start]);
-  await comet.initializeStorage();
+  if (!opts.skipInitStorage) await comet.initializeStorage();
 
   const baseTokenBalance = opts.baseTokenBalance;
   if (baseTokenBalance) {
@@ -401,6 +402,7 @@ export async function getConfigurationForConfigurator(
   },
   base: string,
   priceFeeds: { [p: string]: SimplePriceFeed },
+  liquidationModule: string
 ) {
 
   const assets = opts.assets || defaultAssets();
@@ -430,7 +432,6 @@ export async function getConfigurationForConfigurator(
     governor: governor.address,
     pauseGuardian: pauseGuardian.address,
     extensionDelegate: extensionDelegate.address,
-    liquidationModule: '0x1111111111111111111111111111111111111111', // at this moment, we do not have address of the comet for liquidation modue, thus we use a dummy address
     baseToken: tokens[base].address,
     baseTokenPriceFeed: priceFeeds[base].address,
     supplyKink,
@@ -448,6 +449,7 @@ export async function getConfigurationForConfigurator(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    liquidationModule,
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
       if (symbol != base) {
         acc.push({
@@ -483,6 +485,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
+    defaultLiquidationModule
   } = await makeProtocol(opts);
 
   // Deploy ProxyAdmin
@@ -506,6 +509,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     base,
     priceFeeds,
+    defaultLiquidationModule.address
   );
 
   // Deploy CometFactory
@@ -544,27 +548,16 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     );
 
     await configuratorAsProxy.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
-    await proxyAdmin.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
-  }
+    await proxyAdmin.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);  }
 
-  // Now we know addresses of the comet proxies, we can deploy the liquidation modules
-  const cometAsProxy = comet.attach(cometProxy.address);
-  const defaultLiquidationModuleForProxy = await deployAndUpdateLiquidationModule({
-    comet: cometAsProxy,
-    governor,
-    multisig: multisig.address,
-    executors: [executor.address],
-    pausers: [pauser.address],
-    ...(opts.liquidationModuleOpts || {}),
-  });
 
   return {
     opts,
     governor,
     pauseGuardian,
     multisig,
-    executor,
-    pauser,
+    executors,
+    pausers,
     extensionDelegate,
     users,
     base,
@@ -579,8 +572,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
-    defaultLiquidationModule: defaultLiquidationModuleForProxy,
-    defaultLiquidationModuleForProxy,
+    defaultLiquidationModule
   };
 }
 

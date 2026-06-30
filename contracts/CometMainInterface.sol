@@ -145,6 +145,7 @@ abstract contract CometMainInterface is CometCore {
     function baseToken() virtual external view returns (address);
     function baseTokenPriceFeed() virtual external view returns (address);
     function extensionDelegate() virtual external view returns (address);
+    function liquidationModule() virtual external view returns (address);
 
     /// @dev uint64
     function supplyKink() virtual external view returns (uint);

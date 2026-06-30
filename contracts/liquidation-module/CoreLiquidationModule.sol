@@ -67,7 +67,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
      *         in case if this method is called before proposal.
      */
     function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) virtual public {
-        if (address(comet) != address(0)) revert AlreadySet();
+        if (address(comet) != address(0) && msg.sender != address(comet)) revert AlreadySet();
 
         comet = ICometInterface(msg.sender);
 

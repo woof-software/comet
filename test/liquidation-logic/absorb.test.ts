@@ -1,4 +1,4 @@
-import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, divPrice, presentValue, CollateralState, makeCollateralStates, seedMarketActivity, deployAndUpdateLiquidationModule } from '../helpers';
+import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, divPrice, presentValue, CollateralState, makeCollateralStates, seedMarketActivity, deployDefaultLiquidationModule } from '../helpers';
 import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, LiquidationModule, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
@@ -1789,7 +1789,7 @@ describe('absorb: general logic', function () {
     
             await configurator.setBaseTokenPriceFeed(cometProxyAddress, priceFeedWithRevert.address);
             await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-            await deployAndUpdateLiquidationModule({comet, governor});
+            await deployDefaultLiquidationModule({comet, governor});
           });
     
           after(async () => await snapshot.restore());
@@ -1828,7 +1828,7 @@ describe('absorb: general logic', function () {
     
             await configurator.updateAssetPriceFeed(cometProxyAddress, tokens[collateralKey].address, priceFeedWithRevert.address);
             await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-            await deployAndUpdateLiquidationModule({comet, governor});
+            await deployDefaultLiquidationModule({comet, governor});
           });
     
           after(async () => await snapshot.restore());
