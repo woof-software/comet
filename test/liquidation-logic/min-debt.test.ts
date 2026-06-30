@@ -19,7 +19,8 @@ describe('partial liquidation: min debt', function() {
 
   let alice: SignerWithAddress;
   let absorber: SignerWithAddress;
-  let governor: SignerWithAddress;
+  let pauser: SignerWithAddress;
+  let executor: SignerWithAddress;
 
   const baseScale: bigint = 10n ** 6n;
   const factorScale: bigint = 10n ** 18n;
@@ -54,7 +55,8 @@ describe('partial liquidation: min debt', function() {
 
     [alice, absorber] = protocol.users;
     const [bob, dave] = protocol.users.slice(2);
-    governor = protocol.governor;
+    pauser = protocol.pausers[0];
+    executor = protocol.executors[0];
 
     const allocateAmount = exp(1_000_000, 18);
     for (const token of Object.values(protocol.tokens)) {
@@ -84,7 +86,11 @@ describe('partial liquidation: min debt', function() {
         // The module defaults to partialLiquidationEnabled = true; toggling to the
         // value it already holds reverts with LiquidationModeAlreadySet.
         if ((await liquidationModule.partialLiquidationEnabled()) !== partialLiquidationEnabled) {
-          await liquidationModule.connect(governor).liquidationModeToggle(partialLiquidationEnabled);
+          await liquidationModule.connect(pauser).liquidationModeToggle(partialLiquidationEnabled);
+        }
+
+        if (viaLiquidationModule) {
+          await liquidationModule.connect(pauser).setDexRoutePaused(true);
         }
 
         // sanity check
@@ -140,11 +146,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -286,11 +290,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -432,11 +434,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -598,11 +598,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -795,11 +793,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -1018,11 +1014,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -1176,11 +1170,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -1364,11 +1356,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -1551,11 +1541,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -1757,11 +1745,9 @@ describe('partial liquidation: min debt', function() {
           after(async () => await innerSnapshot.restore());
     
           it('absorb is successful', async () => {
-            if (viaLiquidationModule) {
-              absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-            } else {
-              absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-            }
+            absorbTx = viaLiquidationModule
+              ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+              : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
             await expect(absorbTx).to.not.be.reverted;
           });
     
@@ -1873,11 +1859,9 @@ describe('partial liquidation: min debt', function() {
           after(async () => await innerSnapshot.restore());
     
           it('absorb is successful', async () => {
-            if (viaLiquidationModule) {
-              absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-            } else {
-              absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-            }
+            absorbTx = viaLiquidationModule
+              ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+              : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
             await expect(absorbTx).to.not.be.reverted;
           });
     
@@ -2013,11 +1997,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -2174,11 +2156,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -2328,11 +2308,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -2482,11 +2460,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -2649,11 +2625,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -2845,11 +2819,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -3048,11 +3020,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -3273,11 +3243,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -3466,11 +3434,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -3665,11 +3631,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -3815,11 +3779,9 @@ describe('partial liquidation: min debt', function() {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            absorbTx = await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          absorbTx = viaLiquidationModule
+            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     

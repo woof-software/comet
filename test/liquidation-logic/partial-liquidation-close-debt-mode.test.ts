@@ -23,7 +23,6 @@ describe('partial liquidation (close debt mode)', function() {
   // Signers
   let alice: SignerWithAddress;
   let absorber: SignerWithAddress;
-  let governor: SignerWithAddress;
 
   // Math
   const baseScale: bigint = 10n ** 6n;
@@ -57,7 +56,6 @@ describe('partial liquidation (close debt mode)', function() {
 
     [alice, absorber] = protocol.users;
     const [bob, dave] = protocol.users.slice(2);
-    governor = protocol.governor;
 
     const allocateAmount = exp(1_000_000, 18);
     for (const token of Object.values(protocol.tokens)) {
@@ -68,7 +66,8 @@ describe('partial liquidation (close debt mode)', function() {
     await seedMarketActivity(comet, tokens, priceFeeds, bob, dave, baseToken,  initialBaseFunding );
 
     // Enable close debt mode
-    await liquidationModule.connect(governor).liquidationModeToggle(false);
+    const pauser = protocol.pausers[0];
+    await liquidationModule.connect(pauser).liquidationModeToggle(false);
     targetHealthFactor = (await liquidationModule.TARGET_HEALTH_FACTOR()).toBigInt();
 
     snapshot = await takeSnapshot();
