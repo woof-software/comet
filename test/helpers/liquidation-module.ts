@@ -1,6 +1,7 @@
 import {
   LiquidationModule,
   LiquidationModule__factory,
+  LiquidationModuleForComet__factory
 } from 'build/types';
 import { ethers } from 'hardhat';
 
@@ -31,6 +32,24 @@ export async function deployDefaultLiquidationModule(
     opts.executors,
     opts.pausers,
     opts.incentiveBps ?? DEFAULT_INCENTIVE_BPS
+  );
+  await liquidationModule.deployed();
+
+  return liquidationModule;
+}
+
+export async function deployDefaultLiquidationModuleWithComet(
+  opts: DeployLiquidationModuleOpts,
+  comet: string
+): Promise<LiquidationModule> {
+  const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModuleForComet')) as LiquidationModuleForComet__factory;
+  const liquidationModule = await LiquidationModuleFactory.deploy(
+    opts.dexAdapter,
+    opts.multisig,
+    opts.executors,
+    opts.pausers,
+    opts.incentiveBps ?? DEFAULT_INCENTIVE_BPS,
+    comet
   );
   await liquidationModule.deployed();
 

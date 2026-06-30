@@ -62,14 +62,16 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
     }
 
     /**
-     * @notice initialization method which will be called just once from the Comet during its construction
+     * @notice initialization method which will be called just once during Comet initialization or module construction
      *         It is safe to assume that only comet will initiate the method, as otherwise Comet update proposal will revert
      *         in case if this method is called before proposal.
      */
     function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) virtual public {
-        if (address(comet) != address(0) && msg.sender != address(comet)) revert AlreadySet();
+        /// @dev values are either set during Comet first deployment (comet is not set)
+        ///      or via update by the same Comet (thus address of the comet is already set via constructor)
 
-        comet = ICometInterface(msg.sender);
+        if (address(comet) == address(0)) comet = ICometInterface(msg.sender);
+        else if (msg.sender != address(this)) revert AlreadySet();
 
         /// @dev we dropped sanity checks as those are parameters directly from Comet's constructor
         assetList = IAssetList(_assetList);

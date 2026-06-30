@@ -59,8 +59,8 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) override public {
         super.initiateModule(_assetList, _numAssets, _baseScale, _baseToken);
 
-        /// @dev msg.sender is expected to be a comet address
-        dexAdapter.initiateAdapter(msg.sender, _assetList, _baseToken);
+        /// @dev comet is expected to be set either in constructor or in core initialization
+        dexAdapter.initiateAdapter(address(comet), _assetList, _baseToken);
     }
 
     /**

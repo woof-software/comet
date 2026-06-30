@@ -115,7 +115,7 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
      * @param _assetList The Comet asset list used to enumerate and validate the collateral routes.
      * @param _baseAsset The Comet base asset that collateral is swapped into.
      */
-    function initiateAdapter(address _comet, address _assetList, address _baseAsset) external override {
+    function initiateAdapter(address _comet, address _assetList, address _baseAsset) public override {
         _initiateAdapter(_comet, _baseAsset);
 
         IAssetList assetList = IAssetList(_assetList);
