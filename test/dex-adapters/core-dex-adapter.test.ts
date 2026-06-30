@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import { Signer } from 'ethers';
+import { ContractTransaction, Signer } from 'ethers';
 import { OneInchV6CoreAdapter, OneInchV6CoreAdapter__factory } from '../../build/types';
 import {
   RouteConfig,
@@ -10,6 +10,7 @@ import {
   TOKENS,
   MARKETS,
   setupDexAdapter,
+  SnapshotRestorer,
 } from '../helpers';
 
 describe('CoreDexAdapter', function () {
@@ -23,9 +24,10 @@ describe('CoreDexAdapter', function () {
   let baseToken: string;
   let moduleSigner: Signer;
   let moduleAddress: string;
+  let snapshot: SnapshotRestorer;
 
   before(async () => {
-    ({ adapter, adapterFactory, routes, baseToken, moduleSigner, moduleAddress } = await setupDexAdapter(market));
+    ({ adapter, adapterFactory, routes, baseToken, moduleSigner, moduleAddress, snapshot } = await setupDexAdapter(market));
   });
 
   context('constructor', function () {
@@ -81,6 +83,44 @@ describe('CoreDexAdapter', function () {
         )
           .to.be.revertedWithCustomError(adapter, 'SlippageOutOfBounds')
           .withArgs(badSlippageBps);
+      });
+    });
+  });
+
+  context('setSlippageBps', function () {
+    let setTx: ContractTransaction;
+    const NEW_SLIPPAGE_BPS = 1000;
+
+    context('happy path: module updates slippageBps', function () {
+      after(async () => await snapshot.restore());
+
+      it('module updates slippageBps to a new value', async () => {
+        setTx = await adapter.connect(moduleSigner).setSlippageBps(NEW_SLIPPAGE_BPS);
+        await expect(setTx).to.not.be.reverted;
+      });
+
+      it('emits event SlippageSet', async () => {
+        await expect(setTx).to.emit(adapter, 'SlippageSet').withArgs(SLIPPAGE_BPS, NEW_SLIPPAGE_BPS);
+      });
+
+      it('slippageBps is now a new value', async () => {
+        expect(await adapter.slippageBps()).to.equal(NEW_SLIPPAGE_BPS);
+      });
+    });
+
+    context('reverts when', function () {
+      it('caller is not the module', async () => {
+        const [outsider] = await ethers.getSigners();
+        await expect(adapter.connect(outsider).setSlippageBps(NEW_SLIPPAGE_BPS)).to.be.revertedWithCustomError(adapter, 'Unathorized');
+      });
+
+      it('New slippageBps is out of bounds', async () => {
+        const badSlippageBps = 0;
+        await expect(adapter.connect(moduleSigner).setSlippageBps(badSlippageBps)).to.be.revertedWithCustomError(adapter, 'SlippageOutOfBounds');
+      });
+
+      it('New slippage bps is equal to previous value', async () => {
+        await expect(adapter.connect(moduleSigner).setSlippageBps(SLIPPAGE_BPS)).to.be.revertedWithCustomError(adapter, 'AlreadySet');
       });
     });
   });
