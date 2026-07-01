@@ -1,4 +1,4 @@
-// TODO: Re-use this test for liquidation module scenario test.
+// TODO: Remove this test once all real comets are updated to have liquidation module and dex adapter.
 import { expect } from 'chai';
 import hre, { ethers } from 'hardhat';
 import { ContractReceipt, ContractTransaction, Signer } from 'ethers';
@@ -9,7 +9,7 @@ import {
   ERC20__factory,
   OneInchV6CoreAdapter,
   OneInchV6CoreAdapter__factory,
-} from '../build/types';
+} from '../../build/types';
 import {
   setErc20Balance,
   fetch1inchSwapData,
@@ -26,14 +26,14 @@ import {
   TOKENS_BY_NETWORK,
   TokenInfo,
   NETWORKS,
-} from '../test/helpers';
+} from '../../test/helpers';
 
 /**
  * Cross-network sweep: execute swap for every supported network, every Comet market and every configured collateral.
  * A network runs only when `ONEINCH_API_KEY` and its fork RPC env var is set.
  */
 
-describe('OneInchV6CoreAdapter core swap sweep', function () {
+describe('OneInchV6CoreAdapter core & redundant swap sweep', function () {
   this.timeout(600_000);
 
   for (const [network, markets] of Object.entries(SWAP_ROUTES)) {
@@ -140,6 +140,42 @@ describe('OneInchV6CoreAdapter core swap sweep', function () {
               // Report if routed through redundant router.
               if (routedThroughRedundant !== undefined) console.log(`${symbol} Routed through redundant router`);
 
+              // Forwards the realized base output to the module.
+              expect(minOut).to.be.gt(0);
+              expect(received).to.be.gte(minOut);
+
+              // Leaves no tokens on the adapter.
+              expect(await collateralErc20.balanceOf(adapter.address)).to.equal(0);
+              expect(await baseTokenErc20.balanceOf(adapter.address)).to.equal(0);
+            });
+
+            it(`swaps ${symbol} into the base asset via the Uniswap redundant router`, async function () {
+              const collateral = (await comet.getAssetInfo(assetIndex)).asset;
+              expect(await adapter.routeKind(collateral)).to.not.equal(0); // Check that route is set
+              const collateralErc20 = ERC20__factory.connect(collateral, ethers.provider);
+
+              await setErc20Balance(collateral, adapter.address, funding.amount, funding.slot);
+              const amountIn = await collateralErc20.balanceOf(adapter.address);
+              const quote = "0x";
+              const minOut = await adapter.calculateMinAmountOut(collateral, amountIn);
+              const tx: ContractTransaction = await adapter.connect(moduleSigner).swap(collateral, quote);
+              const receipt: ContractReceipt = await tx.wait();
+              const received = await baseTokenErc20.balanceOf(moduleAddress);
+
+              // Emits the adapter Swap event.
+              await expect(tx).to.emit(adapter, 'Swap').withArgs(collateral, amountIn, received);
+
+              const routedThroughRedundant = findEvent(
+                receipt.logs,
+                ERC20_EVENTS_IFACE,
+                'Transfer',
+                (logToken, args) =>
+                  eq(logToken, collateral) &&
+                  eq(args.from, adapter.address) &&
+                  eq(args.to, net.redundantRouter)
+              );
+
+              expect(routedThroughRedundant).to.not.be.undefined; // Check that swap was routed through redundant router
               // Forwards the realized base output to the module.
               expect(minOut).to.be.gt(0);
               expect(received).to.be.gte(minOut);
