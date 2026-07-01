@@ -43,7 +43,7 @@ abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessC
      * @param _multisig  The Multisig address: controls parameter setters.
      * @param _executors Initial set of Executor accounts (keeper liquidation callers).
      * @param _pausers   Initial set of Pauser accounts (DEX pause switch).
-     * @dev The DAO is not set here; the inheriting module derives it from Comet via `_setDAO`.
+     * @dev The DAO has the PAUSER_ROLE by default and can toggle the DEX pause switch.
      */
     constructor(
         address _multisig,
@@ -59,6 +59,7 @@ abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessC
 
 
         _grantRole(DEFAULT_ADMIN_ROLE, DAO);
+        _grantRole(PAUSER_ROLE, DAO);
         _grantRole(MULTISIG_ROLE, _multisig);
         multisig = _multisig;
 
@@ -89,8 +90,8 @@ abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessC
         emit DexPausedSet(paused);
     }
 
-    /// @notice Toggle the liquidation mode. Multisig only (parameter setter).
-    function liquidationModeToggle(bool _partialLiquidationEnabled) external onlyRole(MULTISIG_ROLE) {
+    /// @notice Toggle the liquidation mode. Callable by a Pauser or the DAO.
+    function liquidationModeToggle(bool _partialLiquidationEnabled) external onlyRole(PAUSER_ROLE) {
         if (partialLiquidationEnabled == _partialLiquidationEnabled) revert AlreadySet();
 
         partialLiquidationEnabled = _partialLiquidationEnabled;
