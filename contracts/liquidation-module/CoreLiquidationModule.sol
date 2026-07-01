@@ -335,17 +335,9 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
                     // it won't block the entire liquidation check, and won't paralyze liquidations of accounts which hold it.
                     if (asset.liquidateCollateralFactor == 0) continue;
                 } else {
-                    // Block ALL borrow-side actions when the borrower still holds deactivated collateral.
-                    // This revert is intentionally broad: it prevents borrowing, withdrawing other
-                    // collateral, and transferring — even if the remaining active collateral would
-                    // pass the collateralization check on its own. The purpose is to force the
-                    // borrower to withdraw the deactivated collateral FIRST before doing anything
-                    // else (see the deactivation lifecycle comment on isCollateralDeactivated).
-                    //
-                    // If the borrower cannot withdraw the deactivated collateral without becoming
-                    // under-collateralized, they are stuck and must wait for liquidation.
-                    if (CometExtInterface(address(comet)).isCollateralDeactivated(asset.offset)) revert TokenIsDeactivated(asset.asset);
-
+                    // Note: Intentionally skip isCollateralDeactivated() check: this method is for liquidation only, so we 
+                    // only need the collaterized value. The user should still be able to liquidate the deactivated asset
+                    
                     // Mechanism to skip assets with no borrowing power. It avoids getPrice() call price feed,
                     // so in case if excluded asset's oracle reverts (e.g. stale, broken, decommissioned),
                     // it won't block the entire collateralization check, and won't paralyze borrows and transfers.
