@@ -105,7 +105,8 @@ describe('UniswapAdapter', function () {
           badRoutes
         );
         await badAdapter.deployed();
-        return badAdapter.connect(moduleSigner).initiateAdapter(comet.address, comet.address, baseToken);
+        badAdapter.connect(moduleSigner).initiateAdapter(comet.address);
+        return badAdapter.connect(moduleSigner).setAssetList(await comet.assetList(), await comet.numAssets(), baseToken);
       };
 
       it('weth is the zero address', async () => {
@@ -241,7 +242,8 @@ describe('UniswapAdapter', function () {
       badRoutes
     );
     await badAdapter.deployed();
-    await badAdapter.connect(moduleSigner).initiateAdapter(comet.address, comet.address, baseToken);
+    await badAdapter.connect(moduleSigner).initiateAdapter(comet.address);
+    await badAdapter.connect(moduleSigner).setAssetList(await comet.assetList(), await comet.numAssets(), baseToken);
 
     const amountIn = wbtc.amount;
     await setErc20Balance(wbtc.address, badAdapter.address, amountIn, wbtc.slot);

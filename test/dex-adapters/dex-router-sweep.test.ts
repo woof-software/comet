@@ -86,9 +86,8 @@ describe('OneInchV6CoreAdapter core & redundant swap sweep', function () {
               routes
             );
             await adapter.deployed();
-            // The Comet exposes numAssets()/getAssetInfo(), so it doubles as the IAssetList for route
-            // validation. `moduleSigner` stands in for the liquidation module that calls initiateAdapter.
-            await adapter.connect(moduleSigner).initiateAdapter(market.comet, market.comet, baseToken);
+            await adapter.connect(moduleSigner).initiateAdapter(market.comet);
+            await adapter.connect(moduleSigner).setAssetList(await comet.assetList(), await comet.numAssets(), baseToken);
 
             snapshot = await takeSnapshot();
           });

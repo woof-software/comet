@@ -87,7 +87,8 @@ export async function setupDexAdapter(market: MarketConfig): Promise<DexAdapterF
     routes
   );
   await adapter.deployed();
-  await adapter.connect(moduleSigner).initiateAdapter(market.comet, market.comet, baseToken);
+  await adapter.connect(moduleSigner).initiateAdapter(market.comet);
+  await adapter.connect(moduleSigner).setAssetList(await comet.assetList(), await comet.numAssets(), baseToken);
 
   const snapshot = await takeSnapshot();
 
