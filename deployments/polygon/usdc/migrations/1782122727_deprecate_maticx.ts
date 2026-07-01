@@ -33,6 +33,14 @@ export default migration('1782122727_deprecate_maticx', {
       fxRoot
     } = await govDeploymentManager.getContracts();
 
+    const updateMaticXBorrowCollateralFactorCalldataUsdc = await calldata(
+      configurator.populateTransaction.updateAssetBorrowCollateralFactor(
+        USDC_COMET,
+        MaticX.address,
+        0
+      )
+    );
+
     const updateMaticXPriceFeedCalldataUsdc = await calldata(
       configurator.populateTransaction.updateAssetPriceFeed(
         USDC_COMET,
@@ -53,6 +61,14 @@ export default migration('1782122727_deprecate_maticx', {
       cometAdmin.populateTransaction.deployAndUpgradeTo(
         configurator.address,
         USDC_COMET
+      )
+    );
+
+    const updateMaticXBorrowCollateralFactorCalldataUsdt = await calldata(
+      configurator.populateTransaction.updateAssetBorrowCollateralFactor(
+        USDT_COMET,
+        MaticX.address,
+        0
       )
     );
 
@@ -83,20 +99,20 @@ export default migration('1782122727_deprecate_maticx', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
-          configurator.address, configurator.address, cometAdmin.address,
-          configurator.address, configurator.address, cometAdmin.address,
+          configurator.address, configurator.address, configurator.address, cometAdmin.address,
+          configurator.address, configurator.address, configurator.address, cometAdmin.address,
         ],
         [
-          0, 0, 0,
-          0, 0, 0,
+          0, 0, 0, 0,
+          0, 0, 0, 0,
         ],
         [
-          'updateAssetPriceFeed(address,address,address)', 'updateAssetSupplyCap(address,address,uint128)', 'deployAndUpgradeTo(address,address)',
-          'updateAssetPriceFeed(address,address,address)', 'updateAssetSupplyCap(address,address,uint128)', 'deployAndUpgradeTo(address,address)',
+          'updateAssetBorrowCollateralFactor(address,address,uint64)', 'updateAssetPriceFeed(address,address,address)', 'updateAssetSupplyCap(address,address,uint128)', 'deployAndUpgradeTo(address,address)',
+          'updateAssetBorrowCollateralFactor(address,address,uint64)', 'updateAssetPriceFeed(address,address,address)', 'updateAssetSupplyCap(address,address,uint128)', 'deployAndUpgradeTo(address,address)',
         ],
         [
-          updateMaticXPriceFeedCalldataUsdc, updateMaticXSupplyCapCalldataUsdc, deployAndUpgradeToCalldataUsdc,
-          updateMaticXPriceFeedCalldataUsdt, updateMaticXSupplyCapCalldataUsdt, deployAndUpgradeToCalldataUsdt,
+          updateMaticXBorrowCollateralFactorCalldataUsdc, updateMaticXPriceFeedCalldataUsdc, updateMaticXSupplyCapCalldataUsdc, deployAndUpgradeToCalldataUsdc,
+          updateMaticXBorrowCollateralFactorCalldataUsdt, updateMaticXPriceFeedCalldataUsdt, updateMaticXSupplyCapCalldataUsdt, deployAndUpgradeToCalldataUsdt,
         ],
       ]
     );
@@ -114,13 +130,13 @@ export default migration('1782122727_deprecate_maticx', {
 
 ## Proposal summary
 
-Woof proposes to deprecate MaticX as collateral in cUSDCv3 and cUSDTv3 on Polygon by updating its price feed to a constant price feed with a price of 1 wei and set its supply cap to 0.
+Woof proposes to deprecate MaticX as collateral in cUSDCv3 and cUSDTv3 on Polygon by updating its price feed to a constant price feed with a price of 1 wei, setting its supply cap to 0, and setting its borrow collateral factor to 0.
 
 Further detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/1136) and [forum discussion](<>).
 
 ## Proposal actions
 
-The first action updates MaticX price feed to the constant price feed with a price of 1 wei and sets its supply cap to 0. This sends the encoded 'updateAssetPriceFeed', 'updateAssetSupplyCap' and 'deployAndUpgradeTo' calls across the bridge to the governance receiver for both cUSDCv3 and cUSDTv3 on Polygon.
+The first action updates MaticX price feed to the constant price feed with a price of 1 wei, sets its supply cap to 0, and sets its borrow collateral factor to 0. This sends the encoded 'updateAssetBorrowCollateralFactor', 'updateAssetPriceFeed', 'updateAssetSupplyCap' and 'deployAndUpgradeTo' calls across the bridge to the governance receiver for both cUSDCv3 and cUSDTv3 on Polygon.
 `;
 
     const txn = await deploymentManager.retry(async () =>
@@ -164,6 +180,9 @@ The first action updates MaticX price feed to the constant price feed with a pri
     expect(maticXInUsdcCometInfo.supplyCap).to.eq(0);
     expect(maticXInUsdcConfiguratorInfo.supplyCap).to.eq(0);
 
+    expect(maticXInUsdcCometInfo.borrowCollateralFactor).to.eq(0);
+    expect(maticXInUsdcConfiguratorInfo.borrowCollateralFactor).to.eq(0);
+
     // USDT
     const usdtComet = new Contract(
       USDT_COMET,
@@ -185,5 +204,8 @@ The first action updates MaticX price feed to the constant price feed with a pri
 
     expect(maticXInUsdtCometInfo.supplyCap).to.eq(0);
     expect(maticXInUsdtConfiguratorInfo.supplyCap).to.eq(0);
+
+    expect(maticXInUsdtCometInfo.borrowCollateralFactor).to.eq(0);
+    expect(maticXInUsdtConfiguratorInfo.borrowCollateralFactor).to.eq(0);
   },
 });
