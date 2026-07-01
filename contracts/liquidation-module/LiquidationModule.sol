@@ -79,6 +79,8 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @param swapData Per-collateral router calldata for the DEX route, aligned to the seizure plan order.
      */
     function liquidate(address absorber, address account, bytes[] calldata swapData) external onlyRole(EXECUTOR_ROLE) {
+        if (comet.isAbsorbPaused()) revert Paused();
+        
         comet.accrueAccount(account);
 
         // When the DEX path is paused, every keeper liquidation falls back to the default

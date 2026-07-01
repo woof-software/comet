@@ -27,4 +27,6 @@ interface ICometInterface {
 
     function accrueAccount(address account) external;
     function presentValue(int104 principalValue_) external view returns (int256);
+
+    function isAbsorbPaused() external view returns (bool);
 }
