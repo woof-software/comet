@@ -8,7 +8,7 @@ import {
 } from 'build/types';
 import { ethers } from 'hardhat';
 
-type DeployLiquidationModuleOpts = {
+export type DeployLiquidationModuleOpts = {
   multisig: string;
   executors: string[];
   pausers: string[];

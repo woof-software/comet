@@ -1,5 +1,5 @@
-import { ethers, expect, exp, presentValue, mulPrice, mulFactor, divPrice, default24Assets, CollateralState, makeCollateralStates, makeConfigurator, principalValue, deployDefaultLiquidationModule, seedMarketActivity} from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, LiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
+import { ethers, expect, exp, presentValue, mulPrice, mulFactor, divPrice, default24Assets, CollateralState, makeCollateralStates, makeConfigurator, principalValue, deployDefaultLiquidationModuleWithComet, seedMarketActivity, DeployLiquidationModuleOpts, deployEmptyDexAdapter} from '../helpers';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, LiquidationModule, FaucetToken, SimplePriceFeed, AssetListFactory, CometExtAssetList } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -11,11 +11,15 @@ import { AssetInfoStructOutput } from 'build/types/CometWithExtendedAssetList';
 describe('absorb logic with delisted collaterals', function() {
   // Protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
+  let cometExt: CometExtAssetList;
   let configurator: Configurator;
   let cometProxyAdmin: CometProxyAdmin;
   let configuratorProxyAddress: string;
   let cometProxyAddress: string;
   let liquidationModule: LiquidationModule;
+  let assetListFactory: AssetListFactory;
+  let liquidationModuleOpts: DeployLiquidationModuleOpts;
+  let emptyDexAdapterAddress: string;
 
   const baseTokenPrice = exp(1, 8);
   const initialBaseFunding = baseTokenPrice * 10_000n;
@@ -55,14 +59,24 @@ describe('absorb logic with delisted collaterals', function() {
     configurator = protocol.configurator.attach(configuratorProxyAddress);
     comet = protocol.comet.attach(cometProxyAddress);
     cometProxyAdmin = protocol.proxyAdmin;
+    cometExt = protocol.extensionDelegate;
+    assetListFactory = await ethers.getContractAt("AssetListFactory", (await cometExt.assetListFactory())) as AssetListFactory;
+
+    pauseGuardian = protocol.pauseGuardian;
+    governor = protocol.governor;
 
     liquidationModule = protocol.defaultLiquidationModule;
     targetHealthFactor = (await liquidationModule.TARGET_HEALTH_FACTOR()).toBigInt();
     ///turn off DEX liquidation to test pure absorbtion mechanics
     await liquidationModule.connect(protocol.pausers[0]).setDexRoutePaused(true);
 
-    pauseGuardian = protocol.pauseGuardian;
-    governor = protocol.governor;
+    emptyDexAdapterAddress = (await deployEmptyDexAdapter(Object.entries(protocol.tokens).filter(([symbol]) => symbol !== protocol.base).map(([, token]) => {return token.address}))).address;
+    liquidationModuleOpts = {
+      multisig: protocol.multisig.address,
+      executors: [protocol.executors[0].address],
+      pausers: [pauseGuardian.address],
+      dexAdapter: emptyDexAdapterAddress
+    } as DeployLiquidationModuleOpts;
 
     for (let asset in protocol.tokens) {
       if (asset === 'USDC') continue;
@@ -89,7 +103,7 @@ describe('absorb logic with delisted collaterals', function() {
     snapshot = await takeSnapshot();
   });
 
-  context('1 soft delisted collateral: BCF = 0 (partial seizure with falling into minDebt case)', function () {
+  context.only('1 soft delisted collateral: BCF = 0 (partial seizure with falling into minDebt case)', function () {
     const droppedCompPrice = exp(80, 8); // 1 COMP is worth $80 after the price drop
     const collateralKey = 'COMP';
 
@@ -111,10 +125,16 @@ describe('absorb logic with delisted collaterals', function() {
     let assetsInBefore: number;
     let reservedBefore: number;
     let assetInfo: AssetInfoStructOutput;
+    let newLiquidationModule: LiquidationModule;
 
     before(async function() {
-      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
+      await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
+        
+      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
+      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
+
+      await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
+      await newLiquidationModule.connect(pauseGuardian).setDexRoutePaused(true);
 
       await priceFeeds[collateralKey].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -134,6 +154,11 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
+
+    it('sanity check: comet and new liquidation module are in sync', async () => {
+      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
+      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
+    });
 
     it('sanity check: alice is not borrow-collateralized after COMP BCF is zeroed', async () => {
       expect(await comet.isBorrowCollateralized(alice.address)).to.be.false;
@@ -345,7 +370,6 @@ describe('absorb logic with delisted collaterals', function() {
     before(async function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
       await priceFeeds[collateralKey].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -543,7 +567,6 @@ describe('absorb logic with delisted collaterals', function() {
       await comet.connect(alice).supply(tokens[collateralConfigs[1].symbol].address, collateralConfigs[1].amount);
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -788,7 +811,6 @@ describe('absorb logic with delisted collaterals', function() {
       await comet.connect(alice).supply(tokens[collateralConfigs[1].symbol].address, collateralConfigs[1].amount);
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -1062,7 +1084,6 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
       const userBasic = await comet.userBasic(alice.address);
       const totalsBasic = await comet.totalsBasic();
@@ -1232,7 +1253,6 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
       const userBasic = await comet.userBasic(alice.address);
       const totalsBasic = await comet.totalsBasic();
@@ -1433,7 +1453,6 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -1634,7 +1653,6 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -1831,7 +1849,6 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
       const userBasic = await comet.userBasic(alice.address);
       const totalsBasic = await comet.totalsBasic();
@@ -2016,7 +2033,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
+
       await comet.accrueAccount(alice.address);
 
       const userBasic = await comet.userBasic(alice.address);
@@ -2164,7 +2181,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
+
       await comet.accrueAccount(alice.address);
 
       const userBasic = await comet.userBasic(alice.address);
@@ -2367,7 +2384,6 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -2561,7 +2577,7 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
+
       await comet.accrueAccount(alice.address);
 
       const userBasic = await comet.userBasic(alice.address);
@@ -2738,7 +2754,6 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralConfigs[3].symbol].address, 0);
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[4].symbol].address, 0);
       await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -2977,7 +2992,6 @@ describe('absorb logic with delisted collaterals', function() {
       before(async function() {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
         await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-        liquidationModule = await deployDefaultLiquidationModule({comet, governor});
     
         await priceFeeds[collateralKey].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
         await comet.accrueAccount(alice.address);
@@ -3011,7 +3025,6 @@ describe('absorb logic with delisted collaterals', function() {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
         await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-        liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
         const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
         await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
@@ -3043,7 +3056,6 @@ describe('absorb logic with delisted collaterals', function() {
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
         await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralKey].address, 0);
         await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-        liquidationModule = await deployDefaultLiquidationModule({comet, governor});
 
         const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
         await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
