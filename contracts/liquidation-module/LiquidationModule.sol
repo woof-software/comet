@@ -21,6 +21,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     /// @notice Basis-point denominator (100% = 10_000 bps).
     uint16 internal constant BPS = 10_000;
     uint16 internal constant MAX_INCENTIVE = 1_000; /// 10% as max allowed incentive
+    uint256 internal constant BASE_ROUNDING_DUST = 1;
 
     /// @notice used for DEX-path liquidations. Zero address means module doesn't support DEX liquidation route.
     ICoreDexAdapter public immutable dexAdapter;
@@ -110,7 +111,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         if (swapData.length != plan.length) revert InvalidSwapDataLength();
 
         uint256 baseBefore = baseToken.balanceOf(address(this));
-        uint256 unswappedBaseAmount;
+        uint256 unswappedSeizedValue;
         uint256 basePrice = getPrice(comet.baseTokenPriceFeed());
 
         for (uint8 i; i < plan.length; ++i) {
@@ -123,7 +124,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
             // A failed swap means the adapter swept that collateral back to Comet (it is absorbed instead of
             // sold), so its debt-offset value must not be expected back in base.
             if (!dexAdapter.swap(plan[i].asset, swapData[i]))
-                unswappedBaseAmount += divPrice(plan[i].seizedValue, basePrice, baseScale);
+                unswappedSeizedValue += plan[i].seizedValue;
         }
 
         /// @dev Even if received amount is less than debt due to slippage, the DEX adapter verifies the slippage
@@ -132,6 +133,8 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
 
         uint256 baseReceived = baseToken.balanceOf(address(this)) - baseBefore;
+        // Convert the swept collateral's value to base.
+        uint256 unswappedBaseAmount = divPrice(unswappedSeizedValue, basePrice, baseScale);
         uint256 baseRequired = basePaidOut > unswappedBaseAmount ? basePaidOut - unswappedBaseAmount : 0;
 
         /// baseReceived: actually received amount of base asset after all swaps and after slippage checks
@@ -146,7 +149,10 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         uint256 incentive;
         uint256 baseForComet;
 
-        if (baseReceived < baseRequired) {
+        // basePaidOut rounds up while unswappedBaseAmount rounds down, so baseRequired can be overstated
+        // by at most BASE_ROUNDING_DUST. Only a shortfall beyond that dust is real bad debt, so a debt
+        // covered fully in-kind (or down to the wei) is not misreported.
+        if (baseReceived + BASE_ROUNDING_DUST < baseRequired) {
             baseForComet = baseReceived;
             emit BadDebtLiquidate(absorber, account, msg.sender, baseReceived);
         }
