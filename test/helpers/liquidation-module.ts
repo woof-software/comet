@@ -1,11 +1,4 @@
-import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-import {
-  CometProxyAdmin,
-  Configurator,
-  LiquidationModule,
-  LiquidationModule__factory,
-  LiquidationModuleForComet__factory
-} from 'build/types';
+import { LiquidationModule, LiquidationModule__factory, LiquidationModuleForComet__factory } from 'build/types';
 import { ethers } from 'hardhat';
 
 export type DeployLiquidationModuleOpts = {
@@ -55,21 +48,6 @@ export async function deployDefaultLiquidationModuleWithComet(
     comet
   );
   await liquidationModule.deployed();
-
-  return liquidationModule;
-}
-
-export async function deployDefaultLiquidationModuleWithCometUpdate(
-  opts: DeployLiquidationModuleOpts,
-  governor: SignerWithAddress,
-  cometProxyAddress: string,
-  configurator: Configurator,
-  cometProxyAdmin: CometProxyAdmin
-): Promise<LiquidationModule> {
-  const liquidationModule = await deployDefaultLiquidationModuleWithComet(opts, cometProxyAddress);
-
-  await configurator.connect(governor).setLiquidationModule(cometProxyAddress, liquidationModule.address);
-  await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configurator.address, cometProxyAddress);
 
   return liquidationModule;
 }

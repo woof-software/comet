@@ -1,7 +1,9 @@
 import { ethers, expect, exp, presentValue, mulPrice, mulFactor, default24Assets,
-  makeConfigurator, 
-  deployDefaultLiquidationModule,
-  seedMarketActivity} from '../helpers';
+  makeConfigurator,
+  deployDefaultLiquidationModuleWithComet,
+  deployEmptyDexAdapter,
+  seedMarketActivity,
+  DeployLiquidationModuleOpts} from '../helpers';
 import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, LiquidationModule, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
@@ -15,6 +17,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
   let configuratorProxyAddress: string;
   let cometProxyAddress: string;
   let liquidationModule: LiquidationModule;
+  let updateOpts: { multisig: string, executors: string[], pausers: string[], dexAdapter: string };
 
   const baseTokenPrice = exp(1, 8);
   const initialBaseFunding = baseTokenPrice * 10_000n;
@@ -45,6 +48,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
         ...default24Assets(),
       },
       baseTrackingBorrowSpeed: 0,
+      skipInitStorage: true,
     });
     configuratorProxyAddress = protocol.configuratorProxy.address;
     cometProxyAddress = protocol.cometProxy.address;
@@ -81,6 +85,16 @@ describe('collateral price oracle reverts across varying collateral factors duri
     await comet.connect(alice).supply(tokens['COMP'].address, collateralAmount);
     await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
+    // A fresh adapter is required because the module's initiateModule calls dexAdapter.initiateAdapter,
+    // even though the DEX route itself is never exercised here.
+    const updateDexAdapter = await deployEmptyDexAdapter(Object.values(tokens).map(t => t.address));
+    updateOpts = {
+      multisig: protocol.multisig.address,
+      executors: protocol.executors.map(e => e.address),
+      pausers: protocol.pausers.map(p => p.address),
+      dexAdapter: updateDexAdapter.address
+    } as DeployLiquidationModuleOpts;
+
     snapshot = await takeSnapshot();
   });
 
@@ -91,8 +105,9 @@ describe('collateral price oracle reverts across varying collateral factors duri
 
     before(async function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await deployDefaultLiquidationModule({comet, governor});
+      const newLiquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, comet.address);
+      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
+      await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
     });
 
     after(async () => await snapshot.restore());
@@ -128,8 +143,9 @@ describe('collateral price oracle reverts across varying collateral factors duri
     before(async function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
+      liquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, comet.address);
+      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, liquidationModule.address);
+      await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       const userBasic = await comet.userBasic(alice.address);
       const principal = userBasic.principal;
@@ -281,8 +297,9 @@ describe('collateral price oracle reverts across varying collateral factors duri
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      liquidationModule = await deployDefaultLiquidationModule({comet, governor});
+      liquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, comet.address);
+      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, liquidationModule.address);
+      await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       const userBasic = await comet.userBasic(alice.address);
       const principal = userBasic.principal;
@@ -406,8 +423,9 @@ describe('collateral price oracle reverts across varying collateral factors duri
     const collateralKey = 'COMP';
     
     before(async function() {
-      await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await deployDefaultLiquidationModule({comet, governor});
+      liquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, comet.address);
+      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, liquidationModule.address);
+      await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
@@ -416,8 +434,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
     after(async () => await snapshot.restore());
 
     it('absorb reverts with the oracle error because absorbInternal calls _getLiquidity(true) first which triggers the oracle before any deactivation check', async () => {
-      await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
-        .to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
+      await expect(comet.connect(absorber).absorb(absorber.address, [alice.address])).to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
     });
   });
 
@@ -430,8 +447,9 @@ describe('collateral price oracle reverts across varying collateral factors duri
     
     before(async function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await deployDefaultLiquidationModule({comet, governor});
+      liquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, comet.address);
+      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, liquidationModule.address);
+      await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
@@ -455,8 +473,9 @@ describe('collateral price oracle reverts across varying collateral factors duri
     before(async function() {
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await deployDefaultLiquidationModule({comet, governor});
+      liquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, comet.address);
+      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, liquidationModule.address);
+      await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);
@@ -484,8 +503,9 @@ describe('collateral price oracle reverts across varying collateral factors duri
       await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await deployDefaultLiquidationModule({comet, governor});
+      liquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, comet.address);
+      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, liquidationModule.address);
+      await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       await comet.connect(pauseGuardian).deactivateCollateral(compInfo.offset);

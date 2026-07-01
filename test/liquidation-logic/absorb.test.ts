@@ -1,10 +1,10 @@
-import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, divPrice, presentValue, CollateralState, makeCollateralStates, seedMarketActivity } from '../helpers';
+import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, divPrice, presentValue, CollateralState, makeCollateralStates, seedMarketActivity, deployEmptyDexAdapter, deployDefaultLiquidationModuleWithComet, DeployLiquidationModuleOpts } from '../helpers';
 import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, LiquidationModule, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 
-describe.only('absorb: general logic', function () {
+describe('absorb: general logic', function () {
   let comet: CometHarnessInterfaceExtendedAssetList;
   let configurator: Configurator;
   let cometProxyAdmin: CometProxyAdmin;
@@ -29,6 +29,8 @@ describe.only('absorb: general logic', function () {
   let governor: SignerWithAddress;
   let pauser: SignerWithAddress;
   let executor: SignerWithAddress;
+
+  let updateOpts: DeployLiquidationModuleOpts;
 
   let snapshot: SnapshotRestorer;
   let baseSnapshot: SnapshotRestorer;
@@ -65,7 +67,17 @@ describe.only('absorb: general logic', function () {
     governor = protocol.governor;
     pauser = protocol.pausers[0];
     executor = protocol.executors[0];
-    
+
+    // The module's initiateModule calls dexAdapter.initiateAdapter, so a real (fresh) adapter is
+    // required even though the DEX route itself is not exercised on this path.
+    const updateDexAdapter = await deployEmptyDexAdapter(Object.values(tokens).map(t => t.address));
+    updateOpts = {
+      multisig: protocol.multisig.address,
+      executors: protocol.executors.map(e => e.address),
+      pausers: protocol.pausers.map(p => p.address),
+      dexAdapter: updateDexAdapter.address
+    };
+
     const allocateAmount = exp(1_000_000, 18);
     for (const token of Object.values(protocol.tokens)) {
       await (token as FaucetToken).allocateTo(alice.address, allocateAmount);
@@ -1619,6 +1631,7 @@ describe.only('absorb: general logic', function () {
       context('absorb calls accrueInternal: all indices grow, lastAccrualTime is updated', function () {
         const AVERAGE_WAIT_TIME = 3600; // 1 hour in seconds
         const collateralKey = 'COMP';
+        let liquidateTx: Promise<ContractTransaction>;
         let lastAccrualTimeBefore: number;
         let baseSupplyIndexBefore: bigint;
         let baseBorrowIndexBefore: bigint;
@@ -1677,11 +1690,10 @@ describe.only('absorb: general logic', function () {
         });
     
         it('absorb is successful', async () => {
-          if (viaLiquidationModule) {
-            await liquidationModule.connect(absorber)['liquidate(address,address,bytes)'](absorber.address, alice.address, []);
-          } else {
-            await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          }
+          viaLiquidationModule 
+            ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
+            : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          await expect(liquidateTx).to.not.be.reverted;
         });
     
         it('lastAccrualTime was advanced to the absorb block timestamp', async () => {
@@ -1722,7 +1734,7 @@ describe.only('absorb: general logic', function () {
         });
       });
     
-      context.only('revert cases', function () {
+      context('revert cases', function () {
         // absorbInternal calls getPrice(baseTokenPriceFeed) unconditionally before any
         // liquidatability check. A bad (zero) base price propagates BadPrice() through the
         // entire absorb path and reverts the whole call.
@@ -1782,6 +1794,8 @@ describe.only('absorb: general logic', function () {
             wasLiquidatable = await comet.isLiquidatable(alice.address);
     
             await configurator.setBaseTokenPriceFeed(cometProxyAddress, priceFeedWithRevert.address);
+            const newLiquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, cometProxyAddress);
+            await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
             await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
           });
     
@@ -1811,8 +1825,9 @@ describe.only('absorb: general logic', function () {
         context('BCF, LCF and LF > 0: reverting collateral price feed blocks absorb', function () {
           let wasLiquidatable: boolean;
           let liquidateTx: Promise<ContractTransaction>;
+          let updatedLiquidationModule: LiquidationModule;
           const collateralKey = 'COMP';
-    
+
           before(async function() {
             await comet.connect(alice).supply(tokens[collateralKey].address, collateralAmount);
             await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
@@ -1820,11 +1835,14 @@ describe.only('absorb: general logic', function () {
             // because deployAndUpgradeTo has not been called yet.
             await priceFeeds[collateralKey].connect(alice).setRoundData(0, exp(70, 8), 0, 0, 0);
             await comet.accrueAccount(alice.address);
-    
+
             wasLiquidatable = await comet.isLiquidatable(alice.address);
-    
+
             await configurator.updateAssetPriceFeed(cometProxyAddress, tokens[collateralKey].address, priceFeedWithRevert.address);
-            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
+
+            updatedLiquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, cometProxyAddress);
+            await configurator.connect(governor).setLiquidationModule(cometProxyAddress, updatedLiquidationModule.address);
+            await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configurator.address, cometProxyAddress);
           });
     
           after(async () => await snapshot.restore());
@@ -1838,8 +1856,8 @@ describe.only('absorb: general logic', function () {
           });
     
           it('absorb reverts because the collateral price feed reverts', async () => {
-            viaLiquidationModule 
-              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
+            viaLiquidationModule
+              ? liquidateTx = updatedLiquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
               : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
 
             await expect(liquidateTx).to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
@@ -2018,13 +2036,9 @@ describe.only('absorb: general logic', function () {
           });
         });
         
-        //TODO:
-        //TODO:
-        //TODO:
-        //TODO:
-        //TODO:
-        //TODO:
-        context('absorb reverts when liquidation is on pause and user is not liquidatable', function () {          
+        context('absorb reverts when liquidation is on pause and user is not liquidatable', function () {
+          let liquidateTx: Promise<ContractTransaction>;
+
           before(async function() {
             await comet.connect(alice).supply(tokens['COMP'].address, collateralAmount);
             
@@ -2038,13 +2052,16 @@ describe.only('absorb: general logic', function () {
           });
     
           it('absorb reverts because liquidation is on pause before liquidatability matters', async () => {
-            await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
-              .to.be.revertedWithCustomError(comet, 'Paused');
+            viaLiquidationModule 
+              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
+              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            await expect(liquidateTx).to.be.revertedWithCustomError(comet, 'Paused');
           });
         });
     
         context('absorb reverts when liquidation is on pause and user is liquidatable', function () {
           const collateralKey = 'COMP';
+          let liquidateTx: Promise<ContractTransaction>;
     
           before(async function() {
             await comet.connect(alice).supply(tokens[collateralKey].address, collateralAmount);
@@ -2064,8 +2081,10 @@ describe.only('absorb: general logic', function () {
           });
     
           it('absorb reverts because liquidation is on pause', async () => {
-            await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
-              .to.be.revertedWithCustomError(comet, 'Paused');
+            viaLiquidationModule 
+              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
+              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            await expect(liquidateTx).to.be.revertedWithCustomError(comet, 'Paused');
           });
         });
       });
