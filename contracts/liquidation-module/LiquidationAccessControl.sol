@@ -89,10 +89,8 @@ abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessC
         emit DexPausedSet(paused);
     }
 
-        /**
-     * @notice Toggle the liquidation mode. Multisig only (parameter setter).
-     */
-    function liquidationModeToggle(bool _partialLiquidationEnabled) external onlyRole(PAUSER_ROLE) {
+    /// @notice Toggle the liquidation mode. Multisig only (parameter setter).
+    function liquidationModeToggle(bool _partialLiquidationEnabled) external onlyRole(MULTISIG_ROLE) {
         if (partialLiquidationEnabled == _partialLiquidationEnabled) revert AlreadySet();
 
         partialLiquidationEnabled = _partialLiquidationEnabled;

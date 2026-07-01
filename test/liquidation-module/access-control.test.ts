@@ -22,7 +22,7 @@ import { takeSnapshot, SnapshotRestorer } from '../helpers/snapshot';
 // This file covers the constructor wiring and the DAO-only role-management surface (grantRole / revokeRole).
 describe('liquidation module access control', function () {
   // Any non-zero address satisfies the DEX adapter check; the adapter itself is not exercised here.
-  const INCENTIVE_BPS: bigint = BigInt(500);
+  const INCENTIVE_BPS = BigInt(500);
   const ZERO = ethers.constants.AddressZero;
 
   // OZ AccessControl role identifiers.
@@ -44,6 +44,7 @@ describe('liquidation module access control', function () {
   let multisig: SignerWithAddress;
   let other: SignerWithAddress; // holds no role
   let fresh1: SignerWithAddress; // unused account granted roles during the tests
+  let pauser: SignerWithAddress; // holds PAUSER_ROLE (equals pausers[0])
 
   let executors: string[];
   let pausers: string[];
@@ -58,6 +59,7 @@ describe('liquidation module access control', function () {
     pausers = [signers[6].address, signers[7].address, signers[8].address];
     fresh1 = signers[9];
     other = signers[10];
+    pauser = signers[6]; // equals pausers[0]
 
     // The DAO (DEFAULT_ADMIN_ROLE) is the hardcoded governance timelock.
     governor = await ethers.getImpersonatedSigner('0x6d903f6003cca6255D85CcA4D3B5E5146dC33925');
@@ -373,6 +375,100 @@ describe('liquidation module access control', function () {
       it('a non-DAO revokes the role', async () => {
         await expect(liquidationModule.connect(other).revokeRole(PAUSER_ROLE, pausers[0]))
           .to.be.revertedWith(missingRole(other.address, ADMIN_ROLE));
+      });
+    });
+  });
+
+  /*//////////////////////////////////////////////////////////////
+                          setDexRoutePaused
+  //////////////////////////////////////////////////////////////*/
+
+  // The DEX pause switch is Pauser-gated; toggling it to the value it already holds reverts.
+  describe('setDexRoutePaused', function () {
+    describe('happy path', function () {
+      let pauseTx: ContractTransaction;
+
+      after(async () => await snapshot.restore());
+
+      it('a Pauser pauses the DEX route', async () => {
+        pauseTx = await liquidationModule.connect(pauser).setDexRoutePaused(true);
+        await expect(pauseTx).to.not.be.reverted;
+      });
+
+      it('emits DexPausedSet', async () => {
+        await expect(pauseTx).to.emit(liquidationModule, 'DexPausedSet').withArgs(true);
+      });
+
+      it('marks the DEX route as paused', async () => {
+        expect(await liquidationModule.dexRoutePaused()).to.be.true;
+      });
+    });
+
+    describe('revert when', function () {
+      after(async () => await snapshot.restore());
+
+      it('the caller is not a Pauser', async () => {
+        await expect(liquidationModule.connect(other).setDexRoutePaused(true))
+          .to.be.revertedWith(missingRole(other.address, PAUSER_ROLE));
+      });
+
+      it('the DEX route is already unpaused', async () => {
+        // dexRoutePaused starts false, so setting it false again reverts.
+        await expect(liquidationModule.connect(pauser).setDexRoutePaused(false))
+          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
+      });
+
+      it('the DEX route is already paused', async () => {
+        await liquidationModule.connect(pauser).setDexRoutePaused(true);
+        await expect(liquidationModule.connect(pauser).setDexRoutePaused(true))
+          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
+      });
+    });
+  });
+
+  /*//////////////////////////////////////////////////////////////
+                        liquidationModeToggle
+  //////////////////////////////////////////////////////////////*/
+
+  // The liquidation mode is Multisig-gated; toggling it to the value it already holds reverts.
+  describe('liquidationModeToggle', function () {
+    describe('happy path', function () {
+      let toggleTx: ContractTransaction;
+
+      after(async () => await snapshot.restore());
+
+      it('the Multisig disables partial liquidation', async () => {
+        toggleTx = await liquidationModule.connect(multisig).liquidationModeToggle(false);
+        await expect(toggleTx).to.not.be.reverted;
+      });
+
+      it('emits LiquidationModeToggled', async () => {
+        await expect(toggleTx).to.emit(liquidationModule, 'LiquidationModeToggled').withArgs(false);
+      });
+
+      it('disables partial liquidation', async () => {
+        expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
+      });
+    });
+
+    describe('revert when', function () {
+      after(async () => await snapshot.restore());
+
+      it('the caller is not the Multisig', async () => {
+        await expect(liquidationModule.connect(other).liquidationModeToggle(false))
+          .to.be.revertedWith(missingRole(other.address, MULTISIG_ROLE));
+      });
+
+      it('partial liquidation is already enabled', async () => {
+        // partialLiquidationEnabled starts true, so enabling it again reverts.
+        await expect(liquidationModule.connect(multisig).liquidationModeToggle(true))
+          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
+      });
+
+      it('partial liquidation is already disabled', async () => {
+        await liquidationModule.connect(multisig).liquidationModeToggle(false);
+        await expect(liquidationModule.connect(multisig).liquidationModeToggle(false))
+          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
       });
     });
   });
