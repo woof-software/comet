@@ -16,4 +16,7 @@ interface ILiquidationModuleErrors {
 
     /// @notice Reverts when incentiveBps is set above BPS (100%).
     error InvalidIncentiveBps();
+
+    /// @notice Reverts when absorb is paused on the Comet.
+    error Paused();
 }

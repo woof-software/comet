@@ -3,7 +3,6 @@ import {
   ethers,
   expect,
   exp,
-  makeProtocol,
   setErc20Balance,
   setBalance,
   takeSnapshot,
@@ -20,12 +19,17 @@ import {
   AMM_PROTOCOLS,
 } from '../helpers';
 import {
-  CometHarnessInterfaceExtendedAssetList,
+  CometInterface,
+  CometWithExtendedAssetList__factory,
+  CometExtAssetList__factory,
+  AssetListFactory__factory,
   LiquidationModule,
+  LiquidationModule__factory,
   OneInchV6CoreAdapter,
   OneInchV6CoreAdapter__factory,
   ERC20,
   ERC20__factory,
+  SimplePriceFeed__factory,
   SimplePriceFeed,
 } from '../../build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
@@ -55,7 +59,7 @@ describe('liquidation module dex route', function () {
   const WETH_PRICE = 1_600;
   const WSTETH_PRICE = 1_950;
 
-  let comet: CometHarnessInterfaceExtendedAssetList;
+  let comet: CometInterface;
   let adapter: OneInchV6CoreAdapter;
   let liquidationModule: LiquidationModule;
 
@@ -133,37 +137,89 @@ describe('liquidation module dex route', function () {
     );
     await adapter.deployed();
 
-    const protocol = await makeProtocol({
-      base: 'USDC',
-      governor,
-      baseBorrowMin: 0,
-      // Zero interest so the debt-reduction assertion is exact (no accrual between snapshot and liquidate).
-      supplyInterestRateBase: 0,
-      supplyInterestRateSlopeLow: 0,
-      supplyInterestRateSlopeHigh: 0,
-      borrowInterestRateBase: 0,
-      borrowInterestRateSlopeLow: 0,
-      borrowInterestRateSlopeHigh: 0,
-      assets: {
-        USDC: { decimals: 6, initialPrice: 1, address: TOKENS.USDC.address },
-        WBTC: { decimals: 8, initialPrice: WBTC_PRICE, address: TOKENS.WBTC.address },
-        WETH: { decimals: 18, initialPrice: WETH_PRICE, address: TOKENS.WETH.address },
-        WSTETH: { decimals: 18, initialPrice: WSTETH_PRICE, address: TOKENS.WSTETH.address },
-        // Only supplied in the five-collateral context. UNI is left route-less in the adapter (see above).
-        UNI: { decimals: 18, initialPrice: 10, address: TOKENS.UNI.address },
-        LINK: { decimals: 18, initialPrice: 10, address: TOKENS.LINK.address },
+    const signers = await ethers.getSigners();
+    const pauseGuardian = signers[1];
+    executor = signers[2];
+    const executors = [signers[2].address, signers[3].address, signers[4].address];
+    const pausers = [signers[5].address, signers[6].address, signers[7].address];
+    const multisig = signers[8];
+    [borrower, lender, absorber] = [signers[9], signers[10], signers[11]];
+
+    // Mock oracle feeds
+    const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
+    const usdcFeed = await PriceFeedFactory.deploy(exp(1, 8), 8);
+    await usdcFeed.deployed();
+    wbtcFeed = await PriceFeedFactory.deploy(exp(WBTC_PRICE, 8), 8);
+    await wbtcFeed.deployed();
+    wethFeed = await PriceFeedFactory.deploy(exp(WETH_PRICE, 8), 8);
+    await wethFeed.deployed();
+    wstethFeed = await PriceFeedFactory.deploy(exp(WSTETH_PRICE, 8), 8);
+    await wstethFeed.deployed();
+    uniFeed = await PriceFeedFactory.deploy(exp(10, 8), 8);
+    await uniFeed.deployed();
+    linkFeed = await PriceFeedFactory.deploy(exp(10, 8), 8);
+    await linkFeed.deployed();
+
+    // Asset list factory + extension delegate
+    const AssetListFactoryFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
+    const assetListFactory = await AssetListFactoryFactory.deploy();
+    await assetListFactory.deployed();
+    const CometExtFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
+    const extensionDelegate = await CometExtFactory.deploy(
+      {
+        name32: ethers.utils.formatBytes32String('Compound Comet'),
+        symbol32: ethers.utils.formatBytes32String('📈BASE'),
       },
-      dexAdapter: adapter.address,
+      assetListFactory.address
+    );
+    await extensionDelegate.deployed();
+
+    // Keeper liquidation module, bound to the adapter deployed above.
+    const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
+    liquidationModule = await LiquidationModuleFactory.deploy(
+      adapter.address,
+      multisig.address,
+      executors,
+      pausers,
+      PENALTY_BPS
+    );
+    await liquidationModule.deployed();
+
+    // Zero-interest Comet over the real tokens.
+    const CometFactory = (await ethers.getContractFactory('CometWithExtendedAssetList')) as CometWithExtendedAssetList__factory;
+    const cometContract = await CometFactory.deploy({
+      governor: governor.address,
+      pauseGuardian: pauseGuardian.address,
+      extensionDelegate: extensionDelegate.address,
+      liquidationModule: liquidationModule.address,
+      baseToken: TOKENS.USDC.address,
+      baseTokenPriceFeed: usdcFeed.address,
+      supplyKink: exp(0.8, 18),
+      supplyPerYearInterestRateBase: exp(0, 18),
+      supplyPerYearInterestRateSlopeLow: exp(0, 18),
+      supplyPerYearInterestRateSlopeHigh: exp(0, 18),
+      borrowKink: exp(0.8, 18),
+      borrowPerYearInterestRateBase: exp(0, 18),
+      borrowPerYearInterestRateSlopeLow: exp(0, 18),
+      borrowPerYearInterestRateSlopeHigh: exp(0, 18),
+      storeFrontPriceFactor: exp(1, 18),
+      trackingIndexScale: exp(1, 15),
+      baseTrackingSupplySpeed: exp(1, 15),
+      baseTrackingBorrowSpeed: exp(1, 15),
+      baseMinForRewards: exp(1, 6),
+      baseBorrowMin: 0,
+      targetReserves: 0,
+      assetConfigs: [
+        { asset: TOKENS.WBTC.address, priceFeed: wbtcFeed.address, decimals: 8, borrowCollateralFactor: exp(0.8, 18), liquidateCollateralFactor: exp(0.85, 18), liquidationFactor: exp(0.9, 18), supplyCap: exp(150000, 8) },
+        { asset: TOKENS.WETH.address, priceFeed: wethFeed.address, decimals: 18, borrowCollateralFactor: exp(0.8, 18), liquidateCollateralFactor: exp(0.85, 18), liquidationFactor: exp(0.9, 18), supplyCap: exp(150000, 18) },
+        { asset: TOKENS.WSTETH.address, priceFeed: wstethFeed.address, decimals: 18, borrowCollateralFactor: exp(0.8, 18), liquidateCollateralFactor: exp(0.85, 18), liquidationFactor: exp(0.9, 18), supplyCap: exp(150000, 18) },
+        { asset: TOKENS.UNI.address, priceFeed: uniFeed.address, decimals: 18, borrowCollateralFactor: exp(0.8, 18), liquidateCollateralFactor: exp(0.85, 18), liquidationFactor: exp(0.9, 18), supplyCap: exp(150000, 18) },
+        { asset: TOKENS.LINK.address, priceFeed: linkFeed.address, decimals: 18, borrowCollateralFactor: exp(0.8, 18), liquidateCollateralFactor: exp(0.85, 18), liquidationFactor: exp(0.9, 18), supplyCap: exp(150000, 18) },
+      ],
     });
-    comet = protocol.comet;
-    liquidationModule = protocol.defaultLiquidationModule;
-    executor = protocol.executors[0];
-    wbtcFeed = protocol.priceFeeds['WBTC'];
-    wethFeed = protocol.priceFeeds['WETH'];
-    wstethFeed = protocol.priceFeeds['WSTETH'];
-    uniFeed = protocol.priceFeeds['UNI'];
-    linkFeed = protocol.priceFeeds['LINK'];
-    [borrower, lender, absorber] = protocol.users;
+    await cometContract.deployed();
+    await cometContract.initializeStorage();
+    comet = (await ethers.getContractAt('CometInterface', cometContract.address)) as CometInterface;
 
     usdc = ERC20__factory.connect(TOKENS.USDC.address, ethers.provider);
     wbtc = ERC20__factory.connect(TOKENS.WBTC.address, ethers.provider);
