@@ -66,18 +66,29 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
      *         It is safe to assume that only comet will initiate the method, as otherwise Comet update proposal will revert
      *         in case if this method is called before proposal.
      */
-    function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) virtual public {
-        /// @dev values are either set during Comet first deployment (comet is not set)
+    function setAssetList(address _assetList, uint8 _numAssets, address _baseToken) virtual public {
+        /// @dev values are set during the Comet implementation deployment
         ///      or via update by the same Comet (thus address of the comet is already set via constructor)
-
-        if (address(comet) == address(0)) comet = ICometInterface(msg.sender);
-        else if (msg.sender != address(this)) revert AlreadySet();
+        if (address(assetList) != address(0) || address(baseToken) != address(0)) revert AlreadySet();
 
         /// @dev we dropped sanity checks as those are parameters directly from Comet's constructor
         assetList = IAssetList(_assetList);
         numAssets = _numAssets;
-        baseScale = _baseScale;
         baseToken = IERC20(_baseToken);
+    }
+
+    /**
+     * @notice initialization method which will be called just once during Comet initialization or module construction
+     *         It is safe to assume that only comet will initiate the method, as otherwise Comet update proposal will revert
+     *         in case if this method is called before proposal.
+     */
+    function initiateModule(uint64 _baseScale) virtual public {
+        /// @dev values are either set during Comet first deployment (comet is not set)
+        ///      or via update by the same Comet (thus address of the comet is already set via constructor)
+        if (address(comet) != address(0)) revert AlreadySet();
+
+        comet = ICometInterface(msg.sender);
+        baseScale = _baseScale;
     }
 
     /**

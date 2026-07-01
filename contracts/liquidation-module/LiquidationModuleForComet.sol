@@ -21,7 +21,6 @@ contract LiquidationModuleForComet is LiquidationModule {
      * @param pausers_          Initial set of Pauser accounts (DEX pause switch).
      * @param incentiveBps_     Initial executor incentive (in BPS) taken on the DEX route.
      * @param comet_            Existing Comet to be attached to
-     * @param assetList_        Existing AssetList to be attached to
      */
     constructor(
         ICoreDexAdapter dexAdapter_,
@@ -29,12 +28,12 @@ contract LiquidationModuleForComet is LiquidationModule {
         address[] memory executors_,
         address[] memory pausers_,
         uint16 incentiveBps_,
-        address comet_,
-        address assetList_
+        address comet_
     ) LiquidationModule(dexAdapter_, multisig_, executors_, pausers_, incentiveBps_) {
-        if (comet_ == address(0) || assetList_ == address(0)) revert ZeroAddress();
+        if (comet_ == address(0)) revert ZeroAddress();
         comet = ICometInterface(comet_);
+        baseScale = uint64(ICometInterface(comet_).baseScale());
 
-        initiateModule(assetList_, IAssetList(assetList_).numAssets(), uint64(comet.baseScale()), comet.baseToken());
+        dexAdapter.initiateAdapter(comet_);
     }
 }

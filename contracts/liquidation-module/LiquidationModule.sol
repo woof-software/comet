@@ -57,11 +57,22 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      *         It is safe to assume that only comet will initiate the method, as otherwise Comet update proposal will revert
      *         in case if this method is called before proposal.
      */
-    function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) override public {
-        super.initiateModule(_assetList, _numAssets, _baseScale, _baseToken);
+    function setAssetList(address _assetList, uint8 _numAssets, address _baseToken) override public {
+        super.setAssetList(_assetList, _numAssets, _baseToken);
 
-        /// @dev comet is expected to be set either in constructor or in core initialization
-        dexAdapter.initiateAdapter(address(comet), _assetList, _baseToken);
+        dexAdapter.setAssetList(_assetList, _numAssets, _baseToken);
+    }
+
+
+    /**
+     * @notice initialization method which will be called just once from the Comet during its costruction
+     *         It is safe to assume that only comet will initiate the method, as otherwise Comet update proposal will revert
+     *         in case if this method is called before proposal.
+     */
+    function initiateModule(uint64 _baseScale) override public {
+        /// @dev is supposed to be called from Comet only
+        super.initiateModule(_baseScale);
+        dexAdapter.initiateAdapter(msg.sender);
     }
 
     /**

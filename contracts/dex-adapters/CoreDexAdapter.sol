@@ -62,18 +62,16 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
     /**
      * @notice Finalize the initialization of Dex Adapter.
      * @param _comet The Comet market this adapter serves.
-     * @param _baseAsset The Comet base asset that collateral is swapped into.
      */
-    function _initiateAdapter(address _comet, address _baseAsset) internal {
-        if (_comet == address(0) || _baseAsset == address(0)) revert ZeroAddress();
-
+    function initiateAdapter(address _comet) public override {
         /// @dev values are either set during Module first deployment (module is not set)
         ///      or during the update of the same Comet (thus address of the module is already set via constructor)
-        if (module != address(0)) revert AlreadySet();
-        
+        if (address(comet) != address(0) || module != address(0)) revert AlreadySet();
+        if (_comet == address(0)) revert ZeroAddress();
+
+        /// @dev is supposed to be called from Module only        
         module = msg.sender;
         comet = CometMainInterface(_comet);
-        baseAsset = IERC20(_baseAsset);
     }
 
     /// @inheritdoc ICoreDexAdapter

@@ -106,7 +106,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
     uint internal immutable accrualDescaleFactor;
     
     /// @notice The address of the asset list
-    address immutable public assetList;
+    address immutable public override assetList;
 
     /// @notice The address od the module with absorb, partial liquidation and liquidation logic
     address immutable public override liquidationModule;
@@ -170,6 +170,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         numAssets = uint8(config.assetConfigs.length);
 
         assetList = IAssetListFactory(IAssetListFactoryHolder(extensionDelegate).assetListFactory()).createAssetList(config.assetConfigs);
+        ICoreLiquidationModule(liquidationModule).setAssetList(assetList, numAssets, baseToken);
     }
 
     /**
@@ -226,7 +227,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         // trackingSupplyIndex = 0;
         // trackingBorrowIndex = 0;
 
-        ICoreLiquidationModule(liquidationModule).initiateModule(assetList, numAssets, uint64(baseScale), baseToken);
+        ICoreLiquidationModule(liquidationModule).initiateModule(uint64(baseScale));
     }
 
     /**

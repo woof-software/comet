@@ -108,19 +108,12 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
         }
     }
 
-    /**
-     * @notice Finalizes the initialization of Dex Adapter.
-     * @dev Can only be called once.
-     * @param _comet The Comet market this adapter serves.
-     * @param _assetList The Comet asset list used to enumerate and validate the collateral routes.
-     * @param _baseAsset The Comet base asset that collateral is swapped into.
-     */
-    function initiateAdapter(address _comet, address _assetList, address _baseAsset) public override {
-        _initiateAdapter(_comet, _baseAsset);
-
-        IAssetList assetList = IAssetList(_assetList);
-        uint8 numAssets = assetList.numAssets();
+    function setAssetList(address _assetList, uint8 numAssets, address _baseAsset) public override {
+        if (address(baseAsset) != address(0)) revert AlreadySet();
         if (_routesCount != numAssets) revert InvalidRoutesNumber();
+
+        baseAsset = IERC20(_baseAsset);
+        IAssetList assetList = IAssetList(_assetList);
 
         bool baseNative = _baseAsset == weth;
         address expectedDstAsset = baseNative ? address(0) : _baseAsset;

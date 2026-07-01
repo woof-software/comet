@@ -22,7 +22,8 @@ interface ICoreDexAdapter is ICoreDexAdapterErrors, ICoreDexAdapterEvents {
      */
     function swap(address collateral, bytes calldata swapData) external returns (bool swapped);
 
-    function initiateAdapter(address comet, address assetList, address baseAsset) external;
+    function initiateAdapter(address comet) external;
+    function setAssetList(address assetList, uint8 numAssets, address baseAsset) external;
 
     function setSlippageBps(uint16 _slippageBPS) external;
 }

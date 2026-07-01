@@ -26,5 +26,6 @@ interface ICoreLiquidationModule is ICoreLiquidationModuleErrors, ICoreLiquidati
 
     function seizurePlan(address account) external view returns (Seizure[] memory plan);
 
-    function initiateModule(address _assetList, uint8 _numAssets, uint64 _baseScale, address _baseToken) external;
+    function initiateModule(uint64 _baseScale) external;
+    function setAssetList(address _assetList, uint8 _numAssets, address _baseToken) external;
 }
