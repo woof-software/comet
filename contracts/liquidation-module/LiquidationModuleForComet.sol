@@ -4,6 +4,7 @@ pragma solidity =0.8.15;
 import { LiquidationModule } from "./LiquidationModule.sol";
 import { ICometInterface } from "../interfaces/ICometInterface.sol";
 import { ICoreDexAdapter } from "../interfaces/dex-adapters/ICoreDexAdapter.sol";
+import { IAssetList } from "../IAssetList.sol";
 
 /**
  * @title Liquidation Module (for existing Comet)
@@ -20,6 +21,7 @@ contract LiquidationModuleForComet is LiquidationModule {
      * @param pausers_          Initial set of Pauser accounts (DEX pause switch).
      * @param incentiveBps_     Initial executor incentive (in BPS) taken on the DEX route.
      * @param comet_            Existing Comet to be attached to
+     * @param assetList_        Existing AssetList to be attached to
      */
     constructor(
         ICoreDexAdapter dexAdapter_,
@@ -27,11 +29,12 @@ contract LiquidationModuleForComet is LiquidationModule {
         address[] memory executors_,
         address[] memory pausers_,
         uint16 incentiveBps_,
-        address comet_
+        address comet_,
+        address assetList_
     ) LiquidationModule(dexAdapter_, multisig_, executors_, pausers_, incentiveBps_) {
-        if (comet_ == address(0)) revert ZeroAddress();
+        if (comet_ == address(0) || assetList_ == address(0)) revert ZeroAddress();
         comet = ICometInterface(comet_);
-        
-        initiateModule(comet.assetList(), comet.numAssets(), uint64(comet.baseScale()), comet.baseToken());
+
+        initiateModule(assetList_, IAssetList(assetList_).numAssets(), uint64(comet.baseScale()), comet.baseToken());
     }
 }
