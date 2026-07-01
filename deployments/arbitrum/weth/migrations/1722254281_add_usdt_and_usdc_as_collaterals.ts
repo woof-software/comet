@@ -60,7 +60,7 @@ export default migration('1722254281_add_usdt_and_usdc_as_collaterals', {
       'USDT',
       USDT_ADDRESS,
       'arbitrum',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     const usdtPricefeed = await deploymentManager.existing(
@@ -83,7 +83,7 @@ export default migration('1722254281_add_usdt_and_usdc_as_collaterals', {
       'USDC',
       USDC_ADDRESS,
       'arbitrum',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     const usdcPricefeed = await deploymentManager.existing(
@@ -218,7 +218,7 @@ export default migration('1722254281_add_usdt_and_usdc_as_collaterals', {
       'USDT',
       USDT_ADDRESS,
       'arbitrum',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     const usdtAssetConfig = {
@@ -255,7 +255,7 @@ export default migration('1722254281_add_usdt_and_usdc_as_collaterals', {
       'USDC',
       USDC_ADDRESS,
       'arbitrum',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     const usdcAssetConfig = {

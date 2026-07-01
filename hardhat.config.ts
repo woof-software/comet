@@ -112,10 +112,16 @@ interface NetworkConfig {
   gasPrice?: number | 'auto';
 }
 
+const EXTERNAL_CONTRACTS_COMPILE_LIST = [
+  'contracts/capo/contracts/test/MockERC20.sol'
+];
+
 subtask(TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS).setAction(async (_, __, runSuper) => {
   const paths = await runSuper();
-  
+
   return paths.filter((p: string) => {
+    if (EXTERNAL_CONTRACTS_COMPILE_LIST.some((allowed) => p.includes(allowed))) return true;
+
     return !(
       p.includes('contracts/capo/contracts/test/') ||
       p.includes('contracts/capo/test/') ||

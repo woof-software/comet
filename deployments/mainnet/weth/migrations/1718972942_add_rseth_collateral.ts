@@ -27,7 +27,7 @@ export default migration('1718972942_add_rseth_collateral', {
       'rsETH',
       RSETH_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const rsEthPricefeed = await deploymentManager.existing(
       'rsETH:priceFeed',
@@ -112,7 +112,7 @@ export default migration('1718972942_add_rseth_collateral', {
       'rsETH',
       RSETH_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     
     const rsETHAssetConfig = {
