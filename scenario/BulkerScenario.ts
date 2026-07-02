@@ -1,7 +1,7 @@
 import { CometContext, scenario } from './context/CometContext';
 import { constants, ContractReceipt, utils } from 'ethers';
 import { expect } from 'chai';
-import { expectBase, isRewardSupported, isBulkerSupported, getExpectedBaseBalance, matchesDeployment } from './utils';
+import { expectBase, expectApproximately, isRewardSupported, isBulkerSupported, getExpectedBaseBalance, matchesDeployment } from './utils';
 import { exp } from '../test/helpers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { NonStandardFaucetToken } from '../build/types';
@@ -920,6 +920,7 @@ scenario(
     // Albert repays the full debt through the bulker, sending more ETH than is owed
     const extraEth = exp(0.005, 18);
     const supplyNativeTokenCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, constants.MaxUint256]);
+    const bulkerEthBefore = (await world.deploymentManager.hre.ethers.provider.getBalance(bulker.address)).toBigInt();
     const albertBalanceBefore = await albert.getEthBalance();
     const receipt = await albert.invoke(
       { actions: [await bulker.ACTION_SUPPLY_NATIVE_TOKEN()], calldata: [supplyNativeTokenCalldata] },
@@ -928,8 +929,15 @@ scenario(
     const albertBalanceAfter = await albert.getEthBalance();
 
     expect(await comet.borrowBalanceOf(albert.address)).to.be.equal(0n);
-    expect(await world.deploymentManager.hre.ethers.provider.getBalance(bulker.address)).to.be.equal(0n);
-    expect(albertBalanceBefore.toBigInt() - albertBalanceAfter.toBigInt()).to.be.equal(borrowBalanceBefore + gasCost(receipt));
+    // Fork bulker may hold pre-existing ETH; assert no net change rather than absolute zero.
+    expect((await world.deploymentManager.hre.ethers.provider.getBalance(bulker.address)).toBigInt()).to.be.equal(bulkerEthBefore);
+    // Bulker reads live borrowBalanceOf at invoke time, which is borrowBalanceBefore + accrued interest;
+    // albert's net ETH cost exceeds borrowBalanceBefore by that delta.
+    expectApproximately(
+      albertBalanceBefore.toBigInt() - albertBalanceAfter.toBigInt(),
+      borrowBalanceBefore + gasCost(receipt),
+      exp(1, 10)
+    );
   }
 );
 
@@ -1054,7 +1062,13 @@ scenario(
     const albertBalanceAfter = await albert.getEthBalance();
 
     expect(await comet.balanceOf(albert.address)).to.be.equal(0n);
-    expect(albertBalanceAfter.toBigInt() - albertBalanceBefore.toBigInt()).to.be.equal(balanceBefore - gasCost(receipt));
+    // The bulker reads balanceOf(albert) live at invoke time, which includes supply interest accrued
+    // since the snapshot; allow a few seconds of interest as tolerance.
+    expectApproximately(
+      albertBalanceAfter.toBigInt() - albertBalanceBefore.toBigInt(),
+      balanceBefore - gasCost(receipt),
+      exp(1, 10)
+    );
   }
 );
 
