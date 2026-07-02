@@ -19,7 +19,7 @@ export default migration('1770317078_add_usde_collateral', {
       'USDe',
       USDe_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const USDePriceFeed = await deploymentManager.existing(
       'USDe:priceFeed',
@@ -99,7 +99,7 @@ The second action deploys and upgrades Comet to a new version.`;
       'USDe',
       USDe_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const USDeAssetConfig = {
       asset: USDe.address,

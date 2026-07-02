@@ -1,6 +1,10 @@
 import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
-import { FaucetToken, SimplePriceFeed } from '../../../build/types';
-import { DeploySpec, cloneGov, deployComet, exp, wait } from '../../../src/deploy';
+import { Configurator, FaucetToken, SimplePriceFeed } from '../../../build/types';
+import { DeploySpec, cloneGov, deployComet, exp, sameAddress, wait } from '../../../src/deploy';
+
+// Fixed test addresses for the dev market-admin role (impersonated by scenarios).
+const MARKET_ADMIN = '0x1111111111111111111111111111111111111111';
+const MARKET_ADMIN_PAUSE_GUARDIAN = '0x2222222222222222222222222222222222222222';
 
 async function makeToken(
   deploymentManager: DeploymentManager,
@@ -64,6 +68,51 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
     assetConfigs: [assetConfig0, assetConfig1],
   });
   const { rewards } = deployed;
+  const configurator = deployed.configurator as unknown as Configurator;
+
+  // Deploy + wire a MarketAdminPermissionChecker so the market-admin Configurator
+  // scenarios are exercised on the local development base. On live networks this is
+  // rolled out per-market via a gov_marketupdates migration; here we bake it into the
+  // fresh dev deployment so the feature is enabled instead of left at address(0).
+  const configuratorGovernor = await configurator.governor();
+  const marketAdminPermissionChecker = await deploymentManager.deploy(
+    'marketAdminPermissionChecker',
+    'marketupdates/MarketAdminPermissionChecker.sol',
+    [configuratorGovernor, MARKET_ADMIN, MARKET_ADMIN_PAUSE_GUARDIAN]
+  );
+
+  // The Configurator governor is the timelock after deployComet, so impersonate it to
+  // call the governor-only setter (dev base runs on the hardhat network).
+  await deploymentManager.idempotent(
+    async () =>
+      !sameAddress(
+        await configurator.marketAdminPermissionChecker(),
+        marketAdminPermissionChecker.address
+      ),
+    async () => {
+      trace(`Setting MarketAdminPermissionChecker in Configurator to ${marketAdminPermissionChecker.address}`);
+      await deploymentManager.hre.network.provider.request({
+        method: 'hardhat_impersonateAccount',
+        params: [configuratorGovernor],
+      });
+      await deploymentManager.hre.network.provider.send('hardhat_setBalance', [
+        configuratorGovernor,
+        '0x' + (10n ** 18n).toString(16),
+      ]);
+      const govSigner = await deploymentManager.hre.ethers.getSigner(configuratorGovernor);
+      trace(
+        await wait(
+          configurator
+            .connect(govSigner)
+            .setMarketAdminPermissionChecker(marketAdminPermissionChecker.address)
+        )
+      );
+      await deploymentManager.hre.network.provider.request({
+        method: 'hardhat_stopImpersonatingAccount',
+        params: [configuratorGovernor],
+      });
+    }
+  );
 
   await deploymentManager.idempotent(
     async () => (await GOLD.balanceOf(rewards.address)).eq(0),

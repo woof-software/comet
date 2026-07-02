@@ -35,7 +35,7 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { ProtocolConfiguration, deployComet, COMP_WHALES, WHALES } from '../../src/deploy';
 import { AddressLike, getAddressFromNumber, resolveAddress } from './Address';
-import { fastGovernanceExecute, max, mineBlocks, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
+import { fastGovernanceExecute, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
 import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
 import { Requirements } from '../constraints/Requirements';
 
@@ -347,7 +347,15 @@ async function getActors(context: CometContext): Promise<{ [name: string]: Comet
   const pauseGuardianAddress = await comet.pauseGuardian();
   const useLocalAdminSigner = adminAddress === await localAdminSigner.getAddress();
   const useLocalPauseGuardianSigner = pauseGuardianAddress === await localPauseGuardianSigner.getAddress();
-  const adminSigner = useLocalAdminSigner ? localAdminSigner : await world.impersonateAddress(adminAddress);
+  let adminSigner: SignerWithAddress;
+  if (useLocalAdminSigner) {
+    adminSigner = localAdminSigner;
+  } else {
+    adminSigner = await world.impersonateAddress(adminAddress);
+    // Fund the impersonated governor for gas (single setBalance RPC, no block mined),
+    // so scenarios don't need to zero the base fee on every admin tx.
+    await setEtherBalance(world.deploymentManager, adminAddress, 10n ** 18n);
+  }
   const pauseGuardianSigner = useLocalPauseGuardianSigner ? localPauseGuardianSigner : await world.impersonateAddress(pauseGuardianAddress);
 
   return {

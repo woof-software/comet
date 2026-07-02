@@ -8,7 +8,7 @@ import "../../../contracts/marketupdates/MarketUpdateProposer.sol";
 import "../../../contracts/Configurator.sol";
 import "../../../contracts/CometProxyAdmin.sol";
 import "../../../contracts/marketupdates/MarketAdminPermissionChecker.sol";
-import "../../../contracts/Create2DeployerInterface.sol";
+import "../../../contracts/interfaces/Create2DeployerInterface.sol";
 import "./helpers/MarketUpdateAddresses.sol";
 import "./helpers/MarketUpdateContractsDeployer.sol";
 import "./helpers/ChainAddresses.sol";

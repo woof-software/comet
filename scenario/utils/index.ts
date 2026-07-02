@@ -24,6 +24,7 @@ import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
 import {
   mineBlocks,
+  setEtherBalance,
   setNextBaseFeeToZero,
   setNextBlockTimestamp,
 } from './hreUtils';
@@ -32,6 +33,7 @@ import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
+export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
 
@@ -66,7 +68,7 @@ export async function getSignerForProposal(
     usedSigners.set(key, []);
   }
   const signers = usedSigners.get(key);
-  if(signers.length == 0){
+  if (signers.length == 0) {
     const signer = (await gm.getSigners())[0];
     signers.push(signer.address);
     return signer;
@@ -353,8 +355,18 @@ export async function isValidAssetIndex(
   ctx: CometContext,
   assetNum: number
 ): Promise<boolean> {
+  // Sanity checks
+  if (assetNum < 0) return false;
+  if (assetNum >= MAX_ASSETS) return false;
+  // Asset info checks. If any of these are false, the asset is invalid. This means that the asset is deprecated.
   const comet = await ctx.getComet();
-  return assetNum < (await comet.numAssets());
+  const assetInfo = await comet.getAssetInfo(assetNum);
+  if (assetInfo.borrowCollateralFactor.toBigInt() == 0n) return false;
+  if (assetInfo.supplyCap.toBigInt() == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor.toBigInt() == 0n) return false;
+  if (assetInfo.liquidationFactor.toBigInt() == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor.toBigInt() <= assetInfo.borrowCollateralFactor.toBigInt()) return false;
+  return true;
 }
 
 export async function isTriviallySourceable(
@@ -436,7 +448,7 @@ export async function fetchLogs(
   filter: EventFilter,
   fromBlock: number,
   toBlock: number,
-  BLOCK_SPAN = 2047 // NB: sadly max for fuji is LESS than 2048
+  BLOCK_SPAN = 2047
 ): Promise<Event[]> {
   if (toBlock - fromBlock > BLOCK_SPAN) {
     const midBlock = fromBlock + BLOCK_SPAN;
@@ -657,8 +669,8 @@ export async function updateCCIPStats(
 
   const tokenPrices = [];
   const gasPrices = [];
-  for (const [network,, address] of tokens) {
-    if(network !== dm.network) continue;
+  for (const [network, , address] of tokens) {
+    if (network !== dm.network) continue;
     const price = await registryContract.getTokenPrice(address);
     tokenPrices.push([address, price.value]);
   }
@@ -672,7 +684,7 @@ export async function updateCCIPStats(
     }
   }
 
-  if(tenderlyLogs) {
+  if (tenderlyLogs) {
     dm.stashRelayMessage(
       priceRegistry,
       registryContract.interface.encodeFunctionData('updatePrices', [
@@ -952,8 +964,8 @@ export async function tenderlyExecute(
 
   for (const currentBdm of bdms) {
     const chainId2 = currentBdm.hre.ethers.provider.network.chainId;
-  let proposals;
-  if (chainId1 !== chainId2) {
+    let proposals;
+    if (chainId1 !== chainId2) {
       const relayPath = path.resolve(__dirname, '../../cache/relay.json');
       if (existsSync(relayPath)) unlinkSync(relayPath);
 
@@ -963,14 +975,14 @@ export async function tenderlyExecute(
       
       if (proposals && proposals.length > 0) {
         const timelockL2 = await currentBdm.getContractOrThrow('timelock');
-    const delay = await timelockL2.delay();
-    const relayMessages = loadCachedRelayMessages();
+        const delay = await timelockL2.delay();
+        const relayMessages = loadCachedRelayMessages();
         const executeProposalSig = utils.id('executeProposal(uint256)').substring(0, 10);
 
         const latestL2 = await currentBdm.hre.ethers.provider.getBlock('latest');
-    const maxEta = Math.max(...proposals.map(p => Number(p.eta || 0))) + delay.toNumber();
+        const maxEta = Math.max(...proposals.map(p => Number(p.eta || 0))) + delay.toNumber();
         const T0L2 = Math.max(latestL2.timestamp, maxEta + 1);
-    const B0L2 = Number(latestL2.number) + 1;
+        const B0L2 = Number(latestL2.number) + 1;
 
         let previousBlock = latestL2.number;
         let previousTimestamp = T0L2;
@@ -986,22 +998,22 @@ export async function tenderlyExecute(
           previousBlock = block;
           previousTimestamp = timestamp;
 
-      return {
-        network_id: chainId2.toString(),
-        from: msg.signer,
-        to: msg.messenger,
-        block_number: Number(block),
-        block_header: {
+          return {
+            network_id: chainId2.toString(),
+            from: msg.signer,
+            to: msg.messenger,
+            block_number: Number(block),
+            block_header: {
               timestamp: currentBdm.hre.ethers.utils.hexlify(Number(timestamp))
-        },
-        input: msg.callData,
-        save: true,
-        save_if_fails: true,
-        gas_price: 0,
-      };
-    });
+            },
+            input: msg.callData,
+            save: true,
+            save_if_fails: true,
+            gas_price: 0,
+          };
+        });
 
-    if (simsL2.length > 0) {
+        if (simsL2.length > 0) {
           const bundle2 = await simulateBundle(currentBdm, simsL2, Number(B0L2));
           
           // filter from bundle every entry with simulation.input that starts with 0x0d61b519 i.e. executeProposal(uint256)
@@ -1009,7 +1021,7 @@ export async function tenderlyExecute(
           for (const sim of filteredBundle) {
             await shareSimulation(currentBdm, sim.simulation.id);
             console.log(`\nRelayed to ${currentBdm.network}`);
-      console.log(`Simulation ${sim.simulation.id} done, status: ${sim.simulation.status}`);
+            console.log(`Simulation ${sim.simulation.id} done, status: ${sim.simulation.status}`);
             console.log(`Link: https://www.tdly.co/shared/simulation/${sim.simulation.id} \n`);
           }
         }
@@ -1034,7 +1046,7 @@ async function simulateBundle(
     const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
 
     // Merge rolling state changes with simulation's own state_objects
-    const stateObjects = sim.state_objects 
+    const stateObjects = sim.state_objects
       ? { ...rollingStateChanges, ...sim.state_objects }
       : rollingStateChanges;
 
@@ -1084,7 +1096,7 @@ async function simulateBundle(
 
     results.push(simResult);
   }
-  
+
   return results;
 }
 
@@ -1214,7 +1226,7 @@ export async function executeOpenProposal(
     const tx = await governor.execute(id, { gasPrice: 0, gasLimit: 120000000 });
     const receipt = await tx.wait();
 
-    if(receipt.gasUsed.toNumber() >= 16_777_215) {
+    if (receipt.gasUsed.toNumber() >= 16_777_215) {
       throw new Error('Execution may have failed due to hitting gas limit');
     }
   }
@@ -1558,24 +1570,24 @@ export async function executeOpenProposalAndRelay(
   console.log(`All Redstone oracles on ${bridgeDeploymentManager.network} are mocked`);
 
   const bridgeManagers = await isBridgeProposal(
-      governanceDeploymentManager,
-      bridgeDeploymentManager,
-      openProposal
+    governanceDeploymentManager,
+    bridgeDeploymentManager,
+    openProposal
   );
 
   for (const bridgeManager of bridgeManagers) {
     await mockAllRedstoneOracles(bridgeManager);
     if (bridgeManager) {
-    await relayMessage(
-      governanceDeploymentManager,
+      await relayMessage(
+        governanceDeploymentManager,
         bridgeManager,
-      startingBlockNumber
-    );
-  } else {
-    console.log(
+        startingBlockNumber
+      );
+    } else {
+      console.log(
         `[${governanceDeploymentManager.network} -> ${bridgeManager.network}] Proposal ${openProposal.id} doesn't target bridge; not relaying`
-    );
-    return;
+      );
+      return;
     }
   }
 }
@@ -1642,7 +1654,7 @@ export async function timeUntilUnderwater({
   // XXX throw error if baseBalanceOf is positive and liquidationMargin is positive
   return Number(
     (-liquidationMargin * factorScale) / baseLiquidity / borrowRate +
-      fudgeFactor
+    fudgeFactor
   );
 }
 
@@ -1653,4 +1665,29 @@ export function applyL1ToL2Alias(address: string) {
 
 export function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
   return !!log?.raw?.topics && !!log?.raw?.data;
+}
+
+export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
+  try {
+    const configurator = await ctx.getConfigurator();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    // Use function selector to probe existence without reverting on unsupported networks
+    const iface = new ethers.utils.Interface([
+      'function marketAdminPermissionChecker() public view returns (address)'
+    ]);
+    const functionSelector = iface.getSighash('marketAdminPermissionChecker');
+    
+    const result = await ethers.provider.call({
+      to: configurator.address,
+      data: functionSelector
+    });
+    
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
 }
