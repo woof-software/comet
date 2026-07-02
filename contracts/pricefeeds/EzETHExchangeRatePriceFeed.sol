@@ -2,7 +2,7 @@
 pragma solidity 0.8.15;
 
 import "../vendor/renzo/IBalancerRateProvider.sol";
-import "../IPriceFeed.sol";
+import "../interfaces/IPriceFeed.sol";
 
 /**
  * @title ezETH Scaling price feed

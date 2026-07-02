@@ -10,8 +10,8 @@ import "./vendor/@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "./vendor/@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 
 import "../CometInterface.sol";
-import "../ERC20.sol";
-import "../IWstETH.sol";
+import "../interfaces/ERC20.sol";
+import "../interfaces/IWstETH.sol";
 import "./interfaces/IStableSwap.sol";
 import "./interfaces/IUniswapV2Router.sol";
 import "./interfaces/IVault.sol";

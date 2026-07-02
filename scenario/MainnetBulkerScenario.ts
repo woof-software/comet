@@ -71,7 +71,7 @@ scenario(
     const { albert } = actors;
 
     const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
 
     const toSupplyStEth = exp(.1, 18);
 
@@ -125,7 +125,7 @@ scenario(
     const { albert } = actors;
 
     const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
 
     await albert.allow(bulker.address, true);
 
@@ -179,7 +179,7 @@ scenario(
     const { albert } = actors;
 
     const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
 
     await albert.allow(bulker.address, true);
 
