@@ -30,6 +30,12 @@ async function hasNativeAsBase(ctx: CometContext): Promise<boolean> {
   if ((await comet.baseToken()).toLowerCase() === wrappedNativeToken.toLowerCase()) return true;
 }
 
+async function isRewardsEnabled(ctx: CometContext): Promise<boolean> {
+  if (!await isRewardSupported(ctx)) return false;
+  const comet = await ctx.getComet();
+  return (await comet.baseTrackingSupplySpeed()).toBigInt() > 0n;
+}
+
 async function getAvailableCollateralAssetIndexes(ctx: CometContext): Promise<number[]> {
   const comet = await ctx.getComet();
   const numAssets = await comet.numAssets();
@@ -1055,7 +1061,7 @@ scenario(
 scenario(
   'Comet#bulker > ACTION_CLAIM_REWARD claims accrued rewards',
   {
-    filter: async (ctx) => await isBulkerSupported(ctx) && await isRewardSupported(ctx) && !matchesDeployment(ctx, [{ deployment: 'wsteth' }]),
+    filter: async (ctx) => await isBulkerSupported(ctx) && await isRewardsEnabled(ctx) && !matchesDeployment(ctx, [{ deployment: 'wsteth' }]),
     tokenBalances: async (ctx) => (
       {
         albert: { $base: `== ${getConfigForScenario(ctx).bulkerBase}` },
@@ -1848,7 +1854,7 @@ scenario(
 scenario(
   'Comet#bulker > ACTION_CLAIM_REWARD with shouldAccrue=false passes false through',
   {
-    filter: async (ctx) => await isBulkerSupported(ctx) && await isRewardSupported(ctx) && !matchesDeployment(ctx, [{ deployment: 'wsteth' }]),
+    filter: async (ctx) => await isBulkerSupported(ctx) && await isRewardsEnabled(ctx) && !matchesDeployment(ctx, [{ deployment: 'wsteth' }]),
     tokenBalances: async (ctx: CometContext) => (
       {
         albert: { $base: `== ${getConfigForScenario(ctx).bulkerBase}` },
