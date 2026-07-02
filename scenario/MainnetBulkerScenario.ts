@@ -46,7 +46,7 @@ scenario(
   async ({ bulker }, context) => {
     const wstETHAddress = await (bulker as MainnetBulker).wsteth();
     const stETHAddress = await (bulker as MainnetBulker).steth();
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/IWstETH.sol:IWstETH', wstETHAddress) as IWstETH;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', wstETHAddress) as IWstETH;
 
     expect(stETHAddress.toLowerCase()).to.be.equal((await wstETH.stETH()).toLowerCase());
   }
@@ -211,7 +211,7 @@ scenario(
     const { albert } = actors;
 
     const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
 
     const toSupplyStEth = exp(.1, 18);
     await context.sourceTokens(toSupplyStEth + 3n, new CometAsset(stETH), albert);
@@ -243,7 +243,7 @@ scenario(
     const { albert } = actors;
 
     const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
 
     // Use tETH as collateral: the only asset in this market with a non-zero borrowCF on the
     // live fork (rsETH borrowCF=0; ezETH supplyCap=0 with no borrow headroom).
@@ -295,7 +295,7 @@ scenario(
     const { albert } = actors;
 
     const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
 
     const toSupplyWstEth = exp(0.2, 18);
     await context.sourceTokens(toSupplyWstEth + 3n, MAINNET_WSTETH_ADDRESS, albert);
@@ -336,7 +336,7 @@ scenario(
   async ({ comet, actors, bulker }, context) => {
     const { albert } = actors;
 
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
 
     const toSupplyWstEth = exp(0.2, 18);
     await context.sourceTokens(toSupplyWstEth + 3n, MAINNET_WSTETH_ADDRESS, albert);
@@ -364,7 +364,7 @@ scenario(
     filter: async (ctx) => await isBulkerSupported(ctx) && await isWstETHBase(ctx) && matchesDeployment(ctx, [{ network: 'mainnet' }]),
   },
   async ({ comet, bulker }, context) => {
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
 
     expect(await wstETH.balanceOf(bulker.address)).to.be.equal(0);
 
@@ -610,7 +610,7 @@ scenario(
     filter: async (ctx) => await isBulkerSupported(ctx) && await isWstETHBase(ctx) && matchesDeployment(ctx, [{ network: 'mainnet' }]),
   },
   async ({ comet, bulker }, context) => {
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
 
     const extraWstEth = exp(0.01, 18);
     const wstEthWhale = await context.world.impersonateAddress('0x0B925eD163218f6662a35e0f0371Ac234f9E9371', { value: exp(0.1, 18) });
