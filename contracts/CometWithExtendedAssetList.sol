@@ -275,18 +275,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
             baseBorrowIndex_ += safe64(mulFactor(baseBorrowIndex_, borrowRate * timeElapsed));
         }
 
-        /// @dev Prevent lenders' illiquidity when there are no borrowers
-        /// In markets with reserves and lenders but no borrows, lenders earn the base supply rate
-        /// funded from reserves. Without this cap, totalSupply() could exceed the actual token balance,
-        /// making it impossible for lenders to withdraw their full entitled amount.
-        /// This safeguard recalculates the supply index to match the available balance exactly,
-        /// ensuring withdrawals remain possible even when interest accrual outpaces reserves.
-        if (totalBorrowBase == 0 && totalSupplyBase > 0) {
-            uint256 baseBalance = IERC20NonStandard(baseToken).balanceOf(address(this));
-            if (presentValueSupply(baseSupplyIndex_, totalSupplyBase) > baseBalance) 
-                baseSupplyIndex_ = safe64((baseBalance * BASE_INDEX_SCALE) / totalSupplyBase);
-        }
-
         return (baseSupplyIndex_, baseBorrowIndex_);
     }
 
