@@ -32,7 +32,7 @@ export default migration('1727880771_add_tbtc_collateral', {
       'tBTC',
       TBTC_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const tBTCPriceFeed = await deploymentManager.existing(
       'tBTC:priceFeed',
@@ -101,7 +101,7 @@ export default migration('1727880771_add_tbtc_collateral', {
       'tBTC',
       TBTC_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const tBTCAssetConfig = {
       asset: tBTC.address,

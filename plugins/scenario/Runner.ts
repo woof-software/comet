@@ -159,7 +159,7 @@ async function retry(fn: () => Promise<any>, retries: number = 10, timeLimit?: n
     return await asyncCallWithTimeout(fn(), timeLimit);
   } catch (e) {
     if (retries === 0) throw e;
-    if(e.reason !== 'could not detect network')
+    if (e.reason !== 'could not detect network')
       throw e;
 
     console.warn(`Retrying in ${wait}ms...`);
@@ -184,8 +184,8 @@ async function asyncCallWithTimeout(asyncPromise: Promise<any>, timeLimit: numbe
   });
 }
 
-export async function runScenarios(bases: ForkSpec[]) {
-  const loader = await Loader.load();
+export async function runScenarios(bases: ForkSpec[], glob: string = 'scenario/**.ts') {
+  const loader = await Loader.load(glob);
   const [runningScenarios, skippedScenarios] = loader.splitScenarios();
 
   const startTime = Date.now();
