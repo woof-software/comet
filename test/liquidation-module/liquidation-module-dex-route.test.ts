@@ -36,44 +36,53 @@ import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber } from 'ethers';
 
 // End-to-end keeper DEX liquidations against a fresh Comet that uses REAL mainnet USDC-market tokens, so the
-// seized collateral is actually swapped on a fork through 1inch. Prices are mock SimplePriceFeeds (kept well
-// below real market prices) so we can push the position into liquidation while keeping the adapter's
-// oracle-derived minimum conservative. Swap calldata is built from the on-chain `seizurePlan`, exactly as a
-// keeper would, and the per-collateral seized amounts are also asserted against the plan (not events).
+// seized collateral is actually swapped on a fork through 1inch or Uniswap.
 describe('liquidation module dex route', function () {
   this.timeout(600_000);
 
-  const PENALTY_BPS: bigint = BigInt(500); // 5%
+  const INCENTIVE_BPS: bigint = BigInt(500); // 5%
   const BPS = 10_000n;
-
-  // The Comet's collateral set (>= 5 real USDC-market tokens), in asset-list order.
-  const COLLATERALS = [
-    TOKENS.WBTC.address,
-    TOKENS.WETH.address,
-    TOKENS.UNI.address,
-    TOKENS.LINK.address,
-    TOKENS.WSTETH.address,
+  // Collateral info: address, decimals, initial price
+  const COLLATERAL_SPECS: [string, number, bigint][] = [
+    [TOKENS.WBTC.address, 8, 5_882_352_941_176n],
+    [TOKENS.WETH.address, 18, 156_250_000_000n],
+    [TOKENS.WSTETH.address, 18, 156_250_000_000n],
+    [TOKENS.UNI.address, 18, 273_972_602n],
+    [TOKENS.LINK.address, 18, 714_285_714n],
+    [TOKENS.COMP.address, 18, 1_538_461_538n],
+    [TOKENS.tBTC.address, 18, 5_882_352_941_176n],
+    [TOKENS.weETH.address, 18, 156_250_000_000n],
+    [TOKENS.rsETH.address, 18, 156_250_000_000n],
+    [TOKENS.cbETH.address, 18, 156_250_000_000n],
+    [TOKENS.ETHx.address, 18, 156_250_000_000n],
+    [TOKENS.ezETH.address, 18, 156_250_000_000n],
+    [TOKENS.rswETH.address, 18, 156_250_000_000n],
+    [TOKENS.rETH.address, 18, 156_250_000_000n],
+    [TOKENS.osETH.address, 18, 156_250_000_000n],
+    [TOKENS.USDT.address, 6, 100_000_000n],
+    [TOKENS.USDS.address, 18, 100_000_000n],
+    [TOKENS.mETH.address, 18, 156_250_000_000n],
+    [TOKENS.SKY.address, 18, 5_263_157n],
+    [TOKENS.sUSDS.address, 18, 100_000_000n],
+    [TOKENS.wUSDM.address, 18, 100_000_000n],
+    [TOKENS.sFRAX.address, 18, 100_000_000n],
+    [TOKENS.XAUt.address, 6, 400_000_000_000n],
+    [TOKENS.pumpBTC.address, 8, 5_882_352_941_176n],
   ];
-
-  const WBTC_PRICE = 60_000;
-  const WETH_PRICE = 1_600;
-  const WSTETH_PRICE = 1_950;
+  // Addresses only, for building the adapter's routes.
+  const COLLATERALS = COLLATERAL_SPECS.map(([addr]) => addr);
+  // Initial (8-decimal) price per collateral.
+  const initialPriceOf = new Map<string, bigint>(COLLATERAL_SPECS.map(([addr, , price]) => [addr, price]));
+  const droppedPrice = (addr: string) => (initialPriceOf.get(addr)! * 4n) / 5n;
+  const infoByAddress = new Map(Object.values(TOKENS).map((info) => [info.address, info] as const));
 
   let comet: CometInterface;
   let adapter: OneInchV6CoreAdapter;
   let liquidationModule: LiquidationModule;
 
-  let usdc: ERC20;
-  let wbtc: ERC20;
-  let weth: ERC20;
-  let wsteth: ERC20;
-  let uni: ERC20;
-  let link: ERC20;
-  let wbtcFeed: SimplePriceFeed;
-  let wethFeed: SimplePriceFeed;
-  let wstethFeed: SimplePriceFeed;
-  let uniFeed: SimplePriceFeed;
-  let linkFeed: SimplePriceFeed;
+  let feeds: Map<string, SimplePriceFeed>;
+  let tokens: Map<string, ERC20>;
+  let usdc: ERC20; // base token
 
   let governor: SignerWithAddress;
   let executor: SignerWithAddress;
@@ -115,11 +124,6 @@ describe('liquidation module dex route', function () {
     governor = await ethers.getImpersonatedSigner('0x6d903f6003cca6255D85CcA4D3B5E5146dC33925');
     await setBalance(governor.address, ethers.utils.parseEther('10'));
 
-    // The adapter is deployed BEFORE the Comet (the Comet's constructor later binds it via initiateAdapter),
-    // so routes are built from an explicit collateral list rather than read from the not-yet-existing Comet.
-    // UNI is intentionally dropped from the route map (left unset) so the five-collateral test can exercise
-    // the fallback where a seized collateral has no DEX route and the adapter sweeps it back to Comet. The
-    // other contexts never supply UNI, so this doesn't affect them.
     const usdcRoutesNoUni = Object.fromEntries(
       Object.entries(MARKETS.usdc.routes).filter(
         ([addr]) => addr.toLowerCase() !== TOKENS.UNI.address.toLowerCase()
@@ -145,20 +149,27 @@ describe('liquidation module dex route', function () {
     const multisig = signers[8];
     [borrower, lender, absorber] = [signers[9], signers[10], signers[11]];
 
-    // Mock oracle feeds
     const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
     const usdcFeed = await PriceFeedFactory.deploy(exp(1, 8), 8);
     await usdcFeed.deployed();
-    wbtcFeed = await PriceFeedFactory.deploy(exp(WBTC_PRICE, 8), 8);
-    await wbtcFeed.deployed();
-    wethFeed = await PriceFeedFactory.deploy(exp(WETH_PRICE, 8), 8);
-    await wethFeed.deployed();
-    wstethFeed = await PriceFeedFactory.deploy(exp(WSTETH_PRICE, 8), 8);
-    await wstethFeed.deployed();
-    uniFeed = await PriceFeedFactory.deploy(exp(10, 8), 8);
-    await uniFeed.deployed();
-    linkFeed = await PriceFeedFactory.deploy(exp(10, 8), 8);
-    await linkFeed.deployed();
+
+    feeds = new Map();
+    tokens = new Map();
+    for (const [asset, , price] of COLLATERAL_SPECS) {
+      const feed = await PriceFeedFactory.deploy(price, 8);
+      await feed.deployed();
+      feeds.set(asset, feed);
+      tokens.set(asset, ERC20__factory.connect(asset, ethers.provider));
+    }
+    const assetConfigs = COLLATERAL_SPECS.map(([asset, decimals]) => ({
+      asset,
+      priceFeed: feeds.get(asset)!.address,
+      decimals,
+      borrowCollateralFactor: exp(0.8, 18),
+      liquidateCollateralFactor: exp(0.85, 18),
+      liquidationFactor: exp(0.9, 18),
+      supplyCap: exp(150000, decimals),
+    }));
 
     // Asset list factory + extension delegate
     const AssetListFactoryFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
@@ -181,7 +192,7 @@ describe('liquidation module dex route', function () {
       multisig.address,
       executors,
       pausers,
-      PENALTY_BPS
+      INCENTIVE_BPS
     );
     await liquidationModule.deployed();
 
@@ -209,24 +220,13 @@ describe('liquidation module dex route', function () {
       baseMinForRewards: exp(1, 6),
       baseBorrowMin: 0,
       targetReserves: 0,
-      assetConfigs: [
-        { asset: TOKENS.WBTC.address, priceFeed: wbtcFeed.address, decimals: 8, borrowCollateralFactor: exp(0.8, 18), liquidateCollateralFactor: exp(0.85, 18), liquidationFactor: exp(0.9, 18), supplyCap: exp(150000, 8) },
-        { asset: TOKENS.WETH.address, priceFeed: wethFeed.address, decimals: 18, borrowCollateralFactor: exp(0.8, 18), liquidateCollateralFactor: exp(0.85, 18), liquidationFactor: exp(0.9, 18), supplyCap: exp(150000, 18) },
-        { asset: TOKENS.WSTETH.address, priceFeed: wstethFeed.address, decimals: 18, borrowCollateralFactor: exp(0.8, 18), liquidateCollateralFactor: exp(0.85, 18), liquidationFactor: exp(0.9, 18), supplyCap: exp(150000, 18) },
-        { asset: TOKENS.UNI.address, priceFeed: uniFeed.address, decimals: 18, borrowCollateralFactor: exp(0.8, 18), liquidateCollateralFactor: exp(0.85, 18), liquidationFactor: exp(0.9, 18), supplyCap: exp(150000, 18) },
-        { asset: TOKENS.LINK.address, priceFeed: linkFeed.address, decimals: 18, borrowCollateralFactor: exp(0.8, 18), liquidateCollateralFactor: exp(0.85, 18), liquidationFactor: exp(0.9, 18), supplyCap: exp(150000, 18) },
-      ],
+      assetConfigs,
     });
     await cometContract.deployed();
     await cometContract.initializeStorage();
     comet = (await ethers.getContractAt('CometInterface', cometContract.address)) as CometInterface;
 
     usdc = ERC20__factory.connect(TOKENS.USDC.address, ethers.provider);
-    wbtc = ERC20__factory.connect(TOKENS.WBTC.address, ethers.provider);
-    weth = ERC20__factory.connect(TOKENS.WETH.address, ethers.provider);
-    wsteth = ERC20__factory.connect(TOKENS.WSTETH.address, ethers.provider);
-    uni = ERC20__factory.connect(TOKENS.UNI.address, ethers.provider);
-    link = ERC20__factory.connect(TOKENS.LINK.address, ethers.provider);
   });
 
   // Supplies `amount` of base liquidity from the lender so the borrower can draw USDC.
@@ -249,6 +249,9 @@ describe('liquidation module dex route', function () {
     const BORROW_USDC = exp(7_000, 6);
     const WBTC_PRICE_DROPPED = exp(50_000, 8);
 
+    let wbtc: ERC20;
+    let wbtcFeed: SimplePriceFeed;
+
     let plan: PlanItem[];
     let swapData: string[];
     let cometUsdcBefore: bigint;
@@ -260,6 +263,9 @@ describe('liquidation module dex route', function () {
     let tx: Awaited<ReturnType<LiquidationModule['liquidate']>>;
 
     before(async () => {
+      wbtc = tokens.get(TOKENS.WBTC.address)!;
+      wbtcFeed = feeds.get(TOKENS.WBTC.address)!;
+
       snapshot = await takeSnapshot();
 
       await supplyBase(LENDER_USDC);
@@ -326,7 +332,7 @@ describe('liquidation module dex route', function () {
       }
       expect(baseReceived).to.be.greaterThanOrEqual(minOut);
 
-      expect(penalty).to.equal((baseReceived * PENALTY_BPS) / BPS);
+      expect(penalty).to.equal((baseReceived * INCENTIVE_BPS) / BPS);
       expect(baseRepaid).to.be.greaterThan(0n);
     });
 
@@ -344,10 +350,17 @@ describe('liquidation module dex route', function () {
     const WETH_COLLATERAL = exp(1, 18);
     const WSTETH_COLLATERAL = exp(1, 18);
     const BORROW_USDC = exp(3_800, 6);
-    // Drop every collateral price 20% 
-    const WBTC_PRICE_DROPPED = exp(WBTC_PRICE * 0.8, 8);
-    const WETH_PRICE_DROPPED = exp(WETH_PRICE * 0.8, 8);
-    const WSTETH_PRICE_DROPPED = exp(WSTETH_PRICE * 0.8, 8);
+    // Drop every collateral price 20% below its initial price (see COLLATERAL_SPECS).
+    const WBTC_PRICE_DROPPED = droppedPrice(TOKENS.WBTC.address);
+    const WETH_PRICE_DROPPED = droppedPrice(TOKENS.WETH.address);
+    const WSTETH_PRICE_DROPPED = droppedPrice(TOKENS.WSTETH.address);
+
+    let wbtc: ERC20;
+    let weth: ERC20;
+    let wsteth: ERC20;
+    let wbtcFeed: SimplePriceFeed;
+    let wethFeed: SimplePriceFeed;
+    let wstethFeed: SimplePriceFeed;
 
     let plan: PlanItem[];
     let swapData: string[];
@@ -360,6 +373,13 @@ describe('liquidation module dex route', function () {
     let tx: Awaited<ReturnType<LiquidationModule['liquidate']>>;
 
     before(async () => {
+      wbtc = tokens.get(TOKENS.WBTC.address)!;
+      weth = tokens.get(TOKENS.WETH.address)!;
+      wsteth = tokens.get(TOKENS.WSTETH.address)!;
+      wbtcFeed = feeds.get(TOKENS.WBTC.address)!;
+      wethFeed = feeds.get(TOKENS.WETH.address)!;
+      wstethFeed = feeds.get(TOKENS.WSTETH.address)!;
+
       snapshot = await takeSnapshot();
 
       await supplyBase(LENDER_USDC);
@@ -434,7 +454,7 @@ describe('liquidation module dex route', function () {
       }
       expect(baseReceived).to.be.greaterThanOrEqual(minOut);
 
-      expect(penalty).to.equal((baseReceived * PENALTY_BPS) / BPS);
+      expect(penalty).to.equal((baseReceived * INCENTIVE_BPS) / BPS);
       expect(baseRepaid).to.be.greaterThan(0n);
     });
 
@@ -453,12 +473,23 @@ describe('liquidation module dex route', function () {
     const WSTETH_COLLATERAL = exp(1, 18);
     const UNI_COLLATERAL = exp(180, 18);
     const LINK_COLLATERAL = exp(240, 18);
-    const BORROW_USDC = exp(6_300, 6);
+    const BORROW_USDC = exp(5_000, 6);
     const BASE_PRICE = exp(1, 8);
     const BASE_SCALE = exp(1, 6);
 
     // UNI swap route is unset and should be absorbed
     const isUni = (asset: string) => asset.toLowerCase() === TOKENS.UNI.address.toLowerCase();
+
+    let wbtc: ERC20;
+    let weth: ERC20;
+    let wsteth: ERC20;
+    let uni: ERC20;
+    let link: ERC20;
+    let wbtcFeed: SimplePriceFeed;
+    let wethFeed: SimplePriceFeed;
+    let wstethFeed: SimplePriceFeed;
+    let uniFeed: SimplePriceFeed;
+    let linkFeed: SimplePriceFeed;
 
     let plan: PlanItem[];
     let swapData: string[];
@@ -472,6 +503,17 @@ describe('liquidation module dex route', function () {
     let tx: Awaited<ReturnType<LiquidationModule['liquidate']>>;
 
     before(async () => {
+      wbtc = tokens.get(TOKENS.WBTC.address)!;
+      weth = tokens.get(TOKENS.WETH.address)!;
+      wsteth = tokens.get(TOKENS.WSTETH.address)!;
+      uni = tokens.get(TOKENS.UNI.address)!;
+      link = tokens.get(TOKENS.LINK.address)!;
+      wbtcFeed = feeds.get(TOKENS.WBTC.address)!;
+      wethFeed = feeds.get(TOKENS.WETH.address)!;
+      wstethFeed = feeds.get(TOKENS.WSTETH.address)!;
+      uniFeed = feeds.get(TOKENS.UNI.address)!;
+      linkFeed = feeds.get(TOKENS.LINK.address)!;
+
       snapshot = await takeSnapshot();
 
       await supplyBase(LENDER_USDC);
@@ -482,11 +524,13 @@ describe('liquidation module dex route', function () {
       await supplyCollateral(link, TOKENS.LINK, LINK_COLLATERAL);
       await comet.connect(borrower).withdraw(TOKENS.USDC.address, BORROW_USDC);
 
-      await wbtcFeed.setRoundData(0, exp(WBTC_PRICE * 0.8, 8), 0, 0, 0);
-      await wethFeed.setRoundData(0, exp(WETH_PRICE * 0.8, 8), 0, 0, 0);
-      await wstethFeed.setRoundData(0, exp(WSTETH_PRICE * 0.8, 8), 0, 0, 0);
-      await uniFeed.setRoundData(0, exp(8, 8), 0, 0, 0);
-      await linkFeed.setRoundData(0, exp(6, 8), 0, 0, 0);
+      await wbtcFeed.setRoundData(0, droppedPrice(TOKENS.WBTC.address), 0, 0, 0);
+      await wethFeed.setRoundData(0, droppedPrice(TOKENS.WETH.address), 0, 0, 0);
+      await wstethFeed.setRoundData(0, droppedPrice(TOKENS.WSTETH.address), 0, 0, 0);
+      await uniFeed.setRoundData(0, droppedPrice(TOKENS.UNI.address), 0, 0, 0);
+      // Every collateral drops 20%. UNI's small real price contributes little collateral, so the borrow
+      // requires all five collaterals to be seized (LINK, the last, is partially seized).
+      await linkFeed.setRoundData(0, droppedPrice(TOKENS.LINK.address), 0, 0, 0);
       await comet.accrueAccount(borrower.address);
 
       plan = await liquidationModule.seizurePlan(borrower.address);
@@ -577,6 +621,129 @@ describe('liquidation module dex route', function () {
     it('reduces the borrower debt and restores the position', async () => {
       expect((await comet.borrowBalanceOf(borrower.address)).toBigInt()).to.be.lessThan(borrowBefore);
       expect(await liquidationModule.isLiquidatable(borrower.address)).to.be.false;
+    });
+  });
+
+  context('twenty-four collaterals, each absorbed or swapped through the DEX route', function () {
+    const LENDER_USDC = exp(30_000, 6);
+    const BORROW_USDC = exp(18_000, 6);
+    // Collaterals with swap routes
+    const ROUTED = [TOKENS.WBTC.address, TOKENS.WETH.address, TOKENS.WSTETH.address, TOKENS.LINK.address];
+    const isRouted = (asset: string) => ROUTED.some((a) => a.toLowerCase() === asset.toLowerCase());
+
+    let plan: PlanItem[];
+    let swapData: string[];
+    let borrowBefore: bigint;
+    const collateralBefore = new Map<string, bigint>();
+    const cometBalanceBefore = new Map<string, bigint>();
+    const reservesBefore = new Map<string, bigint>();
+
+    let tx: Awaited<ReturnType<LiquidationModule['liquidate']>>;
+
+    before(async () => {
+      snapshot = await takeSnapshot();
+
+      // Price every collateral at its real price, then supply its ~$1000 swap-routes amount.
+      for (const [asset, , price] of COLLATERAL_SPECS) {
+        await feeds.get(asset)!.setRoundData(0, price, 0, 0, 0);
+      }
+      await supplyBase(LENDER_USDC);
+      for (const [asset] of COLLATERAL_SPECS) {
+        const info = infoByAddress.get(asset)!;
+        await supplyCollateral(tokens.get(asset)!, info, info.amount.toBigInt());
+      }
+      await comet.connect(borrower).withdraw(TOKENS.USDC.address, BORROW_USDC);
+
+      // Crash every collateral 20%. The debt now exceeds the position's seizable value (bad debt), so every
+      // collateral is seized — routed ones swapped, the rest swept back to Comet.
+      for (const [asset] of COLLATERAL_SPECS) {
+        await feeds.get(asset)!.setRoundData(0, droppedPrice(asset), 0, 0, 0);
+      }
+      await comet.accrueAccount(borrower.address);
+
+      plan = await liquidationModule.seizurePlan(borrower.address);
+      // Quote the routed collaterals on 1inch; pass empty calldata for the route-less ones so the adapter's
+      // redundant path finds no route and sweeps them back to Comet.
+      swapData = await Promise.all(
+        plan.map((s) =>
+          isRouted(s.asset)
+            ? fetch1inchSwapData({
+                chainId: CHAIN_ID,
+                src: s.asset,
+                dst: TOKENS.USDC.address,
+                amount: s.seizedAmount.toString(),
+                from: adapter.address,
+                slippage: ONEINCH_SLIPPAGE_PCT,
+                protocols: AMM_PROTOCOLS,
+              })
+            : Promise.resolve('0x')
+        )
+      );
+
+      borrowBefore = (await comet.borrowBalanceOf(borrower.address)).toBigInt();
+      for (const s of plan) {
+        collateralBefore.set(s.asset, (await comet.collateralBalanceOf(borrower.address, s.asset)).toBigInt());
+        cometBalanceBefore.set(
+          s.asset,
+          (await ERC20__factory.connect(s.asset, ethers.provider).balanceOf(comet.address)).toBigInt()
+        );
+        reservesBefore.set(s.asset, (await comet.getCollateralReserves(s.asset)).toBigInt());
+      }
+    });
+
+    after(async () => await snapshot.restore());
+
+    it('plans a seizure for every collateral', () => {
+      expect(plan.length).to.equal(COLLATERAL_SPECS.length);
+    });
+
+    it('liquidates the whole position through the DEX route', async () => {
+      tx = await liquidationModule
+        .connect(executor)
+        .liquidate(absorber.address, borrower.address, swapData);
+      await tx.wait();
+    });
+
+    it('falls back to absorbing the route-less collaterals', async () => {
+      await expect(tx).to.emit(adapter, 'RedundantSwapFailed');
+    });
+
+    it('seizes the planned amount from the borrower for every collateral', async () => {
+      for (const s of plan) {
+        const after = (await comet.collateralBalanceOf(borrower.address, s.asset)).toBigInt();
+        expect(collateralBefore.get(s.asset)! - after).to.equal(s.seizedAmount.toBigInt());
+      }
+    });
+
+    it('swaps routed collaterals out of Comet and absorbs route-less ones as reserves', async () => {
+      for (const s of plan) {
+        const cometAfter = (await ERC20__factory.connect(s.asset, ethers.provider).balanceOf(comet.address)).toBigInt();
+        const reservesAfter = (await comet.getCollateralReserves(s.asset)).toBigInt();
+        if (isRouted(s.asset)) {
+          // Sold: the tokens left Comet and reserves are unchanged.
+          expect(cometBalanceBefore.get(s.asset)! - cometAfter).to.equal(s.seizedAmount.toBigInt());
+          expect(reservesAfter - reservesBefore.get(s.asset)!).to.equal(0n);
+        } else {
+          // Swept back: Comet's token balance is unchanged (out then back) and it becomes protocol reserves.
+          expect(cometBalanceBefore.get(s.asset)! - cometAfter).to.equal(0n);
+          expect(reservesAfter - reservesBefore.get(s.asset)!).to.equal(s.seizedAmount.toBigInt());
+        }
+      }
+    });
+
+    it('clears the borrower debt', async () => {
+      expect((await comet.borrowBalanceOf(borrower.address)).toBigInt()).to.be.lessThan(borrowBefore);
+      expect(await liquidationModule.isLiquidatable(borrower.address)).to.be.false;
+    });
+
+    it('leaves no collateral or base stranded on the adapter or the module', async () => {
+      for (const [asset] of COLLATERAL_SPECS) {
+        const token = tokens.get(asset)!;
+        expect((await token.balanceOf(adapter.address)).toBigInt()).to.equal(0n);
+        expect((await token.balanceOf(liquidationModule.address)).toBigInt()).to.equal(0n);
+      }
+      expect((await usdc.balanceOf(adapter.address)).toBigInt()).to.equal(0n);
+      expect((await usdc.balanceOf(liquidationModule.address)).toBigInt()).to.equal(0n);
     });
   });
 });
