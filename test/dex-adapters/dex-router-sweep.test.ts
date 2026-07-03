@@ -7,8 +7,8 @@ import {
   CometInterface__factory,
   ERC20,
   ERC20__factory,
-  OneInchV6CoreAdapter,
-  OneInchV6CoreAdapter__factory,
+  OneInchV6Adapter,
+  OneInchV6Adapter__factory,
 } from '../../build/types';
 import {
   setErc20Balance,
@@ -33,7 +33,7 @@ import {
  * A network runs only when `ONEINCH_API_KEY` and its fork RPC env var is set.
  */
 
-describe('OneInchV6CoreAdapter core & redundant swap sweep', function () {
+describe('OneInchV6Adapter core & redundant swap sweep', function () {
   this.timeout(600_000);
 
   for (const [network, markets] of Object.entries(SWAP_ROUTES)) {
@@ -50,7 +50,7 @@ describe('OneInchV6CoreAdapter core & redundant swap sweep', function () {
 
       for (const [marketName, market] of Object.entries(markets)) {
         describe(`${marketName} comet`, function () {
-          let adapter: OneInchV6CoreAdapter;
+          let adapter: OneInchV6Adapter;
           let comet: CometInterface;
           let baseToken: string;
           let baseTokenErc20: ERC20;
@@ -76,8 +76,8 @@ describe('OneInchV6CoreAdapter core & redundant swap sweep', function () {
 
             const routes = await buildRoutes(comet, market.routes);
             const factory = (await ethers.getContractFactory(
-              'OneInchV6CoreAdapter'
-            )) as OneInchV6CoreAdapter__factory;
+              'OneInchV6Adapter'
+            )) as OneInchV6Adapter__factory;
             adapter = await factory.deploy(
               CORE_ROUTER,
               net.redundantRouter,

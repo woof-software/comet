@@ -25,8 +25,8 @@ import {
   AssetListFactory__factory,
   LiquidationModule,
   LiquidationModule__factory,
-  OneInchV6CoreAdapter,
-  OneInchV6CoreAdapter__factory,
+  OneInchV6Adapter,
+  OneInchV6Adapter__factory,
   ERC20,
   ERC20__factory,
   SimplePriceFeed__factory,
@@ -77,7 +77,7 @@ describe('liquidation module dex route', function () {
   const infoByAddress = new Map(Object.values(TOKENS).map((info) => [info.address, info] as const));
 
   let comet: CometInterface;
-  let adapter: OneInchV6CoreAdapter;
+  let adapter: OneInchV6Adapter;
   let liquidationModule: LiquidationModule;
 
   let feeds: Map<string, SimplePriceFeed>;
@@ -131,7 +131,7 @@ describe('liquidation module dex route', function () {
     );
     const routes = buildRoutesFromList(COLLATERALS, usdcRoutesNoUni);
 
-    const AdapterFactory = (await ethers.getContractFactory('OneInchV6CoreAdapter')) as OneInchV6CoreAdapter__factory;
+    const AdapterFactory = (await ethers.getContractFactory('OneInchV6Adapter')) as OneInchV6Adapter__factory;
     adapter = await AdapterFactory.deploy(
       CORE_ROUTER,
       REDUNDANT_ROUTER,

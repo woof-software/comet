@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import { ContractReceipt, ContractTransaction, Signer, BigNumber } from 'ethers';
-import { OneInchV6CoreAdapter, ERC20, ERC20__factory } from '../../build/types';
+import { OneInchV6Adapter, ERC20, ERC20__factory } from '../../build/types';
 import {
   setErc20Balance,
   fetch1inchSwapData,
@@ -19,10 +19,10 @@ import {
   MARKETS,
 } from '../helpers';
 
-describe('OneInchV6CoreAdapter', function () {
+describe('OneInchV6Adapter', function () {
   this.timeout(180_000);
 
-  let adapter: OneInchV6CoreAdapter;
+  let adapter: OneInchV6Adapter;
   let baseToken: string;
   let baseTokenErc20: ERC20;
   let wbtcErc20: ERC20;
@@ -246,7 +246,7 @@ describe('OneInchV6CoreAdapter', function () {
     // Separate cWETHv3 (base = WETH) deployment: USDC collateral swapped to WETH via the 1inch core path.
     const usdc = TOKENS.USDC;
 
-    let wethAdapter: OneInchV6CoreAdapter;
+    let wethAdapter: OneInchV6Adapter;
     let wethBaseToken: string;
     let wethBaseErc20: ERC20; // WETH
     let usdcErc20: ERC20;

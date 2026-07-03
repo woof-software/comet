@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import { ContractTransaction, Signer } from 'ethers';
-import { OneInchV6CoreAdapter, OneInchV6CoreAdapter__factory } from '../../build/types';
+import { OneInchV6Adapter, OneInchV6Adapter__factory } from '../../build/types';
 import {
   RouteConfig,
   CORE_ROUTER,
@@ -18,8 +18,8 @@ describe('CoreDexAdapter', function () {
 
   const market = MARKETS.usdc;
 
-  let adapter: OneInchV6CoreAdapter;
-  let adapterFactory: OneInchV6CoreAdapter__factory;
+  let adapter: OneInchV6Adapter;
+  let adapterFactory: OneInchV6Adapter__factory;
   let routes: RouteConfig[];
   let baseToken: string;
   let moduleSigner: Signer;

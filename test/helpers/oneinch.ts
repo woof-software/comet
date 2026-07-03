@@ -4,7 +4,7 @@ import { BigNumber, BigNumberish } from 'ethers';
 
 /**
  * Helper for getting swap qoute from 1inch Aggregation API (v6) and preparing the calldata that
- * `OneInchV6CoreAdapter._coreSwap` expects as `swapData`.
+ * `OneInchV6Adapter._coreSwap` expects as `swapData`.
  *
  * Note: Requires the env var `ONEINCH_API_KEY` (1inch developer-portal key). Quotes are computed against
  * mainnet head, so the test fork should be pinned at (or very close to) the latest block.

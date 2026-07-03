@@ -5,8 +5,8 @@ import {
   CometInterface__factory,
   ERC20,
   ERC20__factory,
-  OneInchV6CoreAdapter,
-  OneInchV6CoreAdapter__factory,
+  OneInchV6Adapter,
+  OneInchV6Adapter__factory,
 } from "../../build/types";
 import { takeSnapshot, SnapshotRestorer } from "./snapshot";
 import {
@@ -26,8 +26,8 @@ import { TOKENS } from "./swap-routes";
 
 // Everything a dex-adapter test needs after deploying the adapter on a mainnet fork.
 export interface DexAdapterFixture {
-  adapter: OneInchV6CoreAdapter;
-  adapterFactory: OneInchV6CoreAdapter__factory;
+  adapter: OneInchV6Adapter;
+  adapterFactory: OneInchV6Adapter__factory;
   routes: RouteConfig[];
   comet: CometInterface;
   baseToken: string;
@@ -41,10 +41,10 @@ export interface DexAdapterFixture {
 }
 
 
-export async function deployEmptyDexAdapter(collaterals: string[]): Promise<OneInchV6CoreAdapter> {
+export async function deployEmptyDexAdapter(collaterals: string[]): Promise<OneInchV6Adapter> {
   const adapterFactory = (await ethers.getContractFactory(
-    "OneInchV6CoreAdapter"
-  )) as OneInchV6CoreAdapter__factory;
+    "OneInchV6Adapter"
+  )) as OneInchV6Adapter__factory;
   const adapter = await adapterFactory.deploy(
     CORE_ROUTER,
     REDUNDANT_ROUTER,
@@ -57,7 +57,7 @@ export async function deployEmptyDexAdapter(collaterals: string[]): Promise<OneI
   return adapter;
 }
 
-// Resets the mainnet fork, deploys a OneInchV6CoreAdapter for `market`, and snapshots the post-deploy state.
+// Resets the mainnet fork, deploys a OneInchV6Adapter for `market`, and snapshots the post-deploy state.
 export async function setupDexAdapter(market: MarketConfig): Promise<DexAdapterFixture> {
   await hre.network.provider.request({
     method: "hardhat_reset",
@@ -77,8 +77,8 @@ export async function setupDexAdapter(market: MarketConfig): Promise<DexAdapterF
   const routes = await buildRoutes(comet, market.routes);
 
   const adapterFactory = (await ethers.getContractFactory(
-    "OneInchV6CoreAdapter"
-  )) as OneInchV6CoreAdapter__factory;
+    "OneInchV6Adapter"
+  )) as OneInchV6Adapter__factory;
   const adapter = await adapterFactory.deploy(
     CORE_ROUTER,
     REDUNDANT_ROUTER,

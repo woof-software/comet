@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import { ContractReceipt, ContractTransaction, Signer, BigNumber } from 'ethers';
-import { CometInterface, OneInchV6CoreAdapter, OneInchV6CoreAdapter__factory, ERC20, ERC20__factory } from '../../build/types';
+import { CometInterface, OneInchV6Adapter, OneInchV6Adapter__factory, ERC20, ERC20__factory } from '../../build/types';
 import {
   setErc20Balance,
   withCustomMinReturn,
@@ -36,8 +36,8 @@ describe('UniswapAdapter', function () {
 
   const market = MARKETS.usdc;
 
-  let adapter: OneInchV6CoreAdapter;
-  let adapterFactory: OneInchV6CoreAdapter__factory;
+  let adapter: OneInchV6Adapter;
+  let adapterFactory: OneInchV6Adapter__factory;
   let routes: RouteConfig[];
   let comet: CometInterface;
   let baseToken: string;
@@ -509,7 +509,7 @@ describe('UniswapAdapter', function () {
     const usdc = TOKENS.USDC;
     const poolKey = WETH_USDC_ROUTE.poolKey; // same ETH/USDC pool, reversed direction
 
-    let wethAdapter: OneInchV6CoreAdapter;
+    let wethAdapter: OneInchV6Adapter;
     let wethBaseToken: string;
     let wethBaseErc20: ERC20; // WETH
     let usdcErc20: ERC20;

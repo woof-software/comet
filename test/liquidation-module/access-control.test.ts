@@ -5,7 +5,7 @@ import {
   AssetListFactory__factory,
   SimplePriceFeed__factory,
   FaucetToken__factory,
-  OneInchV6CoreAdapter__factory,
+  OneInchV6Adapter__factory,
   LiquidationModule,
   LiquidationModule__factory,
 } from 'build/types';
@@ -94,7 +94,7 @@ describe('liquidation module access control', function () {
     await extensionDelegate.deployed();
 
     // DEX adapter with unset route per collateral
-    const AdapterFactory = (await ethers.getContractFactory('OneInchV6CoreAdapter')) as OneInchV6CoreAdapter__factory;
+    const AdapterFactory = (await ethers.getContractFactory('OneInchV6Adapter')) as OneInchV6Adapter__factory;
     const adapter = await AdapterFactory.deploy(deployer.address, deployer.address, weth.address, 500, [
       {
         collateral: weth.address,

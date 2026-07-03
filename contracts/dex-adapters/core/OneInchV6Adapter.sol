@@ -16,7 +16,7 @@ import { SwapDescription, IOneInchV6 } from "../../vendor/OneInchV6/IOneInchV6.s
  * @dev Validates the off-chain 1inch swap calldata against the requested swap before forwarding it to the router.
  * @custom:security-contact dmitriy@woof.software
  */
-contract OneInchV6CoreAdapter is UniswapAdapter, IOneInchV6AdapterErrors {
+contract OneInchV6Adapter is UniswapAdapter, IOneInchV6AdapterErrors {
     using SafeERC20 for IERC20;
 
     /// @notice Selector of IOneInchV6.swap, the only 1inch router call accepted as core swap data.
