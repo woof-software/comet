@@ -441,6 +441,51 @@ export async function usesAssetList(ctx: CometContext): Promise<boolean> {
   return await comet.maxAssets() === MAX_ASSETS;
 }
 
+/**
+ * Address of the Comet's liquidation module, or null when it has none. Reads the getter through a minimal ABI
+ * and swallows reverts so it also works against Comets that predate the module (the call reverts there).
+ */
+export async function getLiquidationModuleAddress(ctx: CometContext): Promise<string | null> {
+  const comet = await ctx.getComet();
+  const ethers = ctx.world.deploymentManager.hre.ethers;
+  try {
+    const view = new ethers.Contract(
+      comet.address,
+      ['function liquidationModule() view returns (address)'],
+      ethers.provider
+    );
+    const moduleAddress: string = await view.liquidationModule();
+    return moduleAddress === constants.AddressZero ? null : moduleAddress;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when the Comet has liquidation module and dex adapter and dex route is not paused.
+ */
+export async function hasDexLiquidation(ctx: CometContext): Promise<boolean> {
+  const moduleAddress = await getLiquidationModuleAddress(ctx);
+  if (moduleAddress === null) return false;
+  const ethers = ctx.world.deploymentManager.hre.ethers;
+  try {
+    const module = new ethers.Contract(
+      moduleAddress,
+      [
+        'function dexAdapter() view returns (address)',
+        'function dexRoutePaused() view returns (bool)',
+      ],
+      ethers.provider
+    );
+    const adapter: string = await module.dexAdapter();
+    if (adapter === constants.AddressZero) return false;
+    // Only exercise the DEX route while it is actually enabled.
+    return !(await module.dexRoutePaused());
+  } catch {
+    return false;
+  }
+}
+
 export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
 }

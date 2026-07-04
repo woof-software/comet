@@ -702,6 +702,11 @@ const config: HardhatUserConfig = {
         deployment: 'wron',
         auxiliaryBase: 'mainnet'
       },
+      { 
+        name: 'mainnet-usdc-dex',
+        network: 'mainnet',
+        deployment: 'usdc-dex'
+      }
     ],
   },
 
