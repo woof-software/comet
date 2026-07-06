@@ -5,7 +5,7 @@ import { exp, proposal } from '../../../../src/deploy';
 import { Contract } from 'ethers';
 
 const OLD_FRANCHISER_FACTORY = '0xE696d89f4F378772f437F01FaaD70240abdf1854';
-const FRANCHISER_POOL_FACTORY = '0x219a69E60Eaf34A7658848664b907Fa6d72B5CEb';
+const FRANCHISER_POOL_FACTORY = '0x8421c35b1235741e00d2475f365A434d4b476A19';
 
 const poolConfig = {
   coordinator: '0x9825413dd3875E01B34451A7A7e066b2225a234E',
@@ -143,6 +143,10 @@ Further detailed information can be found in the [Franchiser repository](https:/
 ## Note
 
 The migration preserves delegate voting power while moving administration to a more flexible operating model.
+
+## Audit
+
+The Franchiser V2 code has been audited by ChainSecurity, and the audit report is available [here](https://www.chainsecurity.com/security-audit/compound-franchiser-v2).
 
 ## Proposal actions
 
