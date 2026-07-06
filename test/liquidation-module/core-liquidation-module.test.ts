@@ -11,23 +11,13 @@ import {
   LiquidationModule__factory,
 } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-import { ContractTransaction } from 'ethers';
-import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 
 describe('core liquidation module', function () {
-  // liquidationModeToggle is gated by OZ AccessControl's PAUSER_ROLE.
-  const PAUSER_ROLE = ethers.utils.id('PAUSER_ROLE');
-  const missingRole = (account: string, role: string) =>
-    `AccessControl: account ${account.toLowerCase()} is missing role ${role}`;
-
   let comet: CometInterface;
   let liquidationModule: LiquidationModule;
 
   let governor: SignerWithAddress;
-  let pauser: SignerWithAddress;
   let alice: SignerWithAddress;
-
-  let snapshot: SnapshotRestorer;
 
   before(async () => {
     const signers = await ethers.getSigners();
@@ -36,7 +26,6 @@ describe('core liquidation module', function () {
     const executors = [signers[3].address, signers[4].address, signers[5].address];
     const pauserSigners = [signers[6], signers[7], signers[8]];
     const pausers = pauserSigners.map((s) => s.address);
-    pauser = pauserSigners[0];
     alice = signers[9];
 
     governor = await ethers.getImpersonatedSigner('0x6d903f6003cca6255D85CcA4D3B5E5146dC33925');
@@ -134,8 +123,6 @@ describe('core liquidation module', function () {
     await cometContract.deployed();
     await cometContract.initializeStorage();
     comet = (await ethers.getContractAt('CometInterface', cometContract.address)) as CometInterface;
-
-    snapshot = await takeSnapshot();
   });
 
   context('constructor', function () {
@@ -168,73 +155,7 @@ describe('core liquidation module', function () {
     });
   });
 
-  context('liquidationModeToggle', function () {
-    context('when partial liquidation is enabled (default state)', function () {
-      let toggleTx: ContractTransaction;
-
-      after(async () => await snapshot.restore());
-
-      it('multisig toggles partialLiquidationEnabled from true to false', async () => {
-        toggleTx = await liquidationModule.connect(pauser).liquidationModeToggle(false);
-        await expect(toggleTx).to.not.be.reverted;
-      });
-
-      it('emits LiquidationModeToggled with the new value', async () => {
-        await expect(toggleTx).to.emit(liquidationModule, 'LiquidationModeToggled').withArgs(false);
-      });
-
-      it('partialLiquidationEnabled is now false', async () => {
-        expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
-      });
-    });
-
-    context('when partial liquidation is disabled', function () {
-      let toggleTx: ContractTransaction;
-
-      before(async () => {
-        // Establish the disabled precondition so the toggle under test flips it back on.
-        await liquidationModule.connect(pauser).liquidationModeToggle(false);
-      });
-
-      after(async () => await snapshot.restore());
-
-      it('multisig toggles partialLiquidationEnabled from false to true', async () => {
-        toggleTx = await liquidationModule.connect(pauser).liquidationModeToggle(true);
-        await expect(toggleTx).to.not.be.reverted;
-      });
-
-      it('emits LiquidationModeToggled with the new value', async () => {
-        await expect(toggleTx).to.emit(liquidationModule, 'LiquidationModeToggled').withArgs(true);
-      });
-
-      it('partialLiquidationEnabled is now true', async () => {
-        expect(await liquidationModule.partialLiquidationEnabled()).to.be.true;
-      });
-    });
-
-    context('revert when', function () {
-      after(async () => await snapshot.restore());
-
-      it('caller is not a pauser', async () => {
-        await expect(liquidationModule.connect(alice).liquidationModeToggle(false))
-          .to.be.revertedWith(missingRole(alice.address, PAUSER_ROLE));
-      });
-
-      it('the wanted value is already set (true -> true)', async () => {
-        await expect(liquidationModule.connect(pauser).liquidationModeToggle(true))
-          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
-      });
-
-      it('the wanted value is already set (false -> false)', async () => {
-        await liquidationModule.connect(pauser).liquidationModeToggle(false);
-
-        await expect(liquidationModule.connect(pauser).liquidationModeToggle(false))
-          .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
-      });
-    });
-  });
-
-  context('liquidate', function () {
+  context('absorb', function () {
     context('revert when', function () {
       it('caller is not the comet', async () => {
         // sanity check 

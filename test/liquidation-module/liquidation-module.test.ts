@@ -1,20 +1,24 @@
-import { ethers, exp, expect, SnapshotRestorer, takeSnapshot, setBalance } from '../helpers';
+import { ConfiguratorAndProtocol, ethers, exp, expect, SnapshotRestorer, takeSnapshot, setBalance, makeConfigurator, deployEmptyDexAdapter } from '../helpers';
 import {
+  CometHarnessInterfaceExtendedAssetList,
   CometInterface,
   CometWithExtendedAssetList__factory,
   CometExtAssetList__factory,
+  Configurator,
   AssetListFactory__factory,
   SimplePriceFeed__factory,
   FaucetToken__factory,
   OneInchV6Adapter__factory,
   LiquidationModule,
   LiquidationModule__factory,
+  LiquidationModuleForComet,
+  LiquidationModuleForComet__factory,
 } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
 
 describe('liquidation module', function () {
-  const INCENTIVE_BPS: bigint = BigInt(500);
+  const INCENTIVE_BPS = BigInt(500);
   const ZERO = ethers.constants.AddressZero;
 
   // Parameter setters are gated by OZ AccessControl's MULTISIG_ROLE.
@@ -25,10 +29,19 @@ describe('liquidation module', function () {
   let comet: CometInterface;
   let liquidationModule: LiquidationModule;
   let LiquidationModuleFactory: LiquidationModule__factory;
+  let LiquidationModuleForCometFactory: LiquidationModuleForComet__factory;
   let dexAdapter: string;
+  let protocol: ConfiguratorAndProtocol;
+  let configuratorAsProxy: Configurator;
+  let cometAsProxy: CometHarnessInterfaceExtendedAssetList;
+  let cometProxyAddress: string;
+  let configuratorProxyAddress: string;
+  let configuratorBaseToken: string;
 
   let governor: SignerWithAddress;
   let alice: SignerWithAddress;
+  let moduleExecutor: SignerWithAddress;
+  let modulePauser: SignerWithAddress;
 
   let snapshot: SnapshotRestorer;
 
@@ -36,6 +49,8 @@ describe('liquidation module', function () {
     const signers = await ethers.getSigners();
     const [deployer, pauseGuardian] = signers;
     alice = signers[2];
+    moduleExecutor = signers[9];
+    modulePauser = signers[10];
     const executors = [signers[3].address, signers[4].address, signers[5].address];
     const pausers = [signers[6].address, signers[7].address, signers[8].address];
 
@@ -87,6 +102,7 @@ describe('liquidation module', function () {
 
     // Liquidation module (bound to the Comet below via initializeStorage)
     LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
+    LiquidationModuleForCometFactory = (await ethers.getContractFactory('LiquidationModuleForComet')) as LiquidationModuleForComet__factory;
     liquidationModule = await LiquidationModuleFactory.deploy(
       dexAdapter,
       governor.address, // multisig == DAO for this suite
@@ -136,6 +152,20 @@ describe('liquidation module', function () {
     await cometContract.initializeStorage();
     comet = (await ethers.getContractAt('CometInterface', cometContract.address)) as CometInterface;
 
+    protocol = await makeConfigurator({
+      base: 'USDC',
+      assets: {
+        USDC: { decimals: 6, initialPrice: 1 },
+        COMP: { decimals: 18, initialPrice: 100 },
+      },
+      skipInitStorage: true,
+    });
+    configuratorAsProxy = protocol.configurator.attach(protocol.configuratorProxy.address);
+    cometAsProxy = protocol.comet.attach(protocol.cometProxy.address);
+    cometProxyAddress = protocol.cometProxy.address;
+    configuratorProxyAddress = configuratorAsProxy.address;
+    configuratorBaseToken = protocol.tokens.USDC.address;
+
     snapshot = await takeSnapshot();
   });
 
@@ -156,11 +186,124 @@ describe('liquidation module', function () {
       });
     });
 
-      it('IncentiveBps exceeds maximum bps', async () => {
-        await expect(LiquidationModuleFactory.deploy(dexAdapter, governor.address, [governor.address], [governor.address], 1_001))
-          .to.be.revertedWithCustomError(liquidationModule, 'InvalidIncentiveBps');
+    it('IncentiveBps exceeds maximum bps', async () => {
+      await expect(LiquidationModuleFactory.deploy(dexAdapter, governor.address, [moduleExecutor.address], [modulePauser.address], 1_001))
+        .to.be.revertedWithCustomError(liquidationModule, 'InvalidIncentiveBps');
+    });
+
+    context('revert when', function () {
+      it('comet address is zero for LiquidationModuleForComet', async () => {
+        await expect(
+          LiquidationModuleForCometFactory.deploy(
+            dexAdapter,
+            governor.address,
+            [moduleExecutor.address],
+            [modulePauser.address],
+            INCENTIVE_BPS,
+            ZERO
+          )
+        ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
     });
+  });
+
+  context('manual setAssetList before Comet upgrade', function () {
+    context('base token is set and asset list is zero', function () {
+      let module: LiquidationModuleForComet;
+
+      before(async () => {
+        const adapter = await deployEmptyDexAdapter([protocol.tokens.COMP.address]);
+
+        module = await LiquidationModuleForCometFactory.deploy(
+          adapter.address,
+          protocol.multisig.address,
+          [protocol.executors[0].address],
+          [protocol.pausers[0].address],
+          INCENTIVE_BPS,
+          cometProxyAddress
+        );
+        await module.deployed();
+      });
+
+      after(async () => await snapshot.restore());
+
+      it('reverts before storing module settings because the adapter cannot read a zero asset list', async () => {
+        await expect(module.setAssetList(ZERO, 1, configuratorBaseToken)).to.be.revertedWithoutReason;
+      });
+    });
+
+    context('asset list is set and base token is zero', function () {
+      let module: LiquidationModuleForComet;
+      let assetList: string;
+      let manualSetAssetListTx: ContractTransaction;
+      let setLiquidationModuleTx: ContractTransaction;
+
+      before(async () => {
+        const adapter = await deployEmptyDexAdapter([protocol.tokens.COMP.address]);
+
+        module = await LiquidationModuleForCometFactory.deploy(
+          adapter.address,
+          protocol.multisig.address,
+          [protocol.executors[0].address],
+          [protocol.pausers[0].address],
+          INCENTIVE_BPS,
+          cometProxyAddress
+        );
+        await module.deployed();
+        assetList = await cometAsProxy.assetList();
+      });
+
+      after(async () => await snapshot.restore());
+
+      it('manually sets asset list with a zero base token', async () => {
+        manualSetAssetListTx = await module.setAssetList(assetList, 1, ZERO);
+        await expect(manualSetAssetListTx).to.not.be.reverted;
+      });
+
+      it('stores the asset list on the module', async () => {
+        expect(await module.assetList()).to.equal(assetList);
+      });
+
+      it('keeps the base token unset on the module', async () => {
+        expect(await module.baseToken()).to.equal(ZERO);
+      });
+
+      it('updates the configurator to the new module', async () => {
+        setLiquidationModuleTx = await configuratorAsProxy.setLiquidationModule(cometProxyAddress, module.address);
+        await expect(setLiquidationModuleTx).to.not.be.reverted;
+      });
+
+      it('reverts during Comet upgrade because the module is already set', async () => {
+        await expect(
+          protocol.proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress)
+        ).to.be.revertedWithCustomError(module, 'AlreadySet');
+      });
+    });
+
+    context('asset list and base token are zero', function () {
+      let module: LiquidationModuleForComet;
+
+      before(async () => {
+        const adapter = await deployEmptyDexAdapter([protocol.tokens.COMP.address]);
+
+        module = await LiquidationModuleForCometFactory.deploy(
+          adapter.address,
+          protocol.multisig.address,
+          [protocol.executors[0].address],
+          [protocol.pausers[0].address],
+          INCENTIVE_BPS,
+          cometProxyAddress
+        );
+        await module.deployed();
+      });
+
+      after(async () => await snapshot.restore());
+
+      it('reverts before storing module settings because the adapter cannot read a zero asset list', async () => {
+        await expect(module.setAssetList(ZERO, 1, ZERO)).to.be.revertedWithoutReason;
+      });
+    });
+  });
 
   context('setIncentiveBps', function () {
     const NEW_INCENTIVE_BPS = 700;
