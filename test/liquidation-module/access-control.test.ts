@@ -18,7 +18,7 @@ import { takeSnapshot, SnapshotRestorer } from '../helpers/snapshot';
 //                               account that can grant/revoke roles.
 //   - MULTISIG_ROLE: controls parameter setters.
 //   - EXECUTOR_ROLE: the only accounts allowed to call the keeper liquidate() entry point.
-//   - PAUSER_ROLE:   toggle the DEX pause switch.
+//   - PAUSER_ROLE:   toggle the DEX pause switch and pause keeper liquidations.
 // This file covers the constructor wiring and the DAO-only role-management surface (grantRole / revokeRole).
 describe('liquidation module access control', function () {
   // Any non-zero address satisfies the DEX adapter check; the adapter itself is not exercised here.
@@ -173,6 +173,10 @@ describe('liquidation module access control', function () {
         expect(await liquidationModule.hasRole(ADMIN_ROLE, dao.address)).to.be.true;
       });
 
+      it('grants the DAO the pauser role', async () => {
+        expect(await liquidationModule.hasRole(PAUSER_ROLE, dao.address)).to.be.true;
+      });
+
       it('grants the Multisig the multisig role', async () => {
         expect(await liquidationModule.hasRole(MULTISIG_ROLE, multisig.address)).to.be.true;
       });
@@ -211,6 +215,24 @@ describe('liquidation module access control', function () {
         await expect(
           LiquidationModuleFactory.deploy(dexAdapter, multisig.address, executors, [], INCENTIVE_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
+      });
+
+      it('the Executors list exceeds the uint8 max length', async () => {
+        // 256 > type(uint8).max (255). The length guard reverts before the per-element loop, so the
+        // zero-address entries never reach the ZeroAddress check.
+        const tooManyExecutors = new Array(256).fill(ZERO);
+        await expect(
+          LiquidationModuleFactory.deploy(dexAdapter, multisig.address, tooManyExecutors, pausers, INCENTIVE_BPS)
+        ).to.be.revertedWithCustomError(liquidationModule, 'ArrayLengthMismatch');
+      });
+
+      it('the Pausers list exceeds the uint8 max length', async () => {
+        // 256 > type(uint8).max (255). The length guard reverts before the per-element loop, so the
+        // zero-address entries never reach the ZeroAddress check.
+        const tooManyPausers = new Array(256).fill(ZERO);
+        await expect(
+          LiquidationModuleFactory.deploy(dexAdapter, multisig.address, executors, tooManyPausers, INCENTIVE_BPS)
+        ).to.be.revertedWithCustomError(liquidationModule, 'ArrayLengthMismatch');
       });
 
       it('the Executors list has duplicates', async () => {
@@ -308,6 +330,20 @@ describe('liquidation module access control', function () {
       });
     });
 
+    // OZ AccessControl performs no zero-address validation on grantRole, so the role can be granted
+    // to the zero address.
+    describe('edge cases', function () {
+      after(async () => await snapshot.restore());
+
+      it('the DAO grants the Executor role to the zero address', async () => {
+        await expect(liquidationModule.connect(dao).grantRole(EXECUTOR_ROLE, ZERO)).to.not.be.reverted;
+      });
+
+      it('marks the zero address as an Executor', async () => {
+        expect(await liquidationModule.hasRole(EXECUTOR_ROLE, ZERO)).to.be.true;
+      });
+    });
+
     describe('revert when', function () {
       it('a non-DAO grants the role', async () => {
         await expect(liquidationModule.connect(other).grantRole(EXECUTOR_ROLE, fresh1.address))
@@ -366,6 +402,20 @@ describe('liquidation module access control', function () {
       });
     });
 
+    // OZ AccessControl performs no zero-address validation on grantRole, so the role can be granted
+    // to the zero address.
+    describe('edge cases', function () {
+      after(async () => await snapshot.restore());
+
+      it('the DAO grants the Pauser role to the zero address', async () => {
+        await expect(liquidationModule.connect(dao).grantRole(PAUSER_ROLE, ZERO)).to.not.be.reverted;
+      });
+
+      it('marks the zero address as a Pauser', async () => {
+        expect(await liquidationModule.hasRole(PAUSER_ROLE, ZERO)).to.be.true;
+      });
+    });
+
     describe('revert when', function () {
       it('a non-DAO grants the role', async () => {
         await expect(liquidationModule.connect(other).grantRole(PAUSER_ROLE, fresh1.address))
@@ -383,9 +433,30 @@ describe('liquidation module access control', function () {
                           setDexRoutePaused
   //////////////////////////////////////////////////////////////*/
 
-  // The DEX pause switch is Pauser-gated; toggling it to the value it already holds reverts.
+  // The DEX pause switch is gated by PAUSER_ROLE, held by both the Pausers and the DAO; toggling it
+  // to the value it already holds reverts.
   describe('setDexRoutePaused', function () {
-    describe('happy path', function () {
+    // The DAO holds PAUSER_ROLE, so it can toggle the switch directly.
+    describe('happy path (dao caller)', function () {
+      let pauseTx: ContractTransaction;
+
+      after(async () => await snapshot.restore());
+
+      it('the DAO pauses the DEX route', async () => {
+        pauseTx = await liquidationModule.connect(dao).setDexRoutePaused(true);
+        await expect(pauseTx).to.not.be.reverted;
+      });
+
+      it('emits DexPausedSet', async () => {
+        await expect(pauseTx).to.emit(liquidationModule, 'DexPausedSet').withArgs(true);
+      });
+
+      it('marks the DEX route as paused', async () => {
+        expect(await liquidationModule.dexRoutePaused()).to.be.true;
+      });
+    });
+
+    describe('happy path (pauser caller)', function () {
       let pauseTx: ContractTransaction;
 
       after(async () => await snapshot.restore());
@@ -430,15 +501,36 @@ describe('liquidation module access control', function () {
                         liquidationModeToggle
   //////////////////////////////////////////////////////////////*/
 
-  // The liquidation mode is Multisig-gated; toggling it to the value it already holds reverts.
+  // The liquidation mode is gated by PAUSER_ROLE, held by both the Pausers and the DAO; toggling it
+  // to the value it already holds reverts.
   describe('liquidationModeToggle', function () {
-    describe('happy path', function () {
+    // The DAO holds PAUSER_ROLE, so it can toggle the liquidation mode directly.
+    describe('happy path (dao caller)', function () {
       let toggleTx: ContractTransaction;
 
       after(async () => await snapshot.restore());
 
-      it('the Multisig disables partial liquidation', async () => {
-        toggleTx = await liquidationModule.connect(multisig).liquidationModeToggle(false);
+      it('the DAO disables partial liquidation', async () => {
+        toggleTx = await liquidationModule.connect(dao).liquidationModeToggle(false);
+        await expect(toggleTx).to.not.be.reverted;
+      });
+
+      it('emits LiquidationModeToggled', async () => {
+        await expect(toggleTx).to.emit(liquidationModule, 'LiquidationModeToggled').withArgs(false);
+      });
+
+      it('disables partial liquidation', async () => {
+        expect(await liquidationModule.partialLiquidationEnabled()).to.be.false;
+      });
+    });
+
+    describe('happy path (pauser caller)', function () {
+      let toggleTx: ContractTransaction;
+
+      after(async () => await snapshot.restore());
+
+      it('a Pauser disables partial liquidation', async () => {
+        toggleTx = await liquidationModule.connect(pauser).liquidationModeToggle(false);
         await expect(toggleTx).to.not.be.reverted;
       });
 
@@ -454,20 +546,20 @@ describe('liquidation module access control', function () {
     describe('revert when', function () {
       after(async () => await snapshot.restore());
 
-      it('the caller is not the Multisig', async () => {
+      it('the caller is not a Pauser', async () => {
         await expect(liquidationModule.connect(other).liquidationModeToggle(false))
-          .to.be.revertedWith(missingRole(other.address, MULTISIG_ROLE));
+          .to.be.revertedWith(missingRole(other.address, PAUSER_ROLE));
       });
 
       it('partial liquidation is already enabled', async () => {
         // partialLiquidationEnabled starts true, so enabling it again reverts.
-        await expect(liquidationModule.connect(multisig).liquidationModeToggle(true))
+        await expect(liquidationModule.connect(pauser).liquidationModeToggle(true))
           .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
       });
 
       it('partial liquidation is already disabled', async () => {
-        await liquidationModule.connect(multisig).liquidationModeToggle(false);
-        await expect(liquidationModule.connect(multisig).liquidationModeToggle(false))
+        await liquidationModule.connect(pauser).liquidationModeToggle(false);
+        await expect(liquidationModule.connect(pauser).liquidationModeToggle(false))
           .to.be.revertedWithCustomError(liquidationModule, 'AlreadySet');
       });
     });
