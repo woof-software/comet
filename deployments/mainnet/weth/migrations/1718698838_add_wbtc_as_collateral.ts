@@ -30,7 +30,7 @@ export default migration('1718698838_add_wbtc_as_collateral', {
       'WBTC',
       WBTC_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     const wbtcPricefeed = await deploymentManager.existing(
@@ -98,7 +98,7 @@ export default migration('1718698838_add_wbtc_as_collateral', {
       'WBTC',
       WBTC_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     
     const wbtcAssetConfig = {
