@@ -8,7 +8,6 @@ import { ICometLiquidationInterface } from "../interfaces/ICometLiquidationInter
 import { IPriceFeed } from "../IPriceFeed.sol";
 import { IAssetList } from "../IAssetList.sol";
 
-import { CometExtInterface } from "../CometExtInterface.sol";
 import { CometMath } from "../CometMath.sol";
 
 import { LiquidationAccessControl } from "./LiquidationAccessControl.sol";
