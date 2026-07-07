@@ -31,7 +31,20 @@ const oldFranchisers = [
   '0x78BE1f3dd735bB4F20decb62A1beCE31DA452126',
 ];
 
+const delegateesToSkip = [
+  '0x13BDaE8c5F0fC40231F0E6A4ad70196F59138548', // Michigan Blockchain | 29,999.88 COMP
+  '0x4f894Bfc9481110278C356adE1473eBe2127Fd3C', // Reservoir / AlphaGrowth | 50,000.00 COMP
+  '0x72C58877ef744b86F6ef416a3bE26Ec19d587708', // Sharp | 1,178.70 COMP
+];
+
+const delegateesToReallocate = [
+  { delegatee: '0x070341aA5Ed571f0FB2c4a5641409B1A46b4961b', amount: exp(8262.46, 18) }, // FranklinDAO
+  { delegatee: '0xc5547B4907418C2EC0C2A95beC6fEE8354657759', amount: exp(40000, 18) }, // DAOplomats
+  { delegatee: '0x1F3D3A7A9c548bE39539b39D7400302753E20591', amount: exp(32916.12, 18) }, // blockful
+];
+
 const delegatePowerBefore: { [delegatee: string]: bigint } = {};
+const delegateesConfig: {delegatee: string, balance: bigint}[] = [];
 
 export default migration('1781520280_setup_franchiser', {
   async prepare() {
@@ -51,7 +64,6 @@ export default migration('1781520280_setup_franchiser', {
     const franchiserPoolFactory = await deploymentManager.existing('franchiserPoolFactory', FRANCHISER_POOL_FACTORY);
 
     let totalBalance = BigInt(0);
-    const delegateesConfig: {delegatee: string, balance: bigint}[] = [];
 
     for (const franchiser of oldFranchisers) {
       const balance = await COMP.balanceOf(franchiser);
@@ -73,7 +85,26 @@ export default migration('1781520280_setup_franchiser', {
 
     trace(`Total balance of old franchisers: ${totalBalance}`);
 
+    // Capture baseline voting power for reallocated delegatees that have no old franchiser (e.g. brand-new delegates).
+    for (const { delegatee } of delegateesToReallocate) {
+      if (!(delegatee in delegatePowerBefore)) {
+        delegatePowerBefore[delegatee] = (await COMP.getCurrentVotes(delegatee)).toBigInt();
+      }
+    }
+
     const delegatees = delegateesConfig.map(({ delegatee }) => delegatee);
+
+    for (const { delegatee, amount } of delegateesToReallocate) {
+      const existing = delegateesConfig.find((c) => c.delegatee === delegatee);
+      if (existing) {
+        existing.balance += amount;
+      } else {
+        delegateesConfig.push({ delegatee, balance: amount });
+      }
+    }
+
+    const delegateesForRenewal = delegateesConfig.filter(({ delegatee }) => !delegateesToSkip.includes(delegatee));
+    trace(`Delegatees for renewal: ${delegateesForRenewal.map(({ delegatee }) => delegatee).join(', ')}`);
 
     const mainnetActions = [
       // 1. Recall COMP tokens from old franchisers back to the timelock
@@ -101,60 +132,60 @@ export default migration('1781520280_setup_franchiser', {
           poolConfig.maxDelegatees,
           poolConfig.freezePeriod,
           poolConfig.amount,
-          delegateesConfig.map(({ delegatee }) => delegatee),
-          delegateesConfig.map(({ balance }) => balance.toString())
+          delegateesForRenewal.map(({ delegatee }) => delegatee),
+          delegateesForRenewal.map(({ balance }) => balance.toString())
         ],
       },
     ];
 
-    const description = `# Migrate to Franchiser V2
+    const description = `# Franchiser Operational Upgrade and Rebalance
 
-## Proposal summary
+## Summary
 
-Woof proposes migrating the current franchiser program to Franchiser V2, which separates funding from day-to-day delegate management while preserving current delegate voting power.
+This proposal upgrades Compound's treasury-delegation (Franchiser) system to a new pool-based architecture and, in the same step, carries out the first scheduled biannual delegate rebalancing under **Proposal 504 — [Compound Delegate Race (Cycle 2)](https://www.comp.xyz/t/compound-delegate-race-cycle-2/7302)**.
 
-Further detailed information can be found in the [Franchiser repository](https://github.com/woof-software/compound-franchiser) and [proposal pull request](https://github.com/compound-finance/comet/pull/1134).
+The total COMP delegated through the program does not change. Existing delegations migrate to the new pool with no interruption to voting power, and the pool reclaimed from under-participating delegates is redistributed to qualified active delegates. COMP remains in Governance-owned contracts throughout.
 
-### Why this change
+## Background
 
-- Governance currently must allocate COMP and choose delegatees in the same proposal.
-- Reassigning delegates requires a full governance cycle.
-- A delegate whose power is being revoked can still vote against that proposal.
-- The new design reduces operational overhead and improves incident response.
+Proposal 504 established a standing six-monthly review of treasury-delegated voting power, with a uniform on-chain participation standard and a defined reallocation procedure. The first review window (Proposals 505–586) has closed and participation has been verified on-chain. The full review, application window, and waterfall are documented on the forum: [comp.xyz/t/7862](https://www.comp.xyz/t/7862).
 
-### New operating model
+## What this proposal does
 
-| Role / Component | Responsibility |
-| --- | --- |
-| FranchiserPoolFactory | Governance entry point for creating, funding, halting, and updating pools. |
-| FranchiserPool | Coordinator and Guardian entry point for delegate management and emergency controls. |
-| Franchiser | Holds delegated COMP for top-level delegatees and preserves the existing subdelegate model. |
-| Governance | Can create and fund pools, halt a pool, and update the coordinator, guardian, delegate cap, or freeze period. |
-| Coordinator | Can delegate, recall, and reassign COMP among top-level delegatees without moving COMP out of the program. |
-| Guardian | Can recall specific delegates, freeze the pool while recalling all delegates, or suspend the Coordinator without recalling delegates. |
+1. **Upgrade.** Migrate the treasury-delegation program to the upgraded Franchiser pool: existing delegations move into a new Governance-funded pool, with the CGWG multisig set as Coordinator and a Guardian set for emergency oversight. Governance retains sole authority to fund, halt, or reclaim the pool in full.
 
-### Safety properties
+2. **Rebalance.** As part of the migration, three delegations that fell below the participation standard are not renewed — releasing **81,178.58 COMP** — which is redistributed to the qualified applicants per the waterfall.
 
-- Frozen pools block Coordinator actions, but Guardian actions remain available.
-- Governance can unfreeze a pool early or let the freeze expire automatically.
-- The minimum freeze period is 10 days, giving Governance time to replace compromised actors or fully shut down the program if needed.
-- Idle COMP remains in the pool, while delegated COMP is held by top-level Franchiser instances.
+**Not renewed — 81,178.58 COMP reclaimed:**
 
-## Note
+| Delegatee | Address | COMP |
+|---|---|---:|
+| Michigan Blockchain | \`0x13BD…8548\` | 29,999.88 |
+| Reservoir / AlphaGrowth | \`0x4f89…fd3c\` | 50,000.00 |
+| Sharp | \`0x72C5…7708\` | 1,178.70 |
 
-The migration preserves delegate voting power while moving administration to a more flexible operating model.
+**Reallocated — 81,178.58 COMP:**
 
-## Audit
+| Delegate | Address | COMP |
+|---|---|---:|
+| FranklinDAO | \`0x0703…961b\` | 8,262.46 |
+| DAOplomats | \`0xc554…7759\` | 40,000.00 |
+| blockful | \`0x1F3D…0591\` | 32,916.12 |
 
-The Franchiser V2 code has been audited by ChainSecurity, and the audit report is available [here](https://www.chainsecurity.com/security-audit/compound-franchiser-v2).
+## The upgraded architecture
 
-## Proposal actions
+The upgrade replaces per-delegation Franchiser deployments with a single pool, split across three role-gated contracts:
 
-The first proposal action recalls COMP from the old franchisers back to the timelock.
+- **FranchiserPoolFactory** — the Governance-only entry point. Governance creates, funds, and can halt a pool; halting recalls all delegates and returns the full COMP balance to the Timelock (the only path for COMP to leave the program).
+- **FranchiserPool** — holds the program's idle COMP. A **Coordinator** (the CGWG multisig) can \`delegate\`, \`recall\`, and \`reassign\` voting power among delegates within Governance-set limits. A separate **Guardian** can emergency-\`recall\` a delegate or \`freeze\` the pool (10-day minimum), but can never move or delegate COMP.
+- **Franchiser** — unchanged from V1: holds delegated COMP and grants voting power to a delegatee (who may name up to one sub-delegate).
 
-The second action approves the FranchiserPoolFactory to transfer COMP on behalf of the timelock.
+Governance (the Timelock) sets each pool's parameters — delegate cap, Coordinator, Guardian, freeze period — and can change them or halt the program at any time by on-chain vote.
 
-The third action creates a new pool for the franchisers, funding it with recalled 610,000 COMP and assigning the same delegatees as before.
+## Guarantees
+
+- **Delegation only, never custody.** COMP stays in Governance-owned contracts at every step (Timelock → pool → Franchiser); no working group, Coordinator, or Guardian ever takes custody of the tokens.
+- **Total set by governance.** This proposal does not change the program's total delegated COMP — it migrates and reallocates the existing pool. Any change to the total returns to an on-chain vote, and Governance can recall or reassign any delegation at any time.
 `;
 
     const txn = await deploymentManager.retry(async () =>
@@ -206,10 +237,24 @@ The third action creates a new pool for the franchisers, funding it with recalle
     // Check that all COMP is used for franchisers and none is left in the pool contract.
     expect(await COMP.balanceOf(pools[0])).to.equal(0);
 
-    // Verify that delegatees have the same voting power captured before migration.
+    // Verify that delegatees have the expected voting power after migration.
     for (const delegatee of Object.keys(delegatePowerBefore)) {
       const delegatePowerAfter = await COMP.getCurrentVotes(delegatee);
-      expect(delegatePowerAfter.toBigInt()).to.equal(delegatePowerBefore[delegatee]);
+      const reallocation = delegateesToReallocate.find(({ delegatee: d }) => d === delegatee);
+
+      if (delegateesToSkip.includes(delegatee)) {
+        // Delegatees that were skipped for reallocation should have 0 voting power after migration.
+        expect(delegatePowerBefore[delegatee] - delegatePowerAfter.toBigInt())
+          .to.equal(delegateesConfig.find(({ delegatee: d }) => d === delegatee)?.balance);
+      }
+      else if (reallocation) {
+        // Delegatees that received a reallocation should gain exactly the reallocated amount.
+        expect(delegatePowerAfter.toBigInt() - delegatePowerBefore[delegatee]).to.equal(reallocation.amount);
+      }
+      else {
+        // Delegatees that were renewed should have the same voting power as before migration.
+        expect(delegatePowerAfter.toBigInt()).to.equal(delegatePowerBefore[delegatee]);
+      }
     }
   },
 });
