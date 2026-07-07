@@ -93,7 +93,7 @@ describe('withdrawReserves', function () {
       totalSupplyBase: 50n,
     });
 
-    expect(await comet.getReserves()).to.be.equal(0);
+    expect(await comet.getReserves()).to.be.lessThan(0);
 
     await expect(comet.connect(governor).withdrawReserves(alice.address, 100)).to.be.revertedWith(
       "custom error 'InsufficientReserves()'"

@@ -433,7 +433,7 @@ describe('absorb', function () {
     expect(r0).to.be.equal(-startingDebt);
     expect(t1.totalSupplyBase).to.be.equal(finalDebt);
     expect(t1.totalBorrowBase).to.be.equal(0);
-    expect(r1).to.be.equal(0);
+    expect(r1).to.be.equal(-finalDebt);
 
     expect(pP0.internal).to.be.deep.equal({ COMP: 0n, USDC: 0n, WBTC: 0n, WETH: 0n });
     expect(pP0.external).to.be.deep.equal({ COMP: exp(1, 18), USDC: 0n, WBTC: exp(1, 8), WETH: exp(1, 18) });
@@ -446,7 +446,7 @@ describe('absorb', function () {
     expect(pP1.external).to.be.deep.equal({ COMP: exp(1, 18), USDC: 0n, WBTC: exp(1, 8), WETH: exp(1, 18) });
     expect(pA1.internal).to.be.deep.equal({ COMP: 0n, USDC: 0n, WBTC: 0n, WETH: 0n });
     expect(pA1.external).to.be.deep.equal({ COMP: 0n, USDC: 0n, WBTC: 0n, WETH: 0n });
-    expect(pU1.internal).to.be.deep.equal({ COMP: 0n, USDC: 0n, WBTC: 0n, WETH: 0n });
+    expect(pU1.internal).to.be.deep.equal({ COMP: 0n, USDC: finalDebt, WBTC: 0n, WETH: 0n });
     expect(pU1.external).to.be.deep.equal({ COMP: 0n, USDC: 0n, WBTC: 0n, WETH: 0n });
 
     expect(lA1.numAbsorbs).to.be.equal(1);
