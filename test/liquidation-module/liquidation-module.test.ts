@@ -28,6 +28,8 @@ describe('liquidation module', function () {
 
   let comet: CometInterface;
   let liquidationModule: LiquidationModule;
+  let moduleForComet: LiquidationModuleForComet;
+  let moduleAssetList: string;
   let LiquidationModuleFactory: LiquidationModule__factory;
   let LiquidationModuleForCometFactory: LiquidationModuleForComet__factory;
   let dexAdapter: string;
@@ -166,6 +168,19 @@ describe('liquidation module', function () {
     configuratorProxyAddress = configuratorAsProxy.address;
     configuratorBaseToken = protocol.tokens.USDC.address;
 
+    // A fresh LiquidationModuleForComet used to exercise the manual setAssetList initializer.
+    const moduleAdapter = await deployEmptyDexAdapter([protocol.tokens.COMP.address]);
+    moduleForComet = await LiquidationModuleForCometFactory.deploy(
+      moduleAdapter.address,
+      protocol.multisig.address,
+      [protocol.executors[0].address],
+      [protocol.pausers[0].address],
+      INCENTIVE_BPS,
+      cometProxyAddress
+    );
+    await moduleForComet.deployed();
+    moduleAssetList = await cometAsProxy.assetList();
+
     snapshot = await takeSnapshot();
   });
 
@@ -207,100 +222,63 @@ describe('liquidation module', function () {
     });
   });
 
+  // setAssetList is the one-shot manual initializer for a fresh LiquidationModuleForComet.
+  // It validates each argument is non-zero, and once stored it makes the subsequent
+  // Comet-driven initialization (during a proxy upgrade) revert with AlreadySet.
   context('manual setAssetList before Comet upgrade', function () {
-    context('base token is set and asset list is zero', function () {
-      let module: LiquidationModuleForComet;
-
-      before(async () => {
-        const adapter = await deployEmptyDexAdapter([protocol.tokens.COMP.address]);
-
-        module = await LiquidationModuleForCometFactory.deploy(
-          adapter.address,
-          protocol.multisig.address,
-          [protocol.executors[0].address],
-          [protocol.pausers[0].address],
-          INCENTIVE_BPS,
-          cometProxyAddress
-        );
-        await module.deployed();
+    // The reverting calls do not mutate state, so the module deployed in the outer `before`
+    // is reused by the happy-path context below; the snapshot is restored there.
+    context('revert when', function () {
+      it('asset list is zero', async () => {
+        await expect(moduleForComet.setAssetList(ZERO, 1, configuratorBaseToken))
+          .to.be.revertedWithCustomError(moduleForComet, 'ZeroAddress');
       });
 
-      after(async () => await snapshot.restore());
+      it('numAssets is zero', async () => {
+        await expect(moduleForComet.setAssetList(moduleAssetList, 0, configuratorBaseToken))
+          .to.be.revertedWithCustomError(moduleForComet, 'InvalidNumAssets');
+      });
 
-      it('reverts before storing module settings because the adapter cannot read a zero asset list', async () => {
-        await expect(module.setAssetList(ZERO, 1, configuratorBaseToken)).to.be.revertedWithoutReason;
+      it('base token is zero', async () => {
+        await expect(moduleForComet.setAssetList(moduleAssetList, 1, ZERO))
+          .to.be.revertedWithCustomError(moduleForComet, 'ZeroAddress');
+      });
+
+      // The address check is evaluated before the numAssets check.
+      it('all values are zero', async () => {
+        await expect(moduleForComet.setAssetList(ZERO, 0, ZERO))
+          .to.be.revertedWithCustomError(moduleForComet, 'ZeroAddress');
       });
     });
 
-    context('asset list is set and base token is zero', function () {
-      let module: LiquidationModuleForComet;
-      let assetList: string;
-      let manualSetAssetListTx: ContractTransaction;
-      let setLiquidationModuleTx: ContractTransaction;
-
-      before(async () => {
-        const adapter = await deployEmptyDexAdapter([protocol.tokens.COMP.address]);
-
-        module = await LiquidationModuleForCometFactory.deploy(
-          adapter.address,
-          protocol.multisig.address,
-          [protocol.executors[0].address],
-          [protocol.pausers[0].address],
-          INCENTIVE_BPS,
-          cometProxyAddress
-        );
-        await module.deployed();
-        assetList = await cometAsProxy.assetList();
-      });
-
+    context('setAssetList manually initialized and reverts during comet upgrade', function () {
       after(async () => await snapshot.restore());
 
-      it('manually sets asset list with a zero base token', async () => {
-        manualSetAssetListTx = await module.setAssetList(assetList, 1, ZERO);
-        await expect(manualSetAssetListTx).to.not.be.reverted;
+      it('manually initializes the asset list', async () => {
+        await expect(moduleForComet.setAssetList(moduleAssetList, 1, configuratorBaseToken)).to.not.be.reverted;
       });
 
       it('stores the asset list on the module', async () => {
-        expect(await module.assetList()).to.equal(assetList);
+        expect(await moduleForComet.assetList()).to.equal(moduleAssetList);
       });
 
-      it('keeps the base token unset on the module', async () => {
-        expect(await module.baseToken()).to.equal(ZERO);
+      it('stores numAssets on the module', async () => {
+        expect(await moduleForComet.numAssets()).to.equal(1);
+      });
+
+      it('stores the base token on the module', async () => {
+        expect(await moduleForComet.baseToken()).to.equal(configuratorBaseToken);
       });
 
       it('updates the configurator to the new module', async () => {
-        setLiquidationModuleTx = await configuratorAsProxy.setLiquidationModule(cometProxyAddress, module.address);
-        await expect(setLiquidationModuleTx).to.not.be.reverted;
+        await expect(configuratorAsProxy.setLiquidationModule(cometProxyAddress, moduleForComet.address)).to.not.be.reverted;
       });
 
+      // Comet's upgrade path calls setAssetList again, which reverts because the module is already initialized.
       it('reverts during Comet upgrade because the module is already set', async () => {
         await expect(
           protocol.proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress)
-        ).to.be.revertedWithCustomError(module, 'AlreadySet');
-      });
-    });
-
-    context('asset list and base token are zero', function () {
-      let module: LiquidationModuleForComet;
-
-      before(async () => {
-        const adapter = await deployEmptyDexAdapter([protocol.tokens.COMP.address]);
-
-        module = await LiquidationModuleForCometFactory.deploy(
-          adapter.address,
-          protocol.multisig.address,
-          [protocol.executors[0].address],
-          [protocol.pausers[0].address],
-          INCENTIVE_BPS,
-          cometProxyAddress
-        );
-        await module.deployed();
-      });
-
-      after(async () => await snapshot.restore());
-
-      it('reverts before storing module settings because the adapter cannot read a zero asset list', async () => {
-        await expect(module.setAssetList(ZERO, 1, ZERO)).to.be.revertedWithoutReason;
+        ).to.be.revertedWithCustomError(moduleForComet, 'AlreadySet');
       });
     });
   });
