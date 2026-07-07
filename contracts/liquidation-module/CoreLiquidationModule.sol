@@ -70,7 +70,9 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
         ///      or via update by the same Comet (thus address of the comet is already set via constructor)
         if (address(assetList) != address(0) || address(baseToken) != address(0)) revert AlreadySet();
 
-        /// @dev we dropped sanity checks as those are parameters directly from Comet's constructor
+        if (_assetList == address(0) || _baseToken == address(0)) revert ZeroAddress();
+        if (_numAssets == 0) revert InvalidNumAssets();
+
         assetList = IAssetList(_assetList);
         numAssets = _numAssets;
         baseToken = IERC20(_baseToken);
