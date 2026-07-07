@@ -17,4 +17,7 @@ interface ICoreLiquidationModuleErrors {
 
     /// @notice Reverts when collateral that must be checked for borrower solvency is deactivated.
     error TokenIsDeactivated(address asset);
+
+    /// @notice Reverts when the number of assets is set to zero.
+    error InvalidNumAssets();
 }
