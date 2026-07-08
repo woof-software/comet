@@ -16,7 +16,6 @@ export default async function relayMessage(
   tenderlyLogs?: any[]
 ) {
   const bridgeNetwork = bridgeDeploymentManager.network;
-  if(bridgeNetwork === governanceDeploymentManager.network) return; // no need to relay if the proposal is on the same network
   console.log(`Relaying messages from ${governanceDeploymentManager.network} -> ${bridgeNetwork}`);
   let proposal;
   switch (bridgeNetwork) {

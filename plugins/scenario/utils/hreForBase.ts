@@ -73,8 +73,6 @@ function getBlockRollback(base: ForkSpec) {
   }
   else if (base.network === 'arbitrum') {
     return undefined;
-  } else if (base.network === 'sepolia') {
-    return undefined;
   }
   else if (base.network === 'unichain') {
     return 0;
