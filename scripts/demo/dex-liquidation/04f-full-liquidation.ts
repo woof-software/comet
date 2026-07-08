@@ -47,7 +47,7 @@ async function main() {
 
     const collateralAfter = await comet.collateralBalanceOf(borrower.address, wethInfo.asset);
     const debtAfter = await comet.borrowBalanceOf(borrower.address);
-    console.log(`\n  Collateral seized: ${fmtToken(collateralBefore.sub(collateralAfter), 18, 'WETH')} of ${fmtToken(collateralBefore, 18, 'WETH')}  (FULL balance)`);
+    console.log(`\n  Collateral swapped into USDC via 1Inch: ${fmtToken(collateralBefore.sub(collateralAfter), 18, 'WETH')} of ${fmtToken(collateralBefore, 18, 'WETH')}  (FULL balance)`);
     console.log(`  Debt cleared:      ${fmtToken(debtBefore.sub(debtAfter), 6, 'USDC')}`);
 
     await reportPosition(comet, borrower.address, 'After full liquidation');

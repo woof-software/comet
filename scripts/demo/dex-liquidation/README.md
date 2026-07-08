@@ -51,7 +51,8 @@ npx hardhat run deployments/localhost/usdc-dex/deploy.ts --network localhost
 Set up a WETH + WBTC + LINK + UNI position and drop several prices so it's liquidatable but still a partial
 liquidation:
 ```bash
-npx hardhat run scripts/demo/02a-supply-and-borrow-multi.ts --network localhost   # deposits all 4 collaterals & borrows
+npx hardhat run scripts/demo/02a-supply-multi.ts --network localhost   # deposits all 4 collaterals
+npx hardhat run scripts/demo/02a-borrow-multi.ts --network localhost   # borrows ~99% of the combined limit
 WETH_PRICE=1250 WBTC_PRICE=47000 LINK_PRICE=8 UNI_PRICE=6 \
   npx hardhat run scripts/demo/03-drop-price.ts             --network localhost    # drop 4 prices → liquidatable
 npx hardhat run scripts/demo/dex-liquidation/04e-liquidate-multi-1inch.ts   --network localhost   # seizes WETH+WBTC+LINK on 1inch, leaves UNI

@@ -33,7 +33,7 @@ async function main() {
     const reservesAfter = await comet.getCollateralReserves(wethInfo.asset);
     const collateralAfter = await comet.collateralBalanceOf(borrower.address, wethInfo.asset);
     const debtAfter = await comet.borrowBalanceOf(borrower.address);
-    console.log(`\n  Collateral seized into reserves: ${fmtToken(collateralBefore.sub(collateralAfter), 18, 'WETH')}`);
+    console.log(`\n  Collateral swapped into USDC via 1Inch: ${fmtToken(collateralBefore.sub(collateralAfter), 18, 'WETH')}`);
     console.log(`  Protocol WETH reserves:          ${fmtToken(reservesBefore, 18, 'WETH')} → ${fmtToken(reservesAfter, 18, 'WETH')}`);
     console.log(`  Debt written down:               ${fmtToken(debtBefore.sub(debtAfter), 6, 'USDC')}`);
 

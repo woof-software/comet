@@ -25,7 +25,7 @@ async function main() {
 
     await reportPosition(comet, borrower.address, 'Before liquidation');
     if (!(await comet.isLiquidatable(borrower.address))) {
-      console.log('\nBorrower is not liquidatable yet — run 02a-supply-and-borrow-multi then 03-drop-price (drop several collaterals) first.');
+      console.log('\nBorrower is not liquidatable yet — run 02a-supply-multi + 02a-borrow-multi, then 03-drop-price (drop several collaterals) first.');
       return;
     }
 
@@ -79,8 +79,11 @@ async function main() {
 
     console.log('\nSeized & swapped into USDC:');
     for (const x of seized) {
+      const beforeBal = before.get(x.asset)!;
       const after = await comet.collateralBalanceOf(borrower.address, x.asset);
-      console.log(`  ${x.symbol}: ${fmtToken(before.get(x.asset)!.sub(after), x.decimals, x.symbol)}`);
+      const seizedAmt = beforeBal.sub(after);
+      const pct = beforeBal.isZero() ? 0 : seizedAmt.mul(10000).div(beforeBal).toNumber() / 100;
+      console.log(`  ${x.symbol}: ${fmtToken(seizedAmt, x.decimals, x.symbol)}  (${pct.toFixed(1)}% of balance)`);
     }
     const debtAfter = await comet.borrowBalanceOf(borrower.address);
     console.log(`  Debt repaid: ${fmtToken(debtBefore.sub(debtAfter), 6, 'USDC')}`);
@@ -97,7 +100,7 @@ async function main() {
       untouched.push(fmtToken(bal, info.scale.toString().length - 1, sym));
     }
     if (untouched.length > 0) {
-      console.log(`\n⚖️  Left fully untouched (proves partial liquidation): ${untouched.join(', ')}`);
+      console.log(`\n⚖️  Left fully untouched: ${untouched.join(', ')}`);
     } else {
       console.log('\n⚠️  Every collateral was seized — the price drop was too deep for a partial demo; use a milder 03 drop.');
     }
