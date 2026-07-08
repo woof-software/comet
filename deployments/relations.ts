@@ -56,14 +56,13 @@ const relationConfigMap: RelationConfigMap = {
             // This is a workaround for contracts that don't work in Hardhat fork
 
             // invalid opcode when calling symbol()
-            // Arbitrum-specific known contract mappings
             if (address === '0xd09acb80c1e8f2291862c4978a008791c9167003') {
               return 'tETH';
             }
             if (address === '0x5a7facb970d094b6c7ff1df0ea68d99e6e73cbff') {
               return 'weETH';
             }
-            if (address === '0x87eee96d50fb761ad85b1c982d28a042169d61b1') {
+            if (address.toLowerCase() === '0x87eee96d50fb761ad85b1c982d28a042169d61b1') {
               return 'wrsETH';
             }
             // Mantle-specific known contract mapping
@@ -157,7 +156,7 @@ const relationConfigMap: RelationConfigMap = {
   },
 
   governor: {
-    artifact: 'contracts/IProxy.sol:IProxy',
+    artifact: 'contracts/interfaces/IProxy.sol:IProxy',
     delegates: {
       field: {
         slot: '0x10d6a54a4754c8869d6886b5f5d7fbfa5b4522237ea5c60d11bc4e7a1ff9390b',
@@ -173,15 +172,15 @@ const relationConfigMap: RelationConfigMap = {
     }
   },
   'governor:implementation': {
-    artifact: 'contracts/IGovernorBravo.sol:IGovernorBravo',
+    artifact: 'contracts/interfaces/IGovernorBravo.sol:IGovernorBravo',
   },
 
   COMP: {
-    artifact: 'contracts/IComp.sol:IComp',
+    artifact: 'contracts/interfaces/IComp.sol:IComp',
   },
 
   FiatTokenProxy: {
-    artifact: 'contracts/ERC20.sol:ERC20',
+    artifact: 'contracts/interfaces/ERC20.sol:ERC20',
     relations: {
       fiatTokenAdmin: {
         field: {

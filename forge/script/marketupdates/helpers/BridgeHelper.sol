@@ -12,7 +12,7 @@ import "../../../../contracts/bridges/polygon/PolygonBridgeReceiver.sol";
 import "../../../../contracts/bridges/scroll/ScrollBridgeReceiver.sol";
 import "../../../../contracts/bridges/scroll/IScrollMessenger.sol";
 import "../../../../contracts/bridges/arbitrum/AddressAliasHelper.sol";
-import "../../../../contracts/ITimelock.sol";
+import "../../../../contracts/interfaces/ITimelock.sol";
 
 library BridgeHelper {
 
