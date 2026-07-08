@@ -2719,7 +2719,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -2734,7 +2734,7 @@ scenario(
       normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(newAssetSupplyCap);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    console.log(await admin.deployAndUpgradeTo(configurator.address, comet.address));
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
