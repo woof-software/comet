@@ -235,14 +235,6 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     }
   }
 
-  if(ctx.world.base.network === 'mantle' && ctx.world.base.deployment === 'usde') {
-    if(i == 2) { // FBTC
-      config.supplyCollateral = 2;
-      config.transferCollateral = 2;
-      config.withdrawCollateral = 2;
-    }
-  }
-
   if (ctx.world.base.network === 'linea' && ctx.world.base.deployment === 'usdc') {
     config.bulkerAsset = 10;
     config.bulkerAsset1 = 15;
