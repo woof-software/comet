@@ -45,6 +45,9 @@ export interface OneInchSwapQuote {
   dstAmount: string;
   // Router the calldata targets, should be equal to the Dex Adapter's address.
   to: string;
+  // 1inch routing path (nested arrays of { name, part, fromTokenAddress, toTokenAddress }); populated when the
+  // request asks for it (includeProtocols).
+  protocols?: unknown;
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -71,6 +74,8 @@ export async function requestRaw1inchSwap(params: OneInchSwapParams): Promise<On
     allowPartialFill: false,
     // Force plain transferFrom calldata against the granted allowance.
     usePermit2: false,
+    // Ask 1inch to return the routing path (which AMMs it used) alongside the calldata.
+    includeProtocols: true,
     // When set, restrict routing to the whitelisted AMMs.
     ...(params.protocols ? { protocols: params.protocols } : {}),
   };
@@ -81,7 +86,7 @@ export async function requestRaw1inchSwap(params: OneInchSwapParams): Promise<On
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const { data } = await axios.get(url, { params: query, headers });
-      return { data: data.tx.data, dstAmount: data.dstAmount, to: data.tx.to };
+      return { data: data.tx.data, dstAmount: data.dstAmount, to: data.tx.to, protocols: data.protocols };
     } catch (err) {
       lastErr = err;
       const status = axios.isAxiosError(err) ? err.response?.status : undefined;
@@ -102,9 +107,9 @@ export async function requestRaw1inchSwap(params: OneInchSwapParams): Promise<On
 }
 
 
-// Fetches swap quote from 1Inch API and throws if it returned an unsupported function.
-// List of 1Inch V6 functions, supported by OneInchV6Adapter: swap().
-export async function fetch1inchSwapData(params: OneInchSwapParams): Promise<string> {
+// Fetches a swap quote (calldata + routing path) from the 1Inch API and throws if it returned an unsupported
+// function. List of 1Inch V6 functions supported by OneInchV6Adapter: swap().
+export async function fetch1inchSwap(params: OneInchSwapParams): Promise<OneInchSwapQuote> {
   const quote = await requestRaw1inchSwap(params);
   const selector = quote.data.slice(0, 10).toLowerCase();
   if (selector !== ONEINCH_V6_SWAP_SELECTOR) {
@@ -114,7 +119,26 @@ export async function fetch1inchSwapData(params: OneInchSwapParams): Promise<str
         `more liquid route; 1inch sometimes routes through unoswap-style functions.`
     );
   }
-  return quote.data;
+  return quote;
+}
+
+// Convenience wrapper returning only the router calldata.
+export async function fetch1inchSwapData(params: OneInchSwapParams): Promise<string> {
+  return (await fetch1inchSwap(params)).data;
+}
+
+// Flattens the 1inch `protocols` routing path into the distinct AMM names used (e.g. ['UNISWAP_V3', 'SUSHI']).
+export function oneInchRouteNames(protocols: unknown): string[] {
+  const names = new Set<string>();
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+    } else if (node && typeof node === 'object' && typeof (node as { name?: unknown }).name === 'string') {
+      names.add((node as { name: string }).name);
+    }
+  };
+  walk(protocols);
+  return [...names];
 }
 
 
