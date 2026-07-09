@@ -77,14 +77,16 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
      * @param _weth The wrapped native token for this chain.
      * @param _slippageBps Allowed slippage in basis points.
      * @param _swapRoutes V4 routes, one entry per collateral asset (each tagged with its collateral).
+     * @param _initialCollateralSlippages Per-collateral slippage overrides, forwarded to {CoreDexAdapter}.
      */
     constructor(
         address _coreRouter,
         address _redundantRouter,
         address _weth,
         uint16 _slippageBps,
-        RouteConfig[] memory _swapRoutes
-    ) CoreDexAdapter(_coreRouter, _redundantRouter, _slippageBps) {
+        RouteConfig[] memory _swapRoutes,
+        CollateralSlippage[] memory _initialCollateralSlippages
+    ) CoreDexAdapter(_coreRouter, _redundantRouter, _slippageBps, _initialCollateralSlippages) {
         if (_weth == address(0)) revert ZeroAddress();
         weth = _weth;
         _routesCount = uint8(_swapRoutes.length);

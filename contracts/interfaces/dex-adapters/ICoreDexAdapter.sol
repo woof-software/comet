@@ -12,6 +12,12 @@ import { ICoreDexAdapterEvents } from "./ICoreDexAdapterEvents.sol";
  * @custom:security-contact dmitriy@woof.software
  */
 interface ICoreDexAdapter is ICoreDexAdapterErrors, ICoreDexAdapterEvents {
+    /// @notice Initial per-collateral slippage override, supplied to the adapter constructor.
+    struct CollateralSlippage {
+        address collateral;
+        uint16 slippageBps;
+    }
+
     /**
      * @notice Swaps the adapter's entire `collateral` balance into the base asset and sends it to the caller.
      * @dev Only callable by the liquidation module.
@@ -25,5 +31,6 @@ interface ICoreDexAdapter is ICoreDexAdapterErrors, ICoreDexAdapterEvents {
     function initiateAdapter(address comet) external;
     function setAssetList(address assetList, uint8 numAssets, address baseAsset) external;
 
-    function setSlippageBps(uint16 _slippageBPS) external;
+    /// @notice Sets the global slippage (`_collateral` == address(0)) or a per-collateral override.
+    function setSlippageBps(uint16 _slippageBps, address _collateral) external;
 }

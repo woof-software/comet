@@ -193,12 +193,13 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     }
 
     /**
-     * @notice Updates the slippage value for DEX adapter.
-     * @dev Reverts if the new value exceeds 100% (1e4).
-     * @param newSlippageBps New penalty in BPS (1e4 scale).
+     * @notice Updates the global slippage (`collateral` == address(0)) or a per-collateral override on the DEX adapter.
+     * @dev Reverts if the new value exceeds 100% (1e4). A per-collateral override may be 0 to clear it.
+     * @param newSlippageBps New slippage in BPS (1e4 scale).
+     * @param collateral Collateral to override, or the zero address to set the global slippage.
      */
-    function setSlippageBps(uint16 newSlippageBps) external onlyRole(MULTISIG_ROLE) {
+    function setSlippageBps(uint16 newSlippageBps, address collateral) external onlyRole(MULTISIG_ROLE) {
         ///@dev event is emitted in DEX adapter
-        dexAdapter.setSlippageBps(newSlippageBps);
+        dexAdapter.setSlippageBps(newSlippageBps, collateral);
     }
 }

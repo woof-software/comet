@@ -28,6 +28,8 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
     IERC20 public baseAsset;
     /// @notice Slippage applied to the oracle-derived minimum output, in basis points.
     uint16 public slippageBps;
+    /// @notice Optional per-collateral slippage override, in basis points. If not set, global `slippageBps` is used.
+    mapping(address => uint16) public collateralSlippageBps;
     /// @notice Primary DEX router used by _coreSwap.
     address public immutable coreRouter;
     /// @notice Fallback DEX router used by _redundantSwap when the core swap fails.
@@ -42,21 +44,36 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
     }
 
     /**
-     * @notice Sets the adapter's core/redundant routers and slippage. The Comet is NOT bound here: at
-     *         deployment time the Comet does not exist yet, so it is resolved later in {initiateAdapter}.
+     * @notice Sets the adapter's core/redundant routers, global slippage and optional per-collateral slippage
+     *         overrides. The Comet is NOT bound here: at deployment time the Comet does not exist yet, so it is
+     *         resolved later in {initiateAdapter}.
      * @param _coreRouter The primary DEX router.
      * @param _redundantRouter The fallback DEX router.
-     * @param _slippageBps Allowed slippage in basis points (0 < value <= BPS).
+     * @param _slippageBps Global allowed slippage in basis points (0 < value <= BPS).
+     * @param _initialCollateralSlippages Per-collateral slippage overrides.
      */
-    constructor(address _coreRouter, address _redundantRouter, uint16 _slippageBps) {
+    constructor(
+        address _coreRouter,
+        address _redundantRouter,
+        uint16 _slippageBps,
+        CollateralSlippage[] memory _initialCollateralSlippages
+    ) {
         if (_coreRouter == address(0) || _redundantRouter == address(0)) revert ZeroAddress();
         if (_slippageBps == 0 || _slippageBps > BPS) revert SlippageOutOfBounds(_slippageBps);
 
         coreRouter = _coreRouter;
         redundantRouter = _redundantRouter;
         slippageBps = _slippageBps;
+        emit SlippageSet(address(0), 0, _slippageBps);
 
-        emit SlippageSet(0, _slippageBps);
+        CollateralSlippage memory cs;
+        for (uint256 i; i < _initialCollateralSlippages.length; ++i) {
+            cs = _initialCollateralSlippages[i];
+            if (cs.collateral == address(0)) revert ZeroAddress();
+            if (cs.slippageBps == 0 || cs.slippageBps > BPS) revert SlippageOutOfBounds(cs.slippageBps);
+            collateralSlippageBps[cs.collateral] = cs.slippageBps;
+            emit SlippageSet(cs.collateral, 0, cs.slippageBps);
+        }
     }
 
     /**
@@ -120,15 +137,30 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
         // Value collateral in USD (price-scaled), then convert that value into base-asset units.
         uint256 baseAssetValue = amountIn * assetPrice * comet.baseScale() / assetInfo.scale / basePrice;
 
-        minAmountOut = baseAssetValue * (BPS - slippageBps) / BPS;
+        // A per-collateral override (when set) takes priority over the global slippageBps.
+        uint16 slippage = collateralSlippageBps[collateral] != 0 ? collateralSlippageBps[collateral] : slippageBps;
+
+        minAmountOut = baseAssetValue * (BPS - slippage) / BPS;
     }
 
-    function setSlippageBps(uint16 _slippageBps) external onlyModule() {
-        if (_slippageBps == 0 || _slippageBps > BPS) revert SlippageOutOfBounds(_slippageBps);
-        if (_slippageBps == slippageBps) revert AlreadySet();
+    /**
+     * @notice Sets the global slippage (when `_collateral` is the zero address) or a per-collateral override.
+     * @dev The global slippage must be a valid non-zero value; a per-collateral override may be 0 to clear it.
+     * @param _slippageBps New slippage in basis points.
+     * @param _collateral Collateral to override, or the zero address to set the global slippage.
+     */
+    function setSlippageBps(uint16 _slippageBps, address _collateral) external onlyModule() {
+        uint16 current = _collateral == address(0) ? slippageBps : collateralSlippageBps[_collateral];
+        if (_slippageBps > BPS) revert SlippageOutOfBounds(_slippageBps);
+        if (_slippageBps == current) revert AlreadySet();
 
-        emit SlippageSet(slippageBps, _slippageBps);
-        slippageBps = _slippageBps;
+        if (_collateral == address(0)) {
+            if (_slippageBps == 0) revert SlippageOutOfBounds(_slippageBps);
+            slippageBps = _slippageBps;
+        } else
+            collateralSlippageBps[_collateral] = _slippageBps;
+
+        emit SlippageSet(_collateral, current, _slippageBps);
     }
 
     /**
