@@ -18,7 +18,7 @@ import { exp, makeProtocol, expect } from '../helpers';
  */
 describe('absorb: non-borrower accounts revert NotLiquidatable (F-3 verification)', function () {
   it('real supplier (principal > 0) reverts NotLiquidatable, not a panic', async () => {
-    const { comet, tokens, users: [absorber, supplier] } = await makeProtocol({ base: 'USDC' });
+    const { cometWithExtendedAssetList: comet, tokens, users: [absorber, supplier] } = await makeProtocol({ base: 'USDC' });
 
     const usdc = tokens['USDC'];
     await usdc.allocateTo(supplier.address, exp(100, 6));
@@ -31,7 +31,7 @@ describe('absorb: non-borrower accounts revert NotLiquidatable (F-3 verification
   });
 
   it('zero-principal account reverts NotLiquidatable', async () => {
-    const { comet, users: [absorber, idle] } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet, users: [absorber, idle] } = await makeProtocol();
 
     await comet.setBasePrincipal(idle.address, 0);
 
