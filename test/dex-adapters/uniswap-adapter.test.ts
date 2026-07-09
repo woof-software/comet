@@ -102,7 +102,8 @@ describe('UniswapAdapter', function () {
           REDUNDANT_ROUTER,
           TOKENS.WETH.address,
           SLIPPAGE_BPS,
-          badRoutes
+          badRoutes,
+          []
         );
         await badAdapter.deployed();
         badAdapter.connect(moduleSigner).initiateAdapter(comet.address);
@@ -111,7 +112,7 @@ describe('UniswapAdapter', function () {
 
       it('weth is the zero address', async () => {
         await expect(
-          adapterFactory.deploy(CORE_ROUTER, REDUNDANT_ROUTER, ethers.constants.AddressZero, SLIPPAGE_BPS, routes)
+          adapterFactory.deploy(CORE_ROUTER, REDUNDANT_ROUTER, ethers.constants.AddressZero, SLIPPAGE_BPS, routes, [])
         ).to.be.revertedWithCustomError(adapter, 'ZeroAddress');
       });
 
@@ -239,7 +240,8 @@ describe('UniswapAdapter', function () {
       REDUNDANT_ROUTER,
       TOKENS.WETH.address,
       SLIPPAGE_BPS,
-      badRoutes
+      badRoutes,
+      []
     );
     await badAdapter.deployed();
     await badAdapter.connect(moduleSigner).initiateAdapter(comet.address);

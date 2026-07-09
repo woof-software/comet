@@ -98,7 +98,7 @@ describe('liquidation module', function () {
         zeroForOne: false,
         path: [],
       },
-    ]);
+    ], []);
     await adapter.deployed();
     dexAdapter = adapter.address;
 

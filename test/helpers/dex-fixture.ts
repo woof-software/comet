@@ -50,7 +50,8 @@ export async function deployEmptyDexAdapter(collaterals: string[]): Promise<OneI
     REDUNDANT_ROUTER,
     TOKENS.WETH.address,
     SLIPPAGE_BPS,
-    buildRoutesFromList(collaterals, {})
+    buildRoutesFromList(collaterals, {}),
+    []
   );
   await adapter.deployed();
 
@@ -84,7 +85,8 @@ export async function setupDexAdapter(market: MarketConfig): Promise<DexAdapterF
     REDUNDANT_ROUTER,
     TOKENS.WETH.address,
     SLIPPAGE_BPS,
-    routes
+    routes,
+    []
   );
   await adapter.deployed();
   await adapter.connect(moduleSigner).initiateAdapter(market.comet);

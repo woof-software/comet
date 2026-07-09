@@ -115,7 +115,8 @@ describe('liquidation module dex route min amounts', function () {
       REDUNDANT_ROUTER,
       TOKENS.WETH.address,
       SLIPPAGE_BPS,
-      routes
+      routes,
+      []
     );
     await adapter.deployed();
 

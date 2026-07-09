@@ -103,7 +103,7 @@ describe('liquidation module access control', function () {
         zeroForOne: false,
         path: [],
       },
-    ]);
+    ], []);
     await adapter.deployed();
     dexAdapter = adapter.address;
 

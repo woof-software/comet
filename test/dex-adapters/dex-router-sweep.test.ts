@@ -83,7 +83,8 @@ describe('OneInchV6Adapter core & redundant swap sweep', function () {
               net.redundantRouter,
               net.weth,
               SLIPPAGE_BPS,
-              routes
+              routes,
+              []
             );
             await adapter.deployed();
             await adapter.connect(moduleSigner).initiateAdapter(market.comet);
