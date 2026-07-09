@@ -3,8 +3,12 @@ import { DeploymentManager } from '../../../plugins/deployment_manager';
 
 export async function impersonateAddress(dm: DeploymentManager, address: string, value?: bigint): Promise<SignerWithAddress> {
   if (value) {
-    const signer = await dm.getSigner();
-    await signer.sendTransaction({ to: address, value });
+    const current = await dm.hre.ethers.provider.getBalance(address);
+    const newBalance = current.toBigInt() + value;
+    await dm.hre.network.provider.request({
+      method: 'hardhat_setBalance',
+      params: [address, dm.hre.ethers.utils.hexValue(newBalance)],
+    });
   }
   await dm.hre.network.provider.request({
     method: 'hardhat_impersonateAccount',
