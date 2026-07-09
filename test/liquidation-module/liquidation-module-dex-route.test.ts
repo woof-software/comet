@@ -137,7 +137,8 @@ describe('liquidation module dex route', function () {
       REDUNDANT_ROUTER,
       TOKENS.WETH.address,
       SLIPPAGE_BPS,
-      routes
+      routes,
+      []
     );
     await adapter.deployed();
 
