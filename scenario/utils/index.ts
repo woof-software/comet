@@ -37,6 +37,8 @@ export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestam
 import { readFileSync } from 'fs';
 import path from 'path';
 
+export * from './hreUtils';
+
 export const MAX_ASSETS = 24;
 export const UINT256_MAX = 2n ** 256n - 1n;
 
@@ -367,6 +369,15 @@ export async function isValidAssetIndex(
   return true;
 }
 
+export async function isAssetDelisted(
+  ctx: CometContext,
+  assetNum: number
+): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const assetInfo = await comet.getAssetInfo(assetNum);
+  return assetInfo.borrowCollateralFactor.toBigInt() === 0n;
+}
+
 export async function isTriviallySourceable(
   ctx: CometContext,
   assetNum: number,
@@ -437,8 +448,56 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
   return true;
 }
 
+export async function usesAssetList(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  return await comet.maxAssets() === MAX_ASSETS;
+}
+
 export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
+}
+
+export async function supportUtilizationLimit(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    const iface = new ethers.utils.Interface([
+      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
+    ]);
+    const functionSelector = iface.getSighash('MAX_SUPPORTED_UTILIZATION');
+    
+    // Try to call the function using a low-level static call
+    // If the function doesn't exist, this will revert
+    const result = await ethers.provider.call({
+      to: comet.address,
+      data: functionSelector
+    });
+    
+    // If the call succeeds (doesn't revert), the function exists
+    // Decode the result to verify it's a valid bool response
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * @notice Checks if the market is fresh (no supplies and no borrows)
+ * @dev A fresh market has totalSupplyBase == 0 and totalBorrowBase == 0
+ *      This is used to filter scenarios that should only run on new/empty markets
+ */
+export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const totals = await comet.totalsBasic();
+    return totals.totalSupplyBase.isZero() && totals.totalBorrowBase.isZero();
+  } catch (error) {
+    return false;
+  }
 }
 
 export async function fetchLogs(
@@ -1619,27 +1678,38 @@ export function isTenderlyLog(log: any): log is { raw: { topics: string[], data:
   return !!log?.raw?.topics && !!log?.raw?.data;
 }
 
-export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
+/**
+ * Check if Comet supports extended pause functionality
+ * @param ctx The Comet context
+ * @returns true if Comet supports extended pause functions, false otherwise
+ */
+export async function supportsExtendedPause(ctx: CometContext): Promise<boolean> {
   try {
-    const configurator = await ctx.getConfigurator();
+    const comet = await ctx.getComet();
     const ethers = ctx.world.deploymentManager.hre.ethers;
     
-    // Use function selector to probe existence without reverting on unsupported networks
+    // Get the function selector for isLendersWithdrawPaused()
+    // This function only exists in CometWithExtendedAssetList
     const iface = new ethers.utils.Interface([
-      'function marketAdminPermissionChecker() public view returns (address)'
+      'function isLendersWithdrawPaused() external view returns (bool)'
     ]);
-    const functionSelector = iface.getSighash('marketAdminPermissionChecker');
+    const functionSelector = iface.getSighash('isLendersWithdrawPaused');
     
+    // Try to call the function using a low-level static call
+    // If the function doesn't exist, this will revert
     const result = await ethers.provider.call({
-      to: configurator.address,
+      to: comet.address,
       data: functionSelector
     });
     
+    // If the call succeeds (doesn't revert), the function exists
+    // Decode the result to verify it's a valid bool response
     if (result && result !== '0x') {
       return true;
     }
     return false;
   } catch (e) {
+    // If the call reverts or fails, extended pause is not supported
     return false;
   }
 }
