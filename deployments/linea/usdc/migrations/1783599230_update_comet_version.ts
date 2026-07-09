@@ -146,7 +146,27 @@ export default migration('1783599230_update_comet_version', {
       },
     ];
 
-    const description = `DESCRIPTION`;
+    const description = `# Update Comet version on Linea and Scroll
+
+## Proposal summary
+
+This proposal upgrades the Compound III USDC and WETH markets on Linea and the USDC market on Scroll to a new Comet version that changes how the base supply index is capped in markets that have lenders but no borrowers.
+
+Previously, \`accruedInterestIndices()\` applied a post-accrual clamp: whenever \`totalBorrowBase == 0\`, if \`presentValueSupply(totalSupplyBase)\` exceeded the Comet's base token balance, \`baseSupplyIndex\` was forced down to \`(balance * BASE_INDEX_SCALE) / totalSupplyBase\`. This protected lender withdrawals in reserve-funded markets with no borrowers, but only corrected the index after it had already been pushed too far.
+
+The new version enforces the same cap earlier, in \`getSupplyRate()\`: when utilization is \`0\` and \`presentValueSupply(totalSupplyBase) >= balanceOf(this)\`, the supply rate returns \`0\`, so accrual stops before the index overshoots rather than being corrected after the fact. Because a single accrual step still applies one rate over the full \`timeElapsed\`, a long gap between accruals can still overshoot the cap by a few wei; after that, \`getSupplyRate()\` returns \`0\` and the supply index no longer increases.
+
+Further detailed information can be found in the corresponding [pull request](https://github.com/compound-finance/comet/pull/1139).
+
+## Audit
+
+The new Comet version has been audited by [Certora](https://certora.cdn.prismic.io/certora/o_tSg8jfh3YhErQ7_Woof-CometPRs-FinalReport.pdf) and no issues were found.
+
+## Proposal Actions
+
+The first action updates the Comet implementation version in V2 Factory on Linea and deploys and upgrades the USDC and WETH Comets to the new implementation.
+
+The second action updates the Comet implementation version in V2 Factory on Scroll and deploys and upgrades the USDC Comet to the new implementation.`;
 
     const txn = await deploymentManager.retry(async () =>
       trace(
