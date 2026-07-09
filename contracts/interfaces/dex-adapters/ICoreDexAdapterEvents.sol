@@ -18,5 +18,9 @@ interface ICoreDexAdapterEvents {
     /// @param amountIn Amount of the `collateral` swept back to Comet.
     event RedundantSwapFailed(address collateral, uint256 amountIn);
 
-    event SlippageSet(uint16 _oldBps, uint16 _newBps);
+    /// @notice Emitted when slippage is set.
+    /// @param collateral address(0) for the global slippage, or the collateral address for a per-collateral override.
+    /// @param _oldBps Previous slippage in basis points.
+    /// @param _newBps New slippage in basis points.
+    event SlippageSet(address collateral, uint16 _oldBps, uint16 _newBps);
 }
