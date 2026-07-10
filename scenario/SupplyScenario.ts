@@ -952,8 +952,7 @@ scenario('Comet#supply > reverts on unregistered asset', {}, async ({ comet, act
 
   const collateralAmount = exp(getConfigForScenario(context).supplyCollateral, await unregisteredAsset.decimals());
 
-  await context.setNextBaseFeeToZero();
-  await unregisteredAsset.mint(albert.address, collateralAmount, { gasPrice: 0 });
+  await unregisteredAsset.mint(albert.address, collateralAmount);
 
   await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
@@ -970,8 +969,7 @@ scenario('Comet#supplyTo > reverts on unregistered asset', {}, async ({ comet, a
 
   const collateralAmount = exp(getConfigForScenario(context).supplyCollateral, await unregisteredAsset.decimals());
 
-  await context.setNextBaseFeeToZero();
-  await unregisteredAsset.mint(albert.address, collateralAmount, { gasPrice: 0 });
+  await unregisteredAsset.mint(albert.address, collateralAmount);
 
   await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
@@ -988,11 +986,9 @@ scenario('Comet#supplyFrom > reverts on unregistered asset', {}, async ({ comet,
 
   const collateralAmount = exp(getConfigForScenario(context).supplyCollateral, await unregisteredAsset.decimals());
 
-  await context.setNextBaseFeeToZero();
-  await unregisteredAsset.mint(albert.address, collateralAmount, { gasPrice: 0 });
+  await unregisteredAsset.mint(albert.address, collateralAmount);
 
-  await context.setNextBaseFeeToZero();
-  await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount, { gasPrice: 0 });
+  await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
   await expectRevertCustom(
     comet.connect(albert.signer).supplyFrom(albert.address, betty.address, unregisteredAsset.address, collateralAmount),

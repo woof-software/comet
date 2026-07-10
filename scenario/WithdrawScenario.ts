@@ -530,7 +530,6 @@ scenario(
     const amountToWithdraw = BigInt(getConfigForScenario(context).withdrawCollateral) * scaleBN.toBigInt();
 
     // Pause collateral withdraw
-    await context.setNextBaseFeeToZero();
     await cometExt.connect(pauseGuardian.signer).pauseCollateralWithdraw(true);
 
     await expectRevertCustom(
@@ -563,7 +562,6 @@ scenario(
     const amountToWithdraw = BigInt(getConfigForScenario(context).withdrawCollateral) * scaleBN.toBigInt();
 
     // Pause collateral withdraw
-    await context.setNextBaseFeeToZero();
     await cometExt.connect(pauseGuardian.signer).pauseCollateralWithdraw(true);
 
     await expectRevertCustom(
@@ -637,8 +635,7 @@ scenario(
     const amountToWithdraw = BigInt(getConfigForScenario(context).withdrawBase) * (await comet.baseScale()).toBigInt();
 
     // Pause borrowers withdraw
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseBorrowersWithdraw(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseBorrowersWithdraw(true);
 
     await expectRevertCustom(
       comet.connect(albert.signer).withdraw(baseAssetAddress, amountToWithdraw),
@@ -662,8 +659,7 @@ scenario(
     const baseAssetAddress = await comet.baseToken();
     const amountToWithdraw = BigInt(getConfigForScenario(context).withdrawBase) * (await comet.baseScale()).toBigInt();
     // Pause borrowers withdraw
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseBorrowersWithdraw(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseBorrowersWithdraw(true);
 
     await expectRevertCustom(
       comet.connect(albert.signer).withdrawTo(betty.address, baseAssetAddress, amountToWithdraw),
@@ -699,8 +695,7 @@ scenario(
 
     await albert.allow(betty, true);
     // Pause borrowers withdraw
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseBorrowersWithdraw(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseBorrowersWithdraw(true);
 
     await expectRevertCustom(
       comet.connect(betty.signer).withdrawFrom(albert.address, betty.address, baseAssetAddress, amountToWithdraw),
@@ -732,8 +727,7 @@ scenario(
     const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
 
     // Pause lenders withdraw
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseLendersWithdraw(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
 
     await expectRevertCustom(
       comet.connect(albert.signer).withdraw(baseAsset.address, baseSupplied),
@@ -765,8 +759,7 @@ scenario(
     const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
 
     // Pause lenders withdraw
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseLendersWithdraw(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
 
     await expectRevertCustom(
       comet.connect(albert.signer).withdrawTo(berry.address, baseAsset.address, baseSupplied),
@@ -798,8 +791,7 @@ scenario(
 
     await albert.allow(betty, true);
     // Pause lenders withdraw
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseLendersWithdraw(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
 
     await expectRevertCustom(
       comet.connect(betty.signer).withdrawFrom(albert.address, betty.address, baseAssetAddress, baseSupplied),
@@ -834,7 +826,6 @@ scenario(
     const amountToWithdraw = BigInt(getConfigForScenario(context).withdrawCollateral) * scaleBN.toBigInt();
 
     // Pause only asset0 withdraw
-    await context.setNextBaseFeeToZero();
     await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
 
     // Asset0 withdraw should revert
@@ -871,7 +862,6 @@ scenario(
     const amountToWithdraw = BigInt(getConfigForScenario(context).withdrawCollateral) * scaleBN.toBigInt();
 
     // Pause only asset0 withdraw
-    await context.setNextBaseFeeToZero();
     await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
 
     // Asset0 withdraw should revert
@@ -908,7 +898,6 @@ scenario(
     const amountToWithdraw = BigInt(getConfigForScenario(context).withdrawCollateral) * scaleBN.toBigInt();
 
     // Pause only asset0 withdraw
-    await context.setNextBaseFeeToZero();
     await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
 
     await albert.allow(betty, true);
@@ -1263,12 +1252,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       expect(await comet.isBorrowCollateralized(albert.address)).to.be.true;
 
       // Zero borrowCF for target asset via governance
-      await context.setNextBaseFeeToZero();
-      await configurator
-        .connect(admin.signer)
-        .updateAssetBorrowCollateralFactor(comet.address, asset, 0n, { gasPrice: 0 });
-      await context.setNextBaseFeeToZero();
-      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+      await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, asset, 0n);
+      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
 
       // Verify borrowCF is 0
       const assetInfo = await comet.getAssetInfoByAddress(asset);
@@ -1570,8 +1555,7 @@ scenario(
       const userAssetBalanceBefore = await collateralAsset.balanceOf(albert.address);
 
       // Deactivate collateral asset
-      await context.setNextBaseFeeToZero();
-      await cometExt.connect(pauseGuardian.signer).deactivateCollateral(offset, { gasPrice: 0 });
+      await cometExt.connect(pauseGuardian.signer).deactivateCollateral(offset);
 
       await comet.connect(albert.signer).withdraw(collateralAsset.address, amountToWithdraw);
 

@@ -733,8 +733,7 @@ scenario(
     const { albert, betty, pauseGuardian } = actors;
     const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
     // Pause collateral transfer
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseCollateralTransfer(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseCollateralTransfer(true);
 
     await expectRevertCustom(
       comet
@@ -773,8 +772,7 @@ scenario(
 
     await albert.allow(betty, true);
     // Pause collateral transfer
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseCollateralTransfer(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseCollateralTransfer(true);
 
     await expectRevertCustom(
       comet
@@ -816,8 +814,7 @@ scenario(
     const scale = (await comet.baseScale()).toBigInt();
 
     // Pause borrowers transfer
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseBorrowersTransfer(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseBorrowersTransfer(true);
 
     await expectRevertCustom(
       comet.connect(albert.signer).transfer(betty.address, BigInt(getConfigForScenario(context).transferBase) * scale),
@@ -852,8 +849,7 @@ scenario(
     const scale = (await comet.baseScale()).toBigInt();
 
     // Pause borrowers transfer
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseBorrowersTransfer(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseBorrowersTransfer(true);
 
     await expectRevertCustom(
       comet
@@ -890,8 +886,7 @@ scenario(
 
     await albert.allow(betty, true);
     // Pause borrowers transfer
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseBorrowersTransfer(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseBorrowersTransfer(true);
 
     await expectRevertCustom(
       comet
@@ -928,8 +923,7 @@ scenario(
 
     await albert.allow(betty, true);
     // Pause borrowers transfer
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseBorrowersTransfer(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseBorrowersTransfer(true);
 
     await expectRevertCustom(
       comet
@@ -966,8 +960,7 @@ scenario(
     const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
 
     // Pause lenders transfer
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseLendersTransfer(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseLendersTransfer(true);
 
     await expectRevertCustom(
       comet.connect(albert.signer).transfer(betty.address, baseSupplied),
@@ -999,8 +992,7 @@ scenario(
     const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
 
     // Pause lenders transfer
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseLendersTransfer(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseLendersTransfer(true);
 
     await expectRevertCustom(
       comet.connect(albert.signer).transferAsset(betty.address, baseAsset.address, baseSupplied),
@@ -1034,8 +1026,7 @@ scenario(
     await albert.allow(betty, true);
 
     // Pause lenders transfer
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseLendersTransfer(true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseLendersTransfer(true);
 
     await expectRevertCustom(
       comet.connect(betty.signer).transferAssetFrom(albert.address, betty.address, baseAsset.address, baseSupplied),
@@ -1070,8 +1061,7 @@ scenario(
     const scale = scaleBN.toBigInt();
 
     // Pause only asset0 transfer
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetTransfer(offset, true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetTransfer(offset, true);
 
     // Asset0 transfer should revert
     await expectRevertCustom(
@@ -1113,8 +1103,7 @@ scenario(
     const scale = scaleBN.toBigInt();
 
     // Pause only asset0 transfer
-    await context.setNextBaseFeeToZero();
-    await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetTransfer(offset, true, { gasPrice: 0 });
+    await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetTransfer(offset, true);
 
     await albert.allow(betty, true);
 
