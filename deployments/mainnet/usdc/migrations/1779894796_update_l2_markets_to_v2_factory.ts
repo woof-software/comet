@@ -98,6 +98,11 @@ const factoryConfig = {
   unichain: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
 };
 
+const desiredVersion = {
+  version: [1, 2, 1],
+  alternative: ''
+};
+
 export default migration('1779894796_update_l2_markets_to_v2_factory', {
   async prepare() {    
     return {};
@@ -128,6 +133,16 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
     } = await arbitrumDm.getContracts();
 
     // USDC and USDCe
+    const arbitrumFactoryV2 = new Contract(
+      factoryConfig.arbitrum,
+      [
+        'function setVersion(((uint64,uint64,uint64) version, string alternative))',
+      ],
+      await arbitrumDm.getSigner()
+    );
+    const setVersionCalldataArbitrum = await calldata(
+      arbitrumFactoryV2.populateTransaction.setVersion(desiredVersion)
+    );
     const setFactoryCalldataArbitrumUsdc = await calldata(
       arbitrumConfigurator.populateTransaction.setFactory(config.arbitrum.USDC.comet, factoryConfig.arbitrum)
     );
@@ -154,14 +169,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
+          factoryConfig.arbitrum,
           arbitrumConfigurator.address, arbitrumConfigurator.address, arbitrumCometAdmin.address,
           arbitrumConfigurator.address, arbitrumConfigurator.address, arbitrumCometAdmin.address
         ],
         [
+          0,
           0, 0, 0,
           0, 0, 0
         ],
         [
+          'setVersion(((uint64,uint64,uint64),string))',
           'setFactory(address,address)',
           'setExtensionDelegate(address,address)',
           'deployAndUpgradeTo(address,address)',
@@ -170,6 +188,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
           'deployAndUpgradeTo(address,address)',
         ],
         [
+          setVersionCalldataArbitrum,
           setFactoryCalldataArbitrumUsdc, setExtensionDelegateCalldataArbitrumUsdc, deployAndUpgradeToCalldataArbitrumUsdc,
           setFactoryCalldataArbitrumUsdcE, setExtensionDelegateCalldataArbitrumUsdcE, deployAndUpgradeToCalldataArbitrumUsdcE
         ]
@@ -252,6 +271,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       cometAdmin: baseCometAdmin,
     } = await baseDmUsdc.getContracts();
 
+    const baseFactoryV2 = new Contract(
+      factoryConfig.base,
+      [
+        'function setVersion(((uint64,uint64,uint64) version, string alternative))',
+      ],
+      await baseDmUsdc.getSigner()
+    );
+    const setVersionCalldataBase = await calldata(
+      baseFactoryV2.populateTransaction.setVersion(desiredVersion)
+    );
+
     // USDC, USDbC and USDS
     const setFactoryCalldataBaseUsdc = await calldata(
       baseConfigurator.populateTransaction.setFactory(config.base.USDC.comet, factoryConfig.base)
@@ -290,16 +320,19 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
+          factoryConfig.base,
           baseConfigurator.address, baseConfigurator.address, baseCometAdmin.address,
           baseConfigurator.address, baseConfigurator.address, baseCometAdmin.address,
           baseConfigurator.address, baseConfigurator.address, baseCometAdmin.address,
         ],
         [
+          0,
           0, 0, 0,
           0, 0, 0,
           0, 0, 0,
         ],
         [
+          'setVersion(((uint64,uint64,uint64),string))',
           'setFactory(address,address)',
           'setExtensionDelegate(address,address)',
           'deployAndUpgradeTo(address,address)',
@@ -311,6 +344,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
           'deployAndUpgradeTo(address,address)',
         ],
         [
+          setVersionCalldataBase,
           setFactoryCalldataBaseUsdc, setExtensionDelegateCalldataBaseUsdc, deployAndUpgradeToCalldataBaseUsdc,
           setFactoryCalldataBaseUsdbc, setExtensionDelegateCalldataBaseUsdbc, deployAndUpgradeToCalldataBaseUsdbc,
           setFactoryCalldataBaseUsds, setExtensionDelegateCalldataBaseUsds, deployAndUpgradeToCalldataBaseUsds,
@@ -376,6 +410,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       bridgeReceiver: optimismBridgeReceiver,
     } = await optimismDm.getContracts();
 
+    const optimismFactoryV2 = new Contract(
+      factoryConfig.optimism,
+      [
+        'function setVersion(((uint64,uint64,uint64) version, string alternative))',
+      ],
+      await optimismDm.getSigner()
+    );
+    const setVersionCalldataOptimism = await calldata(
+      optimismFactoryV2.populateTransaction.setVersion(desiredVersion)
+    );
+
     const setFactoryCalldataOptimismUsdc = await calldata(
       optimismConfigurator.populateTransaction.setFactory(config.optimism.USDC.comet, factoryConfig.optimism)
     );
@@ -413,16 +458,19 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
+          factoryConfig.optimism,
           optimismConfigurator.address, optimismConfigurator.address, optimismCometAdmin.address,
           optimismConfigurator.address, optimismConfigurator.address, optimismCometAdmin.address,
           optimismConfigurator.address, optimismConfigurator.address, optimismCometAdmin.address,
         ],
         [
+          0,
           0, 0, 0,
           0, 0, 0,
           0, 0, 0,
         ],
         [
+          'setVersion(((uint64,uint64,uint64),string))',
           'setFactory(address,address)',
           'setExtensionDelegate(address,address)',
           'deployAndUpgradeTo(address,address)',
@@ -434,6 +482,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
           'deployAndUpgradeTo(address,address)',
         ],
         [
+          setVersionCalldataOptimism,
           setFactoryCalldataOptimismUsdc, setExtensionDelegateCalldataOptimismUsdc, deployAndUpgradeToCalldataOptimismUsdc,
           setFactoryCalldataOptimismUsdt, setExtensionDelegateCalldataOptimismUsdt, deployAndUpgradeToCalldataOptimismUsdt,
           setFactoryCalldataOptimismWeth, setExtensionDelegateCalldataOptimismWeth, deployAndUpgradeToCalldataOptimismWeth,
@@ -449,6 +498,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       configurator: polygonConfigurator,
       cometAdmin: polygonCometAdmin,
     } = await polygonDm.getContracts();
+
+    const polygonFactoryV2 = new Contract(
+      factoryConfig.polygon,
+      [
+        'function setVersion(((uint64,uint64,uint64) version, string alternative))',
+      ],
+      await polygonDm.getSigner()
+    );
+    const setVersionCalldataPolygon = await calldata(
+      polygonFactoryV2.populateTransaction.setVersion(desiredVersion)
+    );
 
     const setFactoryCalldataPolygonUsdc = await calldata(
       polygonConfigurator.populateTransaction.setFactory(config.polygon.USDC.comet, factoryConfig.polygon)
@@ -476,14 +536,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
+          factoryConfig.polygon,
           polygonConfigurator.address, polygonConfigurator.address, polygonCometAdmin.address,
           polygonConfigurator.address, polygonConfigurator.address, polygonCometAdmin.address,
         ],
         [
+          0,
           0, 0, 0,
           0, 0, 0,
         ],
         [
+          'setVersion(((uint64,uint64,uint64),string))',
           'setFactory(address,address)',
           'setExtensionDelegate(address,address)',
           'deployAndUpgradeTo(address,address)',
@@ -492,6 +555,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
           'deployAndUpgradeTo(address,address)',
         ],
         [
+          setVersionCalldataPolygon,
           setFactoryCalldataPolygonUsdc, setExtensionDelegateCalldataPolygonUsdc, deployAndUpgradeToCalldataPolygonUsdc,
           setFactoryCalldataPolygonUsdt, setExtensionDelegateCalldataPolygonUsdt, deployAndUpgradeToCalldataPolygonUsdt,
         ]
@@ -506,6 +570,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       configurator: mantleConfigurator,
       cometAdmin: mantleCometAdmin,
     } = await mantleDm.getContracts();
+
+    const mantleFactoryV2 = new Contract(
+      factoryConfig.mantle,
+      [
+        'function setVersion(((uint64,uint64,uint64) version, string alternative))',
+      ],
+      await mantleDm.getSigner()
+    );
+    const setVersionCalldataMantle = await calldata(
+      mantleFactoryV2.populateTransaction.setVersion(desiredVersion)
+    );
 
     const setFactoryCalldataMantleUsde = await calldata(
       mantleConfigurator.populateTransaction.setFactory(config.mantle.USDe.comet, factoryConfig.mantle)
@@ -522,17 +597,21 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
+          factoryConfig.mantle,
           mantleConfigurator.address, mantleConfigurator.address, mantleCometAdmin.address,
         ],
         [
+          0,
           0, 0, 0,
         ],
         [
+          'setVersion(((uint64,uint64,uint64),string))',
           'setFactory(address,address)',
           'setExtensionDelegate(address,address)',
           'deployAndUpgradeTo(address,address)',
         ],
         [
+          setVersionCalldataMantle,
           setFactoryCalldataMantleUsde, setExtensionDelegateCalldataMantleUsde, deployAndUpgradeToCalldataMantleUsde,
         ]
       ]
@@ -546,6 +625,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       configurator: unichainConfigurator,
       cometAdmin: unichainCometAdmin,
     } = await unichainDm.getContracts();
+
+    const unichainFactoryV2 = new Contract(
+      factoryConfig.unichain,
+      [
+        'function setVersion(((uint64,uint64,uint64) version, string alternative))',
+      ],
+      await unichainDm.getSigner()
+    );
+    const setVersionCalldataUnichain = await calldata(
+      unichainFactoryV2.populateTransaction.setVersion(desiredVersion)
+    );
 
     const setFactoryCalldataUnichainUsdc = await calldata(
       unichainConfigurator.populateTransaction.setFactory(config.unichain.USDC.comet, factoryConfig.unichain)
@@ -573,14 +663,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
+          factoryConfig.unichain,
           unichainConfigurator.address, unichainConfigurator.address, unichainCometAdmin.address,
           unichainConfigurator.address, unichainConfigurator.address, unichainCometAdmin.address,
         ],
         [
+          0,
           0, 0, 0,
           0, 0, 0,
         ],
         [
+          'setVersion(((uint64,uint64,uint64),string))',
           'setFactory(address,address)',
           'setExtensionDelegate(address,address)',
           'deployAndUpgradeTo(address,address)',
@@ -589,6 +682,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
           'deployAndUpgradeTo(address,address)',
         ],
         [
+          setVersionCalldataUnichain,
           setFactoryCalldataUnichainUsdc, setExtensionDelegateCalldataUnichainUsdc, deployAndUpgradeToCalldataUnichainUsdc,
           setFactoryCalldataUnichainWeth, setExtensionDelegateCalldataUnichainWeth, deployAndUpgradeToCalldataUnichainWeth,
         ]
@@ -771,6 +865,18 @@ The eighth action sets the factory to the newly deployed factory, extension dele
 
     const arbitrumSigner = await arbitrumDm.getSigner();
 
+    const arbitrumCometFactoryV2 = new Contract(
+      factoryConfig.arbitrum,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      arbitrumSigner
+    );
+
+    const [version, alternative] = await arbitrumCometFactoryV2.version();
+    expect(version).to.deep.equal([1, 2, 1]);
+    expect(alternative).to.equal('');
+
     const newCometArbitrumUsdc = new Contract(
       config.arbitrum.USDC.comet, 
       newCometAbi,
@@ -834,6 +940,18 @@ The eighth action sets the factory to the newly deployed factory, extension dele
     expect((await baseConfigurator.getConfiguration(config.base.WETH.comet)).extensionDelegate).to.equal(config.base.WETH.newExt);
 
     const baseSigner = await baseDm.getSigner();
+
+    const baseCometFactoryV2 = new Contract(
+      factoryConfig.base,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      baseSigner
+    );
+
+    const [baseVersion, baseAlternative] = await baseCometFactoryV2.version();
+    expect(baseVersion).to.deep.equal([1, 2, 1]);
+    expect(baseAlternative).to.equal('');
 
     const newCometBaseUsdc = new Contract(
       config.base.USDC.comet, 
@@ -906,6 +1024,18 @@ The eighth action sets the factory to the newly deployed factory, extension dele
 
     const optimismSigner = await optimismDm.getSigner();
 
+    const optimismCometFactoryV2 = new Contract(
+      factoryConfig.optimism,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      optimismSigner
+    );
+
+    const [optimismVersion, optimismAlternative] = await optimismCometFactoryV2.version();
+    expect(optimismVersion).to.deep.equal([1, 2, 1]);
+    expect(optimismAlternative).to.equal('');
+
     const newCometOptimismUsdc = new Contract(
       config.optimism.USDC.comet, 
       newCometAbi,
@@ -953,6 +1083,18 @@ The eighth action sets the factory to the newly deployed factory, extension dele
 
     const polygonSigner = await polygonDm.getSigner();
 
+    const polygonCometFactoryV2 = new Contract(
+      factoryConfig.polygon,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      polygonSigner
+    );
+
+    const [polygonVersion, polygonAlternative] = await polygonCometFactoryV2.version();
+    expect(polygonVersion).to.deep.equal([1, 2, 1]);
+    expect(polygonAlternative).to.equal('');
+
     const newCometPolygonUsdc = new Contract(
       config.polygon.USDC.comet, 
       newCometAbi,
@@ -986,6 +1128,18 @@ The eighth action sets the factory to the newly deployed factory, extension dele
     expect((await mantleConfigurator.getConfiguration(config.mantle.USDe.comet)).extensionDelegate).to.equal(config.mantle.USDe.newExt);
  
     const mantleSigner = await mantleDm.getSigner();
+
+    const mantleCometFactoryV2 = new Contract(
+      factoryConfig.mantle,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      mantleSigner
+    );
+
+    const [mantleVersion, mantleAlternative] = await mantleCometFactoryV2.version();
+    expect(mantleVersion).to.deep.equal([1, 2, 1]);
+    expect(mantleAlternative).to.equal('');
  
     const newCometMantleUsde = new Contract(
       config.mantle.USDe.comet, 
@@ -1011,6 +1165,18 @@ The eighth action sets the factory to the newly deployed factory, extension dele
     expect((await unichainConfigurator.getConfiguration(config.unichain.WETH.comet)).extensionDelegate).to.equal(config.unichain.WETH.newExt);
  
     const unichainSigner = await unichainDm.getSigner();
+
+    const unichainCometFactoryV2 = new Contract(
+      factoryConfig.unichain,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      unichainSigner
+    );
+
+    const [unichainVersion, unichainAlternative] = await unichainCometFactoryV2.version();
+    expect(unichainVersion).to.deep.equal([1, 2, 1]);
+    expect(unichainAlternative).to.equal('');
  
     const newCometUnichainUsdc = new Contract(
       config.unichain.USDC.comet, 

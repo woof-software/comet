@@ -25,6 +25,11 @@ const factoryConfig = {
   optimism: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
 };
 
+const desiredVersion = {
+  version: [1, 2, 1],
+  alternative: ''
+};
+
 export default migration('1779894796_update_l2_markets_to_v2_factory', {
   async prepare() {    
     return {};
@@ -44,6 +49,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       cometAdmin: optimismCometAdmin,
       bridgeReceiver: optimismBridgeReceiver,
     } = await deploymentManager.getContracts();
+
+    const optimismFactoryV2 = new Contract(
+      factoryConfig.optimism,
+      [
+        'function setVersion(((uint64,uint64,uint64) version, string alternative))',
+      ],
+      await deploymentManager.getSigner()
+    );
+    const setVersionCalldataOptimism = await calldata(
+      optimismFactoryV2.populateTransaction.setVersion(desiredVersion)
+    );
 
     const setFactoryCalldataOptimismUsdc = await calldata(
       optimismConfigurator.populateTransaction.setFactory(config.optimism.USDC.comet, factoryConfig.optimism)
@@ -82,16 +98,19 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
+          factoryConfig.optimism,
           optimismConfigurator.address, optimismConfigurator.address, optimismCometAdmin.address,
           optimismConfigurator.address, optimismConfigurator.address, optimismCometAdmin.address,
           optimismConfigurator.address, optimismConfigurator.address, optimismCometAdmin.address,
         ],
         [
+          0,
           0, 0, 0,
           0, 0, 0,
           0, 0, 0,
         ],
         [
+          'setVersion(((uint64,uint64,uint64),string))',
           'setFactory(address,address)',
           'setExtensionDelegate(address,address)',
           'deployAndUpgradeTo(address,address)',
@@ -103,6 +122,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
           'deployAndUpgradeTo(address,address)',
         ],
         [
+          setVersionCalldataOptimism,
           setFactoryCalldataOptimismUsdc, setExtensionDelegateCalldataOptimismUsdc, deployAndUpgradeToCalldataOptimismUsdc,
           setFactoryCalldataOptimismUsdt, setExtensionDelegateCalldataOptimismUsdt, deployAndUpgradeToCalldataOptimismUsdt,
           setFactoryCalldataOptimismWeth, setExtensionDelegateCalldataOptimismWeth, deployAndUpgradeToCalldataOptimismWeth,
@@ -161,6 +181,18 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
     expect((await optimismConfigurator.getConfiguration(config.optimism.WETH.comet)).extensionDelegate).to.equal(config.optimism.WETH.newExt);
 
     const optimismSigner = await deploymentManager.getSigner();
+
+    const optimismCometFactoryV2 = new Contract(
+      factoryConfig.optimism,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      optimismSigner
+    );
+
+    const [version, alternative] = await optimismCometFactoryV2.version();
+    expect(version).to.deep.equal([1, 2, 1]);
+    expect(alternative).to.equal('');
 
     const newCometOptimismUsdc = new Contract(
       config.optimism.USDC.comet, 

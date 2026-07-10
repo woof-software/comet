@@ -21,6 +21,11 @@ const factoryConfig = {
   unichain: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
 };
 
+const desiredVersion = {
+  version: [1, 2, 1],
+  alternative: ''
+};
+
 export default migration('1779894796_update_l2_markets_to_v2_factory', {
   async prepare() {    
     return {};
@@ -40,6 +45,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       configurator: unichainConfigurator,
       cometAdmin: unichainCometAdmin,
     } = await deploymentManager.getContracts();
+
+    const unichainFactoryV2 = new Contract(
+      factoryConfig.unichain,
+      [
+        'function setVersion(((uint64,uint64,uint64) version, string alternative))',
+      ],
+      await deploymentManager.getSigner()
+    );
+    const setVersionCalldataUnichain = await calldata(
+      unichainFactoryV2.populateTransaction.setVersion(desiredVersion)
+    );
 
     const setFactoryCalldataUnichainUsdc = await calldata(
       unichainConfigurator.populateTransaction.setFactory(config.unichain.USDC.comet, factoryConfig.unichain)
@@ -67,14 +83,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
+          factoryConfig.unichain,
           unichainConfigurator.address, unichainConfigurator.address, unichainCometAdmin.address,
           unichainConfigurator.address, unichainConfigurator.address, unichainCometAdmin.address,
         ],
         [
+          0,
           0, 0, 0,
           0, 0, 0,
         ],
         [
+          'setVersion(((uint64,uint64,uint64),string))',
           'setFactory(address,address)',
           'setExtensionDelegate(address,address)',
           'deployAndUpgradeTo(address,address)',
@@ -83,6 +102,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
           'deployAndUpgradeTo(address,address)',
         ],
         [
+          setVersionCalldataUnichain,
           setFactoryCalldataUnichainUsdc, setExtensionDelegateCalldataUnichainUsdc, deployAndUpgradeToCalldataUnichainUsdc,
           setFactoryCalldataUnichainWeth, setExtensionDelegateCalldataUnichainWeth, deployAndUpgradeToCalldataUnichainWeth,
         ]
@@ -138,7 +158,19 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
     expect((await unichainConfigurator.getConfiguration(config.unichain.WETH.comet)).extensionDelegate).to.equal(config.unichain.WETH.newExt);
  
     const unichainSigner = await deploymentManager.getSigner();
- 
+
+    const unichainCometFactoryV2 = new Contract(
+      factoryConfig.unichain,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      unichainSigner
+    );
+
+    const [version, alternative] = await unichainCometFactoryV2.version();
+    expect(version).to.deep.equal([1, 2, 1]);
+    expect(alternative).to.equal('');
+
     const newCometUnichainUsdc = new Contract(
       config.unichain.USDC.comet, 
       newCometAbi,

@@ -33,6 +33,11 @@ const factoryConfig = {
   base: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
 };
 
+const desiredVersion = {
+  version: [1, 2, 1],
+  alternative: ''
+};
+
 export default migration('1779894796_update_l2_markets_to_v2_factory', {
   async prepare() {    
     return {};
@@ -52,6 +57,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       configurator: baseConfigurator,
       cometAdmin: baseCometAdmin,
     } = await deploymentManager.getContracts();
+
+    const baseFactoryV2 = new Contract(
+      factoryConfig.base,
+      [
+        'function setVersion(((uint64,uint64,uint64) version, string alternative))',
+      ],
+      await deploymentManager.getSigner()
+    );
+    const setVersionCalldataBase = await calldata(
+      baseFactoryV2.populateTransaction.setVersion(desiredVersion)
+    );
 
     // USDC, USDbC and USDS
     const setFactoryCalldataBaseUsdc = await calldata(
@@ -91,16 +107,19 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
+          factoryConfig.base,
           baseConfigurator.address, baseConfigurator.address, baseCometAdmin.address,
           baseConfigurator.address, baseConfigurator.address, baseCometAdmin.address,
           baseConfigurator.address, baseConfigurator.address, baseCometAdmin.address,
         ],
         [
+          0,
           0, 0, 0,
           0, 0, 0,
           0, 0, 0,
         ],
         [
+          'setVersion(((uint64,uint64,uint64),string))',
           'setFactory(address,address)',
           'setExtensionDelegate(address,address)',
           'deployAndUpgradeTo(address,address)',
@@ -112,6 +131,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
           'deployAndUpgradeTo(address,address)',
         ],
         [
+          setVersionCalldataBase,
           setFactoryCalldataBaseUsdc, setExtensionDelegateCalldataBaseUsdc, deployAndUpgradeToCalldataBaseUsdc,
           setFactoryCalldataBaseUsdbc, setExtensionDelegateCalldataBaseUsdbc, deployAndUpgradeToCalldataBaseUsdbc,
           setFactoryCalldataBaseUsds, setExtensionDelegateCalldataBaseUsds, deployAndUpgradeToCalldataBaseUsds,
@@ -229,6 +249,18 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
     expect((await baseConfigurator.getConfiguration(config.base.WETH.comet)).extensionDelegate).to.equal(config.base.WETH.newExt);
 
     const baseSigner = await deploymentManager.getSigner();
+
+    const baseCometFactoryV2 = new Contract(
+      factoryConfig.base,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      baseSigner
+    );
+
+    const [version, alternative] = await baseCometFactoryV2.version();
+    expect(version).to.deep.equal([1, 2, 1]);
+    expect(alternative).to.equal('');
 
     const newCometBaseUsdc = new Contract(
       config.base.USDC.comet, 

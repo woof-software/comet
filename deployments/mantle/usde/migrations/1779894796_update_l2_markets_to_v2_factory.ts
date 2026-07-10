@@ -17,6 +17,11 @@ const factoryConfig = {
   mantle: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
 };
 
+const desiredVersion = {
+  version: [1, 2, 1],
+  alternative: ''
+};
+
 export default migration('1779894796_update_l2_markets_to_v2_factory', {
   async prepare() {    
     return {};
@@ -37,6 +42,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       cometAdmin: mantleCometAdmin,
     } = await deploymentManager.getContracts();
 
+    const mantleFactoryV2 = new Contract(
+      factoryConfig.mantle,
+      [
+        'function setVersion(((uint64,uint64,uint64) version, string alternative))',
+      ],
+      await deploymentManager.getSigner()
+    );
+    const setVersionCalldataMantle = await calldata(
+      mantleFactoryV2.populateTransaction.setVersion(desiredVersion)
+    );
+
     const setFactoryCalldataMantleUsde = await calldata(
       mantleConfigurator.populateTransaction.setFactory(config.mantle.USDe.comet, factoryConfig.mantle)
     );
@@ -52,17 +68,21 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
+          factoryConfig.mantle,
           mantleConfigurator.address, mantleConfigurator.address, mantleCometAdmin.address,
         ],
         [
+          0,
           0, 0, 0,
         ],
         [
+          'setVersion(((uint64,uint64,uint64),string))',
           'setFactory(address,address)',
           'setExtensionDelegate(address,address)',
           'deployAndUpgradeTo(address,address)',
         ],
         [
+          setVersionCalldataMantle,
           setFactoryCalldataMantleUsde, setExtensionDelegateCalldataMantleUsde, deployAndUpgradeToCalldataMantleUsde,
         ]
       ]
@@ -115,6 +135,18 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
     expect((await mantleConfigurator.getConfiguration(config.mantle.USDe.comet)).extensionDelegate).to.equal(config.mantle.USDe.newExt);
 
     const mantleSigner = await deploymentManager.getSigner();
+
+    const mantleCometFactoryV2 = new Contract(
+      factoryConfig.mantle,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      mantleSigner
+    );
+
+    const [version, alternative] = await mantleCometFactoryV2.version();
+    expect(version).to.deep.equal([1, 2, 1]);
+    expect(alternative).to.equal('');
 
     const newCometMantleUsde = new Contract(
       config.mantle.USDe.comet, 

@@ -21,6 +21,11 @@ const factoryConfig = {
   polygon: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
 };
 
+const desiredVersion = {
+  version: [1, 2, 1],
+  alternative: ''
+};
+
 export default migration('1779894796_update_l2_markets_to_v2_factory', {
   async prepare() {    
     return {};
@@ -40,6 +45,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       configurator: polygonConfigurator,
       cometAdmin: polygonCometAdmin,
     } = await deploymentManager.getContracts();
+
+    const polygonFactoryV2 = new Contract(
+      factoryConfig.polygon,
+      [
+        'function setVersion(((uint64,uint64,uint64) version, string alternative))',
+      ],
+      await deploymentManager.getSigner()
+    );
+    const setVersionCalldataPolygon = await calldata(
+      polygonFactoryV2.populateTransaction.setVersion(desiredVersion)
+    );
 
     const setFactoryCalldataPolygonUsdc = await calldata(
       polygonConfigurator.populateTransaction.setFactory(config.polygon.USDC.comet, factoryConfig.polygon)
@@ -67,14 +83,17 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [
+          factoryConfig.polygon,
           polygonConfigurator.address, polygonConfigurator.address, polygonCometAdmin.address,
           polygonConfigurator.address, polygonConfigurator.address, polygonCometAdmin.address,
         ],
         [
+          0,
           0, 0, 0,
           0, 0, 0,
         ],
         [
+          'setVersion(((uint64,uint64,uint64),string))',
           'setFactory(address,address)',
           'setExtensionDelegate(address,address)',
           'deployAndUpgradeTo(address,address)',
@@ -83,6 +102,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
           'deployAndUpgradeTo(address,address)',
         ],
         [
+          setVersionCalldataPolygon,
           setFactoryCalldataPolygonUsdc, setExtensionDelegateCalldataPolygonUsdc, deployAndUpgradeToCalldataPolygonUsdc,
           setFactoryCalldataPolygonUsdt, setExtensionDelegateCalldataPolygonUsdt, deployAndUpgradeToCalldataPolygonUsdt,
         ]
@@ -138,6 +158,18 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
     expect((await polygonConfigurator.getConfiguration(config.polygon.USDT.comet)).extensionDelegate).to.equal(config.polygon.USDT.newExt);
 
     const polygonSigner = await deploymentManager.getSigner();
+
+    const polygonCometFactoryV2 = new Contract(
+      factoryConfig.polygon,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      polygonSigner
+    );
+
+    const [version, alternative] = await polygonCometFactoryV2.version();
+    expect(version).to.deep.equal([1, 2, 1]);
+    expect(alternative).to.equal('');
 
     const newCometPolygonUsdc = new Contract(
       config.polygon.USDC.comet, 
