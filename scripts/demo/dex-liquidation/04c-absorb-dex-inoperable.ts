@@ -53,7 +53,7 @@ async function main() {
     );
     console.log('\n1) Deploying a new DEX adapter with NO Uniswap route for WETH...');
     const adapter2 = await (
-      await new OneInchV6Adapter__factory(deployer).deploy(CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routes)
+      await new OneInchV6Adapter__factory(deployer).deploy(CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routes, [])
     ).deployed();
 
     // 2) New liquidation module bound to Comet, using the new adapter.

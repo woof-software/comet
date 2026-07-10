@@ -13,7 +13,7 @@ import { fetch1inchSwap, oneInchRouteNames, CHAIN_ID, ONEINCH_SLIPPAGE_PCT, AMM_
 const ACCRUAL_BUFFER_SECONDS = 30;
 
 async function main() {
-  const { comet, module, adapter, wethInfo, usdc, deployer, borrower } = await loadDemo();
+  const { comet, module, seizureView, adapter, wethInfo, usdc, deployer, borrower } = await loadDemo();
   const provider = hre.ethers.provider;
 
   await withSnapshot(async () => {
@@ -29,15 +29,9 @@ async function main() {
 
     const seizureNow = (await module.seizurePlan(borrower.address))[0].seizedAmount;
 
-    // Precompute the seizure at the exact block the liquidation will mine in: snapshot, jump the clock forward,
-    // accrue the borrower's debt, read the (now larger) seizure, then roll back.
     const t0 = (await provider.getBlock('latest')).timestamp;
     const execTimestamp = t0 + ACCRUAL_BUFFER_SECONDS;
-    const probeId = await provider.send('evm_snapshot', []);
-    await provider.send('evm_setNextBlockTimestamp', [execTimestamp]);
-    await (await comet.connect(deployer).accrueAccount(borrower.address)).wait();
-    const seizedAmount = (await module.seizurePlan(borrower.address))[0].seizedAmount;
-    await provider.send('evm_revert', [probeId]);
+    const seizedAmount = (await seizureView.seizurePlanAt(borrower.address, execTimestamp))[0].seizedAmount;
 
     console.log('\nModule will swap WETH into USDC on 1inch:');
     console.log(`  seizure now:            ${fmtToken(seizureNow, 18, 'WETH')}`);

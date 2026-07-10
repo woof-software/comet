@@ -14,7 +14,7 @@ import { ERC20__factory } from '../../../build/types';
 const ACCRUAL_BUFFER_SECONDS = 30;
 
 async function main() {
-  const { comet, module, adapter, deployer, borrower } = await loadDemo();
+  const { comet, module, seizureView, adapter, deployer, borrower } = await loadDemo();
   const provider = hre.ethers.provider;
   const usdcAddr = await comet.baseToken();
 
@@ -29,14 +29,9 @@ async function main() {
       return;
     }
 
-    // Precompute the multi-collateral seizure plan at the exact block the liquidation will mine in.
     const t0 = (await provider.getBlock('latest')).timestamp;
     const execTimestamp = t0 + ACCRUAL_BUFFER_SECONDS;
-    const probeId = await provider.send('evm_snapshot', []);
-    await provider.send('evm_setNextBlockTimestamp', [execTimestamp]);
-    await (await comet.connect(deployer).accrueAccount(borrower.address)).wait();
-    const plan = await module.seizurePlan(borrower.address);
-    await provider.send('evm_revert', [probeId]);
+    const plan = await seizureView.seizurePlanAt(borrower.address, execTimestamp);
 
     // Quote each seized collateral on 1inch (fall back to the adapter's Uniswap route if 1inch can't route it).
     console.log(`\nSeizure plan spans ${plan.length} collateral(s) — quoting each on 1inch:`);

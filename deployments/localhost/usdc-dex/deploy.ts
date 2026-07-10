@@ -5,6 +5,7 @@ import {
   SimplePriceFeed__factory,
   OneInchV6Adapter__factory,
   LiquidationModule__factory,
+  LiquidationSeizureView__factory,
   AssetListFactory__factory,
   CometExtAssetList__factory,
   CometProxyAdmin__factory,
@@ -86,7 +87,7 @@ async function main() {
   const collateralAddresses = assetEntries.map(([, a]) => a.address);
   const routes = buildRoutesFromList(collateralAddresses, MARKETS.usdc.routes);
   const adapter = await dep(
-    new OneInchV6Adapter__factory(signer).deploy(CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routes)
+    new OneInchV6Adapter__factory(signer).deploy(CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routes, [])
   );
 
   // Liquidation module.
@@ -150,6 +151,9 @@ async function main() {
   const comet = CometInterface__factory.connect(cometProxy.address, signer);
   await (await comet.initializeStorage()).wait();
 
+  // Keeper view helper.
+  const seizureView = await dep(new LiquidationSeizureView__factory(signer).deploy(liquidationModule.address));
+
   // Configurator + factory.
   const cometFactory = await dep(new CometFactoryWithExtendedAssetList__factory(signer).deploy());
   const configuratorImpl = await dep(new Configurator__factory(signer).deploy());
@@ -171,6 +175,7 @@ async function main() {
     cometFactory: cometFactory.address,
     liquidationModule: liquidationModule.address,
     dexAdapter: adapter.address,
+    seizureView: seizureView.address,
   };
   writeFileSync(`${__dirname}/roots.json`, JSON.stringify(roots, null, 2) + '\n');
 
