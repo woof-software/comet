@@ -1,4 +1,4 @@
-import { LiquidationModule, LiquidationModule__factory, LiquidationModuleForComet__factory } from 'build/types';
+import { LiquidationModule, LiquidationModule__factory, LiquidationModuleForComet__factory } from '../../build/types';
 import { ethers } from 'hardhat';
 
 export type DeployLiquidationModuleOpts = {

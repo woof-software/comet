@@ -1662,3 +1662,6 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
     return false;
   }
 }
+
+// Liquidation-module scenario helpers (filters, setup, and shared assertions).
+export * from './liquidationHelpers';

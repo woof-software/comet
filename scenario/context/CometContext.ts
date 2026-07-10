@@ -1,4 +1,4 @@
-import { BigNumber, BigNumberish, Contract } from 'ethers';
+import { BigNumber, BigNumberish, constants, Contract } from 'ethers';
 import { Loader, World, debug } from '../../plugins/scenario';
 import { Migration } from '../../plugins/deployment_manager';
 import {
@@ -38,6 +38,7 @@ import { AddressLike, getAddressFromNumber, resolveAddress } from './Address';
 import { fastGovernanceExecute, max, mineBlocks, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
 import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
 import { Requirements } from '../constraints/Requirements';
+import { buildRoutesFromList } from '../../test/helpers/dex-router';
 
 export type ActorMap = { [name: string]: CometActor };
 export type AssetMap = { [name: string]: CometAsset };
@@ -181,6 +182,81 @@ export class CometContext {
     return this;
   }
 
+  async prepareFreshLiquidationModule(comet: CometInterface, configurator: Configurator) {
+    const ethers = this.world.deploymentManager.hre.ethers;
+    const cometWithModule = new ethers.Contract(
+      comet.address,
+      ['function liquidationModule() view returns (address)'],
+      ethers.provider
+    );
+    let liquidationModuleAddress: string | null = null;
+    try {
+      liquidationModuleAddress = await cometWithModule.liquidationModule();
+      if (liquidationModuleAddress === constants.AddressZero) liquidationModuleAddress = null;
+    } catch {
+      liquidationModuleAddress = null;
+    }
+
+    if (liquidationModuleAddress === null) return;
+
+    const oldModule = new ethers.Contract(
+      liquidationModuleAddress,
+      [
+        'function dexAdapter() view returns (address)',
+        'function multisig() view returns (address)',
+        'function incentiveBps() view returns (uint16)',
+      ],
+      ethers.provider
+    );
+    const oldDexAdapter = new ethers.Contract(
+      await oldModule.dexAdapter(),
+      [
+        'function coreRouter() view returns (address)',
+        'function redundantRouter() view returns (address)',
+        'function weth() view returns (address)',
+        'function slippageBps() view returns (uint16)',
+      ],
+      ethers.provider
+    );
+
+    const collaterals: string[] = [];
+    const rawNumAssets = await comet.numAssets();
+    const numAssets = BigNumber.isBigNumber(rawNumAssets) ? rawNumAssets.toNumber() : Number(rawNumAssets);
+    for (let i = 0; i < numAssets; i++) {
+      collaterals.push((await comet.getAssetInfo(i)).asset);
+    }
+
+    const dexAdapter = await this.world.deploymentManager.deploy(
+      'changePriceFeeds:dexAdapter',
+      'dex-adapters/core/OneInchV6Adapter.sol',
+      [
+        await oldDexAdapter.coreRouter(),
+        await oldDexAdapter.redundantRouter(),
+        await oldDexAdapter.weth(),
+        await oldDexAdapter.slippageBps(),
+        buildRoutesFromList(collaterals, {}),
+      ],
+      true
+    );
+
+    const deployer = await this.world.deploymentManager.getSigner();
+    const liquidationModule = await this.world.deploymentManager.deploy(
+      'changePriceFeeds:liquidationModule',
+      'liquidation-module/LiquidationModuleForComet.sol',
+      [
+        dexAdapter.address,
+        await oldModule.multisig(),
+        [deployer.address],
+        [deployer.address],
+        await oldModule.incentiveBps(),
+        comet.address,
+      ],
+      true
+    );
+
+    await configurator.setLiquidationModule(comet.address, liquidationModule.address);
+  }
+
   async changePriceFeeds(newPrices: Record<string, number>) {
     const comet = await this.getComet();
     const baseToken = await comet.baseToken();
@@ -209,6 +285,22 @@ export class CometContext {
         await configurator.updateAssetPriceFeed(comet.address, assetAddress, priceFeedAddress);
       }
     }
+
+    await this.prepareFreshLiquidationModule(comet, configurator);
+    await cometAdmin.deployAndUpgradeTo(configurator.address, comet.address);
+  }
+
+  async zeroBorrowRates() {
+    const comet = await this.getComet();
+    const gov = await this.world.impersonateAddress(await comet.governor(), { value: 10n ** 18n });
+    const cometAdmin = (await this.getCometAdmin()).connect(gov);
+    const configurator = (await this.getConfigurator()).connect(gov);
+
+    await configurator.setBorrowPerYearInterestRateBase(comet.address, 0);
+    await configurator.setBorrowPerYearInterestRateSlopeLow(comet.address, 0);
+    await configurator.setBorrowPerYearInterestRateSlopeHigh(comet.address, 0);
+
+    await this.prepareFreshLiquidationModule(comet, configurator);
     await cometAdmin.deployAndUpgradeTo(configurator.address, comet.address);
   }
 

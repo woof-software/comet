@@ -1,8 +1,9 @@
 import { CometContext, scenario } from './context/CometContext';
 import { event, expect } from '../test/helpers';
-import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList, isAssetDelisted, supportsExtendedPause } from './utils';
+import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList, isAssetDelisted, supportsExtendedPause, getLiquidationModuleAddress, hasDexLiquidation } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
+import { LiquidationModule__factory } from '../build/types';
 
 scenario(
   'Comet#liquidation > isLiquidatable=true for underwater position',
@@ -684,4 +685,45 @@ scenario(
     expect(Number(baseBalance)).to.be.greaterThanOrEqual(0);
   }
 );
+
+type Entry = 'absorb' | 'liquidate';
+
+function minDebtScenario(entry: Entry) {
+  scenario(
+    `Comet#minDebt > closes via ${entry}`,
+    {
+      cometBalances: {
+        albert: { $base: -1000, $asset0: .001 },
+        betty:  { $base: 100 },
+      },
+      // the keeper path only exists where the module + DEX route are wired,
+      // so filter that variant (the absorb variant runs everywhere):
+      filter: async (ctx) =>
+        entry === 'absorb' ? true : await hasDexLiquidation(ctx),
+    },
+    async ({ comet, actors }, context) => {
+      const { albert, betty } = actors;
+
+      // ---- shared setup: drive albert underwater ----
+      // ...increaseTime / accrueAccount until isLiquidatable...
+
+      // ---- the ONLY branch: entry point ----
+      if (entry === 'liquidate') {
+        const module = LiquidationModule__factory.connect(
+            (await getLiquidationModuleAddress(context))!,
+            betty.signer,
+        );
+        await module.liquidate(betty.address, albert.address, [], { gasPrice: 0 });
+      } else {
+        await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
+      }
+
+      // ---- shared assertions ----
+      expect(await comet.borrowBalanceOf(albert.address)).to.eq(0);
+      // ...
+    },
+  );
+}
+
+(['absorb', 'liquidate'] as Entry[]).forEach(minDebtScenario);
 
