@@ -40,6 +40,7 @@ async function main() {
 
     const collateralBefore = await comet.collateralBalanceOf(borrower.address, wethInfo.asset);
     const debtBefore = await comet.borrowBalanceOf(borrower.address);
+    const reservesBefore = await comet.getReserves();
 
     // Absorb: seizes the collateral into reserves and writes off any shortfall as bad debt.
     console.log('Absorbing the borrower...');
@@ -47,8 +48,10 @@ async function main() {
 
     const collateralAfter = await comet.collateralBalanceOf(borrower.address, wethInfo.asset);
     const debtAfter = await comet.borrowBalanceOf(borrower.address);
+    const reservesAfter = await comet.getReserves();
     console.log(`\n  Collateral swapped into USDC via 1Inch: ${fmtToken(collateralBefore.sub(collateralAfter), 18, 'WETH')} of ${fmtToken(collateralBefore, 18, 'WETH')}  (FULL balance)`);
     console.log(`  Debt cleared:      ${fmtToken(debtBefore.sub(debtAfter), 6, 'USDC')}`);
+    console.log(`  Protocol USDC reserves:   ${fmtToken(reservesBefore, 6, 'USDC')} → ${fmtToken(reservesAfter, 6, 'USDC')}  (+${fmtToken(reservesAfter.sub(reservesBefore), 6, 'USDC')} from the swap)`);
 
     await reportPosition(comet, borrower.address, 'After full liquidation');
     console.log('\n✅ With partial liquidation disabled, the ENTIRE collateral balance was seized to close the debt.');

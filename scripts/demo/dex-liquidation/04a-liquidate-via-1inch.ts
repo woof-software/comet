@@ -59,6 +59,7 @@ async function main() {
 
     const collateralBefore = await comet.collateralBalanceOf(borrower.address, wethInfo.asset);
     const debtBefore = await comet.borrowBalanceOf(borrower.address);
+    const reservesBefore = await comet.getReserves();
 
     // Mine the liquidation at the SAME timestamp we precomputed for, so the module accrues to the identical state
     // and recomputes exactly `seizedAmount` — matching the amount baked into the 1inch calldata.
@@ -68,8 +69,10 @@ async function main() {
 
     const collateralAfter = await comet.collateralBalanceOf(borrower.address, wethInfo.asset);
     const debtAfter = await comet.borrowBalanceOf(borrower.address);
+    const reservesAfter = await comet.getReserves();
     console.log(`\n  Collateral seized & sold: ${fmtToken(collateralBefore.sub(collateralAfter), 18, 'WETH')}`);
     console.log(`  Debt repaid:              ${fmtToken(debtBefore.sub(debtAfter), 6, 'USDC')}`);
+    console.log(`  Protocol USDC reserves:   ${fmtToken(reservesBefore, 6, 'USDC')} → ${fmtToken(reservesAfter, 6, 'USDC')}  (+${fmtToken(reservesAfter.sub(reservesBefore), 6, 'USDC')} from the swap)`);
 
     await reportPosition(comet, borrower.address, 'After liquidation');
     console.log('\n✅ The borrower is healthy again — only PART of the collateral was seized (partial liquidation).');

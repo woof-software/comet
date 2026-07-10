@@ -71,6 +71,7 @@ async function main() {
     const before = new Map<string, BigNumber>();
     for (const x of seized) before.set(x.asset, await comet.collateralBalanceOf(borrower.address, x.asset));
     const debtBefore = await comet.borrowBalanceOf(borrower.address);
+    const reservesBefore = await comet.getReserves();
 
     // Mine at the SAME timestamp we precomputed for, so the module recomputes the identical per-collateral seizures.
     console.log('\nKeeper calls liquidate() with per-collateral swap data...');
@@ -86,7 +87,9 @@ async function main() {
       console.log(`  ${x.symbol}: ${fmtToken(seizedAmt, x.decimals, x.symbol)}  (${pct.toFixed(1)}% of balance)`);
     }
     const debtAfter = await comet.borrowBalanceOf(borrower.address);
+    const reservesAfter = await comet.getReserves();
     console.log(`  Debt repaid: ${fmtToken(debtBefore.sub(debtAfter), 6, 'USDC')}`);
+    console.log(`  Protocol USDC reserves: ${fmtToken(reservesBefore, 6, 'USDC')} → ${fmtToken(reservesAfter, 6, 'USDC')}  (+${fmtToken(reservesAfter.sub(reservesBefore), 6, 'USDC')} from the swaps)`);
 
     // Spotlight the collateral the module never touched.
     const seizedSet = new Set(seized.map((x) => x.asset.toLowerCase()));
