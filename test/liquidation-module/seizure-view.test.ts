@@ -89,7 +89,7 @@ describe('LiquidationSeizureView', function () {
     // Adapter with the WBTC swap route.
     const routes = buildRoutesFromList([TOKENS.WBTC.address], MARKETS.usdc.routes);
     const AdapterFactory = (await ethers.getContractFactory('OneInchV6Adapter')) as OneInchV6Adapter__factory;
-    adapter = await (await AdapterFactory.deploy(CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routes)).deployed();
+    adapter = await (await AdapterFactory.deploy(CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routes, [])).deployed();
 
     // Keeper liquidation module bound to the adapter.
     const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
