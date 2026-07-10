@@ -460,7 +460,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     users,
     base,
     reward,
-    cometWithExtendedAssetList: await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address) as CometWithExtendedAssetList,
+    cometWithExtendedAssetList: (await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address)) as CometWithExtendedAssetList,
     assetListFactory: assetListFactory,
     tokens,
     unsupportedToken,
@@ -692,7 +692,6 @@ export async function makeBulker(opts: BulkerOpts): Promise<BulkerInfo> {
     bulker,
   };
 }
-
 export async function bumpTotalsCollateral(comet: CometHarnessInterfaceExtendedAssetList, token: FaucetToken | NonStandardFaucetFeeToken, delta: bigint): Promise<TotalsCollateralStructOutput> {
   const t0 = await comet.totalsCollateral(token.address);
   const t1 = Object.assign({}, t0, {

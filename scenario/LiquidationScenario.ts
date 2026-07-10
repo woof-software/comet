@@ -213,7 +213,10 @@ scenario(
     filter: async (ctx) => !matchesDeployment(ctx, [
       { network: 'base', deployment: 'usds' },
       { network: 'ronin' },
-      { network: 'scroll' },
+      // asset0's liquidationFactor (0.8) is below its liquidateCollateralFactor (0.85), so
+      // seizing 100% of collateral at the liquidation threshold always undershoots the debt —
+      // a minted supply overshoot can never occur on this market.
+      { network: 'scroll', deployment: 'usdc' },
     ]),
     tokenBalances: async (ctx) => (
       {
