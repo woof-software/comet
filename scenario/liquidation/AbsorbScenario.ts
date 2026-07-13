@@ -307,7 +307,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const module = await configureModule(context, world, entry, partial, betty.address);
 
       // Every seizable collateral, in index order; the last one keeps the surplus.
-      const indices = await usableCollateralIndices(context, comet);
+      const indices = await usableCollateralIndices(context);
       const lastIdx = indices.length - 1;
 
       // Distribute the collateral so the earlier assets hold the bulk ($95, shared): they carry the

@@ -151,12 +151,23 @@ export async function configureModule(
   return module;
 }
 
-/** Every collateral index usable for these liquidation scenarios (not delisted), in order. */
-export async function usableCollateralIndices(ctx: CometContext, comet: CometInterface): Promise<number[]> {
+/**
+ * Collateral indices usable for these liquidation scenarios, in index order. "Usable" means listed
+ * with all three collateral factors positive — borrowCF (not delisted), liquidateCF and
+ * liquidationFactor — which is what the liquidation math needs.
+ *
+ * Pass `amount` to cap the result at the first N usable indices (fewer if the market has fewer);
+ * omit it to return every usable index.
+ */
+export async function usableCollateralIndices(ctx: CometContext, amount?: number): Promise<number[]> {
+  const comet = await ctx.getComet();
   const numAssets = await comet.numAssets();
   const indices: number[] = [];
   for (let i = 0; i < numAssets; i++) {
-    if (await isAssetDelisted(ctx, i)) continue;
+    if (amount !== undefined && indices.length >= amount) break;
+    if (await isAssetDelisted(ctx, i)) continue; // borrowCollateralFactor === 0
+    const info = await comet.getAssetInfo(i);
+    if (info.liquidateCollateralFactor.toBigInt() === 0n || info.liquidationFactor.toBigInt() === 0n) continue;
     indices.push(i);
   }
   return indices;
