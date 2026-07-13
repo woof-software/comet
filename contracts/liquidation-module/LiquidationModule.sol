@@ -26,7 +26,8 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     /// @notice used for DEX-path liquidations. Zero address means module doesn't support DEX liquidation route.
     ICoreDexAdapter public immutable dexAdapter;
 
-    /// @notice Executor incentive on the DEX route.
+    /// @notice Executor incentive on the DEX route, taken as a cut of the surplus base left after the debt is
+    ///         covered — not of the whole liquidated amount.
     uint16 public incentiveBps;
 
     /**
@@ -34,7 +35,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @param multisig_         The Multisig address: controls parameter setters.
      * @param executors_        Initial set of Executor accounts (keeper liquidation callers).
      * @param pausers_          Initial set of Pauser accounts (DEX pause switch).
-     * @param incentiveBps_     Initial executor incentive (in BPS) taken on the DEX route.
+     * @param incentiveBps_     Initial executor incentive (in BPS) taken on the DEX route out of the surplus base.
      */
     constructor(
         ICoreDexAdapter dexAdapter_,
@@ -104,11 +105,13 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     }
 
     /**
-     * @notice Seizes and swaps collaterals into the base asset through the DEX adapter, pays the executor a
-     *         `penaltyBps` cut of the realized base, and sends the remainder to Comet to clear the debt.
-     * @dev If an individual swap fails, the adapter sweeps that collateral back to Comet and it is absorbed
-     *      instead of sold; Reverts if bad debt occurs, or if the base left for Comet after the penalty cannot cover
-     *      the debt.
+     * @notice Seizes and swaps collaterals into the base asset through the DEX adapter, sends the base needed to
+     *         clear the debt to Comet, and pays the executor an `incentiveBps` cut of the surplus that is left
+     *         on top of it.
+     *
+     *      If an individual swap fails, the adapter sweeps that collateral back to Comet and it is absorbed
+     *      instead of sold, so its value is excluded from `baseRequired`. A shortfall beyond the rounding dust is
+     *      bad debt: no incentive is paid and the whole realized base goes to Comet.
      * @param absorber The recipient of the incentive.
      * @param account  The account being liquidated.
      * @param swapData Per-collateral router calldata, aligned to the seizure plan order.
@@ -170,7 +173,8 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
             emit BadDebtLiquidate(absorber, account, msg.sender, baseReceived);
         }
         else {
-            incentive = baseReceived * incentiveBps / BPS;
+            uint256 surplus = baseReceived > baseRequired ? baseReceived - baseRequired : 0;
+            incentive = surplus * incentiveBps / BPS;
             baseForComet = baseReceived - incentive;
         }
 
