@@ -92,9 +92,8 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
     }
 
     /// @inheritdoc ICoreDexAdapter
-    function swap(address collateral, bytes calldata swapData) external onlyModule returns (bool) {
+    function swap(address collateral, uint256 amountIn, bytes calldata swapData) external onlyModule returns (bool) {
         IERC20 collateralToken = IERC20(collateral);
-        uint256 amountIn = collateralToken.balanceOf(address(this));
         if (amountIn == 0) revert ZeroAmountIn();
 
         uint256 minAmountOut = calculateMinAmountOut(collateral, amountIn);

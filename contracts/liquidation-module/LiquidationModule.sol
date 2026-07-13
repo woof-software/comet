@@ -139,7 +139,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
             IERC20(plan[i].asset).safeTransfer(address(dexAdapter), plan[i].seizedAmount);
             // A failed swap means the adapter swept that collateral back to Comet (it is absorbed instead of
             // sold), so its debt-offset value must not be expected back in base.
-            if (!dexAdapter.swap(plan[i].asset, swapData[i]))
+            if (!dexAdapter.swap(plan[i].asset, plan[i].seizedAmount, swapData[i]))
                 unswappedSeizedValue += plan[i].seizedValue;
         }
 

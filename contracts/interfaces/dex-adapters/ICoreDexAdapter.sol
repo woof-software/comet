@@ -19,14 +19,15 @@ interface ICoreDexAdapter is ICoreDexAdapterErrors, ICoreDexAdapterEvents {
     }
 
     /**
-     * @notice Swaps the adapter's entire `collateral` balance into the base asset and sends it to the caller.
+     * @notice Swaps exactly `amountIn` of `collateral` into the base asset and sends it to the caller.
      * @dev Only callable by the liquidation module.
      * @dev On both swap route fail, collateral should be sent back to the Comet to proceed with the absorb liquidation route.
      * @param collateral The collateral token to swap.
+     * @param amountIn The exact amount of `collateral` to swap. Must be non-zero.
      * @param swapData Core router calldata; pass empty to skip the core route and use only the redundant route.
      * @return swapped True if the collateral was swapped into the base asset; false if it was swept to Comet.
      */
-    function swap(address collateral, bytes calldata swapData) external returns (bool swapped);
+    function swap(address collateral, uint256 amountIn, bytes calldata swapData) external returns (bool swapped);
 
     function initiateAdapter(address comet) external;
     function setAssetList(address assetList, uint8 numAssets, address baseAsset) external;
