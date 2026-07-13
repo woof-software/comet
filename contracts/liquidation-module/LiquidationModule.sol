@@ -90,7 +90,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @param account  The underwater account to liquidate.
      * @param swapData Per-collateral router calldata for the DEX route, aligned to the seizure plan order.
      */
-    function liquidate(address absorber, address account, bytes[] calldata swapData) external onlyRole(EXECUTOR_ROLE) {
+    function liquidate(address absorber, address account, bytes[] calldata swapData) external nonReentrant onlyRole(EXECUTOR_ROLE) {
         if (comet.isAbsorbPaused()) revert Paused();
         
         comet.accrueAccount(account);

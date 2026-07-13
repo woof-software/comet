@@ -2,6 +2,7 @@
 pragma solidity =0.8.15;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import { ICometInterface, ICometData } from "../interfaces/ICometInterface.sol";
 import { ICometLiquidationInterface } from "../interfaces/ICometLiquidationInterface.sol";
@@ -25,7 +26,7 @@ import { ICoreLiquidationModule } from "../interfaces/liquidation-module/ICoreLi
  *      - minimum debt handling when the remaining borrow falls below the configured borrow minimum.
  * @custom:security-contact dmitriy@woof.software
  */
-abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAccessControl, CometMath {
+abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAccessControl, CometMath, ReentrancyGuard {
     /// @notice The target health factor for partial liquidation
     uint256 public constant TARGET_HEALTH_FACTOR = 105e16;
 
@@ -98,7 +99,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
      * @param absorber The recipient of the incentive paid to the caller of `Comet.absorb()`.
      * @param account  The underwater account whose collateral and debt are being absorbed.
      */
-    function absorb(address absorber, address account) external onlyComet {
+    function absorb(address absorber, address account) external nonReentrant onlyComet {
         _liquidate(absorber, account);
     }
 
