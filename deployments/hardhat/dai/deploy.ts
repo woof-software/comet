@@ -1,6 +1,7 @@
 import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
 import { FaucetToken, SimplePriceFeed } from '../../../build/types';
 import { DeploySpec, cloneGov, deployComet, exp, wait } from '../../../src/deploy';
+import { sameAddress } from '../../../src/deploy';
 
 // Fixed test addresses for the dev market-admin role (impersonated by scenarios).
 const MARKET_ADMIN = '0x1111111111111111111111111111111111111111';
