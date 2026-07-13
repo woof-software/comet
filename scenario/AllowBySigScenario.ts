@@ -790,6 +790,23 @@ scenario(
   'Comet#allowBySig > authorized manager can supplyFrom collateral on behalf of owner',
   {
     filter: async (ctx) => await isValidAssetIndex(ctx, (await getActiveAsset(ctx)).assetIndex) && await isTriviallySourceable(ctx, (await getActiveAsset(ctx)).assetIndex, getConfigForScenario(ctx, (await getActiveAsset(ctx)).assetIndex).supplyCollateral),
+    tokenBalances: async (ctx) => {
+      const activeAsset = await getActiveAsset(ctx);
+      const assetIndex = activeAsset.assetIndex;
+
+      return {
+        albert: { [`$asset${assetIndex}`]: getConfigForScenario(ctx, assetIndex).supplyCollateral }
+      };
+    },
+    supplyCaps: async (ctx) => 
+    {
+      const activeAsset = await getActiveAsset(ctx);
+      const assetIndex = activeAsset.assetIndex;
+
+      return {
+        [`$asset${assetIndex}`]: getConfigForScenario(ctx, assetIndex).bulkerAsset,
+      };
+    },
   },
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
@@ -797,12 +814,6 @@ scenario(
     const assetIndex = activeAsset.assetIndex;
 
     const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(assetIndex);
-
-    await context.sourceTokens(
-      BigInt(getConfigForScenario(context, assetIndex).supplyCollateral) * scaleBN.toBigInt(),
-      assetAddress,
-      albert.address,
-    );
 
     const collateralAsset = context.getAssetByAddress(assetAddress);
     const scale = scaleBN.toBigInt();
