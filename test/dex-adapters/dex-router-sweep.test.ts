@@ -121,7 +121,7 @@ describe('OneInchV6Adapter core & redundant swap sweep', function () {
               });
 
               const minOut = await adapter.calculateMinAmountOut(collateral, amountIn);
-              const tx: ContractTransaction = await adapter.connect(moduleSigner).swap(collateral, quote);
+              const tx: ContractTransaction = await adapter.connect(moduleSigner).swap(collateral, amountIn, quote);
               const receipt: ContractReceipt = await tx.wait();
               const received = await baseTokenErc20.balanceOf(moduleAddress);
 
@@ -156,9 +156,9 @@ describe('OneInchV6Adapter core & redundant swap sweep', function () {
 
               await setErc20Balance(collateral, adapter.address, funding.amount, funding.slot);
               const amountIn = await collateralErc20.balanceOf(adapter.address);
-              const quote = "0x";
+              const quote = '0x';
               const minOut = await adapter.calculateMinAmountOut(collateral, amountIn);
-              const tx: ContractTransaction = await adapter.connect(moduleSigner).swap(collateral, quote);
+              const tx: ContractTransaction = await adapter.connect(moduleSigner).swap(collateral, amountIn, quote);
               const receipt: ContractReceipt = await tx.wait();
               const received = await baseTokenErc20.balanceOf(moduleAddress);
 

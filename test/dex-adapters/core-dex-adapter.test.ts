@@ -260,14 +260,14 @@ describe('CoreDexAdapter', function () {
   it('rejects swap() from a non-module caller', async () => {
     const [outsider] = await ethers.getSigners();
     await expect(
-      adapter.connect(outsider).swap(TOKENS.WBTC.address, '0x')
+      adapter.connect(outsider).swap(TOKENS.WBTC.address, 0, '0x')
     ).to.be.revertedWithCustomError(adapter, 'Unathorized');
   });
 
-  it('reverts swap() when the adapter holds no collateral (amountIn is zero)', async () => {
+  it('reverts swap() when amountIn is zero', async () => {
     // The freshly deployed adapter holds no WBTC, so balanceOf == 0.
     await expect(
-      adapter.connect(moduleSigner).swap(TOKENS.WBTC.address, '0x')
+      adapter.connect(moduleSigner).swap(TOKENS.WBTC.address, 0, '0x')
     ).to.be.revertedWithCustomError(adapter, 'ZeroAmountIn');
   });
 });

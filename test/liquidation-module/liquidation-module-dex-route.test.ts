@@ -37,7 +37,7 @@ import { BigNumber } from 'ethers';
 
 // End-to-end keeper DEX liquidations against a fresh Comet that uses REAL mainnet USDC-market tokens, so the
 // seized collateral is actually swapped on a fork through 1inch or Uniswap.
-describe.only('liquidation module dex route', function () {
+describe('liquidation module dex route', function () {
   this.timeout(600_000);
 
   const INCENTIVE_BPS = BigInt(500); // 5%
