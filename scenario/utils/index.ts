@@ -1788,3 +1788,67 @@ export async function supportsMarketAdminPermissionChecker(ctx: CometContext): P
     return false;
   }
 }
+
+type ArrayMethods = keyof Omit<any[], number>;
+
+type NamedKeys<T> = {
+  [K in keyof T as K extends number | `${number}` | ArrayMethods ? never : K]: T[K];
+};
+
+type Normalize<T> = T extends BigNumber
+  ? bigint
+  : T extends string | number | boolean
+  ? T
+  : [NamedKeys<T>] extends [Record<string, never>]
+  ? T extends (infer U)[]
+    ? Normalize<U>[]
+    : T
+  : { [K in keyof NamedKeys<T>]: Normalize<NamedKeys<T>[K]> };
+
+type NormalizedStruct<T> = Normalize<NamedKeys<T>>;
+
+/**
+ * Hybrid array-objects with both numeric and named keys are stripped to plain
+ * objects with native bigint values, safe to destructure, compare, and serialize.
+ */
+export function normalizeStructOutput<T>(value: T): NormalizedStruct<T> {
+  function normalize(val: any): any {
+    if (BigNumber.isBigNumber(val)) {
+      return val.toBigInt();
+    }
+    if (val && typeof val === 'object') {
+      const namedKeys = Object.keys(val).filter((key) => isNaN(Number(key)));
+      if (namedKeys.length > 0) {
+        return Object.fromEntries(namedKeys.map((key) => [key, normalize(val[key])]));
+      }
+      if (Array.isArray(val)) {
+        return val.map(normalize);
+      }
+    }
+    return val;
+  }
+
+  return normalize(value) as NormalizedStruct<T>;
+}
+
+/// Finds the first asset with non-zero configuration values
+export async function getActiveAsset(context: CometContext) {
+  const configurator = await context.getConfigurator();
+  const cometAddress = (await context.getComet()).address;
+  const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
+
+  const assetIndex = assetConfigs.findIndex((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
+
+  return {
+    assetIndex,
+    assetConfig: assetConfigs[assetIndex]
+  };
+}
+
+export async function hasActiveAsset(ctx: CometContext): Promise<boolean> {
+  const configurator = await ctx.getConfigurator();
+  const cometAddress = (await ctx.getComet()).address;
+  const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
+
+  return assetConfigs.some((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
+}
