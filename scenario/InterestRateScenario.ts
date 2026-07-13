@@ -545,28 +545,38 @@ scenario(
     const expectedTimeToExhaustReserves = (initialReserves * BigInt(exp(1, 18))) / 
       (totalSupplyBase * supplyPerSecondInterestRateBase.toBigInt());
 
-    // Skip time significantly past when reserves should be exhausted
-    const timeToSkip = Number(expectedTimeToExhaustReserves) + 3600; // Add 1 hour buffer
+    // The contract only re-checks the reserve-exhaustion cutoff once per accrueInternal() call,
+    // using the index from *before* that call's elapsed time (see getSupplyRate in
+    // CometWithExtendedAssetList.sol), then applies the full elapsed time's interest in one linear
+    // step (accruedInterestIndices): baseSupplyIndex_ += mulFactor(baseSupplyIndex_, rate * timeElapsed),
+    // where mulFactor(n, factor) = n * factor / 1e18 (floored integer division). Since that's plain,
+    // deterministic integer math, we can replicate it exactly here and predict the resulting index
+    // for a single large jump instead of approximating it.
+    const preJumpTotals = await comet.totalsBasic();
+    const indexBefore = preJumpTotals.baseSupplyIndex.toBigInt();
+    const lastAccrualTimeBefore = preJumpTotals.lastAccrualTime;
+
+    // Sanity check: the cutoff shouldn't have engaged yet.
+    expect((await comet.getSupplyRate(0)).toBigInt()).to.equal(supplyPerSecondInterestRateBase.toBigInt());
+
+    const timeToSkip = Number(expectedTimeToExhaustReserves) + 3600; // Skip past exhaustion
     await ethers.provider.send('evm_increaseTime', [timeToSkip]);
     await ethers.provider.send('evm_mine', []);
-
-    // Trigger accrue
     await comet.accrueAccount(ethers.constants.AddressZero);
 
-    // After reserves are exhausted, totalSupply() should approximately equal the base token balance
-    const totalSupply = await comet.totalSupply();
-    const cometBalance = await baseToken.balanceOf(comet.address);
-
-    // totalSupply should be approximately equal to or less than balance (within rounding)
-    expect(totalSupply.toBigInt()).to.be.approximately(cometBalance, 10000000);
-
-    // Get the supply index after reserves exhaustion
     const totalsAfterExhaustion = await comet.totalsBasic();
     const indexAfterExhaustion = totalsAfterExhaustion.baseSupplyIndex;
+    const elapsed = BigInt(totalsAfterExhaustion.lastAccrualTime - lastAccrualTimeBefore);
 
-    const baseBalance = await baseToken.balanceOf(comet.address);
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    expect(indexAfterExhaustion).to.equal(baseBalance * baseIndexScale / totalSupplyBase);
+    // Replicate accruedInterestIndices() exactly: mulFactor is floored integer division, so this
+    // matches the on-chain result to the wei/index-unit, not just approximately.
+    const expectedIndexAfterExhaustion = indexBefore +
+      (indexBefore * supplyPerSecondInterestRateBase.toBigInt() * elapsed) / BigInt(exp(1, 18));
+    expect(indexAfterExhaustion.toBigInt()).to.equal(expectedIndexAfterExhaustion);
+
+    const totalSupply = await comet.totalSupply();
+    const cometBalance = await baseToken.balanceOf(comet.address);
+    expect(totalSupply.toBigInt()).to.be.approximately(cometBalance, baseScale / 1000n);
 
     // Skip more time
     await ethers.provider.send('evm_increaseTime', [3600]); // 1 more hour
@@ -582,8 +592,10 @@ scenario(
     // Supply index should NOT have grown further (reserves exhausted)
     expect(finalSupplyIndex.toBigInt()).to.equal(indexAfterExhaustion.toBigInt());
 
-    // Supply rate should now be the base rate
+    // The cutoff in getSupplyRate is permanent until totalSupply's present value drops back below
+    // the balance (e.g. more reserves added, or a withdrawal) — nothing about that changes just
+    // from time passing, so the rate stays cut off at 0, not the raw base rate.
     const supplyRateNow = await comet.getSupplyRate(0);
-    expect(supplyRateNow.toBigInt()).to.equal((await comet.supplyPerSecondInterestRateBase()).toBigInt());
+    expect(supplyRateNow.toBigInt()).to.equal(0n);
   }
 );
