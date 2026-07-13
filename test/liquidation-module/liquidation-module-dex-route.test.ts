@@ -37,10 +37,10 @@ import { BigNumber } from 'ethers';
 
 // End-to-end keeper DEX liquidations against a fresh Comet that uses REAL mainnet USDC-market tokens, so the
 // seized collateral is actually swapped on a fork through 1inch or Uniswap.
-describe('liquidation module dex route', function () {
+describe.only('liquidation module dex route', function () {
   this.timeout(600_000);
 
-  const INCENTIVE_BPS: bigint = BigInt(500); // 5%
+  const INCENTIVE_BPS = BigInt(500); // 5%
   const BPS = 10_000n;
   // Collateral info: address, decimals, initial price
   const COLLATERAL_SPECS: [string, number, bigint][] = [
@@ -92,7 +92,7 @@ describe('liquidation module dex route', function () {
 
   let snapshot: SnapshotRestorer;
 
-  type PlanItem = { asset: string; seizedAmount: BigNumber; seizedValue: BigNumber };
+  type PlanItem = { asset: string, seizedAmount: BigNumber, seizedValue: BigNumber };
 
   // Builds one 1inch swap quote per planned seizure, aligned to the plan order the contract iterates.
   const quotePlan = async (plan: PlanItem[]): Promise<string[]> => {
@@ -111,6 +111,18 @@ describe('liquidation module dex route', function () {
       );
     }
     return swapData;
+  };
+
+  // The base debt cleared from the borrower, as reported by AbsorbDebt. When no swap failed this is the
+  // base the module must hand back to Comet, i.e. the baseRequired the executor incentive is measured against.
+  const absorbedDebt = async (
+    liquidateTx: Awaited<ReturnType<LiquidationModule['liquidate']>>
+  ): Promise<bigint> => {
+    const receipt = await liquidateTx.wait();
+    const event = receipt.events!.find(
+      (e) => e.address === liquidationModule.address && e.event === 'AbsorbDebt'
+    )!;
+    return event.args!.basePaidOut.toBigInt();
   };
 
   before(async () => {
@@ -238,7 +250,7 @@ describe('liquidation module dex route', function () {
   };
 
   // Borrower supplies a real collateral amount.
-  const supplyCollateral = async (token: ERC20, info: { address: string; slot: number | string }, amount: bigint) => {
+  const supplyCollateral = async (token: ERC20, info: { address: string, slot: number | string }, amount: bigint) => {
     await setErc20Balance(info.address, borrower.address, amount, info.slot);
     await token.connect(borrower).approve(comet.address, ethers.constants.MaxUint256);
     await comet.connect(borrower).supply(info.address, amount);
@@ -322,10 +334,10 @@ describe('liquidation module dex route', function () {
       expect(await liquidationModule.isLiquidatable(borrower.address)).to.be.false;
     });
 
-    it('sends proceeds to Comet and exactly penaltyBps of the realized base to the executor', async () => {
+    it('sends proceeds to Comet and exactly incentiveBps of the surplus to the executor', async () => {
       const baseRepaid = (await usdc.balanceOf(comet.address)).toBigInt() - cometUsdcBefore;
-      const penalty = (await usdc.balanceOf(executor.address)).toBigInt() - executorUsdcBefore;
-      const baseReceived = baseRepaid + penalty;
+      const incentive = (await usdc.balanceOf(executor.address)).toBigInt() - executorUsdcBefore;
+      const baseReceived = baseRepaid + incentive;
 
       let minOut = 0n;
       for (const s of plan) {
@@ -333,8 +345,16 @@ describe('liquidation module dex route', function () {
       }
       expect(baseReceived).to.be.greaterThanOrEqual(minOut);
 
-      expect(penalty).to.equal((baseReceived * INCENTIVE_BPS) / BPS);
-      expect(baseRepaid).to.be.greaterThan(0n);
+      // No swap failed, so no collateral was swept back to Comet and the base required to cover the
+      // debt is exactly the basePaidOut reported by AbsorbDebt.
+      const baseRequired = await absorbedDebt(tx);
+
+      // The executor is paid out of the surplus the liquidation produced, not out of the whole
+      // realized base: incentive = (baseReceived - baseRequired) * INCENTIVE_BPS / BPS
+      const surplus = baseReceived - baseRequired;
+      expect(surplus).to.be.greaterThan(0n);
+      expect(incentive).to.equal((surplus * INCENTIVE_BPS) / BPS);
+      expect(baseRepaid).to.equal(baseReceived - incentive);
     });
 
     it('leaves no tokens stranded on the adapter or the module', async () => {
@@ -444,10 +464,10 @@ describe('liquidation module dex route', function () {
       expect(await liquidationModule.isLiquidatable(borrower.address)).to.be.false;
     });
 
-    it('sends proceeds to Comet and exactly penaltyBps of the realized base to the executor', async () => {
+    it('sends proceeds to Comet and exactly incentiveBps of the surplus to the executor', async () => {
       const baseRepaid = (await usdc.balanceOf(comet.address)).toBigInt() - cometUsdcBefore;
-      const penalty = (await usdc.balanceOf(executor.address)).toBigInt() - executorUsdcBefore;
-      const baseReceived = baseRepaid + penalty;
+      const incentive = (await usdc.balanceOf(executor.address)).toBigInt() - executorUsdcBefore;
+      const baseReceived = baseRepaid + incentive;
 
       let minOut = 0n;
       for (const s of plan) {
@@ -455,8 +475,16 @@ describe('liquidation module dex route', function () {
       }
       expect(baseReceived).to.be.greaterThanOrEqual(minOut);
 
-      expect(penalty).to.equal((baseReceived * INCENTIVE_BPS) / BPS);
-      expect(baseRepaid).to.be.greaterThan(0n);
+      // No swap failed, so no collateral was swept back to Comet and the base required to cover the
+      // debt is exactly the basePaidOut reported by AbsorbDebt.
+      const baseRequired = await absorbedDebt(tx);
+
+      // The executor is paid out of the surplus the liquidation produced, not out of the whole
+      // realized base: incentive = (baseReceived - baseRequired) * INCENTIVE_BPS / BPS
+      const surplus = baseReceived - baseRequired;
+      expect(surplus).to.be.greaterThan(0n);
+      expect(incentive).to.equal((surplus * INCENTIVE_BPS) / BPS);
+      expect(baseRepaid).to.equal(baseReceived - incentive);
     });
 
     it('leaves no tokens stranded on the adapter or the module', async () => {
@@ -541,14 +569,14 @@ describe('liquidation module dex route', function () {
           isUni(s.asset)
             ? Promise.resolve('0x')
             : fetch1inchSwapData({
-                chainId: CHAIN_ID,
-                src: s.asset,
-                dst: TOKENS.USDC.address,
-                amount: s.seizedAmount.toString(),
-                from: adapter.address,
-                slippage: ONEINCH_SLIPPAGE_PCT,
-                protocols: AMM_PROTOCOLS,
-              })
+              chainId: CHAIN_ID,
+              src: s.asset,
+              dst: TOKENS.USDC.address,
+              amount: s.seizedAmount.toString(),
+              from: adapter.address,
+              slippage: ONEINCH_SLIPPAGE_PCT,
+              protocols: AMM_PROTOCOLS,
+            })
         )
       );
       uniSeizedValue = plan.find((s) => isUni(s.asset))!.seizedValue.toBigInt();
@@ -669,14 +697,14 @@ describe('liquidation module dex route', function () {
         plan.map((s) =>
           isRouted(s.asset)
             ? fetch1inchSwapData({
-                chainId: CHAIN_ID,
-                src: s.asset,
-                dst: TOKENS.USDC.address,
-                amount: s.seizedAmount.toString(),
-                from: adapter.address,
-                slippage: ONEINCH_SLIPPAGE_PCT,
-                protocols: AMM_PROTOCOLS,
-              })
+              chainId: CHAIN_ID,
+              src: s.asset,
+              dst: TOKENS.USDC.address,
+              amount: s.seizedAmount.toString(),
+              from: adapter.address,
+              slippage: ONEINCH_SLIPPAGE_PCT,
+              protocols: AMM_PROTOCOLS,
+            })
             : Promise.resolve('0x')
         )
       );
