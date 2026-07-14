@@ -11,6 +11,15 @@ const SECONDS_PER_YEAR = 31_536_000n;
 // const FACTOR_SCALE = exp(1, 18);
 const MIN_FACTOR_INCREMENT =  exp(0.0001, 18); // FACTOR_SCALE / 10 ** 4
 
+// Mirrors AssetList.sol's pack/unpack round-trip (lines 152-157, 284-287): factors are descaled
+// to a uint16 (`value / descale`) when packed into AssetInfo, then rescaled back out
+// (`unpacked * rescale`) with descale == rescale == FACTOR_SCALE / 1e4. Net effect is flooring to
+// this 4-decimal grid, so any raw config value must go through the same floor division before
+// comparing against what gets read back from AssetInfo post-upgrade.
+function quantizeFactor(value: bigint): bigint {
+  return (value / MIN_FACTOR_INCREMENT) * MIN_FACTOR_INCREMENT;
+}
+
 function getMinSupplyCapIncrement(decimals: number): bigint {
   return 10n ** BigInt(decimals);
 }
@@ -905,8 +914,8 @@ scenario(
 
     const updatedAssetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(existingAssetConfig.asset));
 
-    expect(updatedAssetInfo.borrowCollateralFactor).to.be.equal(updatedAssetConfig.borrowCollateralFactor);
-    expect(updatedAssetInfo.liquidateCollateralFactor).to.be.equal(updatedAssetConfig.liquidateCollateralFactor);
+    expect(updatedAssetInfo.borrowCollateralFactor).to.be.equal(quantizeFactor(updatedAssetConfig.borrowCollateralFactor));
+    expect(updatedAssetInfo.liquidateCollateralFactor).to.be.equal(quantizeFactor(updatedAssetConfig.liquidateCollateralFactor));
   }
 );
 
@@ -2226,7 +2235,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.borrowCollateralFactor).to.be.equal(newAssetBorrowCollateralFactor);
+    expect(assetInfo.borrowCollateralFactor).to.be.equal(quantizeFactor(newAssetBorrowCollateralFactor));
   }
 );
 
@@ -2319,7 +2328,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.borrowCollateralFactor).to.be.equal(newAssetBorrowCollateralFactor);
+    expect(assetInfo.borrowCollateralFactor).to.be.equal(quantizeFactor(newAssetBorrowCollateralFactor));
   }
 );
 
@@ -2419,7 +2428,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.liquidateCollateralFactor).to.be.equal(newAssetLiquidateCollateralFactor);
+    expect(assetInfo.liquidateCollateralFactor).to.be.equal(quantizeFactor(newAssetLiquidateCollateralFactor));
   }
 );
 
@@ -2486,7 +2495,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.liquidateCollateralFactor).to.be.equal(newAssetLiquidateCollateralFactor);
+    expect(assetInfo.liquidateCollateralFactor).to.be.equal(quantizeFactor(newAssetLiquidateCollateralFactor));
   }
 );
 
@@ -2548,7 +2557,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.liquidationFactor).to.be.equal(newAssetLiquidationFactor);
+    expect(assetInfo.liquidationFactor).to.be.equal(quantizeFactor(newAssetLiquidationFactor));
   }
 );
 
@@ -2615,7 +2624,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.liquidationFactor).to.be.equal(newAssetLiquidationFactor);
+    expect(assetInfo.liquidationFactor).to.be.equal(quantizeFactor(newAssetLiquidationFactor));
   }
 );
 
