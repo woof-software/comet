@@ -1,0 +1,70 @@
+{
+  "name": "Compound USDC (partial-liquidation demo)",
+  "symbol": "cUSDCv3-dex",
+  "baseToken": "USDC",
+  "baseTokenAddress": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+  "baseTokenPrice": 1,
+  "baseTokenSlot": 9,
+  "borrowMin": "10e6",
+  "storeFrontPriceFactor": 0.5,
+  "targetReserves": "0",
+  "rates": {
+    "supplyKink": 0.8,
+    "supplySlopeLow": 0.0325,
+    "supplySlopeHigh": 0.4,
+    "supplyBase": 0,
+    "borrowKink": 0.8,
+    "borrowSlopeLow": 0.035,
+    "borrowSlopeHigh": 0.25,
+    "borrowBase": 0.015
+  },
+  "tracking": {
+    "indexScale": "1e15",
+    "baseSupplySpeed": "0e15",
+    "baseBorrowSpeed": "0e15",
+    "baseMinForRewards": "1000000e6"
+  },
+  "assets": {
+    "WETH": {
+      "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+      "price": 1600,
+      "decimals": "18",
+      "slot": 3,
+      "borrowCF": 0.65,
+      "liquidateCF": 0.7,
+      "liquidationFactor": 0.93,
+      "supplyCap": "1000000e18"
+    },
+    "WBTC": {
+      "address": "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
+      "price": 60000,
+      "decimals": "8",
+      "slot": 0,
+      "borrowCF": 0.65,
+      "liquidateCF": 0.7,
+      "liquidationFactor": 0.93,
+      "supplyCap": "1000000e18"
+    },
+    "LINK": {
+      "address": "0x514910771af9ca656af840dff83e8264ecf986ca",
+      "price": 14,
+      "decimals": "18",
+      "slot": 1,
+      "borrowCF": 0.65,
+      "liquidateCF": 0.7,
+      "liquidationFactor": 0.93,
+      "supplyCap": "1000000e18"
+    },
+    "UNI": {
+      "address": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+      "price": 6,
+      "decimals": "18",
+      "slot": 4,
+      "borrowCF": 0.65,
+      "liquidateCF": 0.7,
+      "liquidationFactor": 0.93,
+      "supplyCap": "1000000e18"
+    }
+  },
+  "_note": "Local forked-hardhat demo. Prices are MOCK SimplePriceFeeds (asset.price / baseTokenPrice, in whole USD) so a script can drop them via setRoundData. All admin roles (governor, pauseGuardian, module multisig/executor/pauser) are signers[0]; lender = signers[1], borrower = signers[2]. Demo funding amounts (lender USDC + borrower collaterals) live in scripts/demo/demo.json."
+}

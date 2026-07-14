@@ -27,6 +27,7 @@ scenario-results.json
 *.iml
 
 deployments/localhost/dai/roots.json
+deployments/localhost/usdc-dex/roots.json
 forge/Makefile
 .envrc
 .env.forge-temp

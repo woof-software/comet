@@ -1,0 +1,9 @@
+{
+  "lenderSupplyUSDC": "10000e6",
+  "collaterals": {
+    "WETH": "2.5e18",
+    "WBTC": "0.05e8",
+    "LINK": "200e18",
+    "UNI": "500e18"
+  }
+}
