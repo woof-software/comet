@@ -3,7 +3,6 @@ import { impersonateAddress } from '../../plugins/scenario/utils';
 import { CometContext } from '../context/CometContext';
 import { CometInterface, LiquidationModule, LiquidationModule__factory } from '../../build/types';
 import { fundAccount, getLiquidationModuleAddress, isAssetDelisted } from './index';
-import { BigNumber } from 'ethers';
 
 // Compound governance timelock — holds DEFAULT_ADMIN_ROLE (and PAUSER_ROLE) on every liquidation
 // module, so it can toggle the mode / DEX switch and grant the keeper EXECUTOR_ROLE.
@@ -11,6 +10,12 @@ const DAO = '0x6d903f6003cca6255D85CcA4D3B5E5146dC33925';
 
 /** The two liquidation entry points, which must produce identical end states. */
 export type Entry = 'absorb' | 'liquidate';
+
+/**
+ * The health factor the module's partial seizure aims to restore — mirrors
+ * `CoreLiquidationModule.TARGET_HEALTH_FACTOR`, in factor scale (1e18 == 1.0).
+ */
+export const TARGET_HF: bigint = 105n * 10n ** 16n;
 
 /**
  * The borrower's base position plus the comet base totals/reserves right before an
@@ -58,10 +63,6 @@ export type CollateralState = Awaited<ReturnType<CometInterface['getAssetInfo']>
 /** True only for deployments that actually ship the liquidation module. */
 export const hasModule = async (ctx: CometContext): Promise<boolean> =>
   (await getLiquidationModuleAddress(ctx)) !== null;
-
-/** True only for deployments that have a positive base borrow minimum. */
-export const zeroBaseBorrowMin = async (ctx: CometContext): Promise<boolean> =>
-  (await (await ctx.getComet()).baseBorrowMin()) === BigNumber.from(0);
 
 /**
  * Reads the borrower's base position plus the comet base totals/reserves in one shot. Call it

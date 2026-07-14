@@ -12,7 +12,6 @@ import {
   usesAssetList,
   expectRevertCustom,
   timeUntilUnderwater,
-  zeroBaseBorrowMin,
 } from '../utils';
 import { mulPrice, divPrice, mulFactor, factorScale } from '../../test/helpers';
 
@@ -41,7 +40,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   //////////////////////////////////////////////////////////////*/
 
   // 1 collateral: seized down to a surplus; debt fully closed.
-  scenario.only(
+  scenario(
     `Comet#absorb > 1 collateral: debt closed, surplus retained [${tag}]`,
     {
       filter: async (ctx) => 
@@ -463,8 +462,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await hasModule(ctx)) &&
         (await usesAssetList(ctx)) &&
         (await isValidAssetIndex(ctx, 0)) &&
-        !(await isAssetDelisted(ctx, 0)) &&
-        !(await zeroBaseBorrowMin(ctx)),
+        !(await isAssetDelisted(ctx, 0))
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;

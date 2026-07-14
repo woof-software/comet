@@ -10,7 +10,6 @@ import {
   isAssetDelisted,
   usesAssetList,
   usableCollateralIndices,
-  zeroBaseBorrowMin,
 } from '../utils';
 import { mulPrice, mulFactor, factorScale } from '../../test/helpers';
 
@@ -468,8 +467,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         return !(await hasModule(ctx)) ||
           !(await usesAssetList(ctx)) ||
           !(await isValidAssetIndex(ctx, collateralIndex)) ||
-          !(await isAssetDelisted(ctx, collateralIndex)) ||
-          !(await zeroBaseBorrowMin(ctx));
+          !(await isAssetDelisted(ctx, collateralIndex));
       },
     },
     async ({ comet, actors }, context, world) => {
@@ -602,8 +600,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         return (await hasModule(ctx)) &&
           (await usesAssetList(ctx)) &&
           (await isValidAssetIndex(ctx, collateralIndex)) &&
-          !(await isAssetDelisted(ctx, collateralIndex)) &&
-          !(await zeroBaseBorrowMin(ctx));
+          !(await isAssetDelisted(ctx, collateralIndex));
       },
     },
     async ({ comet, actors }, context, world) => {
