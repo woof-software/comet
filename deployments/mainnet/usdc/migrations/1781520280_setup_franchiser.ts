@@ -8,7 +8,7 @@ const OLD_FRANCHISER_FACTORY = '0xE696d89f4F378772f437F01FaaD70240abdf1854';
 const FRANCHISER_POOL_FACTORY = '0x8421c35b1235741e00d2475f365A434d4b476A19';
 
 const poolConfig = {
-  coordinator: '0x9825413dd3875E01B34451A7A7e066b2225a234E',
+  coordinator: '0xfd947c72f09703210eeCbcab9c9206fE5e1Bb6e2',
   guardian: '0xbbf3f1421D886E9b2c5D716B5192aC998af2012c',
   maxDelegatees: 30,
   freezePeriod: 10 * 24 * 60 * 60, // 10 days in seconds
@@ -201,8 +201,8 @@ Governance (the Timelock) sets each pool's parameters — delegate cap, Coordina
     trace(`Created proposal ${proposalId}.`);
   },
 
-  async enacted(deploymentManager: DeploymentManager): Promise<boolean> {
-    return true;
+  async enacted(): Promise<boolean> {
+    return false;
   },
 
   async verify(deploymentManager: DeploymentManager) {
