@@ -267,7 +267,10 @@ export class CometContext {
       const priceFeed = await this.world.deploymentManager.deploy(
         `${assetName}:priceFeed`,
         'test/SimplePriceFeed.sol',
-        [newPrices[assetAddress] * 1e8, 8],
+        // Round: the price arrives as a dollar figure, and re-scaling it in floats lands off an
+        // integer for many prices 
+        // Example: (0.14035087 * 1e8 = 14035086.999999998), which ethers rejects.
+        [Math.round(newPrices[assetAddress] * 1e8), 8],
         true
       );
       newPriceFeeds[assetAddress] = priceFeed.address;
