@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { Contract } from 'ethers';
+import { Contract, utils } from 'ethers';
 import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
 import { migration } from '../../../../plugins/deployment_manager/Migration';
 import { exp, proposal } from '../../../../src/deploy';
@@ -30,55 +30,67 @@ export default migration('1780051404_update_usd_based_to_v2_factory', {
     } = await deploymentManager.getContracts();
 
     const mainnetActions = [
-      // 1. Update USDC Comet factory to a new one
+      // 1. Update version in new Comet to the recent service patch version
+      {
+        target: COMET_FACTORY_V2,
+        signature: 'setVersion(((uint64,uint64,uint64),string))',
+        calldata: utils.defaultAbiCoder.encode(
+          ['tuple((uint64,uint64,uint64),string)'],
+          [[
+            [1, 2, 1],
+            '',
+          ]]
+        ),          
+      },
+      // 2. Update USDC Comet factory to a new one
       {
         contract: configurator,
         signature: 'setFactory(address,address)',
         args: [USDC_COMET, COMET_FACTORY_V2],
       },
-      // 2. Set service patch version of the extension delegate for the USDC Comet
+      // 3. Set service patch version of the extension delegate for the USDC Comet
       {
         contract: configurator,
         signature: 'setExtensionDelegate(address,address)',
         args: [USDC_COMET, USDC_EXT],
       },
-      // 3. Deploy and upgrade to a new version of Comet
+      // 4. Deploy and upgrade to a new version of Comet
       {
         contract: cometAdmin,
         signature: 'deployAndUpgradeTo(address,address)',
         args: [configurator.address, USDC_COMET],
       },
-      // 4. Update USDT Comet factory to the new one
+      // 5. Update USDT Comet factory to the new one
       {
         contract: configurator,
         signature: 'setFactory(address,address)',
         args: [USDT_COMET, COMET_FACTORY_V2],
       },
-      // 5. Set service patch version of the extension delegate for the USDT Comet
+      // 6. Set service patch version of the extension delegate for the USDT Comet
       {
         contract: configurator,
         signature: 'setExtensionDelegate(address,address)',
         args: [USDT_COMET, USDT_EXT],
       },
-      // 6. Deploy and upgrade USDT Comet to a new version of Comet
+      // 7. Deploy and upgrade USDT Comet to a new version of Comet
       {
         contract: cometAdmin,
         signature: 'deployAndUpgradeTo(address,address)',
         args: [configurator.address, USDT_COMET],
       },
-      // 7. Update USDS Comet factory to the new one
+      // 8. Update USDS Comet factory to the new one
       {
         contract: configurator,
         signature: 'setFactory(address,address)',
         args: [USDS_COMET, COMET_FACTORY_V2],
       },
-      // 8. Set service patch version of the extension delegate for the USDS Comet
+      // 9. Set service patch version of the extension delegate for the USDS Comet
       {
         contract: configurator,
         signature: 'setExtensionDelegate(address,address)',
         args: [USDS_COMET, USDS_EXT],
       },
-      // 9. Deploy and upgrade USDS Comet to a new version of Comet
+      // 10. Deploy and upgrade USDS Comet to a new version of Comet
       {
         contract: cometAdmin,
         signature: 'deployAndUpgradeTo(address,address)',
@@ -122,23 +134,25 @@ Both service patch Comet update and Bytecode Repository have been audited by Cer
 
 ## Proposal Actions
 
-The first proposal action updates the factory of the USDC Comet to the new V2 factory.
+The first proposal action updates the version in the new Comet factory to the recent service patch version.
 
-The second proposal action sets the extension delegate for the USDC Comet to the new service patch version.
+The second proposal action updates the factory of the USDC Comet to the new V2 factory.
 
-The third proposal action deploys and upgrades the USDC Comet to the new service patch version.
+The third proposal action sets the extension delegate for the USDC Comet to the new service patch version.
 
-The fourth proposal action updates the factory of the USDT Comet to the new V2 factory.
+The fourth proposal action deploys and upgrades the USDC Comet to the new service patch version.
 
-The fifth proposal action sets the extension delegate for the USDT Comet to the new service patch version.
+The fifth proposal action updates the factory of the USDT Comet to the new V2 factory.
 
-The sixth proposal action deploys and upgrades the USDT Comet to the new service patch version.
+The sixth proposal action sets the extension delegate for the USDT Comet to the new service patch version.
 
-The seventh proposal action updates the factory of the USDS Comet to the new V2 factory.
+The seventh proposal action deploys and upgrades the USDT Comet to the new service patch version.
 
-The eighth proposal action sets the extension delegate for the USDS Comet to the new service patch version.
+The eighth proposal action updates the factory of the USDS Comet to the new V2 factory.
 
-The ninth proposal action deploys and upgrades the USDS Comet to the new service patch version.
+The ninth proposal action sets the extension delegate for the USDS Comet to the new service patch version.
+
+The tenth proposal action deploys and upgrades the USDS Comet to the new service patch version.
 `;
     const txn = await deploymentManager.retry(async () =>
       trace(
@@ -165,6 +179,18 @@ The ninth proposal action deploys and upgrades the USDS Comet to the new service
       'function name() external view returns (string)',
       'function extensionDelegate() external view returns (address)',
     ];
+
+    const factoryV2 = new Contract(
+      COMET_FACTORY_V2,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      await deploymentManager.getSigner()
+    );
+
+    const [baseVersion, baseAlternative] = await factoryV2.version();
+    expect(baseVersion).to.deep.equal([1, 2, 1]);
+    expect(baseAlternative).to.equal('');
 
     expect(await configurator.factory(USDC_COMET)).to.equal(COMET_FACTORY_V2);
     expect(await configurator.factory(USDT_COMET)).to.equal(COMET_FACTORY_V2);

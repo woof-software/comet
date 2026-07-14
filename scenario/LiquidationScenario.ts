@@ -213,7 +213,10 @@ scenario(
     filter: async (ctx) => !matchesDeployment(ctx, [
       { network: 'base', deployment: 'usds' },
       { network: 'ronin' },
-      { network: 'scroll' },
+      // asset0's liquidationFactor (0.8) is below its liquidateCollateralFactor (0.85), so
+      // seizing 100% of collateral at the liquidation threshold always undershoots the debt —
+      // a minted supply overshoot can never occur on this market.
+      { network: 'scroll', deployment: 'usdc' },
     ]),
     tokenBalances: async (ctx) => (
       {
@@ -332,10 +335,10 @@ for (let i = 0; i < MAX_ASSETS; i++) {
     {
       filter: async (ctx: CometContext) =>
         await isValidAssetIndex(ctx, i)
-      && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral)
-      && await usesAssetList(ctx)
-      && !(await isAssetDelisted(ctx, i))
-      && await supportsExtendedPause(ctx),
+        && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral)
+        && await usesAssetList(ctx)
+        && !(await isAssetDelisted(ctx, i))
+        && await supportsExtendedPause(ctx),
       tokenBalances: async (ctx: CometContext) => (
         {
           albert: { $base: '== 0' },
@@ -690,4 +693,3 @@ scenario(
     expect(Number(baseBalance)).to.be.greaterThanOrEqual(0);
   }
 );
-

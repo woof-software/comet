@@ -1223,6 +1223,7 @@ scenario('Comet#supply reverts when collateral asset is deactivated and allows t
     const { admin, pauseGuardian, albert } = actors;
 
     // Fund pause guardian account for gas fees
+    await fundAccount(world, admin);
     await fundAccount(world, pauseGuardian);
 
     for (let i = 0; i < MAX_ASSETS; i++) {
@@ -1282,6 +1283,7 @@ scenario(
     const { admin, pauseGuardian, albert, betty } = actors;
 
     // Fund pause guardian account for gas fees
+    await fundAccount(world, admin);
     await fundAccount(world, pauseGuardian);
 
     for (let i = 0; i < MAX_ASSETS; i++) {

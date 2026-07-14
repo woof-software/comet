@@ -1,4 +1,4 @@
-import { AssetConfigStruct } from '../../build/types/Comet';
+import { AssetConfigStruct } from '../../build/types/CometWithExtendedAssetList';
 import { BigNumberish, Contract, PopulatedTransaction, utils } from 'ethers';
 
 export { cloneGov, deployNetworkComet as deployComet, sameAddress } from './Network';
@@ -154,6 +154,7 @@ export const WHALES = {
     '0xDBD974Eb5360d053ea0c56B4DaCF4A9D3E894Ee2', // tETH whale
     '0xbA1333333333a1BA1108E8412f11850A5C319bA9', // tETH whale
     '0xEA1132120ddcDDA2F119e99Fa7A27a0d036F7Ac9', // ezETH whale
+    '0x3405A1bd46B85c5C029483FbECf2F3E611026e45', // USDC.e whale
   ],
   base: [
     '0x6D3c5a4a7aC4B1428368310E4EC3bB1350d01455', // USDbC whale
@@ -172,6 +173,10 @@ export const WHALES = {
     '0x0E635F8EeED4F7279d56692D552F034ECE136019', // USDbC whale
     '0x58Ee32056D946a37f5b49582dE3dEE1dAc0Bb974', // USDbC whale
     '0x80a94C36747CF51b2FbabDfF045f6D22c1930eD1', // wrsETH whale
+    '0x98c7A2338336d2d354663246F64676009c7bDa97', // USDbC whale
+    '0x0E635F8EeED4F7279d56692D552F034ECE136019', // USDbC whale
+    '0x58Ee32056D946a37f5b49582dE3dEE1dAc0Bb974', // USDbC whale
+    '0x2917956eFF0B5eaF030abDB4EF4296DF775009cA', // USDS whale
   ],
   scroll: [
     '0xaaaaAAAACB71BF2C8CaE522EA5fa455571A74106', // USDC whale
@@ -186,6 +191,7 @@ export const WHALES = {
     '0x8af3827a41c26c7f32c81e93bb66e837e0210d5c', // USDC whale
     '0xc45A479877e1e9Dfe9FcD4056c699575a1045dAA', // wstETH whale
     '0x6e57181D6b4b7c138a6F956AD16DAF4f27FC5E04', // COMP whale
+    '0x7C514346b326147FEE97e5034Df75968f17443f5', // COMP whale
     '0xE36A30D249f7761327fd973001A32010b521b6Fd', // ezETH whale
     '0xb40DA71c49c745Dd3ab801882b1D410760541678', // ezETH whale
     '0x540B1E0D69244057cD0Da2AF4Bca87dA87A824bE', // ezETH whale
