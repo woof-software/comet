@@ -27,7 +27,7 @@ export default migration('1718974114_add_oseth_collateral', {
       'osETH',
       OSETH_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const osEthPricefeed = await deploymentManager.existing(
       'osETH:priceFeed',
@@ -94,7 +94,7 @@ export default migration('1718974114_add_oseth_collateral', {
       'osETH',
       OSETH_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const osETHAssetConfig = {
       asset: osETH.address,

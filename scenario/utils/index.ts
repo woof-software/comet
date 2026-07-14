@@ -15,7 +15,7 @@ import { execSync } from 'child_process';
 import { existsSync, unlinkSync } from 'fs';
 import { CometContext } from '../context/CometContext';
 import CometAsset from '../context/CometAsset';
-import { ethers, exp } from '../../test/helpers';
+import { exp } from '../../test/helpers';
 import { DeploymentManager } from '../../plugins/deployment_manager';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { ProposalState, OpenProposal } from '../context/Gov';
@@ -24,6 +24,7 @@ import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
 import {
   mineBlocks,
+  setEtherBalance,
   setNextBaseFeeToZero,
   setNextBlockTimestamp,
 } from './hreUtils';
@@ -32,6 +33,7 @@ import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
+export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
 
@@ -66,7 +68,7 @@ export async function getSignerForProposal(
     usedSigners.set(key, []);
   }
   const signers = usedSigners.get(key);
-  if(signers.length == 0){
+  if (signers.length == 0) {
     const signer = (await gm.getSigners())[0];
     signers.push(signer.address);
     return signer;
@@ -353,8 +355,22 @@ export async function isValidAssetIndex(
   ctx: CometContext,
   assetNum: number
 ): Promise<boolean> {
+  // Sanity checks
+  if (assetNum < 0) return false;
+  if (assetNum >= MAX_ASSETS) return false;
+  // Asset info checks. If any of these are false, the asset is invalid. This means that the asset is deprecated.
   const comet = await ctx.getComet();
-  return assetNum < (await comet.numAssets());
+
+  const numAssets = await comet.numAssets();
+  if (assetNum >= numAssets) return false;
+
+  const assetInfo = await comet.getAssetInfo(assetNum);
+  if (assetInfo.borrowCollateralFactor.toBigInt() == 0n) return false;
+  if (assetInfo.supplyCap.toBigInt() == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor.toBigInt() == 0n) return false;
+  if (assetInfo.liquidationFactor.toBigInt() == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor.toBigInt() <= assetInfo.borrowCollateralFactor.toBigInt()) return false;
+  return true;
 }
 
 export async function isAssetDelisted(
@@ -493,7 +509,7 @@ export async function fetchLogs(
   filter: EventFilter,
   fromBlock: number,
   toBlock: number,
-  BLOCK_SPAN = 2047 // NB: sadly max for fuji is LESS than 2048
+  BLOCK_SPAN = 2047
 ): Promise<Event[]> {
   if (toBlock - fromBlock > BLOCK_SPAN) {
     const midBlock = fromBlock + BLOCK_SPAN;
@@ -714,8 +730,8 @@ export async function updateCCIPStats(
 
   const tokenPrices = [];
   const gasPrices = [];
-  for (const [network,, address] of tokens) {
-    if(network !== dm.network) continue;
+  for (const [network, , address] of tokens) {
+    if (network !== dm.network) continue;
     const price = await registryContract.getTokenPrice(address);
     tokenPrices.push([address, price.value]);
   }
@@ -729,7 +745,7 @@ export async function updateCCIPStats(
     }
   }
 
-  if(tenderlyLogs) {
+  if (tenderlyLogs) {
     dm.stashRelayMessage(
       priceRegistry,
       registryContract.interface.encodeFunctionData('updatePrices', [
@@ -1022,7 +1038,7 @@ export async function tenderlyExecute(
         const timelockL2 = await currentBdm.getContractOrThrow('timelock');
         const delay = await timelockL2.delay();
         const relayMessages = loadCachedRelayMessages();
-        const executeProposalSig = ethers.utils.id('executeProposal(uint256)').substring(0, 10);
+        const executeProposalSig = utils.id('executeProposal(uint256)').substring(0, 10);
 
         const latestL2 = await currentBdm.hre.ethers.provider.getBlock('latest');
         const maxEta = Math.max(...proposals.map(p => Number(p.eta || 0))) + delay.toNumber();
@@ -1091,7 +1107,7 @@ async function simulateBundle(
     const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
 
     // Merge rolling state changes with simulation's own state_objects
-    const stateObjects = sim.state_objects 
+    const stateObjects = sim.state_objects
       ? { ...rollingStateChanges, ...sim.state_objects }
       : rollingStateChanges;
 
@@ -1141,7 +1157,7 @@ async function simulateBundle(
 
     results.push(simResult);
   }
-  
+
   return results;
 }
 
@@ -1149,6 +1165,7 @@ async function shareSimulation(dm: DeploymentManager, simulationId: string) {
   const project = 'comet';
   const username = process.env.TENDERLY_USERNAME || '';
   const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
+
   return axios.post(
     `https://api.tenderly.co/api/v1/account/${username}/project/${project}/simulations/${simulationId}/share`,
     {},
@@ -1270,7 +1287,7 @@ export async function executeOpenProposal(
     const tx = await governor.execute(id, { gasPrice: 0, gasLimit: 120000000 });
     const receipt = await tx.wait();
 
-    if(receipt.gasUsed.toNumber() >= 16_777_215) {
+    if (receipt.gasUsed.toNumber() >= 16_777_215) {
       throw new Error('Execution may have failed due to hitting gas limit');
     }
   }
@@ -1609,13 +1626,16 @@ export async function executeOpenProposalAndRelay(
   const startingBlockNumber =
     await governanceDeploymentManager.hre.ethers.provider.getBlockNumber();
   await executeOpenProposal(governanceDeploymentManager, openProposal);
+
   console.log(`Executed proposal ${openProposal.id} on ${governanceDeploymentManager.network}, checking if relay to ${bridgeDeploymentManager.network} is needed...`);
   console.log(`All Redstone oracles on ${bridgeDeploymentManager.network} are mocked`);
+
   const bridgeManagers = await isBridgeProposal(
     governanceDeploymentManager,
     bridgeDeploymentManager,
     openProposal
   );
+
   for (const bridgeManager of bridgeManagers) {
     await mockAllRedstoneOracles(bridgeManager);
     if (bridgeManager) {
@@ -1695,7 +1715,7 @@ export async function timeUntilUnderwater({
   // XXX throw error if baseBalanceOf is positive and liquidationMargin is positive
   return Number(
     (-liquidationMargin * factorScale) / baseLiquidity / borrowRate +
-      fudgeFactor
+    fudgeFactor
   );
 }
 
@@ -1742,4 +1762,93 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
     // If the call reverts or fails, extended pause is not supported
     return false;
   }
+}
+
+export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
+  try {
+    const configurator = await ctx.getConfigurator();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    // Use function selector to probe existence without reverting on unsupported networks
+    const iface = new ethers.utils.Interface([
+      'function marketAdminPermissionChecker() public view returns (address)'
+    ]);
+    const functionSelector = iface.getSighash('marketAdminPermissionChecker');
+    
+    const result = await ethers.provider.call({
+      to: configurator.address,
+      data: functionSelector
+    });
+    
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+type ArrayMethods = keyof Omit<any[], number>;
+
+type NamedKeys<T> = {
+  [K in keyof T as K extends number | `${number}` | ArrayMethods ? never : K]: T[K];
+};
+
+type Normalize<T> = T extends BigNumber
+  ? bigint
+  : T extends string | number | boolean
+  ? T
+  : [NamedKeys<T>] extends [Record<string, never>]
+  ? T extends (infer U)[]
+    ? Normalize<U>[]
+    : T
+  : { [K in keyof NamedKeys<T>]: Normalize<NamedKeys<T>[K]> };
+
+type NormalizedStruct<T> = Normalize<NamedKeys<T>>;
+
+/**
+ * Hybrid array-objects with both numeric and named keys are stripped to plain
+ * objects with native bigint values, safe to destructure, compare, and serialize.
+ */
+export function normalizeStructOutput<T>(value: T): NormalizedStruct<T> {
+  function normalize(val: any): any {
+    if (BigNumber.isBigNumber(val)) {
+      return val.toBigInt();
+    }
+    if (val && typeof val === 'object') {
+      const namedKeys = Object.keys(val).filter((key) => isNaN(Number(key)));
+      if (namedKeys.length > 0) {
+        return Object.fromEntries(namedKeys.map((key) => [key, normalize(val[key])]));
+      }
+      if (Array.isArray(val)) {
+        return val.map(normalize);
+      }
+    }
+    return val;
+  }
+
+  return normalize(value) as NormalizedStruct<T>;
+}
+
+/// Finds the first asset with non-zero configuration values
+export async function getActiveAsset(context: CometContext) {
+  const configurator = await context.getConfigurator();
+  const cometAddress = (await context.getComet()).address;
+  const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
+
+  const assetIndex = assetConfigs.findIndex((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
+
+  return {
+    assetIndex,
+    assetConfig: assetConfigs[assetIndex]
+  };
+}
+
+export async function hasActiveAsset(ctx: CometContext): Promise<boolean> {
+  const configurator = await ctx.getConfigurator();
+  const cometAddress = (await ctx.getComet()).address;
+  const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
+
+  return assetConfigs.some((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
 }

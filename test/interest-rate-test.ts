@@ -210,7 +210,7 @@ describe('interest calculation', function () {
         lastUpdatedTime = curUpdatedTime;
       });
 
-      it('but does not change supply indexe (as accrue is performed before supply state changes)', async () => {
+      it('but does not change supply index (as accrue is performed before supply state changes)', async () => {
         expect((await comet.totalsBasic()).baseSupplyIndex).to.equal(exp(1, 15));
       });
 
@@ -309,7 +309,7 @@ describe('interest calculation', function () {
         lastUpdatedTime = curUpdatedTime;
       });
 
-      it('but does not change supply indexe (as accrue is performed before supply state changes)', async () => {
+      it('but does not change supply index (as accrue is performed before supply state changes)', async () => {
         expect((await comet.totalsBasic()).baseSupplyIndex).to.equal(
           exp(1, 15)
         );
@@ -826,7 +826,7 @@ describe('interest calculation', function () {
         expect(index).to.equal(accruedIndex);
       });
 
-      it('utiization corresponds to the market state', async () => {
+      it('utilization corresponds to the market state', async () => {
         const curSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
         const curBorrowIndex = (await comet.totalsBasic()).baseBorrowIndex;
 
@@ -1122,7 +1122,7 @@ describe('interest calculation', function () {
           expect(index).to.equal(accruedIndex);
         });
 
-        it('utiization corresponds to the market state (> 100%)', async () => {
+        it('utilization corresponds to the market state (> 100%)', async () => {
           expect(await comet.getUtilization()).to.be.greaterThanOrEqual(
             exp(1, 18)
           ); // > 100%
@@ -1203,7 +1203,7 @@ describe('interest calculation', function () {
             .transfer(eve.address, BORROW_AMOUNT_TRANSFER)).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
         });
 
-        it('exceeds supported utilization is reached during tranfer', async () => {
+        it('exceeds supported utilization is reached during transfer', async () => {
           // Check that total supply is greater than 0
           expect(currTotalSupplyBase).to.be.greaterThan(0);
 
@@ -1421,7 +1421,7 @@ describe('interest calculation', function () {
           expect(index).to.equal(accruedIndex);
         });
 
-        it('utiization corresponds to the market state (> 100%)', async () => {
+        it('utilization corresponds to the market state (> 100%)', async () => {
           const curSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
           const curBorrowIndex = (await comet.totalsBasic()).baseBorrowIndex;
 
@@ -1563,7 +1563,7 @@ describe('interest calculation', function () {
         lastUpdatedTime = curUpdatedTime;
       });
 
-      it('supply index grows based on the high slope of the interest curve (as supply state is updated after acrrual)', async () => {
+      it('supply index grows based on the high slope of the interest curve (as supply state is updated after accrual)', async () => {
         let expectedSupplyRate = baseSupplyRate;
         expectedSupplyRate = expectedSupplyRate.add(
           supplyLowSlope.mul(supplyKink).div(exp(1, 18))
@@ -1583,7 +1583,7 @@ describe('interest calculation', function () {
         expect(index).to.equal(accruedIndex);
       });
 
-      it('borrow index grows based on the high slope of the interest curve (as supply state is updated after acrrual)', async () => {
+      it('borrow index grows based on the high slope of the interest curve (as supply state is updated after accrual)', async () => {
         let expectedBorrowRate = baseBorrowRate;
         expectedBorrowRate = expectedBorrowRate.add(
           borrowLowSlope.mul(borrowKink).div(exp(1, 18))
@@ -1619,7 +1619,7 @@ describe('interest calculation', function () {
           .div(scaledSupply); // 50% +
         const currentUtilization: BigNumber = await comet.getUtilization();
 
-        /// we can loose some weis of accuracy based on rounding errors
+        /// we can lose some weis of accuracy based on rounding errors
         expect(currentUtilization).to.be.approximately(
           expectedUtilization,
           exp(1, 4)
@@ -1705,7 +1705,7 @@ describe('interest calculation', function () {
         expect(index).to.equal(accruedIndex);
       });
 
-      it('utiization corresponds to the market state (< kink%)', async () => {
+      it('utilization corresponds to the market state (< kink%)', async () => {
         const curSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
         const curBorrowIndex = (await comet.totalsBasic()).baseBorrowIndex;
 
@@ -1721,7 +1721,7 @@ describe('interest calculation', function () {
           .div(scaledSupply); // 100% +
         const currentUtilization: BigNumber = await comet.getUtilization();
 
-        /// we can loose some weis of accuracy based on rounding errors
+        /// we can lose some weis of accuracy based on rounding errors
         expect(currentUtilization).to.be.approximately(
           expectedUtilization,
           exp(1, 4)
@@ -1832,12 +1832,28 @@ describe('interest calculation', function () {
 
         // 2k supplied, 8k borrowed -> withdraw of 2k - 1$ will spike utilization over 8000%, exceeding uint64 limit
         const curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.greaterThanOrEqual(exp(80, 18)); // > 8000%, far exceedint uint64 limit
+        expect(curUtilization).to.be.greaterThanOrEqual(exp(80, 18)); // > 8000%, far exceeding uint64 limit
       });
     });
   });
 
   describe('edge cases', function () {
+    /**
+     * No-borrow reserve farming cap (CometWithExtendedAssetList / #464).
+     *
+     * Setup: two lenders supply 2×$1M base, Comet is seeded with $5 reserves, utilization stays 0.
+     * Lenders earn supply interest only from those reserves (base supply rate at util=0).
+     *
+     * Contract behavior: when utilization is 0 and presentValue(totalSupply) >= token balance,
+     * getSupplyRate() returns 0 — accrual stops instead of clamping baseSupplyIndex after the fact
+     * (the old post-accrual truncate in accruedInterestIndices was removed in #464).
+     *
+     * Accrual applies one supply rate over the whole timeElapsed window. If that window is large,
+     * a single accrue can land a few wei above the ideal cap; the important invariant is that
+     * getSupplyRate() then stays 0 and a follow-up accrue does not grow the index further.
+     *
+     * Assertions use market-wide totals (2 deposits + reserves), not a single lender's principal.
+     */
     describe('supply interest will not exceed reserves in case of no borrows for new market', function () {
       let testComet: CometHarnessInterfaceExtendedAssetList;
       const SUPPLY_AMOUNT: BigNumber = BigNumber.from(exp(1000000, baseDecimals)); // 1mln$
@@ -1846,6 +1862,7 @@ describe('interest calculation', function () {
       const INITIAL_RESERVES: BigNumber = BigNumber.from(exp(5, baseDecimals)); // 5$
       let COLLATERAL_AMOUNT: BigNumber; // will be calculated from the price at later testcase
       let expectedTimeElapsed: BigNumber;
+      let maxSupplyIndex: BigNumber;
 
       let baseToken: FaucetToken;
       let collateral: FaucetToken;
@@ -1883,33 +1900,25 @@ describe('interest calculation', function () {
 
       it('supply rate corresponds to the base rate', async () => {
         // cur utilization is 0, as there is no borrows
-        const curSupplyRate = await testComet.getSupplyRate(0);
+        const curSupplyRate = await testComet.getSupplyRate(await testComet.getUtilization());
         expect(curSupplyRate).to.equal(baseSupplyRate);
       });
 
       it('get expected time elapsed on which reserves spend will happen', async () => {
-        // since we deposited just once, we can use the initial principal
-        // if more deposits are performed, it will only speed things up, so we can rely on 1 deposit only
-        const alicePrincipal = (await testComet.userBasic(alice.address)).principal;
+        const { totalSupplyBase, baseSupplyIndex } = await testComet.totalsBasic();
+        const baseBalance = await baseToken.balanceOf(testComet.address);
 
-        // the balance we want to achieve is deposit + half of reserve (for 2 users)
-        const expectedBalance = INITIAL_RESERVES.div(2).add(SUPPLY_AMOUNT);
-
-        // get the expected supply index
-        // presentValue = principal * supplyIndex / 1e15
-        // => expected index = presentValue * 1e15 / principal
-        const expectedSupplyIndex = expectedBalance.mul(exp(1, 15)).div(alicePrincipal);
+        // totalSupply() may grow only up to the actual token balance (deposits + seed reserves)
+        maxSupplyIndex = baseBalance.mul(exp(1, 15)).div(totalSupplyBase);
 
         // since utilization = 0, lenders will get only baseRate of interest
         const expectedSupplyRate = baseSupplyRate;
 
-        // since we started from the initial deposit, the initial index is 1
-        const prevSupplyIndex = BigNumber.from(exp(1, 15));
-
-        // get the time elapsed until the required balance
         // accrued index = supply index + supply index * supply rate * time elapsed
-        // => time elapsed = (accrued index - supply index) / (supply index * supply rate)
-        expectedTimeElapsed = expectedSupplyIndex.sub(prevSupplyIndex).div(prevSupplyIndex.mul(expectedSupplyRate).div(exp(1, 18)));
+        // => time elapsed = (accrued index - supply index) / (supply index * supply rate / factorScale)
+        expectedTimeElapsed = maxSupplyIndex
+          .sub(baseSupplyIndex)
+          .div(baseSupplyIndex.mul(expectedSupplyRate).div(exp(1, 18)));
       });
 
       it('accrue market right after the expected time elapsed', async () => {
@@ -1919,18 +1928,26 @@ describe('interest calculation', function () {
         await testComet.accrueAccount(ethers.constants.AddressZero);
       });
 
-      it('supply rate is growing as total supply grows', async () => {
-        expect(await baseToken.balanceOf(testComet.address)).to.be.approximately(await testComet.totalSupply(), 1);
-        expect(await testComet.getSupplyRate(0)).to.equal(baseSupplyRate);
+      it('total supply does not exceed comet balance and supply rate is cut off', async () => {
+        const baseBalance = await baseToken.balanceOf(testComet.address);
+        const totalSupply = await testComet.totalSupply();
+
+        // See describe-block comment: cap is rate cutoff, not index truncate; allow tiny overshoot on one long accrue.
+        expect(totalSupply).to.be.approximately(baseBalance, 200);
+        expect(await testComet.getSupplyRate(await testComet.getUtilization())).to.equal(0);
       });
 
-      it('supply index becomes equal to max possible index', async () => {
+      it('supply index is at most the max possible index', async () => {
+        const { baseSupplyIndex, totalSupplyBase } = await testComet.totalsBasic();
         const baseBalance = await baseToken.balanceOf(testComet.address);
-        const maxIndex = baseBalance.mul(exp(1, 15)).div((await testComet.totalsBasic()).totalSupplyBase);
-        expect((await testComet.totalsBasic()).baseSupplyIndex).to.equal(maxIndex);
+        const capIndex = baseBalance.mul(exp(1, 15)).div(totalSupplyBase);
+
+        // capIndex = balance * BASE_INDEX_SCALE / totalSupplyBase; same tolerance as totalSupply check above.
+        expect(baseSupplyIndex).to.be.approximately(capIndex, 100_000);
       });
 
       it('accrue market does not change the supply index', async () => {
+        // With getSupplyRate() == 0, further accrual must be a no-op for the supply index.
         const prevIndex = (await testComet.totalsBasic()).baseSupplyIndex;
 
         await ethers.provider.send('evm_increaseTime', [60]);
@@ -2146,7 +2163,7 @@ describe('interest calculation', function () {
         expect(currentUtilization).to.be.approximately(exp(56e16), exp(1, 12));
       });
 
-      it('increase time to bring alice and bob to 1% from liqudiation', async () => {
+      it('increase time to bring alice and bob to 1% from liquidation', async () => {
         await ethers.provider.send('evm_increaseTime', [3600 * 24 * 360]);
         await ethers.provider.send('evm_mine', []);
         await testComet.accrueAccount(ethers.constants.AddressZero);

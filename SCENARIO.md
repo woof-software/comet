@@ -8,7 +8,15 @@ Scenarios are high-level property and ad-hoc tests for the Comet protocol. To ru
 
 You can run scenarios against a given base as:
 
-`npx hardhat scenario --bases development,sepolia,fuji`
+`npx hardhat scenario --bases development,linea,mainnet`
+
+You can run scenarios from a specific file (or files matching a glob pattern) with `--glob`:
+
+`npx hardhat scenario --glob 'scenario/AllowBySigScenario.ts'`
+
+`npx hardhat scenario --glob 'scenario/AllowBySigScenario.ts' --bases development`
+
+The default is `scenario/**.ts` (all scenario files). The pattern is passed to [fast-glob](https://github.com/mrmlnc/fast-glob); quote it in the shell so paths and braces are not expanded by bash. Combine with `--bases` to limit which deployment environments are used.
 
 You can run spider persistently first if you wish:
 

@@ -35,7 +35,7 @@ export default migration('1729767867_add_wusdm_as_collateral', {
       'wUSDM',
       WUSDM_ADDRESS,
       'optimism',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const wUSDMPricefeed = await deploymentManager.existing(
       'wUSDM:priceFeed',

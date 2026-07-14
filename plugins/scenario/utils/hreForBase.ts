@@ -73,8 +73,6 @@ function getBlockRollback(base: ForkSpec) {
   }
   else if (base.network === 'arbitrum') {
     return undefined;
-  } else if (base.network === 'sepolia') {
-    return undefined;
   }
   else if (base.network === 'unichain') {
     return 0;
@@ -116,16 +114,45 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
     }
     return baseNetwork.url;
   })();
-  const provider = new ethers.providers.JsonRpcProvider(providerUrl);
-  if(providerUrl)
-    console.log(`Forking from network: ${base.network} at block number: ${await provider.getBlockNumber() - (getBlockRollback(base) || 0)}`);
+
+  const getBlockNumberWithRetry = async (): Promise<number> => {
+    const provider = new ethers.providers.JsonRpcProvider(providerUrl);
+    const maxAttempts = 5;
+    const retryDelayMs = 5000;
+    const requestTimeoutMs = 10000;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await Promise.race([
+          provider.getBlockNumber(),
+          new Promise<number>((_, reject) =>
+            setTimeout(() => reject(new Error(`Timed out fetching block number after ${requestTimeoutMs / 1000}s`)), requestTimeoutMs)
+          ),
+        ]);
+      } catch (error) {
+        if (attempt === maxAttempts) {
+          throw error;
+        }
+
+        console.warn(`Failed to fetch block number (attempt ${attempt}/${maxAttempts}). Retrying in ${retryDelayMs / 1000}s...`);
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+
+    throw new Error('Failed to fetch block number after retries.');
+  };
+
+  if(providerUrl){
+    console.log(`Forking from network: ${base.network}`);
+    console.log(`At block number: ${await getBlockNumberWithRetry() - (getBlockRollback(base) || 0)}`);
+  }
 
   // noNetwork otherwise
   if (!base.blockNumber && providerUrl && getBlockRollback(base) !== undefined)
-    base.blockNumber = await provider.getBlockNumber() - getBlockRollback(base); // arbitrary number of blocks to go back
+    base.blockNumber = await getBlockNumberWithRetry() - getBlockRollback(base); // arbitrary number of blocks to go back
 
   if (getBlockRollback(base) === 0) {
-    const block = await provider.getBlockNumber();
+    const block = await getBlockNumberWithRetry();
     base.blockNumber = block - 1;
   }
 
