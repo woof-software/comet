@@ -5,6 +5,7 @@ import { exp } from '../test/helpers';
 import { FaucetToken } from '../build/types';
 import { calldata } from '../src/deploy';
 import { expectBase, isBridgedDeployment } from './utils';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => {
   // For this scenario, we will be using the value of LiquidatorPoints.numAbsorbs for address ZERO to test that initialize has been called
@@ -144,7 +145,7 @@ scenario('add new asset',
 
     // Try to supply new token and borrow base
     const baseAssetAddress = await comet.baseToken();
-    const borrowAmount = 1000n * (await comet.baseScale()).toBigInt();
+    const borrowAmount = BigInt(getConfigForScenario(context).withdrawBase) * (await comet.baseScale()).toBigInt();
     await dogecoin.connect(albert.signer).approve(comet.address, exp(100, 8));
     await albert.supplyAsset({ asset: dogecoin.address, amount: exp(100, 8) });
     await albert.withdrawAsset({ asset: baseAssetAddress, amount: borrowAmount });
