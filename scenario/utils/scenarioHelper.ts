@@ -38,22 +38,24 @@ const defaultConfig = {
 export function getConfigForScenario(ctx: CometContext, i?: number) {
   const config = { ...defaultConfig };
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'wbtc') {
-    config.bulkerBase = 50;
+    config.bulkerBase = 25;
     config.bulkerAsset = 200;
     config.bulkerAsset1 = 200;
-    config.bulkerComet = 50;
-    config.bulkerBorrowBase = 25;
-    config.withdrawBase = 25;
+    config.bulkerComet = 5000;
+    config.bulkerBorrowBase = 5;
+    config.withdrawBase = 5;
     config.withdrawAsset = 200;
-    config.bulkerBorrowAsset = 50;
-    config.liquidationBase = 1000;
-    config.liquidationBase1 = 500;
-    config.liquidationAsset = 100;
-    config.rewardsAsset = 100;
-    config.rewardsBase = 10;
-    config.transferBase = 100;
-    config.transferAsset = 500;
-    config.transferAsset1 = 500;
+    config.bulkerBorrowAsset = 10;
+    config.liquidationBase = 10;
+    config.liquidationBase1 = 5;
+    config.liquidationAsset = 1;
+    config.rewardsAsset = 10;
+    config.rewardsBase = 1;
+    config.transferBase = 1;
+    config.transferAsset = 5;
+    config.transferAsset1 = 5;
+    config.supplyBase = 5;
+    config.withdrawBase1 = 5;
     config.interestSeconds = 70;
   }
 
