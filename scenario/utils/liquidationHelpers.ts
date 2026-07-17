@@ -4,7 +4,7 @@ import { impersonateAddress } from '../../plugins/scenario/utils';
 import { CometContext } from '../context/CometContext';
 import { CometInterface, LiquidationModule, LiquidationModule__factory } from '../../build/types';
 import { mulFactor, factorScale, toBigInt } from '../../test/helpers';
-import { fundAccount, getLiquidationModuleAddress } from './index';
+import { AssetInfoBigInt, fundAccount, getLiquidationModuleAddress } from './index';
 
 // Compound governance timelock — holds DEFAULT_ADMIN_ROLE (and PAUSER_ROLE) on every liquidation
 // module, so it can toggle the mode / DEX switch and grant the keeper EXECUTOR_ROLE.
@@ -66,7 +66,7 @@ export interface AbsorbStateBefore {
  * `CollateralState` used in `test/liquidation-logic/absorb.test.ts`; build it with
  * {@link makeCollateralState}, then fill `seizeAmount`/`seizedValue` from the scenario's own math.
  */
-export type CollateralState = Awaited<ReturnType<CometInterface['getAssetInfo']>> & {
+export type CollateralState = {
   /** Borrower's supplied collateral: `collateralBalanceOf(account, asset)`. */
   collateralBalance: bigint;
   /** Protocol-wide supplied total: `totalsCollateral(asset).totalSupplyAsset`. */
@@ -75,8 +75,8 @@ export type CollateralState = Awaited<ReturnType<CometInterface['getAssetInfo']>
   collateralReserves: bigint;
   /** Comet's ERC20 balance of the collateral: `asset.balanceOf(comet)` (untouched by absorb). */
   cometErc20Balance: bigint;
-  /** Current collateral price from the asset price feed. */
-  price: bigint;
+  /** Borrower's `userCollateral(account, asset)` struct (balance, _reserved). */
+  userCollateral: Awaited<ReturnType<CometInterface['userCollateral']>>;
   /** Amount expected to be seized by absorb/liquidate. */
   seizeAmount: bigint;
   /** Market value of `seizeAmount`: `seizeAmount * price / scale`. */
@@ -107,33 +107,31 @@ export async function captureAbsorbStateBefore(
 }
 
 /**
- * Captures the full pre-absorb {@link CollateralState} for each collateral index, one entry per
- * index and in the same order. For every asset it reads the `getAssetInfo` struct plus the
- * borrower's supplied balance, comet's supplied total / reserves / ERC20 balance, and the current
- * price. `seizeAmount`/`seizedValue` start at zero — the scenario fills them from its own seizure
- * math. Returning an ordered array lets callers destructure (`[first, second]`) or iterate (the last
- * entry is the one that closes the debt).
+ * Captures the full pre-absorb {@link CollateralState} for each collateral in `collateralInfos`, one
+ * entry per asset and in the same order. For every asset it reads the borrower's supplied balance and
+ * `userCollateral` struct plus comet's supplied total / reserves / ERC20 balance. The asset config
+ * (scale, factors, priceFeed, offset) and current price come from the caller's `collateralInfos` and
+ * price reads, so they are not duplicated here. `seizeAmount`/`seizedValue` start at zero — the
+ * scenario fills them from its own seizure math. Returning an ordered array lets callers destructure
+ * (`[first, second]`) or iterate (the last entry is the one that closes the debt).
  */
 export async function makeCollateralStates(
   comet: CometInterface,
   context: CometContext,
   account: string,
-  indices: number[]
+  collateralInfos: AssetInfoBigInt[]
 ): Promise<CollateralState[]> {
   return Promise.all(
-    indices.map(async (index) => {
-      const info = await comet.getAssetInfo(index);
-      // `info` is a frozen ethers Result, so spread into a fresh (extensible) object before adding fields.
+    collateralInfos.map(async ({ asset }) => {
       return {
-        ...info,
-        collateralBalance: (await comet.collateralBalanceOf(account, info.asset)).toBigInt(),
-        totalsCollateral: (await comet.totalsCollateral(info.asset)).totalSupplyAsset.toBigInt(),
-        collateralReserves: (await comet.getCollateralReserves(info.asset)).toBigInt(),
-        cometErc20Balance: await context.getAssetByAddress(info.asset).balanceOf(comet.address),
-        price: (await comet.getPrice(info.priceFeed)).toBigInt(),
+        collateralBalance: (await comet.collateralBalanceOf(account, asset)).toBigInt(),
+        totalsCollateral: (await comet.totalsCollateral(asset)).totalSupplyAsset.toBigInt(),
+        collateralReserves: (await comet.getCollateralReserves(asset)).toBigInt(),
+        cometErc20Balance: await context.getAssetByAddress(asset).balanceOf(comet.address),
+        userCollateral: await comet.userCollateral(account, asset),
         seizeAmount: 0n,
         seizedValue: 0n,
-      } as CollateralState;
+      };
     })
   );
 }

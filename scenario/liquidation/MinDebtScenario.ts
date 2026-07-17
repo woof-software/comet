@@ -6,11 +6,11 @@ import {
   configureModule,
   captureAbsorbStateBefore,
   makeCollateralStates,
+  getAssetInfo,
   TARGET_HF,
   getUsableCollateralIndices,
 } from '../utils';
 import { mulPrice, mulFactor, divPrice, factorScale } from '../../test/helpers';
-import { ContractTransaction } from 'ethers';
 
 /**
  * Min-debt (sub-`baseBorrowMin`) absorb scenarios for the liquidation module — the mirror of
@@ -53,25 +53,21 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // reserve assertions below are exact, with no intra-block accrual to reason about.
       await context.zeroBorrowRates();
 
-      const info = await comet.getAssetInfo(collateralIndex);
-      const scale = info.scale.toBigInt();
-      const originalPrice = (await comet.getPrice(info.priceFeed)).toBigInt();
-      const borrowCF = info.borrowCollateralFactor.toBigInt();
-      const lcf = info.liquidateCollateralFactor.toBigInt();
-      const lf = info.liquidationFactor.toBigInt();
-      const collateralAsset = context.getAssetByAddress(info.asset);
+      const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
+      const originalPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
+      const collateralAsset = context.getAssetByAddress(collateralAssetInfo.asset);
 
       // 1. Supply enough collateral to support a borrow above the normal minimum, then borrow it:
       //      borrowAmount    = 1.2 * baseBorrowMin
       //      collateralValue = borrowValue / BCF, with a 10% rounding buffer
       const borrowAmount = (12n * baseBorrowMin) / 10n;
       const borrowValue = mulPrice(borrowAmount, basePrice, baseScale);
-      const collateralValue = ((borrowValue * factorScale) / borrowCF * 110n) / 100n;
-      const collateralAmount = (collateralValue * scale) / originalPrice + 1n;
+      const collateralValue = ((borrowValue * factorScale) / collateralAssetInfo.borrowCollateralFactor * 110n) / 100n;
+      const collateralAmount = (collateralValue * collateralAssetInfo.scale) / originalPrice + 1n;
 
       await context.sourceTokens(collateralAmount, collateralAsset, albert);
       await collateralAsset.approve(albert, comet.address);
-      await albert.safeSupplyAsset({ asset: info.asset, amount: collateralAmount });
+      await albert.safeSupplyAsset({ asset: collateralAssetInfo.asset, amount: collateralAmount });
 
       await context.sourceTokens(2n * borrowAmount, baseAsset, comet.address);
       await albert.withdrawAsset({ asset: baseToken, amount: borrowAmount });
@@ -94,23 +90,20 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      upperValue = debt / LCF  (position stops being liquidatable)
       //      target     = (lowerValue + upperValue) / 2
       const remainingDebtValue = mulPrice(remainingDebt, basePrice, baseScale);
-      const lowerValue = (remainingDebtValue * factorScale) / lf;
-      const upperValue = (remainingDebtValue * factorScale) / lcf;
+      const lowerValue = (remainingDebtValue * factorScale) / collateralAssetInfo.liquidationFactor;
+      const upperValue = (remainingDebtValue * factorScale) / collateralAssetInfo.liquidateCollateralFactor;
       const targetCollateralValue = (lowerValue + upperValue) / 2n;
-      const droppedPrice = (targetCollateralValue * scale) / collateralAmount;
-      await context.changePriceFeeds({ [info.asset]: Number(droppedPrice) / 1e8 });
+      const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
 
       const module = await configureModule(context, world, entry, partial, betty.address);
       await comet.accrueAccount(albert.address);
 
       // 4. Capture state and run the sanity checks that define the sub-min partial-seizure case.
       const cometStateBefore = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
-      const [collateralState] = await makeCollateralStates(comet, context, albert.address, [collateralIndex]);
+      const [collateralState] = await makeCollateralStates(comet, context, albert.address, [collateralAssetInfo]);
       const debtValueBefore = mulPrice(-cometStateBefore.userBalance, basePrice, baseScale);
-      const collateralValueAfterLF = mulFactor(
-        mulPrice(collateralState.collateralBalance, collateralState.price, collateralState.scale),
-        lf
-      );
+      const collateralValueAfterLF = mulFactor(mulPrice(collateralState.collateralBalance, droppedPrice, collateralAssetInfo.scale), collateralAssetInfo.liquidationFactor);
 
       // User is liquidatable, the debt is below the minimum, and the collateral's LF-weighted value
       // still exceeds the debt — so the seizure is partial and leaves a surplus.
@@ -119,11 +112,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(collateralValueAfterLF).to.be.greaterThan(debtValueBefore);
 
       // 5. Absorb via the active entry point.
-      let absorbTx: ContractTransaction;
       if (entry === 'absorb') {
-        absorbTx = await comet.connect(betty.signer).absorb(betty.address, [albert.address]);
+        await comet.connect(betty.signer).absorb(betty.address, [albert.address]);
       } else {
-        absorbTx = await module.connect(betty.signer).liquidate(betty.address, albert.address, []);
+        await module.connect(betty.signer).liquidate(betty.address, albert.address, []);
       }
 
       // 6. Independently derive the expected event values. presentValue() on the captured principal at
@@ -134,53 +126,43 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      seizedValue = seizeAmount * price / scale      (mulPrice — the event's value field)
       const debtAtAbsorb = -(await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
-      const wantedCollateralValue = (basePaidOutValue * factorScale) / lf;
-      const seizeAmount = divPrice(wantedCollateralValue, collateralState.price, collateralState.scale);
-      const seizedValue = mulPrice(seizeAmount, collateralState.price, collateralState.scale);
+      const wantedCollateralValue = (basePaidOutValue * factorScale) / collateralAssetInfo.liquidationFactor;
+      collateralState.seizeAmount = divPrice(wantedCollateralValue, droppedPrice, collateralAssetInfo.scale);
+
+      const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
+      const [collateralStateAfter] = await makeCollateralStates(comet, context, albert.address, [collateralAssetInfo]);
 
       // 7. Post-absorb checks.
 
-      // AbsorbDebt is emitted for the FULL (small) debt — the whole sub-min debt is closed at once.
-      await expect(absorbTx)
-        .to.emit(module, 'AbsorbDebt')
-        .withArgs(betty.address, albert.address, debtAtAbsorb, basePaidOutValue);
-      // AbsorbCollateral is emitted for a PARTIAL seizure — only enough to cover the debt after LF.
-      await expect(absorbTx)
-        .to.emit(module, 'AbsorbCollateral')
-        .withArgs(betty.address, albert.address, collateralState.asset, seizeAmount, seizedValue);
-
       // Debt fully cleared: principal, borrow balance and simple base balance are all zero.
-      expect((await comet.userBasic(albert.address)).principal).to.equal(0);
-      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0);
+      expect(cometStateAfter.user.principal).to.equal(0);
+      expect(-cometStateAfter.userBalance).to.equal(0n);
       expect(await comet.balanceOf(albert.address)).to.equal(0);
 
       // Only part of the collateral is seized; a surplus remains and the account is healthy again.
-      const remainingCollateral = collateralState.collateralBalance - seizeAmount;
-      expect(remainingCollateral).to.be.greaterThan(0n);
-      expect(await comet.collateralBalanceOf(albert.address, collateralState.asset)).to.equal(remainingCollateral);
-      expect((await comet.userCollateral(albert.address, collateralState.asset)).balance).to.equal(remainingCollateral);
+      const remainingCollateral = collateralState.collateralBalance - collateralState.seizeAmount;
+      expect(collateralStateAfter.collateralBalance).to.equal(remainingCollateral);
+      expect(collateralStateAfter.userCollateral.balance).to.equal(remainingCollateral);
+
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
       // Collateral remains, so the user's assetsIn bit and reserved bits are untouched.
-      expect((await comet.userBasic(albert.address)).assetsIn).to.equal(cometStateBefore.user.assetsIn);
-      expect((await comet.userBasic(albert.address))._reserved).to.equal(cometStateBefore.user._reserved);
+      expect(cometStateAfter.user.assetsIn).to.equal(cometStateBefore.user.assetsIn);
+      expect(cometStateAfter.user._reserved).to.equal(cometStateBefore.user._reserved);
 
       // Comet borrow state: borrow base reduced by the absorbed principal; supply base unchanged.
-      const totalsAfter = await comet.totalsBasic();
-      expect(totalsAfter.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
-      expect(totalsAfter.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
+      expect(cometStateAfter.totals.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
+      expect(cometStateAfter.totals.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
 
       // Comet collateral accounting: supplied total drops by the seized amount, reserves rise by it,
       // and the collateral + base ERC20 balances are untouched on the absorb path.
-      expect((await comet.totalsCollateral(collateralState.asset)).totalSupplyAsset)
-        .to.equal(collateralState.totalsCollateral - seizeAmount);
-      expect(await comet.getCollateralReserves(collateralState.asset))
-        .to.equal(collateralState.collateralReserves + seizeAmount);
-      expect(await collateralAsset.balanceOf(comet.address)).to.equal(collateralState.cometErc20Balance);
-      expect(await baseAsset.balanceOf(comet.address)).to.equal(cometStateBefore.cometBaseErc20Balance);
+      expect(collateralStateAfter.totalsCollateral).to.equal(collateralState.totalsCollateral - collateralState.seizeAmount);
+      expect(collateralStateAfter.collateralReserves).to.equal(collateralState.collateralReserves + collateralState.seizeAmount);
+      expect(collateralStateAfter.cometErc20Balance).to.equal(collateralState.cometErc20Balance);
+      expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
 
       // Base reserves fall by the debt paid out.
-      expect(await comet.getReserves()).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
+      expect(cometStateAfter.baseReserves).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
     }
   );
 
@@ -205,6 +187,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // them: [0] is drained, [1] closes the remaining debt.
       const collateralIndexes = await getUsableCollateralIndices(context, 2);
 
+      const collateralInfos = await Promise.all(collateralIndexes.map((index) => getAssetInfo(comet, index)));
+      const collateralPrices = await Promise.all(collateralInfos.map(async (collateralAssetInfo) => (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt()));
+
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);
       const baseScale = (await comet.baseScale()).toBigInt();
@@ -222,15 +207,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
       const collateralValue = (15n * minDebtValue) / 10n;
 
-      for (const index of collateralIndexes) {
-        const info = await comet.getAssetInfo(index);
-        const price = (await comet.getPrice(info.priceFeed)).toBigInt();
-        const amount = (collateralValue * info.scale.toBigInt()) / price + 1n;
-        const asset = context.getAssetByAddress(info.asset);
+      for (let i = 0; i < collateralInfos.length; i++) {
+        const collateralAssetInfo = collateralInfos[i];
+        const amount = (collateralValue * collateralAssetInfo.scale) / collateralPrices[i] + 1n;
+        const asset = context.getAssetByAddress(collateralAssetInfo.asset);
 
         await context.sourceTokens(amount, asset, albert);
         await asset.approve(albert, comet.address);
-        await albert.safeSupplyAsset({ asset: info.asset, amount });
+        await albert.safeSupplyAsset({ asset: collateralAssetInfo.asset, amount });
       }
 
       // 2. Borrow above the minimum: borrowAmount = 1.2 * baseBorrowMin.
@@ -251,7 +235,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(remainingDebt).to.be.lessThan(baseBorrowMin);
 
       const remainingDebtValue = mulPrice(remainingDebt, basePrice, baseScale);
-      const collateralStatesBeforeDrop = await makeCollateralStates(comet, context, albert.address, collateralIndexes);
+      const collateralStatesBeforeDrop = await makeCollateralStates(comet, context, albert.address, collateralInfos);
 
       // 4. Drop collateral [0]'s price until its whole LF-weighted value covers only half the debt — a
       //    full seizure then cannot close the position, so the loop carries the rest forward:
@@ -260,11 +244,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      droppedPrice = value * scale / balance
       //    Every input is read from the market, so the drop sizes itself to whatever the asset is.
       const firstValueAfterLF = remainingDebtValue / 2n;
-      const firstValue = (firstValueAfterLF * factorScale) / collateralStatesBeforeDrop[0].liquidationFactor.toBigInt();
-      const firstDroppedPrice =
-        (firstValue * collateralStatesBeforeDrop[0].scale.toBigInt()) / collateralStatesBeforeDrop[0].collateralBalance;
+      const firstValue = (firstValueAfterLF * factorScale) / collateralInfos[0].liquidationFactor;
+      const firstDroppedPrice = (firstValue * collateralInfos[0].scale) / collateralStatesBeforeDrop[0].collateralBalance;
       // What collateral [0] still contributes to the liquidity keeping the account out of liquidation.
-      const firstLiquidity = mulFactor(firstValue, collateralStatesBeforeDrop[0].liquidateCollateralFactor.toBigInt());
+      const firstLiquidity = mulFactor(firstValue, collateralInfos[0].liquidateCollateralFactor);
 
       // 5. Drop collateral [1]'s price into the window where it closes the carried-forward shortfall
       //    while the account stays liquidatable. Both bounds are on its market value:
@@ -273,17 +256,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      target     = midpoint, so both hold with margin
       //    LCF < LF is enforced by the Configurator, so lowerValue < upperValue on every market: the
       //    window is never empty, whatever the collateral's factors are.
-      const lowerValue =
-        ((remainingDebtValue - firstValueAfterLF) * factorScale) / collateralStatesBeforeDrop[1].liquidationFactor.toBigInt();
-      const upperValue =
-        ((remainingDebtValue - firstLiquidity) * factorScale) / collateralStatesBeforeDrop[1].liquidateCollateralFactor.toBigInt();
+      const lowerValue = ((remainingDebtValue - firstValueAfterLF) * factorScale) / collateralInfos[1].liquidationFactor;
+      const upperValue = ((remainingDebtValue - firstLiquidity) * factorScale) / collateralInfos[1].liquidateCollateralFactor;
       const secondValue = (lowerValue + upperValue) / 2n;
-      const secondDroppedPrice =
-        (secondValue * collateralStatesBeforeDrop[1].scale.toBigInt()) / collateralStatesBeforeDrop[1].collateralBalance;
+      const secondDroppedPrice = (secondValue * collateralInfos[1].scale) / collateralStatesBeforeDrop[1].collateralBalance;
 
       await context.changePriceFeeds({
-        [collateralStatesBeforeDrop[0].asset]: Number(firstDroppedPrice) / 1e8,
-        [collateralStatesBeforeDrop[1].asset]: Number(secondDroppedPrice) / 1e8,
+        [collateralInfos[0].asset]: Number(firstDroppedPrice) / 1e8,
+        [collateralInfos[1].asset]: Number(secondDroppedPrice) / 1e8,
       });
 
       const module = await configureModule(context, world, entry, partial, betty.address);
@@ -291,16 +271,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       // 6. Capture state and run the sanity checks that define this case.
       const cometStateBefore = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
-      const collateralStates = await makeCollateralStates(comet, context, albert.address, collateralIndexes);
+      const collateralStates = await makeCollateralStates(comet, context, albert.address, collateralInfos);
       const debtValueBefore = mulPrice(-cometStateBefore.userBalance, basePrice, baseScale);
-      const firstValueAfterLFNow = mulFactor(
-        mulPrice(collateralStates[0].collateralBalance, collateralStates[0].price, collateralStates[0].scale),
-        collateralStates[0].liquidationFactor.toBigInt()
-      );
-      const secondValueAfterLFNow = mulFactor(
-        mulPrice(collateralStates[1].collateralBalance, collateralStates[1].price, collateralStates[1].scale),
-        collateralStates[1].liquidationFactor.toBigInt()
-      );
+      const firstValueAfterLFNow = mulFactor(mulPrice(collateralStates[0].collateralBalance, firstDroppedPrice, collateralInfos[0].scale), collateralInfos[0].liquidationFactor);
+      const secondValueAfterLFNow = mulFactor(mulPrice(collateralStates[1].collateralBalance, secondDroppedPrice, collateralInfos[1].scale), collateralInfos[1].liquidationFactor);
 
       // The account is liquidatable and its debt is below the minimum, so the loop is in the full-close
       // branch from collateral [0] on.
@@ -327,71 +301,66 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const debtAtAbsorb = -(await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
       collateralStates[0].seizeAmount = collateralStates[0].collateralBalance;
-      collateralStates[0].seizedValue = mulPrice(
-        collateralStates[0].seizeAmount, collateralStates[0].price, collateralStates[0].scale
-      );
-      const debtAfterFirst =
-        basePaidOutValue - mulFactor(collateralStates[0].seizedValue, collateralStates[0].liquidationFactor.toBigInt());
+      collateralStates[0].seizedValue = mulPrice(collateralStates[0].seizeAmount, firstDroppedPrice, collateralInfos[0].scale);
+      const debtAfterFirst = basePaidOutValue - mulFactor(collateralStates[0].seizedValue, collateralInfos[0].liquidationFactor);
 
       //    Iter 2 (collateral [1]): covers the rest → seize only what the residual debt needs.
       //      seizeAmount = (debtAfterFirst / LF) / price                     (divPrice)
       //      seizedValue = seizeAmount * price / scale                       (mulPrice)
-      collateralStates[1].seizeAmount = divPrice(
-        (debtAfterFirst * factorScale) / collateralStates[1].liquidationFactor.toBigInt(),
-        collateralStates[1].price,
-        collateralStates[1].scale
-      );
-      collateralStates[1].seizedValue = mulPrice(
-        collateralStates[1].seizeAmount, collateralStates[1].price, collateralStates[1].scale
-      );
+      collateralStates[1].seizeAmount = divPrice((debtAfterFirst * factorScale) / collateralInfos[1].liquidationFactor, secondDroppedPrice, collateralInfos[1].scale);
+      collateralStates[1].seizedValue = mulPrice(collateralStates[1].seizeAmount, secondDroppedPrice, collateralInfos[1].scale);
+
+      const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
+      const collateralStatesAfter = await makeCollateralStates(comet, context, albert.address, collateralInfos);
 
       // 9. Post-absorb checks.
 
       // Debt fully cleared: principal, borrow balance and simple base balance are all zero.
-      expect((await comet.userBasic(albert.address)).principal).to.equal(0);
-      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0);
+      expect(cometStateAfter.user.principal).to.equal(0);
+      expect(-cometStateAfter.userBalance).to.equal(0n);
       expect(await comet.balanceOf(albert.address)).to.equal(0);
 
       // Collateral [0] is drained; collateral [1] keeps the surplus left after closing the debt.
-      expect(await comet.collateralBalanceOf(albert.address, collateralStates[0].asset)).to.equal(0);
-      expect((await comet.userCollateral(albert.address, collateralStates[0].asset)).balance).to.equal(0);
-      
       const expectedSecondCollateralBalance = collateralStates[1].collateralBalance - collateralStates[1].seizeAmount;
-      expect(await comet.collateralBalanceOf(albert.address, collateralStates[1].asset)).to.equal(expectedSecondCollateralBalance);
-      expect((await comet.userCollateral(albert.address, collateralStates[1].asset)).balance).to.equal(expectedSecondCollateralBalance);
+      const collateralRemaining = [0n, expectedSecondCollateralBalance];
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].collateralBalance).to.equal(collateralRemaining[i]);
+      }
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].userCollateral.balance).to.equal(collateralRemaining[i]);
+      }
 
       // Only the fully-seized collateral [0]'s bit is cleared, in whichever bitfield its index falls
       // (assetsIn for offsets 0-15, _reserved above that); the surviving collateral [1] keeps its bit.
       let expectedAssetsIn = cometStateBefore.user.assetsIn;
       let expectedReserved = cometStateBefore.user._reserved;
-      if (collateralStates[0].offset < 16) {
-        expectedAssetsIn = expectedAssetsIn & ~(1 << collateralStates[0].offset);
+      if (collateralInfos[0].offset < 16) {
+        expectedAssetsIn = expectedAssetsIn & ~(1 << collateralInfos[0].offset);
       } else {
-        expectedReserved = expectedReserved & ~(1 << (collateralStates[0].offset - 16));
+        expectedReserved = expectedReserved & ~(1 << (collateralInfos[0].offset - 16));
       }
-      const userBasicAfter = await comet.userBasic(albert.address);
-      expect(userBasicAfter.assetsIn).to.equal(expectedAssetsIn);
-      expect(userBasicAfter._reserved).to.equal(expectedReserved);
+      expect(cometStateAfter.user.assetsIn).to.equal(expectedAssetsIn);
+      expect(cometStateAfter.user._reserved).to.equal(expectedReserved);
 
       // Comet borrow state: borrow base reduced by the absorbed principal; supply base unchanged.
-      const totalsAfter = await comet.totalsBasic();
-      expect(totalsAfter.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
-      expect(totalsAfter.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
+      expect(cometStateAfter.totals.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
+      expect(cometStateAfter.totals.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
 
       // Comet collateral accounting, per asset: supplied totals drop by that asset's own seized amount,
       // reserves rise by it, and the ERC20 balances are untouched on the absorb path.
-      for (const collateral of collateralStates) {
-        expect((await comet.totalsCollateral(collateral.asset)).totalSupplyAsset)
-          .to.equal(collateral.totalsCollateral - collateral.seizeAmount);
-        expect(await comet.getCollateralReserves(collateral.asset))
-          .to.equal(collateral.collateralReserves + collateral.seizeAmount);
-        expect(await context.getAssetByAddress(collateral.asset).balanceOf(comet.address))
-          .to.equal(collateral.cometErc20Balance);
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].totalsCollateral).to.equal(collateralStates[i].totalsCollateral - collateralStates[i].seizeAmount);
       }
-      expect(await baseAsset.balanceOf(comet.address)).to.equal(cometStateBefore.cometBaseErc20Balance);
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].collateralReserves).to.equal(collateralStates[i].collateralReserves + collateralStates[i].seizeAmount);
+      }
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].cometErc20Balance).to.equal(collateralStates[i].cometErc20Balance);
+      }
+      expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
 
       // Base reserves fall by the debt paid out.
-      expect(await comet.getReserves()).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
+      expect(cometStateAfter.baseReserves).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
 
       // The position is healthy again.
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
@@ -419,6 +388,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // The first two collaterals usable for the liquidation math, in the order the absorb loop walks
       // them: [0] is drained, [1] closes the remaining (by then sub-min) debt.
       const collateralIndexes = await getUsableCollateralIndices(context, 2);
+      const collateralInfos = await Promise.all(collateralIndexes.map((index) => getAssetInfo(comet, index)));
+      const collateralPrices = await Promise.all(collateralInfos.map(async (collateralAssetInfo) => (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt()));
 
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);
@@ -438,16 +409,15 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const borrowAmount = (15n * baseBorrowMin) / 10n;
       const borrowValue = mulPrice(borrowAmount, basePrice, baseScale);
 
-      for (const index of collateralIndexes) {
-        const info = await comet.getAssetInfo(index);
-        const price = (await comet.getPrice(info.priceFeed)).toBigInt();
-        const collateralValue = ((borrowValue * factorScale) / info.borrowCollateralFactor.toBigInt() * 110n) / 100n;
-        const amount = (collateralValue * info.scale.toBigInt()) / price + 1n;
-        const asset = context.getAssetByAddress(info.asset);
+      for (let i = 0; i < collateralInfos.length; i++) {
+        const collateralAssetInfo = collateralInfos[i];
+        const collateralValue = ((borrowValue * factorScale) / collateralAssetInfo.borrowCollateralFactor * 110n) / 100n;
+        const amount = (collateralValue * collateralAssetInfo.scale) / collateralPrices[i] + 1n;
+        const asset = context.getAssetByAddress(collateralAssetInfo.asset);
 
         await context.sourceTokens(amount, asset, albert);
         await asset.approve(albert, comet.address);
-        await albert.safeSupplyAsset({ asset: info.asset, amount });
+        await albert.safeSupplyAsset({ asset: collateralAssetInfo.asset, amount });
       }
 
       // 2. Borrow, and keep the debt there: it starts above baseBorrowMin and stays there until absorb.
@@ -459,7 +429,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect((await comet.borrowBalanceOf(albert.address)).toBigInt()).to.be.greaterThan(baseBorrowMin);
 
       const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
-      const collateralStatesBeforeDrop = await makeCollateralStates(comet, context, albert.address, collateralIndexes);
+      const collateralStatesBeforeDrop = await makeCollateralStates(comet, context, albert.address, collateralInfos);
 
       // 3. Drop collateral [0]'s price so that draining it leaves HALF the min debt still outstanding:
       //      remainingValue = minDebtValue / 2         (what the debt falls to once [0] is seized)
@@ -470,11 +440,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //    ordinary full-seizure trigger, and the remainder lands below baseBorrowMin — the whole point.
       const remainingValue = minDebtValue / 2n;
       const firstValueAfterLF = debtValue - remainingValue;
-      const firstValue = (firstValueAfterLF * factorScale) / collateralStatesBeforeDrop[0].liquidationFactor.toBigInt();
-      const firstDroppedPrice =
-        (firstValue * collateralStatesBeforeDrop[0].scale.toBigInt()) / collateralStatesBeforeDrop[0].collateralBalance;
+      const firstValue = (firstValueAfterLF * factorScale) / collateralInfos[0].liquidationFactor;
+      const firstDroppedPrice = (firstValue * collateralInfos[0].scale) / collateralStatesBeforeDrop[0].collateralBalance;
       // What collateral [0] still contributes to the liquidity keeping the account out of liquidation.
-      const firstLiquidity = mulFactor(firstValue, collateralStatesBeforeDrop[0].liquidateCollateralFactor.toBigInt());
+      const firstLiquidity = mulFactor(firstValue, collateralInfos[0].liquidateCollateralFactor);
 
       // 4. Drop collateral [1]'s price into the window where it closes the remaining (by now sub-min)
       //    debt while the account stays liquidatable. Both bounds are on its market value:
@@ -483,16 +452,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      target     = midpoint, so both hold with margin
       //    LCF < LF is enforced by the Configurator, so lowerValue < upperValue on every market: the
       //    window is never empty, whatever the collateral's factors are.
-      const lowerValue = (remainingValue * factorScale) / collateralStatesBeforeDrop[1].liquidationFactor.toBigInt();
-      const upperValue =
-        ((debtValue - firstLiquidity) * factorScale) / collateralStatesBeforeDrop[1].liquidateCollateralFactor.toBigInt();
+      const lowerValue = (remainingValue * factorScale) / collateralInfos[1].liquidationFactor;
+      const upperValue = ((debtValue - firstLiquidity) * factorScale) / collateralInfos[1].liquidateCollateralFactor;
       const secondValue = (lowerValue + upperValue) / 2n;
-      const secondDroppedPrice =
-        (secondValue * collateralStatesBeforeDrop[1].scale.toBigInt()) / collateralStatesBeforeDrop[1].collateralBalance;
+      const secondDroppedPrice = (secondValue * collateralInfos[1].scale) / collateralStatesBeforeDrop[1].collateralBalance;
 
       await context.changePriceFeeds({
-        [collateralStatesBeforeDrop[0].asset]: Number(firstDroppedPrice) / 1e8,
-        [collateralStatesBeforeDrop[1].asset]: Number(secondDroppedPrice) / 1e8,
+        [collateralInfos[0].asset]: Number(firstDroppedPrice) / 1e8,
+        [collateralInfos[1].asset]: Number(secondDroppedPrice) / 1e8,
       });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the prices are set
@@ -502,16 +469,11 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       // 5. Capture state and run the sanity checks that define this case.
       const cometStateBefore = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
-      const collateralStates = await makeCollateralStates(comet, context, albert.address, collateralIndexes);
+      const collateralStates = await makeCollateralStates(comet, context, albert.address, collateralInfos);
+
       const debtValueBefore = mulPrice(-cometStateBefore.userBalance, basePrice, baseScale);
-      const firstValueAfterLFNow = mulFactor(
-        mulPrice(collateralStates[0].collateralBalance, collateralStates[0].price, collateralStates[0].scale),
-        collateralStates[0].liquidationFactor.toBigInt()
-      );
-      const secondValueAfterLFNow = mulFactor(
-        mulPrice(collateralStates[1].collateralBalance, collateralStates[1].price, collateralStates[1].scale),
-        collateralStates[1].liquidationFactor.toBigInt()
-      );
+      const firstValueAfterLFNow = mulFactor(mulPrice(collateralStates[0].collateralBalance, firstDroppedPrice, collateralInfos[0].scale), collateralInfos[0].liquidationFactor);
+      const secondValueAfterLFNow = mulFactor(mulPrice(collateralStates[1].collateralBalance, secondDroppedPrice, collateralInfos[1].scale), collateralInfos[1].liquidationFactor);
       // What is left of the debt once collateral [0] has been drained.
       const debtValueAfterFirst = debtValueBefore - firstValueAfterLFNow;
 
@@ -541,72 +503,68 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const debtAtAbsorb = -(await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
       collateralStates[0].seizeAmount = collateralStates[0].collateralBalance;
-      collateralStates[0].seizedValue = mulPrice(
-        collateralStates[0].seizeAmount, collateralStates[0].price, collateralStates[0].scale
-      );
-      const debtAfterFirst =
-        basePaidOutValue - mulFactor(collateralStates[0].seizedValue, collateralStates[0].liquidationFactor.toBigInt());
+      collateralStates[0].seizedValue = mulPrice(collateralStates[0].seizeAmount, firstDroppedPrice, collateralInfos[0].scale);
+      const debtAfterFirst = basePaidOutValue - mulFactor(collateralStates[0].seizedValue, collateralInfos[0].liquidationFactor);
 
       //    Iter 2 (collateral [1]): the debt is now sub-min, so the full-close formula runs and seizes
       //    only what the residual debt needs.
       //      seizeAmount = (debtAfterFirst / LF) / price                     (divPrice)
       //      seizedValue = seizeAmount * price / scale                       (mulPrice)
-      collateralStates[1].seizeAmount = divPrice(
-        (debtAfterFirst * factorScale) / collateralStates[1].liquidationFactor.toBigInt(),
-        collateralStates[1].price,
-        collateralStates[1].scale
-      );
-      collateralStates[1].seizedValue = mulPrice(
-        collateralStates[1].seizeAmount, collateralStates[1].price, collateralStates[1].scale
-      );
+      collateralStates[1].seizeAmount = divPrice((debtAfterFirst * factorScale) / collateralInfos[1].liquidationFactor, secondDroppedPrice, collateralInfos[1].scale);
+      collateralStates[1].seizedValue = mulPrice(collateralStates[1].seizeAmount, secondDroppedPrice, collateralInfos[1].scale);
+
+      const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
+      const collateralStatesAfter = await makeCollateralStates(comet, context, albert.address, collateralInfos);
 
       // 8. Post-absorb checks.
 
       // Debt fully cleared: principal, borrow balance and simple base balance are all zero.
-      expect((await comet.userBasic(albert.address)).principal).to.equal(0);
-      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0);
+      expect(cometStateAfter.user.principal).to.equal(0);
+      expect(-cometStateAfter.userBalance).to.equal(0n);
       expect(await comet.balanceOf(albert.address)).to.equal(0);
 
-      // Collateral [0] is drained; collateral [1] keeps the surplus left after closing the debt.
-      expect(await comet.collateralBalanceOf(albert.address, collateralStates[0].asset)).to.equal(0);
-      expect((await comet.userCollateral(albert.address, collateralStates[0].asset)).balance).to.equal(0);
-
       const secondRemaining = collateralStates[1].collateralBalance - collateralStates[1].seizeAmount;
-      expect(await comet.collateralBalanceOf(albert.address, collateralStates[1].asset)).to.equal(secondRemaining);
-      expect((await comet.userCollateral(albert.address, collateralStates[1].asset)).balance).to.equal(secondRemaining);
+      const collateralRemaining = [0n, secondRemaining];
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].collateralBalance).to.equal(collateralRemaining[i]);
+      }
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].userCollateral.balance).to.equal(collateralRemaining[i]);
+      }
 
       // Only the fully-seized collateral [0]'s bit is cleared, in whichever bitfield its index falls
       // (assetsIn for offsets 0-15, _reserved above that); the surviving collateral [1] keeps its bit.
       let expectedAssetsIn = cometStateBefore.user.assetsIn;
       let expectedReserved = cometStateBefore.user._reserved;
-      if (collateralStates[0].offset < 16) {
-        expectedAssetsIn = expectedAssetsIn & ~(1 << collateralStates[0].offset);
+      if (collateralInfos[0].offset < 16) {
+        expectedAssetsIn = expectedAssetsIn & ~(1 << collateralInfos[0].offset);
       } else {
-        expectedReserved = expectedReserved & ~(1 << (collateralStates[0].offset - 16));
+        expectedReserved = expectedReserved & ~(1 << (collateralInfos[0].offset - 16));
       }
-      const userBasicAfter = await comet.userBasic(albert.address);
-      expect(userBasicAfter.assetsIn).to.equal(expectedAssetsIn);
-      expect(userBasicAfter._reserved).to.equal(expectedReserved);
+      expect(cometStateAfter.user.assetsIn).to.equal(expectedAssetsIn);
+      expect(cometStateAfter.user._reserved).to.equal(expectedReserved);
 
       // Comet borrow state: borrow base reduced by the absorbed principal; supply base unchanged.
-      const totalsAfter = await comet.totalsBasic();
-      expect(totalsAfter.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
-      expect(totalsAfter.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
+      expect(cometStateAfter.totals.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
+      expect(cometStateAfter.totals.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
 
       // Comet collateral accounting, per asset: supplied totals drop by that asset's own seized amount,
       // reserves rise by it, and the ERC20 balances are untouched on the absorb path.
-      for (const collateral of collateralStates) {
-        expect((await comet.totalsCollateral(collateral.asset)).totalSupplyAsset)
-          .to.equal(collateral.totalsCollateral - collateral.seizeAmount);
-        expect(await comet.getCollateralReserves(collateral.asset))
-          .to.equal(collateral.collateralReserves + collateral.seizeAmount);
-        expect(await context.getAssetByAddress(collateral.asset).balanceOf(comet.address))
-          .to.equal(collateral.cometErc20Balance);
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].totalsCollateral).to.equal(collateralStates[i].totalsCollateral - collateralStates[i].seizeAmount);
       }
-      expect(await baseAsset.balanceOf(comet.address)).to.equal(cometStateBefore.cometBaseErc20Balance);
+
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].collateralReserves).to.equal(collateralStates[i].collateralReserves + collateralStates[i].seizeAmount);
+      }
+
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].cometErc20Balance).to.equal(collateralStates[i].cometErc20Balance);
+      }
+      expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
 
       // Base reserves fall by the debt paid out.
-      expect(await comet.getReserves()).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
+      expect(cometStateAfter.baseReserves).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
 
       // The position is healthy again.
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
@@ -643,13 +601,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // minimum for the whole run, and the seizure assertions below are exact.
       await context.zeroBorrowRates();
 
-      const info = await comet.getAssetInfo(collateralIndex);
-      const scale = info.scale.toBigInt();
-      const originalPrice = (await comet.getPrice(info.priceFeed)).toBigInt();
-      const borrowCF = info.borrowCollateralFactor.toBigInt();
-      const lcf = info.liquidateCollateralFactor.toBigInt();
-      const lf = info.liquidationFactor.toBigInt();
-      const collateralAsset = context.getAssetByAddress(info.asset);
+      const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
+      const originalPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
+      const collateralAsset = context.getAssetByAddress(collateralAssetInfo.asset);
 
       // 1. Supply enough collateral to support a borrow above the minimum, then borrow it:
       //      borrowAmount    = 1.2 * baseBorrowMin
@@ -657,12 +611,12 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
       const borrowAmount = (12n * baseBorrowMin) / 10n;
       const borrowValue = mulPrice(borrowAmount, basePrice, baseScale);
-      const suppliedValue = ((borrowValue * factorScale) / borrowCF * 110n) / 100n;
-      const collateralAmount = (suppliedValue * scale) / originalPrice + 1n;
+      const suppliedValue = ((borrowValue * factorScale) / collateralAssetInfo.borrowCollateralFactor * 110n) / 100n;
+      const collateralAmount = (suppliedValue * collateralAssetInfo.scale) / originalPrice + 1n;
 
       await context.sourceTokens(collateralAmount, collateralAsset, albert);
       await collateralAsset.approve(albert, comet.address);
-      await albert.safeSupplyAsset({ asset: info.asset, amount: collateralAmount });
+      await albert.safeSupplyAsset({ asset: collateralAssetInfo.asset, amount: collateralAmount });
 
       await context.sourceTokens(2n * borrowAmount, baseAsset, comet.address);
       await albert.withdrawAsset({ asset: baseToken, amount: borrowAmount });
@@ -687,15 +641,15 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //    The guard bound always exceeds D / LF (their difference is m * (targetHF*LF - BCF) / (BCF*LF),
       //    which is positive), so the window is never empty whatever the market's factors are.
       const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
-      const lowerValue = (debtValue * factorScale) / lf;
-      const liquidatableBound = (debtValue * factorScale) / lcf;
+      const lowerValue = (debtValue * factorScale) / collateralAssetInfo.liquidationFactor;
+      const liquidatableBound = (debtValue * factorScale) / collateralAssetInfo.liquidateCollateralFactor;
       const guardBound =
-        ((mulFactor(minDebtValue, (TARGET_HF * lf) / factorScale) + mulFactor(debtValue - minDebtValue, borrowCF)) * factorScale)
-        / ((borrowCF * lf) / factorScale);
+        ((mulFactor(minDebtValue, (TARGET_HF * collateralAssetInfo.liquidationFactor) / factorScale) + mulFactor(debtValue - minDebtValue, collateralAssetInfo.borrowCollateralFactor)) * factorScale)
+        / ((collateralAssetInfo.borrowCollateralFactor * collateralAssetInfo.liquidationFactor) / factorScale);
       const upperValue = liquidatableBound < guardBound ? liquidatableBound : guardBound;
       const targetCollateralValue = (lowerValue + upperValue) / 2n;
-      const droppedPrice = (targetCollateralValue * scale) / collateralAmount;
-      await context.changePriceFeeds({ [info.asset]: Number(droppedPrice) / 1e8 });
+      const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const module = await configureModule(context, world, entry, partial, betty.address);
@@ -703,9 +657,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       // 3. Capture state and run the sanity checks that define the guard case.
       const cometStateBefore = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
-      const [collateralState] = await makeCollateralStates(comet, context, albert.address, [collateralIndex]);
+      const [collateralState] = await makeCollateralStates(comet, context, albert.address, [collateralAssetInfo]);
       const debtValueBefore = mulPrice(-cometStateBefore.userBalance, basePrice, baseScale);
-      const collateralValueBefore = mulPrice(collateralState.collateralBalance, collateralState.price, collateralState.scale);
+      const collateralValueBefore = mulPrice(collateralState.collateralBalance, droppedPrice, collateralAssetInfo.scale);
 
       // The account is liquidatable and, unlike the sub-min cases, its debt is still above the minimum —
       // so the loop enters the partial-seizure formula rather than the full-close one.
@@ -716,8 +670,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // would leave the position short of the target health factor, so no valid partial stop exists.
       //   freedCollateralValue = (debt - minDebt) / LF        collateral freed by that reduction
       //   healthAfter          = (collateral - freed) * BCF / minDebt
-      const freedCollateralValue = ((debtValueBefore - minDebtValue) * factorScale) / lf;
-      const collateralizedValueAfter = mulFactor(collateralValueBefore - freedCollateralValue, borrowCF);
+      const freedCollateralValue = ((debtValueBefore - minDebtValue) * factorScale) / collateralAssetInfo.liquidationFactor;
+      const collateralizedValueAfter = mulFactor(collateralValueBefore - freedCollateralValue, collateralAssetInfo.borrowCollateralFactor);
       const healthFactorAfter = (collateralizedValueAfter * factorScale) / minDebtValue;
       expect(healthFactorAfter).to.be.lessThan(TARGET_HF);
 
@@ -735,46 +689,44 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      seizedValue = seizeAmount * price / scale      (mulPrice)
       const debtAtAbsorb = -(await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
-      collateralState.seizeAmount = divPrice(
-        (basePaidOutValue * factorScale) / lf,
-        collateralState.price,
-        collateralState.scale
-      );
-      collateralState.seizedValue = mulPrice(collateralState.seizeAmount, collateralState.price, collateralState.scale);
+      collateralState.seizeAmount = divPrice((basePaidOutValue * factorScale) / collateralAssetInfo.liquidationFactor, droppedPrice, collateralAssetInfo.scale);
+      collateralState.seizedValue = mulPrice(collateralState.seizeAmount, droppedPrice, collateralAssetInfo.scale);
+
+      const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
+      const [collateralStateAfter] = await makeCollateralStates(comet, context, albert.address, [collateralAssetInfo]);
 
       // 6. Post-absorb checks.
 
       // Debt fully cleared: principal, borrow balance and simple base balance are all zero.
-      expect((await comet.userBasic(albert.address)).principal).to.equal(0);
-      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0);
+      expect(cometStateAfter.user.principal).to.equal(0);
+      expect(-cometStateAfter.userBalance).to.equal(0n);
       expect(await comet.balanceOf(albert.address)).to.equal(0);
 
       // Only the collateral the debt needed is seized; the leftover stays with the borrower.
       const remainingCollateral = collateralState.collateralBalance - collateralState.seizeAmount;
-      expect(await comet.collateralBalanceOf(albert.address, collateralState.asset)).to.equal(remainingCollateral);
-      expect((await comet.userCollateral(albert.address, collateralState.asset)).balance).to.equal(remainingCollateral);
+      expect(collateralStateAfter.collateralBalance).to.equal(remainingCollateral);
+      expect(collateralStateAfter.userCollateral.balance).to.equal(remainingCollateral);
 
       // Collateral remains, so the user's assetsIn bit and reserved bits are untouched.
-      expect((await comet.userBasic(albert.address)).assetsIn).to.equal(cometStateBefore.user.assetsIn);
-      expect((await comet.userBasic(albert.address))._reserved).to.equal(cometStateBefore.user._reserved);
+      expect(cometStateAfter.user.assetsIn).to.equal(cometStateBefore.user.assetsIn);
+      expect(cometStateAfter.user._reserved).to.equal(cometStateBefore.user._reserved);
 
       // Comet borrow state: borrow base reduced by the absorbed principal; supply base unchanged.
-      const totalsAfter = await comet.totalsBasic();
-      expect(totalsAfter.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
-      expect(totalsAfter.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
+      expect(cometStateAfter.totals.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
+      expect(cometStateAfter.totals.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
 
       // Comet collateral accounting: supplied total drops by the seized amount but stays positive,
       // reserves rise by it, and the collateral + base ERC20 balances are untouched on the absorb path.
-      const totalsCollateralAfter = (await comet.totalsCollateral(collateralState.asset)).totalSupplyAsset;
+      const totalsCollateralAfter = collateralStateAfter.totalsCollateral;
       expect(totalsCollateralAfter).to.equal(collateralState.totalsCollateral - collateralState.seizeAmount);
 
-      expect(await comet.getCollateralReserves(collateralState.asset)).to.equal(collateralState.collateralReserves + collateralState.seizeAmount);
+      expect(collateralStateAfter.collateralReserves).to.equal(collateralState.collateralReserves + collateralState.seizeAmount);
       
-      expect(await collateralAsset.balanceOf(comet.address)).to.equal(collateralState.cometErc20Balance);
-      expect(await baseAsset.balanceOf(comet.address)).to.equal(cometStateBefore.cometBaseErc20Balance);
+      expect(collateralStateAfter.cometErc20Balance).to.equal(collateralState.cometErc20Balance);
+      expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
 
       // Base reserves fall by the debt paid out.
-      expect(await comet.getReserves()).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
+      expect(cometStateAfter.baseReserves).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
 
       // The position is healthy again.
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
@@ -802,6 +754,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // The first two collaterals usable for the liquidation math, in the order the absorb loop walks
       // them: [0] is drained, [1] is the one the guard fires on.
       const collateralIndexes = await getUsableCollateralIndices(context, 2);
+      const collateralInfos = await Promise.all(collateralIndexes.map((index) => getAssetInfo(comet, index)));
+      const collateralPrices = await Promise.all(collateralInfos.map(async (collateralAssetInfo) => (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt()));
 
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);
@@ -821,16 +775,15 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const borrowAmount = (15n * baseBorrowMin) / 10n;
       const borrowValue = mulPrice(borrowAmount, basePrice, baseScale);
 
-      for (const index of collateralIndexes) {
-        const info = await comet.getAssetInfo(index);
-        const price = (await comet.getPrice(info.priceFeed)).toBigInt();
-        const collateralValue = ((borrowValue * factorScale) / info.borrowCollateralFactor.toBigInt() * 110n) / 100n;
-        const amount = (collateralValue * info.scale.toBigInt()) / price + 1n;
-        const asset = context.getAssetByAddress(info.asset);
+      for (let i = 0; i < collateralInfos.length; i++) {
+        const collateralAssetInfo = collateralInfos[i];
+        const collateralValue = ((borrowValue * factorScale) / collateralAssetInfo.borrowCollateralFactor * 110n) / 100n;
+        const amount = (collateralValue * collateralAssetInfo.scale) / collateralPrices[i] + 1n;
+        const asset = context.getAssetByAddress(collateralAssetInfo.asset);
 
         await context.sourceTokens(amount, asset, albert);
         await asset.approve(albert, comet.address);
-        await albert.safeSupplyAsset({ asset: info.asset, amount });
+        await albert.safeSupplyAsset({ asset: collateralAssetInfo.asset, amount });
       }
 
       // 2. Borrow, and keep the debt there: it starts above baseBorrowMin and stays there until absorb.
@@ -842,7 +795,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect((await comet.borrowBalanceOf(albert.address)).toBigInt()).to.be.greaterThan(baseBorrowMin);
 
       const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
-      const collateralStatesBeforeDrop = await makeCollateralStates(comet, context, albert.address, collateralIndexes);
+      const collateralStatesBeforeDrop = await makeCollateralStates(comet, context, albert.address, collateralInfos);
 
       // 3. Drop collateral [0]'s price so that draining it leaves the debt at 1.2 * minDebt — still ABOVE
       //    the minimum, so collateral [1] is not routed into the full-close branch by the debt alone:
@@ -852,11 +805,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      droppedPrice   = value * scale / balance
       const remainingValue = (12n * minDebtValue) / 10n;
       const firstValueAfterLF = debtValue - remainingValue;
-      const firstValue = (firstValueAfterLF * factorScale) / collateralStatesBeforeDrop[0].liquidationFactor.toBigInt();
-      const firstDroppedPrice =
-        (firstValue * collateralStatesBeforeDrop[0].scale.toBigInt()) / collateralStatesBeforeDrop[0].collateralBalance;
+      const firstValue = (firstValueAfterLF * factorScale) / collateralInfos[0].liquidationFactor;
+      const firstDroppedPrice = (firstValue * collateralInfos[0].scale) / collateralStatesBeforeDrop[0].collateralBalance;
       // What collateral [0] still contributes to the liquidity keeping the account out of liquidation.
-      const firstLiquidity = mulFactor(firstValue, collateralStatesBeforeDrop[0].liquidateCollateralFactor.toBigInt());
+      const firstLiquidity = mulFactor(firstValue, collateralInfos[0].liquidateCollateralFactor);
 
       // 4. Drop collateral [1]'s price into the window where the guard fires on it. Writing the debt left
       //    after [0] is drained as R, the min debt as m and [1]'s post-drop market value as v:
@@ -876,23 +828,18 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //    outright rather than nibble at it.
       //    The guard bound always exceeds R / LF (by m * (targetHF*LF - BCF) / (BCF*LF) > 0), so the
       //    window is never empty whatever factors the market's collateral happens to have.
-      const secondLF = collateralStatesBeforeDrop[1].liquidationFactor.toBigInt();
-      const secondLCF = collateralStatesBeforeDrop[1].liquidateCollateralFactor.toBigInt();
-      const secondBCF = collateralStatesBeforeDrop[1].borrowCollateralFactor.toBigInt();
-
-      const lowerValue = (remainingValue * factorScale) / secondLF;
-      const liquidatableBound = ((debtValue - firstLiquidity) * factorScale) / secondLCF;
+      const lowerValue = (remainingValue * factorScale) / collateralInfos[1].liquidationFactor;
+      const liquidatableBound = ((debtValue - firstLiquidity) * factorScale) / collateralInfos[1].liquidateCollateralFactor;
       const guardBound =
-        ((mulFactor(minDebtValue, (TARGET_HF * secondLF) / factorScale) + mulFactor(remainingValue - minDebtValue, secondBCF)) * factorScale)
-        / ((secondBCF * secondLF) / factorScale);
+        ((mulFactor(minDebtValue, (TARGET_HF * collateralInfos[1].liquidationFactor) / factorScale) + mulFactor(remainingValue - minDebtValue, collateralInfos[1].borrowCollateralFactor)) * factorScale)
+        / ((collateralInfos[1].borrowCollateralFactor * collateralInfos[1].liquidationFactor) / factorScale);
       const upperValue = liquidatableBound < guardBound ? liquidatableBound : guardBound;
       const secondValue = (lowerValue + upperValue) / 2n;
-      const secondDroppedPrice =
-        (secondValue * collateralStatesBeforeDrop[1].scale.toBigInt()) / collateralStatesBeforeDrop[1].collateralBalance;
+      const secondDroppedPrice = (secondValue * collateralInfos[1].scale) / collateralStatesBeforeDrop[1].collateralBalance;
 
       await context.changePriceFeeds({
-        [collateralStatesBeforeDrop[0].asset]: Number(firstDroppedPrice) / 1e8,
-        [collateralStatesBeforeDrop[1].asset]: Number(secondDroppedPrice) / 1e8,
+        [collateralInfos[0].asset]: Number(firstDroppedPrice) / 1e8,
+        [collateralInfos[1].asset]: Number(secondDroppedPrice) / 1e8,
       });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the prices are set.
@@ -901,15 +848,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       // 5. Capture state and run the sanity checks that define this case.
       const cometStateBefore = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
-      const collateralStates = await makeCollateralStates(comet, context, albert.address, collateralIndexes);
+      const collateralStates = await makeCollateralStates(comet, context, albert.address, collateralInfos);
       const debtValueBefore = mulPrice(-cometStateBefore.userBalance, basePrice, baseScale);
-      const firstValueAfterLFNow = mulFactor(
-        mulPrice(collateralStates[0].collateralBalance, collateralStates[0].price, collateralStates[0].scale),
-        collateralStates[0].liquidationFactor.toBigInt()
-      );
-      const secondCollateralValue = mulPrice(
-        collateralStates[1].collateralBalance, collateralStates[1].price, collateralStates[1].scale
-      );
+      const firstValueAfterLFNow = mulFactor(mulPrice(collateralStates[0].collateralBalance, firstDroppedPrice, collateralInfos[0].scale), collateralInfos[0].liquidationFactor);
+      const secondCollateralValue = mulPrice(collateralStates[1].collateralBalance, secondDroppedPrice, collateralInfos[1].scale);
       // What is left of the debt once collateral [0] has been drained.
       const debtValueAfterFirst = debtValueBefore - firstValueAfterLFNow;
 
@@ -926,10 +868,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // partial stop exists and the debt is closed in full instead.
       //   freedCollateralValue = (remainingDebt - minDebt) / LF   collateral freed by that reduction
       //   healthAfter          = (collateral - freed) * BCF / minDebt
-      const freedCollateralValue = ((debtValueAfterFirst - minDebtValue) * factorScale) / collateralStates[1].liquidationFactor.toBigInt();
-      const collateralizedValueAfter = mulFactor(
-        secondCollateralValue - freedCollateralValue, collateralStates[1].borrowCollateralFactor.toBigInt()
-      );
+      const freedCollateralValue = ((debtValueAfterFirst - minDebtValue) * factorScale) / collateralInfos[1].liquidationFactor;
+      const collateralizedValueAfter = mulFactor(secondCollateralValue - freedCollateralValue, collateralInfos[1].borrowCollateralFactor);
       const healthFactorAfter = (collateralizedValueAfter * factorScale) / minDebtValue;
       expect(healthFactorAfter).to.be.lessThan(TARGET_HF);
 
@@ -949,64 +889,66 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const debtAtAbsorb = -(await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
       collateralStates[0].seizeAmount = collateralStates[0].collateralBalance;
-      collateralStates[0].seizedValue = mulPrice(collateralStates[0].seizeAmount, collateralStates[0].price, collateralStates[0].scale);
-      const debtAfterFirst = basePaidOutValue - mulFactor(collateralStates[0].seizedValue, collateralStates[0].liquidationFactor.toBigInt());
+      collateralStates[0].seizedValue = mulPrice(collateralStates[0].seizeAmount, firstDroppedPrice, collateralInfos[0].scale);
+      const debtAfterFirst = basePaidOutValue - mulFactor(collateralStates[0].seizedValue, collateralInfos[0].liquidationFactor);
 
       //    Iter 2 (collateral [1]): the guard routes it into the full-close formula, so the whole
       //    remaining debt is closed and only the collateral it needs is seized.
       //      seizeAmount = (debtAfterFirst / LF) / price                     (divPrice)
       //      seizedValue = seizeAmount * price / scale                       (mulPrice)
-      collateralStates[1].seizeAmount = divPrice(
-        (debtAfterFirst * factorScale) / collateralStates[1].liquidationFactor.toBigInt(),
-        collateralStates[1].price,
-        collateralStates[1].scale
-      );
-      collateralStates[1].seizedValue = mulPrice(collateralStates[1].seizeAmount, collateralStates[1].price, collateralStates[1].scale);
+      collateralStates[1].seizeAmount = divPrice((debtAfterFirst * factorScale) / collateralInfos[1].liquidationFactor, secondDroppedPrice, collateralInfos[1].scale);
+      collateralStates[1].seizedValue = mulPrice(collateralStates[1].seizeAmount, secondDroppedPrice, collateralInfos[1].scale);
+
+      const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
+      const collateralStatesAfter = await makeCollateralStates(comet, context, albert.address, collateralInfos);
 
       // 8. Post-absorb checks.
 
       // Debt fully cleared: principal, borrow balance and simple base balance are all zero.
-      expect((await comet.userBasic(albert.address)).principal).to.equal(0);
-      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0);
+      expect(cometStateAfter.user.principal).to.equal(0);
+      expect(-cometStateAfter.userBalance).to.equal(0n);
       expect(await comet.balanceOf(albert.address)).to.equal(0);
 
-      // Collateral [0] is drained; collateral [1] keeps the remainder left after closing the debt.
-      expect(await comet.collateralBalanceOf(albert.address, collateralStates[0].asset)).to.equal(0);
-      expect((await comet.userCollateral(albert.address, collateralStates[0].asset)).balance).to.equal(0);
-
       const secondRemaining = collateralStates[1].collateralBalance - collateralStates[1].seizeAmount;
-      expect(await comet.collateralBalanceOf(albert.address, collateralStates[1].asset)).to.equal(secondRemaining);
-      expect((await comet.userCollateral(albert.address, collateralStates[1].asset)).balance).to.equal(secondRemaining);
+      const collateralRemaining = [0n, secondRemaining];
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].collateralBalance).to.equal(collateralRemaining[i]);
+      }
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].userCollateral.balance).to.equal(collateralRemaining[i]);
+      }
 
       // Only the fully-seized collateral [0]'s bit is cleared, in whichever bitfield its index falls
       // (assetsIn for offsets 0-15, _reserved above that); the surviving collateral [1] keeps its bit.
       let expectedAssetsIn = cometStateBefore.user.assetsIn;
       let expectedReserved = cometStateBefore.user._reserved;
-      if (collateralStates[0].offset < 16) {
-        expectedAssetsIn = expectedAssetsIn & ~(1 << collateralStates[0].offset);
+      if (collateralInfos[0].offset < 16) {
+        expectedAssetsIn = expectedAssetsIn & ~(1 << collateralInfos[0].offset);
       } else {
-        expectedReserved = expectedReserved & ~(1 << (collateralStates[0].offset - 16));
+        expectedReserved = expectedReserved & ~(1 << (collateralInfos[0].offset - 16));
       }
-      const userBasicAfter = await comet.userBasic(albert.address);
-      expect(userBasicAfter.assetsIn).to.equal(expectedAssetsIn);
-      expect(userBasicAfter._reserved).to.equal(expectedReserved);
+      expect(cometStateAfter.user.assetsIn).to.equal(expectedAssetsIn);
+      expect(cometStateAfter.user._reserved).to.equal(expectedReserved);
 
       // Comet borrow state: borrow base reduced by the absorbed principal; supply base unchanged.
-      const totalsAfter = await comet.totalsBasic();
-      expect(totalsAfter.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
-      expect(totalsAfter.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
+      expect(cometStateAfter.totals.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
+      expect(cometStateAfter.totals.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
 
       // Comet collateral accounting, per asset: supplied totals drop by that asset's own seized amount,
       // reserves rise by it, and the ERC20 balances are untouched on the absorb path.
-      for (const collateral of collateralStates) {
-        expect((await comet.totalsCollateral(collateral.asset)).totalSupplyAsset).to.equal(collateral.totalsCollateral - collateral.seizeAmount);
-        expect(await comet.getCollateralReserves(collateral.asset)).to.equal(collateral.collateralReserves + collateral.seizeAmount);
-        expect(await context.getAssetByAddress(collateral.asset).balanceOf(comet.address)).to.equal(collateral.cometErc20Balance);
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].totalsCollateral).to.equal(collateralStates[i].totalsCollateral - collateralStates[i].seizeAmount);
       }
-      expect(await baseAsset.balanceOf(comet.address)).to.equal(cometStateBefore.cometBaseErc20Balance);
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].collateralReserves).to.equal(collateralStates[i].collateralReserves + collateralStates[i].seizeAmount);
+      }
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].cometErc20Balance).to.equal(collateralStates[i].cometErc20Balance);
+      }
+      expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
 
       // Base reserves fall by the debt paid out.
-      expect(await comet.getReserves()).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
+      expect(cometStateAfter.baseReserves).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
 
       // The position is healthy again.
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
@@ -1042,25 +984,21 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // carry it above baseBorrowMin and put the loop in a different branch.
       await context.zeroBorrowRates();
 
-      const info = await comet.getAssetInfo(collateralIndex);
-      const scale = info.scale.toBigInt();
-      const originalPrice = (await comet.getPrice(info.priceFeed)).toBigInt();
-      const collateralBCF = info.borrowCollateralFactor.toBigInt();
-      const collateralLCF = info.liquidateCollateralFactor.toBigInt();
-      const collateralLF = info.liquidationFactor.toBigInt();
-      const collateralAsset = context.getAssetByAddress(info.asset);
+      const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
+      const originalPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
+      const collateralAsset = context.getAssetByAddress(collateralAssetInfo.asset);
 
       // 1. Supply enough collateral to support the minimum borrow, then borrow EXACTLY that minimum —
       //    no repay step: the debt is put on the boundary directly.
       //      borrowAmount    = baseBorrowMin
       //      collateralValue = borrowValue / BCF, with a 10% rounding buffer
       const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
-      const suppliedValue = ((minDebtValue * factorScale) / collateralBCF * 110n) / 100n;
-      const collateralAmount = (suppliedValue * scale) / originalPrice + 1n;
+      const suppliedValue = ((minDebtValue * factorScale) / collateralAssetInfo.borrowCollateralFactor * 110n) / 100n;
+      const collateralAmount = (suppliedValue * collateralAssetInfo.scale) / originalPrice + 1n;
 
       await context.sourceTokens(collateralAmount, collateralAsset, albert);
       await collateralAsset.approve(albert, comet.address);
-      await albert.safeSupplyAsset({ asset: info.asset, amount: collateralAmount });
+      await albert.safeSupplyAsset({ asset: collateralAssetInfo.asset, amount: collateralAmount });
 
       await context.sourceTokens(2n * baseBorrowMin, baseAsset, comet.address);
       await albert.withdrawAsset({ asset: baseToken, amount: baseBorrowMin });
@@ -1076,11 +1014,11 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      lowerValue = minDebtValue / LF   (an LF seizure exactly covers the debt)
       //      upperValue = minDebtValue / LCF  (position stops being liquidatable)
       //      target     = (lowerValue + upperValue) / 2
-      const lowerValue = (minDebtValue * factorScale) / collateralLF;
-      const upperValue = (minDebtValue * factorScale) / collateralLCF;
+      const lowerValue = (minDebtValue * factorScale) / collateralAssetInfo.liquidationFactor;
+      const upperValue = (minDebtValue * factorScale) / collateralAssetInfo.liquidateCollateralFactor;
       const targetCollateralValue = (lowerValue + upperValue) / 2n;
-      const droppedPrice = (targetCollateralValue * scale) / collateralAmount;
-      await context.changePriceFeeds({ [info.asset]: Number(droppedPrice) / 1e8 });
+      const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const module = await configureModule(context, world, entry, partial, betty.address);
@@ -1088,12 +1026,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       // 3. Capture state and run the sanity checks that define the boundary case.
       const cometStateBefore = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
-      const [collateralState] = await makeCollateralStates(comet, context, albert.address, [collateralIndex]);
+      const [collateralState] = await makeCollateralStates(comet, context, albert.address, [collateralAssetInfo]);
       const debtValueBefore = mulPrice(-cometStateBefore.userBalance, basePrice, baseScale);
-      const collateralValueAfterLF = mulFactor(
-        mulPrice(collateralState.collateralBalance, collateralState.price, collateralState.scale),
-        collateralLF
-      );
+      const collateralValueAfterLF = mulFactor(mulPrice(collateralState.collateralBalance, droppedPrice, collateralAssetInfo.scale), collateralAssetInfo.liquidationFactor);
 
       // The account is liquidatable, the debt sits exactly ON the minimum (not below it, as in the
       // sub-min cases), and the collateral's LF-weighted value still exceeds it — so the seizure is
@@ -1117,44 +1052,42 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      seizedValue = seizeAmount * price / scale      (mulPrice)
       const debtAtAbsorb = -(await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
-      collateralState.seizeAmount = divPrice(
-        (basePaidOutValue * factorScale) / collateralLF,
-        collateralState.price,
-        collateralState.scale
-      );
-      collateralState.seizedValue = mulPrice(collateralState.seizeAmount, collateralState.price, collateralState.scale);
+      collateralState.seizeAmount = divPrice((basePaidOutValue * factorScale) / collateralAssetInfo.liquidationFactor, droppedPrice, collateralAssetInfo.scale);
+      collateralState.seizedValue = mulPrice(collateralState.seizeAmount, droppedPrice, collateralAssetInfo.scale);
+
+      const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
+      const [collateralStateAfter] = await makeCollateralStates(comet, context, albert.address, [collateralAssetInfo]);
 
       // 6. Post-absorb checks.
 
       // Debt fully cleared: principal, borrow balance and simple base balance are all zero.
-      expect((await comet.userBasic(albert.address)).principal).to.equal(0);
-      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0);
+      expect(cometStateAfter.user.principal).to.equal(0);
+      expect(-cometStateAfter.userBalance).to.equal(0n);
       expect(await comet.balanceOf(albert.address)).to.equal(0);
 
       // Only the collateral the debt needed is seized; the surplus stays with the borrower.
       const remainingCollateral = collateralState.collateralBalance - collateralState.seizeAmount;
-      expect(await comet.collateralBalanceOf(albert.address, collateralState.asset)).to.equal(remainingCollateral);
-      expect((await comet.userCollateral(albert.address, collateralState.asset)).balance).to.equal(remainingCollateral);
+      expect(collateralStateAfter.collateralBalance).to.equal(remainingCollateral);
+      expect(collateralStateAfter.userCollateral.balance).to.equal(remainingCollateral);
 
       // Collateral remains, so the user's assetsIn bit and reserved bits are untouched.
-      expect((await comet.userBasic(albert.address)).assetsIn).to.equal(cometStateBefore.user.assetsIn);
-      expect((await comet.userBasic(albert.address))._reserved).to.equal(cometStateBefore.user._reserved);
+      expect(cometStateAfter.user.assetsIn).to.equal(cometStateBefore.user.assetsIn);
+      expect(cometStateAfter.user._reserved).to.equal(cometStateBefore.user._reserved);
 
       // Comet borrow state: borrow base reduced by the absorbed principal; supply base unchanged.
-      const totalsAfter = await comet.totalsBasic();
-      expect(totalsAfter.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
-      expect(totalsAfter.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
+      expect(cometStateAfter.totals.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
+      expect(cometStateAfter.totals.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
 
       // Comet collateral accounting: supplied total drops by the seized amount but stays positive,
       // reserves rise by it, and the collateral + base ERC20 balances are untouched on the absorb path.
-      const totalsCollateralAfter = (await comet.totalsCollateral(collateralState.asset)).totalSupplyAsset;
+      const totalsCollateralAfter = collateralStateAfter.totalsCollateral;
       expect(totalsCollateralAfter).to.equal(collateralState.totalsCollateral - collateralState.seizeAmount);
-      expect(await comet.getCollateralReserves(collateralState.asset)).to.equal(collateralState.collateralReserves + collateralState.seizeAmount);
-      expect(await collateralAsset.balanceOf(comet.address)).to.equal(collateralState.cometErc20Balance);
-      expect(await baseAsset.balanceOf(comet.address)).to.equal(cometStateBefore.cometBaseErc20Balance);
+      expect(collateralStateAfter.collateralReserves).to.equal(collateralState.collateralReserves + collateralState.seizeAmount);
+      expect(collateralStateAfter.cometErc20Balance).to.equal(collateralState.cometErc20Balance);
+      expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
 
       // Base reserves fall by the debt paid out.
-      expect(await comet.getReserves()).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
+      expect(cometStateAfter.baseReserves).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
 
       // The position is healthy again.
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
@@ -1190,24 +1123,21 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // carry it above baseBorrowMin, and this case is about the boundary itself.
       await context.zeroBorrowRates();
 
-      const info = await comet.getAssetInfo(collateralIndex);
-      const scale = info.scale.toBigInt();
-      const originalPrice = (await comet.getPrice(info.priceFeed)).toBigInt();
-      const collateralBCF = info.borrowCollateralFactor.toBigInt();
-      const collateralLF = info.liquidationFactor.toBigInt();
-      const collateralAsset = context.getAssetByAddress(info.asset);
+      const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
+      const originalPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
+      const collateralAsset = context.getAssetByAddress(collateralAssetInfo.asset);
 
       // 1. Supply enough collateral to support the minimum borrow, then borrow EXACTLY that minimum.
       //      borrowAmount    = baseBorrowMin
       //      collateralValue = minDebtValue / BCF, with a 10% rounding buffer
       const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
       const borrowAmount = baseBorrowMin;
-      const suppliedValue = ((minDebtValue * factorScale) / collateralBCF * 110n) / 100n;
-      const collateralAmount = (suppliedValue * scale) / originalPrice + 1n;
+      const suppliedValue = ((minDebtValue * factorScale) / collateralAssetInfo.borrowCollateralFactor * 110n) / 100n;
+      const collateralAmount = (suppliedValue * collateralAssetInfo.scale) / originalPrice + 1n;
 
       await context.sourceTokens(collateralAmount, collateralAsset, albert);
       await collateralAsset.approve(albert, comet.address);
-      await albert.safeSupplyAsset({ asset: info.asset, amount: collateralAmount });
+      await albert.safeSupplyAsset({ asset: collateralAssetInfo.asset, amount: collateralAmount });
 
       await context.sourceTokens(2n * borrowAmount, baseAsset, comet.address);
       await albert.withdrawAsset({ asset: baseToken, amount: borrowAmount });
@@ -1224,9 +1154,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //    The account is liquidatable for free here: LCF < LF, so an LF-weighted value under the debt
       //    puts the LCF-weighted value under it as well.
       const targetValueAfterLF = (80n * minDebtValue) / 100n;
-      const targetCollateralValue = (targetValueAfterLF * factorScale) / collateralLF;
-      const droppedPrice = (targetCollateralValue * scale) / collateralAmount;
-      await context.changePriceFeeds({ [info.asset]: Number(droppedPrice) / 1e8 });
+      const targetCollateralValue = (targetValueAfterLF * factorScale) / collateralAssetInfo.liquidationFactor;
+      const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const module = await configureModule(context, world, entry, partial, betty.address);
@@ -1234,9 +1164,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       // 3. Capture state and run the sanity checks that define the boundary bad-debt case.
       const cometStateBefore = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
-      const [collateralState] = await makeCollateralStates(comet, context, albert.address, [collateralIndex]);
+      const [collateralState] = await makeCollateralStates(comet, context, albert.address, [collateralAssetInfo]);
       const debtValueBefore = mulPrice(-cometStateBefore.userBalance, basePrice, baseScale);
-      const collateralValueAfterLF = mulFactor(mulPrice(collateralState.collateralBalance, collateralState.price, collateralState.scale), collateralLF);
+      const collateralValueAfterLF = mulFactor(mulPrice(collateralState.collateralBalance, droppedPrice, collateralAssetInfo.scale), collateralAssetInfo.liquidationFactor);
 
       // The account is liquidatable and the debt sits exactly ON the minimum, so the full-close formula
       // runs — but the collateral's LF-weighted value is below the debt, so seizing all of it still
@@ -1255,47 +1185,48 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       // 5. The collateral cannot cover the debt, so every unit of it is seized at market value.
       collateralState.seizeAmount = collateralState.collateralBalance;
-      collateralState.seizedValue = mulPrice(collateralState.seizeAmount, collateralState.price, collateralState.scale);
+      collateralState.seizedValue = mulPrice(collateralState.seizeAmount, droppedPrice, collateralAssetInfo.scale);
+
+      const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
+      const [collateralStateAfter] = await makeCollateralStates(comet, context, albert.address, [collateralAssetInfo]);
 
       // 6. Post-absorb checks.
 
       // Debt fully cleared: principal, borrow balance and simple base balance are all zero.
-      expect((await comet.userBasic(albert.address)).principal).to.equal(0);
-      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0);
+      expect(cometStateAfter.user.principal).to.equal(0);
+      expect(-cometStateAfter.userBalance).to.equal(0n);
       expect(await comet.balanceOf(albert.address)).to.equal(0);
 
       // All of the collateral is seized.
-      expect(await comet.collateralBalanceOf(albert.address, collateralState.asset)).to.equal(0);
-      expect((await comet.userCollateral(albert.address, collateralState.asset)).balance).to.equal(0);
+      expect(collateralStateAfter.collateralBalance).to.equal(0);
+      expect(collateralStateAfter.userCollateral.balance).to.equal(0);
 
       // The fully-seized collateral's bit is cleared, in whichever bitfield its index falls (assetsIn
       // for offsets 0-15, _reserved above that); nothing else in either field moves.
       let expectedAssetsIn = cometStateBefore.user.assetsIn;
       let expectedReserved = cometStateBefore.user._reserved;
-      if (collateralState.offset < 16) {
-        expectedAssetsIn = expectedAssetsIn & ~(1 << collateralState.offset);
+      if (collateralAssetInfo.offset < 16) {
+        expectedAssetsIn = expectedAssetsIn & ~(1 << collateralAssetInfo.offset);
       } else {
-        expectedReserved = expectedReserved & ~(1 << (collateralState.offset - 16));
+        expectedReserved = expectedReserved & ~(1 << (collateralAssetInfo.offset - 16));
       }
-      const userBasicAfter = await comet.userBasic(albert.address);
-      expect(userBasicAfter.assetsIn).to.equal(expectedAssetsIn);
-      expect(userBasicAfter._reserved).to.equal(expectedReserved);
+      expect(cometStateAfter.user.assetsIn).to.equal(expectedAssetsIn);
+      expect(cometStateAfter.user._reserved).to.equal(expectedReserved);
 
       // Comet borrow state: borrow base reduced by the absorbed principal; supply base unchanged.
-      const totalsAfter = await comet.totalsBasic();
-      expect(totalsAfter.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
-      expect(totalsAfter.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
+      expect(cometStateAfter.totals.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
+      expect(cometStateAfter.totals.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
 
       // Comet collateral accounting: supplied total drops by the full seized amount, reserves rise by it,
       // and the collateral + base ERC20 balances are untouched on the absorb path.
-      expect((await comet.totalsCollateral(collateralState.asset)).totalSupplyAsset).to.equal(collateralState.totalsCollateral - collateralState.seizeAmount);
-      expect(await comet.getCollateralReserves(collateralState.asset)).to.equal(collateralState.collateralReserves + collateralState.seizeAmount);
-      expect(await collateralAsset.balanceOf(comet.address)).to.equal(collateralState.cometErc20Balance);
-      expect(await baseAsset.balanceOf(comet.address)).to.equal(cometStateBefore.cometBaseErc20Balance);
+      expect(collateralStateAfter.totalsCollateral).to.equal(collateralState.totalsCollateral - collateralState.seizeAmount);
+      expect(collateralStateAfter.collateralReserves).to.equal(collateralState.collateralReserves + collateralState.seizeAmount);
+      expect(collateralStateAfter.cometErc20Balance).to.equal(collateralState.cometErc20Balance);
+      expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
 
       // Base reserves fall by the FULL debt — the bad-debt write-off, not capped by what the collateral
       // actually covered, and here it happens at the exact min-debt boundary.
-      expect(await comet.getReserves()).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
+      expect(cometStateAfter.baseReserves).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
 
       // The position is healthy again: nothing is owed and nothing is left to seize.
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
