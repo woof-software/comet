@@ -6,8 +6,6 @@ import {
   configureModule,
   captureAbsorbStateBefore,
   makeCollateralStates,
-  isValidAssetIndex,
-  isAssetDelisted,
   getUsableCollateralIndices,
 } from '../utils';
 import { mulPrice, mulFactor, factorScale } from '../../test/helpers';
@@ -25,9 +23,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   const mode = partial ? 'default' : 'full-close';
   const tag = `entry=${entry}, mode=${mode}`;
 
-  // The single collateral asset used for these scenarios.
-  const collateralIndex = 0;
-
   /**
    * 1 collateral: full seizure, the user does not have enough collateral to cover the debt.
    *
@@ -40,12 +35,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await isValidAssetIndex(ctx, collateralIndex)) &&
-        !(await isAssetDelisted(ctx, collateralIndex)),
+        (await getUsableCollateralIndices(ctx, 1)).length === 1,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
       const module = await configureModule(context, world, entry, partial, betty.address);
+
+      // Use the first collateral usable for the liquidation math (all three factors positive).
+      const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
       const baseToken = await comet.baseToken();
       const baseScale = (await comet.baseScale()).toBigInt();
@@ -145,8 +142,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // covered. The intra-block interest on the borrow cancels the write-off, so this is exact against
       // the captured (pre-absorb) balance.
       expect(await comet.getReserves()).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
-
-      console.log('!!!!!!');
     }
   );
 
@@ -160,14 +155,15 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   scenario(
     `Comet#absorb > bad debt: 2 collaterals fully seized, shortfall written off [${tag}]`,
     {
-      filter: async (ctx) => (await hasModule(ctx)),
+      filter: async (ctx) =>
+        (await hasModule(ctx)) &&
+        (await getUsableCollateralIndices(ctx, 2)).length === 2,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
       const module = await configureModule(context, world, entry, partial, betty.address);
 
       const indices = await getUsableCollateralIndices(context, 2);
-      expect(indices.length).to.equal(2);
 
       const baseToken = await comet.baseToken();
       const baseScale = (await comet.baseScale()).toBigInt();
@@ -292,8 +288,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // Base ERC20 balance is untouched, while base reserves absorb the full bad-debt write-off.
       expect(await context.getAssetByAddress(baseToken).balanceOf(comet.address)).to.equal(cometStateBefore.cometBaseErc20Balance);
       expect(await comet.getReserves()).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
-
-      console.log('!!!!!!');
     }
   );
 
@@ -303,13 +297,12 @@ function absorbScenarios(entry: Entry, partial: boolean) {
    * Proves the bad-debt write-off scales across the whole collateral basket: the loop drains every
    * asset, the full debt is closed, and base reserves absorb the basket-wide shortfall.
    */
-  // TODO: we can check this scenario only on real market as development has only 2
   scenario(
     `Comet#absorb > bad debt: all usable collaterals fully seized, shortfall written off [${tag}]`,
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await getUsableCollateralIndices(ctx)).length > 3, // if collaterals amount < 3, then we end up, as for 2 or 1 collaterals we already have the test cases
+        (await getUsableCollateralIndices(ctx)).length > 2, // if collaterals amount < 3, then we end up, as for 2 or 1 collaterals we already have the test cases
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
@@ -446,8 +439,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // Base ERC20 balance is untouched, while base reserves absorb the full basket-wide write-off.
       expect(await baseAsset.balanceOf(comet.address)).to.equal(cometStateBefore.cometBaseErc20Balance);
       expect(await comet.getReserves()).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
-
-      console.log('!!!!!!');
     }
   );
 
@@ -460,14 +451,15 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   scenario(
     `Comet#absorb > bad debt: debt below the min debt, collateral still cannot cover it, shortfall written off [${tag}]`,
     {
-      filter: async (ctx) => {
-        return !(await hasModule(ctx)) ||
-          !(await isValidAssetIndex(ctx, collateralIndex)) ||
-          !(await isAssetDelisted(ctx, collateralIndex));
-      },
+      filter: async (ctx) =>
+        (await hasModule(ctx)) &&
+        (await getUsableCollateralIndices(ctx, 1)).length === 1,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
+
+      // Use the first collateral usable for the liquidation math (all three factors positive).
+      const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);
@@ -577,8 +569,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       // Base reserves fall by the full small debt.
       expect(await comet.getReserves()).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
-
-      console.log('!!!!!!');
     }
   );
 
@@ -592,11 +582,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   scenario(
     `Comet#absorb > bad debt: 1 collateral fully seized when liquidation value exactly equals debt [${tag}]`,
     {
-      filter: async (ctx) => {
-        return (await hasModule(ctx)) &&
-          (await isValidAssetIndex(ctx, collateralIndex)) &&
-          !(await isAssetDelisted(ctx, collateralIndex));
-      },
+      filter: async (ctx) =>
+        (await hasModule(ctx)) &&
+        (await getUsableCollateralIndices(ctx, 1)).length === 1,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
@@ -607,6 +595,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
       await context.zeroBorrowRates();
+
+      // Use the first collateral usable for the liquidation math (all three factors positive).
+      const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
       const info = await comet.getAssetInfo(collateralIndex);
       const collateralAsset = context.getAssetByAddress(info.asset);

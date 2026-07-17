@@ -7,8 +7,6 @@ import {
   captureAbsorbStateBefore,
   makeCollateralStates,
   getUsableCollateralIndices,
-  isValidAssetIndex,
-  isAssetDelisted,
   expectRevertCustom,
   timeUntilUnderwater,
 } from '../utils';
@@ -31,9 +29,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   const mode = partial ? 'default' : 'full-close';
   const tag = `entry=${entry}, mode=${mode}`;
 
-  // The index of the collateral asset to use for the absorb scenarios. Where only 1 token is used, this is the only index.
-  const collateralIndex = 0;
-
   /*//////////////////////////////////////////////////////////////
                              HAPPY PATHS
   //////////////////////////////////////////////////////////////*/
@@ -42,13 +37,15 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   scenario(
     `Comet#absorb > 1 collateral: debt closed, surplus retained [${tag}]`,
     {
-      filter: async (ctx) => 
-        (await hasModule(ctx)) 
-        && (await isValidAssetIndex(ctx, collateralIndex)) 
-        && !(await isAssetDelisted(ctx, collateralIndex)),
+      filter: async (ctx) =>
+        (await hasModule(ctx)) &&
+        (await getUsableCollateralIndices(ctx, 1)).length === 1,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
+
+      // Use the first collateral usable for the liquidation math (all three factors positive).
+      const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
       // Put the module into the requested mode / entry configuration.
       const module = await configureModule(context, world, entry, partial, betty.address);
@@ -87,8 +84,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         fudgeFactor: 60n * 10n, // 10 minutes past the underwater point
       });
       await world.increaseTime(secondsUntilUnderwater);
-      await context.setNextBaseFeeToZero();
-      await comet.accrueAccount(albert.address, { gasPrice: 0 });
+      await comet.accrueAccount(albert.address);
 
       // Sanity checks
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
@@ -103,11 +99,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const collateralLF = info.liquidationFactor.toBigInt();
 
       // 6. Absorb via the active entry point.
-      await context.setNextBaseFeeToZero();
       if (entry === 'absorb') {
-        await comet.connect(betty.signer).absorb(betty.address, [albert.address], { gasPrice: 0 });
+        await comet.connect(betty.signer).absorb(betty.address, [albert.address]);
       } else {
-        await module.connect(betty.signer).liquidate(betty.address, albert.address, [], { gasPrice: 0 });
+        await module.connect(betty.signer).liquidate(betty.address, albert.address, []);
       }
 
       // 7. Independently compute the expected seizure (mirrors _processDebtClosing full closure): the
@@ -159,20 +154,19 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   );
 
   // 2 collaterals: the first is fully seized, the second keeps the surplus; debt fully closed.
-  const indices = [0, 1];
   scenario(
     `Comet#absorb > 2 collaterals: debt closed, surplus retained [${tag}]`,
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await isValidAssetIndex(ctx, indices[0])) &&
-        (await isValidAssetIndex(ctx, indices[1])) &&
-        !(await isAssetDelisted(ctx, indices[0])) &&
-        !(await isAssetDelisted(ctx, indices[1])),
+        (await getUsableCollateralIndices(ctx, 2)).length === 2,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
       const module = await configureModule(context, world, entry, partial, betty.address);
+
+      // The first two collaterals usable for the liquidation math, in index order.
+      const indices = await getUsableCollateralIndices(context, 2);
 
       // Asset 0 (index 0) holds the bulk of the collateral: it carries the borrow power and is fully
       // seized. Asset 1 (index 1) stays small and keeps the surplus after closing the residual debt.
@@ -209,8 +203,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // 3. Fast-forward until interest accrual drives the position underwater.
       const secondsUntilUnderwater = await timeUntilUnderwater({ comet, actor: albert, fudgeFactor: 60n * 10n });
       await world.increaseTime(secondsUntilUnderwater);
-      await context.setNextBaseFeeToZero();
-      await comet.accrueAccount(albert.address, { gasPrice: 0 });
+      await comet.accrueAccount(albert.address);
 
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
       expect((await comet.borrowBalanceOf(albert.address)).toBigInt()).to.be.greaterThan(baseBorrowMin);
@@ -220,11 +213,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const collateralStates = await makeCollateralStates(comet, context, albert.address, indices);
 
       // 5. Absorb via the active entry point.
-      await context.setNextBaseFeeToZero();
       if (entry === 'absorb') {
-        await comet.connect(betty.signer).absorb(betty.address, [albert.address], { gasPrice: 0 });
+        await comet.connect(betty.signer).absorb(betty.address, [albert.address]);
       } else {
-        await module.connect(betty.signer).liquidate(betty.address, albert.address, [], { gasPrice: 0 });
+        await module.connect(betty.signer).liquidate(betty.address, albert.address, []);
       }
 
       // 6. Independently compute the expected seizure (mirrors the absorb loop). The absorb accrued one
@@ -261,8 +253,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
           .to.be.approximately(collateralState.collateralBalance - collateralState.seizeAmount, seizeDelta);
       }
 
-      // assetsIn clears the fully-seized asset 0 bit, keeps asset 1's; reserved bits untouched.
-      const expectedAssetsIn = cometStateBefore.user.assetsIn & ~(1 << indices[0]);
+      // assetsIn clears the fully-seized first collateral's bit, keeps the second's; reserved untouched.
+      const expectedAssetsIn = cometStateBefore.user.assetsIn & ~(1 << collateralStates[0].offset);
       expect((await comet.userBasic(albert.address)).assetsIn).to.equal(expectedAssetsIn);
       expect((await comet.userBasic(albert.address))._reserved).to.equal(cometStateBefore.user._reserved);
 
@@ -345,8 +337,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // 3. Fast-forward until interest accrual drives the position underwater.
       const secondsUntilUnderwater = await timeUntilUnderwater({ comet, actor: albert, fudgeFactor: 60n * 10n });
       await world.increaseTime(secondsUntilUnderwater);
-      await context.setNextBaseFeeToZero();
-      await comet.accrueAccount(albert.address, { gasPrice: 0 });
+      await comet.accrueAccount(albert.address);
 
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
       expect((await comet.borrowBalanceOf(albert.address)).toBigInt()).to.be.greaterThan(baseBorrowMin);
@@ -356,11 +347,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const collateralsState = await makeCollateralStates(comet, context, albert.address, indices);
 
       // 5. Absorb via the active entry point.
-      await context.setNextBaseFeeToZero();
       if (entry === 'absorb') {
-        await comet.connect(betty.signer).absorb(betty.address, [albert.address], { gasPrice: 0 });
+        await comet.connect(betty.signer).absorb(betty.address, [albert.address]);
       } else {
-        await module.connect(betty.signer).liquidate(betty.address, albert.address, [], { gasPrice: 0 });
+        await module.connect(betty.signer).liquidate(betty.address, albert.address, []);
       }
 
       // 6. Independently compute the expected seizure (mirrors the absorb loop): every earlier asset is
@@ -457,11 +447,13 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await isValidAssetIndex(ctx, 0)) &&
-        !(await isAssetDelisted(ctx, 0))
+        (await getUsableCollateralIndices(ctx, 1)).length === 1,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
+
+      // Use the first collateral usable for the liquidation math (all three factors positive).
+      const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
       const baseToken = await comet.baseToken();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
@@ -475,10 +467,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       await context.getAssetByAddress(baseToken).approve(betty, comet.address);
       await betty.safeSupplyAsset({ asset: baseToken, amount: borrowAmount });
 
-      // 2. Albert supplies asset 0 worth 4× the minimum borrow value and borrows 3× the min debt.
+      // 2. Albert supplies the collateral worth 4× the minimum borrow value and borrows 3× the min debt.
       //    minBorrowValue  = baseBorrowMin * basePrice / baseScale
       //    collateralValue = 4 * minBorrowValue
-      const info = await comet.getAssetInfo(0);
+      const info = await comet.getAssetInfo(collateralIndex);
       const collateralPrice = (await comet.getPrice(info.priceFeed)).toBigInt();
       const minBorrowValue = mulPrice(baseBorrowMin, basePrice, baseScale);
       const collateralValue = 4n * minBorrowValue;
@@ -558,8 +550,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         ? trackingBorrowIndexBefore + trackingBorrowSpeed * timeElapsed * baseScale / totalBorrowBaseBefore
         : trackingBorrowIndexBefore;
       expect(totalsAfter.trackingBorrowIndex).to.equal(expectedTrackingBorrowIndex);
-
-      console.log('!!!!!!');
     }
   );
 
@@ -579,11 +569,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect((await comet.userBasic(albert.address)).principal).to.equal(0);
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
-      await context.setNextBaseFeeToZero();
       if (entry === 'absorb') {
-        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address], { gasPrice: 0 }), 'NotLiquidatable()');
+        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address]), 'NotLiquidatable()');
       } else {
-        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, [], { gasPrice: 0 }), 'NotLiquidatable()');
+        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, []), 'NotLiquidatable()');
       }
     }
   );
@@ -607,11 +596,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect((await comet.userBasic(albert.address)).principal).to.be.greaterThan(0);
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
-      await context.setNextBaseFeeToZero();
       if (entry === 'absorb') {
-        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address], { gasPrice: 0 }), 'NotLiquidatable()');
+        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address]), 'NotLiquidatable()');
       } else {
-        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, [], { gasPrice: 0 }), 'NotLiquidatable()');
+        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, []), 'NotLiquidatable()');
       }
     }
   );
@@ -626,11 +614,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       expect(await comet.isAbsorbPaused()).to.be.true;
 
-      await context.setNextBaseFeeToZero();
       if (entry === 'absorb') {
-        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address], { gasPrice: 0 }), 'Paused()');
+        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address]), 'Paused()');
       } else {
-        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, [], { gasPrice: 0 }), 'Paused()');
+        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, []), 'Paused()');
       }
     }
   );
@@ -639,11 +626,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   scenario(
     `Comet#absorb > reverts when debt is borrow collateralized [${tag}]`,
     {
-      filter: async (ctx) => (await hasModule(ctx)) && (await isValidAssetIndex(ctx, collateralIndex)) && !(await isAssetDelisted(ctx, collateralIndex)),
+      filter: async (ctx) => (await hasModule(ctx)) && (await getUsableCollateralIndices(ctx, 1)).length === 1,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
       const module = await configureModule(context, world, entry, partial, betty.address);
+
+      // Use the first collateral usable for the liquidation math (all three factors positive).
+      const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
       // Supply collateral worth ~3× the debt and borrow the minimum: well within the BCF limit.
       const baseToken = await comet.baseToken();
@@ -668,11 +658,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(await comet.isBorrowCollateralized(albert.address)).to.be.true;
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
-      await context.setNextBaseFeeToZero();
       if (entry === 'absorb') {
-        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address], { gasPrice: 0 }), 'NotLiquidatable()');
+        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address]), 'NotLiquidatable()');
       } else {
-        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, [], { gasPrice: 0 }), 'NotLiquidatable()');
+        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, []), 'NotLiquidatable()');
       }
     }
   );
@@ -681,11 +670,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   scenario(
     `Comet#absorb > reverts when not borrow collateralized but still not liquidatable [${tag}]`,
     {
-      filter: async (ctx) => (await hasModule(ctx)) && (await isValidAssetIndex(ctx, collateralIndex)) && !(await isAssetDelisted(ctx, collateralIndex)),
+      filter: async (ctx) => (await hasModule(ctx)) && (await getUsableCollateralIndices(ctx, 1)).length === 1,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
       const module = await configureModule(context, world, entry, partial, betty.address);
+
+      // Use the first collateral usable for the liquidation math (all three factors positive).
+      const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
       const baseToken = await comet.baseToken();
       const baseScale = (await comet.baseScale()).toBigInt();
@@ -732,18 +724,16 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const secondsToBand = ((targetDebt - debt0) * factorScale) / (debt0 * borrowRate);
 
       await world.increaseTime(Number(secondsToBand));
-      await context.setNextBaseFeeToZero();
-      await comet.accrueAccount(albert.address, { gasPrice: 0 });
+      await comet.accrueAccount(albert.address);
 
       expect((await comet.userBasic(albert.address)).principal).to.be.lessThan(0);
       expect(await comet.isBorrowCollateralized(albert.address)).to.be.false;
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
-      await context.setNextBaseFeeToZero();
       if (entry === 'absorb') {
-        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address], { gasPrice: 0 }), 'NotLiquidatable()');
+        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address]), 'NotLiquidatable()');
       } else {
-        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, [], { gasPrice: 0 }), 'NotLiquidatable()');
+        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, []), 'NotLiquidatable()');
       }
     }
   );
