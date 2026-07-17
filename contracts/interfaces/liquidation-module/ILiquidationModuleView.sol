@@ -13,5 +13,4 @@ interface ILiquidationModuleView {
     function baseScale() external view returns (uint64);
     function numAssets() external view returns (uint8);
     function partialLiquidationEnabled() external view returns (bool);
-    function TARGET_HEALTH_FACTOR() external view returns (uint256);
 }
