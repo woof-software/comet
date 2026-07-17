@@ -8,8 +8,7 @@ import {
   makeCollateralStates,
   isValidAssetIndex,
   isAssetDelisted,
-  usesAssetList,
-  usableCollateralIndices,
+  getUsableCollateralIndices,
 } from '../utils';
 import { mulPrice, mulFactor, factorScale } from '../../test/helpers';
 
@@ -41,7 +40,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await usesAssetList(ctx)) &&
         (await isValidAssetIndex(ctx, collateralIndex)) &&
         !(await isAssetDelisted(ctx, collateralIndex)),
     },
@@ -162,13 +160,13 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   scenario(
     `Comet#absorb > bad debt: 2 collaterals fully seized, shortfall written off [${tag}]`,
     {
-      filter: async (ctx) => (await hasModule(ctx)) && (await usesAssetList(ctx)),
+      filter: async (ctx) => (await hasModule(ctx)),
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
       const module = await configureModule(context, world, entry, partial, betty.address);
 
-      const indices = await usableCollateralIndices(context, 2);
+      const indices = await getUsableCollateralIndices(context, 2);
       expect(indices.length).to.equal(2);
 
       const baseToken = await comet.baseToken();
@@ -311,14 +309,13 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await usesAssetList(ctx)) &&
-        (await usableCollateralIndices(ctx)).length > 3, // if collaterals amount < 3, then we end up, as for 2 or 1 collaterals we already have the test cases
+        (await getUsableCollateralIndices(ctx)).length > 3, // if collaterals amount < 3, then we end up, as for 2 or 1 collaterals we already have the test cases
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
       const module = await configureModule(context, world, entry, partial, betty.address);
 
-      const indices = await usableCollateralIndices(context);
+      const indices = await getUsableCollateralIndices(context);
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);
       const baseScale = (await comet.baseScale()).toBigInt();
@@ -465,7 +462,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) => {
         return !(await hasModule(ctx)) ||
-          !(await usesAssetList(ctx)) ||
           !(await isValidAssetIndex(ctx, collateralIndex)) ||
           !(await isAssetDelisted(ctx, collateralIndex));
       },
@@ -598,7 +594,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) => {
         return (await hasModule(ctx)) &&
-          (await usesAssetList(ctx)) &&
           (await isValidAssetIndex(ctx, collateralIndex)) &&
           !(await isAssetDelisted(ctx, collateralIndex));
       },

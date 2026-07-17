@@ -7,8 +7,7 @@ import {
   captureAbsorbStateBefore,
   makeCollateralStates,
   TARGET_HF,
-  usableCollateralIndices,
-  usesAssetList,
+  getUsableCollateralIndices,
 } from '../utils';
 import { mulPrice, mulFactor, divPrice, factorScale } from '../../test/helpers';
 import { ContractTransaction } from 'ethers';
@@ -37,14 +36,13 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await usesAssetList(ctx)) &&
-        (await usableCollateralIndices(ctx, 1)).length > 0,
+        (await getUsableCollateralIndices(ctx, 1)).length > 0,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
-      const [collateralIndex] = await usableCollateralIndices(context, 1);
+      const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);
@@ -198,15 +196,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await usesAssetList(ctx)) &&
-        (await usableCollateralIndices(ctx, 2)).length === 2,
+        (await getUsableCollateralIndices(ctx, 2)).length === 2,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
 
       // The first two collaterals usable for the liquidation math, in the order the absorb loop walks
       // them: [0] is drained, [1] closes the remaining debt.
-      const collateralIndexes = await usableCollateralIndices(context, 2);
+      const collateralIndexes = await getUsableCollateralIndices(context, 2);
 
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);
@@ -414,15 +411,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await usesAssetList(ctx)) &&
-        (await usableCollateralIndices(ctx, 2)).length === 2,
+        (await getUsableCollateralIndices(ctx, 2)).length === 2,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
 
       // The first two collaterals usable for the liquidation math, in the order the absorb loop walks
       // them: [0] is drained, [1] closes the remaining (by then sub-min) debt.
-      const collateralIndexes = await usableCollateralIndices(context, 2);
+      const collateralIndexes = await getUsableCollateralIndices(context, 2);
 
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);
@@ -630,14 +626,13 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await usesAssetList(ctx)) &&
-        (await usableCollateralIndices(ctx, 1)).length > 0,
+        (await getUsableCollateralIndices(ctx, 1)).length > 0,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
-      const [collateralIndex] = await usableCollateralIndices(context, 1);
+      const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);
@@ -799,15 +794,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await usesAssetList(ctx)) &&
-        (await usableCollateralIndices(ctx, 2)).length === 2,
+        (await getUsableCollateralIndices(ctx, 2)).length === 2,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
 
       // The first two collaterals usable for the liquidation math, in the order the absorb loop walks
       // them: [0] is drained, [1] is the one the guard fires on.
-      const collateralIndexes = await usableCollateralIndices(context, 2);
+      const collateralIndexes = await getUsableCollateralIndices(context, 2);
 
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);
@@ -1031,14 +1025,13 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await usesAssetList(ctx)) &&
-        (await usableCollateralIndices(ctx, 1)).length > 0,
+        (await getUsableCollateralIndices(ctx, 1)).length > 0,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
-      const [collateralIndex] = await usableCollateralIndices(context, 1);
+      const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);
@@ -1180,14 +1173,13 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await usesAssetList(ctx)) &&
-        (await usableCollateralIndices(ctx, 1)).length > 0,
+        (await getUsableCollateralIndices(ctx, 1)).length > 0,
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
-      const [collateralIndex] = await usableCollateralIndices(context, 1);
+      const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
       const baseToken = await comet.baseToken();
       const baseAsset = context.getAssetByAddress(baseToken);

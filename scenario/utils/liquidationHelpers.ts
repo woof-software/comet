@@ -1,8 +1,10 @@
+import { BigNumber } from 'ethers';
 import { World } from '../../plugins/scenario';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { CometContext } from '../context/CometContext';
 import { CometInterface, LiquidationModule, LiquidationModule__factory } from '../../build/types';
-import { fundAccount, getLiquidationModuleAddress, isAssetDelisted } from './index';
+import { mulFactor, factorScale, toBigInt } from '../../test/helpers';
+import { fundAccount, getLiquidationModuleAddress } from './index';
 
 // Compound governance timelock — holds DEFAULT_ADMIN_ROLE (and PAUSER_ROLE) on every liquidation
 // module, so it can toggle the mode / DEX switch and grant the keeper EXECUTOR_ROLE.
@@ -16,6 +18,27 @@ export type Entry = 'absorb' | 'liquidate';
  * `CoreLiquidationModule.TARGET_HEALTH_FACTOR`, in factor scale (1e18 == 1.0).
  */
 export const TARGET_HF: bigint = 105n * 10n ** 16n;
+
+/**
+ * The collateral value the module's target-HF formula wants to seize from one collateral — the
+ * mirror of the `wantedCollateralValue` branch in `CoreLiquidationModule._computeSeizurePlan`:
+ *
+ *   wanted = (targetHF * debtRemaining - totalCollateralizedValue) / (targetHF * LF - BCF)
+ *
+ * `debtRemaining` is the debt still open when this collateral is reached and `totalCollateralizedValue`
+ * the BCF-weighted value of the collateral still backing it at that point. The Configurator enforces
+ * `targetHF * LF > LCF > BCF`, so the denominator is always positive.
+ */
+export function wantedCollateralValue(
+  debtRemainingValue: bigint | BigNumber,
+  totalCollateralizedValue: bigint | BigNumber,
+  collateralLF: bigint | BigNumber,
+  collateralBCF: bigint | BigNumber
+): bigint {
+  const numerator = mulFactor(debtRemainingValue, TARGET_HF) - toBigInt(totalCollateralizedValue);
+  const denominator = mulFactor(collateralLF, TARGET_HF) - toBigInt(collateralBCF);
+  return (numerator * factorScale) / denominator;
+}
 
 /**
  * The borrower's base position plus the comet base totals/reserves right before an
@@ -152,24 +175,3 @@ export async function configureModule(
   return module;
 }
 
-/**
- * Collateral indices usable for these liquidation scenarios, in index order. "Usable" means listed
- * with all three collateral factors positive — borrowCF (not delisted), liquidateCF and
- * liquidationFactor — which is what the liquidation math needs.
- *
- * Pass `amount` to cap the result at the first N usable indices (fewer if the market has fewer);
- * omit it to return every usable index.
- */
-export async function usableCollateralIndices(ctx: CometContext, amount?: number): Promise<number[]> {
-  const comet = await ctx.getComet();
-  const numAssets = await comet.numAssets();
-  const indices: number[] = [];
-  for (let i = 0; i < numAssets; i++) {
-    if (amount !== undefined && indices.length >= amount) break;
-    if (await isAssetDelisted(ctx, i)) continue; // borrowCollateralFactor === 0
-    const info = await comet.getAssetInfo(i);
-    if (info.liquidateCollateralFactor.toBigInt() === 0n || info.liquidationFactor.toBigInt() === 0n) continue;
-    indices.push(i);
-  }
-  return indices;
-}

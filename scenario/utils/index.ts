@@ -28,6 +28,7 @@ import {
   setNextBlockTimestamp,
 } from './hreUtils';
 import { BaseBridgeReceiver, CometInterface } from '../../build/types';
+import { AssetInfoStructOutput } from '../../build/types/CometInterface';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
@@ -1665,3 +1666,67 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
 
 // Liquidation-module scenario helpers (filters, setup, and shared assertions).
 export * from './liquidationHelpers';
+
+/** The named fields of {@link AssetInfoStructOutput} — its struct half, without the tuple indices. */
+type AssetInfoFields =
+  | 'offset'
+  | 'asset'
+  | 'priceFeed'
+  | 'scale'
+  | 'borrowCollateralFactor'
+  | 'liquidateCollateralFactor'
+  | 'liquidationFactor'
+  | 'supplyCap';
+
+/**
+ * `getAssetInfo`'s struct, inherited from the generated {@link AssetInfoStructOutput} with every
+ * `BigNumber` field rewritten to `bigint` (the non-numeric fields keep their source types).
+ */
+export type AssetInfoBigInt = {
+  [K in AssetInfoFields]: AssetInfoStructOutput[K] extends BigNumber ? bigint : AssetInfoStructOutput[K];
+};
+
+/**
+ * Reads `comet.getAssetInfo(index)` and returns it with the `BigNumber` fields already converted to
+ * `bigint`, so scenario math can use the factors, scale and cap directly without `.toBigInt()`.
+ */
+export async function getAssetInfo(comet: CometInterface, index: number): Promise<AssetInfoBigInt> {
+  const info = await comet.getAssetInfo(index);
+  return {
+    offset: info.offset,
+    asset: info.asset,
+    priceFeed: info.priceFeed,
+    scale: info.scale.toBigInt(),
+    borrowCollateralFactor: info.borrowCollateralFactor.toBigInt(),
+    liquidateCollateralFactor: info.liquidateCollateralFactor.toBigInt(),
+    liquidationFactor: info.liquidationFactor.toBigInt(),
+    supplyCap: info.supplyCap.toBigInt(),
+  };
+}
+
+/**
+ * Collateral indices usable for these liquidation scenarios, in index order. "Usable" means listed
+ * with all three collateral factors positive — borrowCF (not delisted), liquidateCF and
+ * liquidationFactor — which is what the liquidation math needs.
+ *
+ * Pass `amount` to cap the result at the first N usable indices (fewer if the market has fewer);
+ * omit it to return every usable index.
+ */
+export async function getUsableCollateralIndices(ctx: CometContext, amount?: number): Promise<number[]> {
+  const ZERO = BigNumber.from(0); // to avoid .toBigInt() in the condition
+  const comet = await ctx.getComet();
+  const numAssets = await comet.numAssets();
+  const indices: number[] = [];
+
+  for (let i = 0; i < numAssets; i++) {
+    if (amount !== undefined && indices.length >= amount) break;
+
+    const info = await comet.getAssetInfo(i);
+    if (info.borrowCollateralFactor === ZERO
+        || info.liquidateCollateralFactor === ZERO
+        || info.liquidationFactor === ZERO
+    ) continue;
+    indices.push(i);
+  }
+  return indices;
+}

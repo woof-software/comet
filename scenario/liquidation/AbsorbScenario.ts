@@ -6,10 +6,9 @@ import {
   configureModule,
   captureAbsorbStateBefore,
   makeCollateralStates,
-  usableCollateralIndices,
+  getUsableCollateralIndices,
   isValidAssetIndex,
   isAssetDelisted,
-  usesAssetList,
   expectRevertCustom,
   timeUntilUnderwater,
 } from '../utils';
@@ -45,7 +44,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) => 
         (await hasModule(ctx)) 
-        && (await usesAssetList(ctx)) 
         && (await isValidAssetIndex(ctx, collateralIndex)) 
         && !(await isAssetDelisted(ctx, collateralIndex)),
     },
@@ -167,7 +165,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await usesAssetList(ctx)) &&
         (await isValidAssetIndex(ctx, indices[0])) &&
         (await isValidAssetIndex(ctx, indices[1])) &&
         !(await isAssetDelisted(ctx, indices[0])) &&
@@ -299,14 +296,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
   scenario(
     `Comet#absorb > all collaterals: debt closed, surplus retained [${tag}]`,
     {
-      filter: async (ctx) => (await hasModule(ctx)) && (await usesAssetList(ctx)),
+      filter: async (ctx) => (await hasModule(ctx)),
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
       const module = await configureModule(context, world, entry, partial, betty.address);
 
       // Every seizable collateral, in index order; the last one keeps the surplus.
-      const indices = await usableCollateralIndices(context);
+      const indices = await getUsableCollateralIndices(context);
       const lastIdx = indices.length - 1;
 
       // Distribute the collateral so the earlier assets hold the bulk ($95, shared): they carry the
@@ -460,7 +457,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     {
       filter: async (ctx) =>
         (await hasModule(ctx)) &&
-        (await usesAssetList(ctx)) &&
         (await isValidAssetIndex(ctx, 0)) &&
         !(await isAssetDelisted(ctx, 0))
     },
