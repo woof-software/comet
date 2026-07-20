@@ -97,7 +97,7 @@ async function showReportConsole(results: Result[], _consoleOptions: ConsoleForm
   console.log('\n');
 }
 
-interface JsonTestResult {
+export interface JsonTestResult {
   title: string;
   fullTitle: string;
   file: string;
@@ -108,7 +108,7 @@ interface JsonTestResult {
   err: any;
 }
 
-interface JsonSuiteResult {
+export interface JsonSuiteResult {
   stats: {
     suites: number;
     tests: number;
@@ -143,7 +143,7 @@ async function showJsonReport(results: Result[], jsonOptions: JsonFormatOptions,
       numSolutionSets: result.numSolutionSets ?? 0,
       duration: result.elapsed || 0,
       currentRetry: 0,
-      err: result.error ? result.error.message : {} // Not sure
+      err: result.error ? { message: result.error.message, stack: result.trace } : {}
     };
 
     if (result.error) {

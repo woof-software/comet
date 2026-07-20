@@ -11,6 +11,14 @@ on:
         description: 'Comma-separated deployments, overrides "network" (e.g. "mainnet-weth,base-aero")'
         type: string
         default: ''
+      multistream:
+        description: 'Refresh the spider cache for all chosen bases before running (instead of mainnet only)'
+        type: boolean
+        default: false
+      per_base:
+        description: 'With multistream: shard the spider refresh per base instead of per network (bypasses the bridged-deployment write-race protection for bases sharing a bridge token, e.g. all Arbitrum bases)'
+        type: boolean
+        default: false
   schedule:
     - cron: '0 12 * * *'   # 15:00 Kiev time (UTC+3), runs against main
 permissions:
@@ -39,18 +47,50 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       bases: ${{ steps.set-matrix.outputs.bases }}
+      spider_network_groups: ${{ steps.set-matrix.outputs.spider_network_groups }}
+      spider_base_groups: ${{ steps.set-matrix.outputs.spider_base_groups }}
+      run_network_groups: ${{ steps.set-matrix.outputs.run_network_groups }}
+      run_base_groups: ${{ steps.set-matrix.outputs.run_base_groups }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # Shares the cache key with `prepare`; whichever job populates it first wins, the other reads it
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: yarn-cache
+        with:
+          path: |
+            node_modules
+            .yarn/cache
+            .yarn/__virtual__
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+
+      - name: Install packages
+        if: steps.yarn-cache.outputs.cache-hit != 'true'
+        run: yarn install --non-interactive --frozen-lockfile
+
       - id: set-matrix
+        env:
+          INPUT_BASES: ${{ inputs.bases }}
+          INPUT_NETWORK: ${{ inputs.network }}
         run: |
-          ALL='["development","mainnet","mainnet-weth","mainnet-wbtc","mainnet-usdt","mainnet-wsteth","mainnet-usds","polygon","polygon-usdt","arbitrum-usdc.e","arbitrum-usdc","arbitrum-weth","arbitrum-usdt","base-usdbc","base-weth","base-usdc","base-aero","base-usds","optimism-usdc","optimism-usdt","optimism-weth","mantle-usde","linea-usdc","linea-weth","scroll-usdc","ronin-weth","ronin-wron","unichain-usdc","unichain-weth"]'
-          if [ -n "${{ inputs.bases }}" ]; then
-            BASES=$(echo "${{ inputs.bases }}" | jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$";""))')
-          elif [ -z "${{ inputs.network }}" ] || [ "${{ inputs.network }}" = "all" ]; then
-            BASES=$(echo "$ALL" | jq -c .)
-          else
-            BASES=$(echo "$ALL" | jq -c --arg n "${{ inputs.network }}" '[.[] | select(. == $n or startswith($n + "-"))]')
-          fi
-          echo "bases=$BASES" >> "$GITHUB_OUTPUT"
+          # Filtering, network/base grouping, and the mainnet-spider exclusion all live in
+          # generateCiMatrix.ts, derived from scenario.bases in hardhat.config.ts, so new
+          # bases/networks need no upkeep here.
+          RESULT=$(node -r hardhat/register -r ts-node/register/transpile-only scripts/multistream/generateCiMatrix.ts)
+          echo "bases=$(echo "$RESULT" | jq -c '.bases')" >> "$GITHUB_OUTPUT"
+          echo "spider_network_groups=$(echo "$RESULT" | jq -c '.spider_network_groups')" >> "$GITHUB_OUTPUT"
+          echo "spider_base_groups=$(echo "$RESULT" | jq -c '.spider_base_groups')" >> "$GITHUB_OUTPUT"
+          echo "run_network_groups=$(echo "$RESULT" | jq -c '.run_network_groups')" >> "$GITHUB_OUTPUT"
+          echo "run_base_groups=$(echo "$RESULT" | jq -c '.run_base_groups')" >> "$GITHUB_OUTPUT"
 
   prepare:
     name: Prepare Repository
@@ -81,12 +121,20 @@ jobs:
         run: yarn install --non-interactive --frozen-lockfile
 
       - name: Compile
-        run: yarn build
+        run: yarn build 2>&1 | tee prepare.log
 
       - name: Spider Contracts on Mainnet
-        run: yarn hardhat spider --network mainnet --deployment usdc
+        run: yarn hardhat spider --network mainnet --deployment usdc 2>&1 | tee -a prepare.log
         env:
           DEBUG: true
+
+      - name: Upload prepare log
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepare-log
+          path: prepare.log
+          overwrite: true
 
       # Upload only the prepared artifacts you need (no node_modules)
       - name: Upload prepared state
@@ -100,14 +148,16 @@ jobs:
             build/
             cache/
           include-hidden-files: true
+          overwrite: true
 
-  run-scenarios:
+  spider:
+    name: Refresh spider cache (${{ matrix.group.name }})
     needs: [ generate-matrix, prepare ]
+    if: inputs.multistream == true
     strategy:
       fail-fast: false
       matrix:
-        bases: ${{ fromJson(needs.generate-matrix.outputs.bases) }}
-    name: Run scenarios
+        group: ${{ inputs.per_base && fromJson(needs.generate-matrix.outputs.spider_base_groups) || fromJson(needs.generate-matrix.outputs.spider_network_groups) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -127,6 +177,95 @@ jobs:
           name: prepared-data
           path: .
 
+      - name: Restore node_modules cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .yarn/cache
+            .yarn/__virtual__
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+
+      - name: Install deps if needed
+        run: |
+          if [ ! -d node_modules ] || [ ! -d node_modules/.bin ]; then
+            echo "node_modules missing — running yarn install"
+            yarn install --non-interactive --frozen-lockfile
+          else
+            echo "node_modules present from cache — skipping install"
+          fi
+
+      # `scenario:spider` already spiders every base passed to it in parallel (Promise.all internally),
+      # so within a network group (per_base=false) its bases refresh concurrently too.
+      - name: Refresh spider cache for ${{ matrix.group.name }}
+        env:
+          DEBUG: true
+          GROUP_BASES: ${{ matrix.group.bases }}
+          GROUP_NAME: ${{ matrix.group.name }}
+        run: yarn hardhat scenario:spider --bases "$GROUP_BASES" 2>&1 | tee "spider-$GROUP_NAME.log"
+
+      - name: Upload spider log
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spider-log-${{ matrix.group.name }}
+          path: spider-${{ matrix.group.name }}.log
+          overwrite: true
+
+      - name: Upload refreshed spider cache
+        uses: actions/upload-artifact@v4
+        with:
+          name: spider-data-${{ matrix.group.name }}
+          path: |
+            deployments/**/aliases.json
+            deployments/**/.contracts/*.json
+          include-hidden-files: true
+          overwrite: true
+
+  run-scenarios:
+    needs: [ generate-matrix, prepare, spider ]
+    # `spider` runs with fail-fast: false across per-network shards, but GitHub reports its
+    # aggregate result as 'failure' if any single shard failed. Gating on that would skip every
+    # network's scenarios just because one network's spider refresh failed — even though each
+    # run-scenarios job below already falls back safely to prepared-data's cache when its own
+    # spider-data-* artifact is missing. Only bail out on 'cancelled' (a real request to stop).
+    if: always() && needs.generate-matrix.result == 'success' && needs.prepare.result == 'success' && needs.spider.result != 'cancelled'
+    strategy:
+      fail-fast: false
+      matrix:
+        # multistream + network-level (the default when multistream=true): shard by network,
+        # e.g. ~11 jobs instead of 29, to stay under GitHub's concurrent-job cap.
+        # Otherwise (multistream=false, or per_base=true): one job per base, same as before.
+        group: ${{ (inputs.multistream && !inputs.per_base) && fromJson(needs.generate-matrix.outputs.run_network_groups) || fromJson(needs.generate-matrix.outputs.run_base_groups) }}
+    name: Run scenarios (${{ matrix.group.name }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Download prepared state
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-data
+          path: .
+
+      # Overrides prepared-data's deployment caches with the freshly-spidered ones, when opted in
+      - name: Download refreshed spider cache
+        if: inputs.multistream == true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: spider-data-*
+          path: .
+          merge-multiple: true
+
       # Restore the same cache created in prepare
       - name: Restore node_modules cache
         uses: actions/cache@v4
@@ -140,7 +279,7 @@ jobs:
       # Install only if cache miss (keeps matrix jobs fast)
       - name: Install deps if needed
         run: |
-          if [ ! -d node_modules ] || [ ! -f node_modules/.bin ]; then
+          if [ ! -d node_modules ] || [ ! -d node_modules/.bin ]; then
             echo "node_modules missing — running yarn install"
             yarn install --non-interactive --frozen-lockfile
           else
@@ -150,16 +289,27 @@ jobs:
       - name: Run scenarios
         env:
           DEBUG: true
-        run: yarn scenario --bases ${{ matrix.bases }}
+          GROUP_BASES: ${{ matrix.group.bases }}
+          GROUP_NAME: ${{ matrix.group.name }}
+        run: yarn scenario --bases "$GROUP_BASES" 2>&1 | tee "scenario-$GROUP_NAME.log"
+
+      - name: Upload scenario log
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-log-${{ matrix.group.name }}
+          path: scenario-${{ matrix.group.name }}.log
+          overwrite: true
 
       - uses: actions/upload-artifact@v4 # upload scenario results
         if: success() || failure() # run this step even if previous step failed
         with:
-          name: scenario-results-${{ matrix.bases }}
+          name: scenario-results-${{ matrix.group.name }}
           path: scenario-results.json
+          overwrite: true
 
       - uses: dorny/test-reporter@v1
         with:
-          name: Scenario Tests (${{ matrix.bases }}) # Name of the check run which will be created
+          name: Scenario Tests (${{ matrix.group.name }}) # Name of the check run which will be created
           path: scenario-results.json # Path to test results (inside artifact .zip)
           reporter: mocha-json # Format of test results

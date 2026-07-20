@@ -5,8 +5,9 @@ import '../../plugins/scenario/type-extensions';
 import { ForkSpec } from '../../plugins/scenario/World';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
+import { runMultistream } from '../../scripts/multistream/run';
 
-function getBasesFromTaskArgs(givenBases: string | undefined, env: HardhatRuntimeEnvironment): ForkSpec[] {
+export function getBasesFromTaskArgs(givenBases: string | undefined, env: HardhatRuntimeEnvironment): ForkSpec[] {
   let bases: ForkSpec[] = env.config.scenario.bases;
   if (givenBases) {
     let baseMap = Object.fromEntries(env.config.scenario.bases.map((base) => [base.name, base]));
@@ -25,13 +26,22 @@ function getBasesFromTaskArgs(givenBases: string | undefined, env: HardhatRuntim
 task('scenario', 'Runs scenario tests')
   .addOptionalParam('bases', 'Bases to run on [defaults to all]')
   .addOptionalParam('glob', 'Scenario files glob [default: scenario/**.ts]')
+  .addOptionalParam('output', 'Path to write the JSON report [default: scenario-results.json]')
   .addFlag('spider', 'run spider persistently before scenarios')
   .setAction(async (taskArgs, env: HardhatRuntimeEnvironment) => {
     const bases: ForkSpec[] = getBasesFromTaskArgs(taskArgs.bases, env);
     if (taskArgs.spider) {
       await env.run('scenario:spider', taskArgs);
     }
-    await runScenarios(bases, taskArgs.glob);
+    await runScenarios(bases, taskArgs.glob, taskArgs.output);
+  });
+
+task('scenario:multistream', 'Runs scenario streams in parallel, grouped by network')
+  .addOptionalParam('bases', 'Bases to run on [defaults to all]')
+  .addFlag('perBase', 'Shard streams per base instead of per network. Bypasses the bridged-deployment write-race protection (see MultistreamSolution.md §2/§5) — only use for bases that don\'t share a bridge token.')
+  .setAction(async (taskArgs, env: HardhatRuntimeEnvironment) => {
+    const bases: ForkSpec[] = getBasesFromTaskArgs(taskArgs.bases, env);
+    await runMultistream(bases, taskArgs.perBase);
   });
 
 task('scenario:spider', 'Runs spider in preparation for scenarios')
@@ -42,7 +52,7 @@ task('scenario:spider', 'Runs spider in preparation for scenarios')
       if (base.network !== 'hardhat') {
         let hre = await hreForBase(base);
         let dm = new DeploymentManager(
-          base.name,
+          base.network,
           base.deployment,
           hre,
           {
