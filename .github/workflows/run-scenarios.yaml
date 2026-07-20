@@ -329,3 +329,5 @@ jobs:
           name: Scenario Tests (${{ matrix.group.name }}) # Name of the check run which will be created
           path: scenario-results.json # Path to test results (inside artifact .zip)
           reporter: mocha-json # Format of test results
+          list-suites: failed # only list suites with failures; passing suites just clutter a failure report
+          list-tests: failed # same for individual test cases

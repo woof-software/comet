@@ -125,6 +125,15 @@ export interface JsonSuiteResult {
   passes: JsonTestResult[];
 }
 
+const MAX_ERROR_TEXT_LENGTH = 500;
+
+function truncateErrorText(text: string | undefined): string | undefined {
+  if (text === undefined) {
+    return undefined;
+  }
+  return text.length > MAX_ERROR_TEXT_LENGTH ? `${text.slice(0, MAX_ERROR_TEXT_LENGTH)}... (truncated)` : text;
+}
+
 async function showJsonReport(results: Result[], jsonOptions: JsonFormatOptions, startTime: number, endTime: number) {
   // TODO: Accept options, etc.
   let suites = new Set();
@@ -143,7 +152,7 @@ async function showJsonReport(results: Result[], jsonOptions: JsonFormatOptions,
       numSolutionSets: result.numSolutionSets ?? 0,
       duration: result.elapsed || 0,
       currentRetry: 0,
-      err: result.error ? { message: result.error.message, stack: result.trace } : {}
+      err: result.error ? { message: truncateErrorText(result.error.message), stack: truncateErrorText(result.trace) } : {}
     };
 
     if (result.error) {
