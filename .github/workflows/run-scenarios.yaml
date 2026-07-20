@@ -12,7 +12,7 @@ on:
         type: string
         default: ''
       multistream:
-        description: 'Parallelize by network, refreshing every base'
+        description: 'Multistream mode: group by network instead of base'
         type: boolean
         default: false
   schedule:
