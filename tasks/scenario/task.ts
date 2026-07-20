@@ -48,7 +48,11 @@ task('scenario:spider', 'Runs spider in preparation for scenarios')
   .addOptionalParam('bases', 'Bases to run on [defaults to all]')
   .setAction(async (taskArgs, env) => {
     const bases: ForkSpec[] = getBasesFromTaskArgs(taskArgs.bases, env);
-    await Promise.all(bases.map(async (base) => {
+    // Promise.allSettled, not Promise.all: an RPC/API hiccup on one base (e.g. a flaky
+    // provider, an explorer API returning 500s) shouldn't abandon every other base's
+    // in-flight spider — each base fails or succeeds independently, and we only throw
+    // (failing this task) after every base has had its chance.
+    const results = await Promise.allSettled(bases.map(async (base) => {
       if (base.network !== 'hardhat') {
         let hre = await hreForBase(base);
         let dm = new DeploymentManager(
@@ -62,4 +66,16 @@ task('scenario:spider', 'Runs spider in preparation for scenarios')
         await dm.spider();
       }
     }));
+
+    const failures = results
+      .map((result, i) => ({ result, base: bases[i] }))
+      .filter((entry): entry is { result: PromiseRejectedResult, base: ForkSpec } => entry.result.status === 'rejected');
+
+    for (const { result, base } of failures) {
+      console.error(`Spider failed for ${base.name}:`, result.reason);
+    }
+
+    if (failures.length > 0) {
+      throw new Error(`Spider failed for ${failures.length}/${bases.length} base(s): ${failures.map(({ base }) => base.name).join(', ')}`);
+    }
   });
