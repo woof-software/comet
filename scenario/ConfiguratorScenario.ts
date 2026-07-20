@@ -1,6 +1,8 @@
 import { scenario } from './context/CometContext';
-import { expectRevertCustom } from './utils';
+import { expectRevertCustom, fundAccount, hasModule } from './utils';
 import { expect } from 'chai';
+import { constants } from 'ethers';
+import { LiquidationModule__factory } from '../build/types';
 
 scenario('upgrade governor', {}, async ({ comet, configurator, timelock, actors }, context) => {
   const { admin, albert } = actors;
@@ -76,3 +78,80 @@ scenario.skip('fallbacks to implementation if called by non-admin', {}, async ()
 scenario.skip('transfer admin of configurator', {}, async () => {
   // XXX
 });
+
+/*//////////////////////////////////////////////////////////////
+                        LIQUIDATION MODULE
+//////////////////////////////////////////////////////////////*/
+
+scenario(
+  'liquidation module can be updated',
+  { filter: async (context) => await hasModule(context) },
+  async ({ comet, configurator, actors }, _context, world) => {
+    const { admin, albert, betty, charles } = actors;
+    const scenarioEthers = world.deploymentManager.hre.ethers;
+    const [deployer] = await scenarioEthers.getSigners();
+    await Promise.all([deployer, admin].map((account) => fundAccount(world, account)));
+
+    const configurationBefore = await configurator.getConfiguration(comet.address);
+    const liquidationModuleBefore = LiquidationModule__factory.connect(
+      configurationBefore.liquidationModule,
+      scenarioEthers.provider
+    );
+    const LiquidationModuleFactory = (await scenarioEthers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
+    const liquidationModule = await LiquidationModuleFactory.deploy(
+      await liquidationModuleBefore.dexAdapter(),
+      betty.address,
+      [albert.address],
+      [charles.address],
+      await liquidationModuleBefore.incentiveBps()
+    );
+    await liquidationModule.deployed();
+
+    await configurator.connect(admin.signer).setLiquidationModule(comet.address, liquidationModule.address);
+
+    expect((await configurator.getConfiguration(comet.address)).liquidationModule).to.equal(liquidationModule.address);
+  }
+);
+
+scenario(
+  'reverts when a non-governor updates the liquidation module',
+  { filter: async (context) => await hasModule(context) },
+  async ({ comet, configurator, actors }) => {
+    const { albert, betty } = actors;
+
+    await expectRevertCustom(configurator.connect(albert.signer).setLiquidationModule(comet.address, betty.address), 'Unauthorized()');
+  }
+);
+
+scenario(
+  'reverts when liquidation module is set to the zero address',
+  { filter: async (context) => await hasModule(context) },
+  async ({ comet, configurator, actors }) => {
+    const { admin } = actors;
+
+    await expectRevertCustom(configurator.connect(admin.signer).setLiquidationModule(comet.address, constants.AddressZero), 'InvalidAddress()');
+  }
+);
+
+scenario(
+  'setConfiguration allows a zero liquidation module and reverts on comet during deployment',
+  { filter: async (context) => await hasModule(context) },
+  async ({ comet, configurator, actors }, _context, world) => {
+    const { admin } = actors;
+    await fundAccount(world, admin);
+    const existingConfiguration = await configurator.getConfiguration(comet.address);
+    const existingLiquidationModule = await comet.liquidationModule();
+    const configurationWithZeroLiquidationModule = {
+      ...existingConfiguration,
+      liquidationModule: constants.AddressZero,
+    };
+
+    await configurator.connect(admin.signer).setConfiguration(comet.address, configurationWithZeroLiquidationModule);
+
+    expect((await configurator.getConfiguration(comet.address)).liquidationModule).to.equal(constants.AddressZero);
+    expect(await comet.liquidationModule()).to.equal(existingLiquidationModule);
+
+    // guard on comet against zero liquidation module
+    await expectRevertCustom(configurator.connect(admin.signer)['deploy(address)'](comet.address), 'ZeroAddress()');
+  }
+);

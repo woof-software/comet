@@ -50,10 +50,13 @@ export type MigrationData = {
   verified?: boolean;
 }
 
+const DAO = '0x6d903f6003cca6255D85CcA4D3B5E5146dC33925';
+
 export interface CometProperties {
   actors: ActorMap;
   assets: AssetMap;
   comet: CometInterface;
+  dao: SignerWithAddress;
   configurator: Configurator;
   proxyAdmin: CometProxyAdmin;
   timelock: SimpleTimelock;
@@ -99,6 +102,10 @@ export class CometContext {
 
   async getComet(): Promise<CometInterface> {
     return this.world.deploymentManager.contract('comet');
+  }
+
+  async getDao(): Promise<SignerWithAddress> {
+    return this.world.impersonateAddress(DAO, { value: 100n * 10n ** 18n });
   }
 
   async getCometAdmin(): Promise<CometProxyAdmin> {
@@ -505,6 +512,7 @@ async function getContextProperties(context: CometContext): Promise<CometPropert
     actors: context.actors,
     assets: context.assets,
     comet,
+    dao: await context.getDao(),
     configurator: await context.getConfigurator(),
     proxyAdmin: await context.getCometAdmin(),
     timelock: await context.getTimelock(),
