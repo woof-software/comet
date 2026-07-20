@@ -46,7 +46,9 @@ function runStream(group: string, bases: ForkSpec[]): Promise<{ group: string, c
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
     child.stdout.pipe(log);
+    child.stdout.pipe(process.stdout);
     child.stderr.pipe(log);
+    child.stderr.pipe(process.stderr);
     child.on('error', reject);
     child.on('exit', (code) => resolve({ group, code }));
   });

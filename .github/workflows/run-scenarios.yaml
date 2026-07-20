@@ -317,6 +317,18 @@ jobs:
           path: scenario-${{ matrix.group.name }}.log
           overwrite: true
 
+      # scenario:multistream --per-base (used when multistream=true, see above) writes one
+      # logs/<base>.log per base in this network group — upload them so display-scenario-logs
+      # can show each base's full run as its own dedicated job.
+      - name: Upload per-base scenario logs
+        if: (success() || failure()) && inputs.multistream == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-logs-${{ matrix.group.name }}
+          path: logs/
+          if-no-files-found: ignore
+          overwrite: true
+
       - uses: actions/upload-artifact@v4 # upload scenario results
         if: success() || failure() # run this step even if previous step failed
         with:
@@ -331,3 +343,36 @@ jobs:
           reporter: mocha-json # Format of test results
           list-suites: failed # only list suites with failures; passing suites just clutter a failure report
           list-tests: failed # same for individual test cases
+
+  # One job per selected base, purely to display that base's complete scenario-run log as its
+  # own dedicated job page — easier to find than digging through a network job's combined,
+  # interleaved output. Note this is NOT a live tail: GitHub Actions jobs run on isolated
+  # runners with no shared filesystem, and `needs: run-scenarios` only unblocks once every
+  # network's job has finished, so these jobs display each base's full log after the fact,
+  # not while it's still running.
+  display-scenario-logs:
+    name: Scenario log (${{ matrix.base }})
+    needs: [ generate-matrix, run-scenarios ]
+    if: always() && inputs.multistream == true && needs.run-scenarios.result != 'cancelled'
+    strategy:
+      fail-fast: false
+      matrix:
+        base: ${{ fromJson(needs.generate-matrix.outputs.bases) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download scenario logs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: scenario-logs-*
+          path: logs
+          merge-multiple: true
+
+      - name: Display log
+        env:
+          BASE: ${{ matrix.base }}
+        run: |
+          if [ -f "logs/$BASE.log" ]; then
+            cat "logs/$BASE.log"
+          else
+            echo "No log found for $BASE (its network's job may have failed before producing one)"
+          fi
