@@ -12,11 +12,11 @@ on:
         type: string
         default: ''
       multistream:
-        description: 'Refresh the spider cache for all chosen bases before running (instead of mainnet only)'
+        description: 'Parallelize by network, refreshing every base'
         type: boolean
         default: false
       per_base:
-        description: 'With multistream: shard the spider refresh per base instead of per network (bypasses the bridged-deployment write-race protection for bases sharing a bridge token, e.g. all Arbitrum bases)'
+        description: 'With multistream: shard per base, not per network'
         type: boolean
         default: false
   schedule:
