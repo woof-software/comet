@@ -38,7 +38,7 @@ task('scenario', 'Runs scenario tests')
 
 task('scenario:multistream', 'Runs scenario streams in parallel, grouped by network')
   .addOptionalParam('bases', 'Bases to run on [defaults to all]')
-  .addFlag('perBase', 'Shard streams per base instead of per network. Bypasses the bridged-deployment write-race protection (see MultistreamSolution.md §2/§5) — only use for bases that don\'t share a bridge token.')
+  .addFlag('perBase', 'Shard streams per base instead of per network. Bypasses the bridged-deployment write-race protection')
   .setAction(async (taskArgs, env: HardhatRuntimeEnvironment) => {
     const bases: ForkSpec[] = getBasesFromTaskArgs(taskArgs.bases, env);
     await runMultistream(bases, taskArgs.perBase);

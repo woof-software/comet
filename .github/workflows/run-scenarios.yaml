@@ -292,10 +292,15 @@ jobs:
       # (its bases have no auxiliaryBase and never bridge to themselves). For every other
       # multi-base network (arbitrum, base, optimism, polygon, linea, ronin), this deliberately
       # reopens the bridged-deployment write race that network-level grouping otherwise avoids
-      # (§2 of MultistreamSolution.md): those bases share one bridge token's cache file
+      # those bases share one bridge token's cache file
       # (e.g. deployments/arbitrum/usdc/.contracts), so concurrent bridge-proposal-detecting
       # scenarios across them can race on that write. Accepted trade-off for speed when
       # multistream is on; multistream=false keeps the old, fully-sequential per-base behavior.
+      #
+      # In multistream mode, output is redirected (not tee'd) straight to the log file — this
+      # job would otherwise show every base's entire verbose run inline, duplicating what the
+      # per-base display-scenario-logs jobs already show more legibly. Non-multistream mode has
+      # no such job, so it stays tee'd to remain visible here (the only place to see it).
       - name: Run scenarios
         env:
           DEBUG: true
@@ -304,7 +309,8 @@ jobs:
           USE_MULTISTREAM: ${{ inputs.multistream }}
         run: |
           if [ "$USE_MULTISTREAM" = "true" ]; then
-            yarn hardhat scenario:multistream --bases "$GROUP_BASES" --per-base 2>&1 | tee "scenario-$GROUP_NAME.log"
+            yarn hardhat scenario:multistream --bases "$GROUP_BASES" --per-base > "scenario-$GROUP_NAME.log" 2>&1
+            echo "Full output written to scenario-$GROUP_NAME.log — see the per-base 'Scenario log' jobs for details."
           else
             yarn scenario --bases "$GROUP_BASES" 2>&1 | tee "scenario-$GROUP_NAME.log"
           fi
@@ -367,12 +373,23 @@ jobs:
           path: logs
           merge-multiple: true
 
+      # Report.ts's console reporter prints one "✅/❌ Results: ... [<base>]" summary line per
+      # base at the end of its run, which is exactly what's captured in logs/<base>.log — grep
+      # for it (fixed-string, so base names containing "." like arbitrum-usdc.e can't be
+      # misinterpreted as regex) to make this job's own pass/fail reflect that base's actual
+      # scenario run, instead of always succeeding just because `cat` did.
       - name: Display log
         env:
           BASE: ${{ matrix.base }}
         run: |
-          if [ -f "logs/$BASE.log" ]; then
-            cat "logs/$BASE.log"
-          else
-            echo "No log found for $BASE (its network's job may have failed before producing one)"
+          if [ ! -f "logs/$BASE.log" ]; then
+            echo "::error::No log found for $BASE (its network's job may have failed before producing one)"
+            exit 1
+          fi
+
+          cat "logs/$BASE.log"
+
+          if grep -F "[$BASE]" "logs/$BASE.log" | grep -qF "❌"; then
+            echo "::error::Scenario run for $BASE failed"
+            exit 1
           fi
