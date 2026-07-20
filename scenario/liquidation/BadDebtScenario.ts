@@ -40,7 +40,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
-      const module = await configureModule(context, world, entry, partial, betty.address);
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
       const [collateralIndex] = await getUsableCollateralIndices(context, 1);
@@ -49,14 +48,22 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+      // Freeze interest so the price drop is the only source of bad debt and all state assertions remain exact.
+      await context.zeroBorrowRates();
 
       const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
       const collateralPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
 
-      // 1. Supply collateral worth ~$100 and borrow a healthy 2× min debt — comfortably within the BCF
-      //    limit, so the position starts collateralized and not liquidatable.
-      const COLLATERAL_VALUE = 100n * 10n ** 8n; // $100 in price scale (1e8 = $1)
-      const collateralAmount = (COLLATERAL_VALUE * collateralAssetInfo.scale) / collateralPrice; // amount = value * scale / price
+      // 1. Supply collateral worth 4× the minimum debt value and borrow 2× the minimum debt. Deriving
+      //    both sides from baseBorrowMin keeps the setup proportional across deployments regardless of
+      //    the base asset's price or decimals.
+      //      minDebtValue   = baseBorrowMin * basePrice / baseScale
+      //      collateralValue = 4 * minDebtValue
+      //      collateralAmount = collateralValue * collateralScale / collateralPrice, rounded up
+      const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
+      const collateralValue = 4n * minDebtValue;
+      const collateralAmount = (collateralValue * collateralAssetInfo.scale + collateralPrice - 1n)
+        / collateralPrice;
       const collateralAsset = context.getAssetByAddress(collateralAssetInfo.asset);
       await context.sourceTokens(collateralAmount, collateralAsset, albert);
       await collateralAsset.approve(albert, comet.address);
@@ -69,24 +76,19 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(await comet.isBorrowCollateralized(albert.address)).to.be.true;
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
-      // 2. Skip time so borrow interest carries the debt past the collateral's LF-weighted value — full
-      //    seizure can then no longer cover it (bad debt). Target the debt at 110% of the LF-weighted
-      //    collateral value. A single accrual grows the debt linearly:
-      //      debt(T) = debt0 * (1 + borrowRate * T / factorScale)
-      //    Solve for T. Nothing changes state before the accrual below, so the borrow rate read here is
-      //    exactly the one the accrual applies.
-      //      collateralValue        = collateralAmount * price / scale                 (mulPrice)
-      //      collateralValueAfterLF = collateralValue * LF                             (mulFactor)
-      const collateralValue = mulPrice(collateralAmount, collateralPrice, collateralAssetInfo.scale);
-      const collateralValueAfterLF = mulFactor(collateralValue, collateralAssetInfo.liquidationFactor);
-      const targetDebtValue = (collateralValueAfterLF * 110n) / 100n; // 10% above LF-weighted → bad debt
-      const targetDebt = (targetDebtValue * baseScale) / basePrice;   // back to base units
+      // 2. Drop the collateral price until its LF-weighted value is 90% of the debt. Full seizure then
+      //    leaves a 10% shortfall, which the protocol must write off as bad debt:
+      //      targetValueAfterLF = debtValue * 0.90
+      //      targetValue        = targetValueAfterLF / LF
+      //      droppedPrice       = targetValue * collateralScale / collateralAmount
+      const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
+      const targetValueAfterLF = (debtValue * 90n) / 100n;
+      const targetCollateralValue = (targetValueAfterLF * factorScale) / collateralAssetInfo.liquidationFactor;
+      const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
 
-      const debt = (await comet.borrowBalanceOf(albert.address)).toBigInt();
-      const borrowRate = (await comet.getBorrowRate(await comet.getUtilization())).toBigInt();
-      const secondsToBadDebt = ((targetDebt - debt) * factorScale) / (debt * borrowRate);
-
-      await world.increaseTime(Number(secondsToBadDebt));
+      // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
+      const module = await configureModule(context, world, entry, partial, betty.address);
       await comet.accrueAccount(albert.address);
 
       // 3. Capture state and run the sanity checks that define the bad-debt case.
@@ -99,7 +101,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(-cometStateBefore.userBalance).to.be.greaterThan(baseBorrowMin);
       // Collateral value after the liquidation factor is below the debt — this is what makes it bad debt.
       const collateralValueAfterLFNow = mulFactor(
-        mulPrice(collateralState.collateralBalance, collateralPrice, collateralAssetInfo.scale),
+        mulPrice(collateralState.collateralBalance, droppedPrice, collateralAssetInfo.scale),
         collateralAssetInfo.liquidationFactor
       );
       expect(collateralValueAfterLFNow).to.be.lessThan(debtValueBefore);
@@ -140,8 +142,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
 
       // Base reserves fall by the FULL debt — the bad-debt write-off, not capped by what the collateral
-      // covered. The intra-block interest on the borrow cancels the write-off, so this is exact against
-      // the captured (pre-absorb) balance.
+      // covered. Borrow rates are zero, so this is exact against the captured pre-absorb balance.
       expect(cometStateAfter.baseReserves).to.equal(cometStateBefore.baseReserves + cometStateBefore.userBalance);
     }
   );
@@ -162,7 +163,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
-      const module = await configureModule(context, world, entry, partial, betty.address);
 
       const collateralIndexes = await getUsableCollateralIndices(context, 2);
       const collateralInfos = await Promise.all(collateralIndexes.map((index) => getAssetInfo(comet, index)));
@@ -172,6 +172,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+      // Freeze interest so the price drop is the only source of bad debt and all state assertions remain exact.
+      await context.zeroBorrowRates();
       const borrowAmount = 2n * baseBorrowMin;
       const borrowValue = mulPrice(borrowAmount, basePrice, baseScale);
 
@@ -182,7 +184,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       for (let i = 0; i < collateralInfos.length; i++) {
         const collateralAssetInfo = collateralInfos[i];
         const collateralValue = (borrowValue * factorScale) / collateralAssetInfo.borrowCollateralFactor;
-        const amount = (collateralValue * collateralAssetInfo.scale) / collateralPrices[i] + 1n;
+        const amount = (collateralValue * collateralAssetInfo.scale) / collateralPrices[i];
         const asset = context.getAssetByAddress(collateralAssetInfo.asset);
 
         await context.sourceTokens(amount, asset, albert);
@@ -196,26 +198,30 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(await comet.isBorrowCollateralized(albert.address)).to.be.true;
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
-      // 2. Skip time until the debt is 10% above the combined LF-weighted collateral value. At that
-      //    point the first full seizure cannot close the debt, and neither can the second:
-      //      totalCollateralAfterLF = sum(collateralValue_i * LF_i)
-      //      targetDebt             = totalCollateralAfterLF * 1.10
+      // 2. Scale both collateral prices down until their combined LF-weighted value is 90% of the debt.
+      //    The common ratio preserves their relative values, while ensuring neither collateral nor the
+      //    full basket can cover the debt:
+      //      targetTotalAfterLF = debtValue * 0.90
+      //      droppedPrice_i     = price_i * targetTotalAfterLF / totalCollateralAfterLF
       let totalCollateralAfterLF = 0n;
-      const collateralStatesBeforeInterest = await makeCollateralStates(comet, context, albert.address, collateralInfos);
+      const collateralStatesBeforeDrop = await makeCollateralStates(comet, context, albert.address, collateralInfos);
       for (let i = 0; i < collateralInfos.length; i++) {
         totalCollateralAfterLF += mulFactor(
-          mulPrice(collateralStatesBeforeInterest[i].collateralBalance, collateralPrices[i], collateralInfos[i].scale),
+          mulPrice(collateralStatesBeforeDrop[i].collateralBalance, collateralPrices[i], collateralInfos[i].scale),
           collateralInfos[i].liquidationFactor
         );
       }
-      const targetDebtValue = (totalCollateralAfterLF * 110n) / 100n;
-      const targetDebt = (targetDebtValue * baseScale) / basePrice;
+      const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
+      const targetTotalAfterLF = (debtValue * 90n) / 100n;
+      const droppedPrices = collateralPrices.map((price) => (price * targetTotalAfterLF) / totalCollateralAfterLF);
+      const newPrices: Record<string, number> = {};
+      for (let i = 0; i < collateralInfos.length; i++) {
+        newPrices[collateralInfos[i].asset] = Number(droppedPrices[i]) / 1e8;
+      }
+      await context.changePriceFeeds(newPrices);
 
-      const debt0 = (await comet.borrowBalanceOf(albert.address)).toBigInt();
-      const borrowRate = (await comet.getBorrowRate(await comet.getUtilization())).toBigInt();
-      const secondsToBadDebt = ((targetDebt - debt0) * factorScale) / (debt0 * borrowRate);
-
-      await world.increaseTime(Number(secondsToBadDebt));
+      // changePriceFeeds redeploys the liquidation module, so configure it only once the prices are set.
+      const module = await configureModule(context, world, entry, partial, betty.address);
       await comet.accrueAccount(albert.address);
 
       // 3. Capture state and run the sanity checks that define the multi-collateral bad-debt case.
@@ -229,7 +235,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       let totalCollateralValueAfterLFNow = 0n;
       for (let i = 0; i < collateralInfos.length; i++) {
         totalCollateralValueAfterLFNow += mulFactor(
-          mulPrice(collateralStatesBefore[i].collateralBalance, collateralPrices[i], collateralInfos[i].scale),
+          mulPrice(collateralStatesBefore[i].collateralBalance, droppedPrices[i], collateralInfos[i].scale),
           collateralInfos[i].liquidationFactor
         );
       }
@@ -314,7 +320,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
     },
     async ({ comet, actors }, context, world) => {
       const { albert, betty } = actors;
-      const module = await configureModule(context, world, entry, partial, betty.address);
 
       const collateralIndexes = await getUsableCollateralIndices(context);
       const collateralInfos = await Promise.all(collateralIndexes.map((index) => getAssetInfo(comet, index)));
@@ -324,6 +329,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+      // Freeze interest so the price drop is the only source of bad debt and all state assertions remain exact.
+      await context.zeroBorrowRates();
 
       // 1. Supply the full usable collateral basket with equal USD value per asset. The basket is
       //    sized from the intended borrow limit, then split evenly across every usable collateral:
@@ -354,20 +361,20 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         );
       }
 
-      // 2. A third party supplies extra base liquidity, then the borrower takes just under the full
-      //    initial borrow limit. The extra supply keeps utilization inside a normal supported band.
+      // 2. Fund Comet directly with base liquidity, then borrow just under the full initial limit.
+      //    Utilization no longer matters because bad debt is created by a price drop, not by interest.
       const borrowAmount = ((borrowLimitValue * 99n) / 100n) * baseScale / basePrice;
-      await context.sourceTokens(4n * borrowAmount, baseAsset, betty);
-      await baseAsset.approve(betty, comet.address);
-      await betty.safeSupplyAsset({ asset: baseToken, amount: 4n * borrowAmount });
+      await context.sourceTokens(4n * borrowAmount, baseAsset, comet.address);
       await albert.withdrawAsset({ asset: baseToken, amount: borrowAmount });
 
       expect(await comet.isBorrowCollateralized(albert.address)).to.be.true;
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
-      // 3. Skip time until the debt is 10% above the whole basket's LF-weighted value:
-      //      totalCollateralAfterLF = sum(collateralValue_i * LF_i)
-      //      targetDebt             = totalCollateralAfterLF * 1.10
+      // 3. Scale every collateral price down until the basket's combined LF-weighted value is 90% of
+      //    the debt. Applying one common ratio preserves the basket composition while guaranteeing a
+      //    10% aggregate shortfall after every usable collateral is seized:
+      //      targetTotalAfterLF = debtValue * 0.90
+      //      droppedPrice_i     = price_i * targetTotalAfterLF / totalCollateralAfterLF
       let totalCollateralAfterLF = 0n;
       for (let i = 0; i < collateralInfos.length; i++) {
         totalCollateralAfterLF += mulFactor(
@@ -375,14 +382,17 @@ function absorbScenarios(entry: Entry, partial: boolean) {
           collateralInfos[i].liquidationFactor
         );
       }
-      const targetDebtValue = (totalCollateralAfterLF * 110n) / 100n;
-      const targetDebt = (targetDebtValue * baseScale) / basePrice;
+      const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
+      const targetTotalAfterLF = (debtValue * 90n) / 100n;
+      const droppedPrices = collateralPrices.map((price) => (price * targetTotalAfterLF) / totalCollateralAfterLF);
+      const newPrices: Record<string, number> = {};
+      for (let i = 0; i < collateralInfos.length; i++) {
+        newPrices[collateralInfos[i].asset] = Number(droppedPrices[i]) / 1e8;
+      }
+      await context.changePriceFeeds(newPrices);
 
-      const usersDebt = (await comet.borrowBalanceOf(albert.address)).toBigInt();
-      const borrowRate = (await comet.getBorrowRate(await comet.getUtilization())).toBigInt();
-      const secondsToBadDebt = ((targetDebt - usersDebt) * factorScale) / (usersDebt * borrowRate);
-
-      await world.increaseTime(Number(secondsToBadDebt));
+      // changePriceFeeds redeploys the liquidation module, so configure it only once the prices are set.
+      const module = await configureModule(context, world, entry, partial, betty.address);
       await comet.accrueAccount(albert.address);
 
       // 4. Capture state and run the sanity checks that define the full-basket bad-debt case.
@@ -396,7 +406,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       let totalCollateralValueAfterLFNow = 0n;
       for (let i = 0; i < collateralInfos.length; i++) {
         totalCollateralValueAfterLFNow += mulFactor(
-          mulPrice(collateralStatesBefore[i].collateralBalance, collateralPrices[i], collateralInfos[i].scale),
+          mulPrice(collateralStatesBefore[i].collateralBalance, droppedPrices[i], collateralInfos[i].scale),
           collateralInfos[i].liquidationFactor
         );
       }
@@ -415,7 +425,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         collateralStatesBefore[i].seizeAmount = collateralStatesBefore[i].collateralBalance;
         collateralStatesBefore[i].seizedValue = mulPrice(
           collateralStatesBefore[i].seizeAmount,
-          collateralPrices[i],
+          droppedPrices[i],
           collateralInfos[i].scale
         );
       }
