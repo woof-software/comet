@@ -15,7 +15,7 @@ function resolveBases(all: string[], inputBases: string, inputNetwork: string): 
   return all.filter((name) => name === inputNetwork || name.startsWith(`${inputNetwork}-`));
 }
 
-function groupBy(names: string[], keyOf: (name: string) => string): { name: string; bases: string }[] {
+function groupBy(names: string[], keyOf: (name: string) => string): { name: string, bases: string }[] {
   const groups = new Map<string, string[]>();
   for (const name of names) {
     const key = keyOf(name);
@@ -37,9 +37,12 @@ function main() {
   const bases = resolveBases(all, process.env.INPUT_BASES ?? '', process.env.INPUT_NETWORK ?? '');
   const spiderBases = bases.filter((name) => !ALREADY_SPIDERED.includes(name));
 
-  // Used by the `spider` job: excludes bases the prepare step already spidered
-  const spiderNetworkGroups = groupBy(spiderBases, (name) => networkMap[name]);
-  const spiderBaseGroups = groupBy(spiderBases, (name) => name);
+  // Used by the single `spider` job: `scenario:spider` already spiders every base passed to it
+  // concurrently (Promise.all internally), so there's no need for a GitHub matrix here at all —
+  // mainnet-family bases go first (throttles total concurrent RPC connections, mirrors the local
+  // multistream tool's own prepare step), then everything else.
+  const spiderMainnetBases = spiderBases.filter((name) => networkMap[name] === 'mainnet').join(',');
+  const spiderOtherBases = spiderBases.filter((name) => networkMap[name] !== 'mainnet').join(',');
 
   // Used by the `run-scenarios` job: every chosen base still needs to actually run,
   // so nothing is excluded here (only `spider` cares about not re-spidering mainnet).
@@ -48,8 +51,8 @@ function main() {
 
   process.stdout.write(JSON.stringify({
     bases,
-    spider_network_groups: spiderNetworkGroups,
-    spider_base_groups: spiderBaseGroups,
+    spider_mainnet_bases: spiderMainnetBases,
+    spider_other_bases: spiderOtherBases,
     run_network_groups: runNetworkGroups,
     run_base_groups: runBaseGroups,
   }));

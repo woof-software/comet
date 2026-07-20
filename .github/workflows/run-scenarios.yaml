@@ -15,10 +15,6 @@ on:
         description: 'Parallelize by network, refreshing every base'
         type: boolean
         default: false
-      per_base:
-        description: 'With multistream: shard per base, not per network'
-        type: boolean
-        default: false
   schedule:
     - cron: '0 12 * * *'   # 15:00 Kiev time (UTC+3), runs against main
 permissions:
@@ -47,8 +43,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       bases: ${{ steps.set-matrix.outputs.bases }}
-      spider_network_groups: ${{ steps.set-matrix.outputs.spider_network_groups }}
-      spider_base_groups: ${{ steps.set-matrix.outputs.spider_base_groups }}
+      spider_mainnet_bases: ${{ steps.set-matrix.outputs.spider_mainnet_bases }}
+      spider_other_bases: ${{ steps.set-matrix.outputs.spider_other_bases }}
       run_network_groups: ${{ steps.set-matrix.outputs.run_network_groups }}
       run_base_groups: ${{ steps.set-matrix.outputs.run_base_groups }}
     steps:
@@ -87,8 +83,8 @@ jobs:
           # bases/networks need no upkeep here.
           RESULT=$(node -r hardhat/register -r ts-node/register/transpile-only scripts/multistream/generateCiMatrix.ts)
           echo "bases=$(echo "$RESULT" | jq -c '.bases')" >> "$GITHUB_OUTPUT"
-          echo "spider_network_groups=$(echo "$RESULT" | jq -c '.spider_network_groups')" >> "$GITHUB_OUTPUT"
-          echo "spider_base_groups=$(echo "$RESULT" | jq -c '.spider_base_groups')" >> "$GITHUB_OUTPUT"
+          echo "spider_mainnet_bases=$(echo "$RESULT" | jq -r '.spider_mainnet_bases')" >> "$GITHUB_OUTPUT"
+          echo "spider_other_bases=$(echo "$RESULT" | jq -r '.spider_other_bases')" >> "$GITHUB_OUTPUT"
           echo "run_network_groups=$(echo "$RESULT" | jq -c '.run_network_groups')" >> "$GITHUB_OUTPUT"
           echo "run_base_groups=$(echo "$RESULT" | jq -c '.run_base_groups')" >> "$GITHUB_OUTPUT"
 
@@ -151,13 +147,9 @@ jobs:
           overwrite: true
 
   spider:
-    name: Refresh spider cache (${{ matrix.group.name }})
+    name: Refresh spider cache
     needs: [ generate-matrix, prepare ]
     if: inputs.multistream == true
-    strategy:
-      fail-fast: false
-      matrix:
-        group: ${{ inputs.per_base && fromJson(needs.generate-matrix.outputs.spider_base_groups) || fromJson(needs.generate-matrix.outputs.spider_network_groups) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -195,27 +187,35 @@ jobs:
             echo "node_modules present from cache — skipping install"
           fi
 
-      # `scenario:spider` already spiders every base passed to it in parallel (Promise.all internally),
-      # so within a network group (per_base=false) its bases refresh concurrently too.
-      - name: Refresh spider cache for ${{ matrix.group.name }}
+      # `scenario:spider` already spiders every base passed to it concurrently (Promise.all
+      # internally), so a single job covers every selected network/base with no GitHub matrix
+      # needed at all — mirrors the local multistream tool's own prepare step: mainnet-family
+      # bases first (throttles total concurrent RPC connections), then everything else.
+      - name: Refresh spider cache
         env:
           DEBUG: true
-          GROUP_BASES: ${{ matrix.group.bases }}
-          GROUP_NAME: ${{ matrix.group.name }}
-        run: yarn hardhat scenario:spider --bases "$GROUP_BASES" 2>&1 | tee "spider-$GROUP_NAME.log"
+          MAINNET_BASES: ${{ needs.generate-matrix.outputs.spider_mainnet_bases }}
+          OTHER_BASES: ${{ needs.generate-matrix.outputs.spider_other_bases }}
+        run: |
+          if [ -n "$MAINNET_BASES" ]; then
+            yarn hardhat scenario:spider --bases "$MAINNET_BASES" 2>&1 | tee spider.log
+          fi
+          if [ -n "$OTHER_BASES" ]; then
+            yarn hardhat scenario:spider --bases "$OTHER_BASES" 2>&1 | tee -a spider.log
+          fi
 
       - name: Upload spider log
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
-          name: spider-log-${{ matrix.group.name }}
-          path: spider-${{ matrix.group.name }}.log
+          name: spider-log
+          path: spider.log
           overwrite: true
 
       - name: Upload refreshed spider cache
         uses: actions/upload-artifact@v4
         with:
-          name: spider-data-${{ matrix.group.name }}
+          name: spider-data
           path: |
             deployments/**/aliases.json
             deployments/**/.contracts/*.json
@@ -224,19 +224,18 @@ jobs:
 
   run-scenarios:
     needs: [ generate-matrix, prepare, spider ]
-    # `spider` runs with fail-fast: false across per-network shards, but GitHub reports its
-    # aggregate result as 'failure' if any single shard failed. Gating on that would skip every
-    # network's scenarios just because one network's spider refresh failed — even though each
-    # run-scenarios job below already falls back safely to prepared-data's cache when its own
-    # spider-data-* artifact is missing. Only bail out on 'cancelled' (a real request to stop).
+    # Each job below already falls back safely to prepared-data's (older, but present) cache if
+    # the spider job's artifact is missing or stale, so a spider failure shouldn't block every
+    # network's scenarios. Only bail out on 'cancelled' (a real request to stop).
     if: always() && needs.generate-matrix.result == 'success' && needs.prepare.result == 'success' && needs.spider.result != 'cancelled'
     strategy:
       fail-fast: false
       matrix:
-        # multistream + network-level (the default when multistream=true): shard by network,
-        # e.g. ~11 jobs instead of 29, to stay under GitHub's concurrent-job cap.
-        # Otherwise (multistream=false, or per_base=true): one job per base, same as before.
-        group: ${{ (inputs.multistream && !inputs.per_base) && fromJson(needs.generate-matrix.outputs.run_network_groups) || fromJson(needs.generate-matrix.outputs.run_base_groups) }}
+        # multistream=true: shard by network (e.g. ~11 jobs instead of 29, to stay under GitHub's
+        # concurrent-job cap), with each job further fanning out across its own bases via
+        # scenario:multistream (see the "Run scenarios" step below).
+        # multistream=false (default): one job per base, exactly as before.
+        group: ${{ inputs.multistream && fromJson(needs.generate-matrix.outputs.run_network_groups) || fromJson(needs.generate-matrix.outputs.run_base_groups) }}
     name: Run scenarios (${{ matrix.group.name }})
     runs-on: ubuntu-latest
     steps:
@@ -257,12 +256,14 @@ jobs:
           name: prepared-data
           path: .
 
-      # Overrides prepared-data's deployment caches with the freshly-spidered ones, when opted in
+      # Overrides prepared-data's deployment caches with the freshly-spidered ones, when opted in.
+      # Uses `pattern` (not `name`) so a missing artifact (e.g. spider job failed) doesn't fail
+      # this step — it just falls back to prepared-data's cache instead.
       - name: Download refreshed spider cache
         if: inputs.multistream == true
         uses: actions/download-artifact@v4
         with:
-          pattern: spider-data-*
+          pattern: spider-data
           path: .
           merge-multiple: true
 
@@ -286,12 +287,27 @@ jobs:
             echo "node_modules present from cache — skipping install"
           fi
 
+      # multistream=true fans every network group's bases out via scenario:multistream --per-base
+      # instead of running them sequentially in this job. For mainnet this is free parallelism
+      # (its bases have no auxiliaryBase and never bridge to themselves). For every other
+      # multi-base network (arbitrum, base, optimism, polygon, linea, ronin), this deliberately
+      # reopens the bridged-deployment write race that network-level grouping otherwise avoids
+      # (§2 of MultistreamSolution.md): those bases share one bridge token's cache file
+      # (e.g. deployments/arbitrum/usdc/.contracts), so concurrent bridge-proposal-detecting
+      # scenarios across them can race on that write. Accepted trade-off for speed when
+      # multistream is on; multistream=false keeps the old, fully-sequential per-base behavior.
       - name: Run scenarios
         env:
           DEBUG: true
           GROUP_BASES: ${{ matrix.group.bases }}
           GROUP_NAME: ${{ matrix.group.name }}
-        run: yarn scenario --bases "$GROUP_BASES" 2>&1 | tee "scenario-$GROUP_NAME.log"
+          USE_MULTISTREAM: ${{ inputs.multistream }}
+        run: |
+          if [ "$USE_MULTISTREAM" = "true" ]; then
+            yarn hardhat scenario:multistream --bases "$GROUP_BASES" --per-base 2>&1 | tee "scenario-$GROUP_NAME.log"
+          else
+            yarn scenario --bases "$GROUP_BASES" 2>&1 | tee "scenario-$GROUP_NAME.log"
+          fi
 
       - name: Upload scenario log
         if: success() || failure()
