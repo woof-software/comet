@@ -46,9 +46,15 @@ function runStream(group: string, bases: ForkSpec[]): Promise<{ group: string, c
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
     child.stdout.pipe(log);
-    child.stdout.pipe(process.stdout);
     child.stderr.pipe(log);
-    child.stderr.pipe(process.stderr);
+    // Locally, also echo to the terminal live. In CI, skip this: the orchestration messages
+    // above (Preparing/Launching/etc.) still print via plain console.log either way, but each
+    // stream's full verbose scenario-by-scenario output would otherwise duplicate what the
+    // per-base display-scenario-logs jobs already show more legibly.
+    if (!process.env.CI) {
+      child.stdout.pipe(process.stdout);
+      child.stderr.pipe(process.stderr);
+    }
     child.on('error', reject);
     child.on('exit', (code) => resolve({ group, code }));
   });

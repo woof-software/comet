@@ -291,16 +291,18 @@ jobs:
       # instead of running them sequentially in this job. For mainnet this is free parallelism
       # (its bases have no auxiliaryBase and never bridge to themselves). For every other
       # multi-base network (arbitrum, base, optimism, polygon, linea, ronin), this deliberately
-      # reopens the bridged-deployment write race that network-level grouping otherwise avoids
-      # those bases share one bridge token's cache file
+      # reopens the bridged-deployment write race that network-level grouping otherwise avoids —
+      #   those bases share one bridge token's cache file
       # (e.g. deployments/arbitrum/usdc/.contracts), so concurrent bridge-proposal-detecting
       # scenarios across them can race on that write. Accepted trade-off for speed when
       # multistream is on; multistream=false keeps the old, fully-sequential per-base behavior.
       #
-      # In multistream mode, output is redirected (not tee'd) straight to the log file — this
-      # job would otherwise show every base's entire verbose run inline, duplicating what the
-      # per-base display-scenario-logs jobs already show more legibly. Non-multistream mode has
-      # no such job, so it stays tee'd to remain visible here (the only place to see it).
+      # scenario:multistream skips echoing each stream's verbose scenario-by-scenario output to
+      # its own stdout when CI=true (set automatically by GitHub Actions) — see run.ts — so this
+      # step's log naturally shows the orchestration messages (Preparing/Launching/summary) up
+      # through the Promise.all of streams, without duplicating what the per-base
+      # display-scenario-logs jobs already show more legibly. tee still works fine for both
+      # branches since there's nothing left to suppress at the YAML level.
       - name: Run scenarios
         env:
           DEBUG: true
@@ -309,8 +311,7 @@ jobs:
           USE_MULTISTREAM: ${{ inputs.multistream }}
         run: |
           if [ "$USE_MULTISTREAM" = "true" ]; then
-            yarn hardhat scenario:multistream --bases "$GROUP_BASES" --per-base > "scenario-$GROUP_NAME.log" 2>&1
-            echo "Full output written to scenario-$GROUP_NAME.log — see the per-base 'Scenario log' jobs for details."
+            yarn hardhat scenario:multistream --bases "$GROUP_BASES" --per-base 2>&1 | tee "scenario-$GROUP_NAME.log"
           else
             yarn scenario --bases "$GROUP_BASES" 2>&1 | tee "scenario-$GROUP_NAME.log"
           fi
