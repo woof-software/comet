@@ -4,12 +4,17 @@ import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 
+import { useBlockDelta } from '../helpers/block-clock';
+
 // Covers the debt-closing path in absorbInternal where remaining debt is below baseBorrowMin,
 // so the protocol closes the debt fully using a partial collateral seizure.
 // The special setups below reproduce cases where current divPrice flooring seizes too little
 // collateral for the closed debt. Tests assert the expected no-loss accounting flow, so the
 // current contract fails at the event/storage step that uses the floored seizure amount.
 describe.skip('partial liquidation: debt closing rounding', function() {
+  // Pin one second between blocks so interest accrues deterministically regardless of machine speed.
+  useBlockDelta(1);
+
   const baseTokenPrice = exp(1, 8);
   const initialBaseFunding = baseTokenPrice * 10_000n;
   const baseBorrowMin = exp(10, 6); // $10

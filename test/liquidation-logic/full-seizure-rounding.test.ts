@@ -4,11 +4,16 @@ import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 
+import { useBlockDelta } from '../helpers/block-clock';
+
 // Covers the full-seizure path triggered by Solidity integer truncation.
 // The special setups below have exact LF-adjusted collateral coverage above the debt,
 // but rounded contract math makes the coverage look insufficient and seizes everything.
 // Tests assert the expected correct flow, so current contract behavior fails at the exact step.
 describe.skip('partial liquidation: full seizure from debt closing rounding', function() {
+  // Pin one second between blocks so interest accrues deterministically regardless of machine speed.
+  useBlockDelta(1);
+
   const baseTokenPrice = exp(1, 8);
   const initialBaseFunding = baseTokenPrice * 1_000_000n;
   const baseBorrowMin = exp(10, 6); // $10

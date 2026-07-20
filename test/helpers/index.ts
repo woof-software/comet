@@ -1,3 +1,4 @@
+export * from './block-clock';
 export * from './cast';
 export * from './default-assets';
 export * from './dex-router';

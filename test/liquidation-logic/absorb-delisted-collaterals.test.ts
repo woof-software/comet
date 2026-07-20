@@ -5,10 +5,15 @@ import { ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 import { AssetInfoStructOutput } from 'build/types/CometWithExtendedAssetList';
 
+import { useBlockDelta } from '../helpers/block-clock';
+
 // These flows cover absorption after a collateral is soft-delisted by setting BCF to 0.
 // The collateral no longer contributes to the borrow-side health value, but if LCF and LF
 // remain positive it is still liquidatable and must reduce the account's debt when seized.
 describe('absorb logic with delisted collaterals', function() {
+  // Pin one second between blocks so interest accrues deterministically regardless of machine speed.
+  useBlockDelta(1);
+
   // Protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
   let configurator: Configurator;

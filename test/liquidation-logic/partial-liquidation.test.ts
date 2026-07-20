@@ -6,7 +6,12 @@ import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 import { TotalsBasicStructOutput } from 'build/types/CometExt';
 import { AssetInfoStructOutput } from 'build/types/AssetList';
 
+import { useBlockDelta } from '../helpers/block-clock';
+
 describe('partial liquidation', function() {
+  // Pin one second between blocks so interest accrues deterministically regardless of machine speed.
+  useBlockDelta(1);
+
   // Protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
   let liquidationModule: LiquidationModule;

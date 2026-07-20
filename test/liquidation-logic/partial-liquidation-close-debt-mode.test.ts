@@ -5,7 +5,12 @@ import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 
+import { useBlockDelta } from '../helpers/block-clock';
+
 describe('partial liquidation (close debt mode)', function() {
+  // Pin one second between blocks so interest accrues deterministically regardless of machine speed.
+  useBlockDelta(1);
+
   // Protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
   let liquidationModule: LiquidationModule;

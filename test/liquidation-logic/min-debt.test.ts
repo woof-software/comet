@@ -5,7 +5,12 @@ import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 import { TotalsBasicStructOutput } from 'build/types/CometExtAssetList';
 
+import { useBlockDelta } from '../helpers/block-clock';
+
 describe('partial liquidation: min debt', function() {
+  // Pin one second between blocks so interest accrues deterministically regardless of machine speed.
+  useBlockDelta(1);
+
   let comet: CometHarnessInterfaceExtendedAssetList;
   let liquidationModule: LiquidationModule;
 
