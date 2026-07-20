@@ -84,7 +84,7 @@ export async function runMultistream(bases: ForkSpec[], perBase: boolean = false
 
   console.log(`Launching ${groups.size} stream(s) (${perBase ? 'per-base' : 'per-network'}): ${[...groups.keys()].join(', ')}`);
   if (perBase) {
-    console.log(`⚠️  --per-base bypasses the bridged-deployment write-race protection; don't use it for bases that share a bridge token (e.g. all Arbitrum bases funnel through deployments/arbitrum/usdc/.contracts).`);
+    console.log(`⚠️  --per-base bypasses the bridged-deployment write-race protection.`);
   }
   const streamResults = await Promise.all(
     [...groups.entries()].map(([group, groupBases]) => runStream(group, groupBases))
