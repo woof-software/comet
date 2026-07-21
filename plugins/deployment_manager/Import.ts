@@ -23,7 +23,7 @@ export async function fetchAndCacheContract(
   return buildFile;
 }
 
-const blockScoutNetworks = ['unichain', 'scroll'];
+const blockScoutNetworks = ['mainnet', 'unichain', 'scroll', 'optimism', 'base', 'arbitrum'];
 
 // Wrapper for pulling contract data from Etherscan
 export async function importContract(

@@ -125,8 +125,7 @@ async function pullFirstTransactionForContractFromBlockscout(network: string, ad
   debug(`Attempting to pull Contract Creation code from first tx at ${debugUrl}`);
   const result = await get(url, {});
 
-  const contractCreationCode = result.result[0].input;
-  console.log('code', contractCreationCode);
+  const contractCreationCode = result.result?.[0]?.input;
   if (!contractCreationCode) {
     throw new Error(`Unable to find Contract Creation tx at ${debugUrl}`);
   }
@@ -134,7 +133,12 @@ async function pullFirstTransactionForContractFromBlockscout(network: string, ad
   return contractCreationCode.slice(2);
 }
 
-async function getBlockscoutApiData(network: string, address: string): Promise<EtherscanData> {
+async function getBlockscoutApiData(
+  network: string,
+  address: string,
+  retries: number = 3,
+  retryDelay: number = 2000
+): Promise<EtherscanData> {
   let apiUrl = await getBlockscoutApiUrl(network);
 
   let result = await get(apiUrl, {
@@ -151,6 +155,17 @@ async function getBlockscoutApiData(network: string, address: string): Promise<E
 
   if (s.ABI === 'Contract source code not verified') {
     throw new Error('Contract source code not verified');
+  }
+
+  if (!s.ABI) {
+    if (retries === 0) {
+      throw new Error('Contract source code not verified');
+    }
+
+    debug(`Blockscout returned an incomplete response for ${network}@${address}, retrying in ${retryDelay / 1000}s; ${retries} retries left`);
+
+    await new Promise(ok => setTimeout(ok, retryDelay));
+    return getBlockscoutApiData(network, address, retries - 1, retryDelay * 2 > 10000 ? 10000 : retryDelay * 2);
   }
 
   return {

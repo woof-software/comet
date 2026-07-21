@@ -9,6 +9,10 @@ export interface Result {
 
 export function getBlockscoutApiUrl(network: string): string {
   let host = {
+    'mainnet': 'eth.blockscout.com',
+    'optimism': 'optimism.blockscout.com',
+    'base': 'base.blockscout.com',
+    'arbitrum': 'arbitrum.blockscout.com',
     'unichain': 'unichain.blockscout.com',
     'scroll': 'scrollscan.com'
   }[network];
@@ -22,6 +26,10 @@ export function getBlockscoutApiUrl(network: string): string {
 
 export function getBlockscoutUrl(network: string): string {
   let host = {
+    'arbitrum': 'arbitrum.blockscout.com',
+    'base': 'base.blockscout.com',
+    'optimism': 'optimism.blockscout.com',
+    'mainnet': 'eth.blockscout.com',
     'unichain': 'unichain.blockscout.com',
     'scroll': 'scrollscan.com'
   }[network];
@@ -35,6 +43,10 @@ export function getBlockscoutUrl(network: string): string {
 
 export async function getBlockscoutRPCUrl(network: string): Promise<string> {
   let host = {
+    'mainnet': `${process.env.MAINNET_QUICKNODE_LINK}`.replace('https://', ''),
+    'optimism': `${process.env.OPTIMISM_QUICKNODE_LINK}`.replace('https://', ''),
+    'base': `${process.env.BASE_QUICKNODE_LINK}`.replace('https://', ''),
+    'arbitrum': `${process.env.ARBITRUM_QUICKNODE_LINK}`.replace('https://', ''),
     'unichain': `${process.env.UNICHAIN_QUICKNODE_LINK}`.replace('https://', ''),
     'scroll': `scroll-mainnet.gateway.tenderly.co`,
   }[network];
