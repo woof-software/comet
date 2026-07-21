@@ -90,6 +90,7 @@ jobs:
 
   prepare:
     name: Prepare Repository
+    needs: [ generate-matrix ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -119,10 +120,29 @@ jobs:
       - name: Compile
         run: yarn build 2>&1 | tee prepare.log
 
-      - name: Spider Contracts on Mainnet
-        run: yarn hardhat spider --network mainnet --deployment usdc 2>&1 | tee -a prepare.log
+      # Always spider mainnet/usdc — it's the shared auxiliaryBase every L2 scenario run depends
+      # on, refreshed regardless of what's selected. When multistream is on, also spider every
+      # other selected base in this same step (mainnet-family bases first, to throttle total
+      # concurrent RPC connections, mirroring the local multistream tool's own prepare step;
+      # scenario:spider already spiders everything passed to it concurrently via Promise.all
+      # internally) — so run-scenarios never needs a separate spider-refresh job, and
+      # prepared-data alone always has whatever cache this run actually needs.
+      - name: Spider contracts
         env:
           DEBUG: true
+          MULTISTREAM: ${{ inputs.multistream }}
+          MAINNET_BASES: ${{ needs.generate-matrix.outputs.spider_mainnet_bases }}
+          OTHER_BASES: ${{ needs.generate-matrix.outputs.spider_other_bases }}
+        run: |
+          yarn hardhat spider --network mainnet --deployment usdc 2>&1 | tee -a prepare.log
+          if [ "$MULTISTREAM" = "true" ]; then
+            if [ -n "$MAINNET_BASES" ]; then
+              yarn hardhat scenario:spider --bases "$MAINNET_BASES" 2>&1 | tee -a prepare.log
+            fi
+            if [ -n "$OTHER_BASES" ]; then
+              yarn hardhat scenario:spider --bases "$OTHER_BASES" 2>&1 | tee -a prepare.log
+            fi
+          fi
 
       - name: Upload prepare log
         if: success() || failure()
@@ -146,88 +166,9 @@ jobs:
           include-hidden-files: true
           overwrite: true
 
-  spider:
-    name: Refresh spider cache
-    needs: [ generate-matrix, prepare ]
-    if: inputs.multistream == true
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Download prepared state
-        uses: actions/download-artifact@v4
-        with:
-          name: prepared-data
-          path: .
-
-      - name: Restore node_modules cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            .yarn/cache
-            .yarn/__virtual__
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-
-      - name: Install deps if needed
-        run: |
-          if [ ! -d node_modules ] || [ ! -d node_modules/.bin ]; then
-            echo "node_modules missing — running yarn install"
-            yarn install --non-interactive --frozen-lockfile
-          else
-            echo "node_modules present from cache — skipping install"
-          fi
-
-      # `scenario:spider` already spiders every base passed to it concurrently (Promise.all
-      # internally), so a single job covers every selected network/base with no GitHub matrix
-      # needed at all — mirrors the local multistream tool's own prepare step: mainnet-family
-      # bases first (throttles total concurrent RPC connections), then everything else.
-      - name: Refresh spider cache
-        env:
-          DEBUG: true
-          MAINNET_BASES: ${{ needs.generate-matrix.outputs.spider_mainnet_bases }}
-          OTHER_BASES: ${{ needs.generate-matrix.outputs.spider_other_bases }}
-        run: |
-          if [ -n "$MAINNET_BASES" ]; then
-            yarn hardhat scenario:spider --bases "$MAINNET_BASES" 2>&1 | tee spider.log
-          fi
-          if [ -n "$OTHER_BASES" ]; then
-            yarn hardhat scenario:spider --bases "$OTHER_BASES" 2>&1 | tee -a spider.log
-          fi
-
-      - name: Upload spider log
-        if: success() || failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: spider-log
-          path: spider.log
-          overwrite: true
-
-      - name: Upload refreshed spider cache
-        uses: actions/upload-artifact@v4
-        with:
-          name: spider-data
-          path: |
-            deployments/**/aliases.json
-            deployments/**/.contracts/*.json
-          include-hidden-files: true
-          overwrite: true
-
   run-scenarios:
-    needs: [ generate-matrix, prepare, spider ]
-    # Each job below already falls back safely to prepared-data's (older, but present) cache if
-    # the spider job's artifact is missing or stale, so a spider failure shouldn't block every
-    # network's scenarios. Only bail out on 'cancelled' (a real request to stop).
-    if: always() && needs.generate-matrix.result == 'success' && needs.prepare.result == 'success' && needs.spider.result != 'cancelled'
+    needs: [ generate-matrix, prepare ]
+    if: always() && needs.generate-matrix.result == 'success' && needs.prepare.result == 'success'
     strategy:
       fail-fast: false
       matrix:
@@ -255,17 +196,6 @@ jobs:
         with:
           name: prepared-data
           path: .
-
-      # Overrides prepared-data's deployment caches with the freshly-spidered ones, when opted in.
-      # Uses `pattern` (not `name`) so a missing artifact (e.g. spider job failed) doesn't fail
-      # this step — it just falls back to prepared-data's cache instead.
-      - name: Download refreshed spider cache
-        if: inputs.multistream == true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: spider-data
-          path: .
-          merge-multiple: true
 
       # Restore the same cache created in prepare
       - name: Restore node_modules cache
