@@ -118,7 +118,7 @@ function absorbScenarios(entry: Entry) {
       const liquidatableMaxValue = (debtValue * factorScale) / collateralLCF;
       const targetCollateralValue = (guardFloorValue + liquidatableMaxValue) / 2n;
       const newCollateralPrice = (targetCollateralValue * collateralScale) / collateralAmount;
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(newCollateralPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: newCollateralPrice });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const liquidationModule = await configureModule(context, world, entry, true, betty.address);
@@ -309,7 +309,7 @@ function absorbScenarios(entry: Entry) {
 
       // 4. Drop the first collateral onto its target value; the second's price is left alone.
       const newFirstCollateralPrice = (firstTargetValue * collateralInfos[0].scale) / firstSupplyAmount;
-      await context.changePriceFeeds({ [collateralInfos[0].asset]: Number(newFirstCollateralPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralInfos[0].asset]: newFirstCollateralPrice });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const liquidationModule = await configureModule(context, world, entry, true, betty.address);
@@ -517,7 +517,7 @@ function absorbScenarios(entry: Entry) {
 
       // 4. Drop the closing collateral onto its target value; every small asset is left alone.
       const newClosingCollateralPrice = (closingTargetValue * collateralInfos[closing].scale) / closingAmount;
-      await context.changePriceFeeds({ [collateralInfos[closing].asset]: Number(newClosingCollateralPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralInfos[closing].asset]: newClosingCollateralPrice });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const liquidationModule = await configureModule(context, world, entry, true, betty.address);
@@ -723,7 +723,7 @@ function absorbScenarios(entry: Entry) {
       const liquidatableMaxValue = (debtValue - mulFactor(secondCollateralValue, collateralInfos[1].liquidateCollateralFactor)) * factorScale / collateralInfos[0].liquidateCollateralFactor;
       const firstTargetValue = (guardFloorValue + liquidatableMaxValue) / 2n;
       const newFirstCollateralPrice = (firstTargetValue * collateralInfos[0].scale) / firstAmount;
-      await context.changePriceFeeds({ [collateralInfos[0].asset]: Number(newFirstCollateralPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralInfos[0].asset]: newFirstCollateralPrice });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const liquidationModule = await configureModule(context, world, entry, true, betty.address);

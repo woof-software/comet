@@ -264,7 +264,7 @@ export class CometContext {
     await configurator.setLiquidationModule(comet.address, liquidationModule.address);
   }
 
-  async changePriceFeeds(newPrices: Record<string, number>) {
+  async changePriceFeeds(newPrices: Record<string, bigint>) {
     const comet = await this.getComet();
     const baseToken = await comet.baseToken();
 
@@ -274,10 +274,9 @@ export class CometContext {
       const priceFeed = await this.world.deploymentManager.deploy(
         `${assetName}:priceFeed`,
         'test/SimplePriceFeed.sol',
-        // Round: the price arrives as a dollar figure, and re-scaling it in floats lands off an
-        // integer for many prices 
-        // Example: (0.14035087 * 1e8 = 14035086.999999998), which ethers rejects.
-        [Math.round(newPrices[assetAddress] * 1e8), 8],
+        // The price is supplied already scaled to the feed's 8 decimals (the same scale comet.getPrice
+        // returns), so it is set directly with no float re-scaling.
+        [newPrices[assetAddress], 8],
         true
       );
       newPriceFeeds[assetAddress] = priceFeed.address;

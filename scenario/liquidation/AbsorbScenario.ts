@@ -108,7 +108,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const targetCollateralValue = (lowerValue + upperValue) / 2n;
       const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale + collateralAmount - 1n)
         / collateralAmount;
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const module = await configureModule(context, world, entry, partial, betty.address);
@@ -269,7 +269,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const secondTargetValue = (lowerValue + upperValue) / 2n;
       const secondDroppedPrice = (secondTargetValue * collateralInfos[1].scale + collateralStatesBeforeDrop[1].collateralBalance - 1n)
         / collateralStatesBeforeDrop[1].collateralBalance;
-      await context.changePriceFeeds({ [collateralInfos[1].asset]: Number(secondDroppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralInfos[1].asset]: secondDroppedPrice });
 
       // Each collateral's price at absorb time: [0] unchanged, [1] dropped.
       const pricesAtAbsorb = [collateralPrices[0], secondDroppedPrice];
@@ -479,7 +479,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const lastTargetValue = (lowerValue + upperValue) / 2n;
       const lastDroppedPrice = (lastTargetValue * collateralInfos[lastIdx].scale + collateralStatesBeforeDrop[lastIdx].collateralBalance - 1n)
         / collateralStatesBeforeDrop[lastIdx].collateralBalance;
-      await context.changePriceFeeds({ [collateralInfos[lastIdx].asset]: Number(lastDroppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralInfos[lastIdx].asset]: lastDroppedPrice });
 
       // Each collateral's price at absorb time: the earlier assets unchanged, the last dropped.
       const pricesAtAbsorb = collateralPrices.map((price, i) => (i === lastIdx ? lastDroppedPrice : price));
@@ -644,7 +644,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
       // 3. Drop the collateral price by 35%, then accrue so lastAccrualTime is a clean starting point.
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number((collateralPrice * 65n) / 100n) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: (collateralPrice * 65n) / 100n });
       const module = await configureModule(context, world, entry, partial, betty.address);
       await comet.accrueAccount(albert.address);
 
@@ -945,7 +945,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const targetValueAfterLCF = (debtValue * 90n) / 100n;
       const targetCollateralValue = (targetValueAfterLCF * factorScale) / collateralAssetInfo.liquidateCollateralFactor;
       const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
       await comet.accrueAccount(albert.address);
 
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
@@ -953,7 +953,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       // 3. Replace the base-token feed with a zero-price feed. The feed change redeploys the module, so
       //    configure the active entry point only after the broken oracle is installed.
-      await context.changePriceFeeds({ [baseToken]: 0 });
+      await context.changePriceFeeds({ [baseToken]: 0n });
       const module = await configureModule(context, world, entry, partial, betty.address);
 
       await expect(comet.isBorrowCollateralized(albert.address)).to.be.revertedWithCustomError(comet, 'BadPrice');
@@ -1014,7 +1014,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const targetValueAfterLCF = (debtValue * 90n) / 100n;
       const targetCollateralValue = (targetValueAfterLCF * factorScale) / collateralAssetInfo.liquidateCollateralFactor;
       const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
       await comet.accrueAccount(albert.address);
 
       expect(await comet.isLiquidatable(albert.address)).to.be.true;

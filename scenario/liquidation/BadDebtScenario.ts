@@ -85,7 +85,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const targetValueAfterLF = (debtValue * 90n) / 100n;
       const targetCollateralValue = (targetValueAfterLF * factorScale) / collateralAssetInfo.liquidationFactor;
       const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const module = await configureModule(context, world, entry, partial, betty.address);
@@ -214,9 +214,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
       const targetTotalAfterLF = (debtValue * 90n) / 100n;
       const droppedPrices = collateralPrices.map((price) => (price * targetTotalAfterLF) / totalCollateralAfterLF);
-      const newPrices: Record<string, number> = {};
+      const newPrices: Record<string, bigint> = {};
       for (let i = 0; i < collateralInfos.length; i++) {
-        newPrices[collateralInfos[i].asset] = Number(droppedPrices[i]) / 1e8;
+        newPrices[collateralInfos[i].asset] = droppedPrices[i];
       }
       await context.changePriceFeeds(newPrices);
 
@@ -385,9 +385,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
       const targetTotalAfterLF = (debtValue * 90n) / 100n;
       const droppedPrices = collateralPrices.map((price) => (price * targetTotalAfterLF) / totalCollateralAfterLF);
-      const newPrices: Record<string, number> = {};
+      const newPrices: Record<string, bigint> = {};
       for (let i = 0; i < collateralInfos.length; i++) {
-        newPrices[collateralInfos[i].asset] = Number(droppedPrices[i]) / 1e8;
+        newPrices[collateralInfos[i].asset] = droppedPrices[i];
       }
       await context.changePriceFeeds(newPrices);
 
@@ -534,7 +534,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const remainingDebtValue = mulPrice(remainingDebt, basePrice, baseScale);
       const targetCollateralValue = ((remainingDebtValue * 80n) / 100n * factorScale) / collateralAssetInfo.liquidationFactor;
       const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
       const module = await configureModule(context, world, entry, partial, betty.address);
 
       await comet.accrueAccount(albert.address);
@@ -667,7 +667,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
       // 2. Apply the price drop that makes the supplied collateral exactly cover the debt after LF.
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
       const module = await configureModule(context, world, entry, partial, betty.address);
 
       // 3. Capture state and run the sanity checks that define the equality boundary.

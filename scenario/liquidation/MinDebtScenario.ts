@@ -94,7 +94,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const upperValue = (remainingDebtValue * factorScale) / collateralAssetInfo.liquidateCollateralFactor;
       const targetCollateralValue = (lowerValue + upperValue) / 2n;
       const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
 
       const module = await configureModule(context, world, entry, partial, betty.address);
       await comet.accrueAccount(albert.address);
@@ -262,8 +262,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const secondDroppedPrice = (secondValue * collateralInfos[1].scale) / collateralStatesBeforeDrop[1].collateralBalance;
 
       await context.changePriceFeeds({
-        [collateralInfos[0].asset]: Number(firstDroppedPrice) / 1e8,
-        [collateralInfos[1].asset]: Number(secondDroppedPrice) / 1e8,
+        [collateralInfos[0].asset]: firstDroppedPrice,
+        [collateralInfos[1].asset]: secondDroppedPrice,
       });
 
       const module = await configureModule(context, world, entry, partial, betty.address);
@@ -458,8 +458,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const secondDroppedPrice = (secondValue * collateralInfos[1].scale) / collateralStatesBeforeDrop[1].collateralBalance;
 
       await context.changePriceFeeds({
-        [collateralInfos[0].asset]: Number(firstDroppedPrice) / 1e8,
-        [collateralInfos[1].asset]: Number(secondDroppedPrice) / 1e8,
+        [collateralInfos[0].asset]: firstDroppedPrice,
+        [collateralInfos[1].asset]: secondDroppedPrice,
       });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the prices are set
@@ -649,7 +649,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const upperValue = liquidatableBound < guardBound ? liquidatableBound : guardBound;
       const targetCollateralValue = (lowerValue + upperValue) / 2n;
       const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const module = await configureModule(context, world, entry, partial, betty.address);
@@ -838,8 +838,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const secondDroppedPrice = (secondValue * collateralInfos[1].scale) / collateralStatesBeforeDrop[1].collateralBalance;
 
       await context.changePriceFeeds({
-        [collateralInfos[0].asset]: Number(firstDroppedPrice) / 1e8,
-        [collateralInfos[1].asset]: Number(secondDroppedPrice) / 1e8,
+        [collateralInfos[0].asset]: firstDroppedPrice,
+        [collateralInfos[1].asset]: secondDroppedPrice,
       });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the prices are set.
@@ -1018,7 +1018,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const upperValue = (minDebtValue * factorScale) / collateralAssetInfo.liquidateCollateralFactor;
       const targetCollateralValue = (lowerValue + upperValue) / 2n;
       const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const module = await configureModule(context, world, entry, partial, betty.address);
@@ -1156,7 +1156,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const targetValueAfterLF = (80n * minDebtValue) / 100n;
       const targetCollateralValue = (targetValueAfterLF * factorScale) / collateralAssetInfo.liquidationFactor;
       const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: Number(droppedPrice) / 1e8 });
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.
       const module = await configureModule(context, world, entry, partial, betty.address);
