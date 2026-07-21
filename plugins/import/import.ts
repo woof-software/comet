@@ -173,7 +173,7 @@ async function getBlockscoutApiData(
     abi: JSON.parse(s.ABI),
     contract: s.ContractName,
     compiler: s.CompilerVersion,
-    optimized: s.OptimizationUsed as unknown as boolean,
+    optimized: s.OptimizationUsed !== '0',
     optimizationRuns: Number(s.OptimizationRuns),
     constructorArgs: s.ConstructorArguments,
   };
