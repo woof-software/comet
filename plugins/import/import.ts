@@ -161,8 +161,17 @@ async function getBlockscoutApiData(
   }
 
   if (!s.ABI) {
-    if (retries === 0) {
+    // For networks with a Sourcify fallback configured, an incomplete Blockscout response has
+    // consistently turned out to be permanent (Blockscout never gets it), not transient — so
+    // retrying Blockscout here just wastes up to ~14s per contract for nothing. Go straight to
+    // Sourcify instead. Networks without a Sourcify fallback keep the retry-then-fail behavior,
+    // since for those an incomplete response really has been a transient hiccup.
+    if (sourcifyChainIds[network]) {
       return await getSourcifyApiData(network, address);
+    }
+
+    if (retries === 0) {
+      throw new Error('Contract source code not verified');
     }
 
     debug(`Blockscout returned an incomplete response for ${network}@${address}, retrying in ${retryDelay / 1000}s; ${retries} retries left`);
