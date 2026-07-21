@@ -14,7 +14,8 @@ export function getBlockscoutApiUrl(network: string): string {
     'base': 'base.blockscout.com',
     'arbitrum': 'arbitrum.blockscout.com',
     'unichain': 'unichain.blockscout.com',
-    'scroll': 'scrollscan.com'
+    'scroll': 'scrollscan.com',
+    'ronin': 'explorer.roninchain.com',
   }[network];
 
   if (!host) {
@@ -31,7 +32,8 @@ export function getBlockscoutUrl(network: string): string {
     'optimism': 'optimism.blockscout.com',
     'mainnet': 'eth.blockscout.com',
     'unichain': 'unichain.blockscout.com',
-    'scroll': 'scrollscan.com'
+    'scroll': 'scrollscan.com',
+    'ronin': 'explorer.roninchain.com',
   }[network];
 
   if (!host) {
@@ -49,6 +51,7 @@ export async function getBlockscoutRPCUrl(network: string): Promise<string> {
     'arbitrum': `${process.env.ARBITRUM_QUICKNODE_LINK}`.replace('https://', ''),
     'unichain': `${process.env.UNICHAIN_QUICKNODE_LINK}`.replace('https://', ''),
     'scroll': `scroll-mainnet.gateway.tenderly.co`,
+    'ronin': `${process.env.RONIN_QUICKNODE_LINK}`.replace('https://', ''),
   }[network];
 
   if (!host) {
