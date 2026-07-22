@@ -38,6 +38,7 @@ import {
   MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
   CometHarnessInterfaceExtendedAssetList,
   LiquidationModule,
+  LiquidationModule__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
@@ -140,7 +141,6 @@ export type ConfiguratorAndProtocol = {
   proxyAdmin: CometProxyAdmin;
   cometFactory: CometFactoryWithExtendedAssetList;
   cometProxy: TransparentUpgradeableProxy;
-  defaultLiquidationModuleForProxy: LiquidationModule;
 } & Protocol;
 
 export type RewardsOpts = {
@@ -299,7 +299,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   }
 
   const defaultLiquidationModule = opts.liquidationModule ?? await deployDefaultLiquidationModule({
-    dexAdapter: opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address}))).address,
+    dexAdapter: opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address;}))).address,
     multisig: multisig.address,
     executors: opts.liquidationModuleOpts?.executors ?? executors.map((x) => x.address),
     pausers: opts.liquidationModuleOpts?.pausers ?? pausers.map((x) => x.address),
@@ -485,8 +485,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
-    defaultLiquidationModule
-  } = await makeProtocol(opts);
+  } = await makeProtocol({...opts, skipInitStorage: true});
 
   // Deploy ProxyAdmin
   const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdmin')) as CometProxyAdmin__factory;
@@ -500,6 +499,16 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     (await comet.populateTransaction.initializeStorage()).data,
   );
 
+  // Deploy LiquidationModule
+  const LiquidationModule = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
+  const liquidationModule = await LiquidationModule.deploy(
+    opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address;}))).address,
+    multisig.address,
+    executors.map((x) => x.address),
+    pausers.map((x) => x.address),
+    opts.liquidationModuleOpts?.incentiveBps ?? 0n
+  );
+
   const configuration = await getConfigurationForConfigurator(
     opts,
     comet,
@@ -509,7 +518,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     base,
     priceFeeds,
-    defaultLiquidationModule.address
+    liquidationModule.address
   );
 
   // Deploy CometFactory
@@ -548,8 +557,8 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     );
 
     await configuratorAsProxy.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
-    await proxyAdmin.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);  }
-
+    await proxyAdmin.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
+  }
 
   return {
     opts,
@@ -572,7 +581,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
-    defaultLiquidationModule
+    defaultLiquidationModule: liquidationModule
   };
 }
 
@@ -868,8 +877,8 @@ export async function setupFork(blockNumber?: number, jsonRpcUrl?: string) {
 }
 
 const toSigner = async (x: string | SignerWithAddress): Promise<SignerWithAddress> => {
-    if (typeof x !== 'string') return x;                 // already a signer (default slice)
-    const signer = await ethers.getImpersonatedSigner(x);
-    await setBalance(signer.address, ethers.utils.parseEther('10')); // gas to call the module
-    return signer;
-  };
+  if (typeof x !== 'string') return x;                 // already a signer (default slice)
+  const signer = await ethers.getImpersonatedSigner(x);
+  await setBalance(signer.address, ethers.utils.parseEther('10')); // gas to call the module
+  return signer;
+};
