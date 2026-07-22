@@ -43,8 +43,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       bases: ${{ steps.set-matrix.outputs.bases }}
-      spider_mainnet_bases: ${{ steps.set-matrix.outputs.spider_mainnet_bases }}
-      spider_other_bases: ${{ steps.set-matrix.outputs.spider_other_bases }}
       run_network_groups: ${{ steps.set-matrix.outputs.run_network_groups }}
       run_base_groups: ${{ steps.set-matrix.outputs.run_base_groups }}
     steps:
@@ -83,8 +81,6 @@ jobs:
           # bases/networks need no upkeep here.
           RESULT=$(node -r hardhat/register -r ts-node/register/transpile-only scripts/multistream/generateCiMatrix.ts)
           echo "bases=$(echo "$RESULT" | jq -c '.bases')" >> "$GITHUB_OUTPUT"
-          echo "spider_mainnet_bases=$(echo "$RESULT" | jq -r '.spider_mainnet_bases')" >> "$GITHUB_OUTPUT"
-          echo "spider_other_bases=$(echo "$RESULT" | jq -r '.spider_other_bases')" >> "$GITHUB_OUTPUT"
           echo "run_network_groups=$(echo "$RESULT" | jq -c '.run_network_groups')" >> "$GITHUB_OUTPUT"
           echo "run_base_groups=$(echo "$RESULT" | jq -c '.run_base_groups')" >> "$GITHUB_OUTPUT"
 
@@ -120,29 +116,26 @@ jobs:
       - name: Compile
         run: yarn build 2>&1 | tee prepare.log
 
-      # Always spider mainnet/usdc — it's the shared auxiliaryBase every L2 scenario run depends
-      # on, refreshed regardless of what's selected. When multistream is on, also spider every
-      # other selected base in this same step (mainnet-family bases first, to throttle total
-      # concurrent RPC connections, mirroring the local multistream tool's own prepare step;
-      # scenario:spider already spiders everything passed to it concurrently via Promise.all
-      # internally) — so run-scenarios never needs a separate spider-refresh job, and
-      # prepared-data alone always has whatever cache this run actually needs.
+      # mainnet is always spidered — it's the shared auxiliaryBase every L2 scenario run depends
+      # on, refreshed regardless of what's selected. With multistream off, that's the only base
+      # spidered here (unchanged from before). With multistream on, every other selected base is
+      # spidered too, in the very same scenario:spider call — its own Promise.all already spiders
+      # everything passed to it concurrently, and Cache.ts now writes cache files atomically
+      # (temp file + rename), so the concurrent-write race that used to make this risky is fixed
+      # at the source. So: run-scenarios never needs a separate spider-refresh job, and
+      # prepared-data alone always has whatever cache this run needs.
       - name: Spider contracts
         env:
           DEBUG: true
           MULTISTREAM: ${{ inputs.multistream }}
-          MAINNET_BASES: ${{ needs.generate-matrix.outputs.spider_mainnet_bases }}
-          OTHER_BASES: ${{ needs.generate-matrix.outputs.spider_other_bases }}
+          ALL_BASES: ${{ needs.generate-matrix.outputs.bases }}
         run: |
-          yarn hardhat spider --network mainnet --deployment usdc 2>&1 | tee -a prepare.log
           if [ "$MULTISTREAM" = "true" ]; then
-            if [ -n "$MAINNET_BASES" ]; then
-              yarn hardhat scenario:spider --bases "$MAINNET_BASES" 2>&1 | tee -a prepare.log
-            fi
-            if [ -n "$OTHER_BASES" ]; then
-              yarn hardhat scenario:spider --bases "$OTHER_BASES" 2>&1 | tee -a prepare.log
-            fi
+            BASES=$(echo "$ALL_BASES" | jq -r '(["mainnet"] + .) | unique | join(",")')
+          else
+            BASES="mainnet"
           fi
+          yarn hardhat scenario:spider --bases "$BASES" 2>&1 | tee -a prepare.log
 
       - name: Upload prepare log
         if: success() || failure()
