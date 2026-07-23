@@ -16,7 +16,7 @@ import "./CometWithExtendedAssetList.sol";
  * │   lose.                                                                 │
  * │                                                                         │
  * │   The DAO has NO control whatsoever over these Comets: no governance,   │
- * │   no pause, no recovery, no upgrades.                    │
+ * │   no pause, no recovery, no upgrades.                                   │
  * │                                                                         │
  * │   The same applies to EVERY Comet deployed from this instance: none of  │
  * │   them are for production use, and users should never deposit into them.│
