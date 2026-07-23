@@ -2,7 +2,6 @@
 pragma solidity =0.8.15;
 
 import { ICoreLiquidationModuleErrors } from "./ICoreLiquidationModuleErrors.sol";
-import { ICoreLiquidationModuleEvents } from "./ICoreLiquidationModuleEvents.sol";
 
 /**
  * @title Core Liquidation Module Interface
@@ -11,7 +10,7 @@ import { ICoreLiquidationModuleEvents } from "./ICoreLiquidationModuleEvents.sol
  * @dev Function documentation is maintained in the module implementation contract.
  * @custom:security-contact dmitriy@woof.software
  */
-interface ICoreLiquidationModule is ICoreLiquidationModuleErrors, ICoreLiquidationModuleEvents {
+interface ICoreLiquidationModule is ICoreLiquidationModuleErrors {
     struct Seizure {
         address asset;
         uint8 index;

@@ -133,8 +133,14 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         for (uint8 i; i < plan.length; ++i) {
             if (plan[i].seizedAmount == 0) continue;
 
-            emit AbsorbCollateral(absorber, account, plan[i].asset, plan[i].seizedAmount, plan[i].wantedCollateralValue);
-            ICometLiquidationInterface(address(comet)).updateAndSeizeCollateral(account, plan[i].index, uint128(plan[i].seizedAmount));
+            // Comet emits AbsorbCollateral from the hook.
+            ICometLiquidationInterface(address(comet)).updateAndSeizeCollateral(
+                absorber,
+                account,
+                plan[i].index,
+                uint128(plan[i].seizedAmount),
+                plan[i].wantedCollateralValue
+            );
             // Hook transfers collateral to the module, so module re-transfers it further to the adapter
             IERC20(plan[i].asset).safeTransfer(address(dexAdapter), plan[i].seizedAmount);
             // A failed swap means the adapter swept that collateral back to Comet (it is absorbed instead of
@@ -145,8 +151,8 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
 
         /// @dev Even if received amount is less than debt due to slippage, the DEX adapter verifies the slippage
         ///      tolerance, so we can close the whole debt.
-        ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(account, newBalance);
-        emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
+        // Comet emits AbsorbDebt from the hook.
+        ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(absorber, account, newBalance, basePaidOut, basePaidOutValue);
 
         uint256 baseReceived = baseToken.balanceOf(address(this)) - baseBefore;
         // Convert the swept collateral's value to base.

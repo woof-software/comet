@@ -106,13 +106,18 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
 
         for (uint8 i; i < plan.length; ++i) {
             if (plan[i].seizedAmount == 0 ) continue;
-            emit AbsorbCollateral(absorber, account, plan[i].asset, plan[i].seizedAmount, plan[i].wantedCollateralValue);
-            // Collaterals storage update
-            ICometLiquidationInterface(address(comet)).updateCollateral(account, plan[i].index, uint128(plan[i].seizedAmount));
+            // Collaterals storage update. Comet emits AbsorbCollateral from the hook.
+            ICometLiquidationInterface(address(comet)).updateCollateral(
+                absorber,
+                account,
+                plan[i].index,
+                uint128(plan[i].seizedAmount),
+                plan[i].wantedCollateralValue
+            );
         }
 
-        ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(account, newBalance);
-        emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
+        // Comet emits AbsorbDebt from the hook.
+        ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(absorber, account, newBalance, basePaidOut, basePaidOutValue);
     }
 
     /**

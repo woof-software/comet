@@ -14,7 +14,7 @@ interface ICometLiquidationInterface {
                         LIQUIDATION MODULE PART
     //////////////////////////////////////////////////////////////*/
 
-    function updateCollateral(address account, uint8 index, uint128 seizedAmount) external;
-    function updateAndSeizeCollateral(address account, uint8 index, uint128 seizedAmount) external;
-    function updateDebtAndPrincipal(address account, int256 newBalance) external;
+    function updateCollateral(address absorber, address account, uint8 index, uint128 seizedAmount, uint256 usdValue) external;
+    function updateAndSeizeCollateral(address absorber, address account, uint8 index, uint128 seizedAmount, uint256 usdValue) external;
+    function updateDebtAndPrincipal(address absorber, address account, int256 newBalance, uint256 basePaidOut, uint256 basePaidOutValue) external;
 }
