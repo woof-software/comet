@@ -12,7 +12,11 @@ import "./CometWithExtendedAssetList.sol";
  * │   protocol features. It carries no guarantees whatsoever: it may be     │
  * │   upgraded, paused, drained, or abandoned at any moment without notice. │
  * │   Any assets supplied here should be considered permanently at risk and │
- * │   potentially unrecoverable. NEVER use this market with real funds.     │
+ * │   potentially unrecoverable. NEVER deposit funds you are not ready to   │
+ * │   lose.                                                                 │
+ * │                                                                         │
+ * │   The DAO has NO control whatsoever over these Comets: no governance,   │
+ * │   no pause, no recovery, no upgrades.                                   │
  * │                                                                         │
  * │   The same applies to EVERY Comet deployed from this instance: none of  │
  * │   them are for production use, and users should never deposit into them.│
