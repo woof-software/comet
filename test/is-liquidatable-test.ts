@@ -43,7 +43,7 @@ describe('isLiquidatable', function () {
       baseTrackingBorrowSpeed: exp(1 / 86400, 15, 18), // 1 comp per day
       baseTrackingSupplySpeed: exp(1 / 86400, 15, 18), // 1 comp per day
     });
-    const cometProxyAddress = protocol.cometProxy.address;
+    const cometProxyAddress = protocol.cometProxyWithExtendedAssetList.address;
     comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
     configurator = protocol.configurator;
     configuratorProxyAddress = protocol.configuratorProxy.address;
