@@ -21,19 +21,21 @@ import { impersonateAddress } from '../../plugins/scenario/utils';
 import { ProposalState, OpenProposal } from '../context/Gov';
 import { debug } from '../../plugins/deployment_manager/Utils';
 import { COMP_WHALES } from '../../src/deploy';
+import { findMintAuthority } from '../../plugins/scenario/utils/TokenSourcer';
 import relayMessage from './relayMessage';
 import {
   mineBlocks,
   setEtherBalance,
   setNextBaseFeeToZero,
   setNextBlockTimestamp,
+  duration,
 } from './hreUtils';
 import { BaseBridgeReceiver, CometInterface } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
-export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
+export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp, duration };
 import { readFileSync } from 'fs';
 import path from 'path';
 
@@ -432,9 +434,12 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
   if (rewardTokenAddress === constants.AddressZero) return false;
 
   const totalSupply = await COMP.totalSupply();
-  if (totalSupply.toBigInt() < exp(1, 18)) return false;
+  if (totalSupply.toBigInt() >= exp(1, 18)) return true;
 
-  return true;
+  // Barely any of the token was ever bridged (e.g. COMP on scroll), so it can't be sourced
+  // from a holder. That only rules the market out if it can't be minted either.
+  const authority = await findMintAuthority(ctx.world.deploymentManager, rewardTokenAddress);
+  return authority !== null;
 }
 
 export function isBridgedDeployment(ctx: CometContext): boolean {
@@ -1623,22 +1628,65 @@ export async function supportsMarketAdminPermissionChecker(ctx: CometContext): P
   try {
     const configurator = await ctx.getConfigurator();
     const ethers = ctx.world.deploymentManager.hre.ethers;
-    
+
     // Use function selector to probe existence without reverting on unsupported networks
     const iface = new ethers.utils.Interface([
       'function marketAdminPermissionChecker() public view returns (address)'
     ]);
     const functionSelector = iface.getSighash('marketAdminPermissionChecker');
-    
+
     const result = await ethers.provider.call({
       to: configurator.address,
       data: functionSelector
     });
-    
+
     if (result && result !== '0x') {
       return true;
     }
     return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function supportsSetRewardConfigWithMultiplier(ctx: CometContext): Promise<boolean> {
+  try {
+    const rewards = await ctx.getRewards();
+    if (rewards == null) return false;
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+
+    // `setRewardConfigWithMultiplier` reverts NotPermitted on the deployments that
+    // have it, so an eth_call probe can't tell "exists but reverted" from "missing".
+    // Instead look for its selector in the deployed bytecode: the dispatcher embeds
+    // it as a PUSH4, and the multiplier variant only exists on the newer CometRewards.
+    const iface = new ethers.utils.Interface([
+      'function setRewardConfigWithMultiplier(address comet, address token, uint256 multiplier) public'
+    ]);
+    const functionSelector = iface.getSighash('setRewardConfigWithMultiplier');
+
+    const code = await ethers.provider.getCode(rewards.address);
+    return code.includes(functionSelector.slice(2));
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function supportsSetRewardsClaimed(ctx: CometContext): Promise<boolean> {
+  try {
+    const rewards = await ctx.getRewards();
+    if (rewards == null) return false;
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+
+    // Like setRewardConfigWithMultiplier, this reverts NotPermitted where it exists,
+    // so probe for its selector in the deployed bytecode rather than via eth_call:
+    // the governor bookkeeping surface only exists on the newer CometRewards.
+    const iface = new ethers.utils.Interface([
+      'function setRewardsClaimed(address comet, address[] users, uint256[] claimedAmounts) external'
+    ]);
+    const functionSelector = iface.getSighash('setRewardsClaimed');
+
+    const code = await ethers.provider.getCode(rewards.address);
+    return code.includes(functionSelector.slice(2));
   } catch (e) {
     return false;
   }
