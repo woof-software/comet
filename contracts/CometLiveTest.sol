@@ -32,13 +32,38 @@ import "./CometWithExtendedAssetList.sol";
  *      this test instance exists / which feature is currently being exercised.
  */
 contract CometLiveTest is CometWithExtendedAssetList {
-    /// @notice Human-readable description signalling that this Comet is a testing
-    ///         instance and indicating which feature is currently under test.
-    string public testingPurpose;
+    /// @notice Description signalling that this Comet is a testing instance and
+    ///         indicating which feature is currently under test.
+    bytes32 internal immutable testingPurpose32;
 
-    constructor(Configuration memory config, string memory testingPurpose_)
+    /**
+     * @notice Construct a test-only Comet instance.
+     * @param config The mapping of initial/constant parameters (see {CometWithExtendedAssetList}).
+     * @param testingPurpose32_ Description of the feature under test, as a zero-padded
+     **/
+    constructor(Configuration memory config, bytes32 testingPurpose32_)
         CometWithExtendedAssetList(config)
     {
-        testingPurpose = testingPurpose_;
+        testingPurpose32 = testingPurpose32_;
+    }
+
+    /**
+     * @notice Get the description of this test instance's purpose
+     * @return The testing purpose as a string
+     */
+    function testingPurpose() external view returns (string memory) {
+        uint8 i;
+        for (i = 0; i < 32; ) {
+            if (testingPurpose32[i] == 0) {
+                break;
+            }
+            unchecked { i++; }
+        }
+        bytes memory testingPurpose_ = new bytes(i);
+        for (uint8 j = 0; j < i; ) {
+            testingPurpose_[j] = testingPurpose32[j];
+            unchecked { j++; }
+        }
+        return string(testingPurpose_);
     }
 }
