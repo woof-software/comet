@@ -485,7 +485,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
-  } = await makeProtocol({...opts, skipInitStorage: true});
+  } = await makeProtocol({...opts, skipInitStorage: true });
 
   // Deploy ProxyAdmin
   const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdmin')) as CometProxyAdmin__factory;
@@ -496,7 +496,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
   const cometProxy = await CometProxy.deploy(
     comet.address,
     proxyAdmin.address,
-    (await comet.populateTransaction.initializeStorage()).data,
+    '0x',
   );
 
   // Deploy LiquidationModule
@@ -559,6 +559,13 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     await configuratorAsProxy.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
     await proxyAdmin.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
   }
+
+  const initializeStorageCalldata = (await comet.populateTransaction.initializeStorage()).data;
+  await proxyAdmin.connect(governor).deployUpgradeToAndCall(
+    configuratorProxy.address,
+    cometProxy.address,
+    initializeStorageCalldata
+  );
 
   return {
     opts,

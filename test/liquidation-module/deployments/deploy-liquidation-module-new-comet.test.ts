@@ -195,10 +195,6 @@ describe('deploy liquidation module for new comet', function () {
       expect(await liquidationModule.dexAdapter()).to.equal(dexAdapter.address);
     });
 
-    it('sets the multisig', async () => {
-      expect(await liquidationModule.multisig()).to.equal(multisig);
-    });
-
     it('sets the incentive bps', async () => {
       expect(await liquidationModule.incentiveBps()).to.equal(INCENTIVE_BPS);
     });

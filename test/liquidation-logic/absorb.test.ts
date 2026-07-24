@@ -49,8 +49,7 @@ describe('absorb: general logic', function () {
       },
       baseTrackingSupplySpeed: 0,
       baseTrackingBorrowSpeed: 0,
-      baseBorrowMin: baseBorrowMin,
-      skipInitStorage: true
+      baseBorrowMin: baseBorrowMin
     });
     configuratorProxyAddress = protocol.configuratorProxy.address;
     cometProxyAddress = protocol.cometProxy.address;
@@ -170,7 +169,7 @@ describe('absorb: general logic', function () {
     
         it('absorb is successful', async () => {
           absorbTx = viaLiquidationModule
-            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            ? await liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
             : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
@@ -188,7 +187,7 @@ describe('absorb: general logic', function () {
         });
     
         it('emits AbsorbCollateral for the seized collateral', async () => {
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+          await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
             absorber.address,
             alice.address,
             tokens[collateralKey].address,
@@ -199,7 +198,7 @@ describe('absorb: general logic', function () {
     
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -332,7 +331,7 @@ describe('absorb: general logic', function () {
         });
     
         it('emits AbsorbCollateral for the seized collateral', async () => {
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+          await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
             absorber.address,
             alice.address,
             tokens[collateralKey].address,
@@ -343,7 +342,7 @@ describe('absorb: general logic', function () {
     
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -476,7 +475,7 @@ describe('absorb: general logic', function () {
         });
     
         it('emits AbsorbCollateral for the seized collateral', async () => {
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+          await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
             absorber.address,
             alice.address,
             tokens[collateralKey].address,
@@ -487,7 +486,7 @@ describe('absorb: general logic', function () {
     
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -637,7 +636,7 @@ describe('absorb: general logic', function () {
     
         for (const config of collateralConfigs) {
           it(`emits AbsorbCollateral for seized ${config.symbol}`, async () => {
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
               absorber.address,
               alice.address,
               tokens[config.symbol].address,
@@ -649,7 +648,7 @@ describe('absorb: general logic', function () {
     
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -811,7 +810,7 @@ describe('absorb: general logic', function () {
     
         for (const config of collateralConfigs) {
           it(`emits AbsorbCollateral for seized ${config.symbol}`, async () => {
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
               absorber.address,
               alice.address,
               tokens[config.symbol].address,
@@ -823,7 +822,7 @@ describe('absorb: general logic', function () {
     
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -985,7 +984,7 @@ describe('absorb: general logic', function () {
     
         for (const config of collateralConfigs) {
           it(`emits AbsorbCollateral for seized ${config.symbol}`, async () => {
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
               absorber.address,
               alice.address,
               tokens[config.symbol].address,
@@ -997,7 +996,7 @@ describe('absorb: general logic', function () {
     
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -1158,7 +1157,7 @@ describe('absorb: general logic', function () {
     
         for (const config of collateralConfigs) {
           it(`emits AbsorbCollateral for seized ${config.symbol}`, async () => {
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
               absorber.address,
               alice.address,
               tokens[config.symbol].address,
@@ -1170,7 +1169,7 @@ describe('absorb: general logic', function () {
     
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -1340,7 +1339,7 @@ describe('absorb: general logic', function () {
     
         for (const config of collateralConfigs) {
           it(`emits AbsorbCollateral for seized ${config.symbol}`, async () => {
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
               absorber.address,
               alice.address,
               tokens[config.symbol].address,
@@ -1352,7 +1351,7 @@ describe('absorb: general logic', function () {
     
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -1508,7 +1507,7 @@ describe('absorb: general logic', function () {
     
         it('absorb is successful', async () => {
           absorbTx = viaLiquidationModule
-            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
+            ? await liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
             : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
@@ -1540,7 +1539,7 @@ describe('absorb: general logic', function () {
     
         for (const config of collateralConfigs) {
           it(`emits AbsorbCollateral for seized ${config.symbol}`, async () => {
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
               absorber.address,
               alice.address,
               tokens[config.symbol].address,
@@ -1552,7 +1551,7 @@ describe('absorb: general logic', function () {
     
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
         });
     
         // User base balances

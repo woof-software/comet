@@ -62,6 +62,9 @@ describe('partial liquidation', function() {
         sUSDe: { ...default24AssetsData.sUSDe, supplyCap: exp(4000, 18) },
       },
       baseTrackingBorrowSpeed: 0,
+      borrowInterestRateBase: 0,
+      borrowInterestRateSlopeLow: 0,
+      borrowInterestRateSlopeHigh: 0,
       baseBorrowMin: baseBorrowMin,
     });
     comet = protocol.comet;
@@ -218,7 +221,7 @@ describe('partial liquidation', function() {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
     
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -398,7 +401,7 @@ describe('partial liquidation', function() {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
     
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -578,7 +581,7 @@ describe('partial liquidation', function() {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
     
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -776,7 +779,7 @@ describe('partial liquidation', function() {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
     
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -988,7 +991,7 @@ describe('partial liquidation', function() {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
     
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -1196,7 +1199,7 @@ describe('partial liquidation', function() {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
     
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -1407,7 +1410,7 @@ describe('partial liquidation', function() {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
     
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
         // User base balances
@@ -1624,7 +1627,7 @@ describe('partial liquidation', function() {
             const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
             const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
     
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+            await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
           });
     
           // User base balances
@@ -1780,7 +1783,7 @@ describe('partial liquidation', function() {
               const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
               const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
     
-              await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+              await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
                 absorber.address, alice.address, tokens[config.symbol].address, config.amount, collateralValue
               );
               collateralsState[config.symbol].seizedValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
@@ -1797,7 +1800,7 @@ describe('partial liquidation', function() {
             const wantedGmxCollateralValue = getWantedCollateralValue(gmxInfo, debtRemainingValue, totalCollateralizedValue);
             const gmxSeizeAmount = divPrice(wantedGmxCollateralValue, gmxPrice, gmxInfo.scale);
     
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
               absorber.address, alice.address, tokens[collateralConfigs[4].symbol].address, gmxSeizeAmount, wantedGmxCollateralValue
             );
           });
@@ -1945,7 +1948,7 @@ describe('partial liquidation', function() {
         it('AbsorbDebt event is emitted', async () => {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
             absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
           );
         });
@@ -2178,7 +2181,7 @@ describe('partial liquidation', function() {
         it('AbsorbDebt event is emitted', async () => {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
             absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
           );
         });
@@ -2411,7 +2414,7 @@ describe('partial liquidation', function() {
         it('AbsorbDebt event is emitted', async () => {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
             absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
           );
         });
@@ -2649,7 +2652,7 @@ describe('partial liquidation', function() {
         it('AbsorbDebt event is emitted', async () => {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
             absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
           );
         });
@@ -2952,7 +2955,7 @@ describe('partial liquidation', function() {
         it('AbsorbDebt event is emitted', async () => {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
             absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
           );
         });
@@ -3210,7 +3213,7 @@ describe('partial liquidation', function() {
         it('AbsorbDebt event is emitted', async () => {
           const basePaidOut = -(await comet.borrowBalanceOf(alice.address)).toBigInt() - balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
         // User base balances

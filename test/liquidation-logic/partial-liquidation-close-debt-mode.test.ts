@@ -47,6 +47,9 @@ describe('partial liquidation (close debt mode)', function() {
         sUSDe: { ...default24AssetsData.sUSDe, supplyCap: exp(4000, 18) },
       },
       baseTrackingBorrowSpeed: 0,
+      borrowInterestRateBase: 0,
+      borrowInterestRateSlopeLow: 0,
+      borrowInterestRateSlopeHigh: 0,
       baseBorrowMin: baseBorrowMin,
     });
     comet = protocol.comet;
@@ -159,7 +162,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -307,7 +310,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -455,7 +458,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -628,7 +631,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -816,7 +819,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -1008,7 +1011,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -1209,7 +1212,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -1400,7 +1403,7 @@ describe('partial liquidation (close debt mode)', function() {
         // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
         const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-        await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+        await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
       });
 
       // User base balances
@@ -1521,7 +1524,7 @@ describe('partial liquidation (close debt mode)', function() {
           const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
           const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
 
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+          await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
             absorber.address, alice.address, tokens[config.symbol].address, config.amount, collateralValue
           );
           debtRemainingValue -= mulFactor(collateralValue, assetInfo.liquidationFactor);
@@ -1537,7 +1540,7 @@ describe('partial liquidation (close debt mode)', function() {
         // The event reports wantedCollateralValue recomputed from the seized amount.
         const wantedGmxCollateralValue = mulPrice(gmxSeizeAmount, gmxPrice, gmxInfo.scale);
 
-        await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+        await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
           absorber.address, alice.address, tokens[collateralConfigs[4].symbol].address, gmxSeizeAmount, wantedGmxCollateralValue
         );
       });
@@ -1638,7 +1641,7 @@ describe('partial liquidation (close debt mode)', function() {
     it('AbsorbDebt event is emitted', async () => {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut
       );
     });
@@ -1821,7 +1824,7 @@ describe('partial liquidation (close debt mode)', function() {
     it('AbsorbDebt event is emitted', async () => {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut
       );
     });
@@ -2004,7 +2007,7 @@ describe('partial liquidation (close debt mode)', function() {
     it('AbsorbDebt event is emitted', async () => {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut
       );
     });
@@ -2196,7 +2199,7 @@ describe('partial liquidation (close debt mode)', function() {
     it('AbsorbDebt event is emitted', async () => {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut
       );
     });
@@ -2446,7 +2449,7 @@ describe('partial liquidation (close debt mode)', function() {
     // Events
     it('AbsorbDebt event is emitted', async () => {
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut
       );
     });
@@ -2679,7 +2682,7 @@ describe('partial liquidation (close debt mode)', function() {
     // Events
     it('AbsorbDebt event is emitted', async () => {
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances

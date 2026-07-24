@@ -161,10 +161,6 @@ describe('liquidation module access control', function () {
   describe('constructor', function () {
     // The constructor wires the Multisig, the initial Executors/Pausers and the DAO (DEFAULT_ADMIN_ROLE).
     describe('happy path', function () {
-      it('sets the Multisig', async () => {
-        expect(await liquidationModule.multisig()).to.equal(multisig.address);
-      });
-
       it('exposes the hardcoded DAO timelock', async () => {
         expect(await liquidationModule.DAO()).to.equal(dao.address);
       });

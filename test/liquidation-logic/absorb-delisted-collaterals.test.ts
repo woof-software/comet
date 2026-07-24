@@ -5186,7 +5186,7 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('emits AbsorbCollateral for COMP', async () => {
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address,
         alice.address,
         tokens[collateralKey].address,
@@ -5198,7 +5198,7 @@ describe('absorb logic with delisted collaterals', function() {
     it('emits AbsorbDebt for the absorbed debt', async () => {
       const totalsBasic = await comet.totalsBasic();
       const basePaidOut = -presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address,
         alice.address,
         basePaidOut,
@@ -5359,7 +5359,7 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('emits AbsorbCollateral for COMP', async () => {
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address,
         alice.address,
         tokens[collateralKey].address,
@@ -5371,7 +5371,7 @@ describe('absorb logic with delisted collaterals', function() {
     it('emits AbsorbDebt for the absorbed debt', async () => {
       const totalsBasic = await comet.totalsBasic();
       const basePaidOut = -presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address,
         alice.address,
         basePaidOut,
@@ -5536,7 +5536,7 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('emits AbsorbCollateral for COMP', async () => {
       const collateralValue = mulPrice(collateralAmount, droppedCompPrice, assetInfo.scale);
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address,
         alice.address,
         tokens[collateralKey].address,
@@ -5548,7 +5548,7 @@ describe('absorb logic with delisted collaterals', function() {
     it('emits AbsorbDebt for the absorbed debt', async () => {
       const totalsBasic = await comet.totalsBasic();
       const basePaidOut = -presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address,
         alice.address,
         basePaidOut,
@@ -5715,7 +5715,7 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('emits AbsorbCollateral for COMP', async () => {
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address,
         alice.address,
         tokens[collateralKey].address,
@@ -5728,7 +5728,7 @@ describe('absorb logic with delisted collaterals', function() {
       const totalsBasic = await comet.totalsBasic();
       const expectedBasePaidOut = -presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
 
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address,
         alice.address,
         expectedBasePaidOut,
@@ -5902,7 +5902,7 @@ describe('absorb logic with delisted collaterals', function() {
     it('emits AbsorbCollateral for COMP', async () => {
       const expectedCompCollateralValue = mulPrice(collateralsState[collateralConfigs[0].symbol].seizeAmount, droppedCompPrice, compInfo.scale);
 
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[collateralConfigs[0].symbol].address, collateralsState[collateralConfigs[0].symbol].seizeAmount, expectedCompCollateralValue
       );
     });
@@ -5911,7 +5911,7 @@ describe('absorb logic with delisted collaterals', function() {
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
       const expectedWethCollateralValue = mulPrice(collateralsState[collateralConfigs[1].symbol].seizeAmount, wethPrice, wethInfo.scale);
 
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[collateralConfigs[1].symbol].address, collateralsState[collateralConfigs[1].symbol].seizeAmount, expectedWethCollateralValue
       );
     });
@@ -5920,7 +5920,7 @@ describe('absorb logic with delisted collaterals', function() {
       const totalsBasic = await comet.totalsBasic();
       const expectedBasePaidOut = -presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
 
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, expectedBasePaidOut, mulPrice(expectedBasePaidOut, baseTokenPrice, baseScale)
       );
     });
@@ -6096,7 +6096,7 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('emits AbsorbCollateral for COMP with zero collateral value', async () => {
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[collateralConfigs[0].symbol].address, collateralsState[collateralConfigs[0].symbol].seizeAmount, 0
       );
     });
@@ -6105,7 +6105,7 @@ describe('absorb logic with delisted collaterals', function() {
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
       const expectedWethCollateralValue = mulPrice(collateralsState[collateralConfigs[1].symbol].seizeAmount, wethPrice, wethInfo.scale);
 
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[collateralConfigs[1].symbol].address, collateralsState[collateralConfigs[1].symbol].seizeAmount, expectedWethCollateralValue
       );
     });
@@ -6114,7 +6114,7 @@ describe('absorb logic with delisted collaterals', function() {
       const totalsBasic = await comet.totalsBasic();
       const expectedBasePaidOut = -presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
 
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, expectedBasePaidOut, mulPrice(expectedBasePaidOut, baseTokenPrice, baseScale)
       );
     });
@@ -6279,7 +6279,7 @@ describe('absorb logic with delisted collaterals', function() {
     it('emits AbsorbCollateral for COMP', async () => {
       const expectedCompCollateralValue = mulPrice(collateralsState[collateralConfigs[0].symbol].seizeAmount, droppedCompPrice, compInfo.scale);
 
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[collateralConfigs[0].symbol].address, collateralsState[collateralConfigs[0].symbol].seizeAmount, expectedCompCollateralValue
       );
     });
@@ -6288,7 +6288,7 @@ describe('absorb logic with delisted collaterals', function() {
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
       const expectedWethCollateralValue = mulPrice(collateralsState[collateralConfigs[1].symbol].seizeAmount, wethPrice, wethInfo.scale);
 
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[collateralConfigs[1].symbol].address, collateralsState[collateralConfigs[1].symbol].seizeAmount, expectedWethCollateralValue
       );
     });
@@ -6297,7 +6297,7 @@ describe('absorb logic with delisted collaterals', function() {
       const totalsBasic = await comet.totalsBasic();
       const expectedBasePaidOut = -presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
 
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, expectedBasePaidOut, mulPrice(expectedBasePaidOut, baseTokenPrice, baseScale)
       );
     });
@@ -6463,7 +6463,7 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('emits AbsorbCollateral for COMP with zero collateral value', async () => {
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[collateralConfigs[0].symbol].address, collateralsState[collateralConfigs[0].symbol].seizeAmount, 0
       );
     });
@@ -6472,7 +6472,7 @@ describe('absorb logic with delisted collaterals', function() {
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
       const expectedWethCollateralValue = mulPrice(collateralsState[collateralConfigs[1].symbol].seizeAmount, wethPrice, wethInfo.scale);
 
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[collateralConfigs[1].symbol].address, collateralsState[collateralConfigs[1].symbol].seizeAmount, expectedWethCollateralValue
       );
     });
@@ -6481,7 +6481,7 @@ describe('absorb logic with delisted collaterals', function() {
       const totalsBasic = await comet.totalsBasic();
       const expectedBasePaidOut = -presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
 
-      await expect(absorbTx).to.emit(newLiquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, expectedBasePaidOut, mulPrice(expectedBasePaidOut, baseTokenPrice, baseScale)
       );
     });

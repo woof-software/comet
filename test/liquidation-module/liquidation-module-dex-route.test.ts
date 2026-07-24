@@ -18,6 +18,7 @@ import {
   ONEINCH_SLIPPAGE_PCT,
   AMM_PROTOCOLS,
 } from '../helpers';
+import { findEvent, eq } from '../helpers/events';
 import {
   CometInterface,
   CometWithExtendedAssetList__factory,
@@ -119,10 +120,12 @@ describe('liquidation module dex route', function () {
     liquidateTx: Awaited<ReturnType<LiquidationModule['liquidate']>>
   ): Promise<bigint> => {
     const receipt = await liquidateTx.wait();
-    const event = receipt.events!.find(
-      (e) => e.address === liquidationModule.address && e.event === 'AbsorbDebt'
+    // The transaction goes through the module, so ethers only names the module's own logs. Comet's logs come
+    // back undecoded and have to be matched and parsed against Comet's interface by hand.
+    const event = findEvent(receipt.logs, comet.interface, 'AbsorbDebt', (emitter) =>
+      eq(emitter, comet.address)
     )!;
-    return event.args!.basePaidOut.toBigInt();
+    return event.args.basePaidOut.toBigInt();
   };
 
   before(async () => {

@@ -189,14 +189,14 @@ describe.skip('partial liquidation: debt closing rounding', function() {
     });
 
     it('AbsorbCollateral emits the expected no-loss seized collateral amount and repriced value', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[SYMBOL].address, expectedSeizeAmount, expectedWantedCollateralValue
       );
     });
 
     it('AbsorbDebt closes the whole debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -381,14 +381,14 @@ describe.skip('partial liquidation: debt closing rounding', function() {
     });
 
     it('AbsorbCollateral emits the expected no-loss seized collateral amount and repriced value', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[SYMBOL].address, expectedSeizeAmount, expectedWantedCollateralValue
       );
     });
 
     it('AbsorbDebt closes the whole debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -573,14 +573,14 @@ describe.skip('partial liquidation: debt closing rounding', function() {
     });
 
     it('AbsorbCollateral emits the expected no-loss seized collateral amount and repriced value', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[SYMBOL].address, expectedSeizeAmount, expectedWantedCollateralValue
       );
     });
 
     it('AbsorbDebt closes the whole debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -843,7 +843,7 @@ context('rsETH-denominated base (18 decimals): dust and min-borrow edge cases', 
     });
 
     it('AbsorbCollateral event is emitted for COMP full seizure', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(rsEthComet, 'AbsorbCollateral').withArgs(
         rsEthAbsorber.address,
         rsEthAlice.address,
         compAsset.address,
@@ -853,7 +853,7 @@ context('rsETH-denominated base (18 decimals): dust and min-borrow edge cases', 
     });
 
     it('AbsorbCollateral event is emitted for WETH full seizure', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(rsEthComet, 'AbsorbCollateral').withArgs(
         rsEthAbsorber.address,
         rsEthAlice.address,
         wethAsset.address,
@@ -863,7 +863,7 @@ context('rsETH-denominated base (18 decimals): dust and min-borrow edge cases', 
     });
 
     it('AbsorbCollateral event is emitted for DAI dust close', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(rsEthComet, 'AbsorbCollateral').withArgs(
         rsEthAbsorber.address,
         rsEthAlice.address,
         daiAsset.address,
@@ -1131,11 +1131,11 @@ context('rsETH-denominated base (18 decimals): dust and min-borrow edge cases', 
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, rsEthBasePrice, rsEthBaseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(rsEthAbsorber.address, rsEthAlice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(rsEthComet, 'AbsorbDebt').withArgs(rsEthAbsorber.address, rsEthAlice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('AbsorbCollateral event is emitted for COMP full seizure', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(rsEthComet, 'AbsorbCollateral').withArgs(
         rsEthAbsorber.address,
         rsEthAlice.address,
         compAsset.address,
@@ -1145,7 +1145,7 @@ context('rsETH-denominated base (18 decimals): dust and min-borrow edge cases', 
     });
 
     it('AbsorbCollateral event is emitted for WETH full seizure', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(rsEthComet, 'AbsorbCollateral').withArgs(
         rsEthAbsorber.address,
         rsEthAlice.address,
         wethAsset.address,
@@ -1155,7 +1155,7 @@ context('rsETH-denominated base (18 decimals): dust and min-borrow edge cases', 
     });
 
     it('AbsorbCollateral event is emitted for USDT partial seizure', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(rsEthComet, 'AbsorbCollateral').withArgs(
         rsEthAbsorber.address,
         rsEthAlice.address,
         usdtAsset.address,

@@ -180,7 +180,7 @@ describe('partial liquidation: bad debt', function() {
           const wantedCollateralValue = mulPrice(collateralAmount, compPrice, assetInfo.scale.toBigInt());
     
           await expect(absorbTx)
-            .to.emit(liquidationModule, 'AbsorbCollateral')
+            .to.emit(comet, 'AbsorbCollateral')
             .withArgs(absorber.address, alice.address, tokens[collateralKey].address, collateralAmount, wantedCollateralValue);
         });
     
@@ -190,7 +190,7 @@ describe('partial liquidation: bad debt', function() {
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
     
           await expect(absorbTx)
-            .to.emit(liquidationModule, 'AbsorbDebt')
+            .to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
@@ -331,7 +331,7 @@ describe('partial liquidation: bad debt', function() {
           const wantedCollateralValue = mulPrice(collateralAmount, ldoPrice, assetInfo.scale.toBigInt());
     
           await expect(absorbTx)
-            .to.emit(liquidationModule, 'AbsorbCollateral')
+            .to.emit(comet, 'AbsorbCollateral')
             .withArgs(absorber.address, alice.address, tokens[collateralKey].address, collateralAmount, wantedCollateralValue);
         });
     
@@ -340,7 +340,7 @@ describe('partial liquidation: bad debt', function() {
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
     
           await expect(absorbTx)
-            .to.emit(liquidationModule, 'AbsorbDebt')
+            .to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
@@ -482,7 +482,7 @@ describe('partial liquidation: bad debt', function() {
           const wantedCollateralValue = mulPrice(collateralAmount, susdePrice, assetInfo.scale.toBigInt());
     
           await expect(absorbTx)
-            .to.emit(liquidationModule, 'AbsorbCollateral')
+            .to.emit(comet, 'AbsorbCollateral')
             .withArgs(absorber.address, alice.address, tokens[collateralKey].address, collateralAmount, wantedCollateralValue);
         });
     
@@ -491,7 +491,7 @@ describe('partial liquidation: bad debt', function() {
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
     
           await expect(absorbTx)
-            .to.emit(liquidationModule, 'AbsorbDebt')
+            .to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
@@ -640,7 +640,7 @@ describe('partial liquidation: bad debt', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const wantedCollateralValue = mulPrice(config.amount, price, assetInfo.scale.toBigInt());
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral')
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral')
               .withArgs(absorber.address, alice.address, tokens[config.symbol].address, config.amount, wantedCollateralValue);
           });
         }
@@ -648,7 +648,7 @@ describe('partial liquidation: bad debt', function() {
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const basePaidOut = -balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt')
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
@@ -801,7 +801,7 @@ describe('partial liquidation: bad debt', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const wantedCollateralValue = mulPrice(config.amount, price, assetInfo.scale.toBigInt());
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral')
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral')
               .withArgs(absorber.address, alice.address, tokens[config.symbol].address, config.amount, wantedCollateralValue);
           });
         }
@@ -809,7 +809,7 @@ describe('partial liquidation: bad debt', function() {
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const basePaidOut = -balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt')
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
@@ -965,7 +965,7 @@ describe('partial liquidation: bad debt', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const wantedCollateralValue = mulPrice(config.amount, price, assetInfo.scale.toBigInt());
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral')
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral')
               .withArgs(absorber.address, alice.address, tokens[config.symbol].address, config.amount, wantedCollateralValue);
           });
         }
@@ -973,7 +973,7 @@ describe('partial liquidation: bad debt', function() {
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const basePaidOut = -balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt')
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
@@ -1128,7 +1128,7 @@ describe('partial liquidation: bad debt', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const wantedCollateralValue = mulPrice(config.amount, price, assetInfo.scale.toBigInt());
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral')
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral')
               .withArgs(absorber.address, alice.address, tokens[config.symbol].address, config.amount, wantedCollateralValue);
           });
         }
@@ -1136,7 +1136,7 @@ describe('partial liquidation: bad debt', function() {
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const basePaidOut = -balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt')
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
@@ -1296,7 +1296,7 @@ describe('partial liquidation: bad debt', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const wantedCollateralValue = mulPrice(config.amount, price, assetInfo.scale.toBigInt());
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral')
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral')
               .withArgs(absorber.address, alice.address, tokens[config.symbol].address, config.amount, wantedCollateralValue);
           });
         }
@@ -1304,7 +1304,7 @@ describe('partial liquidation: bad debt', function() {
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const basePaidOut = -balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt')
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
@@ -1459,14 +1459,14 @@ describe('partial liquidation: bad debt', function() {
           const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
           const price = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
           const wantedCollateralValue = mulPrice(collateralAmount, price, assetInfo.scale.toBigInt());
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral')
+          await expect(absorbTx).to.emit(comet, 'AbsorbCollateral')
             .withArgs(absorber.address, alice.address, tokens[collateralKey].address, collateralAmount, wantedCollateralValue);
         });
     
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const basePaidOut = -balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt')
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
@@ -1631,7 +1631,7 @@ describe('partial liquidation: bad debt', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const wantedCollateralValue = mulPrice(config.amount, price, assetInfo.scale.toBigInt());
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral')
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral')
               .withArgs(absorber.address, alice.address, tokens[config.symbol].address, config.amount, wantedCollateralValue);
           });
         }
@@ -1639,7 +1639,7 @@ describe('partial liquidation: bad debt', function() {
         it('emits AbsorbDebt for the full absorbed debt', async () => {
           const basePaidOut = -balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt')
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
@@ -1781,14 +1781,14 @@ describe('partial liquidation: bad debt', function() {
         it('emits AbsorbCollateral for full AAVE seizure', async () => {
           const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
           const wantedCollateralValue = mulPrice(collateralAmount, droppedAavePrice, assetInfo.scale.toBigInt());
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral')
+          await expect(absorbTx).to.emit(comet, 'AbsorbCollateral')
             .withArgs(absorber.address, alice.address, tokens[collateralKey].address, collateralAmount, wantedCollateralValue);
         });
     
         it('emits AbsorbDebt for the full remaining borrow amount', async () => {
           const basePaidOut = -balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt')
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
@@ -1974,7 +1974,7 @@ describe('partial liquidation: bad debt', function() {
           it(`emits AbsorbCollateral for full ${config.symbol} seizure`, async () => {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const wantedCollateralValue = mulPrice(config.amount, config.droppedPrice, assetInfo.scale.toBigInt());
-            await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral')
+            await expect(absorbTx).to.emit(comet, 'AbsorbCollateral')
               .withArgs(absorber.address, alice.address, tokens[config.symbol].address, config.amount, wantedCollateralValue);
           });
         }
@@ -1982,7 +1982,7 @@ describe('partial liquidation: bad debt', function() {
         it('emits AbsorbDebt for the full absorbed borrow amount', async () => {
           const basePaidOut = -balanceBefore;
           const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt')
+          await expect(absorbTx).to.emit(comet, 'AbsorbDebt')
             .withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
         });
     
