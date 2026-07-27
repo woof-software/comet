@@ -140,7 +140,7 @@ export function expectRevertCustom(
 }
 
 export function expectRevertMatches(
-  tx: Promise<ContractReceipt>,
+  tx: Promise<ContractReceipt | ContractTransaction>,
   patterns: RegExp[]
 ) {
   return tx
