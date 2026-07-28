@@ -74,7 +74,10 @@ interface NetworkTrackingConfiguration {
 
 interface NetworkAssetConfiguration {
   address?: string;
-  priceFeed: string;
+  /** Existing feed address; omitted on local markets where the feed is deployed from `price`. */
+  priceFeed?: string;
+  /** USD price used by local markets to deploy a SimplePriceFeed (ignored when `priceFeed` is set). */
+  price?: number;
   decimals: number;
   borrowCF: number;
   liquidateCF: number;
@@ -89,7 +92,10 @@ export interface NetworkConfiguration {
   pauseGuardian?: string;
   baseToken: string;
   baseTokenAddress?: string;
-  baseTokenPriceFeed: string;
+  /** Existing base feed address; omitted on local markets where the feed is deployed separately. */
+  baseTokenPriceFeed?: string;
+  /** USD price used by local markets to deploy the base SimplePriceFeed. */
+  baseTokenPrice?: number;
   borrowMin: ScientificNotation;
   storeFrontPriceFactor: number;
   targetReserves: ScientificNotation;

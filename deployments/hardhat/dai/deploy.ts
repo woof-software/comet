@@ -1,8 +1,7 @@
 import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
 import { FaucetToken, SimplePriceFeed } from '../../../build/types';
-import { DeploySpec, cloneGov, exp, wait } from '../../../src/deploy';
+import { DeploySpec, NetworkConfiguration, cloneGov, exp, wait } from '../../../src/deploy';
 import { ethers } from 'ethers';
-// Adapter constants + route builder come from the DEX-adapter test helpers, as in deployments/mainnet/usdc-dex.
 import { buildRoutesFromList, CORE_ROUTER, REDUNDANT_ROUTER, SLIPPAGE_BPS, TOKENS } from '../../../test/helpers';
 
 // Executor incentive (bps) on the DEX route. The DAO constant additionally holds admin + pauser roles
@@ -11,52 +10,73 @@ const INCENTIVE_BPS = 500; // 5%
 
 async function makeToken(
   deploymentManager: DeploymentManager,
-  amount: number,
   name: string,
   decimals: number,
   symbol: string
 ): Promise<FaucetToken> {
-  const mint = (BigInt(amount) * 10n ** BigInt(decimals)).toString();
-  return deploymentManager.deploy(symbol, 'test/FaucetToken.sol', [mint, name, decimals, symbol]);
+  return deploymentManager.deploy(symbol, 'test/FaucetToken.sol', [0, name, decimals, symbol]);
 }
 
 async function makePriceFeed(
   deploymentManager: DeploymentManager,
   alias: string,
-  initialPrice: number,
-  decimals: number
+  priceUsd: number
 ): Promise<SimplePriceFeed> {
-  return deploymentManager.deploy(alias, 'test/SimplePriceFeed.sol', [initialPrice * 1e8, decimals]);
+  // SimplePriceFeed stores prices in 1e8 scale (same as Chainlink USD feeds).
+  const price = Math.round(priceUsd * 1e8);
+  return deploymentManager.deploy(alias, 'test/SimplePriceFeed.sol', [price, 8]);
 }
 
 /**
  * Local (non-forked) development market wired with the liquidation module + DEX adapter, so the
  * liquidation scenarios (which filter on `getLiquidationModuleAddress`) run on `--bases development`.
  *
- * NOTE: This mirrors deployments/mainnet/usdc-dex — it deploys the Comet implementation directly and
- * deliberately does NOT call `deployAndUpgradeTo`. The Comet constructor initializes the module
- * (`setAssetList`) and `initializeStorage` calls `initiateModule`; a second implementation deploy would
- * re-initialize the same module and revert `AlreadySet`. The module is therefore deployed only here for
- * development; other markets provide an already-deployed module address.
+ * Collaterals are declared in configuration.json and deployed here as FaucetTokens + SimplePriceFeeds.
+ * This mirrors deployments/mainnet/usdc-dex — it deploys the Comet implementation directly and
+ * deliberately does NOT call `deployAndUpgradeTo` (a second module init would revert `AlreadySet`).
  */
 export default async function deploy(deploymentManager: DeploymentManager, _deploySpec: DeploySpec): Promise<Deployed> {
   const trace = deploymentManager.tracer();
   const signer = await deploymentManager.getSigner();
+  const config = await deploymentManager.readConfig<NetworkConfiguration>();
+
+  const assetEntries = Object.entries(config.assets);
 
   // Governance contracts (timelock becomes the market governor / pause guardian).
   const { fauceteer, timelock } = await cloneGov(deploymentManager);
 
-  const DAI = await makeToken(deploymentManager, 10000000, 'DAI', 18, 'DAI');
-  const GOLD = await makeToken(deploymentManager, 20000000, 'GOLD', 8, 'GOLD');
-  const SILVER = await makeToken(deploymentManager, 30000000, 'SILVER', 10, 'SILVER');
+  // Base token + feed first, then every collateral from configuration.json.
+  // Protocol params below stay hardcoded (as before); configuration.json only drives the asset list.
+  const DAI = await makeToken(deploymentManager, 'DAI', 18, 'DAI');
+  const daiPriceFeed = await makePriceFeed(deploymentManager, 'DAI:priceFeed', 1);
 
-  const daiPriceFeed = await makePriceFeed(deploymentManager, 'DAI:priceFeed', 1, 8);
-  const goldPriceFeed = await makePriceFeed(deploymentManager, 'GOLD:priceFeed', 0.5, 8);
-  const silverPriceFeed = await makePriceFeed(deploymentManager, 'SILVER:priceFeed', 0.05, 8);
+  const collateralTokens: FaucetToken[] = [];
+  const assetConfigs = [];
+  for (const [symbol, assetConfig] of assetEntries) {
+    const token = await makeToken(
+      deploymentManager,
+      symbol,
+      assetConfig.decimals,
+      symbol
+    );
+    const priceFeed = await makePriceFeed(deploymentManager, `${symbol}:priceFeed`, assetConfig.price!);
+    collateralTokens.push(token);
 
-  // DEX adapter — GOLD/SILVER have no on-chain DEX routes on the dev network, so every route is Unset
-  // and keeper liquidations fall back to the pure absorb path.
-  const routes = buildRoutesFromList([GOLD.address, SILVER.address], {});
+    const [supplyCapAmount, supplyCapDecimals] = assetConfig.supplyCap.split('e').map(Number);
+    assetConfigs.push({
+      asset: token.address,
+      priceFeed: priceFeed.address,
+      decimals: Number(assetConfig.decimals),
+      borrowCollateralFactor: exp(assetConfig.borrowCF, 18),
+      liquidateCollateralFactor: exp(assetConfig.liquidateCF, 18),
+      liquidationFactor: exp(assetConfig.liquidationFactor, 18),
+      supplyCap: exp(supplyCapAmount, supplyCapDecimals),
+    });
+  }
+
+  // No on-chain DEX routes on the local network — every route is Unset, so keeper liquidations fall
+  // back to the pure absorb path.
+  const routes = buildRoutesFromList(collateralTokens.map((token) => token.address), {});
   const adapter = await deploymentManager.deploy(
     'dexAdapter',
     'dex-adapters/core/OneInchV6Adapter.sol',
@@ -79,8 +99,8 @@ export default async function deploy(deploymentManager: DeploymentManager, _depl
     'CometExtAssetList.sol',
     [
       {
-        name32: ethers.utils.formatBytes32String('Compound DAI'),
-        symbol32: ethers.utils.formatBytes32String('cDAIv3'),
+        name32: ethers.utils.formatBytes32String(config.name),
+        symbol32: ethers.utils.formatBytes32String(config.symbol),
       },
       assetListFactory.address,
     ],
@@ -88,27 +108,6 @@ export default async function deploy(deploymentManager: DeploymentManager, _depl
   );
 
   const cometAdmin = await deploymentManager.deploy('cometAdmin', 'CometProxyAdmin.sol', [signer.address], true);
-
-  const assetConfigs = [
-    {
-      asset: GOLD.address,
-      priceFeed: goldPriceFeed.address,
-      decimals: 8,
-      borrowCollateralFactor: exp(0.9, 18),
-      liquidateCollateralFactor: exp(0.91, 18),
-      liquidationFactor: exp(0.95, 18),
-      supplyCap: exp(1000000, 8),
-    },
-    {
-      asset: SILVER.address,
-      priceFeed: silverPriceFeed.address,
-      decimals: 10,
-      borrowCollateralFactor: exp(0.4, 18),
-      liquidateCollateralFactor: exp(0.5, 18),
-      liquidationFactor: exp(0.9, 18),
-      supplyCap: exp(500000, 10),
-    },
-  ];
 
   const configuration = {
     governor: timelock.address,
@@ -160,7 +159,9 @@ export default async function deploy(deploymentManager: DeploymentManager, _depl
   trace(await wait(configurator.connect(signer).setFactory(comet.address, cometFactory.address)));
   trace(await wait(configurator.connect(signer).setConfiguration(comet.address, configuration)));
 
+  // Reward token is GOLD — always present in configuration.json assets.
   const rewards = await deploymentManager.deploy('rewards', 'CometRewards.sol', [signer.address], true);
+  const GOLD = collateralTokens[assetEntries.findIndex(([symbol]) => symbol === 'GOLD')];
   trace(await wait(rewards.connect(signer).setRewardConfig(comet.address, GOLD.address)));
 
   // Seed rewards with GOLD.
@@ -169,13 +170,17 @@ export default async function deploy(deploymentManager: DeploymentManager, _depl
     async () => {
       trace(`Sending some GOLD to CometRewards`);
       const amount = exp(2_000_000, 8);
-      trace(await wait(GOLD.connect(signer).transfer(rewards.address, amount)));
+      trace(await wait(GOLD.connect(signer).allocateTo(rewards.address, amount)));
     }
   );
 
-  // Mint some tokens to the fauceteer.
+  // Mint some tokens to the fauceteer for every locally deployed asset.
+  const faucetAssets: [FaucetToken, number][] = [
+    [DAI, 1e8],
+    ...collateralTokens.map((token): [FaucetToken, number] => [token, 1e7]),
+  ];
   await Promise.all(
-    ([[DAI, 1e8], [GOLD, 2e6], [SILVER, 1e7]] as [FaucetToken, number][]).map(([asset, units]) => {
+    faucetAssets.map(([asset, units]) => {
       return deploymentManager.idempotent(
         async () => (await asset.balanceOf(fauceteer.address)).eq(0),
         async () => {
