@@ -299,7 +299,7 @@ export class CometContext {
     await cometAdmin.deployAndUpgradeTo(configurator.address, comet.address);
   }
 
-  async zeroBorrowRates() {
+  async freezeBorrowRates() {
     const comet = await this.getComet();
     const gov = await this.world.impersonateAddress(await comet.governor(), { value: 10n ** 18n });
     const cometAdmin = (await this.getCometAdmin()).connect(gov);

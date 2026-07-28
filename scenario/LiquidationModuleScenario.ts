@@ -2,7 +2,6 @@ import { expect } from 'chai';
 import { LiquidationModule__factory } from '../build/types';
 import { scenario } from './context/CometContext';
 import {
-  expectRevertCustom,
   fundAccount,
   getLiquidationModuleAddress,
   hasModule,
@@ -24,7 +23,7 @@ scenario(
 
     expect(await module.comet()).to.equal(comet.address);
     expect(albert.address).to.not.equal(comet.address);
-    await expectRevertCustom(module.connect(albert.signer).absorb(albert.address, betty.address), 'OnlyComet()');
+    await expect(module.connect(albert.signer).absorb(albert.address, betty.address)).to.be.revertedWithCustomError(module, 'OnlyComet');
   }
 );
 
@@ -141,7 +140,7 @@ scenario(
     );
 
     expect(await module.dexRoutePaused()).to.be.false;
-    await expectRevertCustom(module.connect(dao).setDexRoutePaused(false), 'AlreadySet()');
+    await expect(module.connect(dao).setDexRoutePaused(false)).to.be.revertedWithCustomError(module, 'AlreadySet');
   }
 );
 
@@ -156,7 +155,7 @@ scenario(
     await module.connect(dao).setDexRoutePaused(true);
 
     expect(await module.dexRoutePaused()).to.be.true;
-    await expectRevertCustom(module.connect(dao).setDexRoutePaused(true), 'AlreadySet()');
+    await expect(module.connect(dao).setDexRoutePaused(true)).to.be.revertedWithCustomError(module, 'AlreadySet');
   }
 );
 
@@ -270,7 +269,7 @@ scenario(
     );
 
     expect(await module.partialLiquidationEnabled()).to.be.true;
-    await expectRevertCustom(module.connect(dao).liquidationModeToggle(true), 'AlreadySet()');
+    await expect(module.connect(dao).liquidationModeToggle(true)).to.be.revertedWithCustomError(module, 'AlreadySet');
   }
 );
 
@@ -285,7 +284,7 @@ scenario(
     await module.connect(dao).liquidationModeToggle(false);
 
     expect(await module.partialLiquidationEnabled()).to.be.false;
-    await expectRevertCustom(module.connect(dao).liquidationModeToggle(false), 'AlreadySet()');
+    await expect(module.connect(dao).liquidationModeToggle(false)).to.be.revertedWithCustomError(module, 'AlreadySet');
   }
 );
 
@@ -356,7 +355,7 @@ scenario(
     );
     const multisig = await world.impersonateAddress(await module.multisig(), { value: 10n ** 18n });
 
-    await expectRevertCustom(module.connect(multisig).setIncentiveBps(MAX_INCENTIVE + 1), 'InvalidIncentiveBps()');
+    await expect(module.connect(multisig).setIncentiveBps(MAX_INCENTIVE + 1)).to.be.revertedWithCustomError(module, 'InvalidIncentiveBps');
   }
 );
 
@@ -382,7 +381,7 @@ scenario(
       MAX_INCENTIVE + 1
     );
 
-    await expectRevertCustom(deployer.sendTransaction(deployTransaction), 'InvalidIncentiveBps()');
+    await expect(deployer.sendTransaction(deployTransaction)).to.be.revertedWithCustomError(module, 'InvalidIncentiveBps');
   }
 );
 

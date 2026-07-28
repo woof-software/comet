@@ -192,6 +192,8 @@ scenario(
       (await getUsableCollateralIndices(context, 1)).length === 1,
   },
   async ({ comet, configurator, proxyAdmin, actors }, context, world) => {
+    await context.freezeBorrowRates();
+
     const { admin, albert, betty } = actors;
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
@@ -201,7 +203,6 @@ scenario(
     const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
     const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
     const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
-    await context.zeroBorrowRates();
 
     const assetInfo = await getAssetInfo(comet, collateralIndex);
     const collateralAsset = context.getAssetByAddress(assetInfo.asset);
@@ -315,6 +316,8 @@ scenario(
       (await getUsableCollateralIndices(context, 1)).length === 1,
   },
   async ({ comet, configurator, proxyAdmin, actors }, context, world) => {
+    await context.freezeBorrowRates();
+
     const { admin, albert, betty } = actors;
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
@@ -324,7 +327,6 @@ scenario(
     const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
     const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
     const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
-    await context.zeroBorrowRates();
 
     const assetInfo = await getAssetInfo(comet, collateralIndex);
     const collateralAsset = context.getAssetByAddress(assetInfo.asset);
@@ -609,6 +611,8 @@ scenario(
       (await getUsableCollateralIndices(context, 1)).length === 1,
   },
   async ({ comet, cometExt, configurator, proxyAdmin, actors }, context, world) => {
+    await context.freezeBorrowRates();
+
     const { admin, pauseGuardian, albert, betty } = actors;
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
@@ -618,7 +622,6 @@ scenario(
     const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
     const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
     const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
-    await context.zeroBorrowRates();
 
     const assetInfo = await getAssetInfo(comet, collateralIndex);
     const collateralAsset = context.getAssetByAddress(assetInfo.asset);
@@ -735,6 +738,8 @@ scenario(
       (await getUsableCollateralIndices(context, 1)).length === 1,
   },
   async ({ comet, cometExt, configurator, proxyAdmin, actors }, context, world) => {
+    await context.freezeBorrowRates();
+
     const { admin, pauseGuardian, albert, betty } = actors;
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);
 
@@ -744,7 +749,6 @@ scenario(
     const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
     const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
     const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
-    await context.zeroBorrowRates();
 
     const assetInfo = await getAssetInfo(comet, collateralIndex);
     const collateralAsset = context.getAssetByAddress(assetInfo.asset);

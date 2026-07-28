@@ -39,6 +39,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 1)).length === 1,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
@@ -48,8 +50,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the price drop is the only source of bad debt and all state assertions remain exact.
-      await context.zeroBorrowRates();
 
       const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
       const collateralPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
@@ -62,7 +62,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      collateralAmount = collateralValue * collateralScale / collateralPrice, rounded up
       const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
       const collateralValue = 4n * minDebtValue;
-      const collateralAmount = (collateralValue * collateralAssetInfo.scale + collateralPrice - 1n)
+      const collateralAmount = (collateralValue * collateralAssetInfo.scale + collateralPrice)
         / collateralPrice;
       const collateralAsset = context.getAssetByAddress(collateralAssetInfo.asset);
       await context.sourceTokens(collateralAmount, collateralAsset, albert);
@@ -162,6 +162,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 2)).length === 2,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       const collateralIndexes = await getUsableCollateralIndices(context, 2);
@@ -172,8 +174,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the price drop is the only source of bad debt and all state assertions remain exact.
-      await context.zeroBorrowRates();
       const borrowAmount = 2n * baseBorrowMin;
       const borrowValue = mulPrice(borrowAmount, basePrice, baseScale);
 
@@ -268,8 +268,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       let expectedReserved = cometStateBefore.user._reserved;
       for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].collateralBalance).to.equal(0);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].userCollateral.balance).to.equal(0);
       }
       for (const collateralAssetInfo of collateralInfos) {
@@ -283,21 +281,17 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(cometStateAfter.user.assetsIn).to.equal(expectedAssetsIn);
       expect(cometStateAfter.user._reserved).to.equal(expectedReserved);
 
-      for (let i = 0; i < collateralInfos.length; i++) {
-        expect(collateralStatesAfter[i].totalsCollateral)
-          .to.equal(collateralStatesBefore[i].totalsCollateral - collateralStatesBefore[i].seizeAmount);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
-        expect(collateralStatesAfter[i].collateralReserves)
-          .to.equal(collateralStatesBefore[i].collateralReserves + collateralStatesBefore[i].seizeAmount);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
-        expect(collateralStatesAfter[i].cometErc20Balance).to.equal(collateralStatesBefore[i].cometErc20Balance);
-      }
-
       // Comet borrow state: borrow base reduced by the absorbed principal; supply base unchanged.
       expect(cometStateAfter.totals.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
       expect(cometStateAfter.totals.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
+
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].totalsCollateral)
+          .to.equal(collateralStatesBefore[i].totalsCollateral - collateralStatesBefore[i].seizeAmount);
+        expect(collateralStatesAfter[i].collateralReserves)
+          .to.equal(collateralStatesBefore[i].collateralReserves + collateralStatesBefore[i].seizeAmount);
+        expect(collateralStatesAfter[i].cometErc20Balance).to.equal(collateralStatesBefore[i].cometErc20Balance);
+      }
 
       // Base ERC20 balance is untouched, while base reserves absorb the full bad-debt write-off.
       expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
@@ -319,6 +313,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx)).length > 2, // if collaterals amount < 3, then we end up, as for 2 or 1 collaterals we already have the test cases
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       const collateralIndexes = await getUsableCollateralIndices(context);
@@ -329,8 +325,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the price drop is the only source of bad debt and all state assertions remain exact.
-      await context.zeroBorrowRates();
 
       // 1. Supply the full usable collateral basket with equal USD value per asset. The basket is
       //    sized from the intended borrow limit, then split evenly across every usable collateral:
@@ -442,20 +436,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].collateralBalance).to.equal(0);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].userCollateral.balance).to.equal(0);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
-        expect(collateralStatesAfter[i].totalsCollateral)
-          .to.equal(collateralStatesBefore[i].totalsCollateral - collateralStatesBefore[i].seizeAmount);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
-        expect(collateralStatesAfter[i].collateralReserves)
-          .to.equal(collateralStatesBefore[i].collateralReserves + collateralStatesBefore[i].seizeAmount);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
-        expect(collateralStatesAfter[i].cometErc20Balance).to.equal(collateralStatesBefore[i].cometErc20Balance);
       }
 
       expect(cometStateAfter.user.assetsIn).to.equal(0);
@@ -464,6 +445,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // Comet borrow state: borrow base reduced by the absorbed principal; supply base unchanged.
       expect(cometStateAfter.totals.totalBorrowBase).to.equal(cometStateBefore.totals.totalBorrowBase.add(cometStateBefore.user.principal));
       expect(cometStateAfter.totals.totalSupplyBase).to.equal(cometStateBefore.totals.totalSupplyBase);
+
+      for (let i = 0; i < collateralInfos.length; i++) {
+        expect(collateralStatesAfter[i].totalsCollateral)
+          .to.equal(collateralStatesBefore[i].totalsCollateral - collateralStatesBefore[i].seizeAmount);
+        expect(collateralStatesAfter[i].collateralReserves)
+          .to.equal(collateralStatesBefore[i].collateralReserves + collateralStatesBefore[i].seizeAmount);
+        expect(collateralStatesAfter[i].cometErc20Balance).to.equal(collateralStatesBefore[i].cometErc20Balance);
+      }
 
       // Base ERC20 balance is untouched, while base reserves absorb the full basket-wide write-off.
       expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
@@ -612,6 +601,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 1)).length === 1,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       const baseToken = await comet.baseToken();
@@ -619,7 +610,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      await context.zeroBorrowRates();
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
       const [collateralIndex] = await getUsableCollateralIndices(context, 1);
@@ -644,13 +634,13 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //    until the boundary lands exactly (typically the first amount already works).
       const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
       const borrowAmount = baseBorrowMin;
-      const targetValue = (minDebtValue * factorScale + collateralLF - 1n) / collateralLF;
+      const targetValue = (minDebtValue * factorScale + collateralLF) / collateralLF;
 
       let collateralAmount = (4n * minDebtValue * collateralScale) / originalPrice;
-      let droppedPrice = (targetValue * collateralScale + collateralAmount - 1n) / collateralAmount;
+      let droppedPrice = (targetValue * collateralScale + collateralAmount) / collateralAmount;
       while (mulFactor(mulPrice(collateralAmount, droppedPrice, collateralScale), collateralLF) !== minDebtValue) {
         collateralAmount++;
-        droppedPrice = (targetValue * collateralScale + collateralAmount - 1n) / collateralAmount;
+        droppedPrice = (targetValue * collateralScale + collateralAmount) / collateralAmount;
       }
 
       // Supply collateral

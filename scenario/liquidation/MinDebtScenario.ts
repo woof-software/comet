@@ -39,6 +39,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 1)).length > 0,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
@@ -49,10 +51,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the sub-min debt stays exactly where we put it — the partial-seizure and
-      // reserve assertions below are exact, with no intra-block accrual to reason about.
-      await context.zeroBorrowRates();
-
       const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
       const originalPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
       const collateralAsset = context.getAssetByAddress(collateralAssetInfo.asset);
@@ -181,6 +179,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 2)).length === 2,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       // The first two collaterals usable for the liquidation math, in the order the absorb loop walks
@@ -195,10 +195,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the sub-min debt stays exactly where the partial repay leaves it — the
-      // seizure and reserve assertions below are exact, with no intra-block accrual to reason about.
-      await context.zeroBorrowRates();
-
       // 1. Supply both collaterals, each worth 1.5× the minimum debt:
       //      minDebtValue    = baseBorrowMin priced in USD
       //      collateralValue = 1.5 * minDebtValue      (per asset)
@@ -325,8 +321,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const collateralRemaining = [0n, expectedSecondCollateralBalance];
       for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].collateralBalance).to.equal(collateralRemaining[i]);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].userCollateral.balance).to.equal(collateralRemaining[i]);
       }
 
@@ -350,11 +344,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // reserves rise by it, and the ERC20 balances are untouched on the absorb path.
       for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].totalsCollateral).to.equal(collateralStates[i].totalsCollateral - collateralStates[i].seizeAmount);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].collateralReserves).to.equal(collateralStates[i].collateralReserves + collateralStates[i].seizeAmount);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].cometErc20Balance).to.equal(collateralStates[i].cometErc20Balance);
       }
       expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
@@ -383,6 +373,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 2)).length === 2,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       // The first two collaterals usable for the liquidation math, in the order the absorb loop walks
@@ -396,10 +388,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the debt stays exactly where the borrow puts it — the sub-min threshold is
-      // crossed by the first seizure alone, not by accrual, and the assertions below stay exact.
-      await context.zeroBorrowRates();
-
       // 1. Supply both collaterals, each sized to carry the whole borrow on its own:
       //      borrowAmount    = 1.5 * baseBorrowMin   (comfortably above the minimum)
       //      collateralValue = borrowValue / BCF, with a 10% rounding buffer
@@ -527,8 +515,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const collateralRemaining = [0n, secondRemaining];
       for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].collateralBalance).to.equal(collateralRemaining[i]);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].userCollateral.balance).to.equal(collateralRemaining[i]);
       }
 
@@ -552,13 +538,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // reserves rise by it, and the ERC20 balances are untouched on the absorb path.
       for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].totalsCollateral).to.equal(collateralStates[i].totalsCollateral - collateralStates[i].seizeAmount);
-      }
-
-      for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].collateralReserves).to.equal(collateralStates[i].collateralReserves + collateralStates[i].seizeAmount);
-      }
-
-      for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].cometErc20Balance).to.equal(collateralStates[i].cometErc20Balance);
       }
       expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
@@ -587,6 +567,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 1)).length > 0,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
@@ -597,10 +579,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the debt stays exactly where the borrow puts it — it must sit above the
-      // minimum for the whole run, and the seizure assertions below are exact.
-      await context.zeroBorrowRates();
-
       const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
       const originalPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
       const collateralAsset = context.getAssetByAddress(collateralAssetInfo.asset);
@@ -749,6 +727,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 2)).length === 2,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       // The first two collaterals usable for the liquidation math, in the order the absorb loop walks
@@ -762,10 +742,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the debt stays exactly where the borrow puts it — it must stay above the
-      // minimum both before absorb and after the first seizure, and the assertions below are exact.
-      await context.zeroBorrowRates();
-
       // 1. Supply both collaterals, each sized to carry the whole borrow on its own:
       //      borrowAmount    = 1.5 * baseBorrowMin   (comfortably above the minimum)
       //      collateralValue = borrowValue / BCF, with a 10% rounding buffer
@@ -913,8 +889,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const collateralRemaining = [0n, secondRemaining];
       for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].collateralBalance).to.equal(collateralRemaining[i]);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].userCollateral.balance).to.equal(collateralRemaining[i]);
       }
 
@@ -938,11 +912,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // reserves rise by it, and the ERC20 balances are untouched on the absorb path.
       for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].totalsCollateral).to.equal(collateralStates[i].totalsCollateral - collateralStates[i].seizeAmount);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].collateralReserves).to.equal(collateralStates[i].collateralReserves + collateralStates[i].seizeAmount);
-      }
-      for (let i = 0; i < collateralInfos.length; i++) {
         expect(collateralStatesAfter[i].cometErc20Balance).to.equal(collateralStates[i].cometErc20Balance);
       }
       expect(cometStateAfter.cometBaseErc20Balance).to.equal(cometStateBefore.cometBaseErc20Balance);
@@ -970,6 +940,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 1)).length > 0,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
@@ -980,10 +952,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the debt stays exactly on the boundary — a single second of accrual would
-      // carry it above baseBorrowMin and put the loop in a different branch.
-      await context.zeroBorrowRates();
-
       const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
       const originalPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
       const collateralAsset = context.getAssetByAddress(collateralAssetInfo.asset);
@@ -1109,6 +1077,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 1)).length > 0,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
@@ -1119,10 +1089,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the debt stays exactly on the boundary — a single second of accrual would
-      // carry it above baseBorrowMin, and this case is about the boundary itself.
-      await context.zeroBorrowRates();
-
       const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
       const originalPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
       const collateralAsset = context.getAssetByAddress(collateralAssetInfo.asset);

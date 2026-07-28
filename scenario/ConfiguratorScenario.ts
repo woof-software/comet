@@ -1,5 +1,5 @@
 import { scenario } from './context/CometContext';
-import { expectRevertCustom, fundAccount, hasModule } from './utils';
+import { fundAccount, hasModule } from './utils';
 import { expect } from 'chai';
 import { constants } from 'ethers';
 import { LiquidationModule__factory } from '../build/types';
@@ -60,10 +60,8 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
-    await expectRevertCustom(
-      configurator.connect(albert.signer).setGovernor(comet.address, albert.address),
-      'Unauthorized()'
-    );
+    await expect(configurator.connect(albert.signer).setGovernor(comet.address, albert.address))
+      .to.be.revertedWithCustomError(configurator, 'Unauthorized');
   });
 
 scenario.skip('reverts if proxy is not upgraded by ProxyAdmin', {}, async () => {
@@ -119,7 +117,8 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert, betty } = actors;
 
-    await expectRevertCustom(configurator.connect(albert.signer).setLiquidationModule(comet.address, betty.address), 'Unauthorized()');
+    await expect(configurator.connect(albert.signer).setLiquidationModule(comet.address, betty.address))
+      .to.be.revertedWithCustomError(configurator, 'Unauthorized');
   }
 );
 
@@ -129,7 +128,8 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    await expectRevertCustom(configurator.connect(admin.signer).setLiquidationModule(comet.address, constants.AddressZero), 'InvalidAddress()');
+    await expect(configurator.connect(admin.signer).setLiquidationModule(comet.address, constants.AddressZero))
+      .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
   }
 );
 
@@ -152,6 +152,7 @@ scenario(
     expect(await comet.liquidationModule()).to.equal(existingLiquidationModule);
 
     // guard on comet against zero liquidation module
-    await expectRevertCustom(configurator.connect(admin.signer)['deploy(address)'](comet.address), 'ZeroAddress()');
+    await expect(configurator.connect(admin.signer)['deploy(address)'](comet.address))
+      .to.be.revertedWithCustomError(comet, 'ZeroAddress');
   }
 );

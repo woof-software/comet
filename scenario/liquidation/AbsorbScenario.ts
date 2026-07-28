@@ -8,7 +8,6 @@ import {
   makeCollateralStates,
   getAssetInfo,
   getUsableCollateralIndices,
-  expectRevertCustom,
   TARGET_HF,
 } from '../utils';
 import { mulPrice, divPrice, mulFactor, factorScale } from '../../test/helpers';
@@ -43,6 +42,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 1)).length === 1,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       // Use the first collateral usable for the liquidation math (all three factors positive).
@@ -53,10 +54,6 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the debt stays exactly where the borrow puts it — the price drop alone makes
-      // the position liquidatable, and the seizure / reserve assertions below are exact, with no
-      // intra-block accrual to reason about.
-      await context.zeroBorrowRates();
 
       const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
       const collateralPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
@@ -66,16 +63,16 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //    to restore the target health factor would drop the residual below baseBorrowMin, so the
       //    min-debt guard closes the debt in full instead — identically in both modes.
       const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
-      const borrowAmount = (15n * baseBorrowMin + 9n) / 10n;
+      const borrowAmount = (15n * baseBorrowMin) / 10n;
       const borrowValue = mulPrice(borrowAmount, basePrice, baseScale);
 
       // 2. Supply the collateral that borrow needs, with a 10% buffer, then borrow. Fund Comet with 2× the
       //    borrow straight to its balance — enough base liquidity with a buffer, no separate supplier.
       //      collateralValue = borrowValue / BCF * 1.10
-      const minimumSuppliedValue = (borrowValue * factorScale + collateralAssetInfo.borrowCollateralFactor - 1n)
+      const minimumSuppliedValue = (borrowValue * factorScale + collateralAssetInfo.borrowCollateralFactor)
         / collateralAssetInfo.borrowCollateralFactor;
-      const suppliedValue = (minimumSuppliedValue * 110n + 99n) / 100n;
-      const collateralAmount = (suppliedValue * collateralAssetInfo.scale + collateralPrice - 1n) / collateralPrice;
+      const suppliedValue = (minimumSuppliedValue * 110n) / 100n;
+      const collateralAmount = (suppliedValue * collateralAssetInfo.scale + collateralPrice) / collateralPrice;
 
       await context.sourceTokens(collateralAmount, collateralAsset, albert);
       await collateralAsset.approve(albert, comet.address);
@@ -98,7 +95,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //    liquidatable, the collateral still covers the debt, and the guard fires — a full close with a
       //    surplus in either mode.
       const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
-      const lowerValue = (debtValue * factorScale + collateralAssetInfo.liquidationFactor - 1n)
+      const lowerValue = (debtValue * factorScale + collateralAssetInfo.liquidationFactor)
         / collateralAssetInfo.liquidationFactor;
       const liquidatableBound = (debtValue * factorScale) / collateralAssetInfo.liquidateCollateralFactor;
       const guardBound =
@@ -106,7 +103,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         + ((debtValue - minDebtValue) * factorScale) / collateralAssetInfo.liquidationFactor;
       const upperValue = liquidatableBound < guardBound ? liquidatableBound : guardBound;
       const targetCollateralValue = (lowerValue + upperValue) / 2n;
-      const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale + collateralAmount - 1n)
+      const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale + collateralAmount)
         / collateralAmount;
       await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
 
@@ -187,6 +184,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         (await getUsableCollateralIndices(ctx, 2)).length === 2,
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       // The first two collaterals usable for the liquidation math, in the order the absorb loop walks
@@ -201,25 +200,22 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the debt stays exactly where the borrow puts it — the price drop alone makes
-      // the position liquidatable, and the seizure / reserve assertions below are exact.
-      await context.zeroBorrowRates();
 
       // 1. Borrow 1.5× the minimum debt. Asset [0] is sized to retire a fixed 0.3× the min debt when fully
       //    seized, leaving a residual of 1.2× the min debt on asset [1] — still above the floor, so the
       //    last asset goes through the guard rather than the sub-min branch.
       const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
-      const borrowAmount = (15n * baseBorrowMin + 9n) / 10n;
+      const borrowAmount = (15n * baseBorrowMin) / 10n;
       const borrowValue = mulPrice(borrowAmount, basePrice, baseScale);
-      const firstAfterLF = (3n * minDebtValue + 9n) / 10n; // LF-weighted value asset [0] retires when drained
+      const firstAfterLF = (3n * minDebtValue) / 10n; // LF-weighted value asset [0] retires when drained
 
       // 2. Supply asset [0] small at its own price (fully seized below) and asset [1] over-supplied so the
       //    borrow is valid; asset [1]'s price is dropped onto the guard window afterwards.
       //      collateral0Value = firstAfterLF / LF0                 asset [0]'s market value
       //      collateral1Value = remaining borrow power / BCF1 * 1.10
-      const collateral0Value = (firstAfterLF * factorScale + collateralInfos[0].liquidationFactor - 1n)
+      const collateral0Value = (firstAfterLF * factorScale + collateralInfos[0].liquidationFactor)
         / collateralInfos[0].liquidationFactor;
-      const collateral0SupplyAmount = (collateral0Value * collateralInfos[0].scale + collateralPrices[0] - 1n)
+      const collateral0SupplyAmount = (collateral0Value * collateralInfos[0].scale + collateralPrices[0])
         / collateralPrices[0];
       const collateral0Asset = context.getAssetByAddress(collateralInfos[0].asset);
       await context.sourceTokens(collateral0SupplyAmount, collateral0Asset, albert);
@@ -228,10 +224,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
 
       const collateral0SuppliedValue = mulPrice(collateral0SupplyAmount, collateralPrices[0], collateralInfos[0].scale);
       const firstBorrowLiquidity = mulFactor(collateral0SuppliedValue, collateralInfos[0].borrowCollateralFactor);
-      const minimumCollateral1Value = ((borrowValue - firstBorrowLiquidity) * factorScale + collateralInfos[1].borrowCollateralFactor - 1n)
+      const minimumCollateral1Value = ((borrowValue - firstBorrowLiquidity) * factorScale + collateralInfos[1].borrowCollateralFactor)
         / collateralInfos[1].borrowCollateralFactor;
-      const collateral1Value = (minimumCollateral1Value * 110n + 99n) / 100n;
-      const collateral1SupplyAmount = (collateral1Value * collateralInfos[1].scale + collateralPrices[1] - 1n)
+      const collateral1Value = (minimumCollateral1Value * 110n) / 100n;
+      const collateral1SupplyAmount = (collateral1Value * collateralInfos[1].scale + collateralPrices[1])
         / collateralPrices[1];
       const collateral1Asset = context.getAssetByAddress(collateralInfos[1].asset);
       await context.sourceTokens(collateral1SupplyAmount, collateral1Asset, albert);
@@ -259,7 +255,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const firstLiquidity = mulFactor(firstValue, collateralInfos[0].liquidateCollateralFactor);
       const remainingValue = debtValue - firstSeizedLF;
 
-      const lowerValue = (remainingValue * factorScale + collateralInfos[1].liquidationFactor - 1n)
+      const lowerValue = (remainingValue * factorScale + collateralInfos[1].liquidationFactor)
         / collateralInfos[1].liquidationFactor;
       const liquidatableBound = ((debtValue - firstLiquidity) * factorScale) / collateralInfos[1].liquidateCollateralFactor;
       const guardBound =
@@ -267,7 +263,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         + ((remainingValue - minDebtValue) * factorScale) / collateralInfos[1].liquidationFactor;
       const upperValue = liquidatableBound < guardBound ? liquidatableBound : guardBound;
       const secondTargetValue = (lowerValue + upperValue) / 2n;
-      const secondDroppedPrice = (secondTargetValue * collateralInfos[1].scale + collateralStatesBeforeDrop[1].collateralBalance - 1n)
+      const secondDroppedPrice = (secondTargetValue * collateralInfos[1].scale + collateralStatesBeforeDrop[1].collateralBalance)
         / collateralStatesBeforeDrop[1].collateralBalance;
       await context.changePriceFeeds({ [collateralInfos[1].asset]: secondDroppedPrice });
 
@@ -387,6 +383,8 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       filter: async (ctx) => (await hasModule(ctx)) && ((await getUsableCollateralIndices(ctx)).length > 2),
     },
     async ({ comet, actors }, context, world) => {
+      await context.freezeBorrowRates();
+
       const { albert, betty } = actors;
 
       // Every usable collateral, in index order. Each earlier asset stays at its price and is fully seized;
@@ -401,18 +399,15 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      // Freeze interest so the debt stays exactly where the borrow puts it — the price drop alone makes
-      // the position liquidatable, and the seizure / reserve assertions below are exact.
-      await context.zeroBorrowRates();
 
       // 1. Borrow 1.5× the minimum debt. The earlier assets together are sized to retire a fixed 0.3× the
       //    min debt when fully seized (split evenly), leaving a residual of 1.2× the min debt on the last
       //    asset — still above the floor, so it goes through the guard rather than the sub-min branch.
       const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
-      const borrowAmount = (15n * baseBorrowMin + 9n) / 10n;
+      const borrowAmount = (15n * baseBorrowMin) / 10n;
       const borrowValue = mulPrice(borrowAmount, basePrice, baseScale);
-      const earlierAfterLFTotal = (3n * minDebtValue + 9n) / 10n;
-      const perEarlierAfterLF = (earlierAfterLFTotal + BigInt(lastIdx) - 1n) / BigInt(lastIdx); // LF-weighted value each earlier asset retires
+      const earlierAfterLFTotal = (3n * minDebtValue) / 10n;
+      const perEarlierAfterLF = (earlierAfterLFTotal + BigInt(lastIdx)) / BigInt(lastIdx); // LF-weighted value each earlier asset retires
 
       // 2. Supply every earlier asset small at its own price (fully seized below), and the last asset
       //    over-supplied so the borrow is valid; the last asset's price is dropped onto the guard window
@@ -421,9 +416,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      lastValue       = remaining borrow power / BCF_last * 1.10
       let earlierBorrowLiquidity = 0n;
       for (let i = 0; i < lastIdx; i++) {
-        const collateralValue = (perEarlierAfterLF * factorScale + collateralInfos[i].liquidationFactor - 1n)
+        const collateralValue = (perEarlierAfterLF * factorScale + collateralInfos[i].liquidationFactor)
           / collateralInfos[i].liquidationFactor;
-        const supplyAmount = (collateralValue * collateralInfos[i].scale + collateralPrices[i] - 1n)
+        const supplyAmount = (collateralValue * collateralInfos[i].scale + collateralPrices[i])
           / collateralPrices[i];
         const suppliedValue = mulPrice(supplyAmount, collateralPrices[i], collateralInfos[i].scale);
         earlierBorrowLiquidity += mulFactor(suppliedValue, collateralInfos[i].borrowCollateralFactor);
@@ -433,10 +428,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         await albert.safeSupplyAsset({ asset: collateralInfos[i].asset, amount: supplyAmount });
       }
 
-      const minimumLastValue = ((borrowValue - earlierBorrowLiquidity) * factorScale + collateralInfos[lastIdx].borrowCollateralFactor - 1n)
+      const minimumLastValue = ((borrowValue - earlierBorrowLiquidity) * factorScale + collateralInfos[lastIdx].borrowCollateralFactor)
         / collateralInfos[lastIdx].borrowCollateralFactor;
-      const lastValue = (minimumLastValue * 110n + 99n) / 100n;
-      const lastSupplyAmount = (lastValue * collateralInfos[lastIdx].scale + collateralPrices[lastIdx] - 1n)
+      const lastValue = (minimumLastValue * 110n) / 100n;
+      const lastSupplyAmount = (lastValue * collateralInfos[lastIdx].scale + collateralPrices[lastIdx])
         / collateralPrices[lastIdx];
       const lastAsset = context.getAssetByAddress(collateralInfos[lastIdx].asset);
       await context.sourceTokens(lastSupplyAmount, lastAsset, albert);
@@ -469,7 +464,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       }
       const remainingValue = debtValue - earlierSeizedLF;
 
-      const lowerValue = (remainingValue * factorScale + collateralInfos[lastIdx].liquidationFactor - 1n)
+      const lowerValue = (remainingValue * factorScale + collateralInfos[lastIdx].liquidationFactor)
         / collateralInfos[lastIdx].liquidationFactor;
       const liquidatableBound = ((debtValue - earlierLiquidity) * factorScale) / collateralInfos[lastIdx].liquidateCollateralFactor;
       const guardBound =
@@ -477,7 +472,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         + ((remainingValue - minDebtValue) * factorScale) / collateralInfos[lastIdx].liquidationFactor;
       const upperValue = liquidatableBound < guardBound ? liquidatableBound : guardBound;
       const lastTargetValue = (lowerValue + upperValue) / 2n;
-      const lastDroppedPrice = (lastTargetValue * collateralInfos[lastIdx].scale + collateralStatesBeforeDrop[lastIdx].collateralBalance - 1n)
+      const lastDroppedPrice = (lastTargetValue * collateralInfos[lastIdx].scale + collateralStatesBeforeDrop[lastIdx].collateralBalance)
         / collateralStatesBeforeDrop[lastIdx].collateralBalance;
       await context.changePriceFeeds({ [collateralInfos[lastIdx].asset]: lastDroppedPrice });
 
@@ -734,9 +729,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
       if (entry === 'absorb') {
-        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address]), 'NotLiquidatable()');
+        await expect(comet.connect(betty.signer).absorb(betty.address, [albert.address])).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
       } else {
-        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, []), 'NotLiquidatable()');
+        await expect(module.connect(betty.signer).liquidate(betty.address, albert.address, [])).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
       }
     }
   );
@@ -761,9 +756,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
       if (entry === 'absorb') {
-        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address]), 'NotLiquidatable()');
+        await expect(comet.connect(betty.signer).absorb(betty.address, [albert.address])).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
       } else {
-        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, []), 'NotLiquidatable()');
+        await expect(module.connect(betty.signer).liquidate(betty.address, albert.address, [])).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
       }
     }
   );
@@ -779,9 +774,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(await comet.isAbsorbPaused()).to.be.true;
 
       if (entry === 'absorb') {
-        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address]), 'Paused()');
+        await expect(comet.connect(betty.signer).absorb(betty.address, [albert.address])).to.be.revertedWithCustomError(comet, 'Paused');
       } else {
-        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, []), 'Paused()');
+        await expect(module.connect(betty.signer).liquidate(betty.address, albert.address, [])).to.be.revertedWithCustomError(comet, 'Paused');
       }
     }
   );
@@ -823,9 +818,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
       if (entry === 'absorb') {
-        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address]), 'NotLiquidatable()');
+        await expect(comet.connect(betty.signer).absorb(betty.address, [albert.address])).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
       } else {
-        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, []), 'NotLiquidatable()');
+        await expect(module.connect(betty.signer).liquidate(betty.address, albert.address, [])).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
       }
     }
   );
@@ -884,9 +879,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // A single accrual grows the debt linearly: debt(T) = debt0 * (1 + borrowRate * T / factorScale).
       // Solve for T so debt(T) == targetDebt. Nothing changes state before the accrual below, so the
       // borrow rate read here is exactly the one that accrual applies.
-      const debt0 = (await comet.borrowBalanceOf(albert.address)).toBigInt();
+      const debt = (await comet.borrowBalanceOf(albert.address)).toBigInt();
       const borrowRate = (await comet.getBorrowRate(await comet.getUtilization())).toBigInt();
-      const secondsToBand = ((targetDebt - debt0) * factorScale) / (debt0 * borrowRate);
+      const secondsToBand = ((targetDebt - debt) * factorScale) / (debt * borrowRate);
 
       await world.increaseTime(Number(secondsToBand));
       await comet.accrueAccount(albert.address);
@@ -896,9 +891,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
       if (entry === 'absorb') {
-        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address]), 'NotLiquidatable()');
+        await expect(comet.connect(betty.signer).absorb(betty.address, [albert.address])).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
       } else {
-        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, []), 'NotLiquidatable()');
+        await expect(module.connect(betty.signer).liquidate(betty.address, albert.address, [])).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
       }
     }
   );
@@ -928,11 +923,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // 1. Establish a healthy borrow using the deployment's own minimum debt, price, scale and BCF.
       const borrowAmount = 2n * baseBorrowMin;
       const borrowValue = mulPrice(borrowAmount, basePrice, baseScale);
-      const minimumCollateralValue = (borrowValue * factorScale + collateralAssetInfo.borrowCollateralFactor)
-        / collateralAssetInfo.borrowCollateralFactor;
+      const minimumCollateralValue = (borrowValue * factorScale + collateralAssetInfo.borrowCollateralFactor) / collateralAssetInfo.borrowCollateralFactor;
       const suppliedCollateralValue = (minimumCollateralValue * 110n) / 100n;
-      const collateralAmount = (suppliedCollateralValue * collateralAssetInfo.scale + collateralPrice)
-        / collateralPrice;
+      const collateralAmount = (suppliedCollateralValue * collateralAssetInfo.scale + collateralPrice) / collateralPrice;
 
       await context.sourceTokens(collateralAmount, collateralAsset, albert);
       await collateralAsset.approve(albert, comet.address);
@@ -965,9 +958,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       await expect(comet.isLiquidatable(albert.address)).to.be.revertedWithCustomError(comet, 'BadPrice');
 
       if (entry === 'absorb') {
-        await expectRevertCustom(comet.connect(betty.signer).absorb(betty.address, [albert.address]), 'BadPrice()');
+        await expect(comet.connect(betty.signer).absorb(betty.address, [albert.address])).to.be.revertedWithCustomError(comet, 'BadPrice');
       } else {
-        await expectRevertCustom(module.connect(betty.signer).liquidate(betty.address, albert.address, []), 'BadPrice()');
+        await expect(module.connect(betty.signer).liquidate(betty.address, albert.address, [])).to.be.revertedWithCustomError(comet, 'BadPrice');
       }
     }
   );
@@ -1045,8 +1038,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         .to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
 
       if (entry === 'absorb') {
-        await expect(comet.connect(betty.signer).absorb(betty.address, [albert.address]))
-          .to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
+        await expect(comet.connect(betty.signer).absorb(betty.address, [albert.address])).to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
       } else {
         await expect(module.connect(betty.signer).liquidate(betty.address, albert.address, []))
           .to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
