@@ -535,7 +535,7 @@ function absorbScenarios(entry: Entry) {
 
       // Sanity checks before absorb: the account is liquidatable, with its LCF-weighted health factor
       // (across every collateral) below the target the module aims to restore.
-      let liquidityBefore: bigint;
+      let liquidityBefore = 0n;
       for (let i = 0; i < collateralIndexes.length; i++) {
         liquidityBefore += mulFactor(collateralValuesBefore[i], collateralInfos[i].liquidateCollateralFactor);
       }
@@ -683,7 +683,7 @@ function absorbScenarios(entry: Entry) {
       //    Borrow 5x that. (The tiny second collateral barely shifts any of this.)
       const minDebtValue = mulPrice(baseBorrowMin, basePrice, baseScale);
       const seizeFormulaDenominator = mulFactor(collateralInfos[0].liquidationFactor, TARGET_HF) - collateralInfos[0].borrowCollateralFactor;
-      const minBorrowValue = (minDebtValue * collateralInfos[0].liquidateCollateralFactor * seizeFormulaDenominator) 
+      const minBorrowValue = (minDebtValue * collateralInfos[0].liquidateCollateralFactor * seizeFormulaDenominator)
         / (collateralInfos[0].borrowCollateralFactor * (collateralInfos[0].liquidationFactor - collateralInfos[0].liquidateCollateralFactor));
       const borrowValue = 5n * minBorrowValue;
       const borrowAmount = divPrice(borrowValue, basePrice, baseScale);
@@ -722,7 +722,28 @@ function absorbScenarios(entry: Entry) {
       const guardFloorValue = (debtValue * factorScale) / collateralInfos[0].liquidationFactor + (minDebtValue * seizeFormulaDenominator * factorScale) / (collateralInfos[0].liquidationFactor * collateralInfos[0].borrowCollateralFactor);
       const liquidatableMaxValue = (debtValue - mulFactor(secondCollateralValue, collateralInfos[1].liquidateCollateralFactor)) * factorScale / collateralInfos[0].liquidateCollateralFactor;
       const firstTargetValue = (guardFloorValue + liquidatableMaxValue) / 2n;
-      const newFirstCollateralPrice = (firstTargetValue * collateralInfos[0].scale) / firstAmount;
+      let newFirstCollateralPrice = (firstTargetValue * collateralInfos[0].scale) / firstAmount;
+
+      // The target-HF formula and each factor multiplication round down independently. Move the price
+      // upward by the minimum oracle units needed for the rounded first-asset seizure to satisfy the
+      // loop's exact break condition, so the second asset is genuinely never processed.
+      const secondCollateralValueAfterSupply = mulPrice(secondAmount, collateralPrices[1], collateralInfos[1].scale);
+      while (true) {
+        const firstCollateralValueAtPrice = mulPrice(firstAmount, newFirstCollateralPrice, collateralInfos[0].scale);
+        const totalCollateralizedValueAtPrice = mulFactor(firstCollateralValueAtPrice, collateralInfos[0].borrowCollateralFactor)
+          + mulFactor(secondCollateralValueAfterSupply, collateralInfos[1].borrowCollateralFactor);
+        const firstWantedAtPrice = wantedCollateralValue(
+          debtValue,
+          totalCollateralizedValueAtPrice,
+          collateralInfos[0].liquidationFactor,
+          collateralInfos[0].borrowCollateralFactor
+        );
+        const debtValueAfterFirst = debtValue - mulFactor(firstWantedAtPrice, collateralInfos[0].liquidationFactor);
+        const collateralizedValueAfterFirst = totalCollateralizedValueAtPrice
+          - mulFactor(firstWantedAtPrice, collateralInfos[0].borrowCollateralFactor);
+        if (mulFactor(debtValueAfterFirst, TARGET_HF) <= collateralizedValueAfterFirst) break;
+        newFirstCollateralPrice += 1n;
+      }
       await context.changePriceFeeds({ [collateralInfos[0].asset]: newFirstCollateralPrice });
 
       // changePriceFeeds redeploys the liquidation module, so configure it only once the price is set.

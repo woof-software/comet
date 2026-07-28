@@ -618,7 +618,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
       const baseScale = (await comet.baseScale()).toBigInt();
       const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
-      const borrowAmount = 3n * baseBorrowMin;
+      const minBorrowValue = mulPrice(baseBorrowMin, basePrice, baseScale);
+      const borrowAmount = 2n * baseBorrowMin;
+      const borrowValue = mulPrice(borrowAmount, basePrice, baseScale);
 
       // 1. Betty supplies base for real, so totalSupplyBase > 0 (the supply and tracking-supply indices
       //    can grow / divide safely) and albert has liquidity to borrow against.
@@ -626,13 +628,12 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       await context.getAssetByAddress(baseToken).approve(betty, comet.address);
       await betty.safeSupplyAsset({ asset: baseToken, amount: borrowAmount });
 
-      // 2. Albert supplies the collateral worth 4× the minimum borrow value and borrows 3× the min debt.
+      // 2. Albert supplies collateral worth 5× the minimum borrow value and borrows 2× the min debt.
       //    minBorrowValue  = baseBorrowMin * basePrice / baseScale
-      //    collateralValue = 4 * minBorrowValue
+      //    collateralValue = 5 * minBorrowValue
       const collateralAssetInfo = await getAssetInfo(comet, collateralIndex);
       const collateralPrice = (await comet.getPrice(collateralAssetInfo.priceFeed)).toBigInt();
-      const minBorrowValue = mulPrice(baseBorrowMin, basePrice, baseScale);
-      const collateralValue = 4n * minBorrowValue;
+      const collateralValue = 5n * minBorrowValue;
       const collateralAmount = (collateralValue * collateralAssetInfo.scale) / collateralPrice;
       const collateralAsset = context.getAssetByAddress(collateralAssetInfo.asset);
       await context.sourceTokens(collateralAmount, collateralAsset, albert);
@@ -643,8 +644,12 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       expect(await comet.isBorrowCollateralized(albert.address)).to.be.true;
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
-      // 3. Drop the collateral price by 35%, then accrue so lastAccrualTime is a clean starting point.
-      await context.changePriceFeeds({ [collateralAssetInfo.asset]: (collateralPrice * 65n) / 100n });
+      // 3. Set the dropped price so LCF-weighted collateral covers only 90% of the debt, making the
+      //    account liquidatable, then accrue so lastAccrualTime is a clean starting point.
+      const targetValueAfterLCF = borrowValue * 90n / 100n;
+      const targetCollateralValue = targetValueAfterLCF * factorScale / collateralAssetInfo.liquidateCollateralFactor;
+      const droppedPrice = targetCollateralValue * collateralAssetInfo.scale / collateralAmount;
+      await context.changePriceFeeds({ [collateralAssetInfo.asset]: droppedPrice });
       const module = await configureModule(context, world, entry, partial, betty.address);
       await comet.accrueAccount(albert.address);
 
