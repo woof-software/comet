@@ -52,7 +52,7 @@ scenario(
     const perAssetBaseWei =
       (BigInt(getConfigForScenario(context).liquidationBase) * baseScale) / BigInt(numAssets);
 
-    const supplied: { asset: string; amount: bigint; priceFeed: string; price: bigint }[] = [];
+    const supplied: { asset: string, amount: bigint, priceFeed: string, price: bigint }[] = [];
     let borrowCapacityWei = 0n;
     for (let i = 0; i < numAssets; i++) {
       const info = await comet.getAssetInfo(i);
@@ -120,7 +120,7 @@ scenario(
     );
 
     // Snapshot each seized collateral's Comet ERC-20 balance and reserves before liquidating.
-    const before = new Map<string, { comet: bigint; reserves: bigint }>();
+    const before = new Map<string, { comet: bigint, reserves: bigint }>();
     for (const s of plan) {
       const erc20 = ERC20__factory.connect(s.asset, ethers.provider);
       before.set(s.asset.toLowerCase(), {

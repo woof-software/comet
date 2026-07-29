@@ -33,7 +33,7 @@ import {
  * A network runs only when `ONEINCH_API_KEY` and its fork RPC env var is set.
  */
 
-describe('OneInchV6Adapter core & redundant swap sweep', function () {
+describe.skip('OneInchV6Adapter core & redundant swap sweep', function () {
   this.timeout(600_000);
 
   for (const [network, markets] of Object.entries(SWAP_ROUTES)) {

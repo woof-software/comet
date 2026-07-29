@@ -1,6 +1,6 @@
-import { ethers } from "hardhat";
-import { CometInterface } from "../../build/types";
-import { ONEINCH_V6_ROUTER_MAINNET } from "./oneinch";
+import { ethers } from 'hardhat';
+import { CometInterface } from '../../build/types';
+import { ONEINCH_V6_ROUTER_MAINNET } from './oneinch';
 
 /**
  * Route helpers and shared infrastructure constants for the dex adapters.
@@ -110,7 +110,7 @@ export async function buildRoutes(
 export function v4PoolId(poolKey: PoolKey): string {
   return ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
-      ["address", "address", "uint24", "int24", "address"],
+      ['address', 'address', 'uint24', 'int24', 'address'],
       [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks]
     )
   );
@@ -118,21 +118,21 @@ export function v4PoolId(poolKey: PoolKey): string {
 
 // Global infrastructure.
 export const CORE_ROUTER = ONEINCH_V6_ROUTER_MAINNET;
-export const REDUNDANT_ROUTER = "0x4C82D1fBFe28C977cBB58D8C7FF8FCF9F70a2cCA";
-export const POOL_MANAGER = "0x000000000004444c5dc75cB358380D2e3dE08A90";
+export const REDUNDANT_ROUTER = '0x4C82D1fBFe28C977cBB58D8C7FF8FCF9F70a2cCA';
+export const POOL_MANAGER = '0x000000000004444c5dc75cB358380D2e3dE08A90';
 
 // Swap parameters.
 export const SLIPPAGE_BPS = 500; // 5%
 export const ONEINCH_SLIPPAGE_PCT = 1; // 1%
 export const CHAIN_ID = 1;
 // Restrict 1inch routing to signature-free AMMs so the core calldata can be used on a fork.
-export const AMM_PROTOCOLS = "UNISWAP_V4,UNISWAP_V3,UNISWAP_V2,SUSHI,CURVE";
+export const AMM_PROTOCOLS = 'UNISWAP_V4,UNISWAP_V3,UNISWAP_V2,SUSHI,CURVE';
 
 export const POOL_MANAGER_SWAP_EVENT =
-  "event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)";
+  'event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)';
 export const ERC20_EVENTS_IFACE = new ethers.utils.Interface([
-  "event Transfer(address indexed from, address indexed to, uint256 value)",
-  "event Approval(address indexed owner, address indexed spender, uint256 value)",
+  'event Transfer(address indexed from, address indexed to, uint256 value)',
+  'event Approval(address indexed owner, address indexed spender, uint256 value)',
 ]);
 export const POOL_MANAGER_IFACE = new ethers.utils.Interface([POOL_MANAGER_SWAP_EVENT]);
 

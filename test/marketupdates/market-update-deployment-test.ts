@@ -15,7 +15,7 @@ import {
   SimpleTimelock,
   TransparentUpgradeableProxy__factory,
 } from './../../build/types';
-import { makeProtocol, getConfigurationForConfigurator } from './../helpers';
+import { makeProtocol, getConfigurationForConfigurator, prepareFreshLiquidationModule } from './../helpers';
 import { ethers } from 'hardhat';
 
 describe('MarketUpdateDeployment', function() {
@@ -284,11 +284,32 @@ describe('MarketUpdateDeployment', function() {
     const newSupplyKinkByGovernorTimelock = 300n;
     const oldSupplyKink = await cometAsProxy.supplyKink();
     expect(oldSupplyKink).to.be.equal(800000000000000000n);
+
+    const newConfiguratorViaProxy = configuratorNew.attach(
+      configuratorProxyContract.address
+    );
+
+    // NOTE: A fresh LiquidationModule must be set before every Comet upgrade.
+    // Comet's constructor calls setAssetList on the module, which reverts with AlreadySet()
+    // if that module was already initialized by a previous implementation. setLiquidationModule
+    // is governor-only, so it is included in the governor batch ahead of deployAndUpgradeTo.
+    const newLiquidationModuleForGovernor = await prepareFreshLiquidationModule(
+      newConfiguratorViaProxy,
+      cometBehindProxy.address
+    );
     await governorTimelock.executeTransactions(
-      [configuratorProxyContract.address, proxyAdminNew.address],
-      [0, 0],
-      ['setSupplyKink(address,uint64)', 'deployAndUpgradeTo(address,address)'],
+      [configuratorProxyContract.address, configuratorProxyContract.address, proxyAdminNew.address],
+      [0, 0, 0],
       [
+        'setLiquidationModule(address,address)',
+        'setSupplyKink(address,uint64)',
+        'deployAndUpgradeTo(address,address)',
+      ],
+      [
+        ethers.utils.defaultAbiCoder.encode(
+          ['address', 'address'],
+          [cometBehindProxy.address, newLiquidationModuleForGovernor.address]
+        ),
         ethers.utils.defaultAbiCoder.encode(
           ['address', 'uint64'],
           [cometBehindProxy.address, newSupplyKinkByGovernorTimelock]
@@ -304,13 +325,30 @@ describe('MarketUpdateDeployment', function() {
     expect(newSupplyKink).to.be.equal(newSupplyKinkByGovernorTimelock);
 
     // MarketAdmin: Setting new supplyKink in Configurator and deploying Comet
-    const newConfiguratorViaProxy = configuratorNew.attach(
-      configuratorProxyContract.address
-    );
     const supplyKinkOld = (
       await newConfiguratorViaProxy.getConfiguration(cometBehindProxy.address)
     ).supplyKink;
     expect(supplyKinkOld).to.be.equal(300n);
+
+    // NOTE: Same fresh-LM requirement as above. setLiquidationModule is governor-only, so it
+    // cannot be bundled into the market-admin proposal (MarketUpdateTimelock would revert with
+    // Unauthorized). Governor sets the module first; the proposal then only updates supplyKink
+    // and runs deployAndUpgradeTo.
+    const newLiquidationModuleForMarketAdmin = await prepareFreshLiquidationModule(
+      newConfiguratorViaProxy,
+      cometBehindProxy.address
+    );
+    await governorTimelock.executeTransactions(
+      [configuratorProxyContract.address],
+      [0],
+      ['setLiquidationModule(address,address)'],
+      [
+        ethers.utils.defaultAbiCoder.encode(
+          ['address', 'address'],
+          [cometBehindProxy.address, newLiquidationModuleForMarketAdmin.address]
+        ),
+      ]
+    );
 
     const newSupplyKinkByMarketAdmin = 100n;
     await marketUpdateProposer
@@ -364,6 +402,8 @@ describe('MarketUpdateDeployment', function() {
       defaultLiquidationModule
     } = await makeProtocol({
       governor: governorTimelockSigner,
+      // Avoid initiating the LM on the implementation; the proxy will call initializeStorage.
+      skipInitStorage: true,
     });
 
     const configuration = await getConfigurationForConfigurator(

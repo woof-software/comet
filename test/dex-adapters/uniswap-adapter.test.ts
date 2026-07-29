@@ -223,7 +223,7 @@ describe('UniswapAdapter', function () {
     const cometBalBefore = await unsetColErc20.balanceOf(comet.address);
     await expect(
       adapter.connect(moduleSigner).swap(unsetCollateral, amountIn, swapData)
-    ).to.emit(adapter, "RedundantSwapFailed").withArgs(unsetCollateral, amountIn);
+    ).to.emit(adapter, 'RedundantSwapFailed').withArgs(unsetCollateral, amountIn);
     
     expect(await unsetColErc20.balanceOf(comet.address)).to.equal(cometBalBefore.add(amountIn));
   });

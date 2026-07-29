@@ -1,5 +1,5 @@
 import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, default24Assets, divPrice, factorScale, CollateralState, makeCollateralStates } from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, DefaultLiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
+import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -21,7 +21,6 @@ describe.skip('partial liquidation: debt closing rounding', function() {
   const baseScale = 10n ** 6n;
 
   let comet: CometHarnessInterfaceExtendedAssetList;
-  let liquidationModule: DefaultLiquidationModule;
   let tokens: { [symbol: string]: FaucetToken } = {};
   let baseToken: FaucetToken;
   let priceFeeds: { [symbol: string]: SimplePriceFeed } = {};
@@ -44,7 +43,6 @@ describe.skip('partial liquidation: debt closing rounding', function() {
     });
 
     comet = protocol.comet;
-    liquidationModule = protocol.defaultLiquidationModule;
     for (let asset in protocol.tokens) {
       if (asset === 'USDC') continue;
       tokens[asset] = protocol.tokens[asset] as FaucetToken;
@@ -906,7 +904,6 @@ context('rsETH-denominated base (18 decimals): dust and min-borrow edge cases', 
     const droppedWethPrice = exp(1500, 8);
 
     let rsEthComet: CometHarnessInterfaceExtendedAssetList;
-    let liquidationModule: DefaultLiquidationModule;
     let rsEthBaseToken: FaucetToken;
     let compAsset: FaucetToken;
     let wethAsset: FaucetToken;
@@ -974,7 +971,6 @@ context('rsETH-denominated base (18 decimals): dust and min-borrow edge cases', 
         baseBorrowMin: rsEthBaseBorrowMin,
       });
       rsEthComet = protocol.comet;
-      liquidationModule = protocol.defaultLiquidationModule;
       rsEthBaseToken = protocol.tokens['rsETH'] as FaucetToken;
       compAsset = protocol.tokens['COMP'] as FaucetToken;
       wethAsset = protocol.tokens['WETH'] as FaucetToken;

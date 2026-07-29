@@ -46,7 +46,7 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 
 // Helpers
 import type { Numeric } from './helpers/index';
-import { exp, dfn, defaultAssets, deployDefaultLiquidationModule, deployEmptyDexAdapter, mulPrice, toBigInt, convertToBigInt, setBalance } from './helpers/index';
+import { exp, dfn, defaultAssets, deployDefaultLiquidationModule, deployDefaultLiquidationModuleWithComet, deployEmptyDexAdapter, mulPrice, toBigInt, convertToBigInt, setBalance } from './helpers/index';
 
 export * from './helpers/index';
 export { ethers, expect, hre };
@@ -692,14 +692,49 @@ export async function setTotalsBasic(comet: CometHarnessInterfaceExtendedAssetLi
   return t1;
 }
 
+/**
+ * Redeploy Comet via Configurator with a fresh LiquidationModule.
+ * Required because Comet construction calls setAssetList on the module, which reverts
+ * with AlreadySet() if the previous module was already initialized.
+ */
+export async function prepareFreshLiquidationModule(
+  configurator: Configurator,
+  cometProxyAddress: string,
+) {
+  const configuration = await configurator.getConfiguration(cometProxyAddress);
+  const collateralAddresses = configuration.assetConfigs.map((assetConfig) => assetConfig.asset);
+  const newDexAdapter = await deployEmptyDexAdapter(collateralAddresses);
+  // Governor is sufficient for role wiring in unit tests that only need a valid LM.
+  const governor = configuration.governor;
+  return deployDefaultLiquidationModuleWithComet(
+    {
+      multisig: governor,
+      executors: [governor],
+      pausers: [governor],
+      dexAdapter: newDexAdapter.address,
+    },
+    cometProxyAddress
+  );
+}
+
+export async function deployAndUpgradeToWithFreshModule(
+  proxyAdmin: CometProxyAdmin,
+  configurator: Configurator,
+  cometProxyAddress: string,
+) {
+  const newLiquidationModule = await prepareFreshLiquidationModule(configurator, cometProxyAddress);
+  await configurator.setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
+  await proxyAdmin.deployAndUpgradeTo(configurator.address, cometProxyAddress);
+}
+
 export async function updateAssetBorrowCollateralFactor(configurator: Configurator, cometProxyAdmin: CometProxyAdmin, cometAddress: string, assetAddress: string, borrowCF: bigint) {
   await configurator.updateAssetBorrowCollateralFactor(cometAddress, assetAddress, borrowCF);
-  await cometProxyAdmin.deployAndUpgradeTo(configurator.address, cometAddress);
+  await deployAndUpgradeToWithFreshModule(cometProxyAdmin, configurator, cometAddress);
 }
 
 export async function updateAssetLiquidateCollateralFactor(configurator: Configurator, cometProxyAdmin: CometProxyAdmin, cometAddress: string, assetAddress: string, liquidateCF: bigint, governor: SignerWithAddress) {
   await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometAddress, assetAddress, liquidateCF);
-  await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configurator.address, cometAddress);
+  await deployAndUpgradeToWithFreshModule(cometProxyAdmin.connect(governor) as CometProxyAdmin, configurator.connect(governor) as Configurator, cometAddress);
 }
 
 export async function getLiquidity(comet: CometWithExtendedAssetList, token: FaucetToken | NonStandardFaucetFeeToken, amount: bigint): Promise<BigNumber> {

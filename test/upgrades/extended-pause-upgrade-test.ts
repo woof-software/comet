@@ -1,6 +1,14 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import { setupFork, impersonateAccount, setBalance, SnapshotRestorer, takeSnapshot} from '../helpers';
+import {
+  setupFork,
+  impersonateAccount,
+  setBalance,
+  SnapshotRestorer,
+  takeSnapshot,
+  deployDefaultLiquidationModuleWithComet,
+  deployEmptyDexAdapter,
+} from '../helpers';
 import {
   CometExtAssetList__factory,
   CometFactoryWithExtendedAssetList__factory,
@@ -20,7 +28,6 @@ describe('extended pause upgrade test', function () {
   const CONFIGURATOR_ADDRESS = '0x316f9708bB98af7dA9c68C1C3b5e79039cD336E3';
   const GOVERNOR_ADDRESS = '0x6d903f6003cca6255d85cca4d3b5e5146dc33925';
   const ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
-  const LIQUIDATION_MODULE = '0x1111111111111111111111111111111111111111';
 
   // Contracts
   let comet: CometWithExtendedAssetList;
@@ -175,10 +182,23 @@ describe('extended pause upgrade test', function () {
       .connect(governor)
       .setFactory(COMET_ADDRESS, newFactory.address);
 
-    // Ensure liquidation module is set
-    await configurator
-      .connect(governor)
-      .setLiquidationModule(COMET_ADDRESS, LIQUIDATION_MODULE);
+    // Fresh LM bound to the existing Comet is required before deploy: the new
+    // implementation constructor calls setAssetList on the module.
+    // Use non-DAO role holders: DAO is already granted PAUSER_ROLE in the LM constructor.
+    const [executor, pauser, multisig] = await ethers.getSigners();
+    const configuration = await configurator.getConfiguration(COMET_ADDRESS);
+    const collateralAddresses = configuration.assetConfigs.map((assetConfig) => assetConfig.asset);
+    const dexAdapter = await deployEmptyDexAdapter(collateralAddresses);
+    const liquidationModule = await deployDefaultLiquidationModuleWithComet(
+      {
+        multisig: multisig.address,
+        executors: [executor.address],
+        pausers: [pauser.address],
+        dexAdapter: dexAdapter.address,
+      },
+      COMET_ADDRESS
+    );
+    await configurator.connect(governor).setLiquidationModule(COMET_ADDRESS, liquidationModule.address);
 
     // Deploy new implementation using configurator
     const deployTx = await configurator.connect(governor).deploy(COMET_ADDRESS);
