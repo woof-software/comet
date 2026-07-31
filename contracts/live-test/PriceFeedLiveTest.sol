@@ -21,7 +21,6 @@ import "../vendor/@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface
  */
 contract PriceFeedLiveTest is AggregatorV3Interface, AccessControl {
     uint256 public constant override version = 1;
-    string public constant override description = "PriceFeedLiveTest (TEST ONLY)";
     uint8 public immutable override decimals;
     AggregatorV3Interface public immutable sourcePriceFeed;
 
@@ -32,6 +31,8 @@ contract PriceFeedLiveTest is AggregatorV3Interface, AccessControl {
     int256 public constantPrice;
     /// @notice Monotonic round id for the constant-price mode, bumped on every {setPrice}
     uint80 internal constantRoundId;
+    /// @notice Description and testing purpose of price feed
+    string public description;
 
     /// @notice Thrown when passed values is equal to already stored one
     error SameValue();
@@ -40,10 +41,11 @@ contract PriceFeedLiveTest is AggregatorV3Interface, AccessControl {
     /// @notice Emitted when the price source mode is toggled
     event SourceFeedModeSet(bool useSourceFeed);
 
-    constructor(address sourcePriceFeed_, uint8 decimals_, address admin_) {
+    constructor(address sourcePriceFeed_, uint8 decimals_, address admin_, string memory description_) {
         sourcePriceFeed = AggregatorV3Interface(sourcePriceFeed_);
         decimals = decimals_;
         useSourceFeed = true;
+        description = description_;
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
