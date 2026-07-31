@@ -1,6 +1,7 @@
 pragma solidity ^0.8.15;
 
 import "@forge-std/src/Vm.sol";
+import "@comet-contracts/CometWithExtendedAssetList.sol";
 import "@comet-contracts/bridges/arbitrum/ArbitrumBridgeReceiver.sol";
 import "@comet-contracts/marketupdates/MarketAdminPermissionChecker.sol";
 import "../script/marketupdates/helpers/GovernanceHelper.sol";
@@ -120,7 +121,7 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         address configuratorProxy = chainAddresses.configuratorProxyAddress;
         address cometProxyAdminNew = deployedContracts.newCometProxyAdmin;
         address marketUpdateProposer = deployedContracts.marketUpdateProposer;
-        uint256 oldSupplyKinkBeforeGovernorUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 oldSupplyKinkBeforeGovernorUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         uint256 newSupplyKinkByGovernorTimelock = 300000000000000000;
 
         assertEq(MarketAdminPermissionChecker(deployedContracts.marketAdminPermissionChecker).marketAdmin(), deployedContracts.marketUpdateTimelock);
@@ -149,11 +150,11 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         GovernanceHelper.createProposalAndPass(vm, proposalRequest, description);
 
         // check the new kink value
-        uint256 newSupplyKinkAfterGovernorUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 newSupplyKinkAfterGovernorUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         assert(newSupplyKinkAfterGovernorUpdate == newSupplyKinkByGovernorTimelock);
 
         // Setting new Supply Kink using Market Admin
-        uint256 oldSupplyKinkBeforeMarketAdminUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 oldSupplyKinkBeforeMarketAdminUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         uint256 newSupplyKinkByMarketAdmin = 400000000000000000;
 
         assert(oldSupplyKinkBeforeMarketAdminUpdate != newSupplyKinkByMarketAdmin);
@@ -163,7 +164,7 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         description = string(abi.encodePacked("Proposal to update Supply Kink for ", marketName, " Market by Market Admin"));
         GovernanceHelper.createAndPassMarketUpdateProposal(vm, chainAddresses.marketAdmin, proposalRequest, description, marketUpdateProposer);
 
-        uint256 newSupplyKinkAfterMarketAdminUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 newSupplyKinkAfterMarketAdminUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         assert(newSupplyKinkAfterMarketAdminUpdate == newSupplyKinkByMarketAdmin);
     }
 
@@ -181,7 +182,7 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         address cometProxyAdminNew = deployedContracts.newCometProxyAdmin;
         address marketUpdateProposer = deployedContracts.marketUpdateProposer;
 
-        uint256 oldSupplyKinkBeforeGovernorUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 oldSupplyKinkBeforeGovernorUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         uint256 newSupplyKinkByGovernorTimelock = 300000000000000000;
 
         assert(oldSupplyKinkBeforeGovernorUpdate != newSupplyKinkByGovernorTimelock);
@@ -210,11 +211,11 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         BridgeHelper.simulateMessageAndExecuteProposal(vm, chain, MarketUpdateAddresses.GOVERNOR_BRAVO_TIMELOCK_ADDRESS, proposalRequest);
 
         // check the new kink value
-        uint256 newSupplyKinkAfterGovernorUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 newSupplyKinkAfterGovernorUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         assert(newSupplyKinkAfterGovernorUpdate == newSupplyKinkByGovernorTimelock);
 
         // Setting new Supply Kink using Market Admin
-        uint256 oldSupplyKinkBeforeMarketAdminUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 oldSupplyKinkBeforeMarketAdminUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         uint256 newSupplyKinkByMarketAdmin = 400000000000000000;
 
         assert(oldSupplyKinkBeforeMarketAdminUpdate != newSupplyKinkByMarketAdmin);
@@ -224,7 +225,7 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         description = string(abi.encodePacked("Proposal to update Supply Kink for ", marketName, " Market by Market Admin"));
         GovernanceHelper.createAndPassMarketUpdateProposalL2(vm, chainAddresses.marketAdmin, proposalRequest, description, marketUpdateProposer);
 
-        uint256 newSupplyKinkAfterMarketAdminUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 newSupplyKinkAfterMarketAdminUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         assert(newSupplyKinkAfterMarketAdminUpdate == newSupplyKinkByMarketAdmin);
     }
 }

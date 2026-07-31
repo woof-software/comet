@@ -2,13 +2,13 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
-import "../../contracts/Comet.sol";
+import "../../contracts/CometWithExtendedAssetList.sol";
 import "../../contracts/CometConfiguration.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
 
 contract PolygonLiquidatorTest is Test {
-    Comet public comet;
+    CometWithExtendedAssetList public comet;
     OnChainLiquidator public liquidator;
 
     // contracts
@@ -84,7 +84,7 @@ contract PolygonLiquidatorTest is Test {
             supplyCap: 0
         });
 
-        comet = new Comet(CometConfiguration.Configuration(
+        comet = new CometWithExtendedAssetList(CometConfiguration.Configuration(
             {
                 governor: TIMELOCK,
                 pauseGuardian: GNOSIS_SAFE,
@@ -106,7 +106,8 @@ contract PolygonLiquidatorTest is Test {
                 baseMinForRewards: 1000000e6,
                 baseBorrowMin: 100e6,
                 targetReserves: 5000000e6,
-                assetConfigs: assetConfigs
+                assetConfigs: assetConfigs,
+                liquidationModule: address(1)
             }
         ));
 
