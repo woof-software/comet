@@ -92,7 +92,7 @@ An example deployment command looks like:
 
 Liquidation of under-collateralized accounts is handled by a dedicated **Liquidation Module**, not by the core market. The module reads an account's position from Comet, computes a per-collateral **seizure plan**, and either absorbs the collateral into the protocol (the permissionless default route) or sells it for the base asset through a DEX adapter (the executor route).
 
-📖 **Full documentation: [docs/Liquidation.md](docs/Liquidation.md)** — an end-to-end guide covering the health factor and collateral valuation, why accounts become liquidatable, the seizure calculation (partial, full-close, min-debt, and bad-debt cases), the default and DEX liquidation routes, liquidator incentives, emitted events, and the integration interfaces.
+📖 **Full documentation: [liquidation.md](docs/liquidation.md)** — an end-to-end guide covering the health factor and collateral valuation, why accounts become liquidatable, the seizure calculation (partial, full-close, min-debt, and bad-debt cases), the default and DEX liquidation routes, liquidator incentives, emitted events, and the integration interfaces.
 
 **[LiquidationModule.sol](contracts/liquidation-module/LiquidationModule.sol)** - Deployed module. Adds the executor-gated DEX liquidation route (`liquidate`) on top of the default logic, routing seized collateral through a DEX adapter and paying the executor an incentive out of the surplus.
 
