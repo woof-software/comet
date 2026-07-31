@@ -1,0 +1,11 @@
+{
+  "contracts/capo": {
+    "branch": {
+      "name": "lst-lrt-oracles",
+      "rev": "3020ec85ccddde176a7b379e162e6c0d50239d42"
+    }
+  },
+  "forge/lib/forge-std": {
+    "rev": "77041d2ce690e692d6e03cc812b57d1ddaa4d505"
+  }
+}
