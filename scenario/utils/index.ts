@@ -24,6 +24,7 @@ import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
 import {
   mineBlocks,
+  setEtherBalance,
   setNextBaseFeeToZero,
   setNextBlockTimestamp,
 } from './hreUtils';
@@ -32,7 +33,7 @@ import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
-export { mineBlocks, setNextBaseFeeToZero, setNextBlockTimestamp };
+export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
 
@@ -65,7 +66,7 @@ export async function getSignerForProposal(
     usedSigners.set(key, []);
   }
   const signers = usedSigners.get(key);
-  if(signers.length == 0){
+  if (signers.length == 0) {
     const signer = (await gm.getSigners())[0];
     signers.push(signer.address);
     return signer;
@@ -352,8 +353,18 @@ export async function isValidAssetIndex(
   ctx: CometContext,
   assetNum: number
 ): Promise<boolean> {
+  // Sanity checks
+  if (assetNum < 0) return false;
+  if (assetNum >= MAX_ASSETS) return false;
+  // Asset info checks. If any of these are false, the asset is invalid. This means that the asset is deprecated.
   const comet = await ctx.getComet();
-  return assetNum < (await comet.numAssets());
+  const assetInfo = await comet.getAssetInfo(assetNum);
+  if (assetInfo.borrowCollateralFactor.toBigInt() == 0n) return false;
+  if (assetInfo.supplyCap.toBigInt() == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor.toBigInt() == 0n) return false;
+  if (assetInfo.liquidationFactor.toBigInt() == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor.toBigInt() <= assetInfo.borrowCollateralFactor.toBigInt()) return false;
+  return true;
 }
 
 export async function isTriviallySourceable(
@@ -656,8 +667,8 @@ export async function updateCCIPStats(
 
   const tokenPrices = [];
   const gasPrices = [];
-  for (const [network,, address] of tokens) {
-    if(network !== dm.network) continue;
+  for (const [network, , address] of tokens) {
+    if (network !== dm.network) continue;
     const price = await registryContract.getTokenPrice(address);
     tokenPrices.push([address, price.value]);
   }
@@ -671,7 +682,7 @@ export async function updateCCIPStats(
     }
   }
 
-  if(tenderlyLogs) {
+  if (tenderlyLogs) {
     dm.stashRelayMessage(
       priceRegistry,
       registryContract.interface.encodeFunctionData('updatePrices', [
@@ -1033,7 +1044,7 @@ async function simulateBundle(
     const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
 
     // Merge rolling state changes with simulation's own state_objects
-    const stateObjects = sim.state_objects 
+    const stateObjects = sim.state_objects
       ? { ...rollingStateChanges, ...sim.state_objects }
       : rollingStateChanges;
 
@@ -1083,7 +1094,7 @@ async function simulateBundle(
 
     results.push(simResult);
   }
-  
+
   return results;
 }
 
@@ -1212,7 +1223,7 @@ export async function executeOpenProposal(
     const tx = await governor.execute(id, { gasPrice: 0, gasLimit: 120000000 });
     const receipt = await tx.wait();
 
-    if(receipt.gasUsed.toNumber() >= 16_777_215) {
+    if (receipt.gasUsed.toNumber() >= 16_777_215) {
       throw new Error('Execution may have failed due to hitting gas limit');
     }
   }
@@ -1637,7 +1648,7 @@ export async function timeUntilUnderwater({
   // XXX throw error if baseBalanceOf is positive and liquidationMargin is positive
   return Number(
     (-liquidationMargin * factorScale) / baseLiquidity / borrowRate +
-      fudgeFactor
+    fudgeFactor
   );
 }
 
@@ -1648,4 +1659,29 @@ export function applyL1ToL2Alias(address: string) {
 
 export function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
   return !!log?.raw?.topics && !!log?.raw?.data;
+}
+
+export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
+  try {
+    const configurator = await ctx.getConfigurator();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    // Use function selector to probe existence without reverting on unsupported networks
+    const iface = new ethers.utils.Interface([
+      'function marketAdminPermissionChecker() public view returns (address)'
+    ]);
+    const functionSelector = iface.getSighash('marketAdminPermissionChecker');
+    
+    const result = await ethers.provider.call({
+      to: configurator.address,
+      data: functionSelector
+    });
+    
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
 }
