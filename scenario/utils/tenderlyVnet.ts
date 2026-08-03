@@ -8,6 +8,9 @@ export interface TenderlyVnetInfo {
   dashboardUrl?: string;
 }
 
+// All Virtual TestNets created by this flow live in the same Tenderly project.
+const TENDERLY_PROJECT = 'comet';
+
 interface TenderlyCreds {
   account: string;
   project: string;
@@ -16,17 +19,16 @@ interface TenderlyCreds {
 
 function getTenderlyCreds(): TenderlyCreds {
   const account = process.env.TENDERLY_USERNAME || process.env.TENDERLY_ACCOUNT;
-  const project = process.env.TENDERLY_PROJECT;
   const accessKey = process.env.TENDERLY_ACCESS_KEY;
 
-  if (!account || !project || !accessKey) {
+  if (!account || !accessKey) {
     throw new Error(
-      'Missing Tenderly credentials to create a Virtual TestNet: set TENDERLY_USERNAME, TENDERLY_PROJECT ' +
-      'and TENDERLY_ACCESS_KEY. Alternatively, set TENDERLY_VNET_RPC_URL to the Admin RPC URL of an ' +
-      'already-created Virtual TestNet to reuse it instead of creating a new one.'
+      'Missing Tenderly credentials to create a Virtual TestNet: set TENDERLY_USERNAME and TENDERLY_ACCESS_KEY. ' +
+      'Alternatively, set TENDERLY_VNET_RPC_URL to the Admin RPC URL of an already-created Virtual TestNet to ' +
+      'reuse it instead of creating a new one.'
     );
   }
-  return { account, project, accessKey };
+  return { account, project: TENDERLY_PROJECT, accessKey };
 }
 
 /*

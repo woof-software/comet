@@ -95,12 +95,10 @@ jobs:
         env:
           TENDERLY_USERNAME:     ${{ secrets.TENDERLY_USERNAME }}
           TENDERLY_ACCESS_KEY:   ${{ secrets.TENDERLY_ACCESS_KEY }}
-          TENDERLY_PROJECT:      ${{ secrets.TENDERLY_PROJECT }}
           TENDERLY_VNET_RPC_URL: ${{ secrets.TENDERLY_VNET_RPC_URL }}
         run: |
           echo "TENDERLY_USERNAME=$TENDERLY_USERNAME"       >> "$GITHUB_ENV"
           echo "TENDERLY_ACCESS_KEY=$TENDERLY_ACCESS_KEY"   >> "$GITHUB_ENV"
-          echo "TENDERLY_PROJECT=$TENDERLY_PROJECT"         >> "$GITHUB_ENV"
           echo "TENDERLY_VNET_RPC_URL=$TENDERLY_VNET_RPC_URL" >> "$GITHUB_ENV"
 
       - name: Seacrest
