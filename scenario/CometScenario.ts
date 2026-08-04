@@ -1,17 +1,12 @@
-import { CometContext, scenario } from "./context/CometContext";
+import { scenario } from "./context/CometContext";
 import { expect } from "chai";
 import { exp } from "../test/helpers";
-import { expectRevertCustom } from "./utils";
-import { SECONDS_PER_YEAR } from "./utils/constants";
+import { expectRevertCustom, perSecond } from "./utils";
 import { BigNumber, ethers } from "ethers";
 import { MockERC20 } from "../build/types";
 import { getConfigForScenario } from "./utils/scenarioHelper";
 
 const REQUIRED_NUM_ASSETS = 17; // need at least 17 assets so index 16 has offset=16
-
-function perSecond(perYear: BigNumber): BigNumber {
-  return perYear.div(SECONDS_PER_YEAR);
-}
 
 type ArrayMethods = keyof Omit<any[], number>;
 

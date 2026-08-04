@@ -37,7 +37,12 @@ export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestam
 import { readFileSync } from 'fs';
 import path from 'path';
 export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
-import { MAX_ASSETS } from './constants';
+import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
+
+/** Convert a per-year interest factor to per-second (Comet constructor truncation). */
+export function perSecond(perYear: BigNumber): BigNumber {
+  return perYear.div(SECONDS_PER_YEAR);
+}
 
 export interface ComparativeAmount {
   val: number;
