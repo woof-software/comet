@@ -128,12 +128,27 @@ export function expectRevertCustom(
             .reduce((a, s) => a + s.charCodeAt(0).toString(16), '0x')
         )
         .slice(2, 2 + 8);
+      const errorName = custom.replace(/\(\)$/, '');
+      const escaped = custom.replace(/[()]/g, '\\$&');
+
+      // ethers sometimes decodes the error (CALL_EXCEPTION), sometimes only the selector
+      if (
+        e.errorName === errorName ||
+        e.errorSignature === custom ||
+        e.data === `0x${selector}`
+      ) {
+        return;
+      }
+
       const patterns = [
-        new RegExp(`custom error '${custom.replace(/[()]/g, '\\$&')}'`),
+        new RegExp(`custom error '${escaped}'`),
         new RegExp(`unrecognized custom error with selector ${selector}`),
         new RegExp(
           `unrecognized custom error \\(return data: 0x${selector}\\)`
         ),
+        new RegExp(`errorSignature="${escaped}"`),
+        new RegExp(`errorName="${errorName}"`),
+        new RegExp(`data="0x${selector}"`),
       ];
       for (const pattern of patterns)
         if (pattern.test(e.message) || pattern.test(e.reason)) return;
