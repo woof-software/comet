@@ -2,8 +2,8 @@ import { scenario } from "./context/CometContext";
 import { expect } from "chai";
 import { exp } from "../test/helpers";
 import { expectRevertCustom, perSecond } from "./utils";
-import { BigNumber, ethers } from "ethers";
-import { MockERC20 } from "../build/types";
+import { BigNumber, BigNumberish, ethers } from "ethers";
+import { FaucetToken } from "../build/types";
 import { getConfigForScenario } from "./utils/scenarioHelper";
 
 const MIN_OFFSET_FOR_RESERVED = 16; // _reserved covers offsets 16–23
@@ -107,10 +107,9 @@ scenario(
   "Comet#getAssetInfoByAddress > reverts if asset does not exist",
   {},
   async ({ comet }) => {
-    await expectRevertCustom(
+    await expect(
       comet.getAssetInfoByAddress(ethers.Wallet.createRandom().address),
-      "BadAsset()",
-    );
+    ).to.be.revertedWithCustomError(comet, "BadAsset");
   },
 );
 
@@ -151,13 +150,17 @@ scenario(
         }
       }
 
-      // Unique mock at index 16 so getAssetInfoByAddress / supply use offset >= 16.
-      const mockToken = (await dm.deploy(
-        "mockERC20:extendedAssetTarget",
-        "capo/contracts/test/MockERC20.sol",
-        ["Mock Extended Token", "MEXT", 18],
+      // Unique token at index 16 so getAssetInfoByAddress / supply use offset >= 16.
+      // Use FaucetToken (always compiled) — MockERC20 lives in the capo submodule.
+      const mockToken = await dm.deploy<
+        FaucetToken,
+        [string, string, BigNumberish, string]
+      >(
+        "faucetToken:extendedAssetTarget",
+        "test/FaucetToken.sol",
+        [exp(1_000_000, 18).toString(), "Mock Extended Token", 18, "MEXT"],
         true,
-      )) as MockERC20;
+      );
       const mockPriceFeed = await dm.deploy(
         "test:extendedAssetTargetPriceFeed",
         "test/SimplePriceFeed.sol",
@@ -183,7 +186,7 @@ scenario(
       targetAssetAddress = mockToken.address;
       supplyAmount =
         BigInt(getConfigForScenario(context).supplyCollateral) * 10n ** 18n;
-      await mockToken.mint(albert.address, supplyAmount);
+      await mockToken.allocateTo(albert.address, supplyAmount);
 
       await context.setNextBaseFeeToZero();
       await admin.deployAndUpgradeTo(configurator.address, comet.address, {
