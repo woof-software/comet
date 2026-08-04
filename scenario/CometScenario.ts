@@ -2,12 +2,16 @@ import { CometContext, scenario } from "./context/CometContext";
 import { expect } from "chai";
 import { exp } from "../test/helpers";
 import { expectRevertCustom } from "./utils";
+import { SECONDS_PER_YEAR } from "./utils/constants";
 import { BigNumber, ethers } from "ethers";
 import { MockERC20 } from "../build/types";
 import { getConfigForScenario } from "./utils/scenarioHelper";
 
-const SECONDS_PER_YEAR = 31_536_000n;
 const REQUIRED_NUM_ASSETS = 17; // need at least 17 assets so index 16 has offset=16
+
+function perSecond(perYear: BigNumber): BigNumber {
+  return perYear.div(SECONDS_PER_YEAR);
+}
 
 type ArrayMethods = keyof Omit<any[], number>;
 
@@ -55,37 +59,6 @@ function normalizeStructOutput<T>(value: T): NormalizedStruct<T> {
   return normalize(value) as NormalizedStruct<T>;
 }
 
-/// Utility for scenarios to check if there's at least one collateral asset non deactivated
-async function hasActiveAsset(ctx: CometContext): Promise<boolean> {
-  const configurator = await ctx.getConfigurator();
-  const cometAddress = (await ctx.getComet()).address;
-  const assetConfigs = normalizeStructOutput(
-    await configurator.getConfiguration(cometAddress),
-  ).assetConfigs;
-
-  return assetConfigs.some(
-    (asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n,
-  );
-}
-
-/// Finds the first asset with non-zero configuration values
-async function getActiveAsset(context: CometContext) {
-  const configurator = await context.getConfigurator();
-  const cometAddress = (await context.getComet()).address;
-  const assetConfigs = normalizeStructOutput(
-    await configurator.getConfiguration(cometAddress),
-  ).assetConfigs;
-
-  const assetIndex = assetConfigs.findIndex(
-    (asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n,
-  );
-
-  return {
-    assetIndex,
-    assetConfig: assetConfigs[assetIndex],
-  };
-}
-
 scenario(
   "Comet#numAssets > market has at least one collateral asset",
   {},
@@ -126,92 +99,57 @@ scenario(
   "Comet#configuration > matches configurator parameters",
   {},
   async ({ comet, configurator }) => {
-    const existingConfig = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address),
+    const cfg = await configurator.getConfiguration(comet.address);
+
+    expect(await comet.governor()).to.equal(cfg.governor);
+    expect(await comet.pauseGuardian()).to.equal(cfg.pauseGuardian);
+    expect(await comet.baseToken()).to.equal(cfg.baseToken);
+    expect(await comet.baseTokenPriceFeed()).to.equal(cfg.baseTokenPriceFeed);
+    expect(await comet.extensionDelegate()).to.equal(cfg.extensionDelegate);
+
+    expect(await comet.supplyKink()).to.equal(cfg.supplyKink);
+    expect(await comet.supplyPerSecondInterestRateSlopeLow()).to.equal(
+      perSecond(cfg.supplyPerYearInterestRateSlopeLow),
+    );
+    expect(await comet.supplyPerSecondInterestRateSlopeHigh()).to.equal(
+      perSecond(cfg.supplyPerYearInterestRateSlopeHigh),
+    );
+    expect(await comet.supplyPerSecondInterestRateBase()).to.equal(
+      perSecond(cfg.supplyPerYearInterestRateBase),
+    );
+    expect(await comet.borrowKink()).to.equal(cfg.borrowKink);
+    expect(await comet.borrowPerSecondInterestRateSlopeLow()).to.equal(
+      perSecond(cfg.borrowPerYearInterestRateSlopeLow),
+    );
+    expect(await comet.borrowPerSecondInterestRateSlopeHigh()).to.equal(
+      perSecond(cfg.borrowPerYearInterestRateSlopeHigh),
+    );
+    expect(await comet.borrowPerSecondInterestRateBase()).to.equal(
+      perSecond(cfg.borrowPerYearInterestRateBase),
     );
 
-    const {
-      supplyPerYearInterestRateSlopeLow,
-      supplyPerYearInterestRateSlopeHigh,
-      supplyPerYearInterestRateBase,
-      borrowPerYearInterestRateSlopeLow,
-      borrowPerYearInterestRateSlopeHigh,
-      borrowPerYearInterestRateBase,
-      ...restExistingConfig
-    } = existingConfig;
+    expect(await comet.storeFrontPriceFactor()).to.equal(cfg.storeFrontPriceFactor);
+    expect(await comet.trackingIndexScale()).to.equal(cfg.trackingIndexScale);
+    expect(await comet.baseTrackingSupplySpeed()).to.equal(cfg.baseTrackingSupplySpeed);
+    expect(await comet.baseTrackingBorrowSpeed()).to.equal(cfg.baseTrackingBorrowSpeed);
+    expect(await comet.baseMinForRewards()).to.equal(cfg.baseMinForRewards);
+    expect(await comet.baseBorrowMin()).to.equal(cfg.baseBorrowMin);
+    expect(await comet.targetReserves()).to.equal(cfg.targetReserves);
 
-    const convertedExistingConfig = {
-      ...restExistingConfig,
-      supplyPerSecondInterestRateSlopeLow:
-        supplyPerYearInterestRateSlopeLow / SECONDS_PER_YEAR,
-      supplyPerSecondInterestRateSlopeHigh:
-        supplyPerYearInterestRateSlopeHigh / SECONDS_PER_YEAR,
-      supplyPerSecondInterestRateBase:
-        supplyPerYearInterestRateBase / SECONDS_PER_YEAR,
-      borrowPerSecondInterestRateSlopeLow:
-        borrowPerYearInterestRateSlopeLow / SECONDS_PER_YEAR,
-      borrowPerSecondInterestRateSlopeHigh:
-        borrowPerYearInterestRateSlopeHigh / SECONDS_PER_YEAR,
-      borrowPerSecondInterestRateBase:
-        borrowPerYearInterestRateBase / SECONDS_PER_YEAR,
-    };
+    const numAssets = await comet.numAssets();
+    expect(numAssets).to.equal(cfg.assetConfigs.length);
 
-    const cometConfig = {
-      governor: await comet.governor(),
-      pauseGuardian: await comet.pauseGuardian(),
-      baseToken: await comet.baseToken(),
-      baseTokenPriceFeed: await comet.baseTokenPriceFeed(),
-      extensionDelegate: await comet.extensionDelegate(),
-      supplyKink: (await comet.supplyKink()).toBigInt(),
-      supplyPerSecondInterestRateSlopeLow: (
-        await comet.supplyPerSecondInterestRateSlopeLow()
-      ).toBigInt(),
-      supplyPerSecondInterestRateSlopeHigh: (
-        await comet.supplyPerSecondInterestRateSlopeHigh()
-      ).toBigInt(),
-      supplyPerSecondInterestRateBase: (
-        await comet.supplyPerSecondInterestRateBase()
-      ).toBigInt(),
-      borrowKink: (await comet.borrowKink()).toBigInt(),
-      borrowPerSecondInterestRateSlopeLow: (
-        await comet.borrowPerSecondInterestRateSlopeLow()
-      ).toBigInt(),
-      borrowPerSecondInterestRateSlopeHigh: (
-        await comet.borrowPerSecondInterestRateSlopeHigh()
-      ).toBigInt(),
-      borrowPerSecondInterestRateBase: (
-        await comet.borrowPerSecondInterestRateBase()
-      ).toBigInt(),
-      storeFrontPriceFactor: (await comet.storeFrontPriceFactor()).toBigInt(),
-      trackingIndexScale: (await comet.trackingIndexScale()).toBigInt(),
-      baseTrackingSupplySpeed: (
-        await comet.baseTrackingSupplySpeed()
-      ).toBigInt(),
-      baseTrackingBorrowSpeed: (
-        await comet.baseTrackingBorrowSpeed()
-      ).toBigInt(),
-      baseMinForRewards: (await comet.baseMinForRewards()).toBigInt(),
-      baseBorrowMin: (await comet.baseBorrowMin()).toBigInt(),
-      targetReserves: (await comet.targetReserves()).toBigInt(),
-      assetConfigs: await Promise.all(
-        Array(await comet.numAssets())
-          .fill(0)
-          .map((_, i) =>
-            comet.getAssetInfo(i).then((info) => ({
-              asset: info.asset,
-              priceFeed: info.priceFeed,
-              decimals: Math.log10(Number(info.scale.toBigInt())),
-              borrowCollateralFactor: info.borrowCollateralFactor.toBigInt(),
-              liquidateCollateralFactor:
-                info.liquidateCollateralFactor.toBigInt(),
-              liquidationFactor: info.liquidationFactor.toBigInt(),
-              supplyCap: info.supplyCap.toBigInt(),
-            })),
-          ),
-      ),
-    };
-
-    expect(cometConfig).to.deep.equal(convertedExistingConfig);
+    for (let i = 0; i < numAssets; i++) {
+      const info = await comet.getAssetInfo(i);
+      const expected = cfg.assetConfigs[i];
+      expect(info.asset).to.equal(expected.asset);
+      expect(info.priceFeed).to.equal(expected.priceFeed);
+      expect(info.scale).to.equal(BigNumber.from(10).pow(expected.decimals));
+      expect(info.borrowCollateralFactor).to.equal(expected.borrowCollateralFactor);
+      expect(info.liquidateCollateralFactor).to.equal(expected.liquidateCollateralFactor);
+      expect(info.liquidationFactor).to.equal(expected.liquidationFactor);
+      expect(info.supplyCap).to.equal(expected.supplyCap);
+    }
   },
 );
 

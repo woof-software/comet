@@ -36,9 +36,8 @@ import axios from 'axios';
 export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
-
-export const MAX_ASSETS = 24;
-export const UINT256_MAX = 2n ** 256n - 1n;
+export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
+import { MAX_ASSETS } from './constants';
 
 export interface ComparativeAmount {
   val: number;
