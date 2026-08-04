@@ -21,7 +21,7 @@ describe('withdraw', function () {
   before(async function () {
     const protocol = await makeProtocol({ base: 'USDC' });
 
-    comet = protocol.comet;
+    comet = protocol.cometWithExtendedAssetList;
     baseToken = protocol.tokens[protocol.base] as FaucetToken;
     collaterals = Object.fromEntries(
       Object.entries(protocol.tokens).filter(([_symbol, token]) => token.address !== baseToken.address)
@@ -583,7 +583,7 @@ describe('withdraw', function () {
 
       it('gas used is within expected bounds', async () => {
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(85000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(87000);
       });
     });
 
@@ -904,7 +904,7 @@ describe('withdraw', function () {
     let reentrancySnapshot: SnapshotRestorer;
 
     before(async () => {
-      const { comet, tokens, users } = await makeProtocol({
+      const { cometWithExtendedAssetList: comet, tokens, users } = await makeProtocol({
         assets: {
           USDC: { decimals: 6 },
           EVIL: {
@@ -995,7 +995,7 @@ describe('withdraw', function () {
         };
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
-        nstComet = protocol.comet;
+        nstComet = protocol.cometWithExtendedAssetList;
         [alice, bob] = protocol.users;
 
         const tokens = protocol.tokens;
@@ -1056,7 +1056,7 @@ describe('withdraw', function () {
         };
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
-        feeComet = protocol.comet;
+        feeComet = protocol.cometWithExtendedAssetList;
         feeBaseToken = protocol.tokens['USDT'] as NonStandardFaucetFeeToken;
         feeCollateral = protocol.tokens['FeeCollateral'] as NonStandardFaucetFeeToken;
         [alice, bob] = protocol.users;
