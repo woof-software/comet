@@ -7,8 +7,14 @@
 
 ## Env variables
 
-The following env variables are used in the repo. One way to set up these env
-variables is to create a `.env` in the root directory of this repo.
+The following env variables are used in the repo. To set them up, copy
+[`.env.example`](.env.example) to a `.env` in the root directory of this repo and
+fill in the values you need — it is the complete, annotated reference and covers
+a few advanced variables not listed below.
+
+```
+cp .env.example .env
+```
 
 Required env variables:
 
