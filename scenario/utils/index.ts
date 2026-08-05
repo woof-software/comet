@@ -1652,6 +1652,7 @@ export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
     return false;
   }
 }
+
 export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
   try {
     const configurator = await ctx.getConfigurator();
