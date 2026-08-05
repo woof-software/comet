@@ -291,25 +291,25 @@ scenario(
   }
 );
 
-scenario('Comet#storage > lastAccrualTime does not lie in the future', {}, async ({ comet }, _context, world) => {
+scenario('Comet#interestRate > lastAccrualTime does not lie in the future', {}, async ({ comet }, _context, world) => {
   const { lastAccrualTime } = await comet.totalsBasic();
   const now = await world.timestamp();
   expect(lastAccrualTime).to.be.lte(now, `lastAccrualTime=${lastAccrualTime} > block.timestamp=${now}`);
 });
 
 scenario(
-  'Comet#storage > lastAccrualTime is initialized on a live market',
+  'Comet#interestRate > lastAccrualTime is initialized on a live market',
   {
     filter: async (ctx: CometContext) => !(await isFreshMarket(ctx))
   },
   async ({ comet }) => {
     const { lastAccrualTime } = await comet.totalsBasic();
-    expect(lastAccrualTime).to.be.gt(0, `lastAccrualTime is 0 on an active market — storage likely corrupted`);
+    expect(lastAccrualTime).to.be.gt(0, `lastAccrualTime is 0 on an active market — interestRate likely corrupted`);
   }
 );
 
 scenario(
-  'Comet#storage > baseSupplyIndex >= BASE_INDEX_SCALE on initialized market',
+  'Comet#interestRate > baseSupplyIndex >= BASE_INDEX_SCALE on initialized market',
   {
     filter: async (ctx: CometContext) => !(await isFreshMarket(ctx))
   },
@@ -324,7 +324,7 @@ scenario(
 );
 
 scenario(
-  'Comet#storage > baseBorrowIndex >= BASE_INDEX_SCALE on initialized market',
+  'Comet#interestRate > baseBorrowIndex >= BASE_INDEX_SCALE on initialized market',
   {
     filter: async (ctx: CometContext) => !(await isFreshMarket(ctx))
   },
@@ -339,7 +339,7 @@ scenario(
 );
 
 scenario(
-  'Comet#storage > baseBorrowIndex >= baseSupplyIndex',
+  'Comet#interestRate > baseBorrowIndex >= baseSupplyIndex',
   {
     filter: async (ctx: CometContext) => !(await isFreshMarket(ctx))
   },
@@ -353,7 +353,7 @@ scenario(
 );
 
 scenario(
-  'Comet#storage > trackingSupplyIndex > 0 on rewards-active market',
+  'Comet#interestRate > trackingSupplyIndex > 0 on rewards-active market',
   {
     filter: async (ctx: CometContext) => {
       if (await isFreshMarket(ctx)) return false;
@@ -372,7 +372,7 @@ scenario(
 );
 
 scenario(
-  'Comet#storage > trackingBorrowIndex > 0 on rewards-active market',
+  'Comet#interestRate > trackingBorrowIndex > 0 on rewards-active market',
   {
     filter: async (ctx: CometContext) => {
       if (await isFreshMarket(ctx)) return false;
