@@ -109,5 +109,5 @@ contract CometHarnessExtendedAssetList is CometWithExtendedAssetList {
         }
 
         return liquidity <= 0 ? int(0) : liquidity * int(baseScale) / 1e8;
-    } 
+    }
 }
