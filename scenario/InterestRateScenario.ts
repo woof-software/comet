@@ -390,7 +390,7 @@ scenario(
   }
 );
 
-scenario('Comet#interestRate > borrow curve lies strictly above supply curve', {}, async ({ comet }) => {
+scenario('Comet#interestRate > borrow curve lie strictly above supply curve', {}, async ({ comet }) => {
   const FACTOR_SCALE = BigNumber.from(exp(1, 18));
   const ZERO = BigNumber.from(0);
   const ONE = BigNumber.from(1);
@@ -446,7 +446,7 @@ scenario('Comet#interestRate > supply and borrow curves share the same kink posi
   expect(supplyKink).to.equal(borrowKink, `supplyKink=${supplyKink} does not equal borrowKink=${borrowKink}`);
 });
 
-scenario('Comet#interestRate > supply kink position lie within valid utilization range', {}, async ({ comet }) => {
+scenario('Comet#interestRate > supply kink position lies within valid utilization range', {}, async ({ comet }) => {
   const FACTOR_SCALE = BigNumber.from(exp(1, 18));
 
   const supplyKink = await comet.supplyKink();
@@ -455,7 +455,7 @@ scenario('Comet#interestRate > supply kink position lie within valid utilization
   expect(supplyKink).to.be.lte(FACTOR_SCALE, `supplyKink=${supplyKink} > FACTOR_SCALE=${FACTOR_SCALE}`);
 });
 
-scenario('Comet#interestRate > borrow kink position lie within valid utilization range', {}, async ({ comet }) => {
+scenario('Comet#interestRate > borrow kink position lies within valid utilization range', {}, async ({ comet }) => {
   const FACTOR_SCALE = BigNumber.from(exp(1, 18));
   const borrowKink = await comet.borrowKink();
 
