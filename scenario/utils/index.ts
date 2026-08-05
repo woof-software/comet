@@ -36,9 +36,13 @@ import axios from 'axios';
 export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
+export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
+import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
-export const MAX_ASSETS = 24;
-export const UINT256_MAX = 2n ** 256n - 1n;
+/** Convert a per-year interest factor to per-second (Comet constructor truncation). */
+export function perSecond(perYear: BigNumber): BigNumber {
+  return perYear.div(SECONDS_PER_YEAR);
+}
 
 export interface ComparativeAmount {
   val: number;
@@ -124,12 +128,27 @@ export function expectRevertCustom(
             .reduce((a, s) => a + s.charCodeAt(0).toString(16), '0x')
         )
         .slice(2, 2 + 8);
+      const errorName = custom.replace(/\(\)$/, '');
+      const escaped = custom.replace(/[()]/g, '\\$&');
+
+      // ethers sometimes decodes the error (CALL_EXCEPTION), sometimes only the selector
+      if (
+        e.errorName === errorName ||
+        e.errorSignature === custom ||
+        e.data === `0x${selector}`
+      ) {
+        return;
+      }
+
       const patterns = [
-        new RegExp(`custom error '${custom.replace(/[()]/g, '\\$&')}'`),
+        new RegExp(`custom error '${escaped}'`),
         new RegExp(`unrecognized custom error with selector ${selector}`),
         new RegExp(
           `unrecognized custom error \\(return data: 0x${selector}\\)`
         ),
+        new RegExp(`errorSignature="${escaped}"`),
+        new RegExp(`errorName="${errorName}"`),
+        new RegExp(`data="0x${selector}"`),
       ];
       for (const pattern of patterns)
         if (pattern.test(e.message) || pattern.test(e.reason)) return;
