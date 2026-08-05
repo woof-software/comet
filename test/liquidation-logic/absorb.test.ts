@@ -1,5 +1,5 @@
 import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, divPrice, presentValue, CollateralState, makeCollateralStates, seedMarketActivity, deployEmptyDexAdapter, deployDefaultLiquidationModuleWithComet, DeployLiquidationModuleOpts } from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, LiquidationModule, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, DexLiquidationModule, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -15,7 +15,7 @@ describe('absorb: general logic', function () {
   let cometProxyAdmin: CometProxyAdmin;
   let configuratorProxyAddress: string;
   let cometProxyAddress: string;
-  let liquidationModule: LiquidationModule;
+  let liquidationModule: DexLiquidationModule;
 
   const initialBaseFunding = exp(1, 8) * 10_000n;
   const baseBorrowMin = exp(10, 6);
@@ -1829,7 +1829,7 @@ describe('absorb: general logic', function () {
         context('BCF, LCF and LF > 0: reverting collateral price feed blocks absorb', function () {
           let wasLiquidatable: boolean;
           let liquidateTx: Promise<ContractTransaction>;
-          let updatedLiquidationModule: LiquidationModule;
+          let updatedLiquidationModule: DexLiquidationModule;
           const collateralKey = 'COMP';
 
           before(async function() {

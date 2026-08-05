@@ -1,4 +1,4 @@
-import { LiquidationModule, LiquidationModule__factory, LiquidationModuleForComet__factory } from 'build/types';
+import { DexLiquidationModule, DexLiquidationModule__factory, DexLiquidationModuleForComet, DexLiquidationModuleForComet__factory } from 'build/types';
 import { ethers } from 'hardhat';
 
 export type DeployLiquidationModuleOpts = {
@@ -12,7 +12,7 @@ export type DeployLiquidationModuleOpts = {
 const DEFAULT_INCENTIVE_BPS = BigInt(500);
 
 /**
- * Deploys a LiquidationModule. Pass the returned module's address as
+ * Deploys a DexLiquidationModule. Pass the returned module's address as
  * `config.liquidationModule` when deploying the Comet (see makeProtocol/makeConfigurator).
  *
  * The DAO is a constant. The Multisig, Executor and Pauser roles are required and must be supplied by the
@@ -20,8 +20,8 @@ const DEFAULT_INCENTIVE_BPS = BigInt(500);
  */
 export async function deployDefaultLiquidationModule(
   opts: DeployLiquidationModuleOpts
-): Promise<LiquidationModule> {
-  const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
+): Promise<DexLiquidationModule> {
+  const LiquidationModuleFactory = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
   const liquidationModule = await LiquidationModuleFactory.deploy(
     opts.dexAdapter,
     opts.multisig,
@@ -37,8 +37,8 @@ export async function deployDefaultLiquidationModule(
 export async function deployDefaultLiquidationModuleWithComet(
   opts: DeployLiquidationModuleOpts,
   comet: string
-): Promise<LiquidationModule> {
-  const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModuleForComet')) as LiquidationModuleForComet__factory;
+): Promise<DexLiquidationModuleForComet> {
+  const LiquidationModuleFactory = (await ethers.getContractFactory('DexLiquidationModuleForComet')) as DexLiquidationModuleForComet__factory;
   const liquidationModule = await LiquidationModuleFactory.deploy(
     opts.dexAdapter,
     opts.multisig,

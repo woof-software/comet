@@ -7,14 +7,14 @@ import {
   SimplePriceFeed__factory,
   FaucetToken__factory,
   OneInchV6Adapter__factory,
-  LiquidationModule,
-  LiquidationModule__factory,
+  DexLiquidationModule,
+  DexLiquidationModule__factory,
 } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
 describe('core liquidation module', function () {
   let comet: CometInterface;
-  let liquidationModule: LiquidationModule;
+  let liquidationModule: DexLiquidationModule;
 
   let governor: SignerWithAddress;
   let alice: SignerWithAddress;
@@ -74,8 +74,8 @@ describe('core liquidation module', function () {
     await adapter.deployed();
 
     // Liquidation module
-    const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
-    liquidationModule = await LiquidationModuleFactory.deploy(
+    const DexLiquidationModuleFactory = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
+    liquidationModule = await DexLiquidationModuleFactory.deploy(
       adapter.address,
       multisig.address,
       executors,

@@ -24,8 +24,8 @@ import {
   CometWithExtendedAssetList__factory,
   CometExtAssetList__factory,
   AssetListFactory__factory,
-  LiquidationModule,
-  LiquidationModule__factory,
+  DexLiquidationModule,
+  DexLiquidationModule__factory,
   OneInchV6Adapter,
   OneInchV6Adapter__factory,
   ERC20,
@@ -79,7 +79,7 @@ describe('liquidation module dex route', function () {
 
   let comet: CometInterface;
   let adapter: OneInchV6Adapter;
-  let liquidationModule: LiquidationModule;
+  let liquidationModule: DexLiquidationModule;
 
   let feeds: Map<string, SimplePriceFeed>;
   let tokens: Map<string, ERC20>;
@@ -117,7 +117,7 @@ describe('liquidation module dex route', function () {
   // The base debt cleared from the borrower, as reported by AbsorbDebt. When no swap failed this is the
   // base the module must hand back to Comet, i.e. the baseRequired the executor incentive is measured against.
   const absorbedDebt = async (
-    liquidateTx: Awaited<ReturnType<LiquidationModule['liquidate']>>
+    liquidateTx: Awaited<ReturnType<DexLiquidationModule['liquidate']>>
   ): Promise<bigint> => {
     const receipt = await liquidateTx.wait();
     // The transaction goes through the module, so ethers only names the module's own logs. Comet's logs come
@@ -202,8 +202,8 @@ describe('liquidation module dex route', function () {
     await extensionDelegate.deployed();
 
     // Keeper liquidation module, bound to the adapter deployed above.
-    const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
-    liquidationModule = await LiquidationModuleFactory.deploy(
+    const DexLiquidationModuleFactory = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
+    liquidationModule = await DexLiquidationModuleFactory.deploy(
       adapter.address,
       multisig.address,
       executors,
@@ -276,7 +276,7 @@ describe('liquidation module dex route', function () {
     const collateralBefore = new Map<string, bigint>();
     const cometBalanceBefore = new Map<string, bigint>();
 
-    let tx: Awaited<ReturnType<LiquidationModule['liquidate']>>;
+    let tx: Awaited<ReturnType<DexLiquidationModule['liquidate']>>;
 
     before(async () => {
       wbtc = tokens.get(TOKENS.WBTC.address)!;
@@ -394,7 +394,7 @@ describe('liquidation module dex route', function () {
     const collateralBefore = new Map<string, bigint>();
     const cometBalanceBefore = new Map<string, bigint>();
 
-    let tx: Awaited<ReturnType<LiquidationModule['liquidate']>>;
+    let tx: Awaited<ReturnType<DexLiquidationModule['liquidate']>>;
 
     before(async () => {
       wbtc = tokens.get(TOKENS.WBTC.address)!;
@@ -532,7 +532,7 @@ describe('liquidation module dex route', function () {
     const cometBalanceBefore = new Map<string, bigint>();
     const reservesBefore = new Map<string, bigint>();
 
-    let tx: Awaited<ReturnType<LiquidationModule['liquidate']>>;
+    let tx: Awaited<ReturnType<DexLiquidationModule['liquidate']>>;
 
     before(async () => {
       wbtc = tokens.get(TOKENS.WBTC.address)!;
@@ -670,7 +670,7 @@ describe('liquidation module dex route', function () {
     const cometBalanceBefore = new Map<string, bigint>();
     const reservesBefore = new Map<string, bigint>();
 
-    let tx: Awaited<ReturnType<LiquidationModule['liquidate']>>;
+    let tx: Awaited<ReturnType<DexLiquidationModule['liquidate']>>;
 
     before(async () => {
       snapshot = await takeSnapshot();

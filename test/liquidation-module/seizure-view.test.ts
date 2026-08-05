@@ -22,8 +22,8 @@ import {
   CometWithExtendedAssetList__factory,
   CometExtAssetList__factory,
   AssetListFactory__factory,
-  LiquidationModule,
-  LiquidationModule__factory,
+  DexLiquidationModule,
+  DexLiquidationModule__factory,
   OneInchV6Adapter,
   OneInchV6Adapter__factory,
   ERC20,
@@ -50,7 +50,7 @@ describe('LiquidationSeizureView', function () {
 
   let comet: CometInterface;
   let adapter: OneInchV6Adapter;
-  let liquidationModule: LiquidationModule;
+  let liquidationModule: DexLiquidationModule;
   let seizureView: LiquidationSeizureView;
 
   let usdc: ERC20;
@@ -63,9 +63,9 @@ describe('LiquidationSeizureView', function () {
   let absorber: SignerWithAddress;
 
   let execTimestamp: number;
-  let planNow: Awaited<ReturnType<LiquidationModule['seizurePlan']>>;
+  let planNow: Awaited<ReturnType<DexLiquidationModule['seizurePlan']>>;
   let viewPlan: Awaited<ReturnType<LiquidationSeizureView['seizurePlanAt']>>;
-  let groundTruthPlan: Awaited<ReturnType<LiquidationModule['seizurePlan']>>;
+  let groundTruthPlan: Awaited<ReturnType<DexLiquidationModule['seizurePlan']>>;
   let debtNow: bigint;
   let debtAtExec: bigint;
 
@@ -92,9 +92,9 @@ describe('LiquidationSeizureView', function () {
     adapter = await (await AdapterFactory.deploy(CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routes, [])).deployed();
 
     // Keeper liquidation module bound to the adapter.
-    const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
+    const DexLiquidationModuleFactory = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
     liquidationModule = await (
-      await LiquidationModuleFactory.deploy(adapter.address, multisig.address, [executor.address], [signers[5].address], INCENTIVE_BPS)
+      await DexLiquidationModuleFactory.deploy(adapter.address, multisig.address, [executor.address], [signers[5].address], INCENTIVE_BPS)
     ).deployed();
 
     // Price feeds + asset list infra.

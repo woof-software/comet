@@ -23,8 +23,8 @@ import {
   CometWithExtendedAssetList__factory,
   CometExtAssetList__factory,
   AssetListFactory__factory,
-  LiquidationModule,
-  LiquidationModule__factory,
+  DexLiquidationModule,
+  DexLiquidationModule__factory,
   OneInchV6Adapter,
   OneInchV6Adapter__factory,
   ERC20,
@@ -75,7 +75,7 @@ describe('liquidation module dex route min amounts', function () {
 
   let comet: CometInterface;
   let adapter: OneInchV6Adapter;
-  let liquidationModule: LiquidationModule;
+  let liquidationModule: DexLiquidationModule;
 
   let feeds: Map<string, SimplePriceFeed>;
   let tokens: Map<string, ERC20>;
@@ -165,8 +165,8 @@ describe('liquidation module dex route min amounts', function () {
     await extensionDelegate.deployed();
 
     // Keeper liquidation module, bound to the adapter deployed above.
-    const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
-    liquidationModule = await LiquidationModuleFactory.deploy(
+    const DexLiquidationModuleFactory = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
+    liquidationModule = await DexLiquidationModuleFactory.deploy(
       adapter.address,
       multisig.address,
       executors,
@@ -238,7 +238,7 @@ describe('liquidation module dex route min amounts', function () {
     const cometBalanceBefore = new Map<string, bigint>();
     const reservesBefore = new Map<string, bigint>();
 
-    let tx: Awaited<ReturnType<LiquidationModule['liquidate']>>;
+    let tx: Awaited<ReturnType<DexLiquidationModule['liquidate']>>;
 
     before(async () => {
       snapshot = await takeSnapshot();
