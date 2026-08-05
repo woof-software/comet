@@ -23,6 +23,8 @@ import { debug } from '../../plugins/deployment_manager/Utils';
 import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
 import {
+  advanceToTimestamp,
+  getLatestBlockTimestamp,
   mineBlocks,
   setEtherBalance,
   setNextBaseFeeToZero,
@@ -33,7 +35,7 @@ import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
-export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
+export { advanceToTimestamp, getLatestBlockTimestamp, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
 export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
@@ -1178,6 +1180,7 @@ export async function executeOpenProposal(
   }
 
   // Execute proposal (maybe, w/ gas limit so we see if exec reverts, not a gas estimation error)
+  let executeReceipt = null;
   if ((await governor.state(id)) == ProposalState.Queued) {
     const block = await dm.hre.ethers.provider.getBlock('latest');
     const eta = await (async () => {
@@ -1199,9 +1202,9 @@ export async function executeOpenProposal(
     await updateCCIPStats(dm);
 
     const tx = await governor.execute(id, { gasPrice: 0, gasLimit: 120000000 });
-    const receipt = await tx.wait();
+    executeReceipt = await tx.wait();
 
-    if (receipt.gasUsed.toNumber() >= 16_777_215) {
+    if (executeReceipt.gasUsed.toNumber() >= 16_777_215) {
       throw new Error('Execution may have failed due to hitting gas limit');
     }
   }
@@ -1210,6 +1213,7 @@ export async function executeOpenProposal(
 
   // mine a block
   await dm.hre.ethers.provider.send('evm_mine', []);
+  return executeReceipt;
 }
 
 async function testnetPropose(
@@ -1290,7 +1294,7 @@ export async function fastGovernanceExecute(
     startBlock,
     endBlock,
   });
-  await executeOpenProposal(dm, {
+  return executeOpenProposal(dm, {
     id,
     proposer: proposer.address,
     targets,

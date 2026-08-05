@@ -9,4 +9,10 @@ export interface Requirements {
     utilization?: number; // Utilization constraint
     prices?: object; // Price constraint
     reserves?: number | string; // Reserves constraint
+    proposal?: true | { // Governance proposal constraint
+        state?: 'pending' | 'active' | 'succeeded' | 'queued'; // default 'pending'
+        proposer?: number; // index into context.getProposer(), default 0
+        actions?: (context) => Promise<{ targets: string[], values: number[], calldatas: string[], description: string }>;
+    };
+    timelockPendingAdmin?: string; // Timelock pending admin constraint: actor name or literal address
 }

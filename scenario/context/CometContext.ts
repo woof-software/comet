@@ -12,6 +12,8 @@ import {
   MigrationConstraint,
   ProposalConstraint,
   FilterConstraint,
+  GovProposalConstraint,
+  TimelockPendingAdminConstraint,
   PriceConstraint,
   ReservesConstraint
 } from '../constraints';
@@ -37,6 +39,7 @@ import { AddressLike, getAddressFromNumber, resolveAddress } from './Address';
 import { fastGovernanceExecute, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
 import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
 import { Requirements } from '../constraints/Requirements';
+import type { CreatedProposal } from '../utils/governanceHelpers';
 
 export type ActorMap = { [name: string]: CometActor };
 export type AssetMap = { [name: string]: CometAsset };
@@ -66,6 +69,7 @@ export class CometContext {
   actors: ActorMap;
   assets: AssetMap;
   migrations?: MigrationData[];
+  proposal?: CreatedProposal; // handoff from GovProposalConstraint to the scenario body
 
   constructor(world: World) {
     this.world = world;
@@ -86,8 +90,8 @@ export class CometContext {
     return whales.concat(WHALES[this.world.base.network] || []);
   }
 
-  async getProposer(): Promise<SignerWithAddress> {
-    return this.world.impersonateAddress((await this.getCompWhales())[0], { value: 10n ** 18n, onGovNetwork: true });
+  async getProposer(index: number = 0): Promise<SignerWithAddress> {
+    return this.world.impersonateAddress((await this.getCompWhales())[index], { value: 10n ** 18n, onGovNetwork: true });
   }
 
   async getComp(): Promise<ERC20> {
@@ -314,7 +318,7 @@ export class CometContext {
   // Instantly executes some actions through the governance proposal process
   async fastGovernanceExecute(targets: string[], values: BigNumberish[], signatures: string[], calldatas: string[]) {
     const proposer = await this.getProposer();
-    await fastGovernanceExecute(
+    return fastGovernanceExecute(
       this.world.deploymentManager,
       proposer,
       targets,
@@ -424,7 +428,9 @@ export const dynamicConstraints: DynamicConstraint<CometContext, Requirements>[]
   new TokenBalanceConstraint(),
   new UtilizationConstraint(),
   new PriceConstraint(),
-  new ReservesConstraint()
+  new ReservesConstraint(),
+  new GovProposalConstraint(),
+  new TimelockPendingAdminConstraint()
 ];
 
 export const scenarioLoader = Loader.get<CometContext, CometProperties, Requirements>().configure(

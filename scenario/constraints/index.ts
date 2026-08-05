@@ -8,5 +8,7 @@ export { CometBalanceConstraint } from './CometBalanceConstraint';
 export { MigrationConstraint } from './MigrationConstraint';
 export { ProposalConstraint } from './ProposalConstraint';
 export { FilterConstraint } from './FilterConstraint';
+export { GovProposalConstraint } from './GovProposalConstraint';
+export { TimelockPendingAdminConstraint } from './TimelockPendingAdminConstraint';
 export { PriceConstraint } from './PriceConstraint';
 export { ReservesConstraint } from './ReservesConstraint';

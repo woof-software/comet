@@ -19,3 +19,13 @@ export async function mineBlocks(dm: DeploymentManager, blocks: number) {
 export async function setNextBlockTimestamp(dm: DeploymentManager, timestamp: number) {
   await dm.hre.ethers.provider.send('evm_setNextBlockTimestamp', [timestamp]);
 }
+
+export async function getLatestBlockTimestamp(dm: DeploymentManager): Promise<number> {
+  const block = await dm.hre.ethers.provider.getBlock('latest');
+  return block.timestamp;
+}
+
+export async function advanceToTimestamp(dm: DeploymentManager, timestamp: number) {
+  await setNextBlockTimestamp(dm, timestamp);
+  await mineBlocks(dm, 1);
+}

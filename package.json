@@ -27,7 +27,7 @@
     }
   },
   "scripts": {
-    "build": "hardhat compile",
+    "build": "hardhat compile && node scripts/build-compound-governance.js",
     "clean": "hardhat clean && rm -rf build/ cache/ coverage* dist/",
     "cover": "hardhat coverage && npx istanbul report --include coverage.json html lcov",
     "gas": "REPORT_GAS=true yarn test",
