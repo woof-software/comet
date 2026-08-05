@@ -41,7 +41,7 @@ describe('reserves', function () {
         }),
       }
     );
-    const cometProxyAddress = protocol.cometProxy.address;
+    const cometProxyAddress = protocol.cometProxyWithExtendedAssetList.address;
     comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
     const configuratorProxyAddress = protocol.configuratorProxy.address;
     proxyAdmin = protocol.proxyAdmin;
@@ -1406,7 +1406,7 @@ describe('reserves', function () {
   });
 
   describe('getCollateralReserves - all 24 collateral slots after one absorb', function () {
-    const numCollaterals = MAX_ASSETS - 1; // 23 collateral assets (1 slot = base)
+    const numCollaterals = MAX_ASSETS;
     const seedAmount = exp(500_000, baseTokenDecimals);
     const supplyAmount = exp(100_000, baseTokenDecimals);
 
@@ -1507,7 +1507,7 @@ describe('reserves', function () {
     });
 
     it('make position liquidatable and absorb all assets in one call', async function () {
-    // Drop all prices by 30%
+      // Drop all prices by 30%
       for (let i = 0; i < numCollaterals; i++) {
         const [, currentPrice] = await collateralFeeds[i].latestRoundData();
         await collateralFeeds[i].setPrice(currentPrice.mul(70).div(100));
@@ -1539,9 +1539,10 @@ describe('reserves', function () {
       }
     });
 
-    it('assetsIn bitmap should be cleared for absorbed user', async function () {
+    it('asset bitmaps should be cleared for absorbed user', async function () {
       const userBasic = await comet.userBasic(bob.address);
       expect(userBasic.assetsIn).to.equal(0);
+      expect(userBasic._reserved).to.equal(0);
     });
   });
 
