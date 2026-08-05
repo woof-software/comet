@@ -14,7 +14,28 @@ Required env variables:
 
 ```
 ETHERSCAN_KEY=<key>
-INFURA_KEY=<key>
+MAINNET_QUICKNODE_LINK=<rpc-url>
+UNICHAIN_QUICKNODE_LINK=<rpc-url>
+LINEA_QUICKNODE_LINK=<rpc-url>
+```
+
+Per-chain env variables (required only when working with a specific chain):
+
+```
+# RPC endpoints
+POLYGON_QUICKNODE_LINK=<rpc-url>
+OPTIMISM_QUICKNODE_LINK=<rpc-url>
+MANTLE_QUICKNODE_LINK=<rpc-url>
+BASE_QUICKNODE_LINK=<rpc-url>
+ARBITRUM_QUICKNODE_LINK=<rpc-url>
+RONIN_QUICKNODE_LINK=<rpc-url>
+
+# Block explorer API keys (for contract verification)
+ETHERSCAN_KEY_FOR_OPTIMISM=<key>
+ETHERSCAN_KEY_FOR_BASE=<key>
+ETHERSCAN_KEY_FOR_ARBITRUM=<key>
+ETHERSCAN_KEY_FOR_POLYGON=<key>
+ETHERSCAN_KEY_FOR_LINEA=<key>
 ```
 
 Optional env variables:
@@ -45,13 +66,13 @@ git commit -n -m "commit without running pre-commit hook"
 
 ## Multi-chain support
 
-Currently, Avalanche mainnet and testnet (fuji) are supported. This means that deployment scripts, scenarios, and spider all work for Avalanche.
+The following chains are currently supported: `mainnet`, `ronin`, `polygon`, `optimism`, `mantle`, `unichain`, `linea`, `base`, `arbitrum`, and `scroll`. This means that deployment scripts, scenarios, and spider all work for these chains.
 
-To use this project with other chains, the block explorer API key for your target chain must be set in .env (e.g. `SNOWTRACE_KEY` for Avalanche).
+To work with a given chain, set its RPC endpoint (e.g. `BASE_QUICKNODE_LINK` for Base) and, for contract verification, its block explorer API key (`ETHERSCAN_KEY` or the chain-specific `ETHERSCAN_KEY_FOR_*` variant, e.g. `ETHERSCAN_KEY_FOR_BASE`) in `.env`.
 
 An example deployment command looks like:
 
-`yarn hardhat deploy --network fuji --deployment usdc`
+`yarn hardhat deploy --network base --deployment usdc`
 
 ## Comet protocol contracts
 
@@ -73,7 +94,9 @@ An example deployment command looks like:
 
 **[CometMath.sol](https://github.com/compound-finance/comet/blob/main/contracts/CometMath.sol)** - Contract that defines math functions that are used throughout the Comet codebase.
 
-**[CometFactory.sol](https://github.com/compound-finance/comet/blob/main/contracts/CometFactory.sol)** - Contract that inherits `CometConfiguration.sol` and is used to deploy new versions of `CometWithExtendedAssetList.sol`. This contract will mainly be called by the Configurator during the governance upgrade process.
+**[CometFactoryWithExtendedAssetList.sol](https://github.com/compound-finance/comet/blob/main/contracts/CometFactoryWithExtendedAssetList.sol)** - Contract that inherits `CometConfiguration.sol` and is used to deploy new versions of `CometWithExtendedAssetList.sol`. This contract will mainly be called by the Configurator during the governance upgrade process.
+
+**[AssetListFactory.sol](https://github.com/compound-finance/comet/blob/main/contracts/AssetListFactory.sol)** - Contract that deploys `AssetList` instances, which back the extended asset list used by `CometWithExtendedAssetList.sol`. See [IAssetListFactory.sol](https://github.com/compound-finance/comet/blob/main/contracts/interfaces/IAssetListFactory.sol) and [IAssetListFactoryHolder.sol](https://github.com/compound-finance/comet/blob/main/contracts/interfaces/IAssetListFactoryHolder.sol) for the related interfaces.
 
 ## Configurator contracts
 
@@ -83,7 +106,7 @@ An example deployment command looks like:
 
 ## Supplementary contracts
 
-**[Bulker.sol](https://github.com/compound-finance/comet/blob/main/contracts/Bulker.sol)** - Contract that allows multiple Comet functions to be called in a single transaction.
+**[BaseBulker.sol](https://github.com/compound-finance/comet/blob/main/contracts/bulkers/BaseBulker.sol)** - Contract that allows multiple Comet functions to be called in a single transaction. Chain-specific variants extend it, e.g. [MainnetBulker.sol](https://github.com/compound-finance/comet/blob/main/contracts/bulkers/MainnetBulker.sol) and [MainnetBulkerWithWstETHSupport.sol](https://github.com/compound-finance/comet/blob/main/contracts/bulkers/MainnetBulkerWithWstETHSupport.sol).
 
 **[CometRewards.sol](https://github.com/compound-finance/comet/blob/main/contracts/CometRewards.sol)** - Contract that allows Comet users to claim rewards based on their protocol participation.
 
@@ -257,7 +280,7 @@ This can also be used together with `--overwrite`, to produce the verification a
 #### Other considerations
 
 Make sure that the deploying address has a sufficient amount of the chain's
-native asset (i.e. 2 ETH for Sepolia, 2 AVAX for Fuji)
+native asset (e.g. ETH on Ethereum/L2s, POL on Polygon, MNT on Mantle)
 
 ### Clone Multisig
 
@@ -269,14 +292,14 @@ DST_NETWORK=optimism npx hardhat run scripts/clone-multisig.ts
 
 ### Liquidation Bot
 
-This repo includes a contract (Liquidator.sol) that will absorb an underwater
-position, purchase the absorbed collateral, and then attempt to sell it on
+This repo includes a contract (`contracts/liquidator/OnChainLiquidator.sol`) that will absorb an
+underwater position, purchase the absorbed collateral, and then attempt to sell it on
 Uniswap for a profit.
 
-To run the bot, you'll need the address of a deployed version of the Liquidator
+To run the bot, you'll need the address of a deployed version of the `OnChainLiquidator`
 contract (or you can deploy a new instance of it yourself):
 
-`LIQUIDATOR_ADDRESS="0xABC..." DEPLOYMENT="usdc" yarn liquidation-bot --network sepolia`
+`LIQUIDATOR_ADDRESS="0xABC..." DEPLOYMENT="usdc" yarn liquidation-bot --network mainnet`
 
 Initiating transactions this way via the public mempool will
 [almost certainly get frontrun](https://youtu.be/UZ-NNd6yjFM), but you might be
