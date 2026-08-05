@@ -1,6 +1,6 @@
 import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, default24Assets,
   CollateralState, makeCollateralStates, seedMarketActivity } from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, FaucetToken, LiquidationModule, SimplePriceFeed } from 'build/types';
+import { CometHarnessInterfaceExtendedAssetList, FaucetToken, DexLiquidationModule, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -13,7 +13,7 @@ describe('partial liquidation: bad debt', function() {
 
   // Protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
-  let liquidationModule: LiquidationModule;
+  let liquidationModule: DexLiquidationModule;
 
   // Constants
   const baseTokenPrice = exp(1, 8);

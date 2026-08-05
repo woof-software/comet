@@ -37,8 +37,8 @@ import {
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
   MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
   CometHarnessInterfaceExtendedAssetList,
-  LiquidationModule,
-  LiquidationModule__factory,
+  DexLiquidationModule,
+  DexLiquidationModule__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
@@ -102,7 +102,7 @@ export type ProtocolOpts = {
   targetReserves?: Numeric;
   baseTokenBalance?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
-  liquidationModule?: LiquidationModule;
+  liquidationModule?: DexLiquidationModule;
   dexAdapter?: string;
   liquidationModuleOpts?: {
     executors?: string[];
@@ -132,7 +132,7 @@ export type Protocol = {
   priceFeeds: {
     [symbol: string]: SimplePriceFeed;
   };
-  defaultLiquidationModule: LiquidationModule;
+  defaultLiquidationModule: DexLiquidationModule;
 };
 
 export type ConfiguratorAndProtocol = {
@@ -500,7 +500,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
   );
 
   // Deploy LiquidationModule
-  const LiquidationModule = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
+  const LiquidationModule = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
   const liquidationModule = await LiquidationModule.deploy(
     opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address;}))).address,
     multisig.address,

@@ -1,5 +1,5 @@
 import { ethers, expect, exp, presentValue, mulPrice, mulFactor, divPrice, default24Assets, CollateralState, makeCollateralStates, makeConfigurator, principalValue, deployDefaultLiquidationModuleWithComet, seedMarketActivity, DeployLiquidationModuleOpts, deployEmptyDexAdapter} from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, LiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, DexLiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -20,7 +20,7 @@ describe('absorb logic with delisted collaterals', function() {
   let cometProxyAdmin: CometProxyAdmin;
   let configuratorProxyAddress: string;
   let cometProxyAddress: string;
-  let liquidationModule: LiquidationModule;
+  let liquidationModule: DexLiquidationModule;
   let liquidationModuleOpts: DeployLiquidationModuleOpts;
   let emptyDexAdapterAddress: string;
 
@@ -126,7 +126,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -319,7 +319,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -525,7 +525,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -768,7 +768,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -997,7 +997,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -1212,7 +1212,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -1427,7 +1427,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -1598,7 +1598,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -1804,7 +1804,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -1997,7 +1997,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -2188,7 +2188,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -2390,7 +2390,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -2581,7 +2581,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -2769,7 +2769,7 @@ describe('absorb logic with delisted collaterals', function() {
     let cometBaseTokenBalanceBefore: bigint;
     let assetsInBefore: number;
     let reservedBefore: number;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -2921,7 +2921,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -3139,7 +3139,7 @@ describe('absorb logic with delisted collaterals', function() {
     let assetsInBefore: number;
     let reservedBefore: number;
     let principalBefore: bigint;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -3342,7 +3342,7 @@ describe('absorb logic with delisted collaterals', function() {
     let assetsInBefore: number;
     let reservedBefore: number;
     let principalBefore: bigint;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -3531,7 +3531,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -3718,7 +3718,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -3969,7 +3969,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -4193,7 +4193,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -4405,7 +4405,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -4661,7 +4661,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -4886,7 +4886,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -5096,7 +5096,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -5290,7 +5290,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -5462,7 +5462,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -5639,7 +5639,7 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -5817,7 +5817,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
     let borrowCollateralizedBefore: boolean;
@@ -6008,7 +6008,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
     let borrowCollateralizedBefore: boolean;
@@ -6201,7 +6201,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
     let borrowCollateralizedBefore: boolean;
@@ -6386,7 +6386,7 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: LiquidationModule;
+    let newLiquidationModule: DexLiquidationModule;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
     let borrowCollateralizedBefore: boolean;

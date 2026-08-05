@@ -10,8 +10,8 @@ import {
   ConfiguratorProxy__factory,
   Configurator__factory,
   FaucetToken__factory,
-  LiquidationModule,
-  LiquidationModule__factory,
+  DexLiquidationModule,
+  DexLiquidationModule__factory,
   OneInchV6Adapter,
   SimplePriceFeed__factory,
   TransparentUpgradeableProxy,
@@ -25,7 +25,7 @@ import {
 } from '../../helpers';
 
 // Covers the deployment flow for a new Comet market that starts with the
-// default LiquidationModule. The module is deployed before the Comet exists,
+// default DexLiquidationModule. The module is deployed before the Comet exists,
 // then Comet deployment initializes its asset list and proxy storage binds it.
 describe('deploy liquidation module for new comet', function () {
   const INCENTIVE_BPS = BigInt(500);
@@ -34,7 +34,7 @@ describe('deploy liquidation module for new comet', function () {
   let cometAsProxy: CometWithExtendedAssetList;
   let cometProxy: TransparentUpgradeableProxy;
   let proxyAdmin: CometProxyAdmin;
-  let liquidationModule: LiquidationModule;
+  let liquidationModule: DexLiquidationModule;
   let dexAdapter: OneInchV6Adapter;
 
   let predictedCometProxyAddress: string;
@@ -86,8 +86,8 @@ describe('deploy liquidation module for new comet', function () {
 
     dexAdapter = await deployEmptyDexAdapter([comp.address, weth.address]);
 
-    const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
-    liquidationModule = await LiquidationModuleFactory.deploy(
+    const DexLiquidationModuleFactory = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
+    liquidationModule = await DexLiquidationModuleFactory.deploy(
       dexAdapter.address,
       multisig,
       [executor],
