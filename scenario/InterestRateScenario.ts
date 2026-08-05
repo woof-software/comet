@@ -191,9 +191,7 @@ scenario(
 
 scenario(
   'Comet#interestRate > rate curve matches formula across utilization points',
-  {
-    filter: async (ctx: CometContext) => !(await isFreshMarket(ctx))
-  },
+  {},
   async ({ comet }) => {
     const supplyKink = await comet.supplyKink();
     const supplyBase = await comet.supplyPerSecondInterestRateBase();
@@ -205,82 +203,27 @@ scenario(
     const borrowSlopeLow = await comet.borrowPerSecondInterestRateSlopeLow();
     const borrowSlopeHigh = await comet.borrowPerSecondInterestRateSlopeHigh();
 
-    const currentUtilization = await comet.getUtilization();
+    // Sweep 0% -> 200% utilization in 10% steps. Both curves are piecewise linear with a
+    // single breakpoint at the kink, so an even sweep lands on both sides of it wherever
+    // the kink sits, and every step exercises a different truncation of
+    // `slope * utilization / FACTOR_SCALE`. Utilization can exceed 100% in Comet, where
+    // borrows are backed by collateral rather than by the base supply.
+    const STEPS = 20;
+    const step = FACTOR_SCALE.mul(2).div(STEPS);
+    const utilizations = [
+      ...Array.from({ length: STEPS + 1 }, (_, i) => step.mul(i)),
+      await comet.getUtilization() // the real-world point, which the sweep is unlikely to land on
+    ];
 
-    const rateAt = (
-      utilization: BigNumber,
-      kink: BigNumber,
-      base: BigNumber,
-      slopeLow: BigNumber,
-      slopeHigh: BigNumber
-    ): BigNumber => {
-      if (utilization.lte(kink)) {
-        return base.add(slopeLow.mul(utilization).div(FACTOR_SCALE));
-      } else {
-        return base
-          .add(slopeLow.mul(kink).div(FACTOR_SCALE))
-          .add(slopeHigh.mul(utilization.sub(kink)).div(FACTOR_SCALE));
-      }
-    };
-
-    const probePoints = (kink: BigNumber, otherKink: BigNumber): BigNumber[] => {
-      const halfScale = FACTOR_SCALE.div(2);
-      const aboveKink = kink.lt(halfScale) ? kink.add(halfScale.sub(kink).div(2)) : kink; // skip if kink is already at/past 50% (degenerate case)
-
-      const points = [
-        ZERO,
-        kink.gt(ZERO) ? kink.sub(ONE) : ZERO, // below kink, low-slope region
-        kink, // boundary, `<=` branch
-        aboveKink, // above kink, `>` branch
-        otherKink, // cross-check across curves
-        currentUtilization // the real-world point
-      ];
-
-      const seen = new Set<string>();
-      return points.filter((p) => {
-        const k = p.toString();
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
-    };
-
-    for (const u of probePoints(supplyKink, borrowKink)) {
-      const actual = await comet.getSupplyRate(u);
-      const expected = rateAt(u, supplyKink, supplyBase, supplySlopeLow, supplySlopeHigh);
-      expect(actual).to.equal(
-        expected,
+    for (const u of utilizations) {
+      expect(await comet.getSupplyRate(u)).to.equal(
+        calculateInterestRate(u, supplyKink, supplyBase, supplySlopeLow, supplySlopeHigh),
         `supply rate mismatch at u=${u.toString()} (supplyKink=${supplyKink.toString()})`
       );
-    }
-
-    for (const u of probePoints(borrowKink, supplyKink)) {
-      const actual = await comet.getBorrowRate(u);
-      const expected = rateAt(u, borrowKink, borrowBase, borrowSlopeLow, borrowSlopeHigh);
-      expect(actual).to.equal(
-        expected,
+      expect(await comet.getBorrowRate(u)).to.equal(
+        calculateInterestRate(u, borrowKink, borrowBase, borrowSlopeLow, borrowSlopeHigh),
         `borrow rate mismatch at u=${u.toString()} (borrowKink=${borrowKink.toString()})`
       );
-    }
-
-    const halfScale = FACTOR_SCALE.div(2);
-
-    if (supplyKink.lt(halfScale)) {
-      const u = supplyKink.add(halfScale.sub(supplyKink).div(2));
-      const rateAtKink = await comet.getSupplyRate(supplyKink);
-      const rateAbove = await comet.getSupplyRate(u);
-      const observedStep = rateAbove.sub(rateAtKink);
-      const expectedStep = supplySlopeHigh.mul(u.sub(supplyKink)).div(FACTOR_SCALE);
-      expect(observedStep).to.equal(expectedStep, `supply rate slope above kink mismatch at u=${u.toString()}`);
-    }
-
-    if (borrowKink.lt(halfScale)) {
-      const u = borrowKink.add(halfScale.sub(borrowKink).div(2));
-      const rateAtKink = await comet.getBorrowRate(borrowKink);
-      const rateAbove = await comet.getBorrowRate(u);
-      const observedStep = rateAbove.sub(rateAtKink);
-      const expectedStep = borrowSlopeHigh.mul(u.sub(borrowKink)).div(FACTOR_SCALE);
-      expect(observedStep).to.equal(expectedStep, `borrow rate slope above kink mismatch at u=${u.toString()}`);
     }
   }
 );
