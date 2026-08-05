@@ -53,7 +53,7 @@ scenario('Comet#interestRate > rates using on-chain configuration constants', {}
   const actualUtilization = await comet.getUtilization();
   const expectedUtilization = calculateUtilization(totalSupplyBase, totalBorrowBase, baseSupplyIndex, baseBorrowIndex);
 
-  expect(defactor(actualUtilization)).to.be.approximately(defactor(expectedUtilization), 0.00001);
+  expect(actualUtilization).to.equal(expectedUtilization);
   expect(await comet.getSupplyRate(actualUtilization)).to.equal(
     calculateInterestRate(
       actualUtilization,
@@ -148,7 +148,7 @@ scenario(
       baseBorrowIndex
     );
 
-    expect(defactor(actualUtilization)).to.be.approximately(defactor(expectedUtilization), 0.00001);
+    expect(actualUtilization).to.equal(expectedUtilization);
     expect(await comet.getSupplyRate(actualUtilization)).to.equal(
       calculateInterestRate(
         actualUtilization,
