@@ -36,7 +36,7 @@ import axios from 'axios';
 export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
-export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
+export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR, FACTOR_SCALE } from './constants';
 import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
 /** Convert a per-year interest factor to per-second (Comet constructor truncation). */

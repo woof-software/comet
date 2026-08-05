@@ -3,11 +3,14 @@ import { expect } from 'chai';
 import { annualize, defactor, exp } from '../test/helpers';
 import { BigNumber, constants } from 'ethers';
 import { CometInterface } from '../build/types';
-import { isFreshMarket, SECONDS_PER_YEAR } from './utils';
+import { FACTOR_SCALE, isFreshMarket, SECONDS_PER_YEAR } from './utils';
 
 // Bounds of the `uint64` type used for the interest rate base parameters.
 const UINT64_MIN = constants.Zero;
 const UINT64_MAX = constants.MaxUint256.mask(64);
+
+const ZERO = constants.Zero;
+const ONE = constants.One;
 
 function calculateInterestRate(
   utilization: BigNumber,
@@ -15,7 +18,7 @@ function calculateInterestRate(
   interestRateBase: BigNumber,
   interestRateSlopeLow: BigNumber,
   interestRateSlopeHigh: BigNumber,
-  factorScale = BigNumber.from(exp(1, 18))
+  factorScale = FACTOR_SCALE
 ): BigNumber {
   if (utilization.lte(kink)) {
     const interestRateWithoutBase = interestRateSlopeLow.mul(utilization).div(factorScale);
@@ -32,10 +35,10 @@ function calculateUtilization(
   totalBorrowBase: BigNumber,
   baseSupplyIndex: BigNumber,
   baseBorrowIndex: BigNumber,
-  factorScale = BigNumber.from(exp(1, 18))
+  factorScale = FACTOR_SCALE
 ): BigNumber {
   if (totalSupplyBase.isZero()) {
-    return BigNumber.from(0);
+    return ZERO;
   } else {
     const totalSupply = totalSupplyBase.mul(baseSupplyIndex).div(factorScale);
     const totalBorrow = totalBorrowBase.mul(baseBorrowIndex).div(factorScale);
@@ -201,10 +204,6 @@ scenario(
     const borrowBase = await comet.borrowPerSecondInterestRateBase();
     const borrowSlopeLow = await comet.borrowPerSecondInterestRateSlopeLow();
     const borrowSlopeHigh = await comet.borrowPerSecondInterestRateSlopeHigh();
-
-    const FACTOR_SCALE = BigNumber.from(exp(1, 18));
-    const ZERO = BigNumber.from(0);
-    const ONE = BigNumber.from(1);
 
     const currentUtilization = await comet.getUtilization();
 
@@ -386,10 +385,6 @@ scenario(
 );
 
 scenario('Comet#interestRate > borrow curve lie strictly above supply curve', {}, async ({ comet }) => {
-  const FACTOR_SCALE = BigNumber.from(exp(1, 18));
-  const ZERO = BigNumber.from(0);
-  const ONE = BigNumber.from(1);
-
   const supplyKink = await comet.supplyKink();
   const borrowKink = await comet.borrowKink();
   const currentUtilization = await comet.getUtilization();
@@ -397,7 +392,15 @@ scenario('Comet#interestRate > borrow curve lie strictly above supply curve', {}
   const minKink = supplyKink.lte(borrowKink) ? supplyKink : borrowKink;
   const maxKink = supplyKink.lte(borrowKink) ? borrowKink : supplyKink;
 
-  const points = [ZERO, minKink.gt(ZERO) ? minKink.sub(ONE) : ZERO, minKink, maxKink, currentUtilization, FACTOR_SCALE];
+  const points = [
+    ZERO,
+    minKink.gt(ZERO) ? minKink.sub(ONE) : ZERO,
+    minKink,
+    maxKink,
+    currentUtilization,
+    FACTOR_SCALE, // 100% utilization
+    FACTOR_SCALE.mul(2) // 200% utilization — reachable in Comet, where borrows are backed by collateral rather than by the base supply
+  ];
 
   const seen = new Set<string>();
   const uniquePoints = points.filter((p) => {
@@ -442,8 +445,6 @@ scenario('Comet#interestRate > supply and borrow curves share the same kink posi
 });
 
 scenario('Comet#interestRate > supply kink position lies within valid utilization range', {}, async ({ comet }) => {
-  const FACTOR_SCALE = BigNumber.from(exp(1, 18));
-
   const supplyKink = await comet.supplyKink();
 
   expect(supplyKink).to.be.gt(0, `supplyKink=0`);
@@ -451,7 +452,6 @@ scenario('Comet#interestRate > supply kink position lies within valid utilizatio
 });
 
 scenario('Comet#interestRate > borrow kink position lies within valid utilization range', {}, async ({ comet }) => {
-  const FACTOR_SCALE = BigNumber.from(exp(1, 18));
   const borrowKink = await comet.borrowKink();
 
   expect(borrowKink).to.be.gt(0, `borrowKink=0`);
