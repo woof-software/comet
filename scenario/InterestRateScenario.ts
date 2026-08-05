@@ -1,9 +1,13 @@
 import { scenario, CometContext } from './context/CometContext';
 import { expect } from 'chai';
 import { annualize, defactor, exp } from '../test/helpers';
-import { BigNumber } from 'ethers';
-import { FuzzType } from './constraints/Fuzzing';
-import { isFreshMarket } from './utils';
+import { BigNumber, constants } from 'ethers';
+import { CometInterface } from '../build/types';
+import { isFreshMarket, SECONDS_PER_YEAR } from './utils';
+
+// Bounds of the `uint64` type used for the interest rate base parameters.
+const UINT64_MIN = constants.Zero;
+const UINT64_MAX = constants.MaxUint256.mask(64);
 
 function calculateInterestRate(
   utilization: BigNumber,
@@ -39,8 +43,10 @@ function calculateUtilization(
   }
 }
 
-scenario('Comet#interestRate > rates using on-chain configuration constants', {}, async ({ comet }) => {
-  let { totalSupplyBase, totalBorrowBase, baseSupplyIndex, baseBorrowIndex } = await comet.totalsBasic();
+// Asserts that the utilization and both rate curves reported by `comet` match the
+// values recomputed off-chain from the parameters the market is currently deployed with.
+async function expectRatesToMatchDeployedCurve(comet: CometInterface) {
+  const { totalSupplyBase, totalBorrowBase, baseSupplyIndex, baseBorrowIndex } = await comet.totalsBasic();
   const supplyKink = await comet.supplyKink();
   const supplyPerSecondInterestRateBase = await comet.supplyPerSecondInterestRateBase();
   const supplyPerSecondInterestRateSlopeLow = await comet.supplyPerSecondInterestRateSlopeLow();
@@ -72,6 +78,10 @@ scenario('Comet#interestRate > rates using on-chain configuration constants', {}
       borrowPerSecondInterestRateSlopeHigh
     )
   );
+}
+
+scenario('Comet#interestRate > rates using on-chain configuration constants', {}, async ({ comet }) => {
+  await expectRatesToMatchDeployedCurve(comet);
 });
 
 scenario(
@@ -121,52 +131,37 @@ scenario(
 );
 
 scenario(
-  'Comet#interestRate > rates using fuzzed configuration constants',
+  'Comet#interestRate > rates using minimum uint64 interest rate bases',
   {
     upgrade: {
-      // TODO: Read types directly from Solidity?
-      supplyPerYearInterestRateBase: { type: FuzzType.UINT64 },
-      borrowPerYearInterestRateBase: { type: FuzzType.UINT64, max: (1e18).toString() /* 100% */ }
+      supplyPerYearInterestRateBase: UINT64_MIN,
+      borrowPerYearInterestRateBase: UINT64_MIN
     }
   },
   async ({ comet }) => {
-    let { totalSupplyBase, totalBorrowBase, baseSupplyIndex, baseBorrowIndex } = await comet.totalsBasic();
-    const supplyKink = await comet.supplyKink();
-    const supplyPerSecondInterestRateBase = await comet.supplyPerSecondInterestRateBase();
-    const supplyPerSecondInterestRateSlopeLow = await comet.supplyPerSecondInterestRateSlopeLow();
-    const supplyPerSecondInterestRateSlopeHigh = await comet.supplyPerSecondInterestRateSlopeHigh();
-    const borrowKink = await comet.borrowKink();
-    const borrowPerSecondInterestRateBase = await comet.borrowPerSecondInterestRateBase();
-    const borrowPerSecondInterestRateSlopeLow = await comet.borrowPerSecondInterestRateSlopeLow();
-    const borrowPerSecondInterestRateSlopeHigh = await comet.borrowPerSecondInterestRateSlopeHigh();
+    // At the lower bound the bases contribute nothing, so each curve is purely its slope term.
+    expect(await comet.supplyPerSecondInterestRateBase()).to.equal(0);
+    expect(await comet.borrowPerSecondInterestRateBase()).to.equal(0);
 
-    const actualUtilization = await comet.getUtilization();
-    const expectedUtilization = calculateUtilization(
-      totalSupplyBase,
-      totalBorrowBase,
-      baseSupplyIndex,
-      baseBorrowIndex
-    );
+    await expectRatesToMatchDeployedCurve(comet);
+  }
+);
 
-    expect(actualUtilization).to.equal(expectedUtilization);
-    expect(await comet.getSupplyRate(actualUtilization)).to.equal(
-      calculateInterestRate(
-        actualUtilization,
-        supplyKink,
-        supplyPerSecondInterestRateBase,
-        supplyPerSecondInterestRateSlopeLow,
-        supplyPerSecondInterestRateSlopeHigh
-      )
-    );
-    expect(await comet.getBorrowRate(actualUtilization)).to.equal(
-      calculateInterestRate(
-        actualUtilization,
-        borrowKink,
-        borrowPerSecondInterestRateBase,
-        borrowPerSecondInterestRateSlopeLow,
-        borrowPerSecondInterestRateSlopeHigh
-      )
-    );
+scenario(
+  'Comet#interestRate > rates using maximum uint64 interest rate bases',
+  {
+    upgrade: {
+      supplyPerYearInterestRateBase: UINT64_MAX,
+      borrowPerYearInterestRateBase: UINT64_MAX
+    }
+  },
+  async ({ comet }) => {
+    // The per-second bases are the per-year bases truncated by `SECONDS_PER_YEAR` in the constructor.
+    expect(await comet.supplyPerSecondInterestRateBase()).to.equal(UINT64_MAX.div(SECONDS_PER_YEAR));
+    expect(await comet.borrowPerSecondInterestRateBase()).to.equal(UINT64_MAX.div(SECONDS_PER_YEAR));
+
+    // `getSupplyRate`/`getBorrowRate` must still return without tripping `safe64` at the upper bound.
+    await expectRatesToMatchDeployedCurve(comet);
   }
 );
 
