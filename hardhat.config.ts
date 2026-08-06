@@ -70,6 +70,7 @@ const {
   ARBITRUM_QUICKNODE_LINK,
   UNICHAIN_QUICKNODE_LINK = '',
   LINEA_QUICKNODE_LINK = '',
+  SCROLL_QUICKNODE_LINK,
   MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
@@ -181,7 +182,7 @@ export const networkConfigs: NetworkConfig[] = [
   {
     network: 'scroll',
     chainId: 534352,
-    url: 'https://scroll-mainnet.gateway.tenderly.co',
+    url: `${SCROLL_QUICKNODE_LINK}`,
   },
 ];
 
