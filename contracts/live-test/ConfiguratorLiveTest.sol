@@ -18,7 +18,6 @@ interface ICometFactoryV2LiveTest {
  *         that is forwarded to the live-test factory's `clone(Configuration,bytes32)` when deploying a
  *         {CometLiveTest}. Real funds must never be deposited into markets deployed through this
  *         Configurator (see the banner in {CometLiveTest}).
- * @dev The base {Configurator.deploy} is left untouched; live-test deploys go through {deployLiveTest}.
  */
 contract ConfiguratorLiveTest is Configurator {
     /// @notice Emitted when the testing purpose for a Comet proxy is updated.
@@ -41,12 +40,12 @@ contract ConfiguratorLiveTest is Configurator {
     /**
      * @notice Deploy a new CometLiveTest implementation using the live-test factory, Configuration and
      *         testing purpose for that Comet proxy.
-     * @dev Callable by anyone. Routes through {ICometFactoryV2LiveTest} so the Configuration is encoded
-     *      against this branch's own struct definition.
+     * @dev Overrides {Configurator.deploy}. Callable by anyone. Routes through {ICometFactoryV2LiveTest}
+     *      so the Configuration is encoded against this branch's own struct definition.
      * @param cometProxy The Comet proxy whose configuration and testing purpose are used.
      * @return newComet The address of the newly deployed CometLiveTest implementation.
      */
-    function deployLiveTest(address cometProxy) external returns (address newComet) {
+    function deploy(address cometProxy) external override returns (address newComet) {
         newComet = ICometFactoryV2LiveTest(factory[cometProxy]).clone(
             configuratorParams[cometProxy],
             testingPurposePerComet[cometProxy]
