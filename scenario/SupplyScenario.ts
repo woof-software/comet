@@ -217,7 +217,6 @@ scenario(
 
     // XXX all these timings are crazy
     expectApproximately(await albert.getCometBaseBalance(), 0n, getInterest(BigInt(getConfigForScenario(context).liquidationBase) * scale, borrowRate, 4n) + 2n);
-
     return txn; // return txn to measure gas
   }
 );

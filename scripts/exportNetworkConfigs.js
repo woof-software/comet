@@ -17,7 +17,7 @@ if (!match) {
 
 let configs;
 try {
-  // Replace any variable references (e.g., ANKR_KEY) with their values from process.env
+  // Replace any variable references with their values from process.env
   const replaced = match[1].replace(/\b([A-Z0-9_]+)\b/g, (m) => {
     if (process.env[m] !== undefined) return JSON.stringify(process.env[m]);
     return m;

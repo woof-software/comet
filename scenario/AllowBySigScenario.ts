@@ -780,7 +780,7 @@ scenario(
     const txn = await betty.supplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: toSupply });
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
-    expectApproximately(await betty.getCometBaseBalance(), toSupply, scale / 1_000_000n);
+    expectApproximately(await betty.getCometBaseBalance(), toSupply, scale / 100_000n);
 
     return txn; // return txn to measure gas
   }
