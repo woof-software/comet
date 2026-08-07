@@ -155,6 +155,23 @@ async function getSourcifyApiData(network: string, address: string): Promise<Eth
   };
 }
 
+async function pullContractCreationBytecodeFromSourcify(network: string, address: string) {
+  const chainId = sourcifyChainIds[network];
+  if (!chainId) {
+    throw new Error(`No Sourcify chain configured for network ${network}`);
+  }
+
+  const result = await get(`https://sourcify.dev/server/v2/contract/${chainId}/${address}`, {
+    fields: 'creationBytecode',
+  });
+
+  const contractCreationCode = result?.creationBytecode?.recompiledBytecode;
+  if (!contractCreationCode) {
+    throw new Error(`Unable to find Contract Creation bytecode on Sourcify for chain ${chainId}@${address}`);
+  }
+  return contractCreationCode.slice(2);
+}
+
 async function getBlockscoutApiData(
   network: string,
   address: string,
@@ -220,12 +237,20 @@ async function fetchDeployedRuntimeCode(network: string, address: string) {
   return code.slice(2);
 }
 
+function synthesizeCreationCode(runtimeCode: string): string {
+  const preambleBytes = 13;
+  const len = (runtimeCode.length / 2).toString(16).padStart(4, '0');
+  const offset = preambleBytes.toString(16).padStart(4, '0');
+  return `61${len}8061${offset}6000396000f3${runtimeCode}`;
+}
+
 async function getContractCreationCodeFromBlockscout(network: string, address: string) {
   const runtimeCode = await fetchDeployedRuntimeCode(network, address).catch(() => undefined);
 
   const strategies = [
     pullContractCreationBytecodeFromBlockscout,
     pullFirstTransactionForContractFromBlockscout,
+    pullContractCreationBytecodeFromSourcify,
   ];
   let errors = [];
   for (const strategy of strategies) {
@@ -239,6 +264,12 @@ async function getContractCreationCodeFromBlockscout(network: string, address: s
       errors.push(error);
     }
   }
+
+  if (runtimeCode) {
+    debug(`No creation bytecode strategy worked for ${network}@${address}; synthesizing a wrapper around its runtime bytecode instead (${errors.join('; ')})`);
+    return synthesizeCreationCode(runtimeCode);
+  }
+
   throw new Error(errors.join('; '));
 }
 
