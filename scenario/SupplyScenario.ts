@@ -216,9 +216,7 @@ scenario(
     const txn = await albert.supplyAsset({ asset: baseAsset.address, amount: BigInt(getConfigForScenario(context).liquidationBase) * scale });
 
     // XXX all these timings are crazy
-    expect(await albert.getCometBaseBalance()).to.be.greaterThanOrEqual(0n);
-    expect(await albert.getCometBaseBalance()).to.be.lessThan(scale / 10_000n);
-
+    expectApproximately(await albert.getCometBaseBalance(), 0n, getInterest(BigInt(getConfigForScenario(context).liquidationBase) * scale, borrowRate, 4n) + 2n);
     return txn; // return txn to measure gas
   }
 );
