@@ -1,7 +1,8 @@
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
-import { BigNumber, Contract, Event, EventFilter } from 'ethers';
+import { BigNumber, Contract, Event, EventFilter, constants, utils } from 'ethers';
 import { erc20 } from './ERC20';
 import { DeploymentManager } from '../../deployment_manager/DeploymentManager';
+import { debug } from '../../deployment_manager/Utils';
 
 const getMaxEntry = (args: [string, BigNumber][]) =>
   args.reduce(([a1, m], [a2, e]) => (m.gte(e) == true ? [a1, m] : [a2, e]));
@@ -63,8 +64,114 @@ export async function sourceTokens({
     return;
   } else if (amount.isNegative()) {
     await removeTokens(dm, amount.abs(), asset, address);
-  } else {
+    return;
+  }
+
+  // A bridged token nobody has bridged in size can't be sourced from a holder: when the
+  // whole supply is short of what we need, searching for one is provably futile, so mint
+  // straight away rather than paying for a full log scan first.
+  const totalSupply = await new Contract(asset, erc20, dm.hre.ethers.provider).totalSupply();
+  if (totalSupply.lt(amount)) {
+    const authority = await findMintAuthority(dm, asset);
+    if (authority) {
+      await mintTokens(dm, authority, asset, address, amount);
+      return;
+    }
+  }
+
+  try {
     await addTokens(dm, amount, asset, address, [address].concat(blacklist), blockNumber);
+  } catch (err) {
+    // `fetchQuery` throws an Error, `addTokens` throws a bare string; either way the
+    // holder search is exhausted, so fall back to minting where the token allows it.
+    const authority = await findMintAuthority(dm, asset);
+    if (!authority) throw err;
+    debug(`Source Tokens: holder search failed for ${asset}, minting instead`, err);
+    await mintTokens(dm, authority, asset, address, amount);
+  }
+}
+
+// Bridged L2 tokens gate `mint` on the bridge/gateway that owns them, and each stack names
+// that getter differently. They also all sit behind a proxy (clone, transparent, beacon),
+// so the selector-in-bytecode probe used elsewhere can't see the implementation — these
+// have to be probed by eth_call.
+const MINT_AUTHORITY_GETTERS = ['gateway()', 'bridge()', 'BRIDGE()', 'l2Bridge()'];
+
+// keyed by network + token; the minting authority is immutable for these tokens
+const mintAuthorityCache = new Map<string, string | null>();
+
+// The probe is a static call, so the credited account is irrelevant — but it must not be
+// the zero address, which ERC20._mint rejects before the access check is even reached.
+const MINT_PROBE_RECIPIENT = '0x000000000000000000000000000000000000dEaD';
+
+/// The address allowed to `mint(address,uint256)` on `asset`, or null if there is none
+export async function findMintAuthority(
+  dm: DeploymentManager,
+  asset: string
+): Promise<string | null> {
+  const key = `${dm.network}:${asset.toLowerCase()}`;
+  if (mintAuthorityCache.has(key)) return mintAuthorityCache.get(key);
+
+  const provider = dm.hre.ethers.provider;
+  const mintData = erc20.encodeFunctionData('mint', [MINT_PROBE_RECIPIENT, 1]);
+
+  let authority: string | null = null;
+  for (const signature of MINT_AUTHORITY_GETTERS) {
+    try {
+      const result = await provider.call({
+        to: asset,
+        data: utils.id(signature).slice(0, 10),
+      });
+      // a bare address, not a fallback returning something else shaped like one
+      if (result.length !== 66) continue;
+      if (result.slice(2, 26) !== '0'.repeat(24)) continue;
+
+      const candidate = utils.getAddress('0x' + result.slice(26));
+      if (candidate === constants.AddressZero) continue;
+
+      // `from` passes the onlyGateway/onlyBridge check, so this also rejects tokens whose
+      // mint entrypoint is named differently (e.g. Arbitrum's `bridgeMint`)
+      await provider.call({ from: candidate, to: asset, data: mintData });
+      authority = candidate;
+      break;
+    } catch (e) {
+      continue;
+    }
+  }
+
+  mintAuthorityCache.set(key, authority);
+  return authority;
+}
+
+async function mintTokens(
+  dm: DeploymentManager,
+  authority: string,
+  asset: string,
+  recipient: string,
+  amount: BigNumber
+) {
+  debug(`Source Tokens: minting ${amount} of ${asset} via ${authority}`);
+  const tokenContract = new Contract(asset, erc20, dm.hre.ethers.provider);
+  const balanceBefore = await tokenContract.balanceOf(recipient);
+
+  await dm.hre.network.provider.request({
+    method: 'hardhat_impersonateAccount',
+    params: [authority],
+  });
+  // zero gas price keeps this working without topping up the real gateway's ETH balance
+  await dm.hre.network.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x0']);
+  const signer = await dm.getSigner(authority);
+  await tokenContract.connect(signer).mint(recipient, amount, { gasPrice: 0 });
+  await dm.hre.network.provider.request({
+    method: 'hardhat_stopImpersonatingAccount',
+    params: [authority],
+  });
+
+  const balanceAfter = await tokenContract.balanceOf(recipient);
+  if (!balanceAfter.sub(balanceBefore).eq(amount)) {
+    throw new Error(
+      `Error: minting ${asset} via ${authority} credited ${balanceAfter.sub(balanceBefore)}, expected ${amount}`
+    );
   }
 }
 
@@ -91,15 +198,6 @@ async function removeTokens(
   });
 }
 
-const mintableByBridgeConfig = {
-  unichain: [
-    '0x927b51f251480a681271180da4de28d44ec4afb8',
-    '0x8f187aa05619a017077f5308904739877ce9ea21',
-    '0x949d3A70722731d3bA8E0ca4061E12387c659E75',
-    '0xdf78e4F0A8279942ca68046476919A90f2288656'
-  ],
-};
-
 async function addTokens(
   dm: DeploymentManager,
   amount: BigNumber,
@@ -123,18 +221,6 @@ async function addTokens(
   block = block ?? (await ethers.provider.getBlockNumber());
   let tokenContract = new ethers.Contract(asset, erc20, ethers.provider);
   let filter = tokenContract.filters.Transfer();
-  if (mintableByBridgeConfig[dm.network] && mintableByBridgeConfig[dm.network].map((addr: string) => addr.toLowerCase()).includes(asset.toLowerCase())) {
-    await dm.hre.network.provider.request({
-      method: 'hardhat_impersonateAccount',
-      params: ['0x4200000000000000000000000000000000000010'],
-    });
-    await dm.hre.network.provider.send('hardhat_setBalance',
-      ['0x4200000000000000000000000000000000000010', '0x1000000000000000']);
-    
-    const signer = await dm.getSigner('0x4200000000000000000000000000000000000010');
-    await tokenContract.connect(signer).mint(address, amount);
-    return;
-  }
   let { recentLogs, blocksDelta } = await fetchQuery(
     tokenContract,
     filter,
