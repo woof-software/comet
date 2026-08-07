@@ -23,7 +23,7 @@ const relationConfigMap: RelationConfigMap = {
       'assetListFactory': {
         field: async (cometExt) => {
           try {
-            return await cometExt.assetListFactory();
+            return cometExt.assetListFactory();
           }
           catch (e) {
             return '0x0000000000000000000000000000000000000000';
