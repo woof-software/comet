@@ -82,8 +82,8 @@ export function mockImportSuccess(address: string) {
   const contractCreationCode =
     fiatTokenBuildFile.contracts['contracts/FiatTokenProxy.sol:FiatTokenProxy'].bin;
 
-  // The RPC strategy (scrapeContractCreationCodeFromBlockscoutRPC) is expected to fail
-  // in tests (no mocked RPC host), falling back to this txlist-based strategy.
+  // The RPC-based ground-truth lookup (fetchDeployedRuntimeCode) is expected to fail in tests
+  // (no mocked RPC host), so the creation code from this txlist strategy is used unverified.
   nock('https://eth.blockscout.com')
     .get('/api')
     .query((query) => {

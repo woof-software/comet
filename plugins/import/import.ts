@@ -191,8 +191,10 @@ async function getBlockscoutApiData(
   };
 }
 
-async function scrapeContractCreationCodeFromBlockscoutRPC(network: string, address: string) {
-  // get code from JSON rpc
+// Fetches the address's already-deployed runtime bytecode via `eth_getCode`. This can never be
+// creation bytecode (there's no RPC method that returns that; it only ever exists in the original
+// deployment transaction's `input`) — used below purely as a ground-truth check.
+async function fetchDeployedRuntimeCode(network: string, address: string) {
   const rpcUrl = await getBlockscoutRPCUrl(network);
   const provider = new providers.JsonRpcProvider(rpcUrl);
   const code = await provider.send('eth_getCode', [address, 'latest']);
@@ -200,14 +202,24 @@ async function scrapeContractCreationCodeFromBlockscoutRPC(network: string, addr
 }
 
 async function getContractCreationCodeFromBlockscout(network: string, address: string) {
+  // Standard Solidity creation bytecode always embeds the contract's runtime bytecode as a
+  // trailing substring, after its constructor logic and CODECOPY/RETURN preamble. Use that to
+  // catch a strategy that "succeeds" (throws nothing) while still handing back the wrong bytes,
+  // so it falls through to the next strategy instead of silently poisoning the result. If the RPC
+  // lookup itself is unavailable, skip verification rather than blocking every strategy on it.
+  const runtimeCode = await fetchDeployedRuntimeCode(network, address).catch(() => undefined);
+
   const strategies = [
-    scrapeContractCreationCodeFromBlockscoutRPC,
     pullFirstTransactionForContractFromBlockscout,
   ];
   let errors = [];
   for (const strategy of strategies) {
     try {
-      return await strategy(network, address);
+      const code = await strategy(network, address);
+      if (runtimeCode && !(code.length > runtimeCode.length && code.includes(runtimeCode))) {
+        throw new Error(`${strategy.name} returned code that doesn't embed the deployed runtime bytecode for ${network}@${address}`);
+      }
+      return code;
     } catch (error) {
       errors.push(error);
     }
