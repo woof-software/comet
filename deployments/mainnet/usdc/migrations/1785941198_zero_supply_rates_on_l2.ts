@@ -346,7 +346,7 @@ export default migration('1785941198_zero_supply_rates_on_l2', {
 
 Woof proposes to zero out supply rates on deprecated Comets: cUSDCv3 and cWETHv3 on Linea, cUSDev3 on Mantle, cWETHv3 and cWRONv3 on Ronin, and cUSDCv3 on Scroll. This proposal takes the governance steps recommended and necessary to update Compound III markets on each network. Simulations have confirmed the market’s readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario). The new parameters are based on the [recommendations from Gauntlet](https://www.comp.xyz/t/accelerating-deprecation-zeroing-supply-rates-on-deprecated-comets/7997/1).
 
-Further detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/<>) and [forum discussion](https://www.comp.xyz/t/accelerating-deprecation-zeroing-supply-rates-on-deprecated-comets/7997).
+Further detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/12) and [forum discussion](https://www.comp.xyz/t/accelerating-deprecation-zeroing-supply-rates-on-deprecated-comets/7997).
 
 ## Specification
 
