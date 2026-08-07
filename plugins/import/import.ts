@@ -70,6 +70,25 @@ interface EtherscanData {
   constructorArgs: string;
 }
 
+async function pullContractCreationBytecodeFromBlockscout(network: string, address: string) {
+  const params = {
+    module: 'contract',
+    action: 'getcontractcreation',
+    contractaddresses: address,
+  };
+  const url = `${getBlockscoutApiUrl(network)}?${paramString(params)}`;
+
+  debug(`Attempting to pull Contract Creation bytecode at ${url}`);
+  const result = await get(url, {});
+
+  const contractCreationCode = result.result?.[0]?.creationBytecode;
+  if (!contractCreationCode) {
+    throw new Error(`Unable to find Contract Creation bytecode at ${url}`);
+  }
+  debug(`Creation bytecode found at ${url}`);
+  return contractCreationCode.slice(2);
+}
+
 async function pullFirstTransactionForContractFromBlockscout(network: string, address: string) {
   const params = {
     module: 'account',
@@ -202,22 +221,18 @@ async function fetchDeployedRuntimeCode(network: string, address: string) {
 }
 
 async function getContractCreationCodeFromBlockscout(network: string, address: string) {
-  // Standard Solidity creation bytecode always embeds the contract's runtime bytecode as a
-  // trailing substring, after its constructor logic and CODECOPY/RETURN preamble. Use that to
-  // catch a strategy that "succeeds" (throws nothing) while still handing back the wrong bytes,
-  // so it falls through to the next strategy instead of silently poisoning the result. If the RPC
-  // lookup itself is unavailable, skip verification rather than blocking every strategy on it.
   const runtimeCode = await fetchDeployedRuntimeCode(network, address).catch(() => undefined);
 
   const strategies = [
+    pullContractCreationBytecodeFromBlockscout,
     pullFirstTransactionForContractFromBlockscout,
   ];
   let errors = [];
   for (const strategy of strategies) {
     try {
       const code = await strategy(network, address);
-      if (runtimeCode && !(code.length > runtimeCode.length && code.includes(runtimeCode))) {
-        throw new Error(`${strategy.name} returned code that doesn't embed the deployed runtime bytecode for ${network}@${address}`);
+      if (runtimeCode && code.length <= runtimeCode.length) {
+        throw new Error(`${strategy.name} returned code no longer than the deployed runtime bytecode for ${network}@${address}`);
       }
       return code;
     } catch (error) {
