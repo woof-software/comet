@@ -105,5 +105,8 @@
     "@tenderly/hardhat-tenderly/ethers": "^6.7.0",
     "@tenderly/hardhat-tenderly/@nomicfoundation/hardhat-ethers": "3.0.9"
   },
-  "packageManager": "yarn@1.22.22"
+  "packageManager": "yarn@1.22.22",
+  "engines": {
+    "node": ">=22.13.0 <23"
+  }
 }
