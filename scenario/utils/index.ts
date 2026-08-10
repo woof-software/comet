@@ -1236,39 +1236,49 @@ export async function tenderlyVnetExecute(
     console.log(`Dashboard:  ${governanceVnet.dashboardUrl}`);
   }
 
+  // Collect every L2 this proposal touches: marketDm plus whatever the migration registered via
+  // addBridgedDeploymentManager() (multichain proposals)
   const governanceChainId = governanceDm.hre.ethers.provider.network.chainId;
-  const marketChainId = marketDm.hre.ethers.provider.network.chainId;
-
-  if (governanceChainId !== marketChainId) {
-    // Only needed for the relay below (e.g. resolving the L1 messenger contract aliases);
-    // skipped entirely for single-chain deployments to save RPC calls against the vnet.
-    await governanceVnetDm.spider();
-
-    const l2Vnet = await getOrCreateVirtualTestnet(marketDm);
-    console.log(`\nVirtual TestNet ready for ${marketDm.network}`);
-    console.log(`  Public RPC: ${l2Vnet.publicRpcUrl}`);
-    if (l2Vnet.dashboardUrl) {
-      console.log(`  Dashboard:  ${l2Vnet.dashboardUrl}`);
+  const candidateL2Dms = [marketDm, ...governanceDm.bridgedDeploymentManagers.values()];
+  const uniqueL2DmsByChainId = new Map<number, DeploymentManager>();
+  for (const dm of candidateL2Dms) {
+    const chainId = dm.hre.ethers.provider.network.chainId;
+    if (chainId !== governanceChainId && !uniqueL2DmsByChainId.has(chainId)) {
+      uniqueL2DmsByChainId.set(chainId, dm);
     }
+  }
+  const l2Dms = [...uniqueL2DmsByChainId.values()];
 
-    const l2VnetEnv = await vnetHreForBase(marketDm.network, l2Vnet.adminRpcUrl);
-    const l2VnetDm = new DeploymentManager(marketDm.network, marketDm.deployment, l2VnetEnv, {
-      writeCacheToDisk: false,
-      verificationStrategy: 'lazy',
-    });
-    await l2VnetDm.spider();
+  if (l2Dms.length > 0) {
+    await governanceVnetDm.spider();
+  }
 
-    // Seed l2VnetDm's default signer, so permissionless calls inside the per-chain relay
-    // implementations (e.g. bridgeReceiver.executeProposal()) have a usable signer even though
-    // the vnet network is configured with accounts: 'remote'.
-    await l2VnetDm.getSigner(proposerAddress);
+  for (const l2Dm of l2Dms) {
+    try {
+      const l2Vnet = await getOrCreateVirtualTestnet(l2Dm);
+      console.log(`\nVirtual TestNet ready for ${l2Dm.network}`);
+      console.log(`  Public RPC: ${l2Vnet.publicRpcUrl}`);
+      if (l2Vnet.dashboardUrl) {
+        console.log(`  Dashboard:  ${l2Vnet.dashboardUrl}`);
+      }
 
-    await relayMessage(governanceVnetDm, l2VnetDm, startingBlockNumber);
+      const l2VnetEnv = await vnetHreForBase(l2Dm.network, l2Vnet.adminRpcUrl);
+      const l2VnetDm = new DeploymentManager(l2Dm.network, l2Dm.deployment, l2VnetEnv, {
+        writeCacheToDisk: false,
+        verificationStrategy: 'lazy',
+      });
+      await l2VnetDm.spider();
+      await l2VnetDm.getSigner(proposerAddress);
 
-    console.log(`\n >>> PROPOSAL RELAYED to ${marketDm.network} \n`);
-    console.log(`Public RPC: ${l2Vnet.publicRpcUrl}`);
-    if (l2Vnet.dashboardUrl) {
-      console.log(`Dashboard:  ${l2Vnet.dashboardUrl}`);
+      await relayMessage(governanceVnetDm, l2VnetDm, startingBlockNumber);
+
+      console.log(`\n >>> PROPOSAL RELAYED to ${l2Dm.network} \n`);
+      console.log(`Public RPC: ${l2Vnet.publicRpcUrl}`);
+      if (l2Vnet.dashboardUrl) {
+        console.log(`Dashboard:  ${l2Vnet.dashboardUrl}`);
+      }
+    } catch (e) {
+      console.log(`\n >>> FAILED to relay to ${l2Dm.network}: ${e.message} \n`);
     }
   }
 
