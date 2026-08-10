@@ -155,7 +155,7 @@ async function deployMockERC20(context: CometContext, alias: string, force?: boo
 
 async function deployCometExt(context: CometContext, force?: boolean): Promise<string> {
   const dm = context.world.deploymentManager;
-  const assetListFactory = await dm.deploy('test:assetListFactory', 'AssetListFactory.sol', []);
+  const assetListFactory = await dm.deploy('test:assetListFactory', 'assetlist/AssetListFactory.sol', []);
 
   const extConfiguration = {
     name32: ethers.utils.formatBytes32String('MOCK'),

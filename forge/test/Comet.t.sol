@@ -5,7 +5,7 @@ import "forge-std/Test.sol";
 import "../../contracts/CometWithExtendedAssetList.sol";
 import "../../contracts/CometConfiguration.sol";
 import { CometExtAssetList } from "../../contracts/CometExtAssetList.sol";
-import { AssetListFactory } from "../../contracts/AssetListFactory.sol";
+import { AssetListFactory } from "../../contracts/assetlist/AssetListFactory.sol";
 
 
 contract CometTest is Test {

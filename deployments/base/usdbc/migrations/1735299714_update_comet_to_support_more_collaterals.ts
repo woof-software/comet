@@ -12,7 +12,7 @@ export default migration('1735299714_update_comet_to_support_more_collaterals', 
   async prepare(deploymentManager: DeploymentManager) {
     const _assetListFactory = await deploymentManager.deploy(
       'assetListFactory',
-      'AssetListFactory.sol',
+      'assetlist/AssetListFactory.sol',
       []
     );
 

@@ -37,7 +37,7 @@ import {
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
   MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
 } from '../build/types';
-import { BigNumber } from 'ethers';
+import { BigNumber, utils } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarnessExtendedAssetList';
 
@@ -725,4 +725,20 @@ function convertToBigInt(arr) {
 
 export function getGasUsed(tx: TransactionResponseExt): bigint {
   return tx.receipt.gasUsed.mul(tx.receipt.effectiveGasPrice).toBigInt();
+}
+
+/**
+ * Decode only the receipt logs that `iface` describes, in receipt order.
+ *
+ * A receipt legitimately carries logs from contracts a given test does not care about —
+ * `deployAndUpgradeTo`, for instance, also emits `AssetListCreated` from the
+ * AssetListFactory. Selecting by topic keeps those out instead of letting `parseLog`
+ * throw on them, so a log that *should* have decoded still surfaces as a failure.
+ */
+export function parseKnownEvents(
+  iface: utils.Interface,
+  logs: { topics: string[], data: string }[]
+): utils.LogDescription[] {
+  const knownTopics = new Set(Object.keys(iface.events).map(sig => iface.getEventTopic(sig)));
+  return logs.filter(log => knownTopics.has(log.topics[0])).map(log => iface.parseLog(log));
 }

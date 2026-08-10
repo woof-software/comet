@@ -1,5 +1,5 @@
 import {ethers} from 'hardhat';
-import {event, expect, makeConfigurator, wait} from './../helpers';
+import {event, expect, makeConfigurator, parseKnownEvents, wait} from './../helpers';
 import {makeMarketAdmin} from './market-updates-helper';
 
 describe('CometProxyAdmin', function() {
@@ -91,16 +91,7 @@ describe('CometProxyAdmin', function() {
         .deployAndUpgradeTo(configuratorProxy.address, cometProxy.address)
     )) as any;
 
-    const eventsForGovernorTimelock = [];
-
-    txnForGovernorTimelock.receipt.events.forEach((event) => {
-      try {
-        const decodedEvent = iface.parseLog(event);
-        eventsForGovernorTimelock.push(decodedEvent);
-      } catch (error) {
-        console.log('Failed to decode event:', error);
-      }
-    });
+    const eventsForGovernorTimelock = parseKnownEvents(iface, txnForGovernorTimelock.receipt.events);
 
     // verify the event names
     expect(eventsForGovernorTimelock[0].name).to.be.equal('CometDeployed');
@@ -116,16 +107,7 @@ describe('CometProxyAdmin', function() {
         .deployAndUpgradeTo(configuratorProxy.address, cometProxy.address)
     )) as any;
 
-    const eventsForMarketAdmin = [];
-
-    txnForMarketAdmin.receipt.events.forEach((event) => {
-      try {
-        const decodedEvent = iface.parseLog(event);
-        eventsForMarketAdmin.push(decodedEvent);
-      } catch (error) {
-        console.log('Failed to decode event:', error);
-      }
-    });
+    const eventsForMarketAdmin = parseKnownEvents(iface, txnForMarketAdmin.receipt.events);
 
     // verify the event names
     expect(eventsForMarketAdmin[0].name).to.be.equal('CometDeployed');
@@ -169,16 +151,7 @@ describe('CometProxyAdmin', function() {
         )
     )) as any;
 
-    const eventsForGovernorTimelock = [];
-
-    txnForGovernorTimelock.receipt.events.forEach((event) => {
-      try {
-        const decodedEvent = iface.parseLog(event);
-        eventsForGovernorTimelock.push(decodedEvent);
-      } catch (error) {
-        console.log('Failed to decode event:', error);
-      }
-    });
+    const eventsForGovernorTimelock = parseKnownEvents(iface, txnForGovernorTimelock.receipt.events);
 
     // verify the event names
     expect(eventsForGovernorTimelock[0].name).to.be.equal('CometDeployed');
@@ -198,16 +171,7 @@ describe('CometProxyAdmin', function() {
         )
     )) as any;
 
-    const eventsForMarketAdmin = [];
-
-    txnForMarketAdmin.receipt.events.forEach((event) => {
-      try {
-        const decodedEvent = iface.parseLog(event);
-        eventsForMarketAdmin.push(decodedEvent);
-      } catch (error) {
-        console.log('Failed to decode event:', error);
-      }
-    });
+    const eventsForMarketAdmin = parseKnownEvents(iface, txnForMarketAdmin.receipt.events);
 
     // verify the event names
     expect(eventsForMarketAdmin[0].name).to.be.equal('CometDeployed');

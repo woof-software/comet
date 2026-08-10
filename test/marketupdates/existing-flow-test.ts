@@ -5,7 +5,7 @@ import {
   SimpleTimelock__factory,
   TransparentUpgradeableProxy__factory
 } from '../../build/types';
-import { ethers, event, expect, makeConfigurator, wait } from './../helpers';
+import { ethers, event, expect, makeConfigurator, parseKnownEvents, wait } from './../helpers';
 
 describe('configurator', function() {
   it("Ensure - timelock's admin is set as Governor - Add two(access and not access) test for it.", async () => {
@@ -138,16 +138,7 @@ describe('configurator', function() {
 
     // Initialize the contract interface
     const iface = new ethers.utils.Interface(abi);
-    const events = [];
-
-    txn.receipt.events.forEach(event => {
-      try {
-        const decodedEvent = iface.parseLog(event);
-        events.push(decodedEvent);
-      } catch (error) {
-        console.log('Failed to decode event:', error);
-      }
-    });
+    const events = parseKnownEvents(iface, txn.receipt.events);
 
     // verify the event names
     expect(events[0].name).to.be.equal('CometDeployed');

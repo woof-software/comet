@@ -356,8 +356,12 @@ export async function isValidAssetIndex(
   // Sanity checks
   if (assetNum < 0) return false;
   if (assetNum >= MAX_ASSETS) return false;
-  // Asset info checks. If any of these are false, the asset is invalid. This means that the asset is deprecated.
   const comet = await ctx.getComet();
+  // `getAssetInfo` reverts with `BadAsset()` for any index at or past the market's own
+  // asset count, so bound against that before asking for the info. MAX_ASSETS is only the
+  // protocol-wide ceiling; a given market almost always lists fewer.
+  if (assetNum >= (await comet.numAssets())) return false;
+  // Asset info checks. If any of these are false, the asset is invalid. This means that the asset is deprecated.
   const assetInfo = await comet.getAssetInfo(assetNum);
   if (assetInfo.borrowCollateralFactor.toBigInt() == 0n) return false;
   if (assetInfo.supplyCap.toBigInt() == 0n) return false;
