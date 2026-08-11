@@ -138,7 +138,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
                 absorber,
                 account,
                 plan[i].index,
-                uint128(plan[i].seizedAmount),
+                safe128(plan[i].seizedAmount),
                 plan[i].wantedCollateralValue
             );
         }
