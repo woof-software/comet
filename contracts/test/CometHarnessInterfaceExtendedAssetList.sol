@@ -13,7 +13,6 @@ abstract contract CometHarnessInterfaceExtendedAssetList is CometInterface {
     function setCollateralBalance(address account, address asset, uint128 balance) virtual external;
     function updateAssetsInExternal(address account, address asset, uint128 initialUserBalance, uint128 finalUserBalance) virtual external;
     function getAssetList(address account) virtual external view returns (address[] memory);
-    function assetList() virtual external view returns (address);
     function MIN_TARGET_HEALTH_FACTOR() virtual external view returns (uint64);
     function isLendersWithdrawPaused() virtual external view returns (bool);
     function isBorrowersWithdrawPaused() virtual external view returns (bool);
@@ -27,5 +26,5 @@ abstract contract CometHarnessInterfaceExtendedAssetList is CometInterface {
     function isCollateralTransferPaused() virtual external view returns (bool);
     function isCollateralWithdrawPaused() virtual external view returns (bool);
     function MAX_SUPPORTED_UTILIZATION() virtual external view returns (uint256);
-    function isCollateralDeactivated(uint24 assetIndex) virtual external view returns (bool);
+    function setLiquidationModule(address newLiquidationModule) virtual external;
 }

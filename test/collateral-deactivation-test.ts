@@ -118,7 +118,7 @@ describe('collateral deactivation functionality', function () {
     const protocol = await makeProtocol({
       assets: { USDC: {}, ...collaterals },
     });
-    comet = protocol.cometWithExtendedAssetList;
+    comet = protocol.comet;
     cometExt = comet.attach(comet.address) as CometExt;
     governor = protocol.governor;
     pauseGuardian = protocol.pauseGuardian;

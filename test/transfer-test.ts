@@ -46,7 +46,7 @@ describe('transfer', function () {
 
   before(async () => {
     const protocol = await makeProtocol({ base: 'USDC'});
-    comet = protocol.cometWithExtendedAssetList;
+    comet = protocol.comet;
     baseToken = protocol.tokens.USDC as FaucetToken;
     for (const asset in protocol.tokens) {
       if (asset === 'USDC') continue;
@@ -73,7 +73,7 @@ describe('transfer', function () {
     const protocolWith24Collaterals = await makeProtocol({
       assets: { USDC: {initialPrice: 1, decimals: 6 }, ...collaterals24Assets, },
     });
-    cometWith24Collaterals = protocolWith24Collaterals.cometWithExtendedAssetList;
+    cometWith24Collaterals = protocolWith24Collaterals.comet;
     for (const asset in protocolWith24Collaterals.tokens) {
       if (asset === 'USDC') continue;
       tokensWith24Collaterals[asset] = protocolWith24Collaterals.tokens[asset] as FaucetToken;
@@ -416,7 +416,7 @@ describe('transfer', function () {
 
         before(async () => {
           const protocol = await makeProtocol({ ...interestRateParams, base: 'USDC'});
-          testComet = protocol.cometWithExtendedAssetList;
+          testComet = protocol.comet;
           testBaseToken = protocol.tokens.USDC as FaucetToken;
 
           [alice, bob] = protocol.users;
@@ -1616,7 +1616,7 @@ describe('transfer', function () {
         },
       });
 
-      comet = protocol.cometWithExtendedAssetList;
+      comet = protocol.comet;
       for (let asset in protocol.tokens) {
         if (asset === 'USDC') continue;
         collaterals[asset] = protocol.tokens[asset] as FaucetToken;
@@ -1722,7 +1722,7 @@ describe('transfer', function () {
         };
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
-        comet = protocol.cometWithExtendedAssetList;
+        comet = protocol.comet;
         const tokens = protocol.tokens;
         [alice, bob] = protocol.users;
 
@@ -1789,7 +1789,7 @@ describe('transfer', function () {
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
         
-        feeComet = protocol.cometWithExtendedAssetList;
+        feeComet = protocol.comet;
         feeBaseToken = protocol.tokens['USDT'] as NonStandardFaucetFeeToken;
         feeCollateral = protocol.tokens['FeeCollateral'] as NonStandardFaucetFeeToken;
         [alice, bob] = protocol.users;

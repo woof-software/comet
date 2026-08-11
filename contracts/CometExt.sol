@@ -255,7 +255,7 @@ contract CometExt is CometExtInterface {
      * @param assetIndex The index of the collateral asset
      * @return Whether the collateral asset is deactivated
      */
-    function isCollateralDeactivated(uint24 assetIndex) public view returns (bool) {
+    function isCollateralDeactivated(uint24 assetIndex) public override view returns (bool) {
         return (deactivatedCollaterals & (uint24(1) << assetIndex) != 0) == true;
     }
 

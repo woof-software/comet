@@ -7,11 +7,8 @@ import {
   BaseBulker,
   BaseBulker__factory,
   CometExt,
-  CometExt__factory,
   CometExtAssetList,
   CometExtAssetList__factory,
-  CometHarness__factory,
-  CometHarnessInterface as Comet,
   CometRewards,
   CometRewards__factory,
   EvilToken__factory,
@@ -26,13 +23,10 @@ import {
   ConfiguratorProxy__factory,
   CometProxyAdmin,
   CometProxyAdmin__factory,
-  CometFactory,
-  CometFactory__factory,
   CometFactoryWithExtendedAssetList,
   CometFactoryWithExtendedAssetList__factory,
   Configurator,
   Configurator__factory,
-  CometHarnessInterface,
   CometInterface,
   CometMainInterface,
   NonStandardFaucetFeeToken,
@@ -42,21 +36,20 @@ import {
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
   MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
+  CometHarnessInterfaceExtendedAssetList,
+  LiquidationModule,
+  LiquidationModule__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
-import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarness';
-import { defaultAssets, default24Assets } from './helpers/default-assets';
+import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarnessExtendedAssetList';
 
-// Snapshot
-export { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
+// Helpers
+import type { Numeric } from './helpers/index';
+import { exp, dfn, defaultAssets, deployDefaultLiquidationModule, deployDefaultLiquidationModuleWithComet, deployEmptyDexAdapter, mulPrice, toBigInt, convertToBigInt, setBalance } from './helpers/index';
 
-// Network helpers
-export * from './helpers/network-helpers';
-
-export { Comet, ethers, expect, hre, default24Assets, defaultAssets };
-
-export type Numeric = number | bigint;
+export * from './helpers/index';
+export { ethers, expect, hre };
 
 export enum ReentryAttack {
   TransferFrom = 0,
@@ -79,11 +72,15 @@ export type ProtocolOpts = {
       initialPrice?: number;
       priceFeedDecimals?: number;
       factory?: FaucetToken__factory | EvilToken__factory | FaucetWETH__factory | NonStandardFaucetFeeToken__factory;
+      // When set, an already-deployed token at this address is used (e.g. a real mainnet token on a fork)
+      // instead of deploying a fresh mock. The price feed stays a mock SimplePriceFeed.
+      address?: string;
     };
   };
   name?: string;
   symbol?: string;
   governor?: SignerWithAddress;
+  multisig?: SignerWithAddress;
   pauseGuardian?: SignerWithAddress;
   extensionDelegate?: CometExt;
   base?: string;
@@ -103,22 +100,30 @@ export type ProtocolOpts = {
   baseMinForRewards?: Numeric;
   baseBorrowMin?: Numeric;
   targetReserves?: Numeric;
-  targetHealthFactor?: Numeric;
   baseTokenBalance?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
+  liquidationModule?: LiquidationModule;
+  dexAdapter?: string;
+  liquidationModuleOpts?: {
+    executors?: string[];
+    pausers?: string[];
+    incentiveBps?: bigint;
+  };
+  skipInitStorage?: boolean;
 };
 
 export type Protocol = {
   opts: ProtocolOpts;
   governor: SignerWithAddress;
   pauseGuardian: SignerWithAddress;
-  extensionDelegate: CometExt;
-  extensionDelegateAssetList: CometExtAssetList;
+  multisig: SignerWithAddress;
+  executors: SignerWithAddress[];
+  pausers: SignerWithAddress[];
+  extensionDelegate: CometExtAssetList;
   users: SignerWithAddress[];
   base: string;
   reward: string;
-  comet: Comet;
-  cometWithExtendedAssetList: CometWithExtendedAssetList;
+  comet: CometWithExtendedAssetList;
   assetListFactory: AssetListFactory;
   tokens: {
     [symbol: string]: FaucetToken | NonStandardFaucetFeeToken;
@@ -127,21 +132,20 @@ export type Protocol = {
   priceFeeds: {
     [symbol: string]: SimplePriceFeed;
   };
+  defaultLiquidationModule: LiquidationModule;
 };
 
 export type ConfiguratorAndProtocol = {
   configurator: Configurator;
   configuratorProxy: ConfiguratorProxy;
   proxyAdmin: CometProxyAdmin;
-  cometFactory: CometFactory;
-  cometFactoryWithExtendedAssetList: CometFactoryWithExtendedAssetList;
+  cometFactory: CometFactoryWithExtendedAssetList;
   cometProxy: TransparentUpgradeableProxy;
-  cometProxyWithExtendedAssetList: TransparentUpgradeableProxy;
 } & Protocol;
 
 export type RewardsOpts = {
   governor?: SignerWithAddress;
-  configs?: [Comet, FaucetToken | NonStandardFaucetFeeToken, Numeric?][];
+  configs?: [CometHarnessInterfaceExtendedAssetList, FaucetToken | NonStandardFaucetFeeToken, Numeric?][];
 };
 
 export type Rewards = {
@@ -200,58 +204,10 @@ export async function makeCollateralStates(
   return col;
 }
 
-export function dfn<T>(x: T | undefined | null, dflt: T): T {
-  return x == undefined ? dflt : x;
-}
-
-export function exp(i: number, d: Numeric = 0, r: Numeric = 6): bigint {
-  const sign = i < 0 ? -1n : 1n;
-  const parts = Math.abs(i).toString().split('.');
-  const intPart = parts[0];
-  const fracPart = (parts[1] || '').padEnd(Number(r), '0').slice(0, Number(r));
-  const scaled = BigInt(intPart + fracPart);
-  return sign * (scaled * 10n ** BigInt(d)) / 10n ** BigInt(r);
-}
-
-export function factor(f: number): bigint {
-  return exp(f, factorDecimals);
-}
-
-export function defactor(f: bigint | BigNumber): number {
-  return Number(toBigInt(f)) / 1e18;
-}
-
-// Truncates a factor to a certain number of decimals
-export function truncateDecimals(factor: bigint | BigNumber, decimals = 4) {
-  const descaleFactor = factorScale / exp(1, decimals);
-  return (toBigInt(factor) / descaleFactor) * descaleFactor;
-}
-
-export function mulPrice(n: bigint | BigNumber, price: bigint | BigNumber, fromScale: bigint | BigNumber): bigint {
-  return toBigInt(n) * toBigInt(price) / toBigInt(fromScale);
-}
-
-export function toBigInt(f: bigint | BigNumber): bigint {
-  if (typeof f === 'bigint') {
-    return f;
-  } else {
-    return f.toBigInt();
-  }
-}
-
-export function annualize(n: bigint | BigNumber, secondsPerYear = 31536000n): number {
-  return defactor(toBigInt(n) * secondsPerYear);
-}
-
-export function toYears(seconds: number, secondsPerYear = 31536000): number {
-  return seconds / secondsPerYear;
-}
-
-
 export const factorDecimals = 18;
-export const factorScale = factor(1);
+export const factorScale = exp(1, factorDecimals);
 export const ONE = factorScale;
-export const ZERO = factor(0);
+export const ZERO = exp(0, factorDecimals);
 export const BASE_INDEX_SCALE = 1e15;
 export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const DEFAULT_PRICEFEED_DECIMALS = 8;
@@ -287,7 +243,12 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const symbol32 = ethers.utils.formatBytes32String(opts.symbol || '📈BASE');
   const governor = opts.governor || signers[0];
   const pauseGuardian = opts.pauseGuardian || signers[1];
-  const users = signers.slice(2); // guaranteed to not be governor or pause guardian
+  // Reserve dedicated signers for the liquidation module roles from the tail of the signer list so
+  // low-index `users` stay stable across the suite. These are returned so tests can drive the roles.
+  const multisig = opts.multisig ?? signers[2];
+  const executors = opts.liquidationModuleOpts?.executors ? await Promise.all(opts.liquidationModuleOpts?.executors.map(toSigner)) : signers.slice(-2);
+  const pausers = opts.liquidationModuleOpts?.pausers ? await Promise.all(opts.liquidationModuleOpts?.pausers.map(toSigner)) : signers.slice(-4, -2);
+  const users = signers.slice(3); // not governor, multisig, pause guardian - though some users may be pausers or executors
   const base = opts.base || 'USDC';
   const reward = opts.reward || 'COMP';
   const supplyKink = dfn(opts.supplyKink, exp(0.8, 18));
@@ -307,9 +268,14 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const targetReserves = dfn(opts.targetReserves, 0);
 
   const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
-  const tokens = {};
+  const tokens: Record<string, FaucetToken> = {};
   for (const symbol in assets) {
     const config = assets[symbol];
+    if (config.address) {
+      // Use an already-deployed token (e.g. a real mainnet token on a fork) instead of a fresh mock.
+      tokens[symbol] = (await ethers.getContractAt('FaucetToken', config.address)) as FaucetToken;
+      continue;
+    }
     const decimals = config.decimals || 18;
     const initial = config.initial || 1e6;
     const name = config.name || symbol;
@@ -323,20 +289,28 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
 
   const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
   const assetListFactory = await AssetListFactory.deploy();
-  await assetListFactory.deployed();  
+  await assetListFactory.deployed();
 
   let extensionDelegate = opts.extensionDelegate;
   if (extensionDelegate === undefined) {
-    const CometExtFactory = (await ethers.getContractFactory('CometExt')) as CometExt__factory;
-    extensionDelegate = await CometExtFactory.deploy({ name32, symbol32 });
+    const CometExtFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
+    extensionDelegate = await CometExtFactory.deploy({ name32, symbol32 }, assetListFactory.address);
     await extensionDelegate.deployed();
   }
 
-  const CometFactory = (await ethers.getContractFactory('CometHarness')) as CometHarness__factory;
+  const defaultLiquidationModule = opts.liquidationModule ?? await deployDefaultLiquidationModule({
+    dexAdapter: opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address;}))).address,
+    multisig: multisig.address,
+    executors: opts.liquidationModuleOpts?.executors ?? executors.map((x) => x.address),
+    pausers: opts.liquidationModuleOpts?.pausers ?? pausers.map((x) => x.address),
+    incentiveBps: opts.liquidationModuleOpts?.incentiveBps
+  });
+
   const config = {
     governor: governor.address,
     pauseGuardian: pauseGuardian.address,
     extensionDelegate: extensionDelegate.address,
+    liquidationModule: defaultLiquidationModule.address,
     baseToken: tokens[base].address,
     baseTokenPriceFeed: priceFeeds[base].address,
     supplyKink,
@@ -354,9 +328,8 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
-    targetHealthFactor: dfn(opts.targetHealthFactor, exp(1.05, 18)),
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
-      if (symbol != base && _i <= 12) {
+      if (symbol != base) {
         acc.push({
           asset: tokens[symbol].address,
           priceFeed: priceFeeds[symbol].address,
@@ -370,8 +343,9 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
       return acc;
     }, []),
   };
+
+  const CometFactory = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
   const comet = await CometFactory.deploy(config);
-  await comet.deployed();
 
   config.assetConfigs = Object.entries(assets).reduce((acc, [symbol, config], _i) => {
     if (symbol != base) {
@@ -387,21 +361,9 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     }
     return acc;
   }, []);
-  let extensionDelegateAssetList = opts.extensionDelegate;
-  if (extensionDelegateAssetList === undefined) {
-    const CometExtFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
-    extensionDelegateAssetList = await CometExtFactory.deploy({ name32, symbol32 }, assetListFactory.address);
-    await extensionDelegateAssetList.deployed();
-  }
-  config.extensionDelegate = extensionDelegateAssetList.address;
-  const CometFactoryWithExtendedAssetList = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
-
-  const cometWithExtendedAssetList = await CometFactoryWithExtendedAssetList.deploy(config);
-  await cometWithExtendedAssetList.deployed();
 
   if (opts.start) await ethers.provider.send('evm_setNextBlockTimestamp', [opts.start]);
-  await comet.initializeStorage();
-  await cometWithExtendedAssetList.initializeStorage();
+  if (!opts.skipInitStorage) await comet.initializeStorage();
 
   const baseTokenBalance = opts.baseTokenBalance;
   if (baseTokenBalance) {
@@ -413,31 +375,35 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     opts,
     governor,
     pauseGuardian,
-    extensionDelegate,
-    extensionDelegateAssetList: extensionDelegateAssetList as CometExtAssetList,
+    multisig,
+    executors,
+    pausers,
+    extensionDelegate: extensionDelegate as CometExtAssetList,
     users,
     base,
     reward,
-    comet: await ethers.getContractAt('CometHarnessInterface', comet.address) as Comet,
-    cometWithExtendedAssetList: await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address) as CometWithExtendedAssetList,
+    comet: await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', comet.address) as CometWithExtendedAssetList,
     assetListFactory: assetListFactory,
     tokens,
     unsupportedToken,
     priceFeeds,
+    defaultLiquidationModule,
   };
 }
 
 export async function getConfigurationForConfigurator(
   opts: ProtocolOpts,
-  comet: CometHarnessInterface,
+  comet: CometWithExtendedAssetList,
   governor: SignerWithAddress,
   pauseGuardian: SignerWithAddress,
-  extensionDelegate: CometExt,
+  extensionDelegate: CometExtAssetList,
   tokens: {
     [p: string]: FaucetToken | NonStandardFaucetFeeToken;
   },
   base: string,
-  priceFeeds: { [p: string]: SimplePriceFeed }) {
+  priceFeeds: { [p: string]: SimplePriceFeed },
+  liquidationModule: string
+) {
 
   const assets = opts.assets || defaultAssets();
 
@@ -457,15 +423,6 @@ export async function getConfigurationForConfigurator(
   const baseMinForRewards = await comet.baseMinForRewards();
   const baseBorrowMin = await comet.baseBorrowMin();
   const targetReserves = await comet.targetReserves();
-
-  // Deploy CometFactory
-  const CometFactoryFactory = (await ethers.getContractFactory('CometFactory')) as CometFactory__factory;
-  const cometFactory = await CometFactoryFactory.deploy();
-  await cometFactory.deployed();
-
-  const CometFactoryWithExtendedAssetListFactory = (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')) as CometFactoryWithExtendedAssetList__factory;
-  const cometFactoryWithExtendedAssetList = await CometFactoryWithExtendedAssetListFactory.deploy();
-  await cometFactoryWithExtendedAssetList.deployed();
 
   // Deploy Configurator
   const ConfiguratorFactory = (await ethers.getContractFactory('Configurator')) as Configurator__factory;
@@ -492,7 +449,7 @@ export async function getConfigurationForConfigurator(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
-    targetHealthFactor: exp(1.05, 18),
+    liquidationModule,
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
       if (symbol != base) {
         acc.push({
@@ -511,37 +468,47 @@ export async function getConfigurationForConfigurator(
   return configuration;
 }
 
-// Only for testing configurator. Non-configurator tests need to deploy the CometHarness instead.
+// Only for testing configurator. Non-configurator tests need to deploy the CometHarnessExtendedAssetList instead.
 export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<ConfiguratorAndProtocol> {
   const {
     governor,
     pauseGuardian,
+    multisig,
+    executors,
+    pausers,
     extensionDelegate,
     users,
     base,
     reward,
     comet,
-    cometWithExtendedAssetList,
-    extensionDelegateAssetList,
     assetListFactory,
     tokens,
     unsupportedToken,
     priceFeeds,
-  } = await makeProtocol(opts);
+  } = await makeProtocol({...opts, skipInitStorage: true });
 
   // Deploy ProxyAdmin
   const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdmin')) as CometProxyAdmin__factory;
   const proxyAdmin = await ProxyAdmin.connect(governor).deploy(governor.address);
-  await proxyAdmin.deployed();
 
   // Deploy Comet proxy
   const CometProxy = (await ethers.getContractFactory('TransparentUpgradeableProxy')) as TransparentUpgradeableProxy__factory;
   const cometProxy = await CometProxy.deploy(
-    cometWithExtendedAssetList.address,
+    comet.address,
     proxyAdmin.address,
-    (await cometWithExtendedAssetList.populateTransaction.initializeStorage()).data,
+    '0x',
   );
-  await cometProxy.deployed();
+
+  // Deploy LiquidationModule
+  const LiquidationModule = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
+  const liquidationModule = await LiquidationModule.deploy(
+    opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address;}))).address,
+    multisig.address,
+    executors.map((x) => x.address),
+    pausers.map((x) => x.address),
+    opts.liquidationModuleOpts?.incentiveBps ?? 0n
+  );
+
   const configuration = await getConfigurationForConfigurator(
     opts,
     comet,
@@ -551,43 +518,29 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     base,
     priceFeeds,
+    liquidationModule.address
   );
-  configuration.extensionDelegate = extensionDelegateAssetList.address;
-
-  const cometProxyWithExtendedAssetList = await CometProxy.deploy(
-    cometWithExtendedAssetList.address,
-    proxyAdmin.address,
-    (await cometWithExtendedAssetList.populateTransaction.initializeStorage()).data,
-  );
-  await cometProxyWithExtendedAssetList.deployed();
 
   // Deploy CometFactory
-  const CometFactoryFactory = (await ethers.getContractFactory('CometFactory')) as CometFactory__factory;
+  const CometFactoryFactory = (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')) as CometFactoryWithExtendedAssetList__factory;
   const cometFactory = await CometFactoryFactory.deploy();
-  await cometFactory.deployed();
-
-  const CometFactoryWithExtendedAssetListFactory = (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')) as CometFactoryWithExtendedAssetList__factory;
-  const cometFactoryWithExtendedAssetList = await CometFactoryWithExtendedAssetListFactory.deploy();
-  await cometFactoryWithExtendedAssetList.deployed();
 
   // Deploy Configurator
   const ConfiguratorFactory = (await ethers.getContractFactory('Configurator')) as Configurator__factory;
   const configurator = await ConfiguratorFactory.deploy();
-  await configurator.deployed();
 
   // Deploy Configurator proxy
   const initializeCalldata = (await configurator.populateTransaction.initialize(governor.address)).data;
   const ConfiguratorProxy = (await ethers.getContractFactory('ConfiguratorProxy')) as ConfiguratorProxy__factory;
   const configuratorProxy = await ConfiguratorProxy.deploy(configurator.address, proxyAdmin.address, initializeCalldata);
-  await configuratorProxy.deployed();
 
   // Set the initial factory and configuration for Comet in Configurator
   const configuratorAsProxy = configurator.attach(configuratorProxy.address);
   await configuratorAsProxy.connect(governor).setConfiguration(cometProxy.address, configuration);
-  await configuratorAsProxy.connect(governor).setFactory(cometProxy.address, cometFactoryWithExtendedAssetList.address);
+  await configuratorAsProxy.connect(governor).setFactory(cometProxy.address, cometFactory.address);
 
-  await configuratorAsProxy.connect(governor).setConfiguration(cometProxyWithExtendedAssetList.address, configuration);
-  await configuratorAsProxy.connect(governor).setFactory(cometProxyWithExtendedAssetList.address, cometFactoryWithExtendedAssetList.address);
+  await configuratorAsProxy.connect(governor).setConfiguration(cometProxy.address, configuration);
+  await configuratorAsProxy.connect(governor).setFactory(cometProxy.address, cometFactory.address);
 
   if(opts.marketAdminPermissionCheckerContract) {
     await configuratorAsProxy.connect(governor).setMarketAdminPermissionChecker(opts.marketAdminPermissionCheckerContract.address);
@@ -607,36 +560,40 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     await proxyAdmin.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
   }
 
-  configuration.extensionDelegate = extensionDelegateAssetList.address;
-  configuration.targetHealthFactor = exp(1.05, 18);
-  
+  const initializeStorageCalldata = (await comet.populateTransaction.initializeStorage()).data;
+  await proxyAdmin.connect(governor).deployUpgradeToAndCall(
+    configuratorProxy.address,
+    cometProxy.address,
+    initializeStorageCalldata
+  );
+
   return {
     opts,
     governor,
     pauseGuardian,
+    multisig,
+    executors,
+    pausers,
     extensionDelegate,
-    extensionDelegateAssetList,
     users,
     base,
     reward,
     proxyAdmin,
     comet,
-    cometWithExtendedAssetList,
     assetListFactory,
     cometProxy,
-    cometProxyWithExtendedAssetList,
     configurator,
     configuratorProxy,
     cometFactory,
-    cometFactoryWithExtendedAssetList,
     tokens,
     unsupportedToken,
     priceFeeds,
+    defaultLiquidationModule: liquidationModule
   };
 }
 
 export async function seedMarketActivity(
-  comet: CometHarnessInterface,
+  comet: CometHarnessInterfaceExtendedAssetList,
   tokens: { [symbol: string]: FaucetToken | NonStandardFaucetFeeToken },
   priceFeeds: { [symbol: string]: SimplePriceFeed },
   lenderUser: SignerWithAddress,
@@ -720,7 +677,7 @@ export async function makeBulker(opts: BulkerOpts): Promise<BulkerInfo> {
     bulker
   };
 }
-export async function bumpTotalsCollateral(comet: CometHarnessInterface, token: FaucetToken | NonStandardFaucetFeeToken, delta: bigint): Promise<TotalsCollateralStructOutput> {
+export async function bumpTotalsCollateral(comet: CometHarnessInterfaceExtendedAssetList, token: FaucetToken | NonStandardFaucetFeeToken, delta: bigint): Promise<TotalsCollateralStructOutput> {
   const t0 = await comet.totalsCollateral(token.address);
   const t1 = Object.assign({}, t0, { totalSupplyAsset: t0.totalSupplyAsset.toBigInt() + delta });
   await token.allocateTo(comet.address, delta);
@@ -728,21 +685,56 @@ export async function bumpTotalsCollateral(comet: CometHarnessInterface, token: 
   return t1;
 }
 
-export async function setTotalsBasic(comet: CometHarnessInterface, overrides = {}): Promise<TotalsBasicStructOutput> {
+export async function setTotalsBasic(comet: CometHarnessInterfaceExtendedAssetList, overrides = {}): Promise<TotalsBasicStructOutput> {
   const t0 = await comet.totalsBasic();
   const t1 = Object.assign({}, t0, overrides);
   await wait(comet.setTotalsBasic(t1));
   return t1;
 }
 
+/**
+ * Redeploy Comet via Configurator with a fresh LiquidationModule.
+ * Required because Comet construction calls setAssetList on the module, which reverts
+ * with AlreadySet() if the previous module was already initialized.
+ */
+export async function prepareFreshLiquidationModule(
+  configurator: Configurator,
+  cometProxyAddress: string,
+) {
+  const configuration = await configurator.getConfiguration(cometProxyAddress);
+  const collateralAddresses = configuration.assetConfigs.map((assetConfig) => assetConfig.asset);
+  const newDexAdapter = await deployEmptyDexAdapter(collateralAddresses);
+  // Governor is sufficient for role wiring in unit tests that only need a valid LM.
+  const governor = configuration.governor;
+  return deployDefaultLiquidationModuleWithComet(
+    {
+      multisig: governor,
+      executors: [governor],
+      pausers: [governor],
+      dexAdapter: newDexAdapter.address,
+    },
+    cometProxyAddress
+  );
+}
+
+export async function deployAndUpgradeToWithFreshModule(
+  proxyAdmin: CometProxyAdmin,
+  configurator: Configurator,
+  cometProxyAddress: string,
+) {
+  const newLiquidationModule = await prepareFreshLiquidationModule(configurator, cometProxyAddress);
+  await configurator.setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
+  await proxyAdmin.deployAndUpgradeTo(configurator.address, cometProxyAddress);
+}
+
 export async function updateAssetBorrowCollateralFactor(configurator: Configurator, cometProxyAdmin: CometProxyAdmin, cometAddress: string, assetAddress: string, borrowCF: bigint) {
   await configurator.updateAssetBorrowCollateralFactor(cometAddress, assetAddress, borrowCF);
-  await cometProxyAdmin.deployAndUpgradeTo(configurator.address, cometAddress);
+  await deployAndUpgradeToWithFreshModule(cometProxyAdmin, configurator, cometAddress);
 }
 
 export async function updateAssetLiquidateCollateralFactor(configurator: Configurator, cometProxyAdmin: CometProxyAdmin, cometAddress: string, assetAddress: string, liquidateCF: bigint, governor: SignerWithAddress) {
   await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometAddress, assetAddress, liquidateCF);
-  await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configurator.address, cometAddress);
+  await deployAndUpgradeToWithFreshModule(cometProxyAdmin.connect(governor) as CometProxyAdmin, configurator.connect(governor) as Configurator, cometAddress);
 }
 
 export async function getLiquidity(comet: CometWithExtendedAssetList, token: FaucetToken | NonStandardFaucetFeeToken, amount: bigint): Promise<BigNumber> {
@@ -856,19 +848,6 @@ export function event(tx, index) {
   return { [ev.event]: args };
 }
 
-// Convert all BigNumbers in an array into BigInts
-function convertToBigInt(arr) {
-  const newArr = [];
-  for (const v of arr) {
-    if (Array.isArray(v)) {
-      newArr.push(convertToBigInt(v));
-    } else {
-      newArr.push(v._isBigNumber ? BigInt(v) : v);
-    }
-  }
-  return newArr;
-}
-
 export function getGasUsed(tx: TransactionResponseExt): bigint {
   return tx.receipt.gasUsed.mul(tx.receipt.effectiveGasPrice).toBigInt();
 }
@@ -896,14 +875,6 @@ export function presentValue(
   } else {
     return -presentValueBorrow(baseBorrowIndex, -principal);
   }
-}
-
-export function mulFactor(n: bigint | BigNumber, factor: bigint | BigNumber):bigint {
-  return toBigInt(n) * toBigInt(factor) / factorScale;
-}
-
-export function divPrice(n: bigint | BigNumber, price: bigint | BigNumber, toScale: bigint | BigNumber): bigint {
-  return toBigInt(n) * toBigInt(toScale) / toBigInt(price);
 }
 
 function principalValueSupply(baseSupplyIndex: bigint, presentValue: bigint): bigint {
@@ -946,3 +917,10 @@ export async function setupFork(blockNumber?: number, jsonRpcUrl?: string) {
     ],
   });
 }
+
+const toSigner = async (x: string | SignerWithAddress): Promise<SignerWithAddress> => {
+  if (typeof x !== 'string') return x;                 // already a signer (default slice)
+  const signer = await ethers.getImpersonatedSigner(x);
+  await setBalance(signer.address, ethers.utils.parseEther('10')); // gas to call the module
+  return signer;
+};

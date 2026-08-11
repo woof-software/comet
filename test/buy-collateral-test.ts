@@ -99,11 +99,13 @@ describe('buyCollateral', function () {
     const cometAsA = comet.connect(alice);
     const baseAsA = USDC.connect(alice);
 
-    // Set reserves to -100 wei
+    // Set reserves to -100e6: totalSupplyBase - totalBorrowBase must be 100e6 and totalBorrowBase
+    // must be non-zero, otherwise the supply-index cap clamps totalSupply_ to the actual balance
+    // (which is 0), making getReserves() return 0 instead of the expected negative value.
     let t0 = await comet.totalsBasic();
     t0 = Object.assign({}, t0, {
-      totalSupplyBase: 100e6,
-      totalBorrowBase: 0n,
+      totalSupplyBase: 200e6,
+      totalBorrowBase: 100e6,
     });
     await wait(comet.setTotalsBasic(t0));
 

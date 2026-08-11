@@ -1,5 +1,5 @@
-import { CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory } from 'build/types';
-import { expect, exp, makeProtocol, makeConfigurator, factorScale, mulFactor, ethers, MAX_ASSETS, SnapshotRestorer, takeSnapshot } from './helpers';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory } from 'build/types';
+import { expect, exp, makeProtocol, makeConfigurator, factorScale, mulFactor, ethers, MAX_ASSETS, SnapshotRestorer, takeSnapshot, deployAndUpgradeToWithFreshModule } from './helpers';
 import { BigNumber } from 'ethers';
 import { AssetInfoStructOutput } from 'build/types/CometWithExtendedAssetList';
 
@@ -202,7 +202,7 @@ describe('quoteCollateral', function () {
     let snapshot: SnapshotRestorer;
 
     // Contracts
-    let comet: CometWithExtendedAssetList;
+    let comet: CometHarnessInterfaceExtendedAssetList;
     let configurator: Configurator;
     let configuratorProxy: ConfiguratorProxy;
     let proxyAdmin: CometProxyAdmin;
@@ -236,7 +236,7 @@ describe('quoteCollateral', function () {
       const configuratorAndProtocol = await makeConfigurator({ assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals }});
 
       cometProxyAddress = configuratorAndProtocol.cometProxy.address;
-      comet = configuratorAndProtocol.cometWithExtendedAssetList.attach(cometProxyAddress) as CometWithExtendedAssetList;
+      comet = configuratorAndProtocol.comet.attach(cometProxyAddress);
       configurator = configuratorAndProtocol.configurator;
       configuratorProxy = configuratorAndProtocol.configuratorProxy;
       proxyAdmin = configuratorAndProtocol.proxyAdmin;
@@ -259,7 +259,7 @@ describe('quoteCollateral', function () {
       const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
       await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
-      await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
+      await deployAndUpgradeToWithFreshModule(proxyAdmin, configurator, cometProxyAddress);
 
       // Culculation data
       assetInfo = await comet.getAssetInfoByAddress(quoteCollateralToken.address);
@@ -296,7 +296,7 @@ describe('quoteCollateral', function () {
     it('update liquidationFactor to 0 to remove discount', async () => {
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, quoteCollateralToken.address, exp(0, 18));
 
-      await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
+      await deployAndUpgradeToWithFreshModule(proxyAdmin, configurator, cometProxyAddress);
     });
 
     it('liquidation factor becomes 0 after upgrade', async () => {
@@ -337,7 +337,7 @@ describe('quoteCollateral', function () {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, asset.address, 0n);
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, asset.address, 0n);
         await configurator.updateAssetLiquidationFactor(cometProxyAddress, asset.address, exp(0, 18));
-        await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
+        await deployAndUpgradeToWithFreshModule(proxyAdmin, configurator, cometProxyAddress);
 
         assetInfo = await comet.getAssetInfoByAddress(asset.address);
         expect(assetInfo.liquidationFactor).to.eq(0);
@@ -397,7 +397,7 @@ describe('quoteCollateral', function () {
 
         it('governance updates collateral price feed to a reverting implementation', async () => {
           await configurator.updateAssetPriceFeed(cometProxyAddress, targetAsset.address, priceFeedWithRevert.address);
-          await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
+          await deployAndUpgradeToWithFreshModule(proxyAdmin, configurator, cometProxyAddress);
         });
 
         it('price feed for quoted asset is now the reverting implementation', async () => {
@@ -413,7 +413,7 @@ describe('quoteCollateral', function () {
 
         it('governance restores the normal collateral price feed', async () => {
           await configurator.updateAssetPriceFeed(cometProxyAddress, targetAsset.address, originalPriceFeed);
-          await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
+          await deployAndUpgradeToWithFreshModule(proxyAdmin, configurator, cometProxyAddress);
         });
 
         it('price feed for quoted asset is restored to the normal implementation', async () => {

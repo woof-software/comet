@@ -63,7 +63,7 @@ describe('extended pause functionality', function () {
 
   before(async function () {
     const protocol = await makeProtocol({ assets: { USDC: {}, ASSET1: {} } });
-    comet = protocol.cometWithExtendedAssetList;
+    comet = protocol.comet;
     cometExt = comet.attach(comet.address) as CometExt;
     governor = protocol.governor;
     pauseGuardian = protocol.pauseGuardian;
@@ -76,7 +76,7 @@ describe('extended pause functionality', function () {
     const protocolWithMaxAssets = await makeProtocol({
       assets: { USDC: {}, ...collaterals },
     });
-    cometWithMaxAssets = protocolWithMaxAssets.cometWithExtendedAssetList;
+    cometWithMaxAssets = protocolWithMaxAssets.comet;
     cometExtWithMaxAssets = cometWithMaxAssets.attach(cometWithMaxAssets.address) as CometExt;
   });
 

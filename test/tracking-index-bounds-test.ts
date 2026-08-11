@@ -1,4 +1,4 @@
-import { expect, exp, fastForward, makeProtocol, setTotalsBasic, toYears } from './helpers';
+import { ethers, expect, exp, fastForward, makeProtocol, setTotalsBasic, toYears } from './helpers';
 import { BigNumber } from 'ethers';
 
 describe('total tracking index bounds', function () {
@@ -26,13 +26,17 @@ describe('total tracking index bounds', function () {
         totalSupplyBase: BigNumber.from(baseMinForRewards), // 10k USDC base units
       });
 
-      await fastForward(secondsUntilOverflow-2);
+      // Compute exact seconds remaining to reach lastAccrualTime + N, so first
+      // accrue has timeElapsed = N (tracking = delta*N ≤ MAX_UINT64) and second
+      // accrue has timeElapsed = 1 (tracking = delta*(N+1) > MAX_UINT64 → panic).
+      const totals0 = await comet.totalsBasic();
+      const currentTs0 = (await ethers.provider.getBlock('latest')).timestamp;
+      const remaining0 = secondsUntilOverflow - (currentTs0 - Number(totals0.lastAccrualTime));
+      await fastForward(remaining0);
 
-      // First accrue is successful without overflow
-      await comet.accrue();
+      await comet.accrue(); // first accrue: timeElapsed = N, tracking = delta*N ≤ MAX_UINT64
 
-      // Second accrue should overflow
-      await expect(comet.accrue()).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
+      await expect(comet.accrue()).to.be.revertedWithPanic(0x11);
     });
 
     it('upper bound hit on tracking borrow index', async () => {
@@ -58,13 +62,14 @@ describe('total tracking index bounds', function () {
         totalBorrowBase: BigNumber.from(baseMinForRewards), // 10k USDC base units
       });
 
-      await fastForward(secondsUntilOverflow-2);
+      const totals1 = await comet.totalsBasic();
+      const currentTs1 = (await ethers.provider.getBlock('latest')).timestamp;
+      const remaining1 = secondsUntilOverflow - (currentTs1 - Number(totals1.lastAccrualTime));
+      await fastForward(remaining1);
 
-      // First accrue is successful without overflow
-      await comet.accrue();
+      await comet.accrue(); // first accrue: timeElapsed = N, tracking = delta*N ≤ MAX_UINT64
 
-      // Second accrue should overflow
-      await expect(comet.accrue()).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
+      await expect(comet.accrue()).to.be.revertedWithPanic(0x11);
     });
 
     it('lower bound hit on tracking supply index', async () => {
@@ -153,13 +158,14 @@ describe('total tracking index bounds', function () {
         totalSupplyBase: BigNumber.from(baseMinForRewards), // 100 WETH base units
       });
 
-      await fastForward(secondsUntilOverflow-2);
+      const totals2 = await comet.totalsBasic();
+      const currentTs2 = (await ethers.provider.getBlock('latest')).timestamp;
+      const remaining2 = secondsUntilOverflow - (currentTs2 - Number(totals2.lastAccrualTime));
+      await fastForward(remaining2);
 
-      // First accrue is successful without overflow
-      await comet.accrue();
+      await comet.accrue(); // first accrue: timeElapsed = N, tracking = delta*N ≤ MAX_UINT64
 
-      // Second accrue should overflow
-      await expect(comet.accrue()).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
+      await expect(comet.accrue()).to.be.revertedWithPanic(0x11);
     });
 
     it('upper bound hit on tracking borrow index', async () => {
@@ -186,13 +192,15 @@ describe('total tracking index bounds', function () {
         totalBorrowBase: BigNumber.from(baseMinForRewards), // 10k USDC base units
       });
 
-      await fastForward(secondsUntilOverflow-2);
+      const totals3 = await comet.totalsBasic();
+      const currentTs3 = (await ethers.provider.getBlock('latest')).timestamp;
+      const remaining3 = secondsUntilOverflow - (currentTs3 - Number(totals3.lastAccrualTime));
+      await fastForward(remaining3);
 
-      // First accrue is successful without overflow
+      // First accrue: timeElapsed = N, tracking = delta*N ≤ MAX_UINT64
       await comet.accrue();
 
-      // Second accrue should overflow
-      await expect(comet.accrue()).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
+      await expect(comet.accrue()).to.be.revertedWithPanic(0x11);
     });
 
     it('lower bound hit on tracking supply index', async () => {

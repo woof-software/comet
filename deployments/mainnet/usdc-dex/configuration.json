@@ -1,0 +1,29 @@
+{
+  "name": "Compound USDC (DEX liquidation)",
+  "symbol": "cUSDCv3-dex",
+  "baseToken": "USDC",
+  "baseTokenAddress": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+  "baseTokenPriceFeed": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
+  "borrowMin": "0",
+  "governor": "0x6d903f6003cca6255d85cca4d3b5e5146dc33925",
+  "pauseGuardian": "0x6d903f6003cca6255d85cca4d3b5e5146dc33925",
+  "storeFrontPriceFactor": 1,
+  "targetReserves": "0",
+  "rates": {
+    "supplyKink": 0.8,
+    "supplySlopeLow": 0,
+    "supplySlopeHigh": 0,
+    "supplyBase": 0,
+    "borrowKink": 0.8,
+    "borrowSlopeLow": 0,
+    "borrowSlopeHigh": 0,
+    "borrowBase": 0
+  },
+  "tracking": {
+    "indexScale": "1e15",
+    "baseSupplySpeed": "0e15",
+    "baseBorrowSpeed": "0e15",
+    "baseMinForRewards": "1e6"
+  },
+  "_note": "Collateral asset configs and price feeds are set programmatically in deploy.ts (real mainnet tokens with mock SimplePriceFeeds); this file is metadata only."
+}

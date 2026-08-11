@@ -1,6 +1,14 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import { setupFork, impersonateAccount, setBalance, SnapshotRestorer, takeSnapshot} from '../helpers';
+import {
+  setupFork,
+  impersonateAccount,
+  setBalance,
+  SnapshotRestorer,
+  takeSnapshot,
+  deployDefaultLiquidationModuleWithComet,
+  deployEmptyDexAdapter,
+} from '../helpers';
 import {
   CometExtAssetList__factory,
   CometFactoryWithExtendedAssetList__factory,
@@ -174,10 +182,23 @@ describe('extended pause upgrade test', function () {
       .connect(governor)
       .setFactory(COMET_ADDRESS, newFactory.address);
 
-    // Ensure configuration satisfies latest constructor checks.
-    await configurator
-      .connect(governor)
-      .setTargetHealthFactor(COMET_ADDRESS, BigNumber.from('1050000000000000000'));
+    // Fresh LM bound to the existing Comet is required before deploy: the new
+    // implementation constructor calls setAssetList on the module.
+    // Use non-DAO role holders: DAO is already granted PAUSER_ROLE in the LM constructor.
+    const [executor, pauser, multisig] = await ethers.getSigners();
+    const configuration = await configurator.getConfiguration(COMET_ADDRESS);
+    const collateralAddresses = configuration.assetConfigs.map((assetConfig) => assetConfig.asset);
+    const dexAdapter = await deployEmptyDexAdapter(collateralAddresses);
+    const liquidationModule = await deployDefaultLiquidationModuleWithComet(
+      {
+        multisig: multisig.address,
+        executors: [executor.address],
+        pausers: [pauser.address],
+        dexAdapter: dexAdapter.address,
+      },
+      COMET_ADDRESS
+    );
+    await configurator.connect(governor).setLiquidationModule(COMET_ADDRESS, liquidationModule.address);
 
     // Deploy new implementation using configurator
     const deployTx = await configurator.connect(governor).deploy(COMET_ADDRESS);

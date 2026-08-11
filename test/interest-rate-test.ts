@@ -61,7 +61,7 @@ describe('interest calculation', function () {
       },
     });
 
-    comet = protocol.cometWithExtendedAssetList;
+    comet = protocol.comet;
     baseToken = protocol.tokens['USDC'] as FaucetToken;
 
     lastUpdatedTime = (await comet.totalsBasic()).lastAccrualTime;
@@ -1844,15 +1844,20 @@ describe('interest calculation', function () {
       const BORROW_AMOUNT: BigNumber = BigNumber.from(exp(2000, baseDecimals)); // 2k$
       const COLLATERAL_VALUE: BigNumber = BigNumber.from(exp(90000, baseDecimals)); // 80k$
       const INITIAL_RESERVES: BigNumber = BigNumber.from(exp(5, baseDecimals)); // 5$
+      const COMET_BALANCE: BigNumber = INITIAL_RESERVES.add(SUPPLY_AMOUNT).add(SUPPLY_AMOUNT);
       let COLLATERAL_AMOUNT: BigNumber; // will be calculated from the price at later testcase
       let expectedTimeElapsed: BigNumber;
+      let prevSupplyIndex: BigNumber;
+      let lastAccrualTime: number;
+      let expectedSupplyIndex: BigNumber;
+      let expectedTotalSupply: BigNumber;
 
       let baseToken: FaucetToken;
       let collateral: FaucetToken;
 
       before(async function () {
         const protocol = await makeProtocol(interestRateParams);
-        testComet = protocol.cometWithExtendedAssetList;
+        testComet = protocol.comet;
         baseToken = protocol.tokens['USDC'] as FaucetToken;
         collateral = protocol.tokens['COMP'] as FaucetToken;
 
@@ -1898,18 +1903,24 @@ describe('interest calculation', function () {
         // get the expected supply index
         // presentValue = principal * supplyIndex / 1e15
         // => expected index = presentValue * 1e15 / principal
-        const expectedSupplyIndex = expectedBalance.mul(exp(1, 15)).div(alicePrincipal);
+        const targetSupplyIndex = expectedBalance.mul(exp(1, 15)).div(alicePrincipal);
 
         // since utilization = 0, lenders will get only baseRate of interest
         const expectedSupplyRate = baseSupplyRate;
 
         // since we started from the initial deposit, the initial index is 1
-        const prevSupplyIndex = BigNumber.from(exp(1, 15));
+        const initialSupplyIndex = BigNumber.from(exp(1, 15));
 
         // get the time elapsed until the required balance
         // accrued index = supply index + supply index * supply rate * time elapsed
         // => time elapsed = (accrued index - supply index) / (supply index * supply rate)
-        expectedTimeElapsed = expectedSupplyIndex.sub(prevSupplyIndex).div(prevSupplyIndex.mul(expectedSupplyRate).div(exp(1, 18)));
+        expectedTimeElapsed = targetSupplyIndex.sub(initialSupplyIndex).div(initialSupplyIndex.mul(expectedSupplyRate).div(exp(1, 18)));
+      });
+
+      it('capture supply index and accrual time before the long accrual', async () => {
+        const totals = await testComet.totalsBasic();
+        prevSupplyIndex = totals.baseSupplyIndex;
+        lastAccrualTime = totals.lastAccrualTime;
       });
 
       it('accrue market right after the expected time elapsed', async () => {
@@ -1919,35 +1930,49 @@ describe('interest calculation', function () {
         await testComet.accrueAccount(ethers.constants.AddressZero);
       });
 
-      it('supply rate is growing as total supply grows', async () => {
-        expect(await baseToken.balanceOf(testComet.address)).to.be.approximately(await testComet.totalSupply(), 1);
-        expect(await testComet.getSupplyRate(0)).to.equal(baseSupplyRate);
+      // Accrual applies the pre-cutoff rate for the full timeElapsed in one step (no index clamp).
+      // Exact post-state is determined by the base-rate formula; getSupplyRate then returns 0
+      // because presentValueSupply >= token balance.
+      it('supply index matches the accrued base-rate formula', async () => {
+        const timeElapsed = (await testComet.totalsBasic()).lastAccrualTime - lastAccrualTime;
+        expectedSupplyIndex = prevSupplyIndex.add(
+          prevSupplyIndex.mul(baseSupplyRate).mul(timeElapsed).div(exp(1, 18))
+        );
+
+        expect((await testComet.totalsBasic()).baseSupplyIndex).to.equal(expectedSupplyIndex);
       });
 
-      it('supply index becomes equal to max possible index', async () => {
-        const baseBalance = await baseToken.balanceOf(testComet.address);
-        const maxIndex = baseBalance.mul(exp(1, 15)).div((await testComet.totalsBasic()).totalSupplyBase);
-        expect((await testComet.totalsBasic()).baseSupplyIndex).to.equal(maxIndex);
+      it('total supply matches present value at the accrued index', async () => {
+        const totalSupplyBase = (await testComet.totalsBasic()).totalSupplyBase;
+        expectedTotalSupply = totalSupplyBase.mul(expectedSupplyIndex).div(exp(1, 15));
+
+        expect(await testComet.totalSupply()).to.equal(expectedTotalSupply);
+      });
+
+      it('supply rate is cut off once present value meets the token balance', async () => {
+        expect(await baseToken.balanceOf(testComet.address)).to.equal(COMET_BALANCE);
+        expect(await testComet.getSupplyRate(0)).to.equal(0);
       });
 
       it('accrue market does not change the supply index', async () => {
-        const prevIndex = (await testComet.totalsBasic()).baseSupplyIndex;
-
         await ethers.provider.send('evm_increaseTime', [60]);
         await ethers.provider.send('evm_mine', []);
 
         await testComet.accrueAccount(ethers.constants.AddressZero);
 
-        const curIndex = (await testComet.totalsBasic()).baseSupplyIndex;
-
-        expect(curIndex).to.equal(prevIndex);
+        expect((await testComet.totalsBasic()).baseSupplyIndex).to.equal(expectedSupplyIndex);
       });
 
       it('charlie borrows some asset and activates the supply rate again', async () => {
         await testComet.connect(charlie).withdraw(baseToken.address, BORROW_AMOUNT);
 
-        const curUtilization = await testComet.getUtilization();
-        expect(curUtilization).to.be.greaterThan(0);
+        // utilization = totalBorrow / totalSupply
+        const totals = await testComet.totalsBasic();
+        const totalBorrow = totals.totalBorrowBase.mul(totals.baseBorrowIndex).div(exp(1, 15));
+        const totalSupply = totals.totalSupplyBase.mul(totals.baseSupplyIndex).div(exp(1, 15));
+        const expectedUtilization = totalBorrow.mul(exp(1, 18)).div(totalSupply);
+
+        expect(await testComet.getUtilization()).to.equal(expectedUtilization);
       });
 
       it('supply rate equals the expected supply rate', async () => {
@@ -1990,7 +2015,7 @@ describe('interest calculation', function () {
 
       before(async function () {
         const protocol = await makeProtocol({ base: 'USDC' });
-        testComet = protocol.cometWithExtendedAssetList;
+        testComet = protocol.comet;
         baseToken = protocol.tokens['USDC'] as FaucetToken;
         collateral = protocol.tokens['COMP'] as FaucetToken;
 
@@ -2063,7 +2088,7 @@ describe('interest calculation', function () {
             },
           },
         });
-        testComet = protocol.cometWithExtendedAssetList;
+        testComet = protocol.comet;
         baseToken = protocol.tokens['USDC'] as FaucetToken;
         collateral = protocol.tokens['COMP'] as FaucetToken;
 

@@ -5,7 +5,7 @@ import {
   SimpleTimelock__factory,
   TransparentUpgradeableProxy__factory
 } from '../../build/types';
-import { ethers, event, expect, makeConfigurator, wait } from './../helpers';
+import { deployAndUpgradeToWithFreshModule, ethers, event, expect, makeConfigurator, prepareFreshLiquidationModule, wait } from './../helpers';
 
 describe('configurator', function() {
   it("Ensure - timelock's admin is set as Governor - Add two(access and not access) test for it.", async () => {
@@ -112,10 +112,16 @@ describe('configurator', function() {
   it("Ensure - CometProxyAdmin's owner is timelock - Test for access", async () => {
     const { signer, timelock } = await initializeAndFundTimelock();
     const {
+      configurator,
       configuratorProxy,
       proxyAdmin,
       cometProxy
     } = await makeConfigurator({ governor: signer });
+
+    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+    // Fresh LM is required: cloning Comet against an already-initialized module reverts with AlreadySet.
+    const newLiquidationModule = await prepareFreshLiquidationModule(configuratorAsProxy, cometProxy.address);
+    await configuratorAsProxy.connect(signer).setLiquidationModule(cometProxy.address, newLiquidationModule.address);
 
     let deployAndUpgradeToCalldata = ethers.utils.defaultAbiCoder.encode(
       ['address', 'address'],
@@ -132,6 +138,7 @@ describe('configurator', function() {
     )) as any;
 
     const abi = [
+      'event AssetListCreated(address indexed assetList, tuple(address asset, address priceFeed, uint8 decimals, uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint128 supplyCap)[] assetConfigs)',
       'event CometDeployed(address indexed cometProxy, address indexed newComet)',
       'event Upgraded(address indexed implementation)'
     ];
@@ -150,12 +157,16 @@ describe('configurator', function() {
     });
 
     // verify the event names
-    expect(events[0].name).to.be.equal('CometDeployed');
-    expect(events[1].name).to.be.equal('Upgraded');
+    expect(events.map((e) => e.name)).to.deep.equal([
+      'AssetListCreated',
+      'CometDeployed',
+      'Upgraded',
+    ]);
 
+    const cometDeployedEvent = events.find((e) => e.name === 'CometDeployed');
     const oldCometProxyAddress = cometProxy.address;
-    const oldCometProxyAddressFromEvent = events[0].args.cometProxy;
-    const newCometProxyAddress = events[0].args.newComet;
+    const oldCometProxyAddressFromEvent = cometDeployedEvent.args.cometProxy;
+    const newCometProxyAddress = cometDeployedEvent.args.newComet;
 
     expect(oldCometProxyAddress).to.be.equal(oldCometProxyAddressFromEvent);
     expect(oldCometProxyAddress).to.be.not.equal(newCometProxyAddress);
@@ -208,11 +219,10 @@ describe('configurator', function() {
     const txn = await wait(
       configuratorAsProxy.setGovernor(cometProxy.address, newGovernor)
     );
-    await wait(
-      proxyAdmin.deployAndUpgradeTo(
-        configuratorProxy.address,
-        cometProxy.address
-      )
+    await deployAndUpgradeToWithFreshModule(
+      proxyAdmin,
+      configuratorAsProxy,
+      cometProxy.address
     );
 
     expect(event(txn, 0)).to.be.deep.equal({
@@ -267,6 +277,7 @@ describe('configurator', function() {
     const { signer, timelock } = await initializeAndFundTimelock();
     const {
       governor,
+      configurator,
       configuratorProxy,
       proxyAdmin,
       cometProxy,
@@ -284,12 +295,17 @@ describe('configurator', function() {
     timelock.setAdmin(governorBravo.address);
 
     const cometAsProxy = comet.attach(cometProxy.address);
+    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
     const ASSET_ADDRESS = (await cometAsProxy.getAssetInfo(1)).asset;
     const NEW_ASSET_SUPPLY_CAP = ethers.BigNumber.from('500000000000000000000');
 
     expect((await cometAsProxy.getAssetInfo(1)).supplyCap).to.be.not.equal(
       NEW_ASSET_SUPPLY_CAP
     );
+
+    // Fresh LM must be set before deployAndUpgradeTo.
+    const newLiquidationModule = await prepareFreshLiquidationModule(configuratorAsProxy, cometProxy.address);
+    await configuratorAsProxy.connect(signer).setLiquidationModule(cometProxy.address, newLiquidationModule.address);
 
     let updateAssetSupplyCapCalldata = ethers.utils.defaultAbiCoder.encode(
       ['address', 'address', 'uint128'],

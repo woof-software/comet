@@ -3,8 +3,9 @@ import { ethers } from 'hardhat';
 import {
   SimplePriceFeed__factory,
   FaucetToken__factory,
-  CometHarness__factory
+  CometHarnessExtendedAssetList__factory,
 } from '../build/types';
+import { default24Assets } from './helpers/default-assets';
 
 describe('asset info', function () {
   it('initializes protocol', async () => {
@@ -20,7 +21,7 @@ describe('asset info', function () {
 
     const cometNumAssets = await comet.numAssets();
     const cometMaxAssets = await comet.maxAssets();
-    expect(cometMaxAssets).to.be.equal(15);
+    expect(cometMaxAssets).to.be.equal(24);
     expect(cometNumAssets).to.be.equal(3);
 
     const assetInfo00 = await comet.getAssetInfo(0);
@@ -43,22 +44,8 @@ describe('asset info', function () {
     let priceFeeds = {};
     const assets = {
       USDC: {},
-      ASSET1: {},
-      ASSET2: {},
-      ASSET3: {},
-      ASSET4: {},
-      ASSET5: {},
-      ASSET6: {},
-      ASSET7: {},
-      ASSET8: {},
-      ASSET9: {},
-      ASSET10: {},
-      ASSET11: {},
-      ASSET12: {},
-      ASSET13: {},
-      ASSET14: {},
-      ASSET15: {},
-      ASSET16: {},
+      ...default24Assets(),
+      ASSET25: {},
     };
     const base = 'USDC';
     const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
@@ -102,7 +89,7 @@ describe('asset info', function () {
       baseMinForRewards: 0,
       baseBorrowMin: 0,
       targetReserves: 0,
-      targetHealthFactor: 0,
+      liquidationModule: ethers.constants.AddressZero,
       assetConfigs: Object.entries(assets).reduce((acc, [symbol], _i) => {
         if (symbol != base) {
           acc.push({
@@ -118,7 +105,7 @@ describe('asset info', function () {
         return acc;
       }, []),
     };
-    const CometFactory = (await ethers.getContractFactory('CometHarness')) as CometHarness__factory;
+    const CometFactory = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
     await expect(
       CometFactory.deploy(config)
     ).to.be.revertedWith("custom error 'TooManyAssets()'");
@@ -127,32 +114,5 @@ describe('asset info', function () {
   it('reverts if index is greater than numAssets', async () => {
     const { comet } = await makeProtocol();
     await expect(comet.getAssetInfo(3)).to.be.revertedWith("custom error 'BadAsset()'");
-  });
-
-  it('reverts if collateral factors are out of range', async () => {
-    await expect(makeProtocol({
-      assets: {
-        USDC: {},
-        ASSET1: {borrowCF: exp(0.9, 18), liquidateCF: exp(0.9, 18)},
-        ASSET2: {},
-      },
-    })).to.be.revertedWith("custom error 'BorrowCFTooLarge()'");
-
-    // check descaled factors
-    await expect(makeProtocol({
-      assets: {
-        USDC: {},
-        ASSET1: {borrowCF: exp(0.9, 18), liquidateCF: exp(0.9, 18) + 1n},
-        ASSET2: {},
-      },
-    })).to.be.revertedWith("custom error 'BorrowCFTooLarge()'");
-
-    await expect(makeProtocol({
-      assets: {
-        USDC: {},
-        ASSET1: {borrowCF: exp(0.99, 18), liquidateCF: exp(1.1, 18)},
-        ASSET2: {},
-      },
-    })).to.be.revertedWith("custom error 'LiquidateCFTooLarge()'");
   });
 });

@@ -14,7 +14,6 @@ abstract contract CometMainInterface is CometCore {
     error BadAsset();
     error BadDecimals();
     error BadDiscount();
-    error BadHealthFactor();
     error BadMinimum();
     error BadPrice();
     error BorrowTooSmall();
@@ -35,6 +34,7 @@ abstract contract CometMainInterface is CometCore {
     error TransferInFailed();
     error TransferOutFailed();
     error Unauthorized();
+    error ZeroAddress();
 
     /// @dev Error emitted when the utilization exceeds the supported utilization
     error ExceedsSupportedUtilization();
@@ -145,6 +145,8 @@ abstract contract CometMainInterface is CometCore {
     function baseToken() virtual external view returns (address);
     function baseTokenPriceFeed() virtual external view returns (address);
     function extensionDelegate() virtual external view returns (address);
+    function liquidationModule() virtual external view returns (address);
+    function assetList() virtual external view returns (address);
 
     /// @dev uint64
     function supplyKink() virtual external view returns (uint);
@@ -180,8 +182,6 @@ abstract contract CometMainInterface is CometCore {
     function baseBorrowMin() virtual external view returns (uint);
     /// @dev uint104
     function targetReserves() virtual external view returns (uint);
-
-    function targetHealthFactor() virtual external view returns (uint);
 
     function numAssets() virtual external view returns (uint8);
     function decimals() virtual external view returns (uint8);

@@ -41,13 +41,17 @@ describe('getReserves', function () {
     const protocol = await makeProtocol({base: 'USDC'});
     const { comet } = protocol;
 
-    // Protocol holds no USDC
-
+    // Protocol holds no USDC.
+    // totalBorrowBase must be non-zero so the supply-index cap does not fire
+    // (cap condition: totalBorrowBase == 0 && totalSupplyBase > 0 would clamp
+    // totalSupply_ to balance=0, making reserves=0 instead of -100).
+    // With baseSupplyIndex=2e15 and baseBorrowIndex=3e15:
+    //   reserves = 0 - 53*2 + 2*3 = -106 + 6 = -100
     await setTotalsBasic(comet, {
       baseSupplyIndex: 2e15,
       baseBorrowIndex: 3e15,
-      totalSupplyBase: 50n,
-      totalBorrowBase: 0n,
+      totalSupplyBase: 53n,
+      totalBorrowBase: 2n,
     });
 
     const reserves = await comet.getReserves();
