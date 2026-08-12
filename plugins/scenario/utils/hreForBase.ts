@@ -9,6 +9,7 @@ import { Environment } from 'hardhat/internal/core/runtime-environment';
 import { ForkSpec } from '../World';
 import { HttpNetworkUserConfig } from 'hardhat/types';
 import { EthereumProvider } from 'hardhat/types/provider';
+import { networkConfigs } from '../../../hardhat.config';
 
 /*
 mimics https://github.com/nomiclabs/hardhat/blob/master/packages/hardhat-core/src/internal/lib/hardhat-lib.ts
@@ -89,6 +90,12 @@ function getBlockRollback(base: ForkSpec) {
     return 25;
 }
 
+let activeMigration = false;
+
+export function migrationStarted() {
+  activeMigration = true;
+}
+
 export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEnvironment> {
   const ctx: HardhatContext = HardhatContext.getHardhatContext();
 
@@ -101,17 +108,51 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
 
   const baseNetwork = networks[base.network] as HttpNetworkUserConfig;
 
-  const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
-  if(baseNetwork.url)
-    console.log(`Forking from network: ${base.network} at block number: ${await provider.getBlockNumber() - (getBlockRollback(base) || 0)}`);
+  const providerUrl = (() => {
+    if (activeMigration){
+      return networkConfigs.find(c => c.network === base.network)?.url;
+    }
+    return baseNetwork.url;
+  })();
+
+  const getBlockNumberWithRetry = async (): Promise<number> => {
+    const provider = new ethers.providers.JsonRpcProvider(providerUrl);
+    const maxAttempts = 5;
+    const retryDelayMs = 5000;
+    const requestTimeoutMs = 10000;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await Promise.race([
+          provider.getBlockNumber(),
+          new Promise<number>((_, reject) =>
+            setTimeout(() => reject(new Error(`Timed out fetching block number after ${requestTimeoutMs / 1000}s`)), requestTimeoutMs)
+          ),
+        ]);
+      } catch (error) {
+        if (attempt === maxAttempts) {
+          throw error;
+        }
+
+        console.warn(`Failed to fetch block number (attempt ${attempt}/${maxAttempts}). Retrying in ${retryDelayMs / 1000}s...`);
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+
+    throw new Error('Failed to fetch block number after retries.');
+  };
+
+  if(providerUrl){
+    console.log(`Forking from network: ${base.network}`);
+    console.log(`At block number: ${await getBlockNumberWithRetry() - (getBlockRollback(base) || 0)}`);
+  }
 
   // noNetwork otherwise
-  if (!base.blockNumber && baseNetwork.url && getBlockRollback(base) !== undefined)
-    base.blockNumber = await provider.getBlockNumber() - getBlockRollback(base); // arbitrary number of blocks to go back
+  if (!base.blockNumber && providerUrl && getBlockRollback(base) !== undefined)
+    base.blockNumber = await getBlockNumberWithRetry() - getBlockRollback(base); // arbitrary number of blocks to go back
 
   if (getBlockRollback(base) === 0) {
-    const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
-    const block = await provider.getBlockNumber();
+    const block = await getBlockNumberWithRetry();
     base.blockNumber = block - 1;
   }
 
@@ -124,7 +165,7 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
     ...{
       forking: {
         enabled: true,
-        url: baseNetwork.url,
+        url: providerUrl,
         httpHeaders: {},
         ...(base.blockNumber && { blockNumber: base.blockNumber }),
       },

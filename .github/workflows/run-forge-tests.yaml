@@ -42,12 +42,10 @@ jobs:
           SCROLL_RPC_URL: ${{ secrets.SCROLL_RPC_URL }}
           UNICHAIN_QUICKNODE_LINK: ${{ secrets.UNICHAIN_QUICKNODE_LINK }}
           LINEA_QUICKNODE_LINK: ${{ secrets.LINEA_QUICKNODE_LINK }}
+          SCROLL_QUICKNODE_LINK: ${{ secrets.SCROLL_QUICKNODE_LINK }}
           RONIN_QUICKNODE_LINK: ${{ secrets.RONIN_QUICKNODE_LINK }}
           ARBITRUM_QUICKNODE_LINK: ${{ secrets.ARBITRUM_QUICKNODE_LINK }}
           POLYGON_QUICKNODE_LINK: ${{ secrets.POLYGON_QUICKNODE_LINK }}
           MANTLE_QUICKNODE_LINK: ${{ secrets.MANTLE_QUICKNODE_LINK }}
           SALT: ${{ secrets.SALT }}
 
-      - name: Build Comet with older solc versions
-        run: |
-          forge build --contracts contracts/CometWithExtendedAssetList.sol --use solc:0.8.15 --via-ir --optimizer-runs 1
