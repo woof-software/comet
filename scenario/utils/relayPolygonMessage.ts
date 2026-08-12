@@ -131,7 +131,7 @@ export default async function relayPolygonMessage(
           await childChainManager.connect(polygonReceiverSigner).onStateReceive(
             123, // stateId
             data, // data
-            { gasPrice: 0 }
+            { gasPrice: 0, gasLimit: 16_777_216 }
           )
         ).wait();
       }
@@ -159,7 +159,7 @@ export default async function relayPolygonMessage(
         await fxChild.connect(polygonReceiverSigner).onStateReceive(
           123, // stateId
           stateSyncedData, // _data
-          { gasPrice: 0 }
+          { gasPrice: 0, gasLimit: 16_777_216 }
         )
       ).wait();
 

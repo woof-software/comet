@@ -234,7 +234,7 @@ const config: HardhatUserConfig = {
     hardhat: {
       chainId: 1337,
       loggingEnabled: !!process.env['LOGGING'],
-      gas: 120000000,
+      gas: 16_777_216,
       gasPrice: 'auto',
       blockGasLimit: 120000000,
       accounts: ETH_PK ?
@@ -251,6 +251,7 @@ const config: HardhatUserConfig = {
               london: 2,
               shanghai: 3,
               cancun: 4,
+              osaka: 5,
             }
           };
           return acc;

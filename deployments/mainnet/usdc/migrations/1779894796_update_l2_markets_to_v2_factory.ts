@@ -726,19 +726,19 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       {
         contract: baseL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [baseBridgeReceiver.address, baseProposalDataPart1, 3_000_000]
+        args: [baseBridgeReceiver.address, baseProposalDataPart1, 2_400_000]
       },
       // 4. Base proposal AERO + WETH
       {
         contract: baseL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [baseBridgeReceiver.address, baseProposalDataPart2, 3_000_000]
+        args: [baseBridgeReceiver.address, baseProposalDataPart2, 2_400_000]
       },
       // 5. Optimism proposal      
       {
         contract: opL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [optimismBridgeReceiver.address, optimismProposalData, 2_500_000]
+        args: [optimismBridgeReceiver.address, optimismProposalData, 2_400_000]
       },
       // 6. Polygon proposal
       {
@@ -820,9 +820,10 @@ The seventh action sets the factory to the newly deployed factory, extension del
 
 The eighth action sets the factory to the newly deployed factory, extension delegate to the newly deployed contract and deploys and upgrades Unichain USDC and WETH Comets to a new version.
 `;
+    const proposalArgs = await proposal(mainnetActions, description);
     const txn = await deploymentManager.retry(async () =>
       trace(
-        await governor.propose(...(await proposal(mainnetActions, description)))
+        await governor.propose(...proposalArgs, { gasLimit: 16_000_000 })
       ), 0, 300_000
     );
 
@@ -833,8 +834,8 @@ The eighth action sets the factory to the newly deployed factory, extension dele
     trace(`Created proposal ${proposalId}.`);
   },
 
-  async enacted(deploymentManager: DeploymentManager): Promise<boolean> {
-    return true;
+  async enacted(): Promise<boolean> {
+    return false;
   },
 
   async verify(deploymentManager: DeploymentManager): Promise<void> {

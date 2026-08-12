@@ -1200,7 +1200,7 @@ export async function voteForOpenProposal(
       try {
         const voter = await impersonateAddress(dm, whale);
         await setNextBaseFeeToZero(dm);
-        await governor.connect(voter).castVote(id, 1, { gasPrice: 0 });
+        await governor.connect(voter).castVote(id, 1, { gasPrice: 0, gasLimit: 16_777_216 });
       } catch (err) {
         debug(`Error while voting for ${whale}`, err.message);
       }
@@ -1260,7 +1260,7 @@ export async function executeOpenProposal(
 
   if ((await governor.state(id)) == ProposalState.Succeeded) {
     await setNextBaseFeeToZero(dm);
-    await governor.queue(id, { gasPrice: 0 });
+    await governor.queue(id, { gasPrice: 0, gasLimit: 16_777_216 });
   }
 
   // Execute proposal (maybe, w/ gas limit so we see if exec reverts, not a gas estimation error)
@@ -1284,7 +1284,7 @@ export async function executeOpenProposal(
     console.log(`Updating CCIP prices...`);
     await updateCCIPStats(dm);
 
-    const tx = await governor.execute(id, { gasPrice: 0, gasLimit: 120000000 });
+    const tx = await governor.execute(id, { gasPrice: 0, gasLimit: 16_777_216 });
     const receipt = await tx.wait();
 
     if (receipt.gasUsed.toNumber() >= 16_777_215) {
@@ -1346,7 +1346,7 @@ export async function fastGovernanceExecute(
             return utils.id(signatures[i]).slice(0, 10) + calldata.slice(2);
           }),
           'FastExecuteProposal',
-          { gasPrice: 0 }
+          { gasPrice: 0, gasLimit: 16_777_216 }
         )
       ).wait()
       : await (

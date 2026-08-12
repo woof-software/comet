@@ -269,7 +269,7 @@ export default async function relayLineaMessage(
         await signer.getAddress()
       );
     }else{
-      await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
+      await bridgeReceiver.executeProposal(id, { gasPrice: 0, gasLimit: 16_777_216 });
     }
    
     console.log(
