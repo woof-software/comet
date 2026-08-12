@@ -234,7 +234,7 @@ export default async function relayRoninMessage(
     } else {
       await updateCCIPStats(bridgeDeploymentManager);
       const signer = await bridgeDeploymentManager.getSigner();
-      await bridgeReceiver.connect(signer).executeProposal(id, { gasPrice: 0 });
+      await bridgeReceiver.connect(signer).executeProposal(id, { gasPrice: 0, gasLimit: 16_777_216 });
       console.log(`[CCIP L2] Executed bridged proposal ${id.toString()}`);
     }
   }

@@ -244,7 +244,7 @@ export async function relayArbitrumMessage(
           ],
         });
 
-        await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
+        await bridgeReceiver.executeProposal(id, { gasPrice: 0, gasLimit: 16_777_216 });
       }
       openBridgedProposals.push({
         id: BigNumber.from(id),
@@ -377,6 +377,7 @@ export async function simulateL2ToL1TokenBridging(
           l1Gateway.address,
           l1Token.toLowerCase() === MAINNET_WETH.toLowerCase() ? amount : 0,
           data,
+          { gasLimit: 16_777_216 }
         );
         await (bridgeTx).wait();
         // stop impersonation after the call

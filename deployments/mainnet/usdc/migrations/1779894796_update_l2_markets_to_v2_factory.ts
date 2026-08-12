@@ -820,9 +820,10 @@ The seventh action sets the factory to the newly deployed factory, extension del
 
 The eighth action sets the factory to the newly deployed factory, extension delegate to the newly deployed contract and deploys and upgrades Unichain USDC and WETH Comets to a new version.
 `;
+    const proposalArgs = await proposal(mainnetActions, description);
     const txn = await deploymentManager.retry(async () =>
       trace(
-        await governor.propose(...(await proposal(mainnetActions, description)))
+        await governor.propose(...proposalArgs, { gasLimit: 16_000_000 })
       ), 0, 300_000
     );
 

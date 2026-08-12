@@ -190,7 +190,7 @@ export default async function relayScrollMessage(
         signer.address
       );
     } else {
-      await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
+      await bridgeReceiver.executeProposal(id, { gasPrice: 0, gasLimit: 16_777_216 });
     }
     console.log(
       `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Executed bridged proposal ${id}`
