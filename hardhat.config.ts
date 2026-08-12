@@ -7,6 +7,8 @@ import hardhatNetworkHelpers from '@nomicfoundation/hardhat-network-helpers';
 import hardhatTypechain from '@nomicfoundation/hardhat-typechain';
 import { defineConfig } from 'hardhat/config';
 
+import deploymentManagerConfig from './plugins/deployment_manager/hardhat3/default-config.js';
+import deploymentManagerPlugin from './plugins/deployment_manager/hardhat3/plugin.js';
 import sourceFilterPlugin from './plugins/hardhat3/source-filter-plugin.js';
 
 const {
@@ -80,6 +82,7 @@ const remoteNetworks = Object.fromEntries(
 export default defineConfig({
   plugins: [
     sourceFilterPlugin,
+    deploymentManagerPlugin,
     hardhatEthers,
     hardhatEthersChaiMatchers,
     hardhatMocha,
@@ -145,4 +148,6 @@ export default defineConfig({
   typechain: {
     outDir: 'build/types',
   },
+
+  deploymentManager: deploymentManagerConfig,
 });
