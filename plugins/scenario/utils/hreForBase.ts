@@ -183,7 +183,7 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
       },
     },
   };
-  return new Environment(
+  const env = new Environment(
     forkedConfig,
     hardhatArguments,
     ctx.tasksDSL.getTaskDefinitions(),
@@ -191,6 +191,10 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
     ctx.environmentExtenders,
     userConfig
   );
+
+  await env.network.provider.send('evm_mine');
+
+  return env;
 }
 
 export default async function hreForBase(base: ForkSpec, fork = true): Promise<HardhatRuntimeEnvironment> {
