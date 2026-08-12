@@ -135,7 +135,7 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       {
         contract: opL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [optimismBridgeReceiver.address, optimismProposalData, 2_500_000]
+        args: [optimismBridgeReceiver.address, optimismProposalData, 2_400_000]
       },
     ];
 

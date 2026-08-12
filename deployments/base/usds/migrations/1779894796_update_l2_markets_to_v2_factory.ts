@@ -193,13 +193,13 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       {
         contract: baseL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [baseBridgeReceiver.address, baseProposalDataPart1, 3_000_000]
+        args: [baseBridgeReceiver.address, baseProposalDataPart1, 2_400_000]
       },
       // 2. Base proposal AERO + WETH
       {
         contract: baseL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [baseBridgeReceiver.address, baseProposalDataPart2, 3_000_000]
+        args: [baseBridgeReceiver.address, baseProposalDataPart2, 2_400_000]
       },
     ];
 

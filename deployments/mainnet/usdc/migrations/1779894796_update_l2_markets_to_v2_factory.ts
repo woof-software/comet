@@ -726,19 +726,19 @@ export default migration('1779894796_update_l2_markets_to_v2_factory', {
       {
         contract: baseL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [baseBridgeReceiver.address, baseProposalDataPart1, 3_000_000]
+        args: [baseBridgeReceiver.address, baseProposalDataPart1, 2_400_000]
       },
       // 4. Base proposal AERO + WETH
       {
         contract: baseL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [baseBridgeReceiver.address, baseProposalDataPart2, 3_000_000]
+        args: [baseBridgeReceiver.address, baseProposalDataPart2, 2_400_000]
       },
       // 5. Optimism proposal      
       {
         contract: opL1CrossDomainMessenger,
         signature: 'sendMessage(address,bytes,uint32)',
-        args: [optimismBridgeReceiver.address, optimismProposalData, 2_500_000]
+        args: [optimismBridgeReceiver.address, optimismProposalData, 2_400_000]
       },
       // 6. Polygon proposal
       {
@@ -833,8 +833,8 @@ The eighth action sets the factory to the newly deployed factory, extension dele
     trace(`Created proposal ${proposalId}.`);
   },
 
-  async enacted(deploymentManager: DeploymentManager): Promise<boolean> {
-    return true;
+  async enacted(): Promise<boolean> {
+    return false;
   },
 
   async verify(deploymentManager: DeploymentManager): Promise<void> {
