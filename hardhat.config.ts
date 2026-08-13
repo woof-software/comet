@@ -11,6 +11,7 @@ import { configVariable, defineConfig } from 'hardhat/config';
 import deploymentManagerConfig from './plugins/deployment_manager/hardhat3/default-config.js';
 import deploymentManagerPlugin from './plugins/deployment_manager/hardhat3/plugin.js';
 import sourceFilterPlugin from './plugins/hardhat3/source-filter-plugin.js';
+import type {} from './plugins/scenario/type-extensions.js';
 
 const {
   ETH_PK,
@@ -158,4 +159,38 @@ export default defineConfig({
   },
 
   deploymentManager: deploymentManagerConfig,
+
+  scenario: {
+    bases: [
+      { name: 'mainnet', network: 'mainnet', deployment: 'usdc', allocation: 1.0 },
+      { name: 'mainnet-weth', network: 'mainnet', deployment: 'weth' },
+      { name: 'mainnet-usdt', network: 'mainnet', deployment: 'usdt' },
+      { name: 'mainnet-wsteth', network: 'mainnet', deployment: 'wsteth' },
+      { name: 'mainnet-usds', network: 'mainnet', deployment: 'usds' },
+      { name: 'mainnet-wbtc', network: 'mainnet', deployment: 'wbtc' },
+      { name: 'development', network: 'hardhat', deployment: 'dai' },
+      { name: 'polygon', network: 'polygon', deployment: 'usdc', auxiliaryBase: 'mainnet' },
+      { name: 'polygon-usdt', network: 'polygon', deployment: 'usdt', auxiliaryBase: 'mainnet' },
+      { name: 'arbitrum-usdc.e', network: 'arbitrum', deployment: 'usdc.e', auxiliaryBase: 'mainnet' },
+      { name: 'arbitrum-usdt', network: 'arbitrum', deployment: 'usdt', auxiliaryBase: 'mainnet' },
+      { name: 'arbitrum-usdc', network: 'arbitrum', deployment: 'usdc', auxiliaryBase: 'mainnet' },
+      { name: 'arbitrum-weth', network: 'arbitrum', deployment: 'weth', auxiliaryBase: 'mainnet' },
+      { name: 'base-usdbc', network: 'base', deployment: 'usdbc', auxiliaryBase: 'mainnet' },
+      { name: 'base-weth', network: 'base', deployment: 'weth', auxiliaryBase: 'mainnet' },
+      { name: 'base-usdc', network: 'base', deployment: 'usdc', auxiliaryBase: 'mainnet' },
+      { name: 'base-aero', network: 'base', deployment: 'aero', auxiliaryBase: 'mainnet' },
+      { name: 'base-usds', network: 'base', deployment: 'usds', auxiliaryBase: 'mainnet' },
+      { name: 'optimism-usdc', network: 'optimism', deployment: 'usdc', auxiliaryBase: 'mainnet' },
+      { name: 'optimism-usdt', network: 'optimism', deployment: 'usdt', auxiliaryBase: 'mainnet' },
+      { name: 'optimism-weth', network: 'optimism', deployment: 'weth', auxiliaryBase: 'mainnet' },
+      { name: 'mantle-usde', network: 'mantle', deployment: 'usde', auxiliaryBase: 'mainnet' },
+      { name: 'unichain-usdc', network: 'unichain', deployment: 'usdc', auxiliaryBase: 'mainnet' },
+      { name: 'unichain-weth', network: 'unichain', deployment: 'weth', auxiliaryBase: 'mainnet' },
+      { name: 'scroll-usdc', network: 'scroll', deployment: 'usdc', auxiliaryBase: 'mainnet' },
+      { name: 'linea-usdc', network: 'linea', deployment: 'usdc', auxiliaryBase: 'mainnet' },
+      { name: 'linea-weth', network: 'linea', deployment: 'weth', auxiliaryBase: 'mainnet' },
+      { name: 'ronin-weth', network: 'ronin', deployment: 'weth', auxiliaryBase: 'mainnet' },
+      { name: 'ronin-wron', network: 'ronin', deployment: 'wron', auxiliaryBase: 'mainnet' },
+    ],
+  },
 });

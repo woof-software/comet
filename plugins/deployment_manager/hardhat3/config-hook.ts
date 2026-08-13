@@ -10,6 +10,7 @@ export default async (): Promise<Partial<ConfigHooks>> => ({
       ...resolvedConfig,
       deploymentManager:
         (userConfig.deploymentManager as DeploymentManagerConfig | undefined) ?? {},
+      scenario: userConfig.scenario ?? { bases: [] },
     };
   },
 });
