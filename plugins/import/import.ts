@@ -1,6 +1,6 @@
-import { get, post, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan';
-import { getBlockscoutApiUrl, getBlockscoutRPCUrl } from './blockscout';
-import { providers } from 'ethers';
+import { get, post, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan.js';
+import { getBlockscoutApiUrl, getBlockscoutRPCUrl } from './blockscout.js';
+import { JsonRpcProvider } from 'ethers';
 
 export function debug(...args: any[]) {
   if (process.env['DEBUG']) {
@@ -167,7 +167,7 @@ async function getBlockscoutApiData(network: string, address: string): Promise<E
 async function scrapeContractCreationCodeFromBlockscoutRPC(network: string, address: string) {
   // get code from JSON rpc
   const rpcUrl = await getBlockscoutRPCUrl(network);
-  const provider = new providers.JsonRpcProvider(rpcUrl);
+  const provider = new JsonRpcProvider(rpcUrl);
   const code = await provider.send('eth_getCode', [address, 'latest']);
   return code.slice(2);
 }

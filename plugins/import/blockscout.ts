@@ -47,7 +47,7 @@ export async function getBlockscoutRPCUrl(network: string): Promise<string> {
 }
 
 export async function get(url, data) {
-  const res = (await axios.get(url, { params: data }))['data'];
+  const axiosClient = axios as unknown as import('axios').AxiosStatic;
+  const res = (await axiosClient.get(url, { params: data }))['data'];
   return res;
 }
-

@@ -1,24 +1,30 @@
 import { diff } from 'jest-diff';
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
-import { Contract, providers, Wallet, constants } from 'ethers';
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { Alias, Address, BuildFile, TraceFn } from './Types';
-import { getAliases, storeAliases, putAlias } from './Aliases';
-import { Cache } from './Cache';
-import { ContractMap, getBuildFile } from './ContractMap';
-import { DeployOpts, deploy, deployBuild } from './Deploy';
-import { fetchAndCacheContract, readContract } from './Import';
-import { getRelationConfig } from './RelationConfig';
-import { getRoots, putRoots } from './Roots';
-import { Spider, spider } from './Spider';
-import { Migration, getArtifactSpec } from './Migration';
-import { generateMigration } from './MigrationTemplate';
-import { ExtendedNonceManager } from './NonceManager';
-import { asyncCallWithTimeout, debug, getEthersContract, mergeIntoProxyContract, txCost } from './Utils';
-import { deleteVerifyArgs, getVerifyArgs } from './VerifyArgs';
-import { verifyContract, VerifyArgs, VerificationStrategy } from './Verify';
+import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
+import { Contract, Interface, Wallet, ZeroAddress } from 'ethers';
+import type { Signer } from 'ethers';
+import type { Alias, Address, BuildFile, TraceFn } from './Types.js';
+import { getAliases, storeAliases, putAlias } from './Aliases.js';
+import { Cache } from './Cache.js';
+import { getBuildFile } from './ContractMap.js';
+import type { ContractMap } from './ContractMap.js';
+import { deploy, deployBuild } from './Deploy.js';
+import type { DeployOpts } from './Deploy.js';
+import { fetchAndCacheContract, readContract } from './Import.js';
+import { getRelationConfig } from './RelationConfig.js';
+import { getRoots, putRoots } from './Roots.js';
+import { spider } from './Spider.js';
+import type { Spider } from './Spider.js';
+import { getArtifactSpec } from './Migration.js';
+import type { Migration } from './Migration.js';
+import { generateMigration } from './MigrationTemplate.js';
+import { ExtendedNonceManager } from './NonceManager.js';
+import { asyncCallWithTimeout, debug, getEthersContract, mergeIntoProxyContract, txCost } from './Utils.js';
+import { deleteVerifyArgs, getVerifyArgs } from './VerifyArgs.js';
+import { verifyContract } from './Verify.js';
+import type { VerifyArgs, VerificationStrategy } from './Verify.js';
 import path from 'path';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { getHardhatEthers } from './hardhat3/runtime.js';
 
 interface DeploymentDelta {
   old: { start: Date, count: number, spider: Spider };
@@ -36,9 +42,8 @@ interface DeploymentManagerConfig {
 
 export type Deployed = { [alias: Alias]: Contract };
 
-async function getManagedSigner(signer): Promise<SignerWithAddress> {
-  const managedSigner = new ExtendedNonceManager(signer) as unknown as providers.JsonRpcSigner;
-  return SignerWithAddress.create(managedSigner);
+async function getManagedSigner(signer: Signer): Promise<ExtendedNonceManager> {
+  return new ExtendedNonceManager(signer);
 }
 
 export class DeploymentManager {
@@ -50,7 +55,7 @@ export class DeploymentManager {
   spent: number;
   cache: Cache; // TODO: kind of a misnomer since its handling *all* path stuff
   contractsCache: ContractMap | null;
-  _signers: SignerWithAddress[];
+  _signers: ExtendedNonceManager[];
   bridgedDeploymentManagers: Map<string, DeploymentManager> = new Map();
 
   constructor(
@@ -90,16 +95,16 @@ export class DeploymentManager {
     return this.bridgedDeploymentManagers.get(key)!;
   }
 
-  async getSigners(): Promise<SignerWithAddress[]> {
+  async getSigners(): Promise<ExtendedNonceManager[]> {
     if (this._signers.length > 0) {
       return this._signers;
     }
-    const signers = await this.hre.ethers.getSigners();
+    const signers = await (await getHardhatEthers(this.hre)).getSigners();
     this._signers = await Promise.all(signers.map(getManagedSigner));
     return this._signers;
   }
 
-  async getSigner(address?: string): Promise<SignerWithAddress> {
+  async getSigner(address?: string): Promise<ExtendedNonceManager> {
     // no address specified, return any signer
     if (!address) {
       return (await this.getSigners())[0];
@@ -107,20 +112,22 @@ export class DeploymentManager {
 
     // address given, first try to find the managed signer for it
     const signers = await this.getSigners(); // ensure loaded
-    const signer = signers.find(s => s.address.toLowerCase() === address.toLowerCase());
+    const signerAddresses = await Promise.all(signers.map(async signer => await signer.getAddress()));
+    const signerIndex = signerAddresses.findIndex(signerAddress => signerAddress.toLowerCase() === address.toLowerCase());
+    const signer = signerIndex === -1 ? undefined : signers[signerIndex];
     if (signer) {
       return signer;
     }
 
     // otherwise create a new managed signer for the given address
-    const newSigner = await getManagedSigner(await this.hre.ethers.getSigner(address));
+    const newSigner = await getManagedSigner(await (await getHardhatEthers(this.hre)).getSigner(address));
     signers.push(newSigner);
     return newSigner;
   }
 
   async resetSignersPendingCounts() {
     // nonce manager never clears the _deltaCount, so we add a helper to force it
-    await Promise.all(this._signers.map(s => s['_signer']._reset()));
+    await Promise.all(this._signers.map(s => s.resetPendingNonce()));
   }
 
   private async deployOpts(): Promise<DeployOpts> {
@@ -167,7 +174,7 @@ export class DeploymentManager {
   /* Unconditionally casts a contract as the given artifact type, without caching */
   async cast<C extends Contract>(address: string, artifact: string): Promise<C> {
     const buildFile = await readContract(this.cache, this.hre, artifact, this.network, address, true);
-    return getEthersContract<C>(address, buildFile, this.hre);
+    return await getEthersContract<C>(address, buildFile, this.hre);
   }
 
   /* Conditionally clones a contract with its alias from a given network to this deployment */
@@ -180,7 +187,7 @@ export class DeploymentManager {
     retries?: number
   ): Promise<C> {
     const maybeExisting: C = await this.contract(alias);
-    if (!maybeExisting || maybeExisting.address == constants.AddressZero || force) {
+  if (!maybeExisting || await maybeExisting.getAddress() === ZeroAddress || force) {
       const buildFile = await this.import(address, fromNetwork);
       const contract: C = await this._deployBuild(buildFile, deployArgs, retries);
       await this.putAlias(alias, contract);
@@ -224,10 +231,10 @@ export class DeploymentManager {
             buildFile = await this.import(address, network);
           }
           trace(`Loaded ${buildFile.contract} from ${address} for '${alias}'`);
-          return getEthersContract<C>(address, buildFile, this.hre);
+          return await getEthersContract<C>(address, buildFile, this.hre);
         })
       );
-      const contract = mergeIntoProxyContract<C>(contracts, this.hre);
+      const contract = await mergeIntoProxyContract<C>(contracts, this.hre);
       await this.putAlias(alias, contract);
       trace(`Loaded ${alias} from ${network} @ ${addresses}`);
       return contract;
@@ -248,7 +255,7 @@ export class DeploymentManager {
       throw new Error(`Unable to find contract ${network}/${deployment}:${otherAlias}`);
     }
     await this.putAlias(alias, contract);
-    trace(`Loaded ${alias} from ${network}/${deployment}:${otherAlias} (${contract.address})'`);
+    trace(`Loaded ${alias} from ${network}/${deployment}:${otherAlias} (${await contract.getAddress()})'`);
     return contract;
   }
 
@@ -256,10 +263,8 @@ export class DeploymentManager {
   async _deploy<C extends Contract>(contractFile: string, deployArgs: any[], retries?: number): Promise<C> {
     if(this.config.saveBytecode) {
       const contractFileName = contractFile.split('/').reverse()[0].split('.')[0];
-      const artifact = this.hre.artifacts.readArtifactSync(contractFileName);
-      const iface = new this.hre.ethers.utils.Interface(
-        artifact.abi
-      );
+      const artifact = await this.hre.artifacts.readArtifact(contractFileName);
+      const iface = new Interface(artifact.abi);
 
       const bytecodeWithArgs =
           artifact.bytecode +
@@ -272,7 +277,7 @@ export class DeploymentManager {
         const signer = await this.getSigner();
 
         // check tx in pending state
-        const pendingTx = await signer.provider.getTransactionCount(signer.address, 'pending');
+        const pendingTx = await signer.provider!.getTransactionCount(await signer.getAddress(), 'pending');
         console.log(`Pending transactions for ${contractFile} deployment: ${pendingTx}`);
 
         return deploy(contractFile, deployArgs, this.hre, await this.deployOpts());
@@ -431,7 +436,7 @@ export class DeploymentManager {
         
         if (buildFile) {
           // Create ethers Contract from build file
-          const contract = getEthersContract(address, buildFile, this.hre);
+          const contract = await getEthersContract(address, buildFile, this.hre);
           
           // Store in contractsCache
           this.contractsCache.set(alias, contract);
@@ -453,10 +458,13 @@ export class DeploymentManager {
       this.network,
       this.deployment
     );
-    const roots = new Map([
-      ...await getRoots(this.cache),
-      ...Object.entries(deployed).map(([a, c]): [Alias, Address] => [a, c.address])
-    ]);
+    const deployedRoots = await Promise.all(
+      Object.entries(deployed).map(async ([alias, contract]): Promise<[Alias, Address]> => [
+        alias,
+        await contract.getAddress(),
+      ])
+    );
+    const roots = new Map([...await getRoots(this.cache), ...deployedRoots]);
     const crawl = await spider(
       this.cache,
       this.network,
@@ -480,8 +488,8 @@ export class DeploymentManager {
 
   /* Stores a new alias, which can then be referenced via `deploymentManager.contract()` */
   async putAlias(alias: Alias, contract: Contract) {
-    await putAlias(this.cache, alias, contract.address);
-    this.contractsCache.set(alias, contract);
+    await putAlias(this.cache, alias, await contract.getAddress());
+    this.contractsCache?.set(alias, contract);
   }
 
   /* Read an alias from another deployment */
@@ -511,10 +519,12 @@ export class DeploymentManager {
   }
 
   /* Gets all the contracts, connected to signer, as an object */
-  async getContracts(signer?: SignerWithAddress): Promise<{ [alias: Alias]: Contract }> {
+  async getContracts(signer?: ExtendedNonceManager): Promise<{ [alias: Alias]: Contract }> {
     const contracts = await this.contracts();
     const signer_ = signer ?? await this.getSigner();
-    return Object.fromEntries([...contracts].map(([a, c]) => [a, c.connect(signer_)]));
+    return Object.fromEntries(
+      [...contracts].map(([alias, contract]) => [alias, contract.connect(signer_) as Contract])
+    );
   }
 
   /* Returns a single contracts indexed by alias.
@@ -527,13 +537,13 @@ export class DeploymentManager {
    * "Compound Comet"
    * ```
    **/
-  async contract<T extends Contract>(alias: string, signer?: SignerWithAddress | Wallet): Promise<T | undefined> {
+  async contract<T extends Contract>(alias: string, signer?: ExtendedNonceManager | Wallet): Promise<T | undefined> {
     const contracts = await this.contracts();
     const contract = contracts.get(alias);
     return contract && contract.connect(signer ?? await this.getSigner()) as T;
   }
 
-  async getContractOrThrow<T extends Contract>(alias: string, signer?: SignerWithAddress): Promise<T> {
+  async getContractOrThrow<T extends Contract>(alias: string, signer?: ExtendedNonceManager): Promise<T> {
     const tag = `${this.network}/${this.deployment}`;
     const contract = await this.contract<T>(alias, signer);
     if (!contract) {
@@ -604,8 +614,8 @@ export class DeploymentManager {
       } else {
         return first.wait().then(async (tx) => {
           const cost = Number(txCost(tx) / (10n ** 12n)) / 1e6;
-          const logs = tx.events.map(e => `${e.event ?? 'unknown'}(${e.args ?? '?'})`).join(' ');
-          const info = `@ ${tx.transactionHash}[${tx.transactionIndex}]`;
+          const logs = tx.logs.map(log => `log(${log.topics[0] ?? '?'})`).join(' ');
+          const info = `@ ${tx.hash}[${tx.index}]`;
           const desc = `${info} in blockNumber: ${tx.blockNumber} emits: ${logs}`;
           debug(`[${this.network}] {${cost} Ξ}`, ...rest, desc);
           this.spent += cost;

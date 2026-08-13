@@ -1,6 +1,7 @@
 import { Contract } from 'ethers';
-import { Cache, FileSpec } from './Cache';
-import { Address, Alias, BuildFile } from './Types';
+import { Cache } from './Cache.js';
+import type { FileSpec } from './Cache.js';
+import type { Address, Alias, BuildFile } from './Types.js';
 
 export type ContractMap = Map<Alias, Contract>;
 

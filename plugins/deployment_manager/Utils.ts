@@ -1,7 +1,8 @@
 import * as fs from 'fs/promises';
-import { HardhatRuntimeEnvironment as HRE } from 'hardhat/types';
+import type { HardhatRuntimeEnvironment as HRE } from 'hardhat/types/hre';
 import { Contract } from 'ethers';
-import { ABI, BuildFile, ContractMetadata } from './Types';
+import type { ABI, BuildFile, ContractMetadata } from './Types.js';
+import { getHardhatEthers } from './hardhat3/runtime.js';
 
 type InputOrOutput = {
   name: string;
@@ -78,9 +79,10 @@ export function getPrimaryContract(buildFile: BuildFile): [string, ContractMetad
   return [targetContract, contractMetadata];
 }
 
-export function getEthersContract<C extends Contract>(address: string, buildFile: BuildFile, hre: HRE): C {
+export async function getEthersContract<C extends Contract>(address: string, buildFile: BuildFile, hre: HRE): Promise<C> {
   const [_, metadata] = getPrimaryContract(buildFile);
-  return new hre.ethers.Contract(address, metadata.abi, hre.ethers.provider) as C;
+  const ethers = await getHardhatEthers(hre);
+  return new Contract(address, metadata.abi, ethers.provider) as C;
 }
 
 // merge two ABIs, duplicate entries are removed
@@ -98,18 +100,19 @@ export function mergeABI(abi0: ABI, abi1: ABI): ABIEntry[] {
   return Object.values(entries);
 }
 
-export function mergeContracts<C extends Contract>(address: string, contracts: Contract[], hre: HRE): C {
+export async function mergeContracts<C extends Contract>(address: string, contracts: Contract[], hre: HRE): Promise<C> {
+  const ethers = await getHardhatEthers(hre);
   return contracts.slice(1).reduce((merged, contract) => {
-    return new hre.ethers.Contract(
+    return new Contract(
       address,
-      mergeABI(merged.interface.format('json'), contract.interface.format('json')),
-      hre.ethers.provider
+      mergeABI(merged.interface.formatJson(), contract.interface.formatJson()),
+      ethers.provider
     );
-  }, new hre.ethers.Contract(address, contracts[0].interface, hre.ethers.provider)) as C;
+  }, new Contract(address, contracts[0].interface, ethers.provider)) as C;
 }
 
-export function mergeIntoProxyContract<C extends Contract>(contracts: Contract[], hre: HRE): C {
-  return mergeContracts(contracts.slice(-1)[0].address, contracts, hre);
+export async function mergeIntoProxyContract<C extends Contract>(contracts: Contract[], hre: HRE): Promise<C> {
+  return mergeContracts(await contracts.slice(-1)[0].getAddress(), contracts, hre);
 }
 
 export function objectToMap<V>(obj: object | { [k: string]: V }): Map<string, V> {
@@ -140,8 +143,8 @@ export function asArray<A>(v: A | A[]): A[] {
   }
 }
 
-export function txCost({ cumulativeGasUsed, effectiveGasPrice }): bigint {
-  return cumulativeGasUsed.mul(effectiveGasPrice).toBigInt();
+export function txCost({ gasUsed, gasPrice }: { gasUsed: bigint; gasPrice: bigint }): bigint {
+  return gasUsed * gasPrice;
 }
 
 /**

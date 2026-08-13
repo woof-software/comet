@@ -1,9 +1,10 @@
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
-import { Contract } from 'ethers';
+import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
+import type { Contract } from 'ethers';
+import { verifyContract as hardhatVerifyContract } from '@nomicfoundation/hardhat-verify/verify';
 
-import { manualVerifyContract } from './ManualVerify';
-import { BuildFile } from './Types';
-import { debug } from './Utils';
+import { manualVerifyContract } from './ManualVerify.js';
+import type { BuildFile } from './Types.js';
+import { debug } from './Utils.js';
 
 export type VerifyArgs =
   | { via: 'artifacts', address: string, constructorArguments: any, contract?: string }
@@ -22,13 +23,14 @@ export async function verifyContract(
   try {
     if (verifyArgs.via === 'artifacts') {
       address = verifyArgs.address;
-      await hre.run('verify:verify', {
+      await hardhatVerifyContract({
         address: verifyArgs.address,
-        constructorArguments: verifyArgs.constructorArguments,
+        constructorArgs: verifyArgs.constructorArguments,
+        provider: 'etherscan',
         ...(verifyArgs.contract !== undefined && { contract: verifyArgs.contract }),
-      });
+      }, hre);
     } else if (verifyArgs.via === 'buildfile') {
-      address = verifyArgs.contract.address;
+      address = await verifyArgs.contract.getAddress();
       await manualVerifyContract(
         verifyArgs.contract,
         verifyArgs.buildFile,

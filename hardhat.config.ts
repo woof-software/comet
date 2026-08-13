@@ -5,7 +5,8 @@ import hardhatEthersChaiMatchers from '@nomicfoundation/hardhat-ethers-chai-matc
 import hardhatMocha from '@nomicfoundation/hardhat-mocha';
 import hardhatNetworkHelpers from '@nomicfoundation/hardhat-network-helpers';
 import hardhatTypechain from '@nomicfoundation/hardhat-typechain';
-import { defineConfig } from 'hardhat/config';
+import hardhatVerify from '@nomicfoundation/hardhat-verify';
+import { configVariable, defineConfig } from 'hardhat/config';
 
 import deploymentManagerConfig from './plugins/deployment_manager/hardhat3/default-config.js';
 import deploymentManagerPlugin from './plugins/deployment_manager/hardhat3/plugin.js';
@@ -88,7 +89,14 @@ export default defineConfig({
     hardhatMocha,
     hardhatNetworkHelpers,
     hardhatTypechain,
+    hardhatVerify,
   ],
+
+  verify: {
+    etherscan: {
+      apiKey: configVariable('ETHERSCAN_KEY'),
+    },
+  },
 
   solidity: {
     version: '0.8.15',
