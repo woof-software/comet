@@ -18,9 +18,8 @@ export async function nonForkedHreForBase(base: ForkSpec): Promise<HardhatRuntim
 
 function getBlockRollback(base: ForkSpec): number | undefined {
   console.log(`Getting block rollback for network: ${base.network}`);
-  if (base.blockNumber !== undefined) return base.blockNumber;
   if (base.network === 'linea') return 150;
-  if (base.network === 'ronin' || base.network === 'unichain') return 0;
+  if (base.network === 'ronin' || base.network === 'unichain') return 1;
   if (base.network === 'arbitrum' || base.network === 'optimism') return undefined;
   if (base.network === 'base') return 100;
   if (base.network === 'mainnet') return 10;
@@ -32,7 +31,7 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
   const remoteEthers = remoteConnection.ethers;
   const currentBlock = await remoteEthers.provider.getBlockNumber();
   const rollback = getBlockRollback(base);
-  const blockNumber = base.blockNumber ?? (rollback === undefined ? undefined : currentBlock - rollback || currentBlock - 1);
+  const blockNumber = base.blockNumber ?? (rollback === undefined ? undefined : currentBlock - rollback);
   const remoteConfig = remoteConnection.networkConfig;
   if (remoteConfig.type !== 'http') {
     throw new Error(`Cannot fork non-HTTP network ${base.network}`);
