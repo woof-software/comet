@@ -54,5 +54,7 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
 }
 
 export default async function hreForBase(base: ForkSpec, fork = true): Promise<HardhatRuntimeEnvironment> {
-  return fork ? forkedHreForBase(base) : nonForkedHreForBase(base);
+  return fork && base.network !== 'hardhat'
+    ? forkedHreForBase(base)
+    : nonForkedHreForBase(base);
 }

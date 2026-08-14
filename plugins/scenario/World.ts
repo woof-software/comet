@@ -1,9 +1,9 @@
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-
 // NB: this couples this plugin to deployment manager plugin
-import { DeploymentManager } from '../deployment_manager/DeploymentManager';
-import hreForBase from './utils/hreForBase';
-import { impersonateAddress } from './utils';
+import { DeploymentManager } from '../deployment_manager/DeploymentManager.js';
+import type { ExtendedNonceManager } from '../deployment_manager/NonceManager.js';
+import { getHardhatEthers } from '../deployment_manager/hardhat3/runtime.js';
+import hreForBase from './utils/hreForBase.js';
+import { impersonateAddress } from './utils/index.js';
 
 export type ForkSpec = {
   name: string;
@@ -41,7 +41,8 @@ export class World {
       this.auxiliaryDeploymentManager = new DeploymentManager(auxiliaryBase.network, auxiliaryBase.deployment, await hreForBase(auxiliaryBase));
       this.snapshotAuxiliaryDeploymentManager = this.auxiliaryDeploymentManager;
     }
-    await this.deploymentManager.hre.network.provider.send('evm_mine');
+    const { provider } = await getHardhatEthers(this.deploymentManager.hre);
+    await provider.send('evm_mine', []);
   }
 
   isRemoteFork(): boolean {
@@ -50,34 +51,26 @@ export class World {
 
   async _snapshot(): Promise<Snapshot> {
     this.snapshotDeploymentManager = this.deploymentManager.fork();
-    const snapshot = await this.deploymentManager.hre.network.provider.request({
-      method: 'evm_snapshot',
-      params: [],
-    }) as string;
+    const { provider } = await getHardhatEthers(this.deploymentManager.hre);
+    const snapshot = await provider.send('evm_snapshot', []) as string;
     let auxiliarySnapshot: string;
     if (this.auxiliaryDeploymentManager) {
       this.snapshotAuxiliaryDeploymentManager = this.auxiliaryDeploymentManager.fork();
-      auxiliarySnapshot = await this.auxiliaryDeploymentManager.hre.network.provider.request({
-        method: 'evm_snapshot',
-        params: [],
-      }) as string;
+      const auxiliaryEthers = await getHardhatEthers(this.auxiliaryDeploymentManager.hre);
+      auxiliarySnapshot = await auxiliaryEthers.provider.send('evm_snapshot', []) as string;
     }
     return { snapshot, auxiliarySnapshot };
   }
 
   async _revert(snapshot: Snapshot) {
     this.deploymentManager = this.snapshotDeploymentManager;
-    await this.deploymentManager.hre.network.provider.request({
-      method: 'evm_revert',
-      params: [snapshot.snapshot],
-    });
+    const { provider } = await getHardhatEthers(this.deploymentManager.hre);
+    await provider.send('evm_revert', [snapshot.snapshot]);
 
     if (this.auxiliaryDeploymentManager) {
       this.auxiliaryDeploymentManager = this.snapshotAuxiliaryDeploymentManager;
-      await this.auxiliaryDeploymentManager.hre.network.provider.request({
-        method: 'evm_revert',
-        params: [snapshot.auxiliarySnapshot],
-      });
+      const auxiliaryEthers = await getHardhatEthers(this.auxiliaryDeploymentManager.hre);
+      await auxiliaryEthers.provider.send('evm_revert', [snapshot.auxiliarySnapshot]);
     }
   }
 
@@ -86,23 +79,28 @@ export class World {
     return await this._snapshot();
   }
 
-  async impersonateAddress(address: string, opts?: { value?: bigint, onGovNetwork?: boolean }): Promise<SignerWithAddress> {
+  async impersonateAddress(address: string, opts?: { value?: bigint, onGovNetwork?: boolean }): Promise<ExtendedNonceManager> {
     const options = opts ?? {};
     const dm = options.onGovNetwork ? this.auxiliaryDeploymentManager ?? this.deploymentManager : this.deploymentManager;
     return await impersonateAddress(dm, address, options.value);
   }
 
   async timestamp() {
-    const blockNumber = await this.deploymentManager.hre.ethers.provider.getBlockNumber();
-    return (await this.deploymentManager.hre.ethers.provider.getBlock(blockNumber)).timestamp;
+    const { provider } = await getHardhatEthers(this.deploymentManager.hre);
+    const blockNumber = await provider.getBlockNumber();
+    const block = await provider.getBlock(blockNumber);
+    if (block === null) throw new Error(`Cannot load block ${blockNumber}`);
+    return block.timestamp;
   }
 
   async increaseTime(amount: number) {
-    await this.deploymentManager.hre.network.provider.send('evm_increaseTime', [amount]);
-    await this.deploymentManager.hre.network.provider.send('evm_mine'); // ensure block is mined
+    const { provider } = await getHardhatEthers(this.deploymentManager.hre);
+    await provider.send('evm_increaseTime', [amount]);
+    await provider.send('evm_mine', []); // ensure block is mined
   }
 
   async chainId() {
-    return (await this.deploymentManager.hre.ethers.provider.getNetwork()).chainId;
+    const { provider } = await getHardhatEthers(this.deploymentManager.hre);
+    return (await provider.getNetwork()).chainId;
   }
 }

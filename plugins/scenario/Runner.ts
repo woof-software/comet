@@ -1,7 +1,10 @@
-import { Scenario, ScenarioEnv, Solution } from './Scenario';
-import { ForkSpec, World } from './World';
-import { Loader } from './Loader';
-import { showReport, pluralize, Result } from './Report';
+import { Scenario } from './Scenario.js';
+import type { ScenarioEnv, Solution } from './Scenario.js';
+import { World } from './World.js';
+import type { ForkSpec } from './World.js';
+import { Loader } from './Loader.js';
+import { showReport, pluralize } from './Report.js';
+import type { Result } from './Report.js';
 import { AssertionError } from 'chai';
 
 export type Address = string;
@@ -110,7 +113,7 @@ export class Runner<T, U, R> {
         // requirements met, run the property
         let txnReceipt = await scenario.property(await env.transformer(ctx), ctx, world);
         if (txnReceipt) {
-          cumulativeGas += txnReceipt.cumulativeGasUsed.toNumber();
+          cumulativeGas += Number(txnReceipt.cumulativeGasUsed);
         }
         numSolutionSets++;
       } catch (e) {
@@ -159,7 +162,7 @@ async function retry(fn: () => Promise<any>, retries: number = 10, timeLimit?: n
     return await asyncCallWithTimeout(fn(), timeLimit);
   } catch (e) {
     if (retries === 0) throw e;
-    if (e.reason !== 'could not detect network')
+    if (!(e instanceof Error) || !('reason' in e) || e.reason !== 'could not detect network')
       throw e;
 
     console.warn(`Retrying in ${wait}ms...`);
