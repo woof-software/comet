@@ -1,10 +1,10 @@
-import { StaticConstraint, debug } from '../../plugins/scenario';
-import { IGovernorBravo, ProposalState, OpenProposal } from '../context/Gov';
-import { CometContext } from '../context/CometContext';
-import { fetchLogs } from '../utils';
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { isBridgedDeployment, executeOpenProposal, voteForOpenProposal, executeOpenProposalAndRelay } from '../utils';
-import { getOpenBridgedProposals, executeBridgedProposal } from '../utils/bridgeProposal';
+import { StaticConstraint, debug } from '../../plugins/scenario/index.js';
+import { IGovernorBravo, ProposalState, OpenProposal } from '../context/Gov.js';
+import { CometContext } from '../context/CometContext.js';
+import { fetchLogs } from '../utils/index.js';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { isBridgedDeployment, executeOpenProposal, voteForOpenProposal, executeOpenProposalAndRelay } from '../utils/index.js';
+import { getOpenBridgedProposals, executeBridgedProposal } from '../utils/bridgeProposal.js';
 
 export async function getOpenProposals(deploymentManager: DeploymentManager, governor: IGovernorBravo): Promise<OpenProposal[]> {
   const timelockBuf = 30000; // XXX this should be timelock.delay + timelock.GRACE_PERIOD

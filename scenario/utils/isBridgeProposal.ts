@@ -1,5 +1,5 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { OpenProposal } from '../context/Gov';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { OpenProposal } from '../context/Gov.js';
 
 export async function isBridgeProposal(
   governanceDeploymentManager: DeploymentManager,

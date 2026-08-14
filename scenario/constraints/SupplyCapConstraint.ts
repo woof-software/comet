@@ -1,9 +1,9 @@
-import { Constraint, Solution } from '../../plugins/scenario';
-import { CometContext } from '../context/CometContext';
+import { Constraint, Solution } from '../../plugins/scenario/index.js';
+import { CometContext } from '../context/CometContext.js';
 import { expect } from 'chai';
-import { Requirements } from './Requirements';
-import { exp } from '../../test/helpers';
-import { ComparisonOp, getAssetFromName, parseAmount } from '../utils';
+import { Requirements } from './Requirements.js';
+import { exp } from '../../test/helpers.js';
+import { ComparisonOp, getAssetFromName, parseAmount } from '../utils/index.js';
 
 export class SupplyCapConstraint<T extends CometContext, R extends Requirements> implements Constraint<T, R> {
   async solve(requirements: R, _initialContext: T) {

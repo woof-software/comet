@@ -1,9 +1,9 @@
-import { Constraint, Solution } from '../../plugins/scenario';
-import { CometContext } from '../context/CometContext';
+import { Constraint, Solution } from '../../plugins/scenario/index.js';
+import { CometContext } from '../context/CometContext.js';
 import { expect } from 'chai';
-import { Requirements } from './Requirements';
-import { exp } from '../../test/helpers';
-import { ComparisonOp, parseAmount, getToTransferAmount } from '../utils';
+import { Requirements } from './Requirements.js';
+import { exp } from '../../test/helpers.js';
+import { ComparisonOp, parseAmount, getToTransferAmount } from '../utils/index.js';
 
 export class ReservesConstraint<T extends CometContext, R extends Requirements> implements Constraint<T, R> {
   async solve(requirements: R, _initialContext: T) {

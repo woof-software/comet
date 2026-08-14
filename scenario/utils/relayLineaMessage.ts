@@ -1,10 +1,10 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils.js';
 import { constants, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
-import { OpenBridgedProposal } from '../context/Gov';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { isTenderlyLog } from './index';
+import { OpenBridgedProposal } from '../context/Gov.js';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import { isTenderlyLog } from './index.js';
 
 const LINEA_SETTER_ROLE_ACCOUNT = '0xc1C6B09D1eB6fCA0fF3cA11027E5Bc4AeDb47F67';
 

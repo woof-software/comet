@@ -1,4 +1,4 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
 
 export async function setNextBaseFeeToZero(dm: DeploymentManager) {
   await dm.hre.network.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x0']);

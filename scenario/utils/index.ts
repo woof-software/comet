@@ -13,24 +13,24 @@ import {
 } from 'ethers';
 import { execSync } from 'child_process';
 import { existsSync } from 'fs';
-import { CometContext } from '../context/CometContext';
-import CometAsset from '../context/CometAsset';
-import { exp } from '../../test/helpers';
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { ProposalState, OpenProposal } from '../context/Gov';
-import { debug } from '../../plugins/deployment_manager/Utils';
-import { COMP_WHALES } from '../../src/deploy';
-import relayMessage from './relayMessage';
+import { CometContext } from '../context/CometContext.js';
+import CometAsset from '../context/CometAsset.js';
+import { exp } from '../../test/helpers.js';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import { ProposalState, OpenProposal } from '../context/Gov.js';
+import { debug } from '../../plugins/deployment_manager/Utils.js';
+import { COMP_WHALES } from '../../src/deploy/index.js';
+import relayMessage from './relayMessage.js';
 import {
   mineBlocks,
   setEtherBalance,
   setNextBaseFeeToZero,
   setNextBlockTimestamp,
-} from './hreUtils';
-import { BaseBridgeReceiver, CometInterface } from '../../build/types';
-import CometActor from './../context/CometActor';
-import { isBridgeProposal } from './isBridgeProposal';
+} from './hreUtils.js';
+import { BaseBridgeReceiver, CometInterface } from '../../build/types/index.js';
+import CometActor from './../context/CometActor.js';
+import { isBridgeProposal } from './isBridgeProposal.js';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
 export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };

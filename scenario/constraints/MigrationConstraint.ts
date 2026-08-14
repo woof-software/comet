@@ -1,10 +1,10 @@
-import { StaticConstraint, Solution, World, debug } from '../../plugins/scenario';
-import { CometContext, MigrationData } from '../context/CometContext';
-import { Migration, loadMigrations, Actions } from '../../plugins/deployment_manager/Migration';
-import { modifiedPaths } from '../utils';
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { exp } from '../../test/helpers';
+import { StaticConstraint, Solution, World, debug } from '../../plugins/scenario/index.js';
+import { CometContext, MigrationData } from '../context/CometContext.js';
+import { Migration, loadMigrations, Actions } from '../../plugins/deployment_manager/Migration.js';
+import { modifiedPaths } from '../utils/index.js';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import { exp } from '../../test/helpers.js';
 
 async function getMigrations<T>(world: World): Promise<Migration<T>[]> {
   // TODO: make this configurable from cli params/env var?

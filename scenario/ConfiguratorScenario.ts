@@ -1,10 +1,10 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { BigNumber, ethers } from 'ethers';
-import { CometContext, scenario } from './context/CometContext';
-import { exp } from '../test/helpers';
-import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker } from './utils';
-import { MarketAdminPermissionChecker } from '../build/types';
+import { CometContext, scenario } from './context/CometContext.js';
+import { exp } from '../test/helpers.js';
+import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker } from './utils/index.js';
+import { MarketAdminPermissionChecker } from '../build/types/index.js';
 
 const SECONDS_PER_YEAR = 31_536_000n;
 // Based on contract's internal precision: FACTOR_SCALE=1e18 with 4 decimal places

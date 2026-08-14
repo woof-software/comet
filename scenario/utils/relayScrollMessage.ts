@@ -1,10 +1,10 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils.js';
 import { Log } from '@ethersproject/abstract-provider';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { OpenBridgedProposal } from '../context/Gov';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import { OpenBridgedProposal } from '../context/Gov.js';
 import { BigNumber, ethers } from 'ethers';
-import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import { applyL1ToL2Alias, isTenderlyLog } from './index.js';
 
 /*
 The Scroll relayer applies an offset to the message sender.

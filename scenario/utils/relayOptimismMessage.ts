@@ -1,10 +1,10 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils.js';
 import { BigNumber, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
-import { OpenBridgedProposal } from '../context/Gov';
-import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import { OpenBridgedProposal } from '../context/Gov.js';
+import { applyL1ToL2Alias, isTenderlyLog } from './index.js';
 
 export default async function relayOptimismMessage(
   governanceDeploymentManager: DeploymentManager,
