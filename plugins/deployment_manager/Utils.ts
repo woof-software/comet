@@ -42,7 +42,7 @@ export async function fileExists(path: string): Promise<boolean> {
   try {
     await fs.stat(path);
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }

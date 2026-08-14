@@ -677,7 +677,7 @@ export async function updateCCIPStats(
     try {
       const price = await registryContract.getDestinationChainGasPrice(chainSelector);
       gasPrices.push([chainSelector, price.value]);
-    } catch (e) {
+    } catch {
       continue;
     }
   }
@@ -752,7 +752,7 @@ async function mockAllRedstoneOracles(dm: DeploymentManager) {
     console.log(`Mocking Redstone oracle for feed: ${feed}`);
     try {
       await dm.getContractOrThrow(`MockRedstoneOracle:${feed}`);
-    } catch (_) {
+    } catch {
       await mockRedstoneOracle(dm, feed);
     }
   }
@@ -1165,7 +1165,7 @@ export async function executeOpenProposal(
       try {
         return await governor.proposalEta(id);
       }
-      catch (err) {
+      catch {
         const proposal = await governor.proposals(id);
         return proposal.eta;
       }
@@ -1639,7 +1639,7 @@ export async function supportsMarketAdminPermissionChecker(ctx: CometContext): P
       return true;
     }
     return false;
-  } catch (e) {
+  } catch {
     return false;
   }
 }

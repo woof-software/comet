@@ -105,15 +105,15 @@ export default defineConfig({
       optimizer: process.env.OPTIMIZER_DISABLED
         ? { enabled: false }
         : {
-            enabled: true,
-            runs: 1,
-            details: {
-              yulDetails: {
-                optimizerSteps:
-                  'dhfoDgvulfnTUtnIf [xa[r]scLM cCTUtTOntnfDIul Lcul Vcul [j] Tpeul xa[rul] xa[r]cL gvif CTUca[r]LsTOtfDnca[r]Iulc] jmul[jul] VcTOcul jmul',
-              },
+          enabled: true,
+          runs: 1,
+          details: {
+            yulDetails: {
+              optimizerSteps:
+                'dhfoDgvulfnTUtnIf [xa[r]scLM cCTUtTOntnfDIul Lcul Vcul [j] Tpeul xa[rul] xa[r]cL gvif CTUca[r]LsTOtfDnca[r]Iulc] jmul[jul] VcTOcul jmul',
             },
           },
+        },
       outputSelection: {
         '*': {
           '*': ['evm.deployedBytecode.sourceMap'],
@@ -132,6 +132,10 @@ export default defineConfig({
     },
   },
 
+  coverage: {
+    skipFiles: ['contracts/test/**', 'contracts/vendor/**', 'contracts/ERC20.sol'],
+  },
+
   networks: {
     hardhat: {
       type: 'edr-simulated',
@@ -142,13 +146,13 @@ export default defineConfig({
       blockGasLimit: 120_000_000,
       accounts: ETH_PK
         ? deriveAccounts(ETH_PK).map((privateKey) => ({
-            privateKey,
-            balance: 10n ** 36n,
-          }))
+          privateKey,
+          balance: 10n ** 36n,
+        }))
         : {
-            mnemonic: MNEMONIC,
-            accountsBalance: 10n ** 36n,
-          },
+          mnemonic: MNEMONIC,
+          accountsBalance: 10n ** 36n,
+        },
       allowUnlimitedContractSize: true,
     },
     ...remoteNetworks,

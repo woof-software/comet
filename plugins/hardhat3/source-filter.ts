@@ -1,4 +1,4 @@
-import type { HookContext, SolidityHooks } from 'hardhat/types/hooks';
+import type { SolidityHooks } from 'hardhat/types/hooks';
 
 const EXTERNAL_CONTRACTS_COMPILE_LIST = [
   'contracts/capo/contracts/test/MockERC20.sol',

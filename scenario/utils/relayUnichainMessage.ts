@@ -103,7 +103,7 @@ export async function relayUnichainMessage(
         console.log(
           `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Bridged over ${amount} of ${l1Token} to user ${to}`
         );
-      } catch (e) {
+      } catch {
         // 1a. Bridging ETH
         const { _from, to, amount, _data } = ethers.utils.defaultAbiCoder.decode(
           ['address from', 'address to', 'uint256 amount', 'bytes data'],

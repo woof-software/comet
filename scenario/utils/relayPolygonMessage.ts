@@ -31,7 +31,7 @@ function tryDecodeStateSyncedData(stateSyncedData: any): BridgeERC20Data | undef
       rootToken,
       amount
     };
-  } catch (e) {
+  } catch {
     return undefined;
   }
 }

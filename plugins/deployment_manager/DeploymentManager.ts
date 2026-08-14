@@ -187,7 +187,7 @@ export class DeploymentManager {
     retries?: number
   ): Promise<C> {
     const maybeExisting: C = await this.contract(alias);
-  if (!maybeExisting || await maybeExisting.getAddress() === ZeroAddress || force) {
+    if (!maybeExisting || await maybeExisting.getAddress() === ZeroAddress || force) {
       const buildFile = await this.import(address, fromNetwork);
       const contract: C = await this._deployBuild(buildFile, deployArgs, retries);
       await this.putAlias(alias, contract);
