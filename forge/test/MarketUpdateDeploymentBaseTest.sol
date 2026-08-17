@@ -1,15 +1,17 @@
 pragma solidity ^0.8.15;
 
 import "@forge-std/src/Vm.sol";
+import "@comet-contracts/CometWithExtendedAssetList.sol";
+import "@comet-contracts/CometFactoryWithExtendedAssetList.sol";
 import "@comet-contracts/bridges/arbitrum/ArbitrumBridgeReceiver.sol";
 import "@comet-contracts/marketupdates/MarketAdminPermissionChecker.sol";
 import "../script/marketupdates/helpers/GovernanceHelper.sol";
 import "../script/marketupdates/helpers/MarketUpdateAddresses.sol";
 import "../script/marketupdates/helpers/ChainAddresses.sol";
 import "../script/marketupdates/helpers/MarketUpdateContractsDeployer.sol";
-import "../script/marketupdates/helpers/BridgeHelper.sol";
-import "@forge-std/src/console.sol";
-import "forge-std/Test.sol";
+import { BridgeHelper } from "../script/marketupdates/helpers/BridgeHelper.sol";
+import { LiquidationModuleHelper } from "../script/marketupdates/helpers/LiquidationModuleHelper.sol";
+import { Test, console } from "forge-std/Test.sol";
 
 abstract contract MarketUpdateDeploymentBaseTest is Test {
 
@@ -68,16 +70,44 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         address localTimelock = ChainAddresses.getLocalTimelockAddress(chain);
         ChainAddresses.ChainAddressesStruct memory chainAddresses = ChainAddresses.getChainAddresses(chain);
 
-        // Since the contacts are already deployed on Optimism, we will return the addresses
-        if(chain == ChainAddresses.Chain.OPTIMISM) {
-            console.log("Contacts are already deployed on Optimism so returning those addresses");
-            return MarketUpdateContractsDeployer.DeployedContracts({
+        // Optimism already ran this deployment for real, so the proposal cannot be replayed — those
+        // proxies have changed hands. Only the Configurator still has to move, to match the factory.
+        if (chain == ChainAddresses.Chain.OPTIMISM) {
+            console.log("Contracts are already deployed on Optimism, upgrading only the Configurator");
+
+            MarketUpdateContractsDeployer.DeployedContracts memory optimismContracts = MarketUpdateContractsDeployer.DeployedContracts({
                 marketUpdateTimelock: 0x81Bc6016Fa365bfE929a51Eec9217B441B598eC6,
                 marketUpdateProposer: 0xB6Ef3AC71E9baCF1F4b9426C149d855Bfc4415F9,
-                newConfiguratorImplementation: 0x371DB45c7ee248dAFf4Dc1FFB67A20faa0ecFE02,
+                newConfiguratorImplementation: address(new Configurator()),
                 newCometProxyAdmin: 0x24D86Da09C4Dd64e50dB7501b0f695d030f397aF,
                 marketAdminPermissionChecker: 0x62DD0452411113404cf9a7fE88A5E6E86f9B71a6
             });
+
+            address[] memory upgradeTargets = new address[](1);
+            uint256[] memory upgradeValues = new uint256[](1);
+            string[] memory upgradeSignatures = new string[](1);
+            bytes[] memory upgradeCalldatas = new bytes[](1);
+
+            upgradeTargets[0] = optimismContracts.newCometProxyAdmin;
+            upgradeSignatures[0] = "upgrade(address,address)";
+            upgradeCalldatas[0] = abi.encode(
+                chainAddresses.configuratorProxyAddress,
+                optimismContracts.newConfiguratorImplementation
+            );
+
+            BridgeHelper.simulateMessageAndExecuteProposal(
+                vm,
+                chain,
+                MarketUpdateAddresses.GOVERNOR_BRAVO_TIMELOCK_ADDRESS,
+                GovernanceHelper.ProposalRequest({
+                    targets: upgradeTargets,
+                    values: upgradeValues,
+                    signatures: upgradeSignatures,
+                    calldatas: upgradeCalldatas
+                })
+            );
+
+            return optimismContracts;
         }
 
         MarketUpdateContractsDeployer.DeployedContracts memory deployedContracts = MarketUpdateContractsDeployer.deployContracts(
@@ -110,6 +140,59 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         return deployedContracts;
     }
 
+    /// Adding liquidationModule to the config moved the clone() selector, so the new Configurator
+    /// cannot reach the factory live on-chain. Governance installs a matching one, once.
+    function buildSetFactoryRequest(
+        address configuratorProxy,
+        address cometProxy
+    ) internal returns (GovernanceHelper.ProposalRequest memory) {
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        string[] memory signatures = new string[](1);
+        bytes[] memory calldatas = new bytes[](1);
+
+        targets[0] = configuratorProxy;
+        signatures[0] = "setFactory(address,address)";
+        calldatas[0] = abi.encode(cometProxy, address(new CometFactoryWithExtendedAssetList()));
+
+        return GovernanceHelper.ProposalRequest({
+            targets: targets,
+            values: values,
+            signatures: signatures,
+            calldatas: calldatas
+        });
+    }
+
+    /// A module serves one Comet deployment, so a fresh one goes in before every upgrade — the
+    /// first included, where the stored module is still zero. Governor-only, hence its own proposal.
+    function buildSetLiquidationModuleRequest(
+        address configuratorProxy,
+        address cometProxy
+    ) internal returns (GovernanceHelper.ProposalRequest memory) {
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        string[] memory signatures = new string[](1);
+        bytes[] memory calldatas = new bytes[](1);
+
+        // Market update multisig stands in as multisig, executor and pauser.
+        address liquidationModule = LiquidationModuleHelper.deployForMarket(
+            configuratorProxy,
+            cometProxy,
+            MarketUpdateAddresses.MARKET_UPDATE_MULTISIG_ADDRESS
+        );
+
+        targets[0] = configuratorProxy;
+        signatures[0] = "setLiquidationModule(address,address)";
+        calldatas[0] = abi.encode(cometProxy, liquidationModule);
+
+        return GovernanceHelper.ProposalRequest({
+            targets: targets,
+            values: values,
+            signatures: signatures,
+            calldatas: calldatas
+        });
+    }
+
     function updateAndVerifySupplyKink(
         Vm vm,
         string memory marketName,
@@ -120,10 +203,22 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         address configuratorProxy = chainAddresses.configuratorProxyAddress;
         address cometProxyAdminNew = deployedContracts.newCometProxyAdmin;
         address marketUpdateProposer = deployedContracts.marketUpdateProposer;
-        uint256 oldSupplyKinkBeforeGovernorUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 oldSupplyKinkBeforeGovernorUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         uint256 newSupplyKinkByGovernorTimelock = 300000000000000000;
 
         assertEq(MarketAdminPermissionChecker(deployedContracts.marketAdminPermissionChecker).marketAdmin(), deployedContracts.marketUpdateTimelock);
+
+        GovernanceHelper.createProposalAndPass(
+            vm,
+            buildSetFactoryRequest(configuratorProxy, cometProxy),
+            string(abi.encodePacked("Proposal to set a matching Comet factory for ", marketName, " Market"))
+        );
+
+        GovernanceHelper.createProposalAndPass(
+            vm,
+            buildSetLiquidationModuleRequest(configuratorProxy, cometProxy),
+            string(abi.encodePacked("Proposal to set a liquidation module for ", marketName, " Market"))
+        );
 
         address[] memory targets = new address[](2);
         uint256[] memory values = new uint256[](2);
@@ -149,21 +244,27 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         GovernanceHelper.createProposalAndPass(vm, proposalRequest, description);
 
         // check the new kink value
-        uint256 newSupplyKinkAfterGovernorUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 newSupplyKinkAfterGovernorUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         assert(newSupplyKinkAfterGovernorUpdate == newSupplyKinkByGovernorTimelock);
 
         // Setting new Supply Kink using Market Admin
-        uint256 oldSupplyKinkBeforeMarketAdminUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 oldSupplyKinkBeforeMarketAdminUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         uint256 newSupplyKinkByMarketAdmin = 400000000000000000;
 
         assert(oldSupplyKinkBeforeMarketAdminUpdate != newSupplyKinkByMarketAdmin);
+
+        GovernanceHelper.createProposalAndPass(
+            vm,
+            buildSetLiquidationModuleRequest(configuratorProxy, cometProxy),
+            string(abi.encodePacked("Proposal to set a fresh liquidation module for ", marketName, " Market"))
+        );
 
         calldatas[0] = abi.encode(cometProxy, newSupplyKinkByMarketAdmin);
 
         description = string(abi.encodePacked("Proposal to update Supply Kink for ", marketName, " Market by Market Admin"));
         GovernanceHelper.createAndPassMarketUpdateProposal(vm, chainAddresses.marketAdmin, proposalRequest, description, marketUpdateProposer);
 
-        uint256 newSupplyKinkAfterMarketAdminUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 newSupplyKinkAfterMarketAdminUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         assert(newSupplyKinkAfterMarketAdminUpdate == newSupplyKinkByMarketAdmin);
     }
 
@@ -181,10 +282,24 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         address cometProxyAdminNew = deployedContracts.newCometProxyAdmin;
         address marketUpdateProposer = deployedContracts.marketUpdateProposer;
 
-        uint256 oldSupplyKinkBeforeGovernorUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 oldSupplyKinkBeforeGovernorUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         uint256 newSupplyKinkByGovernorTimelock = 300000000000000000;
 
         assert(oldSupplyKinkBeforeGovernorUpdate != newSupplyKinkByGovernorTimelock);
+
+        BridgeHelper.simulateMessageAndExecuteProposal(
+            vm,
+            chain,
+            MarketUpdateAddresses.GOVERNOR_BRAVO_TIMELOCK_ADDRESS,
+            buildSetFactoryRequest(configuratorProxy, cometProxy)
+        );
+
+        BridgeHelper.simulateMessageAndExecuteProposal(
+            vm,
+            chain,
+            MarketUpdateAddresses.GOVERNOR_BRAVO_TIMELOCK_ADDRESS,
+            buildSetLiquidationModuleRequest(configuratorProxy, cometProxy)
+        );
 
         address[] memory targets = new address[](2);
         uint256[] memory values = new uint256[](2);
@@ -210,21 +325,28 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         BridgeHelper.simulateMessageAndExecuteProposal(vm, chain, MarketUpdateAddresses.GOVERNOR_BRAVO_TIMELOCK_ADDRESS, proposalRequest);
 
         // check the new kink value
-        uint256 newSupplyKinkAfterGovernorUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 newSupplyKinkAfterGovernorUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         assert(newSupplyKinkAfterGovernorUpdate == newSupplyKinkByGovernorTimelock);
 
         // Setting new Supply Kink using Market Admin
-        uint256 oldSupplyKinkBeforeMarketAdminUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 oldSupplyKinkBeforeMarketAdminUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         uint256 newSupplyKinkByMarketAdmin = 400000000000000000;
 
         assert(oldSupplyKinkBeforeMarketAdminUpdate != newSupplyKinkByMarketAdmin);
+
+        BridgeHelper.simulateMessageAndExecuteProposal(
+            vm,
+            chain,
+            MarketUpdateAddresses.GOVERNOR_BRAVO_TIMELOCK_ADDRESS,
+            buildSetLiquidationModuleRequest(configuratorProxy, cometProxy)
+        );
 
         calldatas[0] = abi.encode(cometProxy, newSupplyKinkByMarketAdmin);
 
         description = string(abi.encodePacked("Proposal to update Supply Kink for ", marketName, " Market by Market Admin"));
         GovernanceHelper.createAndPassMarketUpdateProposalL2(vm, chainAddresses.marketAdmin, proposalRequest, description, marketUpdateProposer);
 
-        uint256 newSupplyKinkAfterMarketAdminUpdate = Comet(payable(cometProxy)).supplyKink();
+        uint256 newSupplyKinkAfterMarketAdminUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         assert(newSupplyKinkAfterMarketAdminUpdate == newSupplyKinkByMarketAdmin);
     }
 }

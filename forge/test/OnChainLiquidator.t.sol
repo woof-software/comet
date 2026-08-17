@@ -2,13 +2,13 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
-import "../../contracts/Comet.sol";
+import "../../contracts/CometWithExtendedAssetList.sol";
 import "../../contracts/CometConfiguration.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
 
 contract OnChainLiquidatorTest is Test {
-    Comet public comet;
+    CometWithExtendedAssetList public comet;
     OnChainLiquidator public liquidator;
 
     // contracts
@@ -32,7 +32,7 @@ contract OnChainLiquidatorTest is Test {
     address public constant WST_ETH_WHALE = 0x10CD5fbe1b404B7E19Ef964B63939907bdaf42E2;
 
     function setUp() public {
-        vm.createSelectFork(string.concat("https://mainnet.infura.io/v3/", vm.envString("INFURA_KEY")));
+        vm.createSelectFork(vm.envString("MAINNET_QUICKNODE_LINK"));
 
         // XXX replace with deployed feeds after mainnet/WETH launch
         SimplePriceFeed wethPriceFeed = new SimplePriceFeed(1e8, 8);
@@ -69,7 +69,7 @@ contract OnChainLiquidatorTest is Test {
             supplyCap: 0
         });
 
-        comet = new Comet(CometConfiguration.Configuration(
+        comet = new CometWithExtendedAssetList(CometConfiguration.Configuration(
             {
                 governor: TIMELOCK,
                 pauseGuardian: GNOSIS_SAFE,
@@ -91,7 +91,8 @@ contract OnChainLiquidatorTest is Test {
                 baseMinForRewards: 1000000e6,
                 baseBorrowMin: 100e6,
                 targetReserves: 5000000e6,
-                assetConfigs: assetConfigs
+                assetConfigs: assetConfigs,
+                liquidationModule: address(1)
             }
         ));
 
