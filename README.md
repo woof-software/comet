@@ -13,8 +13,24 @@ variables is to create a `.env` in the root directory of this repo.
 Required env variables:
 
 ```
-ETHERSCAN_KEY=<key>
-INFURA_KEY=<key>
+ARBITRUM_QUICKNODE_LINK
+BASE_QUICKNODE_LINK
+ETHERSCAN_KEY
+ETHERSCAN_KEY_FOR_ARBITRUM
+ETHERSCAN_KEY_FOR_BASE
+ETHERSCAN_KEY_FOR_LINEA
+ETHERSCAN_KEY_FOR_OPTIMISM
+ETHERSCAN_KEY_FOR_POLYGON
+ETH_PK
+LINEA_QUICKNODE_LINK
+MAINNET_QUICKNODE_LINK
+MANTLE_QUICKNODE_LINK
+OPTIMISM_QUICKNODE_LINK
+POLYGON_QUICKNODE_LINK
+RONIN_QUICKNODE_LINK
+TENDERLY_ACCESS_KEY
+TENDERLY_USERNAME
+UNICHAIN_QUICKNODE_LINK
 ```
 
 Optional env variables:
@@ -22,6 +38,7 @@ Optional env variables:
 ```
 COINMARKETCAP_API_KEY=<key>
 REPORT_GAS=true
+SALT=<salt>                 # used for deterministic deployments
 ETH_PK=<eth-key>             # takes precedence over MNEMONIC
 MNEMONIC=<mnemonic>
 ```
