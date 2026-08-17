@@ -1,12 +1,18 @@
-import { AssetConfigStruct } from '../../build/types/CometWithExtendedAssetList';
-import { BigNumberish, Contract, PopulatedTransaction, utils } from 'ethers';
+import { id } from 'ethers';
+import type { BigNumberish, Contract, TransactionRequest } from 'ethers';
+import type { CometConfiguration } from '../../build/types/CometWithExtendedAssetList.js';
 
-export { cloneGov, deployNetworkComet as deployComet, sameAddress } from './Network';
-export { getConfiguration, getConfigurationStruct } from './NetworkConfiguration';
-export { exp, getBlock, wait } from '../../test/helpers';
-export { debug } from '../../plugins/deployment_manager/Utils';
-import { writeFileSync, mkdirSync } from 'fs';
-import path from 'path';
+export { cloneGov, deployNetworkComet as deployComet, sameAddress } from './Network.js';
+export { getConfiguration, getConfigurationStruct } from './NetworkConfiguration.js';
+export { exp, getBlock, wait } from '../../test/helpers.js';
+export { debug } from '../../plugins/deployment_manager/Utils.js';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+type AssetConfigStruct = CometConfiguration.AssetConfigStruct;
+
+const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 
 export interface ProtocolConfiguration {
@@ -61,6 +67,12 @@ export interface TargetAction {
 
 export type ProposalAction = ContractAction | TargetAction;
 export type Proposal = [
+  string[], // targets
+  BigNumberish[], // values
+  string[], // calldatas
+  string // description
+];
+type CachedProposal = [
   string[], // targets
   BigNumberish[], // values
   string[], // calldatas
@@ -257,9 +269,13 @@ export const WHALES = {
   ]
 };
 
-export async function calldata(req: Promise<PopulatedTransaction>): Promise<string> {
+export async function calldata(req: Promise<TransactionRequest>): Promise<string> {
   // Splice out the first 4 bytes (function selector) of the tx data
-  return '0x' + (await req).data.slice(2 + 8);
+  const data = (await req).data;
+  if (typeof data !== 'string') {
+    throw new Error('Cannot build calldata for a transaction without data');
+  }
+  return '0x' + data.slice(2 + 8);
 }
 
 export async function testnetProposal(actions: ProposalAction[], description: string): Promise<TestnetProposal> {
@@ -268,12 +284,12 @@ export async function testnetProposal(actions: ProposalAction[], description: st
     signatures = [],
     calldatas = [];
   for (const action of actions) {
-    if (action['contract']) {
+    if ('contract' in action) {
       const { contract, value, signature, args } = action as ContractAction;
-      targets.push(contract.address);
+      targets.push(await contract.getAddress());
       values.push(value ?? 0);
       signatures.push(signature);
-      calldatas.push(await calldata(contract.populateTransaction[signature](...args)));
+      calldatas.push(await calldata(contract.getFunction(signature).populateTransaction(...args)));
     } else {
       const { target, value, signature, calldata } = action as TargetAction;
       targets.push(target);
@@ -299,34 +315,32 @@ export async function proposal(
   for (const action of actions) {
     if ('contract' in action) {
       const { contract, value, signature, args } = action as ContractAction;
-      targets.push(contract.address);
+      targets.push(await contract.getAddress());
       values.push(value ?? 0);
       calldatas.push(
-        utils
-          .id(signature)
+        id(signature)
           .slice(0, 10) +
-        (await calldata(contract.populateTransaction[signature](...args))).slice(2)
+        (await calldata(contract.getFunction(signature).populateTransaction(...args))).slice(2)
       );
       signatures.push('');
     } else {
       const { target, value, signature, calldata: cd } = action as TargetAction;
       targets.push(target);
       values.push(value ?? 0);
-      calldatas.push(signature ? utils.id(signature).slice(0, 10) + cd.slice(2) : cd);
+      calldatas.push(signature ? id(signature).slice(0, 10) + cd.slice(2) : cd);
       signatures.push('');
     }
   }
 
-  const fullProposal: Proposal = [targets, values, calldatas, description, signatures];
+  const fullProposal: CachedProposal = [targets, values, calldatas, description, signatures];
   
   stashProposal(fullProposal);
-  fullProposal.pop();
-  return fullProposal;
+  return [targets, values, calldatas, description];
 }
 
-function stashProposal(prop: Proposal) {
+function stashProposal(prop: CachedProposal) {
   try {
-    const cacheDir = path.resolve(__dirname, '../../', 'cache');
+    const cacheDir = path.resolve(moduleDirectory, '../../', 'cache');
     mkdirSync(cacheDir, { recursive: true });
     const file = path.join(cacheDir, 'currentProposal.json');
 
