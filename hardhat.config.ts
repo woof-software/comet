@@ -141,9 +141,10 @@ export default defineConfig({
       type: 'edr-simulated',
       chainId: 1337,
       loggingEnabled: Boolean(process.env.LOGGING),
-      gas: 120_000_000,
+      gas: 'auto',
       gasPrice: 'auto',
       blockGasLimit: 120_000_000,
+      transactionGasCap: false,
       accounts: ETH_PK
         ? deriveAccounts(ETH_PK).map((privateKey) => ({
           privateKey,
