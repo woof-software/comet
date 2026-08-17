@@ -32,27 +32,30 @@ const defaultConfig = {
   transferCollateral: 100,
   supplyCollateral: 100,
   supplyBase: 1000,
+  reservesBase: 5000,
 };
 
 export function getConfigForScenario(ctx: CometContext, i?: number) {
   const config = { ...defaultConfig };
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'wbtc') {
-    config.bulkerBase = 50;
+    config.bulkerBase = 25;
     config.bulkerAsset = 200;
     config.bulkerAsset1 = 200;
-    config.bulkerComet = 50;
-    config.bulkerBorrowBase = 25;
-    config.withdrawBase = 25;
+    config.bulkerComet = 5000;
+    config.bulkerBorrowBase = 5;
+    config.withdrawBase = 5;
     config.withdrawAsset = 200;
-    config.bulkerBorrowAsset = 50;
-    config.liquidationBase = 1000;
-    config.liquidationBase1 = 500;
-    config.liquidationAsset = 100;
-    config.rewardsAsset = 100;
-    config.rewardsBase = 10;
-    config.transferBase = 100;
-    config.transferAsset = 500;
-    config.transferAsset1 = 500;
+    config.bulkerBorrowAsset = 10;
+    config.liquidationBase = 10;
+    config.liquidationBase1 = 5;
+    config.liquidationAsset = 1;
+    config.rewardsAsset = 10;
+    config.rewardsBase = 1;
+    config.transferBase = 1;
+    config.transferAsset = 5;
+    config.transferAsset1 = 5;
+    config.supplyBase = 5;
+    config.withdrawBase1 = 5;
     config.interestSeconds = 70;
   }
 
@@ -71,6 +74,14 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
 
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'usds') {
     config.liquidationAsset = 100;
+  }
+
+  if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'usdc') {
+    config.bulkerBase = 1000;
+    config.bulkerAsset = 100;
+    config.bulkerComet = 500;
+    config.bulkerBorrowBase = 101;
+    config.bulkerBorrowAsset = 1;
   }
 
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'usdt') {
@@ -93,6 +104,9 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     }
   }
 
+  if (ctx.world.base.network === 'base' && ctx.world.base.deployment === 'usdbc') {
+    config.bulkerBase = 100000;
+  }
 
   if (ctx.world.base.network === 'base' && ctx.world.base.deployment === 'usds') {
     config.liquidationBase2 = 100;
@@ -101,6 +115,12 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
 
   if (ctx.world.base.network === 'base' && ctx.world.base.deployment === 'weth') {
     config.liquidationBase = 1000;
+    if(i == 1) { // ezETH
+      config.withdrawBase = 10;
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
   }
 
   if (ctx.world.base.network === 'optimism' && ctx.world.base.deployment === 'usdc') {
@@ -118,25 +138,60 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   }
 
   if (ctx.world.base.network === 'optimism' && ctx.world.base.deployment === 'usdt') {
-    config.bulkerAsset = 10000;
-    config.bulkerAsset1 = 10000;
-    config.transferAsset1 = 10000;
-    config.withdrawAsset = 7000;
+    config.withdrawAsset = 100000;
+    config.transferAsset = 100000;
+    config.transferAsset1 = 100000;
+    config.rewardsAsset = 100000;
+    config.bulkerAsset = 200000;
+    config.withdrawAsset = 140000;
   }
 
   if (ctx.world.base.network === 'optimism' && ctx.world.base.deployment === 'weth') {
+    config.bulkerBorrowBase = 5;
+    config.bulkerBorrowAsset = 5;
+    config.bulkerComet = 100000;
     config.liquidationBase = 1000;
+    config.withdrawBase = 20;
+    config.rewardsBase = 20;
+    config.liquidationBase = 20;
+    config.supplyBase = 20;
+    config.transferBase = 20;
+    config.withdrawBase1 = 20;
+    if(i == 5) { // ezETH
+      config.withdrawBase = 10;
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
+    if(i == 6) { // weETH
+      config.withdrawBase = 10;
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
+    if(i == 7) { // wrsETH
+      config.withdrawBase = 10;
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
   }
 
   if (ctx.world.base.network === 'arbitrum' && ctx.world.base.deployment === 'usdc') {
     config.bulkerAsset = 100000;
     config.bulkerAsset1 = 100000;
-    config.withdrawAsset = 10000;
+    config.rewardsAsset = 200000;
+    config.withdrawAsset = 200000;
     config.transferAsset = 500000;
     config.transferAsset1 = 500000;
     config.transferBase = 100;
     config.rewardsBase = 100;
     config.withdrawBase = 100;
+    if(i == 5) { // ezETH
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
     if(i == 7) { // tETH
       config.supplyCollateral = 2;
       config.transferCollateral = 2;
@@ -150,8 +205,8 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   }
 
   if (ctx.world.base.network === 'arbitrum' && ctx.world.base.deployment === 'usdt') {
-    config.rewardsAsset = 20000;
-    config.withdrawAsset = 20000;
+    config.rewardsAsset = 200000;
+    config.withdrawAsset = 200000;
     config.bulkerAsset = 100000;
     config.bulkerAsset1 = 10000;
     config.transferAsset = 100000;
@@ -161,10 +216,17 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
       config.transferCollateral = 2;
       config.withdrawCollateral = 2;
     }
+    if(i == 6) { // tETH
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
   }
 
   if (ctx.world.base.network === 'arbitrum' && ctx.world.base.deployment === 'usdc.e') {
-    config.withdrawAsset = 10000;
+    config.rewardsAsset = 200000;
+    config.withdrawAsset = 200000;
+    config.bulkerBase = 100000;
     config.bulkerAsset = 100000;
     config.bulkerAsset1 = 100000;
     config.transferAsset = 500000;
@@ -177,6 +239,19 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
 
   if (ctx.world.base.network === 'arbitrum' && ctx.world.base.deployment === 'weth') {
     config.liquidationBase = 1000;
+    config.bulkerBorrowBase = 100;
+    if(i == 7) { // ezETH
+      config.withdrawBase = 10;
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
+    if(i == 8) { // tETH
+      config.withdrawBase = 10;
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
   }
 
   if (ctx.world.base.network === 'ronin' && ctx.world.base.deployment === 'weth') {
@@ -209,9 +284,9 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   if (ctx.world.base.network === 'polygon' && ctx.world.base.deployment === 'usdt') {
     config.withdrawAsset = 20000;
     config.withdrawBase = 100;
-    config.transferAsset = 500000;
+    config.transferAsset = 10000000;
     config.transferBase = 100;
-    config.rewardsAsset = 20000;
+    config.rewardsAsset = 10000000;
     config.rewardsBase = 1000;
   }
 
