@@ -116,6 +116,7 @@ export const WHALES = {
     '0xF469fBD2abcd6B9de8E169d128226C0Fc90a012e', // wbtc whale
     '0x7667095Caa12b79fCa489ff6E2198Ca01fDAe057',
     '0xf7b6B32492c2e13799D921E84202450131bd238B', // pufETH whale
+    '0xce8c60fd8390eFCc3Fc66A3f0bd64BEb969e750E', // tETH whale
   ],
   polygon: [
     '0xF977814e90dA44bFA03b6295A0616a897441aceC', // USDT whale
