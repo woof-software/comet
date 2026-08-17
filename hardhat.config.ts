@@ -71,8 +71,6 @@ const {
   UNICHAIN_QUICKNODE_LINK = '',
   LINEA_QUICKNODE_LINK = '',
   SCROLL_QUICKNODE_LINK,
-  _TENDERLY_KEY_RONIN,
-  _TENDERLY_KEY_POLYGON,
   MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
@@ -347,7 +345,6 @@ const config: HardhatUserConfig = {
       arbitrum: ETHERSCAN_KEY_FOR_ARBITRUM,
       // Base
       base: ETHERSCAN_KEY_FOR_BASE,
-      // optimism: OPTIMISMSCAN_KEY,
       optimisticEthereum: ETHERSCAN_KEY_FOR_OPTIMISM,
       // Mantle
       mantle: ETHERSCAN_KEY,
