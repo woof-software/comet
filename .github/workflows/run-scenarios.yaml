@@ -75,10 +75,8 @@ jobs:
         env:
           INPUT_BASES: ${{ inputs.bases }}
           INPUT_NETWORK: ${{ inputs.network }}
+        name: Generate scenario matrix
         run: |
-          # Filtering, network/base grouping, and the mainnet-spider exclusion all live in
-          # generateCiMatrix.ts, derived from scenario.bases in hardhat.config.ts, so new
-          # bases/networks need no upkeep here.
           RESULT=$(node -r hardhat/register -r ts-node/register/transpile-only scripts/multistream/generateCiMatrix.ts)
           echo "bases=$(echo "$RESULT" | jq -c '.bases')" >> "$GITHUB_OUTPUT"
           echo "run_network_groups=$(echo "$RESULT" | jq -c '.run_network_groups')" >> "$GITHUB_OUTPUT"
@@ -116,14 +114,9 @@ jobs:
       - name: Compile
         run: yarn build 2>&1 | tee prepare.log
 
-      # mainnet is always spidered — it's the shared auxiliaryBase every L2 scenario run depends
-      # on, refreshed regardless of what's selected. With multistream off, that's the only base
-      # spidered here (unchanged from before). With multistream on, every other selected base is
-      # spidered too, in the very same scenario:spider call — its own Promise.all already spiders
-      # everything passed to it concurrently, and Cache.ts now writes cache files atomically
-      # (temp file + rename), so the concurrent-write race that used to make this risky is fixed
-      # at the source. So: run-scenarios never needs a separate spider-refresh job, and
-      # prepared-data alone always has whatever cache this run needs.
+      # mainnet is always spidered (shared auxiliaryBase every L2 scenario depends on). With
+      # multistream on, every other selected base is spidered too, in the same call — safe since
+      # Cache.ts writes cache files atomically (temp file + rename).
       - name: Spider contracts
         env:
           DEBUG: true
@@ -165,10 +158,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # multistream=true: shard by network (e.g. ~11 jobs instead of 29, to stay under GitHub's
-        # concurrent-job cap), with each job further fanning out across its own bases via
-        # scenario:multistream (see the "Run scenarios" step below).
-        # multistream=false (default): one job per base, exactly as before.
+        # multistream=true: shard by network (~11 jobs instead of 29) with per-base fan-out via
+        # scenario:multistream. multistream=false (default): one job per base.
         group: ${{ inputs.multistream && fromJson(needs.generate-matrix.outputs.run_network_groups) || fromJson(needs.generate-matrix.outputs.run_base_groups) }}
     name: Run scenarios (${{ matrix.group.name }})
     runs-on: ubuntu-latest
@@ -210,22 +201,15 @@ jobs:
             echo "node_modules present from cache — skipping install"
           fi
 
-      # multistream=true fans every network group's bases out via scenario:multistream --per-base
-      # instead of running them sequentially in this job. For mainnet this is free parallelism
-      # (its bases have no auxiliaryBase and never bridge to themselves). For every other
-      # multi-base network (arbitrum, base, optimism, polygon, linea, ronin), this deliberately
-      # reopens the bridged-deployment write race that network-level grouping otherwise avoids —
-      #   those bases share one bridge token's cache file
-      # (e.g. deployments/arbitrum/usdc/.contracts), so concurrent bridge-proposal-detecting
-      # scenarios across them can race on that write. Accepted trade-off for speed when
-      # multistream is on; multistream=false keeps the old, fully-sequential per-base behavior.
+      # multistream=true spreads each network group's bases out via scenario:multistream --per-base.
+      # For multi-base networks (arbitrum, base, optimism, polygon, linea, ronin) this reopens the
+      # bridged-deployment write race that network-level grouping otherwise avoids — those bases
+      # share one bridge token's cache file — accepted trade-off for speed. multistream=false
+      # keeps the old, fully-sequential per-base behavior.
       #
-      # scenario:multistream skips echoing each stream's verbose scenario-by-scenario output to
-      # its own stdout when CI=true (set automatically by GitHub Actions) — see run.ts — so this
-      # step's log naturally shows the orchestration messages (Preparing/Launching/summary) up
-      # through the Promise.all of streams, without duplicating what the per-base
-      # display-scenario-logs jobs already show more legibly. tee still works fine for both
-      # branches since there's nothing left to suppress at the YAML level.
+      # scenario:multistream suppresses per-stream verbose output when CI=true (see run.ts), so
+      # this step's log shows only orchestration messages; per-base detail is in
+      # display-scenario-logs below.
       - name: Run scenarios
         env:
           DEBUG: true
@@ -247,9 +231,8 @@ jobs:
           path: scenario-${{ matrix.group.name }}.log
           overwrite: true
 
-      # scenario:multistream --per-base (used when multistream=true, see above) writes one
-      # logs/<base>.log per base in this network group — upload them so display-scenario-logs
-      # can show each base's full run as its own dedicated job.
+      # --per-base writes one logs/<base>.log per base; upload so display-scenario-logs can show
+      # each base's full run as its own job.
       - name: Upload per-base scenario logs
         if: (success() || failure()) && inputs.multistream == true
         uses: actions/upload-artifact@v4
@@ -274,12 +257,8 @@ jobs:
           list-suites: failed # only list suites with failures; passing suites just clutter a failure report
           list-tests: failed # same for individual test cases
 
-  # One job per selected base, purely to display that base's complete scenario-run log as its
-  # own dedicated job page — easier to find than digging through a network job's combined,
-  # interleaved output. Note this is NOT a live tail: GitHub Actions jobs run on isolated
-  # runners with no shared filesystem, and `needs: run-scenarios` only unblocks once every
-  # network's job has finished, so these jobs display each base's full log after the fact,
-  # not while it's still running.
+  # One job per selected base, purely to display that base's full scenario-run log as its own
+  # job page. Not a live tail: it only unblocks after run-scenarios fully finishes.
   display-scenario-logs:
     name: Scenario log (${{ matrix.base }})
     needs: [ generate-matrix, run-scenarios ]
@@ -297,11 +276,8 @@ jobs:
           path: logs
           merge-multiple: true
 
-      # Report.ts's console reporter prints one "✅/❌ Results: ... [<base>]" summary line per
-      # base at the end of its run, which is exactly what's captured in logs/<base>.log — grep
-      # for it (fixed-string, so base names containing "." like arbitrum-usdc.e can't be
-      # misinterpreted as regex) to make this job's own pass/fail reflect that base's actual
-      # scenario run, instead of always succeeding just because `cat` did.
+      # grep -F (fixed-string, so "." in names like arbitrum-usdc.e isn't treated as regex) for
+      # the summary line, so this job's pass/fail reflects the actual scenario run, not `cat`.
       - name: Display log
         env:
           BASE: ${{ matrix.base }}
