@@ -360,6 +360,10 @@ export async function isValidAssetIndex(
   if (assetNum >= MAX_ASSETS) return false;
   // Asset info checks. If any of these are false, the asset is invalid. This means that the asset is deprecated.
   const comet = await ctx.getComet();
+
+  const numAssets = await comet.numAssets();
+  if (assetNum >= numAssets) return false;
+
   const assetInfo = await comet.getAssetInfo(assetNum);
   if (assetInfo.borrowCollateralFactor.toBigInt() == 0n) return false;
   if (assetInfo.supplyCap.toBigInt() == 0n) return false;
@@ -1684,6 +1688,7 @@ export async function executeOpenProposalAndRelay(
   const startingBlockNumber =
     await governanceDeploymentManager.hre.ethers.provider.getBlockNumber();
   await executeOpenProposal(governanceDeploymentManager, openProposal);
+
   console.log(`Executed proposal ${openProposal.id} on ${governanceDeploymentManager.network}, checking if relay to ${bridgeDeploymentManager.network} is needed...`);
   await mockAllRedstoneOracles(bridgeDeploymentManager);
   console.log(`All Redstone oracles on ${bridgeDeploymentManager.network} are mocked`);
