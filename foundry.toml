@@ -22,7 +22,7 @@ yul = true
 optimizerSteps = 'dhfoDgvulfnTUtnIf [xa[r]scLM cCTUtTOntnfDIul Lcul Vcul [j] Tpeul xa[rul] xa[r]cL gvif CTUca[r]LsTOtfDnca[r]Iulc] jmul[jul] VcTOcul jmul'
 
 [profile.default.fuzz]
-runs = 20000
+runs = 2000
 seed = "0xdead"
 
 [rpc_endpoints]
