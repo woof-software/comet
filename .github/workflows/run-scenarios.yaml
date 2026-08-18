@@ -11,6 +11,10 @@ on:
         description: 'Comma-separated deployments, overrides "network" (e.g. "mainnet-weth,base-aero")'
         type: string
         default: ''
+      multistream:
+        description: 'Multistream mode: group by network instead of base'
+        type: boolean
+        default: false
   schedule:
     - cron: '0 12 * * *'   # 15:00 Kiev time (UTC+3), runs against main
 permissions:
@@ -39,21 +43,50 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       bases: ${{ steps.set-matrix.outputs.bases }}
+      run_network_groups: ${{ steps.set-matrix.outputs.run_network_groups }}
+      run_base_groups: ${{ steps.set-matrix.outputs.run_base_groups }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # Shares the cache key with `prepare`; whichever job populates it first wins, the other reads it
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: yarn-cache
+        with:
+          path: |
+            node_modules
+            .yarn/cache
+            .yarn/__virtual__
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+
+      - name: Install packages
+        if: steps.yarn-cache.outputs.cache-hit != 'true'
+        run: yarn install --non-interactive --frozen-lockfile
+
       - id: set-matrix
+        env:
+          INPUT_BASES: ${{ inputs.bases }}
+          INPUT_NETWORK: ${{ inputs.network }}
         run: |
-          ALL='["development","mainnet","mainnet-weth","mainnet-wbtc","mainnet-usdt","mainnet-wsteth","mainnet-usds","polygon","polygon-usdt","arbitrum-usdc.e","arbitrum-usdc","arbitrum-weth","arbitrum-usdt","base-usdbc","base-weth","base-usdc","base-aero","base-usds","optimism-usdc","optimism-usdt","optimism-weth","mantle-usde","linea-usdc","linea-weth","scroll-usdc","ronin-weth","ronin-wron","unichain-usdc","unichain-weth"]'
-          if [ -n "${{ inputs.bases }}" ]; then
-            BASES=$(echo "${{ inputs.bases }}" | jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$";""))')
-          elif [ -z "${{ inputs.network }}" ] || [ "${{ inputs.network }}" = "all" ]; then
-            BASES=$(echo "$ALL" | jq -c .)
-          else
-            BASES=$(echo "$ALL" | jq -c --arg n "${{ inputs.network }}" '[.[] | select(. == $n or startswith($n + "-"))]')
-          fi
-          echo "bases=$BASES" >> "$GITHUB_OUTPUT"
+          # Filtering, network/base grouping, and the mainnet-spider exclusion all live in
+          # generateCiMatrix.ts, derived from scenario.bases in hardhat.config.ts, so new
+          # bases/networks need no upkeep here.
+          RESULT=$(node -r hardhat/register -r ts-node/register/transpile-only scripts/multistream/generateCiMatrix.ts)
+          echo "bases=$(echo "$RESULT" | jq -c '.bases')" >> "$GITHUB_OUTPUT"
+          echo "run_network_groups=$(echo "$RESULT" | jq -c '.run_network_groups')" >> "$GITHUB_OUTPUT"
+          echo "run_base_groups=$(echo "$RESULT" | jq -c '.run_base_groups')" >> "$GITHUB_OUTPUT"
 
   prepare:
     name: Prepare Repository
+    needs: [ generate-matrix ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -81,12 +114,36 @@ jobs:
         run: yarn install --non-interactive --frozen-lockfile
 
       - name: Compile
-        run: yarn build
+        run: yarn build 2>&1 | tee prepare.log
 
-      - name: Spider Contracts on Mainnet
-        run: yarn hardhat spider --network mainnet --deployment usdc
+      # mainnet is always spidered — it's the shared auxiliaryBase every L2 scenario run depends
+      # on, refreshed regardless of what's selected. With multistream off, that's the only base
+      # spidered here (unchanged from before). With multistream on, every other selected base is
+      # spidered too, in the very same scenario:spider call — its own Promise.all already spiders
+      # everything passed to it concurrently, and Cache.ts now writes cache files atomically
+      # (temp file + rename), so the concurrent-write race that used to make this risky is fixed
+      # at the source. So: run-scenarios never needs a separate spider-refresh job, and
+      # prepared-data alone always has whatever cache this run needs.
+      - name: Spider contracts
         env:
           DEBUG: true
+          MULTISTREAM: ${{ inputs.multistream }}
+          ALL_BASES: ${{ needs.generate-matrix.outputs.bases }}
+        run: |
+          if [ "$MULTISTREAM" = "true" ]; then
+            BASES=$(echo "$ALL_BASES" | jq -r '(["mainnet"] + .) | unique | join(",")')
+          else
+            BASES="mainnet"
+          fi
+          yarn hardhat scenario:spider --bases "$BASES" 2>&1 | tee -a prepare.log
+
+      - name: Upload prepare log
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepare-log
+          path: prepare.log
+          overwrite: true
 
       # Upload only the prepared artifacts you need (no node_modules)
       - name: Upload prepared state
@@ -100,14 +157,20 @@ jobs:
             build/
             cache/
           include-hidden-files: true
+          overwrite: true
 
   run-scenarios:
     needs: [ generate-matrix, prepare ]
+    if: always() && needs.generate-matrix.result == 'success' && needs.prepare.result == 'success'
     strategy:
       fail-fast: false
       matrix:
-        bases: ${{ fromJson(needs.generate-matrix.outputs.bases) }}
-    name: Run scenarios
+        # multistream=true: shard by network (e.g. ~11 jobs instead of 29, to stay under GitHub's
+        # concurrent-job cap), with each job further fanning out across its own bases via
+        # scenario:multistream (see the "Run scenarios" step below).
+        # multistream=false (default): one job per base, exactly as before.
+        group: ${{ inputs.multistream && fromJson(needs.generate-matrix.outputs.run_network_groups) || fromJson(needs.generate-matrix.outputs.run_base_groups) }}
+    name: Run scenarios (${{ matrix.group.name }})
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -140,26 +203,117 @@ jobs:
       # Install only if cache miss (keeps matrix jobs fast)
       - name: Install deps if needed
         run: |
-          if [ ! -d node_modules ] || [ ! -f node_modules/.bin ]; then
+          if [ ! -d node_modules ] || [ ! -d node_modules/.bin ]; then
             echo "node_modules missing — running yarn install"
             yarn install --non-interactive --frozen-lockfile
           else
             echo "node_modules present from cache — skipping install"
           fi
 
+      # multistream=true fans every network group's bases out via scenario:multistream --per-base
+      # instead of running them sequentially in this job. For mainnet this is free parallelism
+      # (its bases have no auxiliaryBase and never bridge to themselves). For every other
+      # multi-base network (arbitrum, base, optimism, polygon, linea, ronin), this deliberately
+      # reopens the bridged-deployment write race that network-level grouping otherwise avoids —
+      #   those bases share one bridge token's cache file
+      # (e.g. deployments/arbitrum/usdc/.contracts), so concurrent bridge-proposal-detecting
+      # scenarios across them can race on that write. Accepted trade-off for speed when
+      # multistream is on; multistream=false keeps the old, fully-sequential per-base behavior.
+      #
+      # scenario:multistream skips echoing each stream's verbose scenario-by-scenario output to
+      # its own stdout when CI=true (set automatically by GitHub Actions) — see run.ts — so this
+      # step's log naturally shows the orchestration messages (Preparing/Launching/summary) up
+      # through the Promise.all of streams, without duplicating what the per-base
+      # display-scenario-logs jobs already show more legibly. tee still works fine for both
+      # branches since there's nothing left to suppress at the YAML level.
       - name: Run scenarios
         env:
           DEBUG: true
-        run: yarn scenario --bases ${{ matrix.bases }}
+          GROUP_BASES: ${{ matrix.group.bases }}
+          GROUP_NAME: ${{ matrix.group.name }}
+          USE_MULTISTREAM: ${{ inputs.multistream }}
+        run: |
+          if [ "$USE_MULTISTREAM" = "true" ]; then
+            yarn hardhat scenario:multistream --bases "$GROUP_BASES" --per-base 2>&1 | tee "scenario-$GROUP_NAME.log"
+          else
+            yarn scenario --bases "$GROUP_BASES" 2>&1 | tee "scenario-$GROUP_NAME.log"
+          fi
+
+      - name: Upload scenario log
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-log-${{ matrix.group.name }}
+          path: scenario-${{ matrix.group.name }}.log
+          overwrite: true
+
+      # scenario:multistream --per-base (used when multistream=true, see above) writes one
+      # logs/<base>.log per base in this network group — upload them so display-scenario-logs
+      # can show each base's full run as its own dedicated job.
+      - name: Upload per-base scenario logs
+        if: (success() || failure()) && inputs.multistream == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-logs-${{ matrix.group.name }}
+          path: logs/
+          if-no-files-found: ignore
+          overwrite: true
 
       - uses: actions/upload-artifact@v4 # upload scenario results
         if: success() || failure() # run this step even if previous step failed
         with:
-          name: scenario-results-${{ matrix.bases }}
+          name: scenario-results-${{ matrix.group.name }}
           path: scenario-results.json
+          overwrite: true
 
       - uses: dorny/test-reporter@v1
         with:
-          name: Scenario Tests (${{ matrix.bases }}) # Name of the check run which will be created
+          name: Scenario Tests (${{ matrix.group.name }}) # Name of the check run which will be created
           path: scenario-results.json # Path to test results (inside artifact .zip)
           reporter: mocha-json # Format of test results
+          list-suites: failed # only list suites with failures; passing suites just clutter a failure report
+          list-tests: failed # same for individual test cases
+
+  # One job per selected base, purely to display that base's complete scenario-run log as its
+  # own dedicated job page — easier to find than digging through a network job's combined,
+  # interleaved output. Note this is NOT a live tail: GitHub Actions jobs run on isolated
+  # runners with no shared filesystem, and `needs: run-scenarios` only unblocks once every
+  # network's job has finished, so these jobs display each base's full log after the fact,
+  # not while it's still running.
+  display-scenario-logs:
+    name: Scenario log (${{ matrix.base }})
+    needs: [ generate-matrix, run-scenarios ]
+    if: always() && inputs.multistream == true && needs.run-scenarios.result != 'cancelled'
+    strategy:
+      fail-fast: false
+      matrix:
+        base: ${{ fromJson(needs.generate-matrix.outputs.bases) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download scenario logs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: scenario-logs-*
+          path: logs
+          merge-multiple: true
+
+      # Report.ts's console reporter prints one "✅/❌ Results: ... [<base>]" summary line per
+      # base at the end of its run, which is exactly what's captured in logs/<base>.log — grep
+      # for it (fixed-string, so base names containing "." like arbitrum-usdc.e can't be
+      # misinterpreted as regex) to make this job's own pass/fail reflect that base's actual
+      # scenario run, instead of always succeeding just because `cat` did.
+      - name: Display log
+        env:
+          BASE: ${{ matrix.base }}
+        run: |
+          if [ ! -f "logs/$BASE.log" ]; then
+            echo "::error::No log found for $BASE (its network's job may have failed before producing one)"
+            exit 1
+          fi
+
+          cat "logs/$BASE.log"
+
+          if grep -F "[$BASE]" "logs/$BASE.log" | grep -qF "❌"; then
+            echo "::error::Scenario run for $BASE failed"
+            exit 1
+          fi
