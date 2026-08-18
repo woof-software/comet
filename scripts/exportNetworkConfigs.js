@@ -42,7 +42,7 @@ const envVar = {
   POLYGON_QUICKNODE_LINK: getUrl('polygon'),
   ARBITRUM_QUICKNODE_LINK: getUrl('arbitrum'),
   OPTIMISM_QUICKNODE_LINK: getUrl('optimism'),
-  SCROLL_RPC_URL: getUrl('scroll'),
+  SCROLL_QUICKNODE_LINK: getUrl('scroll'),
   BASE_QUICKNODE_LINK: getUrl('base'),
   MANTLE_QUICKNODE_LINK: getUrl('mantle'),
 };
