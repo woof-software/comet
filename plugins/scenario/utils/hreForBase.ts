@@ -7,7 +7,7 @@ import { getEnvHardhatArguments } from 'hardhat/internal/core/params/env-variabl
 import { HARDHAT_PARAM_DEFINITIONS } from 'hardhat/internal/core/params/hardhat-params';
 import { Environment } from 'hardhat/internal/core/runtime-environment';
 import { ForkSpec } from '../World';
-import { HttpNetworkUserConfig } from 'hardhat/types';
+import { HttpNetworkConfig, HttpNetworkUserConfig } from 'hardhat/types';
 import { EthereumProvider } from 'hardhat/types/provider';
 
 /*
@@ -158,4 +158,93 @@ export default async function hreForBase(base: ForkSpec, fork = true): Promise<H
   } else {
     return nonForkedHreForBase(base);
   }
+}
+
+/*
+Tenderly Virtual TestNets don't implement Hardhat's `hardhat_*` cheatcodes, only their own
+(tenderly_setBalance, tenderly_setStorageAt, ...) plus standard evm_* methods. This translates
+the handful of hardhat_* calls made by existing scenario helpers (impersonateAddress, mineBlocks,
+setEtherBalance, setNextBaseFeeToZero) to their Tenderly/standard equivalents, so that code can run
+unmodified against a Virtual TestNet's Admin RPC instead of a local Hardhat fork.
+*/
+function translateVnetRpcCall(
+  method: string,
+  params: any[] = []
+): { method: string, params: any[] } | null {
+  switch (method) {
+    // Virtual TestNets accept eth_sendTransaction from any `from` address without unlocking it first.
+    case 'hardhat_impersonateAccount':
+    case 'hardhat_stopImpersonatingAccount':
+      return null;
+    // Virtual TestNets accept 0 gasPrice/fee txs directly; there's no base-fee override cheatcode.
+    case 'hardhat_setNextBlockBaseFeePerGas':
+      return null;
+    case 'hardhat_setBalance':
+      return { method: 'tenderly_setBalance', params: [[params[0]], params[1]] };
+    case 'hardhat_mine':
+      return { method: 'evm_increaseBlocks', params: [params[0]] };
+    default:
+      return { method, params };
+  }
+}
+
+function patchProviderForVnet(provider: EthereumProvider): void {
+  const originalRequest = provider.request.bind(provider);
+  provider.request = (async (args: { method: string, params?: any[] }) => {
+    const translated = translateVnetRpcCall(args.method, args.params as any[]);
+    if (!translated) return null;
+    return originalRequest(translated);
+  }) as typeof provider.request;
+
+  const sendable = provider as unknown as { send?: (method: string, params?: any[]) => Promise<any> };
+  if (typeof sendable.send === 'function') {
+    const originalSend = sendable.send.bind(provider);
+    sendable.send = async (method: string, params?: any[]) => {
+      const translated = translateVnetRpcCall(method, params);
+      if (!translated) return null;
+      return originalSend(translated.method, translated.params);
+    };
+  }
+}
+
+// Connects to a Tenderly Virtual TestNet's Admin RPC as a live network, rather than forking it
+// again locally, so migrations/proposals execute as real, persistent transactions on the vnet.
+export async function vnetHreForBase(network: string, rpcUrl: string): Promise<HardhatRuntimeEnvironment> {
+  const ctx: HardhatContext = HardhatContext.getHardhatContext();
+
+  const hardhatArguments = getEnvHardhatArguments(HARDHAT_PARAM_DEFINITIONS, process.env);
+
+  const { resolvedConfig: config, userConfig } = loadConfigAndTasks(hardhatArguments);
+
+  const networks = config.networks;
+  const baseNetwork = networks[network] as HttpNetworkConfig;
+  if (!baseNetwork) {
+    throw new Error(`cannot find network config for network: ${network}`);
+  }
+
+  const vnetConfig = {
+    ...config,
+    defaultNetwork: network,
+    networks: {
+      ...networks,
+      // `accounts: 'remote'` disables Hardhat's local-accounts provider wrapper, which would
+      // otherwise reject `eth_sendTransaction` from any address besides the configured private
+      // key (e.g. an impersonated whale) with HH103. Virtual TestNets accept unsigned
+      // eth_sendTransaction from any address directly, so signing can be fully delegated to the node.
+      [network]: { ...baseNetwork, url: rpcUrl, accounts: 'remote' as const },
+    },
+  };
+
+  const env = new Environment(
+    vnetConfig,
+    { ...hardhatArguments, network },
+    ctx.tasksDSL.getTaskDefinitions(),
+    ctx.environment.scopes,
+    ctx.environmentExtenders,
+    userConfig
+  );
+
+  patchProviderForVnet(env.network.provider);
+
+  return env;
 }
