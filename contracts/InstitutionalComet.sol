@@ -11,7 +11,6 @@ import "./CometWithExtendedAssetList.sol";
  * └──────────────────────────────────────────────────────────────────────────────────────────┘
  *
  * @title InstitutionalComet
- * @author Woof
  * @dev Inherits the full behaviour of {CometWithExtendedAssetList}
  */
 contract InstitutionalComet is CometWithExtendedAssetList {
