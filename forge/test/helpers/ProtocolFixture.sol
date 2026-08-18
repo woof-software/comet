@@ -50,6 +50,7 @@ abstract contract ProtocolFixture is Test {
 
     uint64 internal constant FACTOR_SCALE = 1e18;
     uint8 internal constant PRICE_FEED_DECIMALS = 8;
+    uint256 internal constant TARGET_HF = 1.05e18;
 
     /// Incentive the executor earns on the DEX liquidation route.
     uint16 internal constant INCENTIVE_BPS = 500;
