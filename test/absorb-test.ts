@@ -7,7 +7,7 @@ import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 describe('absorb', function () {
   it('reverts if total borrows underflows', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [absorber, underwater],
     } = await makeProtocol();
 
@@ -26,7 +26,7 @@ describe('absorb', function () {
     };
     const protocol = await makeProtocol(params);
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       priceFeeds,
       users: [absorber, underwater],
     } = protocol;
@@ -98,7 +98,7 @@ describe('absorb', function () {
     };
     const protocol = await makeProtocol(params);
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       priceFeeds,
       users: [absorber, underwater1, underwater2],
     } = protocol;
@@ -182,7 +182,7 @@ describe('absorb', function () {
     };
     const protocol = await makeProtocol(params);
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       priceFeeds,
       users: [absorber, underwater1, underwater2, underwater3],
@@ -392,7 +392,7 @@ describe('absorb', function () {
     };
     const protocol = await makeProtocol(params);
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       tokens,
       users: [absorber, underwater],
       priceFeeds,
@@ -446,7 +446,7 @@ describe('absorb', function () {
     expect(pP1.external).to.be.deep.equal({ COMP: exp(1, 18), USDC: 0n, WBTC: exp(1, 8), WETH: exp(1, 18) });
     expect(pA1.internal).to.be.deep.equal({ COMP: 0n, USDC: 0n, WBTC: 0n, WETH: 0n });
     expect(pA1.external).to.be.deep.equal({ COMP: 0n, USDC: 0n, WBTC: 0n, WETH: 0n });
-    expect(pU1.internal).to.be.deep.equal({ COMP: 0n, USDC: 1n, WBTC: 0n, WETH: 0n });
+    expect(pU1.internal).to.be.deep.equal({ COMP: 0n, USDC: finalDebt, WBTC: 0n, WETH: 0n });
     expect(pU1.external).to.be.deep.equal({ COMP: 0n, USDC: 0n, WBTC: 0n, WETH: 0n });
 
     expect(lA1.numAbsorbs).to.be.equal(1);
@@ -493,8 +493,8 @@ describe('absorb', function () {
       AbsorbDebt: {
         absorber: absorber.address,
         borrower: underwater.address,
-        basePaidOut: pU1.internal.USDC - startingDebt,
-        usdValue: mulPrice(pU1.internal.USDC - startingDebt, usdcPrice, baseScale),
+        basePaidOut: finalDebt - startingDebt,
+        usdValue: mulPrice(finalDebt - startingDebt, usdcPrice, baseScale),
       },
     });
     expect(event(a0, 4)).to.be.deep.equal({
@@ -508,7 +508,7 @@ describe('absorb', function () {
 
   it('reverts if an account is not underwater', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [alice, bob],
     } = await makeProtocol();
 
@@ -522,7 +522,7 @@ describe('absorb', function () {
   it('reverts if absorb is paused', async () => {
     const protocol = await makeProtocol();
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       pauseGuardian,
       users: [alice, bob],
     } = protocol;
@@ -538,7 +538,7 @@ describe('absorb', function () {
 
   it('updates assetsIn for liquidated account', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [absorber, underwater],
       tokens,
     } = await makeProtocol();
@@ -730,7 +730,7 @@ describe('absorb', function () {
         },
       });
       // Note: Always interact with the proxy address, we'll upgrade implementation later
-      cometProxyAddress = configuratorAndProtocol.cometProxy.address;
+      cometProxyAddress = configuratorAndProtocol.cometProxyWithExtendedAssetList.address;
       comet = configuratorAndProtocol.cometWithExtendedAssetList.attach(cometProxyAddress) as CometWithExtendedAssetList;
       configurator = configuratorAndProtocol.configurator;
       configuratorProxy = configuratorAndProtocol.configuratorProxy;
@@ -805,7 +805,7 @@ describe('absorb', function () {
       );
       // Create protocol with configurator so we can update liquidationFactor later
       const configuratorAndProtocol24Assets = await makeConfigurator({ assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals }});
-      comet24Assets = configuratorAndProtocol24Assets.cometWithExtendedAssetList.attach(configuratorAndProtocol24Assets.cometProxy.address) as CometWithExtendedAssetList;
+      comet24Assets = configuratorAndProtocol24Assets.cometWithExtendedAssetList.attach(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address) as CometWithExtendedAssetList;
       underwater24Assets = configuratorAndProtocol24Assets.users[0];
       absorber24Assets = configuratorAndProtocol24Assets.users[1];
       tokens24Assets = configuratorAndProtocol24Assets.tokens;
@@ -823,9 +823,9 @@ describe('absorb', function () {
         configuratorAndProtocol24Assets.assetListFactory.address
       );
       await CometExtAssetList24Assets.deployed();
-      await configuratorProxy24Assets.setExtensionDelegate(configuratorAndProtocol24Assets.cometProxy.address, CometExtAssetList24Assets.address);
-      await configuratorProxy24Assets.setFactory(configuratorAndProtocol24Assets.cometProxy.address, CometFactoryWithExtendedAssetList.address);
-      await configuratorAndProtocol24Assets.proxyAdmin.deployAndUpgradeTo(configuratorAndProtocol24Assets.configuratorProxy.address, configuratorAndProtocol24Assets.cometProxy.address);
+      await configuratorProxy24Assets.setExtensionDelegate(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address, CometExtAssetList24Assets.address);
+      await configuratorProxy24Assets.setFactory(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address, CometFactoryWithExtendedAssetList.address);
+      await configuratorAndProtocol24Assets.proxyAdmin.deployAndUpgradeTo(configuratorAndProtocol24Assets.configuratorProxy.address, configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address);
 
       baseToken24Assets = configuratorAndProtocol24Assets.tokens['USDC'];
 

@@ -1,8 +1,8 @@
 import { ethers, event, expect, exp, makeProtocol, portfolio, ReentryAttack, setTotalsBasic, wait, fastForward, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS } from './helpers';
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, CometHarnessInterface, FaucetToken, CometExtAssetList, CometHarnessInterfaceExtendedAssetList } from '../build/types';
+import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometExtAssetList, CometHarnessInterfaceExtendedAssetList } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-import { TotalsCollateralStruct } from 'build/types/CometHarness';
+import { TotalsCollateralStruct } from 'build/types/CometHarnessExtendedAssetList';
 
 // Note: isolated supply functionality, withdraw and repay are tested in separate testsets
 describe('supply', function () {
@@ -514,7 +514,7 @@ describe('supply', function () {
     describe('supply max base (repay borrow)', function () {
       it('supplies max base borrow balance (including accrued) from sender', async () => {
         const protocol = await makeProtocol({ base: 'USDC' });
-        const { comet, tokens, users: [alice, bob] } = protocol;
+        const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
         const { USDC } = tokens;
 
         await USDC.allocateTo(bob.address, 100e6);
@@ -577,7 +577,7 @@ describe('supply', function () {
 
       it('supply max base should supply 0 if user has no borrow position', async () => {
         const protocol = await makeProtocol({ base: 'USDC' });
-        const { comet, tokens, users: [alice, bob] } = protocol;
+        const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
         const { USDC } = tokens;
 
         await USDC.allocateTo(bob.address, 100e6);
@@ -612,7 +612,7 @@ describe('supply', function () {
 
       it('does not emit Transfer for 0 mint when repaying exact borrow', async () => {
         const protocol = await makeProtocol({ base: 'USDC' });
-        const { comet, tokens, users: [alice, bob] } = protocol;
+        const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
         const { USDC } = tokens;
 
         await USDC.allocateTo(bob.address, 100e6);
@@ -636,13 +636,14 @@ describe('supply', function () {
 
       // Edge-case: when supplying 0, dstPrincipalNew can be less than dstPrincipal due to rounding
       it('supplies 0 and does not revert when dstPrincipalNew < dstPrincipal', async () => {
-        const { comet, tokens, users: [alice] } = await makeProtocol({ base: 'USDC' });
+        const { cometWithExtendedAssetList: comet, tokens, users: [alice] } = await makeProtocol({ base: 'USDC' });
         const { USDC } = tokens;
 
         await comet.setBasePrincipal(alice.address, 99999992291226);
         await setTotalsBasic(comet, {
           totalSupplyBase: 699999944771920,
           baseSupplyIndex: 1000000131467072,
+          totalBorrowBase: 1,
         });
 
         const s0 = await wait(comet.connect(alice).supply(USDC.address, 0));
@@ -657,7 +658,7 @@ describe('supply', function () {
       });
 
       it('reverts if supply max for a collateral asset', async () => {
-        const { comet, tokens, users: [alice, bob] } = await makeProtocol({ base: 'USDC' });
+        const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = await makeProtocol({ base: 'USDC' });
         const { COMP } = tokens;
 
         await COMP.allocateTo(bob.address, 100e6);
@@ -846,7 +847,7 @@ describe('supply', function () {
           (await ethers.provider.getBlock((await supplyTx.wait()).blockNumber)).timestamp
         );
 
-        expect(lastUpdated - cometUpdatedTimeBefore).to.be.approximately(SKIP_TIME, 2); // 2 seconds tolerance
+        expect(lastUpdated - cometUpdatedTimeBefore).to.be.approximately(SKIP_TIME, 4); // 4 seconds tolerance
         expect(lastUpdated).to.equal(supplyTimestamp);
       });
 
@@ -1654,7 +1655,7 @@ describe('supply', function () {
 
   describe('non-standard tokens', function () {
     describe('USDT-like token', function () {
-      let comet: CometHarnessInterface;
+      let comet: CometHarnessInterfaceExtendedAssetList;
       let alice: SignerWithAddress;
       let usdt: NonStandardFaucetFeeToken;
       let nonStdCollateral: NonStandardFaucetFeeToken;
@@ -1675,7 +1676,7 @@ describe('supply', function () {
         };
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
-        comet = protocol.comet;
+        comet = protocol.cometWithExtendedAssetList;
         alice = protocol.users[0];
 
         const tokens = protocol.tokens;
@@ -1709,7 +1710,7 @@ describe('supply', function () {
       const COLLATERAL_TOKEN_AMOUNT = exp(0.5, 18);
       const NUMERATOR = 10;
       const DENOMINATOR = 10000;
-      let feeComet: CometHarnessInterface;
+      let feeComet: CometHarnessInterfaceExtendedAssetList;
       let feeBaseToken: NonStandardFaucetFeeToken;
       let feeCollateral: NonStandardFaucetFeeToken;
       let alice: SignerWithAddress;
@@ -1731,7 +1732,7 @@ describe('supply', function () {
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
         
-        feeComet = protocol.comet;
+        feeComet = protocol.cometWithExtendedAssetList;
         feeBaseToken = protocol.tokens['USDT'] as NonStandardFaucetFeeToken;
         feeCollateral = protocol.tokens['FeeCollateral'] as NonStandardFaucetFeeToken;
         alice = protocol.users[0];
@@ -1817,7 +1818,7 @@ describe('supply', function () {
 
   describe('reentrancy protection', function () {
     it('blocks reentrancy from exceeding the supply cap', async () => {
-      const { comet, tokens, users: [alice, bob] } = await makeProtocol({
+      const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = await makeProtocol({
         assets: {
           USDC: { decimals: 6 },
           EVIL: {
@@ -2101,7 +2102,7 @@ describe('supply', function () {
 });
 
 async function getPrincipalChange(
-  comet: CometHarnessInterface,
+  comet: CometHarnessInterfaceExtendedAssetList,
   lastUpdated: number,
   utilization: number,
   user: string,

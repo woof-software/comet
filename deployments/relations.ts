@@ -119,7 +119,7 @@ const relationConfigMap: RelationConfigMap = {
     },
   },
   'comet:implementation': {
-    artifact: 'contracts/CometWithExtendedAssetList.sol:CometWithExtendedAssetList',
+    artifact: 'contracts/CometInterface.sol:CometInterface',
     delegates: {
       field: async (comet) => comet.extensionDelegate(),
     },

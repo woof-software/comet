@@ -12,7 +12,7 @@ import {
   utils,
 } from 'ethers';
 import { execSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, unlinkSync } from 'fs';
 import { CometContext } from '../context/CometContext';
 import CometAsset from '../context/CometAsset';
 import { exp } from '../../test/helpers';
@@ -35,6 +35,7 @@ import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
+export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
 
@@ -992,8 +993,6 @@ export async function tenderlyExecute(
     },
   ];
 
-  const chainId2 = bdm.hre.ethers.provider.network.chainId;
-
   console.log(`\n========================== TENDERLY ==========================\n`);
 
   console.log(`\nExecuting Tenderly simulation for proposal ${id}...`);
@@ -1003,54 +1002,93 @@ export async function tenderlyExecute(
 
   const exec1 = bundle[bundle.length - 1].simulation;
 
-  console.log(` >>> PROPOSAL EXECUTED  ${id} \n`);
+  console.log(` >>> PROPOSAL EXECUTED  ${id}`);
   console.log(`Simulation ${exec1.id} done, status: ${exec1.status}`);
-  console.log(`Link: https://www.tdly.co/shared/simulation/${exec1.id}`);
-  let proposals;
-  if (chainId1 !== chainId2) {
-    proposals = await relayMessage(gdm, bdm, parseFloat(B0.toString()),  bundle[bundle.length - 1].transaction.transaction_info.logs);
+  console.log(`Link: https://www.tdly.co/shared/simulation/${exec1.id} \n`);
+  
+  const bdms = [bdm];
+  for (const dm of gdm.bridgedDeploymentManagers.values()) {
+    if (!bdms.includes(dm)) {
+      bdms.push(dm);
+    }
+  }
 
-    debug(`Proposals relayed: ${proposals.length}`);
-    const timelockL2 = await bdm.getContractOrThrow('timelock');
-    const delay = await timelockL2.delay();
-    const relayMessages = loadCachedRelayMessages();
-    const latestL2 = await bdm.hre.ethers.provider.getBlock('latest');
-    const maxEta = Math.max(...proposals.map(p => Number(p.eta || 0))) + delay.toNumber();
-    const T0L2 = BigInt(Math.max(latestL2.timestamp, maxEta + 1));
-    const B0L2 = Number(latestL2.number) + 1;
-    const simsL2 = relayMessages.map((msg, i, arr) => {
-      const isLast = i === arr.length - 1;
+  // make bdm contain only 1 dm per network
+  const uniqueBdms = new Map();
+  for (const dm of bdms) {
+    const chainId = dm.hre.ethers.provider.network.chainId;
+    if (!uniqueBdms.has(chainId)) {
+      uniqueBdms.set(chainId, dm);
+    }
+  }
+  bdms.length = 0;
+  bdms.push(...uniqueBdms.values());
 
-      const timestamp = isLast
-        ? Number(T0L2) 
-        : latestL2.timestamp; 
 
-      const block = isLast
-        ? B0L2 : latestL2.number;
+  for (const currentBdm of bdms) {
+    const chainId2 = currentBdm.hre.ethers.provider.network.chainId;
+    let proposals;
+    if (chainId1 !== chainId2) {
+      const relayPath = path.resolve(__dirname, '../../cache/relay.json');
+      if (existsSync(relayPath)) unlinkSync(relayPath);
 
-      return {
-        network_id: chainId2.toString(),
-        from: msg.signer,
-        to: msg.messenger,
-        block_number: Number(block),
-        block_header: {
-          timestamp: bdm.hre.ethers.utils.hexlify(Number(timestamp))
-        },
-        input: msg.callData,
-        save: true,
-        save_if_fails: true,
-        gas_price: 0,
-        gas_limit: 16_777_215,
-      };
-    });
+      proposals = await relayMessage(gdm, currentBdm, parseFloat(B0.toString()), bundle[bundle.length - 1].transaction.transaction_info.logs);
 
-    if (simsL2.length > 0) {
-      const bundle2 = await simulateBundle(bdm, simsL2, Number(B0L2));
-      console.log(` >>> PROPOSAL RELAYED ${id} \n`);
-      const sim = bundle2[bundle2.length - 1];
-      await shareSimulation(bdm, sim.simulation.id);
-      console.log(`Simulation ${sim.simulation.id} done, status: ${sim.simulation.status}`);
-      console.log(`Link: https://www.tdly.co/shared/simulation/${sim.simulation.id}`);
+      debug(`Proposals relayed to ${currentBdm.network}: ${proposals?.length ?? 0}`);
+      
+      if (proposals && proposals.length > 0) {
+        const timelockL2 = await currentBdm.getContractOrThrow('timelock');
+        const delay = await timelockL2.delay();
+        const relayMessages = loadCachedRelayMessages();
+        const executeProposalSig = utils.id('executeProposal(uint256)').substring(0, 10);
+
+        const latestL2 = await currentBdm.hre.ethers.provider.getBlock('latest');
+        const maxEta = Math.max(...proposals.map(p => Number(p.eta || 0))) + delay.toNumber();
+        const T0L2 = Math.max(latestL2.timestamp, maxEta + 1);
+        const B0L2 = Number(latestL2.number) + 1;
+
+        let previousBlock = latestL2.number;
+        let previousTimestamp = T0L2;
+        const simsL2 = relayMessages.map((msg) => {
+          let block = previousBlock;
+          let timestamp = previousTimestamp;
+
+          if (msg.callData.startsWith(executeProposalSig) && !msg.eta) {
+            block = block + 1;
+            timestamp = timestamp + delay.toNumber() + 1;
+          }
+
+          previousBlock = block;
+          previousTimestamp = timestamp;
+
+          return {
+            network_id: chainId2.toString(),
+            from: msg.signer,
+            to: msg.messenger,
+            block_number: Number(block),
+            block_header: {
+              timestamp: currentBdm.hre.ethers.utils.hexlify(Number(timestamp))
+            },
+            input: msg.callData,
+            save: true,
+            save_if_fails: true,
+            gas_price: 0,
+          };
+        });
+
+        if (simsL2.length > 0) {
+          const bundle2 = await simulateBundle(currentBdm, simsL2, Number(B0L2));
+          
+          // filter from bundle every entry with simulation.input that starts with 0x0d61b519 i.e. executeProposal(uint256)
+          const filteredBundle = bundle2.filter(entry => entry.simulation.input.startsWith(executeProposalSig));
+          for (const sim of filteredBundle) {
+            await shareSimulation(currentBdm, sim.simulation.id);
+            console.log(`\nRelayed to ${currentBdm.network}`);
+            console.log(`Simulation ${sim.simulation.id} done, status: ${sim.simulation.status}`);
+            console.log(`Link: https://www.tdly.co/shared/simulation/${sim.simulation.id} \n`);
+          }
+        }
+      }
     }
   }
 
@@ -1750,23 +1788,27 @@ export async function executeOpenProposalAndRelay(
   console.log(`Executed proposal ${openProposal.id} on ${governanceDeploymentManager.network}, checking if relay to ${bridgeDeploymentManager.network} is needed...`);
   await mockAllRedstoneOracles(bridgeDeploymentManager);
   console.log(`All Redstone oracles on ${bridgeDeploymentManager.network} are mocked`);
-  if (
-    await isBridgeProposal(
-      governanceDeploymentManager,
-      bridgeDeploymentManager,
-      openProposal
-    )
-  ) {
-    await relayMessage(
-      governanceDeploymentManager,
-      bridgeDeploymentManager,
-      startingBlockNumber
-    );
-  } else {
-    console.log(
-      `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Proposal ${openProposal.id} doesn't target bridge; not relaying`
-    );
-    return;
+
+  const bridgeManagers = await isBridgeProposal(
+    governanceDeploymentManager,
+    bridgeDeploymentManager,
+    openProposal
+  );
+
+  for (const bridgeManager of bridgeManagers) {
+    await mockAllRedstoneOracles(bridgeManager);
+    if (bridgeManager) {
+      await relayMessage(
+        governanceDeploymentManager,
+        bridgeManager,
+        startingBlockNumber
+      );
+    } else {
+      console.log(
+        `[${governanceDeploymentManager.network} -> ${bridgeManager.network}] Proposal ${openProposal.id} doesn't target bridge; not relaying`
+      );
+      return;
+    }
   }
 }
 
@@ -1904,4 +1946,68 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
     // If the call reverts or fails, extended pause is not supported
     return false;
   }
+}
+
+type ArrayMethods = keyof Omit<any[], number>;
+
+type NamedKeys<T> = {
+  [K in keyof T as K extends number | `${number}` | ArrayMethods ? never : K]: T[K];
+};
+
+type Normalize<T> = T extends BigNumber
+  ? bigint
+  : T extends string | number | boolean
+  ? T
+  : [NamedKeys<T>] extends [Record<string, never>]
+  ? T extends (infer U)[]
+    ? Normalize<U>[]
+    : T
+  : { [K in keyof NamedKeys<T>]: Normalize<NamedKeys<T>[K]> };
+
+type NormalizedStruct<T> = Normalize<NamedKeys<T>>;
+
+/**
+ * Hybrid array-objects with both numeric and named keys are stripped to plain
+ * objects with native bigint values, safe to destructure, compare, and serialize.
+ */
+export function normalizeStructOutput<T>(value: T): NormalizedStruct<T> {
+  function normalize(val: any): any {
+    if (BigNumber.isBigNumber(val)) {
+      return val.toBigInt();
+    }
+    if (val && typeof val === 'object') {
+      const namedKeys = Object.keys(val).filter((key) => isNaN(Number(key)));
+      if (namedKeys.length > 0) {
+        return Object.fromEntries(namedKeys.map((key) => [key, normalize(val[key])]));
+      }
+      if (Array.isArray(val)) {
+        return val.map(normalize);
+      }
+    }
+    return val;
+  }
+
+  return normalize(value) as NormalizedStruct<T>;
+}
+
+/// Finds the first asset with non-zero configuration values
+export async function getActiveAsset(context: CometContext) {
+  const configurator = await context.getConfigurator();
+  const cometAddress = (await context.getComet()).address;
+  const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
+
+  const assetIndex = assetConfigs.findIndex((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
+
+  return {
+    assetIndex,
+    assetConfig: assetConfigs[assetIndex]
+  };
+}
+
+export async function hasActiveAsset(ctx: CometContext): Promise<boolean> {
+  const configurator = await ctx.getConfigurator();
+  const cometAddress = (await ctx.getComet()).address;
+  const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
+
+  return assetConfigs.some((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
 }

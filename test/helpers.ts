@@ -48,12 +48,6 @@ export { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 // Network helpers
 export * from './helpers/network-helpers';
 
-// Snapshot
-export { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
-
-// Network helpers
-export * from './helpers/network-helpers';
-
 export { Comet, ethers, expect, hre };
 
 export type Numeric = number | bigint;
@@ -466,7 +460,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     users,
     base,
     reward,
-    comet: (await ethers.getContractAt('CometHarnessInterface', comet.address)) as Comet,
     cometWithExtendedAssetList: (await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address)) as CometWithExtendedAssetList,
     assetListFactory: assetListFactory,
     tokens,
@@ -699,7 +692,7 @@ export async function makeBulker(opts: BulkerOpts): Promise<BulkerInfo> {
     bulker,
   };
 }
-export async function bumpTotalsCollateral(comet: CometHarnessInterface, token: FaucetToken | NonStandardFaucetFeeToken, delta: bigint): Promise<TotalsCollateralStructOutput> {
+export async function bumpTotalsCollateral(comet: CometHarnessInterfaceExtendedAssetList, token: FaucetToken | NonStandardFaucetFeeToken, delta: bigint): Promise<TotalsCollateralStructOutput> {
   const t0 = await comet.totalsCollateral(token.address);
   const t1 = Object.assign({}, t0, {
     totalSupplyAsset: t0.totalSupplyAsset.toBigInt() + delta,
@@ -792,11 +785,11 @@ export async function portfolio({ cometWithExtendedAssetList, base, tokens }, ac
   return { internal, external };
 }
 
-export async function totalsAndReserves({ comet, base, tokens }): Promise<TotalsAndReserves> {
+export async function totalsAndReserves({ cometWithExtendedAssetList, base, tokens }): Promise<TotalsAndReserves> {
   const totals = {
-    [base]: BigInt((await comet.totalsBasic()).totalSupplyBase),
+    [base]: BigInt((await cometWithExtendedAssetList.totalsBasic()).totalSupplyBase),
   };
-  const reserves = { [base]: BigInt(await comet.getReserves()) };
+  const reserves = { [base]: BigInt(await cometWithExtendedAssetList.getReserves()) };
   for (const symbol in tokens) {
     if (symbol != base) {
       totals[symbol] = BigInt((await cometWithExtendedAssetList.totalsCollateral(tokens[symbol].address)).totalSupplyAsset);
