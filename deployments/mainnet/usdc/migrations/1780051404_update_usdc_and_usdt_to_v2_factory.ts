@@ -78,7 +78,7 @@ export default migration('1780051404_update_usdc_and_usdt_to_v2_factory', {
       },
     ];
 
-    const description = `# Update cUSDCv3 and cUSDTv3 Comets to the service patch version
+    const description = `# Update cUSDCv3 and cUSDTv3 Comets on Mainnet to the service patch version
 
 ## Proposal summary
 
