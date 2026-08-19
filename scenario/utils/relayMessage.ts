@@ -9,6 +9,8 @@ import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMess
 import relayScrollMessage from './relayScrollMessage';
 import relayRoninMessage from './relayRoninMessage';
 
+const L2_BLOCK_BUFFER = 5;
+
 export default async function relayMessage(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
@@ -20,7 +22,8 @@ export default async function relayMessage(
   console.log(`Relaying messages from ${governanceDeploymentManager.network} -> ${bridgeNetwork}`);
   let proposal;
   switch (bridgeNetwork) {
-    case 'base':
+    case 'base': {
+      const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
       proposal = await relayBaseMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
@@ -30,10 +33,13 @@ export default async function relayMessage(
       await simulateBaseL2ToL1TokenBridging(
         governanceDeploymentManager,
         bridgeDeploymentManager,
+        l2StartingBlockNumber,
         tenderlyLogs
       );
       return proposal;
-    case 'optimism':
+    }
+    case 'optimism': {
+      const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
       proposal = await relayOptimismMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
@@ -43,9 +49,11 @@ export default async function relayMessage(
       await simulateOptimismL2ToL1TokenBridging(
         governanceDeploymentManager,
         bridgeDeploymentManager,
+        l2StartingBlockNumber,
         tenderlyLogs
       );
       return proposal;
+    }
     case 'mantle':
       return await relayMantleMessage(
         governanceDeploymentManager,
@@ -74,7 +82,8 @@ export default async function relayMessage(
         startingBlockNumber,
         tenderlyLogs
       );
-    case 'arbitrum':
+    case 'arbitrum': {
+      const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
       proposal = await relayArbitrumMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
@@ -90,9 +99,11 @@ export default async function relayMessage(
       await simulateL2ToL1TokenBridging(
         governanceDeploymentManager,
         bridgeDeploymentManager,
+        l2StartingBlockNumber,
         tenderlyLogs
       );
       return proposal;
+    }
     case 'linea':
       return await relayLineaMessage(
         governanceDeploymentManager,

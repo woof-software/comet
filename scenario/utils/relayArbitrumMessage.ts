@@ -259,6 +259,7 @@ export async function relayArbitrumMessage(
 export async function simulateL2ToL1TokenBridging(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber?: number,
   tenderlyLogs?: any[],
   proposalId?: BigNumber
 ) {
@@ -274,12 +275,14 @@ export async function simulateL2ToL1TokenBridging(
   // ProposalCreated(address indexed rootMessageSender, uint256 id, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 eta)
   console.log('Fetching recent ProposalCreated events from BridgeReceiver...');
   const latestBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber();
-  const proposalCreatedEvents = await bridgeDeploymentManager.hre.ethers.provider.getLogs({
-    fromBlock: latestBlockNumber - 1000, // look back 1000 blocks for ProposalCreated events, which should be sufficient to cover any recent proposals given typical block times on Arbitrum
-    toBlock: 'latest',
-    address: bridgeReceiver.address,
-    topics: [utils.id('ProposalCreated(address,uint256,address[],uint256[],string[],bytes[],uint256)')]
-  });
+  const proposalCreatedEvents = await bridgeDeploymentManager.retry(() =>
+    bridgeDeploymentManager.hre.ethers.provider.getLogs({
+      fromBlock: l2StartingBlockNumber ?? latestBlockNumber - 1000,
+      toBlock: 'latest',
+      address: bridgeReceiver.address,
+      topics: [utils.id('ProposalCreated(address,uint256,address[],uint256[],string[],bytes[],uint256)')]
+    })
+  );
   const outboundTransferSignature = 'outboundTransfer(address,address,uint256,bytes)';
   const outboundTransfer2Signature = 'outboundTransfer(address,address,uint256,uint256,uint256,bytes)';
   const depositForBurnSignature = 'depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)';
@@ -297,8 +300,11 @@ export async function simulateL2ToL1TokenBridging(
     }
 
     for (let i = 0; i < signatures.length; i++) {
+      let bridgedTokens = false;
+
       // Look for L2→L1 outboundTransfer calls (standard Arbitrum gateway bridge)
       if (signatures[i] === outboundTransferSignature || signatures[i] === outboundTransfer2Signature) {
+        bridgedTokens = true;
         const [l1Token, to, amount] = (() => {
           if (signatures[i] === outboundTransferSignature) {
             return utils.defaultAbiCoder.decode(
@@ -393,6 +399,7 @@ export async function simulateL2ToL1TokenBridging(
 
       // Look for L2→L1 CCTP depositForBurn calls (Circle CCTP bridge, e.g. native USDC)
       if (signatures[i] === depositForBurnSignature) {
+        bridgedTokens = true;
         const [amount, , mintRecipientBytes32, burnToken] = utils.defaultAbiCoder.decode(
           ['uint256', 'uint32', 'bytes32', 'address', 'bytes32', 'uint256', 'uint32'],
           calldatas[i]
@@ -434,7 +441,11 @@ export async function simulateL2ToL1TokenBridging(
           console.log(`Warning: Could not simulate CCTP L2→L1 bridging for depositForBurn: ${e.message}`);
         }
       }
-      await governanceDeploymentManager.hre.network.provider.send('evm_mine');
+      if (bridgedTokens) {
+        await governanceDeploymentManager.retry(() =>
+          governanceDeploymentManager.hre.network.provider.send('evm_mine')
+        );
+      }
     }
   }
 }
