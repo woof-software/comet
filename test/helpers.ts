@@ -48,6 +48,12 @@ export { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 // Network helpers
 export * from './helpers/network-helpers';
 
+// Snapshot
+export { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
+
+// Network helpers
+export * from './helpers/network-helpers';
+
 export { Comet, ethers, expect, hre };
 
 export type Numeric = number | bigint;
