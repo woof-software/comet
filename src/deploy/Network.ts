@@ -116,7 +116,7 @@ export async function deployNetworkComet(
     baseBorrowMin,
     targetReserves,
     assetConfigs,
-    rewardTokenAddress
+    rewardTokenAddress,
   } = await getConfiguration(deploymentManager, configOverrides);
 
   /* Deploy contracts */
@@ -133,19 +133,27 @@ export async function deployNetworkComet(
     symbol32: ethers.utils.formatBytes32String(symbol)
   };
 
-  const assetListFactory = await deploymentManager.deploy(
-    'assetListFactory',
-    'AssetListFactory.sol',
-    [],
-    maybeForce()
-  );
-  const cometExt = await deploymentManager.deploy(
-    'comet:implementation:implementation',
-    'CometExtAssetList.sol',
-    [extConfiguration, assetListFactory.address],
-    maybeForce(deploySpec.cometExt)
-  );
-  
+  if(withAssetList) {
+    let assetListFactory = await deploymentManager.deploy(
+      'assetListFactory',
+      'AssetListFactory.sol',
+      [],
+      maybeForce()
+    );
+    cometExt = await deploymentManager.deploy(
+      'comet:implementation:implementation',
+      'CometExtAssetList.sol',
+      [extConfiguration, assetListFactory.address],
+      maybeForce(deploySpec.cometExt)
+    );
+  } else {
+    cometExt = await deploymentManager.deploy(
+      'comet:implementation:implementation',
+      'CometExt.sol',
+      [extConfiguration],
+      maybeForce(deploySpec.cometExt)
+    );
+  }
 
   const cometFactory = await deploymentManager.deploy(
     'cometFactory',
