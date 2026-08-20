@@ -112,8 +112,13 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
             // The denominator is always positive since with targetHF >= 1:
             //   LF * targetHF >= LF > LCF > BCF (enforced in Configurator)
             else {
-                wantedCollateralValue = (mulFactor(debtRemainingValue, TARGET_HEALTH_FACTOR) - totalCollateralizedValue) * FACTOR_SCALE
-                                    / (mulFactor(collateralInfo.liquidationFactor, TARGET_HEALTH_FACTOR) - collateralInfo.borrowCollateralFactor);
+                // Both carry an extra FACTOR_SCALE, which keeps the solve below to a single division.
+                uint256 collateralizationGap = debtRemainingValue * TARGET_HEALTH_FACTOR - totalCollateralizedValue * FACTOR_SCALE;
+                uint256 gapClosedPerSeizedValue = uint256(collateralInfo.liquidationFactor) * TARGET_HEALTH_FACTOR
+                                    - uint256(collateralInfo.borrowCollateralFactor) * FACTOR_SCALE;
+
+                // Up: S is a lower bound, and no later step makes up a shortfall.
+                wantedCollateralValue = ceilDiv(collateralizationGap * FACTOR_SCALE, gapClosedPerSeizedValue);
 
                 // we do not want more collateral than user's debt, though we must descale the value by penalty
                 uint256 maxWantedCollateralValue = debtRemainingValue * FACTOR_SCALE / collateralInfo.liquidationFactor;
@@ -123,8 +128,21 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
                 //   if user has more collateral than we want, we seize only calculated value
                 //   if user has less collateral value than we want - we seize what we can and move to the next collateral
                 if (wantedCollateralValue < collateralValue) {
-                    seizedAmount = divPrice(wantedCollateralValue, collateralPrices[i], collateralInfo.scale);
-                    seizedValue = mulFactor(wantedCollateralValue, collateralInfo.liquidationFactor);
+                    // Up: a collateral unit is coarse — a satoshi is worth ~1e4 value units — so
+                    // truncating here seizes visibly less than asked. The branch condition bounds it.
+                    seizedAmount = ceilDiv(wantedCollateralValue * collateralInfo.scale, collateralPrices[i]);
+
+                    wantedCollateralValue = mulPrice(seizedAmount, collateralPrices[i], collateralInfo.scale);
+
+                    // From seizedAmount, not from the line above: that one is truncated, and crediting
+                    // through it repays less than was seized.
+                    seizedValue = ceilDiv(
+                        seizedAmount * collateralPrices[i] * collateralInfo.liquidationFactor,
+                        uint256(collateralInfo.scale) * FACTOR_SCALE
+                    );
+                    // Nothing bounds this one: a whole collateral unit can be worth more than is left
+                    // owing, and the subtraction below would underflow.
+                    if (seizedValue > debtRemainingValue) seizedValue = debtRemainingValue;
 
                     // we can fall below minDebt at this step, so check it on current iteration
                     if (debtRemainingValue - seizedValue <= minDebtValue) {
@@ -132,7 +150,8 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
                     }
                 } else {
                     seizedAmount = collateralAmount;
-                    seizedValue = mulFactor(collateralValue, collateralInfo.liquidationFactor);
+                    seizedValue = collateralAmount * collateralPrices[i] * collateralInfo.liquidationFactor
+                                        / (uint256(collateralInfo.scale) * FACTOR_SCALE);
 
                     wantedCollateralValue = collateralValue;
                 }
@@ -140,8 +159,8 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
             seizures[seizuresCount] = ICoreLiquidationModule.Seizure({ asset: collateralInfo.asset, index: i, seizedAmount: seizedAmount, seizedValue: seizedValue, wantedCollateralValue: wantedCollateralValue });
             unchecked { ++seizuresCount; }
 
-            // cycle values update
-            totalCollateralizedValue -= mulFactor(wantedCollateralValue, collateralInfo.borrowCollateralFactor);
+            totalCollateralizedValue -= seizedAmount * collateralPrices[i] * collateralInfo.borrowCollateralFactor
+                                / (uint256(collateralInfo.scale) * FACTOR_SCALE);
             debtRemainingValue -= seizedValue;
         }
 
@@ -185,7 +204,6 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
     function _getLiquidity(ICometData.UserBasic memory account, address accountAddress, bool liquidation, uint256[] memory fetchedCollateralPrices) internal view returns (uint256 liquidity, uint256[] memory collateralPrices) {
         uint16 assetsIn = account.assetsIn;
         uint8 _reserved = account._reserved;
-        uint256 newAmount;
         uint128 collateralBalance;
         ICometData.AssetInfo memory asset;
 
@@ -215,15 +233,12 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
 
                 collateralBalance = comet.userCollateral(accountAddress, asset.asset).balance;
 
-                newAmount = mulPrice(
-                    collateralBalance,
-                    collateralPrices[i],
-                    asset.scale
-                );
-                liquidity += mulFactor(
-                    newAmount,
-                    liquidation ? asset.liquidateCollateralFactor : asset.borrowCollateralFactor
-                );
+                // One division: pricing and weighting separately truncates the balance twice, costing
+                // a unit of value per collateral held.
+                liquidity += collateralBalance
+                    * collateralPrices[i]
+                    * (liquidation ? asset.liquidateCollateralFactor : asset.borrowCollateralFactor)
+                    / (uint256(asset.scale) * FACTOR_SCALE);
             }
         }
     }
@@ -245,12 +260,20 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
         uint256 collateralAmount
     ) internal pure returns (uint256 seizedAmount, uint256 seizedValue, uint256 wantedCollateralValue) {
         wantedCollateralValue = mulPrice(collateralAmount, collateralPrice, collateralInfo.scale);
-        uint256 collateralValueLeft = mulFactor(wantedCollateralValue, collateralInfo.liquidationFactor);
+
+        // One division: this picks the branch below, and understating it sends a position the
+        // collateral does cover into the write-off branch.
+        uint256 collateralValueLeft = collateralAmount * collateralPrice * collateralInfo.liquidationFactor
+                            / (uint256(collateralInfo.scale) * FACTOR_SCALE);
 
         if (debtRemainingValue < collateralValueLeft) {
-            // collateral amount to seize = (debt value / LF) / price
-            // we need to scale down debt value by LF, as seized collateral value is treated as penalized
-            seizedAmount = divPrice(debtRemainingValue * FACTOR_SCALE / collateralInfo.liquidationFactor, collateralPrice, collateralInfo.scale);
+            // Up: the whole debt is credited below, so anything truncated here is debt forgiven
+            // against collateral that was never taken. The branch condition bounds it.
+            seizedAmount = ceilDiv(
+                debtRemainingValue * FACTOR_SCALE * uint256(collateralInfo.scale),
+                uint256(collateralInfo.liquidationFactor) * collateralPrice
+            );
+
             seizedValue = debtRemainingValue;
             wantedCollateralValue = mulPrice(seizedAmount, collateralPrice, collateralInfo.scale);
         } else {
