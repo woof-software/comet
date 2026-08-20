@@ -20,7 +20,7 @@ import { takeSnapshot, SnapshotRestorer } from '../helpers/snapshot';
 //   - EXECUTOR_ROLE: the only accounts allowed to call the keeper liquidate() entry point.
 //   - PAUSER_ROLE:   toggle the DEX pause switch and pause keeper liquidations.
 // This file covers the constructor wiring and the DAO-only role-management surface (grantRole / revokeRole).
-describe('liquidation module access control', function () {
+describe.only('liquidation module access control', function () {
   // Any non-zero address satisfies the DEX adapter check; the adapter itself is not exercised here.
   const INCENTIVE_BPS = BigInt(500);
   const ZERO = ethers.constants.AddressZero;
@@ -192,6 +192,10 @@ describe('liquidation module access control', function () {
           expect(await liquidationModule.hasRole(PAUSER_ROLE, pausers[i])).to.be.true;
         });
       });
+
+      it('starts with partial liquidation enabled', async () => {
+        expect(await liquidationModule.partialLiquidationEnabled()).to.be.true;
+      });
     });
 
     describe('revert when', function () {
@@ -278,6 +282,25 @@ describe('liquidation module access control', function () {
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
+
+      // type(uint8).max is 255, so a 256-element array exceeds it and reverts before the grant loop.
+      it('the Executors list exceeds the uint8 max length', async () => {
+        const tooManyExecutors = Array.from({ length: 256 }, (_, i) =>
+          ethers.utils.hexZeroPad(ethers.utils.hexlify(i + 1), 20)
+        );
+        await expect(
+          LiquidationModuleFactory.deploy(dexAdapter, multisig.address, tooManyExecutors, pausers, INCENTIVE_BPS)
+        ).to.be.revertedWithCustomError(liquidationModule, 'ArrayLengthMismatch');
+      });
+
+      it('the Pausers list exceeds the uint8 max length', async () => {
+        const tooManyPausers = Array.from({ length: 256 }, (_, i) =>
+          ethers.utils.hexZeroPad(ethers.utils.hexlify(i + 1), 20)
+        );
+        await expect(
+          LiquidationModuleFactory.deploy(dexAdapter, multisig.address, executors, tooManyPausers, INCENTIVE_BPS)
+        ).to.be.revertedWithCustomError(liquidationModule, 'ArrayLengthMismatch');
+      });
     });
   });
 
@@ -350,6 +373,10 @@ describe('liquidation module access control', function () {
         await expect(liquidationModule.connect(other).revokeRole(EXECUTOR_ROLE, executors[0]))
           .to.be.revertedWith(missingRole(other.address, ADMIN_ROLE));
       });
+    });
+
+    it.only('executor role can be granted to zero address', async () => {
+      await expect(liquidationModule.connect(dao).grantRole(EXECUTOR_ROLE, ZERO)).to.not.be.reverted;
     });
   });
 

@@ -1,5 +1,5 @@
 import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, default24Assets, divPrice, ceilDiv, toBigInt, factorScale, CollateralState, makeCollateralStates } from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
+import { CometHarnessInterfaceExtendedAssetList, LiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -659,7 +659,7 @@ context('rsETH-denominated base (18 decimals): dust and min-borrow edge cases', 
     const droppedWethPrice = exp(1500, 8);
 
     let rsEthComet: CometHarnessInterfaceExtendedAssetList;
-    let liquidationModule: DefaultLiquidationModule;
+    let liquidationModule: LiquidationModule;
     let rsEthBaseToken: FaucetToken;
     let compAsset: FaucetToken;
     let wethAsset: FaucetToken;
