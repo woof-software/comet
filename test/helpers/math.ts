@@ -20,6 +20,14 @@ export function divPrice(n: bigint | BigNumber, price: bigint | BigNumber, toSca
   return toBigInt(n) * toBigInt(toScale) / toBigInt(price);
 }
 
+// Division rounded towards infinity rather than towards zero.
+export function ceilDiv(a: bigint | BigNumber, b: bigint | BigNumber): bigint {
+  const numerator = toBigInt(a);
+  const denominator = toBigInt(b);
+
+  return numerator === 0n ? 0n : (numerator - 1n) / denominator + 1n;
+}
+
 export function factor(f: number): bigint {
   return exp(f, 18);
 }

@@ -1,4 +1,4 @@
-import { ethers, expect, exp, presentValue, mulPrice, mulFactor, divPrice, default24Assets, CollateralState, makeCollateralStates, makeConfigurator, principalValue, deployDefaultLiquidationModuleWithComet, seedMarketActivity, DeployLiquidationModuleOpts, deployEmptyDexAdapter} from '../helpers';
+import { ethers, expect, exp, presentValue, mulPrice, mulFactor, ceilDiv, toBigInt, default24Assets, CollateralState, makeCollateralStates, makeConfigurator, principalValue, deployDefaultLiquidationModuleWithComet, seedMarketActivity, DeployLiquidationModuleOpts, deployEmptyDexAdapter} from '../helpers';
 import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, LiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
@@ -217,8 +217,10 @@ describe('absorb logic with delisted collaterals', function() {
       // adjustedDebtValue = debtValue * 1e18 / 0.90e18
       const totalsBasic = await comet.totalsBasic();
       const debtRemainingValue = mulPrice(-presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex), baseTokenPrice, baseScale);
-      const adjustedDebtValue = debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt();
-      collateralsState[collateralKey].seizeAmount = divPrice(adjustedDebtValue, droppedCompPrice, assetInfo.scale);
+      collateralsState[collateralKey].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(droppedCompPrice),
+      );
       collateralsState[collateralKey].seizedValue = debtRemainingValue;
 
       // getReserves() = baseBalance - presentValueSupply(totalSupplyBase) + presentValueBorrow(totalBorrowBase).
@@ -418,8 +420,10 @@ describe('absorb logic with delisted collaterals', function() {
       // adjustedDebtValue = debtValue * 1e18 / 0.90e18
       const totalsBasic = await comet.totalsBasic();
       const debtRemainingValue = mulPrice(-presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex), baseTokenPrice, baseScale);
-      const adjustedDebtValue = debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt();
-      collateralsState[collateralKey].seizeAmount = divPrice(adjustedDebtValue, droppedCompPrice, assetInfo.scale);
+      collateralsState[collateralKey].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(droppedCompPrice),
+      );
       collateralsState[collateralKey].seizedValue = debtRemainingValue;
 
       // getReserves() = baseBalance - presentValueSupply(totalSupplyBase) + presentValueBorrow(totalBorrowBase).
@@ -623,25 +627,41 @@ describe('absorb logic with delisted collaterals', function() {
       // totalCollateralizedValue = WETH value * BCF = 2e8 * 0.75 = 1.5e8
       const totalsBasic = await comet.totalsBasic();
       const debtRemainingValue = mulPrice(-presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex), baseTokenPrice, baseScale);
-      const wethCollateralValue = mulPrice(collateralConfigs[1].amount, wethPrice, wethInfo.scale);
-      const totalCollateralizedValue = mulFactor(wethCollateralValue, wethInfo.borrowCollateralFactor);
+      const totalCollateralizedValue = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPrice) * toBigInt(wethInfo.borrowCollateralFactor)
+        / (toBigInt(wethInfo.scale) * factorScale);
 
       // Solve the target-HF formula for COMP; WETH is left untouched.
       // wantedCollateralValue = (targetHF * debtValue - WETH_BCF_value) / (targetHF * COMP_LF - COMP_BCF)
-      const wantedCollateralValue = (mulFactor(debtRemainingValue, targetHealthFactor) - totalCollateralizedValue) * factorScale
-        / (mulFactor(compInfo.liquidationFactor, targetHealthFactor) - compInfo.borrowCollateralFactor.toBigInt());
+      const wantedCollateralValue = ceilDiv(
+        (toBigInt(debtRemainingValue) * targetHealthFactor - toBigInt(totalCollateralizedValue) * factorScale) * factorScale,
+        toBigInt(compInfo.liquidationFactor) * targetHealthFactor - toBigInt(compInfo.borrowCollateralFactor) * factorScale,
+      );
 
-      collateralsState[collateralConfigs[0].symbol].seizeAmount = divPrice(wantedCollateralValue, droppedCompPrice, compInfo.scale);
-      collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(wantedCollateralValue, compInfo.liquidationFactor);
+      collateralsState[collateralConfigs[0].symbol].seizeAmount = ceilDiv(toBigInt(wantedCollateralValue) * toBigInt(compInfo.scale), toBigInt(droppedCompPrice));
+      collateralsState[collateralConfigs[0].symbol].seizedValue = ceilDiv(
+        collateralsState[collateralConfigs[0].symbol].seizeAmount * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor),
+        toBigInt(compInfo.scale) * factorScale,
+      );
 
       // The rounded COMP seize amount can leave the account just below target health, so absorb
       // seizes a dust amount of WETH to restore target health while leaving the debt above minDebt.
       const debtRemainingValueAfterCompSeize = debtRemainingValue - collateralsState[collateralConfigs[0].symbol].seizedValue;
-      const wantedWethCollateralValue = (mulFactor(debtRemainingValueAfterCompSeize, targetHealthFactor) - totalCollateralizedValue) * factorScale
-        / (mulFactor(wethInfo.liquidationFactor, targetHealthFactor) - wethInfo.borrowCollateralFactor.toBigInt());
 
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedWethCollateralValue, wethPrice, wethInfo.scale);
-      collateralsState[collateralConfigs[1].symbol].seizedValue = mulFactor(wantedWethCollateralValue, wethInfo.liquidationFactor);
+      // The loop re-checks the target before it moves to the next asset. With the request above
+      // rounded up, the first seizure already meets it on some of these positions, and then
+      // nothing is taken here at all.
+      if (mulFactor(debtRemainingValueAfterCompSeize, targetHealthFactor) > totalCollateralizedValue) {
+        const wantedWethCollateralValue = ceilDiv(
+          (toBigInt(debtRemainingValueAfterCompSeize) * targetHealthFactor - toBigInt(totalCollateralizedValue) * factorScale) * factorScale,
+          toBigInt(wethInfo.liquidationFactor) * targetHealthFactor - toBigInt(wethInfo.borrowCollateralFactor) * factorScale,
+        );
+
+        collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(toBigInt(wantedWethCollateralValue) * toBigInt(wethInfo.scale), toBigInt(wethPrice));
+        collateralsState[collateralConfigs[1].symbol].seizedValue = ceilDiv(
+          collateralsState[collateralConfigs[1].symbol].seizeAmount * toBigInt(wethPrice) * toBigInt(wethInfo.liquidationFactor),
+          toBigInt(wethInfo.scale) * factorScale,
+        );
+      }
       debtRemainingValueAfterSeize = debtRemainingValue
         - collateralsState[collateralConfigs[0].symbol].seizedValue
         - collateralsState[collateralConfigs[1].symbol].seizedValue;
@@ -869,16 +889,18 @@ describe('absorb logic with delisted collaterals', function() {
 
       // Partial liquidation is disabled, so COMP (soft-delisted) is fully seized first, repaying
       // COMP value * LF.
-      const compCollateralValue = mulPrice(collateralAmount, droppedCompPrice, compInfo.scale);
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralAmount;
-      collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(compCollateralValue, compInfo.liquidationFactor);
+      collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralAmount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor)
+        / (toBigInt(compInfo.scale) * factorScale);
 
       // WETH then closes the remaining debt through the close-debt branch: it seizes remaining/LF
       // worth and leaves the rest of the WETH untouched.
       const debtRemainingValueAfterCompSeize = mulPrice(-presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex), baseTokenPrice, baseScale)
         - collateralsState[collateralConfigs[0].symbol].seizedValue;
-      const wantedWethCollateralValue = debtRemainingValueAfterCompSeize * factorScale / wethInfo.liquidationFactor.toBigInt();
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedWethCollateralValue, wethPrice, wethInfo.scale);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValueAfterCompSeize) * factorScale * toBigInt(wethInfo.scale),
+        toBigInt(wethInfo.liquidationFactor) * toBigInt(wethPrice),
+      );
       collateralsState[collateralConfigs[1].symbol].seizedValue = debtRemainingValueAfterCompSeize;
 
       const totalSupplyBefore = presentValue(totalSupplyBaseBefore, baseSupplyIndexBefore, baseBorrowIndexBefore);
@@ -1089,9 +1111,9 @@ describe('absorb logic with delisted collaterals', function() {
     it('calculates COMP and WETH seize amounts for the full COMP seizure then WETH closeout', async () => {
       // Normal COMP cannot reach target health after the debt accrues, so it is fully seized.
       const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const compCollateralValue = mulPrice(collateralAmount, droppedCompPrice, compInfo.scale);
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralAmount;
-      collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(compCollateralValue, compInfo.liquidationFactor);
+      collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralAmount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor)
+        / (toBigInt(compInfo.scale) * factorScale);
 
       const debtRemainingValueAfterCompSeize = debtRemainingValue - collateralsState[collateralConfigs[0].symbol].seizedValue;
       const actualWethSeizeAmount = collateralConfigs[1].amount
@@ -1306,9 +1328,9 @@ describe('absorb logic with delisted collaterals', function() {
       // Partial liquidation is disabled, so COMP is fully seized (the accrued debt exceeds the full
       // COMP value), then WETH closes the remaining debt through the close-debt branch, leaving WETH.
       const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const compCollateralValue = mulPrice(collateralAmount, droppedCompPrice, compInfo.scale);
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralAmount;
-      collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(compCollateralValue, compInfo.liquidationFactor);
+      collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralAmount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor)
+        / (toBigInt(compInfo.scale) * factorScale);
 
       const debtRemainingValueAfterCompSeize = debtRemainingValue - collateralsState[collateralConfigs[0].symbol].seizedValue;
       const actualWethSeizeAmount = collateralConfigs[1].amount
@@ -1466,8 +1488,8 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before delisting, COMP liquidation value could cover alice debt', () => {
       const debtValueBeforeDelist = mulPrice(borrowBalanceBeforeDelist, baseTokenPrice, baseScale);
-      const compCollateralValueBeforeDelist = mulPrice(collateralAmount, baseTokenPrice * 100n, compInfoBeforeDelist.scale);
-      const compLiquidationValueBeforeDelist = mulFactor(compCollateralValueBeforeDelist, compInfoBeforeDelist.liquidationFactor);
+      const compLiquidationValueBeforeDelist = toBigInt(collateralAmount) * toBigInt(baseTokenPrice * 100n) * toBigInt(compInfoBeforeDelist.liquidationFactor)
+        / (toBigInt(compInfoBeforeDelist.scale) * factorScale);
 
       expect(compLiquidationValueBeforeDelist).to.be.greaterThanOrEqual(debtValueBeforeDelist);
     });
@@ -1641,10 +1663,10 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before delisting, WETH alone could not back the debt but COMP plus WETH could', () => {
       const debtValue = mulPrice(borrowBalanceBeforeDelist, baseTokenPrice, baseScale);
-      const compCollateralValueBeforeDelist = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfoBeforeDelist.scale);
-      const wethCollateralValueBeforeDelist = mulPrice(collateralConfigs[1].amount, wethPriceBeforeDelist, wethInfoBeforeDelist.scale);
-      const compBorrowValueBeforeDelist = mulFactor(compCollateralValueBeforeDelist, compInfoBeforeDelist.borrowCollateralFactor);
-      const wethBorrowValueBeforeDelist = mulFactor(wethCollateralValueBeforeDelist, wethInfoBeforeDelist.borrowCollateralFactor);
+      const compBorrowValueBeforeDelist = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(compInfoBeforeDelist.scale) * factorScale);
+      const wethBorrowValueBeforeDelist = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPriceBeforeDelist) * toBigInt(wethInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(wethInfoBeforeDelist.scale) * factorScale);
       const totalBorrowValueBeforeDelist = compBorrowValueBeforeDelist + wethBorrowValueBeforeDelist;
 
       expect(wethBorrowValueBeforeDelist).to.be.lessThan(debtValue);
@@ -1685,14 +1707,19 @@ describe('absorb logic with delisted collaterals', function() {
     it('calculates full COMP removal and partial WETH seizure', async () => {
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
       const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const wethCollateralValue = mulPrice(collateralConfigs[1].amount, wethPrice, wethInfo.scale);
-      const totalCollateralizedValue = mulFactor(wethCollateralValue, wethInfo.borrowCollateralFactor);
-      const wantedWethCollateralValue = (mulFactor(debtRemainingValue, targetHealthFactor) - totalCollateralizedValue) * factorScale
-        / (mulFactor(wethInfo.liquidationFactor, targetHealthFactor) - wethInfo.borrowCollateralFactor.toBigInt());
+      const totalCollateralizedValue = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPrice) * toBigInt(wethInfo.borrowCollateralFactor)
+        / (toBigInt(wethInfo.scale) * factorScale);
+      const wantedWethCollateralValue = ceilDiv(
+        (toBigInt(debtRemainingValue) * targetHealthFactor - toBigInt(totalCollateralizedValue) * factorScale) * factorScale,
+        toBigInt(wethInfo.liquidationFactor) * targetHealthFactor - toBigInt(wethInfo.borrowCollateralFactor) * factorScale,
+      );
 
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedWethCollateralValue, wethPrice, wethInfo.scale);
-      collateralsState[collateralConfigs[1].symbol].seizedValue = mulFactor(wantedWethCollateralValue, wethInfo.liquidationFactor);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(toBigInt(wantedWethCollateralValue) * toBigInt(wethInfo.scale), toBigInt(wethPrice));
+      collateralsState[collateralConfigs[1].symbol].seizedValue = ceilDiv(
+        collateralsState[collateralConfigs[1].symbol].seizeAmount * toBigInt(wethPrice) * toBigInt(wethInfo.liquidationFactor),
+        toBigInt(wethInfo.scale) * factorScale,
+      );
     });
 
     // User base balances
@@ -1848,10 +1875,10 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before delisting, WETH alone could not back the debt but COMP plus WETH could', () => {
       const debtValue = mulPrice(borrowBalanceBeforeDelist, baseTokenPrice, baseScale);
-      const compCollateralValueBeforeDelist = mulPrice(collateralConfigs[0].amount, compPriceBeforeDelist, compInfoBeforeDelist.scale);
-      const wethCollateralValueBeforeDelist = mulPrice(collateralConfigs[1].amount, wethPriceBeforeDelist, wethInfoBeforeDelist.scale);
-      const compBorrowValueBeforeDelist = mulFactor(compCollateralValueBeforeDelist, compInfoBeforeDelist.borrowCollateralFactor);
-      const wethBorrowValueBeforeDelist = mulFactor(wethCollateralValueBeforeDelist, wethInfoBeforeDelist.borrowCollateralFactor);
+      const compBorrowValueBeforeDelist = toBigInt(collateralConfigs[0].amount) * toBigInt(compPriceBeforeDelist) * toBigInt(compInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(compInfoBeforeDelist.scale) * factorScale);
+      const wethBorrowValueBeforeDelist = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPriceBeforeDelist) * toBigInt(wethInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(wethInfoBeforeDelist.scale) * factorScale);
       const totalBorrowValueBeforeDelist = compBorrowValueBeforeDelist + wethBorrowValueBeforeDelist;
 
       expect(wethBorrowValueBeforeDelist).to.be.lessThan(debtValue);
@@ -1888,10 +1915,12 @@ describe('absorb logic with delisted collaterals', function() {
     it('calculates full COMP removal and WETH debt closeout', async () => {
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
       const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const wantedWethCollateralValue = debtRemainingValue * factorScale / wethInfo.liquidationFactor.toBigInt();
 
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedWethCollateralValue, wethPrice, wethInfo.scale);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(wethInfo.scale),
+        toBigInt(wethInfo.liquidationFactor) * toBigInt(wethPrice),
+      );
       collateralsState[collateralConfigs[1].symbol].seizedValue = debtRemainingValue;
     });
 
@@ -2040,10 +2069,10 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before delisting, WETH alone could not back the debt but COMP plus WETH could', () => {
       const debtValue = mulPrice(borrowBalanceBeforeDelist, baseTokenPrice, baseScale);
-      const compCollateralValueBeforeDelist = mulPrice(collateralConfigs[0].amount, compPriceBeforeDelist, compInfoBeforeDelist.scale);
-      const wethCollateralValueBeforeDelist = mulPrice(collateralConfigs[1].amount, wethPriceBeforeDelist, wethInfoBeforeDelist.scale);
-      const compBorrowValueBeforeDelist = mulFactor(compCollateralValueBeforeDelist, compInfoBeforeDelist.borrowCollateralFactor);
-      const wethBorrowValueBeforeDelist = mulFactor(wethCollateralValueBeforeDelist, wethInfoBeforeDelist.borrowCollateralFactor);
+      const compBorrowValueBeforeDelist = toBigInt(collateralConfigs[0].amount) * toBigInt(compPriceBeforeDelist) * toBigInt(compInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(compInfoBeforeDelist.scale) * factorScale);
+      const wethBorrowValueBeforeDelist = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPriceBeforeDelist) * toBigInt(wethInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(wethInfoBeforeDelist.scale) * factorScale);
       const totalBorrowValueBeforeDelist = compBorrowValueBeforeDelist + wethBorrowValueBeforeDelist;
 
       expect(wethBorrowValueBeforeDelist).to.be.lessThan(debtValue);
@@ -2079,11 +2108,11 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('calculates full COMP removal and full WETH seizure with bad debt', async () => {
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
-      const wethCollateralValue = mulPrice(collateralConfigs[1].amount, wethPrice, wethInfo.scale);
 
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
       collateralsState[collateralConfigs[1].symbol].seizeAmount = collateralConfigs[1].amount;
-      collateralsState[collateralConfigs[1].symbol].seizedValue = mulFactor(wethCollateralValue, wethInfo.liquidationFactor);
+      collateralsState[collateralConfigs[1].symbol].seizedValue = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPrice) * toBigInt(wethInfo.liquidationFactor)
+        / (toBigInt(wethInfo.scale) * factorScale);
     });
 
     // User base balances
@@ -2231,10 +2260,10 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before delisting, COMP alone could not back the debt but COMP plus WETH could', () => {
       const debtValue = mulPrice(borrowBalanceBeforeDelist, baseTokenPrice, baseScale);
-      const compCollateralValueBeforeDelist = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfoBeforeDelist.scale);
-      const wethCollateralValueBeforeDelist = mulPrice(collateralConfigs[1].amount, wethPriceBeforeDelist, wethInfoBeforeDelist.scale);
-      const compBorrowValueBeforeDelist = mulFactor(compCollateralValueBeforeDelist, compInfoBeforeDelist.borrowCollateralFactor);
-      const wethBorrowValueBeforeDelist = mulFactor(wethCollateralValueBeforeDelist, wethInfoBeforeDelist.borrowCollateralFactor);
+      const compBorrowValueBeforeDelist = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(compInfoBeforeDelist.scale) * factorScale);
+      const wethBorrowValueBeforeDelist = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPriceBeforeDelist) * toBigInt(wethInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(wethInfoBeforeDelist.scale) * factorScale);
       const totalBorrowValueBeforeDelist = compBorrowValueBeforeDelist + wethBorrowValueBeforeDelist;
 
       expect(compBorrowValueBeforeDelist).to.be.lessThan(debtValue);
@@ -2273,13 +2302,18 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('calculates partial COMP seizure and leaves WETH untouched', async () => {
       const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const compCollateralValue = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfo.scale);
-      const totalCollateralizedValue = mulFactor(compCollateralValue, compInfo.borrowCollateralFactor);
-      const wantedCompCollateralValue = (mulFactor(debtRemainingValue, targetHealthFactor) - totalCollateralizedValue) * factorScale
-        / (mulFactor(compInfo.liquidationFactor, targetHealthFactor) - compInfo.borrowCollateralFactor.toBigInt());
+      const totalCollateralizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.borrowCollateralFactor)
+        / (toBigInt(compInfo.scale) * factorScale);
+      const wantedCompCollateralValue = ceilDiv(
+        (toBigInt(debtRemainingValue) * targetHealthFactor - toBigInt(totalCollateralizedValue) * factorScale) * factorScale,
+        toBigInt(compInfo.liquidationFactor) * targetHealthFactor - toBigInt(compInfo.borrowCollateralFactor) * factorScale,
+      );
 
-      collateralsState[collateralConfigs[0].symbol].seizeAmount = divPrice(wantedCompCollateralValue, droppedCompPrice, compInfo.scale);
-      collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(wantedCompCollateralValue, compInfo.liquidationFactor);
+      collateralsState[collateralConfigs[0].symbol].seizeAmount = ceilDiv(toBigInt(wantedCompCollateralValue) * toBigInt(compInfo.scale), toBigInt(droppedCompPrice));
+      collateralsState[collateralConfigs[0].symbol].seizedValue = ceilDiv(
+        collateralsState[collateralConfigs[0].symbol].seizeAmount * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor),
+        toBigInt(compInfo.scale) * factorScale,
+      );
     });
 
     // User base balances
@@ -2434,10 +2468,10 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before delisting, COMP alone could not back the debt but COMP plus WETH could', () => {
       const debtValue = mulPrice(borrowBalanceBeforeDelist, baseTokenPrice, baseScale);
-      const compCollateralValueBeforeDelist = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfoBeforeDelist.scale);
-      const wethCollateralValueBeforeDelist = mulPrice(collateralConfigs[1].amount, wethPriceBeforeDelist, wethInfoBeforeDelist.scale);
-      const compBorrowValueBeforeDelist = mulFactor(compCollateralValueBeforeDelist, compInfoBeforeDelist.borrowCollateralFactor);
-      const wethBorrowValueBeforeDelist = mulFactor(wethCollateralValueBeforeDelist, wethInfoBeforeDelist.borrowCollateralFactor);
+      const compBorrowValueBeforeDelist = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(compInfoBeforeDelist.scale) * factorScale);
+      const wethBorrowValueBeforeDelist = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPriceBeforeDelist) * toBigInt(wethInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(wethInfoBeforeDelist.scale) * factorScale);
       const totalBorrowValueBeforeDelist = compBorrowValueBeforeDelist + wethBorrowValueBeforeDelist;
 
       expect(compBorrowValueBeforeDelist).to.be.lessThan(debtValue);
@@ -2472,9 +2506,11 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('calculates COMP debt closeout and leaves WETH untouched', async () => {
       const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const wantedCompCollateralValue = debtRemainingValue * factorScale / compInfo.liquidationFactor.toBigInt();
 
-      collateralsState[collateralConfigs[0].symbol].seizeAmount = divPrice(wantedCompCollateralValue, droppedCompPrice, compInfo.scale);
+      collateralsState[collateralConfigs[0].symbol].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(compInfo.scale),
+        toBigInt(compInfo.liquidationFactor) * toBigInt(droppedCompPrice),
+      );
       collateralsState[collateralConfigs[0].symbol].seizedValue = debtRemainingValue;
     });
 
@@ -2624,10 +2660,10 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before delisting, COMP alone could not back the debt but COMP plus WETH could', () => {
       const debtValue = mulPrice(borrowBalanceBeforeDelist, baseTokenPrice, baseScale);
-      const compCollateralValueBeforeDelist = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfoBeforeDelist.scale);
-      const wethCollateralValueBeforeDelist = mulPrice(collateralConfigs[1].amount, wethPriceBeforeDelist, wethInfoBeforeDelist.scale);
-      const compBorrowValueBeforeDelist = mulFactor(compCollateralValueBeforeDelist, compInfoBeforeDelist.borrowCollateralFactor);
-      const wethBorrowValueBeforeDelist = mulFactor(wethCollateralValueBeforeDelist, wethInfoBeforeDelist.borrowCollateralFactor);
+      const compBorrowValueBeforeDelist = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(compInfoBeforeDelist.scale) * factorScale);
+      const wethBorrowValueBeforeDelist = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPriceBeforeDelist) * toBigInt(wethInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(wethInfoBeforeDelist.scale) * factorScale);
       const totalBorrowValueBeforeDelist = compBorrowValueBeforeDelist + wethBorrowValueBeforeDelist;
 
       expect(compBorrowValueBeforeDelist).to.be.lessThan(debtValue);
@@ -2662,10 +2698,10 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('calculates full COMP removal and full WETH removal with bad debt', async () => {
-      const compCollateralValue = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfo.scale);
 
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-      collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(compCollateralValue, compInfo.liquidationFactor);
+      collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor)
+        / (toBigInt(compInfo.scale) * factorScale);
       collateralsState[collateralConfigs[1].symbol].seizeAmount = collateralConfigs[1].amount;
     });
 
@@ -2808,8 +2844,8 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before delisting, COMP could cover alice debt by liquidation factor', () => {
       const debtValueBeforeDelist = mulPrice(borrowBalanceBeforeDelist, baseTokenPrice, baseScale);
-      const collateralValueBeforeDelist = mulPrice(collateralAmount, collateralPriceBeforeDelist, assetInfoBeforeDelist.scale);
-      const liquidationValueBeforeDelist = mulFactor(collateralValueBeforeDelist, assetInfoBeforeDelist.liquidationFactor);
+      const liquidationValueBeforeDelist = toBigInt(collateralAmount) * toBigInt(collateralPriceBeforeDelist) * toBigInt(assetInfoBeforeDelist.liquidationFactor)
+        / (toBigInt(assetInfoBeforeDelist.scale) * factorScale);
 
       expect(liquidationValueBeforeDelist).to.be.greaterThanOrEqual(debtValueBeforeDelist);
     });
@@ -2966,10 +3002,10 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before delisting, WETH alone could not back the debt but COMP plus WETH could', () => {
       const debtValue = mulPrice(borrowBalanceBeforeDelist, baseTokenPrice, baseScale);
-      const compCollateralValueBeforeDelist = mulPrice(collateralConfigs[0].amount, compPriceBeforeDelist, compInfoBeforeDelist.scale);
-      const wethCollateralValueBeforeDelist = mulPrice(collateralConfigs[1].amount, wethPriceBeforeDelist, wethInfoBeforeDelist.scale);
-      const compBorrowValueBeforeDelist = mulFactor(compCollateralValueBeforeDelist, compInfoBeforeDelist.borrowCollateralFactor);
-      const wethBorrowValueBeforeDelist = mulFactor(wethCollateralValueBeforeDelist, wethInfoBeforeDelist.borrowCollateralFactor);
+      const compBorrowValueBeforeDelist = toBigInt(collateralConfigs[0].amount) * toBigInt(compPriceBeforeDelist) * toBigInt(compInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(compInfoBeforeDelist.scale) * factorScale);
+      const wethBorrowValueBeforeDelist = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPriceBeforeDelist) * toBigInt(wethInfoBeforeDelist.borrowCollateralFactor)
+        / (toBigInt(wethInfoBeforeDelist.scale) * factorScale);
       const totalBorrowValueBeforeDelist = compBorrowValueBeforeDelist + wethBorrowValueBeforeDelist;
 
       expect(wethBorrowValueBeforeDelist).to.be.lessThan(debtValue);
@@ -2978,8 +3014,8 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before delisting, WETH alone could not keep alice above liquidation threshold', () => {
       const debtValue = mulPrice(borrowBalanceBeforeDelist, baseTokenPrice, baseScale);
-      const wethCollateralValueBeforeDelist = mulPrice(collateralConfigs[1].amount, wethPriceBeforeDelist, wethInfoBeforeDelist.scale);
-      const wethLiquidationValueBeforeDelist = mulFactor(wethCollateralValueBeforeDelist, wethInfoBeforeDelist.liquidateCollateralFactor);
+      const wethLiquidationValueBeforeDelist = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPriceBeforeDelist) * toBigInt(wethInfoBeforeDelist.liquidateCollateralFactor)
+        / (toBigInt(wethInfoBeforeDelist.scale) * factorScale);
 
       expect(wethLiquidationValueBeforeDelist).to.be.lessThan(debtValue);
     });
@@ -3016,13 +3052,18 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('calculates skipped COMP and partial WETH seizure', async () => {
       const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      const wethCollateralValue = mulPrice(collateralConfigs[1].amount, wethPriceBeforeDelist, wethInfo.scale);
-      const totalCollateralizedValue = mulFactor(wethCollateralValue, wethInfo.borrowCollateralFactor);
-      const wantedWethCollateralValue = (mulFactor(debtRemainingValue, targetHealthFactor) - totalCollateralizedValue) * factorScale
-        / (mulFactor(wethInfo.liquidationFactor, targetHealthFactor) - wethInfo.borrowCollateralFactor.toBigInt());
+      const totalCollateralizedValue = toBigInt(collateralConfigs[1].amount) * toBigInt(wethPriceBeforeDelist) * toBigInt(wethInfo.borrowCollateralFactor)
+        / (toBigInt(wethInfo.scale) * factorScale);
+      const wantedWethCollateralValue = ceilDiv(
+        (toBigInt(debtRemainingValue) * targetHealthFactor - toBigInt(totalCollateralizedValue) * factorScale) * factorScale,
+        toBigInt(wethInfo.liquidationFactor) * targetHealthFactor - toBigInt(wethInfo.borrowCollateralFactor) * factorScale,
+      );
 
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedWethCollateralValue, wethPriceBeforeDelist, wethInfo.scale);
-      collateralsState[collateralConfigs[1].symbol].seizedValue = mulFactor(wantedWethCollateralValue, wethInfo.liquidationFactor);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(toBigInt(wantedWethCollateralValue) * toBigInt(wethInfo.scale), toBigInt(wethPriceBeforeDelist));
+      collateralsState[collateralConfigs[1].symbol].seizedValue = ceilDiv(
+        collateralsState[collateralConfigs[1].symbol].seizeAmount * toBigInt(wethPriceBeforeDelist) * toBigInt(wethInfo.liquidationFactor),
+        toBigInt(wethInfo.scale) * factorScale,
+      );
     });
 
     // User base balances
@@ -3237,15 +3278,21 @@ describe('absorb logic with delisted collaterals', function() {
       // Re-derive the exact debt the absorb repaid (pre-absorb principal at the post-absorb indices).
       const debtRemainingValue = mulPrice(-presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex), baseTokenPrice, baseScale);
       // Deactivation is ignored by the liquidation path, so COMP still contributes its BCF-weighted value.
-      const totalCollateralizedValue = mulFactor(mulPrice(collateralAmount, droppedCompPrice, assetInfo.scale), assetInfo.borrowCollateralFactor);
+      const totalCollateralizedValue = toBigInt(collateralAmount) * toBigInt(droppedCompPrice) * toBigInt(assetInfo.borrowCollateralFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
 
       // Solve targetHF = (totalCollateralValue - S * BCF) / (debt - S * LF) for the seized value S:
       //   S = (targetHF * debt - totalCollateralValue) / (targetHF * LF - BCF)
-      const wantedCollateralValue = (mulFactor(debtRemainingValue, targetHealthFactor) - totalCollateralizedValue) * factorScale
-        / (mulFactor(assetInfo.liquidationFactor, targetHealthFactor) - assetInfo.borrowCollateralFactor.toBigInt());
+      const wantedCollateralValue = ceilDiv(
+        (toBigInt(debtRemainingValue) * targetHealthFactor - toBigInt(totalCollateralizedValue) * factorScale) * factorScale,
+        toBigInt(assetInfo.liquidationFactor) * targetHealthFactor - toBigInt(assetInfo.borrowCollateralFactor) * factorScale,
+      );
 
-      collateralsState[collateralKey].seizeAmount = divPrice(wantedCollateralValue, droppedCompPrice, assetInfo.scale);
-      collateralsState[collateralKey].seizedValue = mulFactor(wantedCollateralValue, assetInfo.liquidationFactor);
+      collateralsState[collateralKey].seizeAmount = ceilDiv(toBigInt(wantedCollateralValue) * toBigInt(assetInfo.scale), toBigInt(droppedCompPrice));
+      collateralsState[collateralKey].seizedValue = ceilDiv(
+        collateralsState[collateralKey].seizeAmount * toBigInt(droppedCompPrice) * toBigInt(assetInfo.liquidationFactor),
+        toBigInt(assetInfo.scale) * factorScale,
+      );
     });
 
     // User base balances
@@ -3441,8 +3488,10 @@ describe('absorb logic with delisted collaterals', function() {
       // pre-absorb principal valued at the post-absorb indices. Close-debt mode then seizes only enough
       // COMP to repay the whole debt (debt < full COMP value): seizeAmount = (debt / LF) / price.
       const debtRemainingValue = mulPrice(-presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex), baseTokenPrice, baseScale);
-      const adjustedDebtValue = debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt();
-      collateralsState[collateralKey].seizeAmount = divPrice(adjustedDebtValue, droppedCompPrice, assetInfo.scale);
+      collateralsState[collateralKey].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(droppedCompPrice),
+      );
       collateralsState[collateralKey].seizedValue = debtRemainingValue;
     });
 
@@ -3586,8 +3635,8 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('time passes until the debt exceeds the full COMP value', async () => {
       // Grow the debt past COMP's full liquidation value so COMP alone cannot cover it.
-      const collateralValue = mulPrice(collateralAmount, droppedCompPrice, assetInfo.scale);
-      const fullSeizureValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
+      const fullSeizureValue = toBigInt(collateralAmount) * toBigInt(droppedCompPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
 
       while (mulPrice((await comet.borrowBalanceOf(alice.address)).toBigInt(), baseTokenPrice, baseScale) <= fullSeizureValue) {
         await ethers.provider.send('evm_increaseTime', [FIVE_DAYS]);
@@ -3776,9 +3825,10 @@ describe('absorb logic with delisted collaterals', function() {
       const wethInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
       const compCollateralValue = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfo.scale);
-      const wethCollateralValue = mulPrice(collateralConfigs[1].amount, wethPrice, wethInfo.scale);
-      const totalCollateralizedValue = mulFactor(compCollateralValue, compInfo.borrowCollateralFactor)
-        + mulFactor(wethCollateralValue, wethInfo.borrowCollateralFactor);
+      const totalCollateralizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.borrowCollateralFactor)
+        / (toBigInt(compInfo.scale) * factorScale)
+        + toBigInt(collateralConfigs[1].amount) * toBigInt(wethPrice) * toBigInt(wethInfo.borrowCollateralFactor)
+          / (toBigInt(wethInfo.scale) * factorScale);
       const fullCompTargetHealthValue = totalCollateralizedValue
         + compCollateralValue * (mulFactor(compInfo.liquidationFactor, targetHealthFactor) - compInfo.borrowCollateralFactor.toBigInt()) / factorScale;
 
@@ -3826,25 +3876,32 @@ describe('absorb logic with delisted collaterals', function() {
       // Deactivation is ignored by absorb, so both collaterals still count toward the BCF-weighted value.
       // Re-derive the exact debt the absorb repaid (pre-absorb principal at the post-absorb indices).
       const debtRemainingValue = mulPrice(-presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex), baseTokenPrice, baseScale);
-      const compCollateralValue = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfo.scale);
-      const wethCollateralValue = mulPrice(collateralConfigs[1].amount, wethPrice, wethInfo.scale);
-      const totalCollateralizedValue = mulFactor(compCollateralValue, compInfo.borrowCollateralFactor)
-        + mulFactor(wethCollateralValue, wethInfo.borrowCollateralFactor);
+      const totalCollateralizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.borrowCollateralFactor)
+        / (toBigInt(compInfo.scale) * factorScale)
+        + toBigInt(collateralConfigs[1].amount) * toBigInt(wethPrice) * toBigInt(wethInfo.borrowCollateralFactor)
+          / (toBigInt(wethInfo.scale) * factorScale);
 
       // COMP alone cannot restore target health after the extra accrual, so it is fully seized first.
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-      collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(compCollateralValue, compInfo.liquidationFactor);
+      collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor)
+        / (toBigInt(compInfo.scale) * factorScale);
 
       // WETH then restores target health:
       //   S = (targetHF * remainingDebt - remainingCollateralValue) / (targetHF * LF - BCF)
       const debtRemainingValueAfterCompSeize = debtRemainingValue - collateralsState[collateralConfigs[0].symbol].seizedValue;
       const totalCollateralizedValueAfterCompSeize = totalCollateralizedValue
-        - mulFactor(compCollateralValue, compInfo.borrowCollateralFactor);
-      const wantedWethCollateralValue = (mulFactor(debtRemainingValueAfterCompSeize, targetHealthFactor) - totalCollateralizedValueAfterCompSeize) * factorScale
-        / (mulFactor(wethInfo.liquidationFactor, targetHealthFactor) - wethInfo.borrowCollateralFactor.toBigInt());
+        - toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.borrowCollateralFactor)
+          / (toBigInt(compInfo.scale) * factorScale);
+      const wantedWethCollateralValue = ceilDiv(
+        (toBigInt(debtRemainingValueAfterCompSeize) * targetHealthFactor - toBigInt(totalCollateralizedValueAfterCompSeize) * factorScale) * factorScale,
+        toBigInt(wethInfo.liquidationFactor) * targetHealthFactor - toBigInt(wethInfo.borrowCollateralFactor) * factorScale,
+      );
 
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedWethCollateralValue, wethPrice, wethInfo.scale);
-      collateralsState[collateralConfigs[1].symbol].seizedValue = mulFactor(wantedWethCollateralValue, wethInfo.liquidationFactor);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(toBigInt(wantedWethCollateralValue) * toBigInt(wethInfo.scale), toBigInt(wethPrice));
+      collateralsState[collateralConfigs[1].symbol].seizedValue = ceilDiv(
+        collateralsState[collateralConfigs[1].symbol].seizeAmount * toBigInt(wethPrice) * toBigInt(wethInfo.liquidationFactor),
+        toBigInt(wethInfo.scale) * factorScale,
+      );
     });
 
     // User base balances
@@ -4071,14 +4128,16 @@ describe('absorb logic with delisted collaterals', function() {
       // COMP is fully seized first (the debt exceeds the full COMP value), repaying compValue * LF.
       const totalsBasic = await comet.totalsBasic();
       const debtRemainingValue = mulPrice(-presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex), baseTokenPrice, baseScale);
-      const compCollateralValue = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfo.scale);
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-      collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(compCollateralValue, compInfo.liquidationFactor);
+      collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor)
+        / (toBigInt(compInfo.scale) * factorScale);
 
       // WETH closes the remaining debt through the close-debt branch: seizeAmount = (remaining / LF) / price.
       const debtRemainingValueAfterCompSeize = debtRemainingValue - collateralsState[collateralConfigs[0].symbol].seizedValue;
-      const wantedWethCollateralValue = debtRemainingValueAfterCompSeize * factorScale / wethInfo.liquidationFactor.toBigInt();
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedWethCollateralValue, wethPrice, wethInfo.scale);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValueAfterCompSeize) * factorScale * toBigInt(wethInfo.scale),
+        toBigInt(wethInfo.liquidationFactor) * toBigInt(wethPrice),
+      );
       collateralsState[collateralConfigs[1].symbol].seizedValue = debtRemainingValueAfterCompSeize;
     });
 
@@ -4251,9 +4310,9 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('time passes until the debt exceeds the combined COMP and WETH value', async () => {
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
-      const compValue = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfo.scale);
       const wethValue = mulPrice(collateralConfigs[1].amount, wethPrice, wethInfo.scale);
-      const fullSeizureValue = mulFactor(compValue, compInfo.liquidationFactor) + mulFactor(wethValue, wethInfo.liquidationFactor);
+      const fullSeizureValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor)
+        / (toBigInt(compInfo.scale) * factorScale) + mulFactor(wethValue, wethInfo.liquidationFactor);
 
       while (mulPrice((await comet.borrowBalanceOf(alice.address)).toBigInt(), baseTokenPrice, baseScale) <= fullSeizureValue) {
         await ethers.provider.send('evm_increaseTime', [FIVE_DAYS]);
@@ -4464,9 +4523,10 @@ describe('absorb logic with delisted collaterals', function() {
       const wethInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
       const compCollateralValue = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfo.scale);
-      const wethCollateralValue = mulPrice(collateralConfigs[1].amount, wethPrice, wethInfo.scale);
-      const totalCollateralizedValue = mulFactor(compCollateralValue, compInfo.borrowCollateralFactor)
-        + mulFactor(wethCollateralValue, wethInfo.borrowCollateralFactor);
+      const totalCollateralizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.borrowCollateralFactor)
+        / (toBigInt(compInfo.scale) * factorScale)
+        + toBigInt(collateralConfigs[1].amount) * toBigInt(wethPrice) * toBigInt(wethInfo.borrowCollateralFactor)
+          / (toBigInt(wethInfo.scale) * factorScale);
       const fullCompTargetHealthValue = totalCollateralizedValue
         + compCollateralValue * (mulFactor(compInfo.liquidationFactor, targetHealthFactor) - compInfo.borrowCollateralFactor.toBigInt()) / factorScale;
       let debt = mulPrice((await comet.borrowBalanceOf(alice.address)).toBigInt(), baseTokenPrice, baseScale);
@@ -4518,25 +4578,32 @@ describe('absorb logic with delisted collaterals', function() {
       // Deactivation is ignored by absorb, so both collaterals still count toward the BCF-weighted value.
       // Re-derive the exact debt the absorb repaid (pre-absorb principal at the post-absorb indices).
       const debtRemainingValue = mulPrice(-presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex), baseTokenPrice, baseScale);
-      const compCollateralValue = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfo.scale);
-      const wethCollateralValue = mulPrice(collateralConfigs[1].amount, wethPrice, wethInfo.scale);
-      const totalCollateralizedValue = mulFactor(compCollateralValue, compInfo.borrowCollateralFactor)
-        + mulFactor(wethCollateralValue, wethInfo.borrowCollateralFactor);
+      const totalCollateralizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.borrowCollateralFactor)
+        / (toBigInt(compInfo.scale) * factorScale)
+        + toBigInt(collateralConfigs[1].amount) * toBigInt(wethPrice) * toBigInt(wethInfo.borrowCollateralFactor)
+          / (toBigInt(wethInfo.scale) * factorScale);
 
       // COMP alone cannot restore target health after the extra accrual, so it is fully seized first.
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-      collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(compCollateralValue, compInfo.liquidationFactor);
+      collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor)
+        / (toBigInt(compInfo.scale) * factorScale);
 
       // WETH then restores target health:
       //   S = (targetHF * remainingDebt - remainingCollateralValue) / (targetHF * LF - BCF)
       const debtRemainingValueAfterCompSeize = debtRemainingValue - collateralsState[collateralConfigs[0].symbol].seizedValue;
       const totalCollateralizedValueAfterCompSeize = totalCollateralizedValue
-        - mulFactor(compCollateralValue, compInfo.borrowCollateralFactor);
-      const wantedWethCollateralValue = (mulFactor(debtRemainingValueAfterCompSeize, targetHealthFactor) - totalCollateralizedValueAfterCompSeize) * factorScale
-        / (mulFactor(wethInfo.liquidationFactor, targetHealthFactor) - wethInfo.borrowCollateralFactor.toBigInt());
+        - toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.borrowCollateralFactor)
+          / (toBigInt(compInfo.scale) * factorScale);
+      const wantedWethCollateralValue = ceilDiv(
+        (toBigInt(debtRemainingValueAfterCompSeize) * targetHealthFactor - toBigInt(totalCollateralizedValueAfterCompSeize) * factorScale) * factorScale,
+        toBigInt(wethInfo.liquidationFactor) * targetHealthFactor - toBigInt(wethInfo.borrowCollateralFactor) * factorScale,
+      );
 
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedWethCollateralValue, wethPrice, wethInfo.scale);
-      collateralsState[collateralConfigs[1].symbol].seizedValue = mulFactor(wantedWethCollateralValue, wethInfo.liquidationFactor);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(toBigInt(wantedWethCollateralValue) * toBigInt(wethInfo.scale), toBigInt(wethPrice));
+      collateralsState[collateralConfigs[1].symbol].seizedValue = ceilDiv(
+        collateralsState[collateralConfigs[1].symbol].seizeAmount * toBigInt(wethPrice) * toBigInt(wethInfo.liquidationFactor),
+        toBigInt(wethInfo.scale) * factorScale,
+      );
     });
 
     // User base balances
@@ -4764,14 +4831,16 @@ describe('absorb logic with delisted collaterals', function() {
       // COMP is fully seized first (the debt exceeds the full COMP value), repaying compValue * LF.
       const totalsBasic = await comet.totalsBasic();
       const debtRemainingValue = mulPrice(-presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex), baseTokenPrice, baseScale);
-      const compCollateralValue = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfo.scale);
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-      collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(compCollateralValue, compInfo.liquidationFactor);
+      collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor)
+        / (toBigInt(compInfo.scale) * factorScale);
 
       // WETH closes the remaining debt through the close-debt branch: seizeAmount = (remaining / LF) / price.
       const debtRemainingValueAfterCompSeize = debtRemainingValue - collateralsState[collateralConfigs[0].symbol].seizedValue;
-      const wantedWethCollateralValue = debtRemainingValueAfterCompSeize * factorScale / wethInfo.liquidationFactor.toBigInt();
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedWethCollateralValue, wethPrice, wethInfo.scale);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValueAfterCompSeize) * factorScale * toBigInt(wethInfo.scale),
+        toBigInt(wethInfo.liquidationFactor) * toBigInt(wethPrice),
+      );
       collateralsState[collateralConfigs[1].symbol].seizedValue = debtRemainingValueAfterCompSeize;
     });
 
@@ -4944,9 +5013,9 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('time passes until the debt exceeds the combined COMP and WETH value', async () => {
       const wethPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
-      const compValue = mulPrice(collateralConfigs[0].amount, droppedCompPrice, compInfo.scale);
       const wethValue = mulPrice(collateralConfigs[1].amount, wethPrice, wethInfo.scale);
-      const fullSeizureValue = mulFactor(compValue, compInfo.liquidationFactor) + mulFactor(wethValue, wethInfo.liquidationFactor);
+      const fullSeizureValue = toBigInt(collateralConfigs[0].amount) * toBigInt(droppedCompPrice) * toBigInt(compInfo.liquidationFactor)
+        / (toBigInt(compInfo.scale) * factorScale) + mulFactor(wethValue, wethInfo.liquidationFactor);
 
       while (mulPrice((await comet.borrowBalanceOf(alice.address)).toBigInt(), baseTokenPrice, baseScale) <= fullSeizureValue) {
         await ethers.provider.send('evm_increaseTime', [FIVE_DAYS]);
@@ -5180,8 +5249,10 @@ describe('absorb logic with delisted collaterals', function() {
       const totalsBasic = await comet.totalsBasic();
       const basePaidOut = -presentValue(principalBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
       const debtRemainingValue = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      const wantedCollateralValue = debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt();
-      collateralsState[collateralKey].seizeAmount = divPrice(wantedCollateralValue, droppedCompPrice, assetInfo.scale);
+      collateralsState[collateralKey].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(droppedCompPrice),
+      );
       collateralsState[collateralKey].seizedValue = debtRemainingValue;
     });
 
@@ -5529,9 +5600,9 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     it('calculates the full COMP seizure', async () => {
-      const collateralValue = mulPrice(collateralAmount, droppedCompPrice, assetInfo.scale);
       collateralsState[collateralKey].seizeAmount = collateralAmount;
-      collateralsState[collateralKey].seizedValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
+      collateralsState[collateralKey].seizedValue = toBigInt(collateralAmount) * toBigInt(droppedCompPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
     });
 
     it('emits AbsorbCollateral for COMP', async () => {

@@ -1,4 +1,4 @@
-import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, default24Assets, divPrice, CollateralState, makeCollateralStates, seedMarketActivity } from '../helpers';
+import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, default24Assets, divPrice, ceilDiv, toBigInt, CollateralState, makeCollateralStates, seedMarketActivity } from '../helpers';
 import { CometHarnessInterfaceExtendedAssetList, LiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
@@ -47,8 +47,12 @@ describe('partial liquidation', function() {
     totalCollateralizedValue: bigint,
   ): bigint {
     // S = (targetHF * debt - totalCollateralizedValue) / (targetHF * LF - BCF)
-    return (mulFactor(debtRemainingValue, targetHealthFactor) - totalCollateralizedValue) * factorScale
-      / (mulFactor(assetInfo.liquidationFactor, targetHealthFactor) - assetInfo.borrowCollateralFactor.toBigInt());
+    // Both sides carry an extra FACTOR_SCALE, so this is a single division, rounded up.
+    const collateralizationGap = debtRemainingValue * targetHealthFactor - totalCollateralizedValue * factorScale;
+    const gapClosedPerSeizedValue = toBigInt(assetInfo.liquidationFactor) * targetHealthFactor
+      - toBigInt(assetInfo.borrowCollateralFactor) * factorScale;
+
+    return ceilDiv(collateralizationGap * factorScale, gapClosedPerSeizedValue);
   }
 
   before(async function() {
@@ -145,8 +149,8 @@ describe('partial liquidation', function() {
           // COMP is the only collateral backing the debt, so the BCF-weighted total is just its value:
           // $93 × 0.80 = $74.40.
           const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
-          const compCollateralValue = mulPrice(collateralAmount, newCompPrice, compInfo.scale);
-          totalCollateralizedValue = mulFactor(compCollateralValue, compInfo.borrowCollateralFactor);
+          totalCollateralizedValue = toBigInt(collateralAmount) * toBigInt(newCompPrice) * toBigInt(compInfo.borrowCollateralFactor)
+            / (toBigInt(compInfo.scale) * factorScale);
     
           totalsBasicBefore = await comet.totalsBasic();
           const userBasic = await comet.userBasic(alice.address);
@@ -169,7 +173,7 @@ describe('partial liquidation', function() {
           const price = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
           const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
           const collateralValue = mulPrice(collateralAmount, price, assetInfo.scale);
-          const liquidityValue = mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+          const liquidityValue = mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           const currentHF = liquidityValue * factorScale / debtValue;
     
           expect(currentHF).to.be.lessThan(targetHealthFactor);
@@ -186,16 +190,16 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
           const price = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
           const balance = await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address);
-          const liquidityValue = mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+          const liquidityValue = mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates seize amount and seized value for partial liquidation', async () => {
@@ -212,8 +216,11 @@ describe('partial liquidation', function() {
     
           // Convert the wanted USD value into COMP amount, then apply LF for the debt value repaid.
           // At $93/COMP this seizes about 0.7119 COMP and repays about $59.59 of debt value.
-          collateralsState[collateralKey].seizeAmount = divPrice(wantedCollateralValue, compPrice, assetInfo.scale);
-          collateralsState[collateralKey].seizedValue = mulFactor(wantedCollateralValue, assetInfo.liquidationFactor);
+          collateralsState[collateralKey].seizeAmount = ceilDiv(toBigInt(wantedCollateralValue) * toBigInt(assetInfo.scale), toBigInt(compPrice));
+          collateralsState[collateralKey].seizedValue = ceilDiv(
+            collateralsState[collateralKey].seizeAmount * toBigInt(compPrice) * toBigInt(assetInfo.liquidationFactor),
+            toBigInt(assetInfo.scale) * factorScale,
+          );
         });
     
         // Events
@@ -328,8 +335,8 @@ describe('partial liquidation', function() {
           // LDO is the only collateral backing the debt, so the BCF-weighted total is just its value:
           // $110 × 0.55 = $60.50.
           const ldoInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
-          const ldoCollateralValue = mulPrice(collateralAmount, newLdoPrice, ldoInfo.scale);
-          totalCollateralizedValue = mulFactor(ldoCollateralValue, ldoInfo.borrowCollateralFactor);
+          totalCollateralizedValue = toBigInt(collateralAmount) * toBigInt(newLdoPrice) * toBigInt(ldoInfo.borrowCollateralFactor)
+            / (toBigInt(ldoInfo.scale) * factorScale);
     
           totalsBasicBefore = await comet.totalsBasic();
           const userBasic = await comet.userBasic(alice.address);
@@ -352,7 +359,7 @@ describe('partial liquidation', function() {
           const price = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
           const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
           const collateralValue = mulPrice(collateralAmount, price, assetInfo.scale);
-          const liquidityValue = mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+          const liquidityValue = mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           const currentHF = liquidityValue * factorScale / debtValue;
     
           expect(currentHF).to.be.lessThan(targetHealthFactor);
@@ -369,16 +376,16 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
           const price = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
           const balance = await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address);
-          const liquidityValue = mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+          const liquidityValue = mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates seize amount and seized value for partial liquidation', async () => {
@@ -392,8 +399,11 @@ describe('partial liquidation', function() {
           // targetHF = (totalCollateralValue - S * borrowCF) / (debt - S * liquidationFactor)
           const wantedCollateralValue = getWantedCollateralValue(assetInfo, debtRemainingValue, totalCollateralizedValue);
     
-          collateralsState[collateralKey].seizeAmount = divPrice(wantedCollateralValue, ldoPrice, assetInfo.scale);
-          collateralsState[collateralKey].seizedValue = mulFactor(wantedCollateralValue, assetInfo.liquidationFactor);
+          collateralsState[collateralKey].seizeAmount = ceilDiv(toBigInt(wantedCollateralValue) * toBigInt(assetInfo.scale), toBigInt(ldoPrice));
+          collateralsState[collateralKey].seizedValue = ceilDiv(
+            collateralsState[collateralKey].seizeAmount * toBigInt(ldoPrice) * toBigInt(assetInfo.liquidationFactor),
+            toBigInt(assetInfo.scale) * factorScale,
+          );
         });
     
         // Events
@@ -508,8 +518,8 @@ describe('partial liquidation', function() {
           // sUSDe is the only collateral backing the debt, so the BCF-weighted total is just its value:
           // $60 × 0.72 = $43.20.
           const sUsdeInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
-          const sUsdeCollateralValue = mulPrice(collateralAmount, newSUsdePrice, sUsdeInfo.scale);
-          totalCollateralizedValue = mulFactor(sUsdeCollateralValue, sUsdeInfo.borrowCollateralFactor);
+          totalCollateralizedValue = toBigInt(collateralAmount) * toBigInt(newSUsdePrice) * toBigInt(sUsdeInfo.borrowCollateralFactor)
+            / (toBigInt(sUsdeInfo.scale) * factorScale);
     
           totalsBasicBefore = await comet.totalsBasic();
           const userBasic = await comet.userBasic(alice.address);
@@ -532,7 +542,7 @@ describe('partial liquidation', function() {
           const price = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
           const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
           const collateralValue = mulPrice(collateralAmount, price, assetInfo.scale);
-          const liquidityValue = mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+          const liquidityValue = mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           const currentHF = liquidityValue * factorScale / debtValue;
     
           expect(currentHF).to.be.lessThan(targetHealthFactor);
@@ -549,16 +559,16 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           const assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
           const price = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
           const balance = await comet.collateralBalanceOf(alice.address, tokens[collateralKey].address);
-          const liquidityValue = mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+          const liquidityValue = mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates seize amount and seized value for partial liquidation', async () => {
@@ -572,8 +582,11 @@ describe('partial liquidation', function() {
           // targetHF = (totalCollateralValue - S * borrowCF) / (debt - S * liquidationFactor)
           const wantedCollateralValue = getWantedCollateralValue(assetInfo, debtRemainingValue, totalCollateralizedValue);
     
-          collateralsState[collateralKey].seizeAmount = divPrice(wantedCollateralValue, sUsdePrice, assetInfo.scale);
-          collateralsState[collateralKey].seizedValue = mulFactor(wantedCollateralValue, assetInfo.liquidationFactor);
+          collateralsState[collateralKey].seizeAmount = ceilDiv(toBigInt(wantedCollateralValue) * toBigInt(assetInfo.scale), toBigInt(sUsdePrice));
+          collateralsState[collateralKey].seizedValue = ceilDiv(
+            collateralsState[collateralKey].seizeAmount * toBigInt(sUsdePrice) * toBigInt(assetInfo.liquidationFactor),
+            toBigInt(assetInfo.scale) * factorScale,
+          );
         });
     
         // Events
@@ -690,8 +703,8 @@ describe('partial liquidation', function() {
           // COMP is fully seized before the loop reaches WETH, so when WETH is partially seized the only
           // collateral still backing the debt is WETH: $45 × 0.75 = $33.75.
           const wethInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
-          const wethCollateralValue = mulPrice(collateralConfigs[1].amount, collateralConfigs[1].droppedPrice, wethInfo.scale);
-          totalCollateralizedValue = mulFactor(wethCollateralValue, wethInfo.borrowCollateralFactor);
+          totalCollateralizedValue = toBigInt(collateralConfigs[1].amount) * toBigInt(collateralConfigs[1].droppedPrice) * toBigInt(wethInfo.borrowCollateralFactor)
+            / (toBigInt(wethInfo.scale) * factorScale);
     
           totalsBasicBefore = await comet.totalsBasic();
           const userBasic = await comet.userBasic(alice.address);
@@ -717,7 +730,7 @@ describe('partial liquidation', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-            liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           }
     
           const currentHF = liquidityValue * factorScale / debtValue;
@@ -736,19 +749,19 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           let liquidityValue = 0n;
           for (const config of collateralConfigs) {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           }
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates COMP full seizure and WETH partial seizure values', async () => {
@@ -756,10 +769,10 @@ describe('partial liquidation', function() {
     
           // COMP is first in asset order. After the 20% price drop, 0.6 COMP is worth $48 — less than the
           // target HF formula wants, so the whole COMP balance is seized.
-          const compCollateralValue = mulPrice(collateralConfigs[0].amount, collateralConfigs[0].droppedPrice, compInfo.scale);
     
           collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-          collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(compCollateralValue, compInfo.liquidationFactor);
+          collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(collateralConfigs[0].droppedPrice) * toBigInt(compInfo.liquidationFactor)
+            / (toBigInt(compInfo.scale) * factorScale);
     
           const wethInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
     
@@ -770,8 +783,11 @@ describe('partial liquidation', function() {
           // It wants about $25.08 of WETH value, so WETH is partially seized.
           const wantedWethCollateralValue = getWantedCollateralValue(wethInfo, debtRemainingValue, totalCollateralizedValue);
     
-          collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedWethCollateralValue, collateralConfigs[1].droppedPrice, wethInfo.scale);
-          collateralsState[collateralConfigs[1].symbol].seizedValue = mulFactor(wantedWethCollateralValue, wethInfo.liquidationFactor);
+          collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(toBigInt(wantedWethCollateralValue) * toBigInt(wethInfo.scale), toBigInt(collateralConfigs[1].droppedPrice));
+          collateralsState[collateralConfigs[1].symbol].seizedValue = ceilDiv(
+            collateralsState[collateralConfigs[1].symbol].seizeAmount * toBigInt(collateralConfigs[1].droppedPrice) * toBigInt(wethInfo.liquidationFactor),
+            toBigInt(wethInfo.scale) * factorScale,
+          );
         });
     
         // Events
@@ -901,8 +917,8 @@ describe('partial liquidation', function() {
           // AAVE is fully seized before the loop reaches LDO, so when LDO is partially seized the only
           // collateral still backing the debt is LDO: $60 × 0.55 = $33.
           const ldoInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
-          const ldoCollateralValue = mulPrice(collateralConfigs[1].amount, collateralConfigs[1].droppedPrice, ldoInfo.scale);
-          totalCollateralizedValue = mulFactor(ldoCollateralValue, ldoInfo.borrowCollateralFactor);
+          totalCollateralizedValue = toBigInt(collateralConfigs[1].amount) * toBigInt(collateralConfigs[1].droppedPrice) * toBigInt(ldoInfo.borrowCollateralFactor)
+            / (toBigInt(ldoInfo.scale) * factorScale);
     
           totalsBasicBefore = await comet.totalsBasic();
           const userBasic = await comet.userBasic(alice.address);
@@ -927,7 +943,7 @@ describe('partial liquidation', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-            liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           }
     
           const currentHF = liquidityValue * factorScale / debtValue;
@@ -946,19 +962,19 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           let liquidityValue = 0n;
           for (const config of collateralConfigs) {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           }
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates AAVE full seizure and LDO partial seizure values', async () => {
@@ -967,10 +983,10 @@ describe('partial liquidation', function() {
     
           // AAVE is asset index 15. After the 20% price drop, 0.6 AAVE is worth $48 — less than the
           // target HF formula wants, so the whole AAVE balance is seized.
-          const aaveCollateralValue = mulPrice(collateralConfigs[0].amount, aavePrice, aaveInfo.scale);
     
           collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-          collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(aaveCollateralValue, aaveInfo.liquidationFactor);
+          collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(aavePrice) * toBigInt(aaveInfo.liquidationFactor)
+            / (toBigInt(aaveInfo.scale) * factorScale);
     
           const ldoInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
           const ldoPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
@@ -982,8 +998,11 @@ describe('partial liquidation', function() {
           // It wants about $8.50 of LDO value, so LDO is partially seized.
           const wantedLdoCollateralValue = getWantedCollateralValue(ldoInfo, debtRemainingValue, totalCollateralizedValue);
     
-          collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedLdoCollateralValue, ldoPrice, ldoInfo.scale);
-          collateralsState[collateralConfigs[1].symbol].seizedValue = mulFactor(wantedLdoCollateralValue, ldoInfo.liquidationFactor);
+          collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(toBigInt(wantedLdoCollateralValue) * toBigInt(ldoInfo.scale), toBigInt(ldoPrice));
+          collateralsState[collateralConfigs[1].symbol].seizedValue = ceilDiv(
+            collateralsState[collateralConfigs[1].symbol].seizeAmount * toBigInt(ldoPrice) * toBigInt(ldoInfo.liquidationFactor),
+            toBigInt(ldoInfo.scale) * factorScale,
+          );
         });
     
         // Events
@@ -1109,8 +1128,8 @@ describe('partial liquidation', function() {
           // USDe is fully seized before the loop reaches sUSDe, so when sUSDe is partially seized the only
           // collateral still backing the debt is sUSDe: $60 × 0.72 = $43.20.
           const susdeInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
-          const susdeCollateralValue = mulPrice(collateralConfigs[1].amount, collateralConfigs[1].droppedPrice, susdeInfo.scale);
-          totalCollateralizedValue = mulFactor(susdeCollateralValue, susdeInfo.borrowCollateralFactor);
+          totalCollateralizedValue = toBigInt(collateralConfigs[1].amount) * toBigInt(collateralConfigs[1].droppedPrice) * toBigInt(susdeInfo.borrowCollateralFactor)
+            / (toBigInt(susdeInfo.scale) * factorScale);
     
           totalsBasicBefore = await comet.totalsBasic();
           const userBasic = await comet.userBasic(alice.address);
@@ -1135,7 +1154,7 @@ describe('partial liquidation', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-            liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           }
     
           const currentHF = liquidityValue * factorScale / debtValue;
@@ -1154,19 +1173,19 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           let liquidityValue = 0n;
           for (const config of collateralConfigs) {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           }
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates USDe full seizure and sUSDe partial seizure values', async () => {
@@ -1175,10 +1194,10 @@ describe('partial liquidation', function() {
     
           // USDe is asset index 22. After the 20% price drop, 60 USDe is worth $48 — less than the
           // target HF formula wants, so the whole USDe balance is seized.
-          const usdeCollateralValue = mulPrice(collateralConfigs[0].amount, usdePrice, usdeInfo.scale);
     
           collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-          collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(usdeCollateralValue, usdeInfo.liquidationFactor);
+          collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(usdePrice) * toBigInt(usdeInfo.liquidationFactor)
+            / (toBigInt(usdeInfo.scale) * factorScale);
     
           const susdeInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
           const susdePrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
@@ -1190,8 +1209,11 @@ describe('partial liquidation', function() {
           // It wants about $32.79 of sUSDe value, so sUSDe is partially seized.
           const wantedSusdeCollateralValue = getWantedCollateralValue(susdeInfo, debtRemainingValue, totalCollateralizedValue);
     
-          collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedSusdeCollateralValue, susdePrice, susdeInfo.scale);
-          collateralsState[collateralConfigs[1].symbol].seizedValue = mulFactor(wantedSusdeCollateralValue, susdeInfo.liquidationFactor);
+          collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(toBigInt(wantedSusdeCollateralValue) * toBigInt(susdeInfo.scale), toBigInt(susdePrice));
+          collateralsState[collateralConfigs[1].symbol].seizedValue = ceilDiv(
+            collateralsState[collateralConfigs[1].symbol].seizeAmount * toBigInt(susdePrice) * toBigInt(susdeInfo.liquidationFactor),
+            toBigInt(susdeInfo.scale) * factorScale,
+          );
         });
     
         // Events
@@ -1320,8 +1342,8 @@ describe('partial liquidation', function() {
           // ezETH is fully seized before the loop reaches OP, so when OP is partially seized the only
           // collateral still backing the debt is OP: $60 × 0.55 = $33.
           const opInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
-          const opCollateralValue = mulPrice(collateralConfigs[1].amount, collateralConfigs[1].droppedPrice, opInfo.scale);
-          totalCollateralizedValue = mulFactor(opCollateralValue, opInfo.borrowCollateralFactor);
+          totalCollateralizedValue = toBigInt(collateralConfigs[1].amount) * toBigInt(collateralConfigs[1].droppedPrice) * toBigInt(opInfo.borrowCollateralFactor)
+            / (toBigInt(opInfo.scale) * factorScale);
     
           totalsBasicBefore = await comet.totalsBasic();
           const userBasic = await comet.userBasic(alice.address);
@@ -1346,7 +1368,7 @@ describe('partial liquidation', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-            liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           }
     
           const currentHF = liquidityValue * factorScale / debtValue;
@@ -1365,19 +1387,19 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           let liquidityValue = 0n;
           for (const config of collateralConfigs) {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           }
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates ezETH full seizure and OP partial seizure values', async () => {
@@ -1386,10 +1408,10 @@ describe('partial liquidation', function() {
     
           // ezETH is asset index 10. After the 25% price drop, 0.02 ezETH is worth $50.25 — less than the
           // target HF formula wants, so the whole ezETH balance is seized.
-          const ezETHCollateralValue = mulPrice(collateralConfigs[0].amount, ezETHPrice, ezETHInfo.scale);
     
           collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-          collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(ezETHCollateralValue, ezETHInfo.liquidationFactor);
+          collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(ezETHPrice) * toBigInt(ezETHInfo.liquidationFactor)
+            / (toBigInt(ezETHInfo.scale) * factorScale);
     
           const opInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
           const opPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
@@ -1401,8 +1423,11 @@ describe('partial liquidation', function() {
           // It wants about $8.72 of OP value, so OP is partially seized.
           const wantedOPCollateralValue = getWantedCollateralValue(opInfo, debtRemainingValue, totalCollateralizedValue);
     
-          collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(wantedOPCollateralValue, opPrice, opInfo.scale);
-          collateralsState[collateralConfigs[1].symbol].seizedValue = mulFactor(wantedOPCollateralValue, opInfo.liquidationFactor);
+          collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(toBigInt(wantedOPCollateralValue) * toBigInt(opInfo.scale), toBigInt(opPrice));
+          collateralsState[collateralConfigs[1].symbol].seizedValue = ceilDiv(
+            collateralsState[collateralConfigs[1].symbol].seizeAmount * toBigInt(opPrice) * toBigInt(opInfo.liquidationFactor),
+            toBigInt(opInfo.scale) * factorScale,
+          );
         });
     
         // Events
@@ -1531,8 +1556,8 @@ describe('partial liquidation', function() {
           // WBTC, rsETH, cbETH and CRV are fully seized before the loop reaches GMX, so when GMX is
           // partially seized the only collateral still backing the debt is GMX: $120 × 0.50 = $60.
           const gmxInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[4].symbol].address);
-          const gmxCollateralValue = mulPrice(collateralConfigs[4].amount, collateralConfigs[4].droppedPrice, gmxInfo.scale);
-          totalCollateralizedValue = mulFactor(gmxCollateralValue, gmxInfo.borrowCollateralFactor);
+          totalCollateralizedValue = toBigInt(collateralConfigs[4].amount) * toBigInt(collateralConfigs[4].droppedPrice) * toBigInt(gmxInfo.borrowCollateralFactor)
+            / (toBigInt(gmxInfo.scale) * factorScale);
     
           totalsBasicBefore = await comet.totalsBasic();
           const userBasic = await comet.userBasic(alice.address);
@@ -1559,7 +1584,7 @@ describe('partial liquidation', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-            liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           }
     
           const currentHF = liquidityValue * factorScale / debtValue;
@@ -1582,19 +1607,19 @@ describe('partial liquidation', function() {
             expect(await comet.isLiquidatable(alice.address)).to.be.false;
           });
     
-          it('new health factor is greater than targetHF', async () => {
-            // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-            // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+          it('new health factor reaches targetHF', async () => {
+            // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+            // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
             const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
             let liquidityValue = 0n;
             for (const config of collateralConfigs) {
               const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
               const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
               const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-              liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+              liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
             }
             const newHF = liquidityValue * factorScale / debtValue;
-            expect(newHF).to.be.greaterThan(targetHealthFactor);
+            expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
           });
     
           it('calculates full seizure values for asset indexes 3, 6, 7, 17 and GMX partial seizure values', async () => {
@@ -1603,10 +1628,10 @@ describe('partial liquidation', function() {
             for (let i = 0; i < collateralConfigs.length - 1; i++) {
               const config = collateralConfigs[i];
               const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
-              const collateralValue = mulPrice(config.amount, config.droppedPrice, assetInfo.scale);
     
               collateralsState[config.symbol].seizeAmount = config.amount;
-              collateralsState[config.symbol].seizedValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
+              collateralsState[config.symbol].seizedValue = toBigInt(config.amount) * toBigInt(config.droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+            / (toBigInt(assetInfo.scale) * factorScale);
             }
     
             const gmxInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[4].symbol].address);
@@ -1618,8 +1643,11 @@ describe('partial liquidation', function() {
             // It wants about $45.52 of GMX value, so GMX is partially seized.
             const wantedGmxCollateralValue = getWantedCollateralValue(gmxInfo, debtRemainingValue, totalCollateralizedValue);
     
-            collateralsState[collateralConfigs[4].symbol].seizeAmount = divPrice(wantedGmxCollateralValue, collateralConfigs[4].droppedPrice, gmxInfo.scale);
-            collateralsState[collateralConfigs[4].symbol].seizedValue = mulFactor(wantedGmxCollateralValue, gmxInfo.liquidationFactor);
+            collateralsState[collateralConfigs[4].symbol].seizeAmount = ceilDiv(toBigInt(wantedGmxCollateralValue) * toBigInt(gmxInfo.scale), toBigInt(collateralConfigs[4].droppedPrice));
+            collateralsState[collateralConfigs[4].symbol].seizedValue = ceilDiv(
+              collateralsState[collateralConfigs[4].symbol].seizeAmount * toBigInt(collateralConfigs[4].droppedPrice) * toBigInt(gmxInfo.liquidationFactor),
+              toBigInt(gmxInfo.scale) * factorScale,
+            );
           });
     
           // Events
@@ -1741,7 +1769,7 @@ describe('partial liquidation', function() {
               const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
               const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
               const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-              liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+              liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
             }
     
             const currentHF = liquidityValue * factorScale / debtValue;
@@ -1760,19 +1788,19 @@ describe('partial liquidation', function() {
             expect(await comet.isLiquidatable(alice.address)).to.be.false;
           });
     
-          it('new health factor is greater than targetHF', async () => {
-            // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-            // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+          it('new health factor reaches targetHF', async () => {
+            // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+            // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
             const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
             let liquidityValue = 0n;
             for (const config of collateralConfigs) {
               const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
               const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
               const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-              liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+              liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
             }
             const newHF = liquidityValue * factorScale / debtValue;
-            expect(newHF).to.be.greaterThan(targetHealthFactor);
+            expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
           });
     
           // The first four collaterals are fully seized; each emits AbsorbCollateral for its whole balance
@@ -1786,7 +1814,8 @@ describe('partial liquidation', function() {
               await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
                 absorber.address, alice.address, tokens[config.symbol].address, config.amount, collateralValue
               );
-              collateralsState[config.symbol].seizedValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
+              collateralsState[config.symbol].seizedValue = toBigInt(config.amount) * toBigInt(price) * toBigInt(assetInfo.liquidationFactor)
+            / (toBigInt(assetInfo.scale) * factorScale);
             });
           }
     
@@ -1875,7 +1904,7 @@ describe('partial liquidation', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-            liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           }
     
           const currentHF = liquidityValue * factorScale / debtValue;
@@ -1894,19 +1923,19 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           let liquidityValue = 0n;
           for (const config of collateralConfigs) {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           }
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates expected partial seizure amounts for COMP', async () => {
@@ -1919,10 +1948,13 @@ describe('partial liquidation', function() {
           const compWantedCollateralValue = getWantedCollateralValue(compInfo, debtRemainingValue, totalCollateralizedValue);
     
           // collateralsState[collateralKey].seizeAmount = floor($72.41 × 1e18 / $90) ≈ 804597701111111111 (≈0.8046 COMP)
-          collateralsState[collateralConfigs[0].symbol].seizeAmount = divPrice(compWantedCollateralValue, collateralConfigs[0].droppedPrice, compInfo.scale);
+          collateralsState[collateralConfigs[0].symbol].seizeAmount = ceilDiv(toBigInt(compWantedCollateralValue) * toBigInt(compInfo.scale), toBigInt(collateralConfigs[0].droppedPrice));
     
           // collateralsState[collateralKey].seizedValue = $72.41 × 0.9 = $65.17 = 6517241379
-          collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(compWantedCollateralValue, compInfo.liquidationFactor);
+          collateralsState[collateralConfigs[0].symbol].seizedValue = ceilDiv(
+            collateralsState[collateralConfigs[0].symbol].seizeAmount * toBigInt(collateralConfigs[0].droppedPrice) * toBigInt(compInfo.liquidationFactor),
+            toBigInt(compInfo.scale) * factorScale,
+          );
         });
     
         it('wantedCollateralValue is less than COMP collateral value: partial seizure confirmed', async () => {
@@ -1937,11 +1969,17 @@ describe('partial liquidation', function() {
         it('after COMP partial seizure, targetHF condition is met: loop breaks before touching WETH', async () => {
           const compInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
           const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-          const compWantedCollateralValue = getWantedCollateralValue(compInfo, debtRemainingValue, totalCollateralizedValue);
           const debtAfterComp = debtRemainingValue - collateralsState[collateralConfigs[0].symbol].seizedValue;
-          const totalCVAfterComp = totalCollateralizedValue - mulFactor(compWantedCollateralValue, compInfo.borrowCollateralFactor);
+          const compPrice = (await priceFeeds[collateralConfigs[0].symbol].latestRoundData())[1].toBigInt();
+          // The loop subtracts the collateralization of what actually left the account, so the
+          // mirror goes through the seized amount, not through the value that was asked for.
+          const totalCVAfterComp = totalCollateralizedValue
+            - toBigInt(collateralsState[collateralConfigs[0].symbol].seizeAmount) * toBigInt(compPrice) * toBigInt(compInfo.borrowCollateralFactor)
+            / (toBigInt(compInfo.scale) * factorScale);
     
-          expect(mulFactor(debtAfterComp, targetHealthFactor)).to.be.equal(totalCVAfterComp);
+          // The contract breaks out on debt * targetHF <= totalCV. Rounding the request up lands
+          // the position just past that boundary rather than exactly on it.
+          expect(mulFactor(debtAfterComp, targetHealthFactor)).to.be.lessThanOrEqual(totalCVAfterComp);
         });
     
         // Events
@@ -2111,7 +2149,7 @@ describe('partial liquidation', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-            liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           }
     
           const currentHF = liquidityValue * factorScale / debtValue;
@@ -2130,19 +2168,19 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           let liquidityValue = 0n;
           for (const config of collateralConfigs) {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           }
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates expected partial seizure amounts for AAVE', async () => {
@@ -2153,8 +2191,11 @@ describe('partial liquidation', function() {
           // S = (1.05 * $66 - $59) * 1e18 / (1.05 * 0.85 - 0.60) ~= $35.21.
           const aaveWantedCollateralValue = getWantedCollateralValue(aaveInfo, debtRemainingValue, totalCollateralizedValue);
     
-          collateralsState[collateralConfigs[0].symbol].seizeAmount = divPrice(aaveWantedCollateralValue, aavePrice, aaveInfo.scale);
-          collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(aaveWantedCollateralValue, aaveInfo.liquidationFactor);
+          collateralsState[collateralConfigs[0].symbol].seizeAmount = ceilDiv(toBigInt(aaveWantedCollateralValue) * toBigInt(aaveInfo.scale), toBigInt(aavePrice));
+          collateralsState[collateralConfigs[0].symbol].seizedValue = ceilDiv(
+            collateralsState[collateralConfigs[0].symbol].seizeAmount * toBigInt(aavePrice) * toBigInt(aaveInfo.liquidationFactor),
+            toBigInt(aaveInfo.scale) * factorScale,
+          );
         });
     
         it('wantedCollateralValue is less than AAVE collateral value: partial seizure confirmed', async () => {
@@ -2170,11 +2211,17 @@ describe('partial liquidation', function() {
         it('after AAVE partial seizure, targetHF condition is met: loop breaks before touching LDO', async () => {
           const aaveInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
           const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-          const aaveWantedCollateralValue = getWantedCollateralValue(aaveInfo, debtRemainingValue, totalCollateralizedValue);
           const debtAfterAave = debtRemainingValue - collateralsState[collateralConfigs[0].symbol].seizedValue;
-          const totalCVAfterAave = totalCollateralizedValue - mulFactor(aaveWantedCollateralValue, aaveInfo.borrowCollateralFactor);
+          const aavePrice = (await priceFeeds[collateralConfigs[0].symbol].latestRoundData())[1].toBigInt();
+          // The loop subtracts the collateralization of what actually left the account, so the
+          // mirror goes through the seized amount, not through the value that was asked for.
+          const totalCVAfterAave = totalCollateralizedValue
+            - toBigInt(collateralsState[collateralConfigs[0].symbol].seizeAmount) * toBigInt(aavePrice) * toBigInt(aaveInfo.borrowCollateralFactor)
+            / (toBigInt(aaveInfo.scale) * factorScale);
     
-          expect(mulFactor(debtAfterAave, targetHealthFactor)).to.be.equal(totalCVAfterAave);
+          // The contract breaks out on debt * targetHF <= totalCV. Rounding the request up lands
+          // the position just past that boundary rather than exactly on it.
+          expect(mulFactor(debtAfterAave, targetHealthFactor)).to.be.lessThanOrEqual(totalCVAfterAave);
         });
     
         // Events
@@ -2344,7 +2391,7 @@ describe('partial liquidation', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-            liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           }
     
           const currentHF = liquidityValue * factorScale / debtValue;
@@ -2363,19 +2410,19 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           let liquidityValue = 0n;
           for (const config of collateralConfigs) {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           }
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates expected partial seizure amounts for rETH', async () => {
@@ -2386,8 +2433,11 @@ describe('partial liquidation', function() {
           // S = (1.05 * $70 - $61.40) * 1e18 / (1.05 * 0.92 - 0.72) ~= $49.19.
           const rEthWantedCollateralValue = getWantedCollateralValue(rEthInfo, debtRemainingValue, totalCollateralizedValue);
     
-          collateralsState[collateralConfigs[0].symbol].seizeAmount = divPrice(rEthWantedCollateralValue, rEthPrice, rEthInfo.scale);
-          collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(rEthWantedCollateralValue, rEthInfo.liquidationFactor);
+          collateralsState[collateralConfigs[0].symbol].seizeAmount = ceilDiv(toBigInt(rEthWantedCollateralValue) * toBigInt(rEthInfo.scale), toBigInt(rEthPrice));
+          collateralsState[collateralConfigs[0].symbol].seizedValue = ceilDiv(
+            collateralsState[collateralConfigs[0].symbol].seizeAmount * toBigInt(rEthPrice) * toBigInt(rEthInfo.liquidationFactor),
+            toBigInt(rEthInfo.scale) * factorScale,
+          );
         });
     
         it('wantedCollateralValue is less than rETH collateral value: partial seizure confirmed', async () => {
@@ -2404,8 +2454,12 @@ describe('partial liquidation', function() {
           const rEthInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
           const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
           const debtAfterREth = debtRemainingValue - collateralsState[collateralConfigs[0].symbol].seizedValue;
-          const rEthWantedCollateralValue = getWantedCollateralValue(rEthInfo, debtRemainingValue, totalCollateralizedValue);
-          const totalCVAfterREth = totalCollateralizedValue - mulFactor(rEthWantedCollateralValue, rEthInfo.borrowCollateralFactor);
+          const rethPrice = (await priceFeeds[collateralConfigs[0].symbol].latestRoundData())[1].toBigInt();
+          // The loop subtracts the collateralization of what actually left the account, so the
+          // mirror goes through the seized amount, not through the value that was asked for.
+          const totalCVAfterREth = totalCollateralizedValue
+            - toBigInt(collateralsState[collateralConfigs[0].symbol].seizeAmount) * toBigInt(rethPrice) * toBigInt(rEthInfo.borrowCollateralFactor)
+            / (toBigInt(rEthInfo.scale) * factorScale);
     
           expect(mulFactor(debtAfterREth, targetHealthFactor)).to.be.lessThan(totalCVAfterREth);
         });
@@ -2583,7 +2637,7 @@ describe('partial liquidation', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-            liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           }
     
           const currentHF = liquidityValue * factorScale / debtValue;
@@ -2602,19 +2656,19 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           let liquidityValue = 0n;
           for (const config of collateralConfigs) {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           }
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates rETH full seizure and AAVE partial seizure values', async () => {
@@ -2622,10 +2676,10 @@ describe('partial liquidation', function() {
     
           // rETH is first in asset order. After the price drop it is worth $30 — below what the debt
           // needs, so the whole rETH balance is seized.
-          const rEthValue = mulPrice(collateralConfigs[0].amount, rEthDroppedPrice, rEthInfo.scale);
     
           collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-          collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(rEthValue, rEthInfo.liquidationFactor);
+          collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(rEthDroppedPrice) * toBigInt(rEthInfo.liquidationFactor)
+            / (toBigInt(rEthInfo.scale) * factorScale);
     
           const aaveInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
     
@@ -2634,18 +2688,27 @@ describe('partial liquidation', function() {
           const debtAfterREth = mulPrice(-balanceBefore, baseTokenPrice, baseScale) - collateralsState[collateralConfigs[0].symbol].seizedValue;
           const aaveWantedCollateralValue = getWantedCollateralValue(aaveInfo, debtAfterREth, totalCollateralizedValue);
     
-          collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(aaveWantedCollateralValue, aaveDroppedPrice, aaveInfo.scale);
-          collateralsState[collateralConfigs[1].symbol].seizedValue = mulFactor(aaveWantedCollateralValue, aaveInfo.liquidationFactor);
+          collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(toBigInt(aaveWantedCollateralValue) * toBigInt(aaveInfo.scale), toBigInt(aaveDroppedPrice));
+          collateralsState[collateralConfigs[1].symbol].seizedValue = ceilDiv(
+            collateralsState[collateralConfigs[1].symbol].seizeAmount * toBigInt(aaveDroppedPrice) * toBigInt(aaveInfo.liquidationFactor),
+            toBigInt(aaveInfo.scale) * factorScale,
+          );
         });
     
         it('after AAVE partial seizure, targetHF condition is met before touching LDO', async () => {
           const aaveInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
           const debtAfterREth = mulPrice(-balanceBefore, baseTokenPrice, baseScale) - collateralsState[collateralConfigs[0].symbol].seizedValue;
-          const aaveWantedCollateralValue = getWantedCollateralValue(aaveInfo, debtAfterREth, totalCollateralizedValue);
           const debtAfterAave = debtAfterREth - collateralsState[collateralConfigs[1].symbol].seizedValue;
-          const totalCVAfterAave = totalCollateralizedValue - mulFactor(aaveWantedCollateralValue, aaveInfo.borrowCollateralFactor);
+          const aavePrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
+          // The loop subtracts the collateralization of what actually left the account, so the
+          // mirror goes through the seized amount, not through the value that was asked for.
+          const totalCVAfterAave = totalCollateralizedValue
+            - toBigInt(collateralsState[collateralConfigs[1].symbol].seizeAmount) * toBigInt(aavePrice) * toBigInt(aaveInfo.borrowCollateralFactor)
+            / (toBigInt(aaveInfo.scale) * factorScale);
     
-          expect(mulFactor(debtAfterAave, targetHealthFactor)).to.be.equal(totalCVAfterAave);
+          // The contract breaks out on debt * targetHF <= totalCV. Rounding the request up lands
+          // the position just past that boundary rather than exactly on it.
+          expect(mulFactor(debtAfterAave, targetHealthFactor)).to.be.lessThanOrEqual(totalCVAfterAave);
         });
     
         // Events
@@ -2870,7 +2933,7 @@ describe('partial liquidation', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-            liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           }
     
           const currentHF = liquidityValue * factorScale / debtValue;
@@ -2889,19 +2952,19 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           let liquidityValue = 0n;
           for (const config of collateralConfigs) {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           }
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates full seizure values for asset indexes 0 through 4 and partial seizure values for asset index 5', async () => {
@@ -2910,10 +2973,10 @@ describe('partial liquidation', function() {
           for (let i = 0; i < firstFullSeizureCount; i++) {
             const config = collateralConfigs[i];
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
-            const collateralValue = mulPrice(config.amount, config.droppedPrice, assetInfo.scale);
     
             collateralsState[config.symbol].seizeAmount = config.amount;
-            collateralsState[config.symbol].seizedValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
+            collateralsState[config.symbol].seizedValue = toBigInt(config.amount) * toBigInt(config.droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+            / (toBigInt(assetInfo.scale) * factorScale);
           }
     
           const config = collateralConfigs[partialSeizureIndex];
@@ -2926,12 +2989,11 @@ describe('partial liquidation', function() {
           // After the first five assets are fully seized, wstETH has enough value to restore targetHF partially.
           const wantedCollateralValue = getWantedCollateralValue(assetInfo, debtRemainingValue, totalCollateralizedValue);
     
-          collateralsState[config.symbol].seizeAmount = divPrice(
-            wantedCollateralValue,
-            config.droppedPrice,
-            assetInfo.scale
+          collateralsState[config.symbol].seizeAmount = ceilDiv(toBigInt(wantedCollateralValue) * toBigInt(assetInfo.scale), toBigInt(config.droppedPrice));
+          collateralsState[config.symbol].seizedValue = ceilDiv(
+            collateralsState[config.symbol].seizeAmount * toBigInt(config.droppedPrice) * toBigInt(assetInfo.liquidationFactor),
+            toBigInt(assetInfo.scale) * factorScale,
           );
-          collateralsState[config.symbol].seizedValue = mulFactor(wantedCollateralValue, assetInfo.liquidationFactor);
         });
     
         it('after asset index 5 partial seizure, targetHF condition is met before touching asset indexes 6 through 23', async () => {
@@ -2942,9 +3004,13 @@ describe('partial liquidation', function() {
               .slice(0, firstFullSeizureCount)
               .reduce((sum, { symbol }) => sum + collateralsState[symbol].seizedValue, 0n);
     
-          const wantedCollateralValue = getWantedCollateralValue(assetInfo, debtRemainingValue, totalCollateralizedValue);
           const debtAfterPartialSeizure = debtRemainingValue - collateralsState[config.symbol].seizedValue;
-          const totalCVAfterPartialSeizure = totalCollateralizedValue - mulFactor(wantedCollateralValue, assetInfo.borrowCollateralFactor);
+          const partialseizurePrice = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
+          // The loop subtracts the collateralization of what actually left the account, so the
+          // mirror goes through the seized amount, not through the value that was asked for.
+          const totalCVAfterPartialSeizure = totalCollateralizedValue
+            - toBigInt(collateralsState[config.symbol].seizeAmount) * toBigInt(partialseizurePrice) * toBigInt(assetInfo.borrowCollateralFactor)
+            / (toBigInt(assetInfo.scale) * factorScale);
     
           // The partial seizure solves for the amount that restores targetHF, so the position lands at or
           // above target: debt * HF <= totalCV (equality is the exact boundary the seizure math targets).
@@ -3138,8 +3204,8 @@ describe('partial liquidation', function() {
           // The 23 lower-index assets are fully seized before the loop reaches sUSDe, so when sUSDe is
           // partially seized the only collateral still backing the debt is sUSDe.
           const sUsDeInfo = await comet.getAssetInfoByAddress(tokens['sUSDe'].address);
-          const sUsDeValue = mulPrice(sUsDeAmount, droppedSUsDePrice, sUsDeInfo.scale);
-          totalCollateralizedValue = mulFactor(sUsDeValue, sUsDeInfo.borrowCollateralFactor);
+          totalCollateralizedValue = toBigInt(sUsDeAmount) * toBigInt(droppedSUsDePrice) * toBigInt(sUsDeInfo.borrowCollateralFactor)
+            / (toBigInt(sUsDeInfo.scale) * factorScale);
         });
     
         after(async () => await snapshot.restore());
@@ -3156,7 +3222,7 @@ describe('partial liquidation', function() {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-            liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
           }
     
           const currentHF = liquidityValue * factorScale / debtValue;
@@ -3175,19 +3241,19 @@ describe('partial liquidation', function() {
           expect(await comet.isLiquidatable(alice.address)).to.be.false;
         });
     
-        it('new health factor is greater than targetHF', async () => {
-          // The absorb restored the position to targetHF using BCF-weighted collateral; the LCF-weighted
-          // health factor (LCF > BCF) is therefore strictly above targetHF afterwards.
+        it('new health factor reaches targetHF', async () => {
+          // Weighted by BCF, the factor the absorb solves against — the same ruler as the sanity
+          // check above. By LCF it would read larger by LCF / BCF and pass with percent to spare.
           const debtValue = mulPrice(await comet.borrowBalanceOf(alice.address), baseTokenPrice, baseScale);
           let liquidityValue = 0n;
           for (const config of collateralConfigs) {
             const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             const balance = await comet.collateralBalanceOf(alice.address, tokens[config.symbol].address);
-            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.liquidateCollateralFactor);
+            liquidityValue += mulFactor(mulPrice(balance, price, assetInfo.scale), assetInfo.borrowCollateralFactor);
           }
           const newHF = liquidityValue * factorScale / debtValue;
-          expect(newHF).to.be.greaterThan(targetHealthFactor);
+          expect(newHF).to.be.greaterThanOrEqual(targetHealthFactor);
         });
     
         it('calculates sUSDe partial seizure values after 23 full seizures', async () => {
@@ -3197,16 +3263,19 @@ describe('partial liquidation', function() {
           for (const sym of assetSymbols23) {
             const info = await comet.getAssetInfoByAddress(tokens[sym].address);
             const price = (await priceFeeds[sym].latestRoundData())[1];
-            const value = mulPrice(assetSupplyAmounts[sym], price, info.scale);
             collateralsState[sym].seizeAmount = assetSupplyAmounts[sym];
-            collateralsState[sym].seizedValue = mulFactor(value, info.liquidationFactor);
+            collateralsState[sym].seizedValue = toBigInt(assetSupplyAmounts[sym]) * toBigInt(price) * toBigInt(info.liquidationFactor)
+            / (toBigInt(info.scale) * factorScale);
             debtRemainingValue -= collateralsState[sym].seizedValue;
           }
     
           const sUsDeWantedCollateralValue = getWantedCollateralValue(sUsDeInfo, debtRemainingValue, totalCollateralizedValue);
     
-          collateralsState['sUSDe'].seizeAmount = divPrice(sUsDeWantedCollateralValue, droppedSUsDePrice, sUsDeInfo.scale);
-          collateralsState['sUSDe'].seizedValue = mulFactor(sUsDeWantedCollateralValue, sUsDeInfo.liquidationFactor);
+          collateralsState['sUSDe'].seizeAmount = ceilDiv(toBigInt(sUsDeWantedCollateralValue) * toBigInt(sUsDeInfo.scale), toBigInt(droppedSUsDePrice));
+          collateralsState['sUSDe'].seizedValue = ceilDiv(
+            collateralsState['sUSDe'].seizeAmount * toBigInt(droppedSUsDePrice) * toBigInt(sUsDeInfo.liquidationFactor),
+            toBigInt(sUsDeInfo.scale) * factorScale,
+          );
         });
     
         // Events
