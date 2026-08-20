@@ -422,7 +422,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
         );
 
         AssetInfo memory asset;
-        uint256 newAmount;
         for (uint8 i; i < numAssets; ++i) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 if (liquidity >= 0) {
@@ -450,15 +449,12 @@ contract CometWithExtendedAssetList is CometMainInterface {
                     continue; 
                 }
 
-                newAmount = mulPrice(
-                    userCollateral[account][asset.asset].balance,
-                    getPrice(asset.priceFeed),
-                    asset.scale
+                liquidity += signed256(
+                    userCollateral[account][asset.asset].balance
+                        * getPrice(asset.priceFeed)
+                        * asset.borrowCollateralFactor
+                        / (uint256(asset.scale) * FACTOR_SCALE)
                 );
-                liquidity += signed256(mulFactor(
-                    newAmount,
-                    asset.borrowCollateralFactor
-                ));
             }
         }
 
@@ -505,7 +501,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
         );
 
         AssetInfo memory asset;
-        uint256 newAmount;
         for (uint8 i; i < numAssets; ++i) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 if (liquidity >= 0) return (false, basePrice, assetPrices);
@@ -521,12 +516,12 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
                 assetPrices[i] = getPrice(asset.priceFeed);
 
-                newAmount = mulPrice(
-                    userCollateral[account][asset.asset].balance,
-                    assetPrices[i],
-                    asset.scale
+                liquidity += signed256(
+                    userCollateral[account][asset.asset].balance
+                        * assetPrices[i]
+                        * asset.liquidateCollateralFactor
+                        / (uint256(asset.scale) * FACTOR_SCALE)
                 );
-                liquidity += signed256(mulFactor(newAmount, asset.liquidateCollateralFactor));
             }
         }
 
