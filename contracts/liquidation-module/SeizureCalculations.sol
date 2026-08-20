@@ -158,7 +158,8 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
             }
             seizures[seizuresCount] = ICoreLiquidationModule.Seizure({ asset: collateralInfo.asset, index: i, seizedAmount: seizedAmount, seizedValue: seizedValue, wantedCollateralValue: wantedCollateralValue });
             unchecked { ++seizuresCount; }
-
+            
+            // cycle values update
             totalCollateralizedValue -= seizedAmount * collateralPrices[i] * collateralInfo.borrowCollateralFactor
                                 / (uint256(collateralInfo.scale) * FACTOR_SCALE);
             debtRemainingValue -= seizedValue;
