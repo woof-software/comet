@@ -1341,7 +1341,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
                 totalsCollateral[asset].totalSupplyAsset -= seizeAmount;
 
                 value = mulPrice(seizeAmount, assetPrices[i], assetInfo.scale);
-                deltaValue += mulFactor(value, assetInfo.liquidationFactor);
+                deltaValue += uint256(seizeAmount) * assetPrices[i] * assetInfo.liquidationFactor
+                    / (uint256(assetInfo.scale) * FACTOR_SCALE);
 
                 emit AbsorbCollateral(absorber, account, asset, seizeAmount, value);
             }
