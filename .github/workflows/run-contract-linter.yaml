@@ -22,6 +22,7 @@ jobs:
       ARBITRUM_QUICKNODE_LINK: ${{ secrets.ARBITRUM_QUICKNODE_LINK }}
       UNICHAIN_QUICKNODE_LINK: ${{ secrets.UNICHAIN_QUICKNODE_LINK }}
       LINEA_QUICKNODE_LINK: ${{ secrets.LINEA_QUICKNODE_LINK }}
+      SCROLL_QUICKNODE_LINK: ${{ secrets.SCROLL_QUICKNODE_LINK }}
     steps:
       - uses: actions/checkout@v4
         with:

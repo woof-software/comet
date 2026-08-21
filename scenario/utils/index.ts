@@ -375,6 +375,15 @@ export async function isValidAssetIndex(
   return true;
 }
 
+export async function isAssetDelisted(
+  ctx: CometContext,
+  assetNum: number
+): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const assetInfo = await comet.getAssetInfo(assetNum);
+  return assetInfo.borrowCollateralFactor.toBigInt() === 0n;
+}
+
 export async function isTriviallySourceable(
   ctx: CometContext,
   assetNum: number,
@@ -445,8 +454,56 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
   return true;
 }
 
+export async function usesAssetList(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  return await comet.maxAssets() === MAX_ASSETS;
+}
+
 export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
+}
+
+export async function supportUtilizationLimit(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    const iface = new ethers.utils.Interface([
+      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
+    ]);
+    const functionSelector = iface.getSighash('MAX_SUPPORTED_UTILIZATION');
+    
+    // Try to call the function using a low-level static call
+    // If the function doesn't exist, this will revert
+    const result = await ethers.provider.call({
+      to: comet.address,
+      data: functionSelector
+    });
+    
+    // If the call succeeds (doesn't revert), the function exists
+    // Decode the result to verify it's a valid bool response
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * @notice Checks if the market is fresh (no supplies and no borrows)
+ * @dev A fresh market has totalSupplyBase == 0 and totalBorrowBase == 0
+ *      This is used to filter scenarios that should only run on new/empty markets
+ */
+export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const totals = await comet.totalsBasic();
+    return totals.totalSupplyBase.isZero() && totals.totalBorrowBase.isZero();
+  } catch (error) {
+    return false;
+  }
 }
 
 export async function fetchLogs(
@@ -1842,6 +1899,42 @@ export function isTenderlyLog(log: any): log is { raw: { topics: string[], data:
   return !!log?.raw?.topics && !!log?.raw?.data;
 }
 
+/**
+ * Check if Comet supports extended pause functionality
+ * @param ctx The Comet context
+ * @returns true if Comet supports extended pause functions, false otherwise
+ */
+export async function supportsExtendedPause(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    // Get the function selector for isLendersWithdrawPaused()
+    // This function only exists in CometWithExtendedAssetList
+    const iface = new ethers.utils.Interface([
+      'function isLendersWithdrawPaused() external view returns (bool)'
+    ]);
+    const functionSelector = iface.getSighash('isLendersWithdrawPaused');
+    
+    // Try to call the function using a low-level static call
+    // If the function doesn't exist, this will revert
+    const result = await ethers.provider.call({
+      to: comet.address,
+      data: functionSelector
+    });
+    
+    // If the call succeeds (doesn't revert), the function exists
+    // Decode the result to verify it's a valid bool response
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    // If the call reverts or fails, extended pause is not supported
+    return false;
+  }
+}
+
 export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
   try {
     const configurator = await ctx.getConfigurator();
@@ -1865,4 +1958,68 @@ export async function supportsMarketAdminPermissionChecker(ctx: CometContext): P
   } catch (e) {
     return false;
   }
+}
+
+type ArrayMethods = keyof Omit<any[], number>;
+
+type NamedKeys<T> = {
+  [K in keyof T as K extends number | `${number}` | ArrayMethods ? never : K]: T[K];
+};
+
+type Normalize<T> = T extends BigNumber
+  ? bigint
+  : T extends string | number | boolean
+  ? T
+  : [NamedKeys<T>] extends [Record<string, never>]
+  ? T extends (infer U)[]
+    ? Normalize<U>[]
+    : T
+  : { [K in keyof NamedKeys<T>]: Normalize<NamedKeys<T>[K]> };
+
+type NormalizedStruct<T> = Normalize<NamedKeys<T>>;
+
+/**
+ * Hybrid array-objects with both numeric and named keys are stripped to plain
+ * objects with native bigint values, safe to destructure, compare, and serialize.
+ */
+export function normalizeStructOutput<T>(value: T): NormalizedStruct<T> {
+  function normalize(val: any): any {
+    if (BigNumber.isBigNumber(val)) {
+      return val.toBigInt();
+    }
+    if (val && typeof val === 'object') {
+      const namedKeys = Object.keys(val).filter((key) => isNaN(Number(key)));
+      if (namedKeys.length > 0) {
+        return Object.fromEntries(namedKeys.map((key) => [key, normalize(val[key])]));
+      }
+      if (Array.isArray(val)) {
+        return val.map(normalize);
+      }
+    }
+    return val;
+  }
+
+  return normalize(value) as NormalizedStruct<T>;
+}
+
+/// Finds the first asset with non-zero configuration values
+export async function getActiveAsset(context: CometContext) {
+  const configurator = await context.getConfigurator();
+  const cometAddress = (await context.getComet()).address;
+  const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
+
+  const assetIndex = assetConfigs.findIndex((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
+
+  return {
+    assetIndex,
+    assetConfig: assetConfigs[assetIndex]
+  };
+}
+
+export async function hasActiveAsset(ctx: CometContext): Promise<boolean> {
+  const configurator = await ctx.getConfigurator();
+  const cometAddress = (await ctx.getComet()).address;
+  const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
+
+  return assetConfigs.some((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
 }
