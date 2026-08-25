@@ -150,7 +150,6 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
                     }
                 } else {
                     seizedAmount = collateralAmount;
-                    // One division, as everywhere the penalized value of a balance is taken.
                     seizedValue = collateralAmount * collateralPrices[i] * collateralInfo.liquidationFactor
                                         / (uint256(collateralInfo.scale) * FACTOR_SCALE);
 
@@ -159,10 +158,8 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
             }
             seizures[seizuresCount] = ICoreLiquidationModule.Seizure({ asset: collateralInfo.asset, index: i, seizedAmount: seizedAmount, seizedValue: seizedValue, wantedCollateralValue: wantedCollateralValue });
             unchecked { ++seizuresCount; }
-
-            // cycle values update.
-            // Mirrors _getLiquidity term for term: a balance seized in full has to subtract back exactly
-            // what it contributed, or the write-off below never sees its zero.
+            
+            // cycle values update
             totalCollateralizedValue -= seizedAmount * collateralPrices[i] * collateralInfo.borrowCollateralFactor
                                 / (uint256(collateralInfo.scale) * FACTOR_SCALE);
             debtRemainingValue -= seizedValue;
