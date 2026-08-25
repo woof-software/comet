@@ -119,6 +119,12 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
       config.transferCollateral = 2;
       config.withdrawCollateral = 2;
     }
+    if(i == 7) { // wsuperOETHb
+      config.withdrawBase = 10;
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
   }
 
   if (ctx.world.base.network === 'optimism' && ctx.world.base.deployment === 'usdc') {
