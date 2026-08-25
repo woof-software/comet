@@ -164,7 +164,7 @@ export default migration('1787311843_update_l2_markets_to_new_version', {
       },
     ];
 
-    const description = `# Complete the Arbitrum and Base Comet Upgrade
+    const description = `# Complete Arbitrum and Base Comet Upgrade
 
 ## Summary
 
