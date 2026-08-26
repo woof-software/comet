@@ -19,8 +19,9 @@ import { MarketAdminPermissionCheckerInterface } from "@comet-contracts/marketup
 
 import { OneInchV6Adapter } from "@comet-contracts/dex-adapters/core/OneInchV6Adapter.sol";
 import { ICoreDexAdapter } from "@comet-contracts/interfaces/dex-adapters/ICoreDexAdapter.sol";
-import { IUniswapAdapter } from "@comet-contracts/interfaces/dex-adapters/IUniswapAdapter.sol";
 import { LiquidationModule } from "@comet-contracts/liquidation-module/LiquidationModule.sol";
+
+import { LiquidationModuleDeployer } from "./LiquidationModuleDeployer.sol";
 
 import { FaucetToken } from "@comet-contracts/test/FaucetToken.sol";
 import { SimplePriceFeed } from "@comet-contracts/test/SimplePriceFeed.sol";
@@ -213,35 +214,40 @@ abstract contract ProtocolFixture is Test {
 
     /**
      * @notice Deploys a liquidation module and the DEX adapter behind it.
-     * @dev The adapter only accepts an asset list it has exactly one route per collateral for, so the
-     *      routes are built from the asset table. They stay unconfigured: no route means a liquidation
-     *      sweeps the collateral to Comet instead of swapping it. A module accepts one asset list and
-     *      one Comet in its lifetime, which is why every implementation needs its own module.
+     * @dev A module accepts one asset list and one Comet in its lifetime, which is why every
+     *      implementation needs its own module and its own adapter.
      */
     function deployLiquidationModule() internal returns (address) {
-        IUniswapAdapter.RouteConfig[] memory routes = new IUniswapAdapter.RouteConfig[](collaterals.length);
-        for (uint256 i; i < collaterals.length; ++i) {
-            routes[i].collateral = address(collaterals[i]);
-        }
-
-        OneInchV6Adapter adapter = new OneInchV6Adapter(
-            DEX_ROUTER,
-            DEX_ROUTER,
-            weth,
-            DEX_SLIPPAGE_BPS,
-            routes,
-            new ICoreDexAdapter.CollateralSlippage[](0)
+        dexAdapter = LiquidationModuleDeployer.deployAdapter(
+            DEX_ROUTER, weth, DEX_SLIPPAGE_BPS, collateralAddresses()
         );
-        dexAdapter = adapter;
 
-        // The module refuses to start without an executor and a pauser, and refuses to grant the
-        // same role twice.
+        return address(LiquidationModuleDeployer.deployDefaultLiquidationModule(moduleOpts(dexAdapter)));
+    }
+
+    /// The roles a module is built with. The module refuses to start without an executor and a
+    /// pauser, and refuses to grant the same role twice.
+    function moduleOpts(ICoreDexAdapter adapter) internal view returns (LiquidationModuleDeployer.Opts memory) {
         address[] memory executors = new address[](1);
         executors[0] = executor;
         address[] memory pausers = new address[](1);
         pausers[0] = pauser;
 
-        return address(new LiquidationModule(adapter, multisig, executors, pausers, INCENTIVE_BPS));
+        return LiquidationModuleDeployer.Opts({
+            multisig: multisig,
+            executors: executors,
+            pausers: pausers,
+            dexAdapter: adapter,
+            incentiveBps: INCENTIVE_BPS
+        });
+    }
+
+    /// The market's collateral in market order, as plain addresses.
+    function collateralAddresses() internal view returns (address[] memory addresses) {
+        addresses = new address[](collaterals.length);
+        for (uint256 i; i < collaterals.length; ++i) {
+            addresses[i] = address(collaterals[i]);
+        }
     }
 
     function deployMarketContracts(CometConfiguration.Configuration memory config) internal {
