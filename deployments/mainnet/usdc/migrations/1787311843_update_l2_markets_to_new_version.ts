@@ -34,6 +34,34 @@ const factoryConfig = {
   base: '0x30beAd17D2641bCc900dc1ABC5d55c88059D176F',
 };
 
+async function getImplementationCode(dm: DeploymentManager, cometAddress: string): Promise<string> {
+  const { cometAdmin } = await dm.getContracts();
+  const implementationAddress = await cometAdmin.getProxyImplementation(cometAddress);
+  return dm.hre.ethers.provider.getCode(implementationAddress);
+}
+
+async function getMaskedImplementationCode(dm: DeploymentManager, cometAddress: string): Promise<string> {
+  const code = await getImplementationCode(dm, cometAddress);
+  const buildInfo = await dm.hre.artifacts.getBuildInfo('contracts/CometWithExtendedAssetList.sol:CometWithExtendedAssetList');
+  if (!buildInfo) throw new Error('Missing build info for CometWithExtendedAssetList');
+  const { immutableReferences } = buildInfo.output.contracts['contracts/CometWithExtendedAssetList.sol']['CometWithExtendedAssetList'].evm.deployedBytecode;
+
+  const bytes = utils.arrayify(code);
+  for (const refs of Object.values(immutableReferences || {}) as { start: number, length: number }[][]) {
+    for (const { start, length } of refs) {
+      bytes.fill(0, start, start + length);
+    }
+  }
+
+  const metadataLength = (bytes[bytes.length - 2] << 8) + bytes[bytes.length - 1];
+  return utils.hexlify(bytes.slice(0, bytes.length - metadataLength - 2));
+}
+
+let preMigrationImplementationCodeHash: {
+  arbitrum: { USDT: string, WETH: string };
+  base: { AERO: string, WETH: string };
+};
+
 export default migration('1787311843_update_l2_markets_to_new_version', {
   async prepare() {    
     return {};
@@ -139,6 +167,17 @@ export default migration('1787311843_update_l2_markets_to_new_version', {
       ]
     );
 
+    preMigrationImplementationCodeHash = {
+      arbitrum: {
+        USDT: utils.keccak256(await getImplementationCode(arbitrumDm, config.arbitrum.USDT.comet)),
+        WETH: utils.keccak256(await getImplementationCode(arbitrumDm, config.arbitrum.WETH.comet)),
+      },
+      base: {
+        AERO: utils.keccak256(await getImplementationCode(baseDmUsdc, config.base.AERO.comet)),
+        WETH: utils.keccak256(await getImplementationCode(baseDmUsdc, config.base.WETH.comet)),
+      },
+    };
+
     const mainnetActions = [
       // 1. Arbitrum proposal USDT + WETH
       {
@@ -217,6 +256,7 @@ The second action sends a cross-chain message to Base calling 'deployAndUpgradeT
     // Arbitrum
     const arbitrumDm = deploymentManager.bridgedDeploymentManagers.get('arbitrum:usdc') as DeploymentManager;
     const {
+      comet: arbitrumUsdcComet,
       configurator: arbitrumConfigurator,
     } = await arbitrumDm.getContracts();
 
@@ -250,6 +290,8 @@ The second action sends a cross-chain message to Base calling 'deployAndUpgradeT
     expect(await newCometArbitrumUsdt.symbol()).to.equal('cUSDTv3');
     expect(await newCometArbitrumUsdt.name()).to.equal('Compound USDT');
     expect(await newCometArbitrumUsdt.extensionDelegate()).to.equal(config.arbitrum.USDT.newExt);
+    expect(utils.keccak256(await getImplementationCode(arbitrumDm, config.arbitrum.USDT.comet))).to.not.equal(preMigrationImplementationCodeHash.arbitrum.USDT);
+    expect(await getMaskedImplementationCode(arbitrumDm, config.arbitrum.USDT.comet)).to.equal(await getMaskedImplementationCode(arbitrumDm, arbitrumUsdcComet.address));
 
     const newCometArbitrumWeth = new Contract(
       config.arbitrum.WETH.comet, 
@@ -261,10 +303,13 @@ The second action sends a cross-chain message to Base calling 'deployAndUpgradeT
     expect(await newCometArbitrumWeth.symbol()).to.equal('cWETHv3');
     expect(await newCometArbitrumWeth.name()).to.equal('Compound WETH');
     expect(await newCometArbitrumWeth.extensionDelegate()).to.equal(config.arbitrum.WETH.newExt);
+    expect(utils.keccak256(await getImplementationCode(arbitrumDm, config.arbitrum.WETH.comet))).to.not.equal(preMigrationImplementationCodeHash.arbitrum.WETH);
+    expect(await getMaskedImplementationCode(arbitrumDm, config.arbitrum.WETH.comet)).to.equal(await getMaskedImplementationCode(arbitrumDm, arbitrumUsdcComet.address));
 
     // Base
     const baseDm = deploymentManager.bridgedDeploymentManagers.get('base:usdc') as DeploymentManager;
     const {
+      comet: baseUsdcComet,
       configurator: baseConfigurator,
     } = await baseDm.getContracts();
 
@@ -298,6 +343,8 @@ The second action sends a cross-chain message to Base calling 'deployAndUpgradeT
     expect(await newCometBaseAero.symbol()).to.equal('cAEROv3');
     expect(await newCometBaseAero.name()).to.equal('Compound AERO');
     expect(await newCometBaseAero.extensionDelegate()).to.equal(config.base.AERO.newExt);
+    expect(utils.keccak256(await getImplementationCode(baseDm, config.base.AERO.comet))).to.not.equal(preMigrationImplementationCodeHash.base.AERO);
+    expect(await getMaskedImplementationCode(baseDm, config.base.AERO.comet)).to.equal(await getMaskedImplementationCode(baseDm, baseUsdcComet.address));
 
     const newCometBaseWeth = new Contract(
       config.base.WETH.comet, 
@@ -309,5 +356,7 @@ The second action sends a cross-chain message to Base calling 'deployAndUpgradeT
     expect(await newCometBaseWeth.symbol()).to.equal('cWETHv3');
     expect(await newCometBaseWeth.name()).to.equal('Compound WETH');
     expect(await newCometBaseWeth.extensionDelegate()).to.equal(config.base.WETH.newExt);
+    expect(utils.keccak256(await getImplementationCode(baseDm, config.base.WETH.comet))).to.not.equal(preMigrationImplementationCodeHash.base.WETH);
+    expect(await getMaskedImplementationCode(baseDm, config.base.WETH.comet)).to.equal(await getMaskedImplementationCode(baseDm, baseUsdcComet.address));
   },
 });
