@@ -56,7 +56,7 @@ In order to achieve this price feed will be updated to a new one, which will ret
 
 This proposal takes the governance steps recommended and necessary to update a Compound III WBTC market on Ethereum. Simulations have confirmed the market’s readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario).
 
-Further detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/<>).
+Further detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/17).
 
 
 ## Proposal Actions
