@@ -68,7 +68,7 @@ The second action deploys and upgrades Comet to a new version.`;
     const txn = await deploymentManager.retry(async () =>
       trace(
         await governor.propose(...(await proposal(mainnetActions, description)))
-      )
+      ), 0, 300_000
     );
 
     const event = txn.events.find(
