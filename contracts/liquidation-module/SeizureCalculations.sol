@@ -44,17 +44,16 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
     {
         if (accountUser.principal > 0) revert NotLiquidatable();
 
-        // replicate isLiquidatable() and cache collateral prices for this function execution
-        // liquidity represents value of all collateral's weighted by LCF
-        (uint256 liquidity, uint256[] memory collateralPrices) = _getLiquidity(accountUser, account, true, new uint256[](0));
+        // replicate isLiquidatable() and cache collateral prices for this function execution.
+        // The LCF-weighted value answers both questions at once: whether the account has fallen through
+        // the liquidation threshold, and what the seizure below has to lift it back above.
+        (uint256 totalCollateralizedValue, uint256[] memory collateralPrices) = _getLiquidity(accountUser, account);
         // cache base asset price
         uint256 basePrice = getPrice(comet.baseTokenPriceFeed());
 
         uint256 debtRemainingValue = mulPrice(uint256(-presentValueBase), basePrice, baseScale);
-        if (debtRemainingValue <= liquidity) revert NotLiquidatable();
+        if (debtRemainingValue <= totalCollateralizedValue) revert NotLiquidatable();
 
-        // Account's value of all collaterals weighted by BCF - using cached prices
-        (uint256 totalCollateralizedValue, ) = _getLiquidity(accountUser, account, false, collateralPrices);
         uint256 minDebtValue = mulPrice(comet.baseBorrowMin(), basePrice, baseScale);
 
         ICoreLiquidationModule.Seizure[] memory seizures = new ICoreLiquidationModule.Seizure[](numAssets);
@@ -98,26 +97,24 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
             // Calculate the collateral value S to seize in order to restore the account to targetHF
             //   HF   = health factor = totalCollateralValue / debt
             //   LF   = liquidationFactor (penalty to seized collateral)
-            //   LCF  = liquidateCollateralFactor
-            //   BCF  = borrowCollateralFactor
+            //   LCF  = liquidateCollateralFactor (the liquidation threshold HF is measured against)
             //
             // After seizing of one collateral of value S, debt is reduced by: S * LF
-            // Collateralized value of user's position is reduced by: S * BCF
+            // The account's collateral value counted against the threshold is reduced by: S * LCF
             // So, expected HF (which we want to be targetHF) after seizing collateral of value S:
-            //   targetHF = (totalCollateralValue - S * BCF) / (debt - S * LF)
+            //   targetHF = (totalCollateralValue - S * LCF) / (debt - S * LF)
             //
             // After solving the formula for S:
-            //   S = (targetHF * debt - totalCollateralValue) / (targetHF * LF - BCF)
+            //   S = (targetHF * debt - totalCollateralValue) / (targetHF * LF - LCF)
             //
             // The denominator is always positive since with targetHF >= 1:
-            //   LF * targetHF >= LF > LCF > BCF (enforced in Configurator)
+            //   LF * targetHF >= LF > LCF (enforced in Configurator)
             else {
                 // Both carry an extra FACTOR_SCALE, which keeps the solve below to a single division.
                 uint256 collateralizationGap = debtRemainingValue * TARGET_HEALTH_FACTOR - totalCollateralizedValue * FACTOR_SCALE;
                 uint256 gapClosedPerSeizedValue = uint256(collateralInfo.liquidationFactor) * TARGET_HEALTH_FACTOR
-                                    - uint256(collateralInfo.borrowCollateralFactor) * FACTOR_SCALE;
+                                    - uint256(collateralInfo.liquidateCollateralFactor) * FACTOR_SCALE;
 
-                // Up: S is a lower bound, and no later step makes up a shortfall.
                 wantedCollateralValue = ceilDiv(collateralizationGap * FACTOR_SCALE, gapClosedPerSeizedValue);
 
                 // we do not want more collateral than user's debt, though we must descale the value by penalty
@@ -128,10 +125,15 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
                 //   if user has more collateral than we want, we seize only calculated value
                 //   if user has less collateral value than we want - we seize what we can and move to the next collateral
                 if (wantedCollateralValue < collateralValue) {
-                    // Up: a collateral unit is coarse — a satoshi is worth ~1e4 value units — so
-                    // truncating here seizes visibly less than asked. The branch condition bounds it.
+                    // Collateral is seized in whole units, so the value above has to become an amount.
+                    // Round up: rounding down would take less than is needed to cover the debt, and no
+                    // later collateral makes up that shortfall. The branch condition keeps the rounded
+                    // amount within the account's balance.
                     seizedAmount = ceilDiv(wantedCollateralValue * collateralInfo.scale, collateralPrices[i]);
 
+                    // Rounding up means the amount taken is worth slightly more than was asked for, so
+                    // restate the wanted value as what that amount is actually worth. This figure is what
+                    // the seizure reports, and it has to match the balance the account loses.
                     wantedCollateralValue = mulPrice(seizedAmount, collateralPrices[i], collateralInfo.scale);
 
                     // From seizedAmount, not from the line above: that one is truncated, and crediting
@@ -150,8 +152,7 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
                     }
                 } else {
                     seizedAmount = collateralAmount;
-                    seizedValue = collateralAmount * collateralPrices[i] * collateralInfo.liquidationFactor
-                                        / (uint256(collateralInfo.scale) * FACTOR_SCALE);
+                    seizedValue = (collateralAmount * collateralPrices[i] * collateralInfo.liquidationFactor) / (uint256(collateralInfo.scale) * FACTOR_SCALE);
 
                     wantedCollateralValue = collateralValue;
                 }
@@ -160,8 +161,7 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
             unchecked { ++seizuresCount; }
             
             // cycle values update
-            totalCollateralizedValue -= seizedAmount * collateralPrices[i] * collateralInfo.borrowCollateralFactor
-                                / (uint256(collateralInfo.scale) * FACTOR_SCALE);
+            totalCollateralizedValue -= (seizedAmount * collateralPrices[i] * collateralInfo.liquidateCollateralFactor) / (uint256(collateralInfo.scale) * FACTOR_SCALE);
             debtRemainingValue -= seizedValue;
         }
 
@@ -197,49 +197,32 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
     * @notice The internal method which abstracts the account's collateral value calculation
     * @param account The account's cached UserBasic
     * @param accountAddress The address of the account
-    * @param liquidation Whether to use liquidation factors or borrow factors in the calculation
-    * @param fetchedCollateralPrices Optional array of collateral prices to use instead of fetching them from the price feeds
-    * @return liquidity collateral-factor-weighted sum of collateral USD value for the account
+    * @return liquidity liquidation-threshold-weighted sum of collateral USD value for the account
     * @return collateralPrices array of cached collaterals prices
     */
-    function _getLiquidity(ICometData.UserBasic memory account, address accountAddress, bool liquidation, uint256[] memory fetchedCollateralPrices) internal view returns (uint256 liquidity, uint256[] memory collateralPrices) {
+    function _getLiquidity(ICometData.UserBasic memory account, address accountAddress) internal view returns (uint256 liquidity, uint256[] memory collateralPrices) {
         uint16 assetsIn = account.assetsIn;
         uint8 _reserved = account._reserved;
         uint128 collateralBalance;
         ICometData.AssetInfo memory asset;
 
-        fetchedCollateralPrices.length == 0 ? collateralPrices = new uint256[](numAssets) : collateralPrices = fetchedCollateralPrices;
+        collateralPrices = new uint256[](numAssets);
         for (uint8 i; i < numAssets; ++i) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 asset = assetList.getAssetInfo(i);
 
-                if (liquidation) {
-                    // Skip assets that do not count toward the liquidation threshold. It avoids getPrice() call for price feed
-                    // so in case if excluded asset's oracle reverts (e.g. stale, broken, decommissioned),
-                    // it won't block the entire liquidation check, and won't paralyze liquidations of accounts which hold it.
-                    if (asset.liquidateCollateralFactor == 0) continue;
-                } else {
-                    // Note: Intentionally skip isCollateralDeactivated() check: this method is for liquidation only, so we
-                    // only need the collaterized value. The user should still be able to liquidate the deactivated asset
+                // Note: Intentionally skip isCollateralDeactivated() check: this method is for liquidation only, so we
+                // only need the collaterized value. The user should still be able to liquidate the deactivated asset
 
-                    // Mechanism to skip assets with no borrowing power. It avoids getPrice() call price feed,
-                    // so in case if excluded asset's oracle reverts (e.g. stale, broken, decommissioned),
-                    // it won't block the entire collateralization check, and won't paralyze borrows and transfers.
-                    if (asset.borrowCollateralFactor == 0) {
-                        continue;
-                    }
-                }
+                // Skip assets that do not count toward the liquidation threshold. It avoids getPrice() call for price feed
+                // so in case if excluded asset's oracle reverts (e.g. stale, broken, decommissioned),
+                // it won't block the entire liquidation check, and won't paralyze liquidations of accounts which hold it.
+                if (asset.liquidateCollateralFactor == 0) continue;
 
-                if (fetchedCollateralPrices.length == 0) collateralPrices[i] = getPrice(asset.priceFeed);
-
+                collateralPrices[i] = getPrice(asset.priceFeed);
                 collateralBalance = comet.userCollateral(accountAddress, asset.asset).balance;
 
-                // One division: pricing and weighting separately truncates the balance twice, costing
-                // a unit of value per collateral held.
-                liquidity += collateralBalance
-                    * collateralPrices[i]
-                    * (liquidation ? asset.liquidateCollateralFactor : asset.borrowCollateralFactor)
-                    / (uint256(asset.scale) * FACTOR_SCALE);
+                liquidity += (collateralBalance * collateralPrices[i] * asset.liquidateCollateralFactor) / (uint256(asset.scale) * FACTOR_SCALE);
             }
         }
     }
@@ -264,15 +247,14 @@ abstract contract SeizureCalculations is CometMath, ICoreLiquidationModuleErrors
 
         // One division: this picks the branch below, and understating it sends a position the
         // collateral does cover into the write-off branch.
-        uint256 collateralValueLeft = collateralAmount * collateralPrice * collateralInfo.liquidationFactor
-                            / (uint256(collateralInfo.scale) * FACTOR_SCALE);
+        uint256 collateralValueLeft = (collateralAmount * collateralPrice * collateralInfo.liquidationFactor) / (uint256(collateralInfo.scale) * FACTOR_SCALE);
 
         if (debtRemainingValue < collateralValueLeft) {
             // Up: the whole debt is credited below, so anything truncated here is debt forgiven
             // against collateral that was never taken. The branch condition bounds it.
             seizedAmount = ceilDiv(
-                debtRemainingValue * FACTOR_SCALE * uint256(collateralInfo.scale),
-                uint256(collateralInfo.liquidationFactor) * collateralPrice
+                debtRemainingValue * FACTOR_SCALE * collateralInfo.scale,
+                collateralInfo.liquidationFactor * collateralPrice
             );
 
             seizedValue = debtRemainingValue;
