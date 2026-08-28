@@ -20,7 +20,7 @@ import { takeSnapshot, SnapshotRestorer } from '../helpers/snapshot';
 //   - EXECUTOR_ROLE: the only accounts allowed to call the keeper liquidate() entry point.
 //   - PAUSER_ROLE:   toggle the DEX pause switch and pause keeper liquidations.
 // This file covers the constructor wiring and the DAO-only role-management surface (grantRole / revokeRole).
-describe.only('liquidation module access control', function () {
+describe('liquidation module access control', function () {
   // Any non-zero address satisfies the DEX adapter check; the adapter itself is not exercised here.
   const INCENTIVE_BPS = BigInt(500);
   const ZERO = ethers.constants.AddressZero;
@@ -375,7 +375,7 @@ describe.only('liquidation module access control', function () {
       });
     });
 
-    it.only('executor role can be granted to zero address', async () => {
+    it('executor role can be granted to zero address', async () => {
       await expect(liquidationModule.connect(dao).grantRole(EXECUTOR_ROLE, ZERO)).to.not.be.reverted;
     });
   });
