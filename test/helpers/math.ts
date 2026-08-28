@@ -46,6 +46,13 @@ export function mulPrice(n: bigint | BigNumber, price: bigint | BigNumber, fromS
   return toBigInt(n) * toBigInt(price) / toBigInt(fromScale);
 }
 
+// Division rounded towards zero, the floor counterpart of ceilDiv. Pass the whole product on each
+// side: the contracts value a weighted balance in a single division, and splitting it truncates the
+// balance at every step, losing a unit of value each time.
+export function mulDiv(numerator: bigint | BigNumber, denominator: bigint | BigNumber): bigint {
+  return toBigInt(numerator) / toBigInt(denominator);
+}
+
 export function annualize(n: bigint | BigNumber, secondsPerYear = 31536000n): number {
   return defactor(toBigInt(n) * secondsPerYear);
 }
