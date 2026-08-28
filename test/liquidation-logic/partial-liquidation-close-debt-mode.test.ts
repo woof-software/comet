@@ -1,11 +1,16 @@
-import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, default24Assets, divPrice, CollateralState, makeCollateralStates, seedMarketActivity } from '../helpers';
+import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, default24Assets, divPrice, ceilDiv, toBigInt, CollateralState, makeCollateralStates, seedMarketActivity } from '../helpers';
 import { CometHarnessInterfaceExtendedAssetList, LiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
 import { TotalsBasicStructOutput } from 'build/types/CometHarnessInterfaceExtendedAssetList';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 
+import { useBlockDelta } from '../helpers/block-clock';
+
 describe('partial liquidation (close debt mode)', function() {
+  // Pin one second between blocks so interest accrues deterministically regardless of machine speed.
+  useBlockDelta(1);
+
   // Protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
   let liquidationModule: LiquidationModule;
@@ -42,6 +47,9 @@ describe('partial liquidation (close debt mode)', function() {
         sUSDe: { ...default24AssetsData.sUSDe, supplyCap: exp(4000, 18) },
       },
       baseTrackingBorrowSpeed: 0,
+      borrowInterestRateBase: 0,
+      borrowInterestRateSlopeLow: 0,
+      borrowInterestRateSlopeHigh: 0,
       baseBorrowMin: baseBorrowMin,
     });
     comet = protocol.comet;
@@ -122,7 +130,7 @@ describe('partial liquidation (close debt mode)', function() {
       const price = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
       const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const collateralValue = mulPrice(collateralAmount, price, assetInfo.scale);
-      const liquidityValue = mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+      const liquidityValue = mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       const currentHF = liquidityValue * factorScale / debtValue;
 
       expect(currentHF).to.be.lessThan(targetHealthFactor);
@@ -145,7 +153,10 @@ describe('partial liquidation (close debt mode)', function() {
       // Seize only enough collateral to close the whole debt, scaling the debt value up by the penalty (LF).
       // seizeAmount = (debt / LF) / price = ($80 / 0.90) / $93 ≈ 0.9558 COMP
       // The entire debt is repaid, so the seized value equals the debt value.
-      collateralsState[collateralKey].seizeAmount = divPrice(debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt(), compPrice, assetInfo.scale);
+      collateralsState[collateralKey].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(compPrice),
+      );
       collateralsState[collateralKey].seizedValue = debtRemainingValue;
     });
 
@@ -154,7 +165,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -270,7 +281,7 @@ describe('partial liquidation (close debt mode)', function() {
       const price = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
       const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const collateralValue = mulPrice(collateralAmount, price, assetInfo.scale);
-      const liquidityValue = mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+      const liquidityValue = mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       const currentHF = liquidityValue * factorScale / debtValue;
 
       expect(currentHF).to.be.lessThan(targetHealthFactor);
@@ -293,7 +304,10 @@ describe('partial liquidation (close debt mode)', function() {
       // Seize only enough collateral to close the whole debt, scaling the debt value up by the penalty (LF).
       // seizeAmount = (debt / LF) / price = ($80 / 0.85) / $1.10 ≈ 85.56 LDO
       // The entire debt is repaid, so the seized value equals the debt value.
-      collateralsState[collateralKey].seizeAmount = divPrice(debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt(), ldoPrice, assetInfo.scale);
+      collateralsState[collateralKey].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(ldoPrice),
+      );
       collateralsState[collateralKey].seizedValue = debtRemainingValue;
     });
 
@@ -302,7 +316,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -418,7 +432,7 @@ describe('partial liquidation (close debt mode)', function() {
       const price = (await priceFeeds[collateralKey].latestRoundData())[1].toBigInt();
       const debtValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
       const collateralValue = mulPrice(collateralAmount, price, assetInfo.scale);
-      const liquidityValue = mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+      const liquidityValue = mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       const currentHF = liquidityValue * factorScale / debtValue;
 
       expect(currentHF).to.be.lessThan(targetHealthFactor);
@@ -441,7 +455,10 @@ describe('partial liquidation (close debt mode)', function() {
       // Seize only enough collateral to close the whole debt, scaling the debt value up by the penalty (LF).
       // seizeAmount = (debt / LF) / price = ($50 / 0.92) / $0.60 ≈ 90.58 sUSDe
       // The entire debt is repaid, so the seized value equals the debt value.
-      collateralsState[collateralKey].seizeAmount = divPrice(debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt(), sUsdePrice, assetInfo.scale);
+      collateralsState[collateralKey].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(sUsdePrice),
+      );
       collateralsState[collateralKey].seizedValue = debtRemainingValue;
     });
 
@@ -450,7 +467,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -570,7 +587,7 @@ describe('partial liquidation (close debt mode)', function() {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-        liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+        liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       }
       const currentHF = liquidityValue * factorScale / debtValue;
 
@@ -592,29 +609,32 @@ describe('partial liquidation (close debt mode)', function() {
       let debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // COMP is first in asset order. After the 20% price drop, 0.6 COMP is worth $48.
-      const compCollateralValue = mulPrice(collateralConfigs[0].amount, collateralConfigs[0].droppedPrice, compInfo.scale);
 
       // COMP cannot cover the debt on its own: collateralValue * LF < debt: $48 * 0.90 = $43.20 < $80.
       // So COMP is fully seized and the cycle moves to the next asset.
-      const compCollateralValueLeft = mulFactor(compCollateralValue, compInfo.liquidationFactor);
+      const compCollateralValueLeft = toBigInt(collateralConfigs[0].amount) * toBigInt(collateralConfigs[0].droppedPrice) * toBigInt(compInfo.liquidationFactor)
+        / (toBigInt(compInfo.scale) * factorScale);
       expect(compCollateralValueLeft).to.be.lessThan(debtRemainingValue);
 
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
       collateralsState[collateralConfigs[0].symbol].seizedValue = compCollateralValueLeft;
 
       const wethInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
-      const wethCollateralValue = mulPrice(collateralConfigs[1].amount, collateralConfigs[1].droppedPrice, wethInfo.scale);
 
       // After COMP full seizure, debt is $80 - $43.20 = $36.80.
       debtRemainingValue -= collateralsState[collateralConfigs[0].symbol].seizedValue;
 
       // WETH can cover the remaining debt: collateralValue * LF > debt: $45 * 0.90 = $40.50 > $36.80.
-      const wethCollateralValueLeft = mulFactor(wethCollateralValue, wethInfo.liquidationFactor);
+      const wethCollateralValueLeft = toBigInt(collateralConfigs[1].amount) * toBigInt(collateralConfigs[1].droppedPrice) * toBigInt(wethInfo.liquidationFactor)
+        / (toBigInt(wethInfo.scale) * factorScale);
       expect(wethCollateralValueLeft).to.be.greaterThan(debtRemainingValue);
 
       // Seize only enough WETH to close the remaining debt, scaling it up by the penalty (LF).
       // seizeAmount = (debt / LF) / price = ($36.80 / 0.90) / $2,000 ≈ 0.02044 WETH
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(debtRemainingValue * factorScale / wethInfo.liquidationFactor.toBigInt(), collateralConfigs[1].droppedPrice, wethInfo.scale);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(wethInfo.scale),
+        toBigInt(wethInfo.liquidationFactor) * toBigInt(collateralConfigs[1].droppedPrice),
+      );
       collateralsState[collateralConfigs[1].symbol].seizedValue = debtRemainingValue;
     });
 
@@ -623,7 +643,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -756,7 +776,7 @@ describe('partial liquidation (close debt mode)', function() {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-        liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+        liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       }
       const currentHF = liquidityValue * factorScale / debtValue;
 
@@ -779,11 +799,11 @@ describe('partial liquidation (close debt mode)', function() {
       let debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // AAVE is asset index 15. After the 20% price drop, 0.6 AAVE is worth $48.
-      const aaveCollateralValue = mulPrice(collateralConfigs[0].amount, aavePrice, aaveInfo.scale);
 
       // AAVE cannot cover the debt on its own: collateralValue * LF < debt: $48 * 0.85 = $40.80 < $75.
       // So AAVE is fully seized and the cycle moves to the next asset.
-      const aaveCollateralValueLeft = mulFactor(aaveCollateralValue, aaveInfo.liquidationFactor);
+      const aaveCollateralValueLeft = toBigInt(collateralConfigs[0].amount) * toBigInt(aavePrice) * toBigInt(aaveInfo.liquidationFactor)
+        / (toBigInt(aaveInfo.scale) * factorScale);
       expect(aaveCollateralValueLeft).to.be.lessThan(debtRemainingValue);
 
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
@@ -791,18 +811,21 @@ describe('partial liquidation (close debt mode)', function() {
 
       const ldoInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
       const ldoPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
-      const ldoCollateralValue = mulPrice(collateralConfigs[1].amount, ldoPrice, ldoInfo.scale);
 
       // After AAVE full seizure, debt is $75 - $40.80 = $34.20.
       debtRemainingValue -= collateralsState[collateralConfigs[0].symbol].seizedValue;
 
       // LDO can cover the remaining debt: collateralValue * LF > debt: $60 * 0.85 = $51.00 > $34.20.
-      const ldoCollateralValueLeft = mulFactor(ldoCollateralValue, ldoInfo.liquidationFactor);
+      const ldoCollateralValueLeft = toBigInt(collateralConfigs[1].amount) * toBigInt(ldoPrice) * toBigInt(ldoInfo.liquidationFactor)
+        / (toBigInt(ldoInfo.scale) * factorScale);
       expect(ldoCollateralValueLeft).to.be.greaterThan(debtRemainingValue);
 
       // Seize only enough LDO to close the remaining debt, scaling it up by the penalty (LF).
       // seizeAmount = (debt / LF) / price = ($34.20 / 0.85) / $1.60 ≈ 25.15 LDO
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(debtRemainingValue * factorScale / ldoInfo.liquidationFactor.toBigInt(), ldoPrice, ldoInfo.scale);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(ldoInfo.scale),
+        toBigInt(ldoInfo.liquidationFactor) * toBigInt(ldoPrice),
+      );
       collateralsState[collateralConfigs[1].symbol].seizedValue = debtRemainingValue;
     });
 
@@ -811,7 +834,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -940,7 +963,7 @@ describe('partial liquidation (close debt mode)', function() {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-        liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+        liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       }
       const currentHF = liquidityValue * factorScale / debtValue;
 
@@ -971,11 +994,11 @@ describe('partial liquidation (close debt mode)', function() {
       let debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // USDe is asset index 22. After the 20% price drop, 60 USDe is worth $48.
-      const usdeCollateralValue = mulPrice(collateralConfigs[0].amount, usdePrice, usdeInfo.scale);
 
       // USDe cannot cover the debt on its own: collateralValue * LF < debt: $48 * 0.92 = $44.16 < $90.
       // So USDe is fully seized and the cycle moves to the next asset.
-      const usdeCollateralValueLeft = mulFactor(usdeCollateralValue, usdeInfo.liquidationFactor);
+      const usdeCollateralValueLeft = toBigInt(collateralConfigs[0].amount) * toBigInt(usdePrice) * toBigInt(usdeInfo.liquidationFactor)
+        / (toBigInt(usdeInfo.scale) * factorScale);
       expect(usdeCollateralValueLeft).to.be.lessThan(debtRemainingValue);
 
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
@@ -983,18 +1006,21 @@ describe('partial liquidation (close debt mode)', function() {
 
       const susdeInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
       const susdePrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
-      const susdeCollateralValue = mulPrice(collateralConfigs[1].amount, susdePrice, susdeInfo.scale);
 
       // After USDe full seizure, debt is $90 - $44.16 = $45.84.
       debtRemainingValue -= collateralsState[collateralConfigs[0].symbol].seizedValue;
 
       // sUSDe can cover the remaining debt: collateralValue * LF > debt: $60 * 0.92 = $55.20 > $45.84.
-      const susdeCollateralValueLeft = mulFactor(susdeCollateralValue, susdeInfo.liquidationFactor);
+      const susdeCollateralValueLeft = toBigInt(collateralConfigs[1].amount) * toBigInt(susdePrice) * toBigInt(susdeInfo.liquidationFactor)
+        / (toBigInt(susdeInfo.scale) * factorScale);
       expect(susdeCollateralValueLeft).to.be.greaterThan(debtRemainingValue);
 
       // Seize only enough sUSDe to close the remaining debt, scaling it up by the penalty (LF).
       // seizeAmount = (debt / LF) / price = ($45.84 / 0.92) / $0.80 ≈ 62.28 sUSDe
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(debtRemainingValue * factorScale / susdeInfo.liquidationFactor.toBigInt(), susdePrice, susdeInfo.scale);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(susdeInfo.scale),
+        toBigInt(susdeInfo.liquidationFactor) * toBigInt(susdePrice),
+      );
       collateralsState[collateralConfigs[1].symbol].seizedValue = debtRemainingValue;
     });
 
@@ -1003,7 +1029,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -1135,7 +1161,7 @@ describe('partial liquidation (close debt mode)', function() {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-        liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+        liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       }
       const currentHF = liquidityValue * factorScale / debtValue;
 
@@ -1172,11 +1198,11 @@ describe('partial liquidation (close debt mode)', function() {
       let debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // ezETH is asset index 10. After the 25% price drop, 0.02 ezETH is worth $50.25.
-      const ezETHCollateralValue = mulPrice(collateralConfigs[0].amount, ezETHPrice, ezETHInfo.scale);
 
       // ezETH cannot cover the debt on its own: collateralValue * LF < debt: $50.25 * 0.91 = $45.73 < $80.
       // So ezETH is fully seized and the cycle moves to the next asset.
-      const ezETHCollateralValueLeft = mulFactor(ezETHCollateralValue, ezETHInfo.liquidationFactor);
+      const ezETHCollateralValueLeft = toBigInt(collateralConfigs[0].amount) * toBigInt(ezETHPrice) * toBigInt(ezETHInfo.liquidationFactor)
+        / (toBigInt(ezETHInfo.scale) * factorScale);
       expect(ezETHCollateralValueLeft).to.be.lessThan(debtRemainingValue);
 
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
@@ -1184,18 +1210,21 @@ describe('partial liquidation (close debt mode)', function() {
 
       const opInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
       const opPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
-      const opCollateralValue = mulPrice(collateralConfigs[1].amount, opPrice, opInfo.scale);
 
       // After ezETH full seizure, debt is $80 − $45.73 = $34.27.
       debtRemainingValue -= collateralsState[collateralConfigs[0].symbol].seizedValue;
 
       // OP can cover the remaining debt: collateralValue * LF > debt: $60 * 0.85 = $51.00 > $34.27.
-      const opCollateralValueLeft = mulFactor(opCollateralValue, opInfo.liquidationFactor);
+      const opCollateralValueLeft = toBigInt(collateralConfigs[1].amount) * toBigInt(opPrice) * toBigInt(opInfo.liquidationFactor)
+        / (toBigInt(opInfo.scale) * factorScale);
       expect(opCollateralValueLeft).to.be.greaterThan(debtRemainingValue);
 
       // Seize only enough OP to close the remaining debt, scaling it up by the penalty (LF).
       // seizeAmount = (debt / LF) / price = ($34.27 / 0.85) / $1.50 ≈ 26.88 OP
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(debtRemainingValue * factorScale / opInfo.liquidationFactor.toBigInt(), opPrice, opInfo.scale);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(opInfo.scale),
+        toBigInt(opInfo.liquidationFactor) * toBigInt(opPrice),
+      );
       collateralsState[collateralConfigs[1].symbol].seizedValue = debtRemainingValue;
     });
 
@@ -1204,7 +1233,7 @@ describe('partial liquidation (close debt mode)', function() {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances
@@ -1337,7 +1366,7 @@ describe('partial liquidation (close debt mode)', function() {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-        liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+        liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       }
       const currentHF = liquidityValue * factorScale / debtValue;
 
@@ -1365,10 +1394,10 @@ describe('partial liquidation (close debt mode)', function() {
         for (let i = 0; i < collateralConfigs.length - 1; i++) {
           const config = collateralConfigs[i];
           const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
-          const collateralValue = mulPrice(config.amount, config.droppedPrice, assetInfo.scale);
 
           // The asset cannot cover the debt on its own (collateralValue * LF < debt), so it is fully seized.
-          const collateralValueLeft = mulFactor(collateralValue, assetInfo.liquidationFactor);
+          const collateralValueLeft = toBigInt(config.amount) * toBigInt(config.droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
           expect(collateralValueLeft).to.be.lessThan(debtRemainingValue);
 
           collateralsState[config.symbol].seizeAmount = config.amount;
@@ -1378,15 +1407,18 @@ describe('partial liquidation (close debt mode)', function() {
 
         // After the first four assets are fully seized, debt reduces to about $72.79.
         const gmxInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[4].symbol].address);
-        const gmxCollateralValue = mulPrice(collateralConfigs[4].amount, collateralConfigs[4].droppedPrice, gmxInfo.scale);
 
         // GMX can cover the remaining debt: collateralValue * LF > debt: $120 * 0.82 = $98.40 > $72.79.
-        const gmxCollateralValueLeft = mulFactor(gmxCollateralValue, gmxInfo.liquidationFactor);
+        const gmxCollateralValueLeft = toBigInt(collateralConfigs[4].amount) * toBigInt(collateralConfigs[4].droppedPrice) * toBigInt(gmxInfo.liquidationFactor)
+        / (toBigInt(gmxInfo.scale) * factorScale);
         expect(gmxCollateralValueLeft).to.be.greaterThan(debtRemainingValue);
 
         // Seize only enough GMX to close the remaining debt, scaling it up by the penalty (LF).
         // seizeAmount = (debt / LF) / price ≈ ($72.79 / 0.82) / $20 ≈ 4.44 GMX
-        collateralsState[collateralConfigs[4].symbol].seizeAmount = divPrice(debtRemainingValue * factorScale / gmxInfo.liquidationFactor.toBigInt(), collateralConfigs[4].droppedPrice, gmxInfo.scale);
+        collateralsState[collateralConfigs[4].symbol].seizeAmount = ceilDiv(
+          toBigInt(debtRemainingValue) * factorScale * toBigInt(gmxInfo.scale),
+          toBigInt(gmxInfo.liquidationFactor) * toBigInt(collateralConfigs[4].droppedPrice),
+        );
         collateralsState[collateralConfigs[4].symbol].seizedValue = debtRemainingValue;
       });
 
@@ -1395,7 +1427,7 @@ describe('partial liquidation (close debt mode)', function() {
         // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
         const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
-        await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+        await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
       });
 
       // User base balances
@@ -1516,10 +1548,11 @@ describe('partial liquidation (close debt mode)', function() {
           const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
           const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
 
-          await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+          await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
             absorber.address, alice.address, tokens[config.symbol].address, config.amount, collateralValue
           );
-          debtRemainingValue -= mulFactor(collateralValue, assetInfo.liquidationFactor);
+          debtRemainingValue -= toBigInt(config.amount) * toBigInt(price) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
         });
       }
 
@@ -1528,11 +1561,14 @@ describe('partial liquidation (close debt mode)', function() {
         const gmxPrice = (await priceFeeds[collateralConfigs[4].symbol].latestRoundData())[1].toBigInt();
 
         // GMX closes the remaining debt: seizeAmount = (debt / LF) / price, scaling the debt up by the penalty.
-        const gmxSeizeAmount = divPrice(debtRemainingValue * factorScale / gmxInfo.liquidationFactor.toBigInt(), gmxPrice, gmxInfo.scale);
+        const gmxSeizeAmount = ceilDiv(
+          toBigInt(debtRemainingValue) * factorScale * toBigInt(gmxInfo.scale),
+          toBigInt(gmxInfo.liquidationFactor) * toBigInt(gmxPrice),
+        );
         // The event reports wantedCollateralValue recomputed from the seized amount.
         const wantedGmxCollateralValue = mulPrice(gmxSeizeAmount, gmxPrice, gmxInfo.scale);
 
-        await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+        await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
           absorber.address, alice.address, tokens[collateralConfigs[4].symbol].address, gmxSeizeAmount, wantedGmxCollateralValue
         );
       });
@@ -1600,7 +1636,7 @@ describe('partial liquidation (close debt mode)', function() {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-        liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+        liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       }
       const currentHF = liquidityValue * factorScale / debtValue;
 
@@ -1622,7 +1658,10 @@ describe('partial liquidation (close debt mode)', function() {
 
       // Seize only enough COMP to close the whole debt, scaling the debt value up by the penalty (LF).
       // seizeAmount = (debt / LF) / price = ($80 / 0.90) / $90 ≈ 0.9877 COMP
-      compSeizeAmount = divPrice(debtRemainingValue * factorScale / compInfo.liquidationFactor.toBigInt(), collateralConfigs[0].droppedPrice, compInfo.scale);
+      compSeizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(compInfo.scale),
+        toBigInt(compInfo.liquidationFactor) * toBigInt(collateralConfigs[0].droppedPrice),
+      );
     });
 
     it('seize amount is less than COMP balance: partial seizure confirmed', () => {
@@ -1633,7 +1672,7 @@ describe('partial liquidation (close debt mode)', function() {
     it('AbsorbDebt event is emitted', async () => {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut
       );
     });
@@ -1782,7 +1821,7 @@ describe('partial liquidation (close debt mode)', function() {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-        liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+        liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       }
       const currentHF = liquidityValue * factorScale / debtValue;
 
@@ -1805,7 +1844,10 @@ describe('partial liquidation (close debt mode)', function() {
 
       // Seize only enough AAVE to close the whole debt, scaling the debt value up by the penalty (LF).
       // seizeAmount = (debt / LF) / price = ($66 / 0.85) / $80 ≈ 0.9706 AAVE
-      aaveSeizeAmount = divPrice(debtRemainingValue * factorScale / aaveInfo.liquidationFactor.toBigInt(), aavePrice, aaveInfo.scale);
+      aaveSeizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(aaveInfo.scale),
+        toBigInt(aaveInfo.liquidationFactor) * toBigInt(aavePrice),
+      );
     });
 
     it('seize amount is less than AAVE balance: partial seizure confirmed', () => {
@@ -1816,7 +1858,7 @@ describe('partial liquidation (close debt mode)', function() {
     it('AbsorbDebt event is emitted', async () => {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut
       );
     });
@@ -1965,7 +2007,7 @@ describe('partial liquidation (close debt mode)', function() {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-        liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+        liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       }
       const currentHF = liquidityValue * factorScale / debtValue;
 
@@ -1988,7 +2030,10 @@ describe('partial liquidation (close debt mode)', function() {
 
       // Seize only enough rETH to close the whole debt, scaling the debt value up by the penalty (LF).
       // seizeAmount = (debt / LF) / price = ($60 / 0.92) / $2,800 ≈ 0.0233 rETH
-      rEthSeizeAmount = divPrice(debtRemainingValue * factorScale / rEthInfo.liquidationFactor.toBigInt(), rEthPrice, rEthInfo.scale);
+      rEthSeizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(rEthInfo.scale),
+        toBigInt(rEthInfo.liquidationFactor) * toBigInt(rEthPrice),
+      );
     });
 
     it('seize amount is less than rETH balance: partial seizure confirmed', () => {
@@ -1999,7 +2044,7 @@ describe('partial liquidation (close debt mode)', function() {
     it('AbsorbDebt event is emitted', async () => {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut
       );
     });
@@ -2148,7 +2193,7 @@ describe('partial liquidation (close debt mode)', function() {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-        liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+        liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       }
       const currentHF = liquidityValue * factorScale / debtValue;
 
@@ -2166,20 +2211,23 @@ describe('partial liquidation (close debt mode)', function() {
 
     it('calculates rETH full seizure and AAVE partial seizure values that close the remaining debt', async () => {
       const rEthInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
-      const rEthValue = mulPrice(collateralConfigs[0].amount, collateralConfigs[0].droppedPrice, rEthInfo.scale);
 
       const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
 
       // rETH is fully seized: collateralValue * LF < debt.
       collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
-      collateralsState[collateralConfigs[0].symbol].seizedValue = mulFactor(rEthValue, rEthInfo.liquidationFactor);
+      collateralsState[collateralConfigs[0].symbol].seizedValue = toBigInt(collateralConfigs[0].amount) * toBigInt(collateralConfigs[0].droppedPrice) * toBigInt(rEthInfo.liquidationFactor)
+        / (toBigInt(rEthInfo.scale) * factorScale);
 
       const aaveInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
       const debtAfterREth = debtRemainingValue - collateralsState[collateralConfigs[0].symbol].seizedValue;
 
       // Seize only enough AAVE to close the remaining debt, scaling by LF.
       // seizeAmount = (debtAfterREth / LF) / price = ($62.40 / 0.85) / $80 ≈ 0.9176 AAVE
-      collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(debtAfterREth * factorScale / aaveInfo.liquidationFactor.toBigInt(), collateralConfigs[1].droppedPrice, aaveInfo.scale);
+      collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+        toBigInt(debtAfterREth) * factorScale * toBigInt(aaveInfo.scale),
+        toBigInt(aaveInfo.liquidationFactor) * toBigInt(collateralConfigs[1].droppedPrice),
+      );
       collateralsState[collateralConfigs[1].symbol].seizedValue = debtAfterREth;
     });
 
@@ -2191,7 +2239,7 @@ describe('partial liquidation (close debt mode)', function() {
     it('AbsorbDebt event is emitted', async () => {
       // The whole debt is closed, so the new balance is 0 and the base paid out equals the old debt.
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut
       );
     });
@@ -2388,7 +2436,7 @@ describe('partial liquidation (close debt mode)', function() {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-        liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+        liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       }
       const currentHF = liquidityValue * factorScale / debtValue;
 
@@ -2414,21 +2462,22 @@ describe('partial liquidation (close debt mode)', function() {
         // The first five collateral values are small, so each asset is fully seized
         // and the remaining debt moves to the next asset.
         collateralsState[config.symbol].seizeAmount = config.amount;
-        collateralsState[config.symbol].seizedValue = mulFactor(collateralValues[i], assetInfo.liquidationFactor);
+        collateralsState[config.symbol].seizedValue = toBigInt(config.amount) * toBigInt(config.droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
         debtRemainingValue -= collateralsState[config.symbol].seizedValue;
       }
 
       const config = collateralConfigs[partialSeizureIndex];
       const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
-      const collateralValueLeft = mulFactor(collateralValues[partialSeizureIndex], assetInfo.liquidationFactor);
+      const collateralValueLeft = toBigInt(config.amount) * toBigInt(config.droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
 
       // Close debt mode seizes only enough wstETH to pay the remaining debt.
       expect(collateralValueLeft).to.be.greaterThan(debtRemainingValue);
 
-      collateralsState[config.symbol].seizeAmount = divPrice(
-        debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt(),
-        config.droppedPrice,
-        assetInfo.scale
+      collateralsState[config.symbol].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(config.droppedPrice),
       );
       collateralsState[config.symbol].seizedValue = debtRemainingValue;
     });
@@ -2441,7 +2490,7 @@ describe('partial liquidation (close debt mode)', function() {
     // Events
     it('AbsorbDebt event is emitted', async () => {
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut
       );
     });
@@ -2623,7 +2672,7 @@ describe('partial liquidation (close debt mode)', function() {
         const assetInfo = await comet.getAssetInfoByAddress(tokens[config.symbol].address);
         const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
         const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
-        liquidityValue += mulFactor(collateralValue, assetInfo.liquidateCollateralFactor);
+        liquidityValue += mulFactor(collateralValue, assetInfo.borrowCollateralFactor);
       }
       const currentHF = liquidityValue * factorScale / debtValue;
 
@@ -2645,8 +2694,8 @@ describe('partial liquidation (close debt mode)', function() {
       for (const sym of assetSymbols23) {
         const info = await comet.getAssetInfoByAddress(tokens[sym].address);
         const price = (await priceFeeds[sym].latestRoundData())[1];
-        const value = mulPrice(assetSupplyAmounts[sym], price, info.scale);
-        const seizedValue = mulFactor(value, info.liquidationFactor);
+        const seizedValue = toBigInt(assetSupplyAmounts[sym]) * toBigInt(price) * toBigInt(info.liquidationFactor)
+        / (toBigInt(info.scale) * factorScale);
 
         collateralsState[sym].seizeAmount = assetSupplyAmounts[sym];
         collateralsState[sym].seizedValue = seizedValue;
@@ -2654,15 +2703,14 @@ describe('partial liquidation (close debt mode)', function() {
       }
 
       const sUsDeInfo = await comet.getAssetInfoByAddress(tokens['sUSDe'].address);
-      const sUsDeValue = mulPrice(sUsDeAmount, droppedSUsDePrice, sUsDeInfo.scale);
-      const sUsDeCollateralValueLeft = mulFactor(sUsDeValue, sUsDeInfo.liquidationFactor);
+      const sUsDeCollateralValueLeft = toBigInt(sUsDeAmount) * toBigInt(droppedSUsDePrice) * toBigInt(sUsDeInfo.liquidationFactor)
+        / (toBigInt(sUsDeInfo.scale) * factorScale);
 
       expect(sUsDeCollateralValueLeft).to.be.greaterThan(debtRemainingValue);
 
-      collateralsState['sUSDe'].seizeAmount = divPrice(
-        debtRemainingValue * factorScale / sUsDeInfo.liquidationFactor.toBigInt(),
-        droppedSUsDePrice,
-        sUsDeInfo.scale
+      collateralsState['sUSDe'].seizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(sUsDeInfo.scale),
+        toBigInt(sUsDeInfo.liquidationFactor) * toBigInt(droppedSUsDePrice),
       );
       collateralsState['sUSDe'].seizedValue = debtRemainingValue;
     });
@@ -2674,7 +2722,7 @@ describe('partial liquidation (close debt mode)', function() {
     // Events
     it('AbsorbDebt event is emitted', async () => {
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut);
     });
 
     // User base balances

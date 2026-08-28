@@ -1,12 +1,19 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import { setupFork, impersonateAccount, setBalance } from '../helpers';
+import {
+  setupFork,
+  impersonateAccount,
+  setBalance,
+  deployDefaultLiquidationModuleWithComet,
+  deployEmptyDexAdapter,
+} from '../helpers';
 import {
   CometExtAssetList,
   CometFactoryWithExtendedAssetList__factory,
   CometProxyAdmin,
   CometWithExtendedAssetList,
   Configurator,
+  LiquidationModule,
 } from 'build/types';
 import { ConfigurationStructOutput } from 'build/types/Configurator';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
@@ -129,15 +136,14 @@ async function getCometValuesSnapshot(
 // This fork test covers the two-step mainnet upgrade path for adding liquidation
 // module configuration to the USDC Comet. It first proves the Configurator proxy
 // values survive its implementation upgrade, then proves Comet proxy values
-// survive the move to a fresh CometWithExtendedAssetList implementation.
+// survive the move to a fresh CometWithExtendedAssetList implementation that
+// binds a LiquidationModuleForComet via immutable constructor config.
 describe('liquidation module upgrade', function () {
   const FORK_BLOCK_NUMBER = 25172553;
   const COMET_ADDRESS = '0xc3d688B66703497DAA19211EEdff47f25384cdc3';
   const CONFIGURATOR_ADDRESS = '0x316f9708bB98af7dA9c68C1C3b5e79039cD336E3';
   const GOVERNOR_ADDRESS = '0x6d903f6003cca6255d85cca4d3b5e5146dc33925';
   const ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
-  const TARGET_HEALTH_FACTOR = BigNumber.from('1050000000000000000');
-  const LIQUIDATION_MODULE = '0x1111111111111111111111111111111111111111';
 
   let comet: CometWithExtendedAssetList;
   let cometExt: CometExtAssetList;
@@ -145,6 +151,7 @@ describe('liquidation module upgrade', function () {
   let proxyAdmin: CometProxyAdmin;
   let governor: SignerWithAddress;
   let configuratorProxyAdmin: SignerWithAddress;
+  let liquidationModule: LiquidationModule;
 
   let configuratorConfigurationBefore: ReturnType<typeof normalizeConfiguration>;
   let configuratorConfigurationAfter: ReturnType<typeof normalizeConfiguration>;
@@ -160,36 +167,19 @@ describe('liquidation module upgrade', function () {
   before(async function () {
     await setupFork(FORK_BLOCK_NUMBER);
 
-    comet = (await ethers.getContractAt(
-      'CometWithExtendedAssetList',
-      COMET_ADDRESS
-    )) as CometWithExtendedAssetList;
-    cometExt = (await ethers.getContractAt(
-      'CometExtAssetList',
-      COMET_ADDRESS
-    )) as CometExtAssetList;
-    configurator = (await ethers.getContractAt(
-      'Configurator',
-      CONFIGURATOR_ADDRESS
-    )) as Configurator;
+    comet = (await ethers.getContractAt('CometWithExtendedAssetList', COMET_ADDRESS)) as CometWithExtendedAssetList;
+    cometExt = (await ethers.getContractAt('CometExtAssetList', COMET_ADDRESS)) as CometExtAssetList;
+    configurator = (await ethers.getContractAt('Configurator', CONFIGURATOR_ADDRESS)) as Configurator;
 
-    const configuratorAdminRaw = await ethers.provider.getStorageAt(
-      CONFIGURATOR_ADDRESS,
-      ADMIN_SLOT
-    );
-    const configuratorAdminAddress = ethers.utils.getAddress(
-      '0x' + configuratorAdminRaw.slice(26)
-    );
+    const configuratorAdminRaw = await ethers.provider.getStorageAt(CONFIGURATOR_ADDRESS, ADMIN_SLOT);
+    const configuratorAdminAddress = ethers.utils.getAddress('0x' + configuratorAdminRaw.slice(26));
     await impersonateAccount(configuratorAdminAddress);
     configuratorProxyAdmin = await ethers.getSigner(configuratorAdminAddress);
     await setBalance(configuratorAdminAddress, ethers.utils.parseEther('10000'));
 
     const cometAdminRaw = await ethers.provider.getStorageAt(COMET_ADDRESS, ADMIN_SLOT);
     const cometAdminAddress = ethers.utils.getAddress('0x' + cometAdminRaw.slice(26));
-    proxyAdmin = (await ethers.getContractAt(
-      'CometProxyAdmin',
-      cometAdminAddress
-    )) as CometProxyAdmin;
+    proxyAdmin = (await ethers.getContractAt('CometProxyAdmin', cometAdminAddress)) as CometProxyAdmin;
     originalCometImplementation = await proxyAdmin.getProxyImplementation(COMET_ADDRESS);
 
     await impersonateAccount(GOVERNOR_ADDRESS);
@@ -220,19 +210,13 @@ describe('liquidation module upgrade', function () {
     });
 
     it('updates the configurator proxy implementation', async function () {
-      const configuratorProxy = await ethers.getContractAt(
-        'ConfiguratorProxy',
-        CONFIGURATOR_ADDRESS
-      );
+      const configuratorProxy = await ethers.getContractAt('ConfiguratorProxy', CONFIGURATOR_ADDRESS);
       configuratorUpgradeTx = await configuratorProxy
         .connect(configuratorProxyAdmin)
         .upgradeTo(latestConfiguratorImplementation);
       await expect(configuratorUpgradeTx).to.not.be.reverted;
 
-      configurator = (await ethers.getContractAt(
-        'Configurator',
-        CONFIGURATOR_ADDRESS
-      )) as Configurator;
+      configurator = (await ethers.getContractAt('Configurator', CONFIGURATOR_ADDRESS)) as Configurator;
     });
 
     it('keeps the configurator values for the Comet proxy unchanged', async function () {
@@ -274,17 +258,32 @@ describe('liquidation module upgrade', function () {
       cometValuesBefore = await getCometValuesSnapshot(comet, cometExt);
     });
 
+    it('deploys a LiquidationModuleForComet bound to the existing Comet', async function () {
+      // Use non-DAO role holders: DAO is already granted PAUSER_ROLE in the LM constructor.
+      const [executor, pauser, multisig] = await ethers.getSigners();
+      const configuration = await configurator.getConfiguration(COMET_ADDRESS);
+      const collateralAddresses = configuration.assetConfigs.map((assetConfig) => assetConfig.asset);
+      const dexAdapter = await deployEmptyDexAdapter(collateralAddresses);
+      liquidationModule = await deployDefaultLiquidationModuleWithComet(
+        {
+          multisig: multisig.address,
+          executors: [executor.address],
+          pausers: [pauser.address],
+          dexAdapter: dexAdapter.address,
+        },
+        COMET_ADDRESS
+      );
+      expect(liquidationModule.address).to.not.equal(ethers.constants.AddressZero);
+    });
+
     it('sets the liquidation module in the configurator', async function () {
-      setLiquidationModuleTx = await configurator
-        .connect(governor)
-        .setLiquidationModule(COMET_ADDRESS, LIQUIDATION_MODULE);
+      setLiquidationModuleTx = await configurator.connect(governor).setLiquidationModule(COMET_ADDRESS, liquidationModule.address);
       await expect(setLiquidationModuleTx).to.not.be.reverted;
     });
 
     it('emits SetLiquidationModule', async function () {
-      await expect(setLiquidationModuleTx)
-        .to.emit(configurator, 'SetLiquidationModule')
-        .withArgs(COMET_ADDRESS, ethers.constants.AddressZero, LIQUIDATION_MODULE);
+      await expect(setLiquidationModuleTx).to.emit(configurator, 'SetLiquidationModule')
+        .withArgs(COMET_ADDRESS, ethers.constants.AddressZero, liquidationModule.address);
     });
 
     it('sets the extended asset list Comet factory', async function () {
@@ -295,19 +294,18 @@ describe('liquidation module upgrade', function () {
       await newFactory.deployed();
       newFactoryAddress = newFactory.address;
 
-      await expect(
-        configurator.connect(governor).setFactory(COMET_ADDRESS, newFactoryAddress)
-      ).to.not.be.reverted;
+      await expect(configurator.connect(governor).setFactory(COMET_ADDRESS, newFactoryAddress)).to.not.be.reverted;
     });
 
     it('stores the new deployment-only configuration', async function () {
       const configuration = await configurator.getConfiguration(COMET_ADDRESS);
 
-      expect(configuration.liquidationModule).to.equal(LIQUIDATION_MODULE);
+      expect(configuration.liquidationModule).to.equal(liquidationModule.address);
       expect(await configurator.factory(COMET_ADDRESS)).to.equal(newFactoryAddress);
     });
 
     it('deploys the new extended asset list Comet implementation', async function () {
+      // Fresh LM is required: the new implementation constructor calls setAssetList on it.
       deployCometTx = await configurator.connect(governor).deploy(COMET_ADDRESS);
       const deployReceipt = await deployCometTx.wait();
       const deployEvent = deployReceipt.events.find((event) => event.event === 'CometDeployed');
@@ -318,9 +316,7 @@ describe('liquidation module upgrade', function () {
     });
 
     it('updates the Comet proxy implementation', async function () {
-      upgradeCometTx = await proxyAdmin
-        .connect(governor)
-        .upgrade(COMET_ADDRESS, newCometImplementation);
+      upgradeCometTx = await proxyAdmin.connect(governor).upgrade(COMET_ADDRESS, newCometImplementation);
       await expect(upgradeCometTx).to.not.be.reverted;
     });
 
@@ -328,15 +324,8 @@ describe('liquidation module upgrade', function () {
       expect(await proxyAdmin.getProxyImplementation(COMET_ADDRESS)).to.equal(newCometImplementation);
     });
 
-    it('initializes the liquidation module in the proxy storage', async function () {
-      // liquidationModule is a storage variable: the constructor wrote it to the
-      // implementation's own storage, not the proxy's. The governor must call
-      // setLiquidationModule on the proxy to write it into the proxy's storage slot.
-      await expect(comet.connect(governor).setLiquidationModule(LIQUIDATION_MODULE)).to.not.be.reverted;
-    });
-
-    it('uses the configured liquidation module', async function () {
-      expect(await comet.liquidationModule()).to.equal(LIQUIDATION_MODULE);
+    it('uses the configured liquidation module as an immutable on the new implementation', async function () {
+      expect(await comet.liquidationModule()).to.equal(liquidationModule.address);
     });
 
     it('keeps the Comet proxy values unchanged', async function () {

@@ -1,5 +1,5 @@
-import hre, { ethers } from "hardhat";
-import { Signer } from "ethers";
+import hre, { ethers } from 'hardhat';
+import { Signer } from 'ethers';
 import {
   CometInterface,
   CometInterface__factory,
@@ -7,8 +7,8 @@ import {
   ERC20__factory,
   OneInchV6Adapter,
   OneInchV6Adapter__factory,
-} from "../../build/types";
-import { takeSnapshot, SnapshotRestorer } from "./snapshot";
+} from '../../build/types';
+import { takeSnapshot, SnapshotRestorer } from './snapshot';
 import {
   MarketConfig,
   RouteConfig,
@@ -17,8 +17,8 @@ import {
   CORE_ROUTER,
   REDUNDANT_ROUTER,
   SLIPPAGE_BPS,
-} from "./dex-router";
-import { TOKENS } from "./swap-routes";
+} from './dex-router';
+import { TOKENS } from './swap-routes';
 
 /**
  * Mainnet-fork fixture for the dex adapters unit tests.
@@ -43,14 +43,15 @@ export interface DexAdapterFixture {
 
 export async function deployEmptyDexAdapter(collaterals: string[]): Promise<OneInchV6Adapter> {
   const adapterFactory = (await ethers.getContractFactory(
-    "OneInchV6Adapter"
+    'OneInchV6Adapter'
   )) as OneInchV6Adapter__factory;
   const adapter = await adapterFactory.deploy(
     CORE_ROUTER,
     REDUNDANT_ROUTER,
     TOKENS.WETH.address,
     SLIPPAGE_BPS,
-    buildRoutesFromList(collaterals, {})
+    buildRoutesFromList(collaterals, {}),
+    []
   );
   await adapter.deployed();
 
@@ -60,7 +61,7 @@ export async function deployEmptyDexAdapter(collaterals: string[]): Promise<OneI
 // Resets the mainnet fork, deploys a OneInchV6Adapter for `market`, and snapshots the post-deploy state.
 export async function setupDexAdapter(market: MarketConfig): Promise<DexAdapterFixture> {
   await hre.network.provider.request({
-    method: "hardhat_reset",
+    method: 'hardhat_reset',
     params: [{ forking: { jsonRpcUrl: process.env.MAINNET_QUICKNODE_LINK } }],
   });
 
@@ -77,14 +78,15 @@ export async function setupDexAdapter(market: MarketConfig): Promise<DexAdapterF
   const routes = await buildRoutes(comet, market.routes);
 
   const adapterFactory = (await ethers.getContractFactory(
-    "OneInchV6Adapter"
+    'OneInchV6Adapter'
   )) as OneInchV6Adapter__factory;
   const adapter = await adapterFactory.deploy(
     CORE_ROUTER,
     REDUNDANT_ROUTER,
     TOKENS.WETH.address,
     SLIPPAGE_BPS,
-    routes
+    routes,
+    []
   );
   await adapter.deployed();
   await adapter.connect(moduleSigner).initiateAdapter(market.comet);

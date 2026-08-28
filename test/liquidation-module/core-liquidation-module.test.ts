@@ -70,7 +70,7 @@ describe('core liquidation module', function () {
         zeroForOne: false,
         path: [],
       },
-    ]);
+    ], []);
     await adapter.deployed();
 
     // Liquidation module

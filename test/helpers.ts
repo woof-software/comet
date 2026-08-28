@@ -38,6 +38,7 @@ import {
   MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
   CometHarnessInterfaceExtendedAssetList,
   LiquidationModule,
+  LiquidationModule__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
@@ -45,7 +46,7 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 
 // Helpers
 import type { Numeric } from './helpers/index';
-import { exp, dfn, defaultAssets, deployDefaultLiquidationModule, deployEmptyDexAdapter, mulPrice, toBigInt, convertToBigInt, setBalance } from './helpers/index';
+import { exp, dfn, defaultAssets, deployDefaultLiquidationModule, deployDefaultLiquidationModuleWithComet, deployEmptyDexAdapter, mulPrice, toBigInt, convertToBigInt, setBalance } from './helpers/index';
 
 export * from './helpers/index';
 export { ethers, expect, hre };
@@ -140,7 +141,6 @@ export type ConfiguratorAndProtocol = {
   proxyAdmin: CometProxyAdmin;
   cometFactory: CometFactoryWithExtendedAssetList;
   cometProxy: TransparentUpgradeableProxy;
-  defaultLiquidationModuleForProxy: LiquidationModule;
 } & Protocol;
 
 export type RewardsOpts = {
@@ -299,7 +299,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   }
 
   const defaultLiquidationModule = opts.liquidationModule ?? await deployDefaultLiquidationModule({
-    dexAdapter: opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address}))).address,
+    dexAdapter: opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address;}))).address,
     multisig: multisig.address,
     executors: opts.liquidationModuleOpts?.executors ?? executors.map((x) => x.address),
     pausers: opts.liquidationModuleOpts?.pausers ?? pausers.map((x) => x.address),
@@ -485,8 +485,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
-    defaultLiquidationModule
-  } = await makeProtocol(opts);
+  } = await makeProtocol({...opts, skipInitStorage: true });
 
   // Deploy ProxyAdmin
   const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdmin')) as CometProxyAdmin__factory;
@@ -497,7 +496,17 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
   const cometProxy = await CometProxy.deploy(
     comet.address,
     proxyAdmin.address,
-    (await comet.populateTransaction.initializeStorage()).data,
+    '0x',
+  );
+
+  // Deploy LiquidationModule
+  const LiquidationModule = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
+  const liquidationModule = await LiquidationModule.deploy(
+    opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address;}))).address,
+    multisig.address,
+    executors.map((x) => x.address),
+    pausers.map((x) => x.address),
+    opts.liquidationModuleOpts?.incentiveBps ?? 0n
   );
 
   const configuration = await getConfigurationForConfigurator(
@@ -509,7 +518,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     base,
     priceFeeds,
-    defaultLiquidationModule.address
+    liquidationModule.address
   );
 
   // Deploy CometFactory
@@ -548,8 +557,15 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     );
 
     await configuratorAsProxy.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
-    await proxyAdmin.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);  }
+    await proxyAdmin.connect(governor).setMarketAdminPermissionChecker(marketAdminPermissionCheckerContract.address);
+  }
 
+  const initializeStorageCalldata = (await comet.populateTransaction.initializeStorage()).data;
+  await proxyAdmin.connect(governor).deployUpgradeToAndCall(
+    configuratorProxy.address,
+    cometProxy.address,
+    initializeStorageCalldata
+  );
 
   return {
     opts,
@@ -572,7 +588,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
-    defaultLiquidationModule
+    defaultLiquidationModule: liquidationModule
   };
 }
 
@@ -676,14 +692,49 @@ export async function setTotalsBasic(comet: CometHarnessInterfaceExtendedAssetLi
   return t1;
 }
 
+/**
+ * Redeploy Comet via Configurator with a fresh LiquidationModule.
+ * Required because Comet construction calls setAssetList on the module, which reverts
+ * with AlreadySet() if the previous module was already initialized.
+ */
+export async function prepareFreshLiquidationModule(
+  configurator: Configurator,
+  cometProxyAddress: string,
+) {
+  const configuration = await configurator.getConfiguration(cometProxyAddress);
+  const collateralAddresses = configuration.assetConfigs.map((assetConfig) => assetConfig.asset);
+  const newDexAdapter = await deployEmptyDexAdapter(collateralAddresses);
+  // Governor is sufficient for role wiring in unit tests that only need a valid LM.
+  const governor = configuration.governor;
+  return deployDefaultLiquidationModuleWithComet(
+    {
+      multisig: governor,
+      executors: [governor],
+      pausers: [governor],
+      dexAdapter: newDexAdapter.address,
+    },
+    cometProxyAddress
+  );
+}
+
+export async function deployAndUpgradeToWithFreshModule(
+  proxyAdmin: CometProxyAdmin,
+  configurator: Configurator,
+  cometProxyAddress: string,
+) {
+  const newLiquidationModule = await prepareFreshLiquidationModule(configurator, cometProxyAddress);
+  await configurator.setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
+  await proxyAdmin.deployAndUpgradeTo(configurator.address, cometProxyAddress);
+}
+
 export async function updateAssetBorrowCollateralFactor(configurator: Configurator, cometProxyAdmin: CometProxyAdmin, cometAddress: string, assetAddress: string, borrowCF: bigint) {
   await configurator.updateAssetBorrowCollateralFactor(cometAddress, assetAddress, borrowCF);
-  await cometProxyAdmin.deployAndUpgradeTo(configurator.address, cometAddress);
+  await deployAndUpgradeToWithFreshModule(cometProxyAdmin, configurator, cometAddress);
 }
 
 export async function updateAssetLiquidateCollateralFactor(configurator: Configurator, cometProxyAdmin: CometProxyAdmin, cometAddress: string, assetAddress: string, liquidateCF: bigint, governor: SignerWithAddress) {
   await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometAddress, assetAddress, liquidateCF);
-  await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configurator.address, cometAddress);
+  await deployAndUpgradeToWithFreshModule(cometProxyAdmin.connect(governor) as CometProxyAdmin, configurator.connect(governor) as Configurator, cometAddress);
 }
 
 export async function getLiquidity(comet: CometWithExtendedAssetList, token: FaucetToken | NonStandardFaucetFeeToken, amount: bigint): Promise<BigNumber> {
@@ -868,8 +919,8 @@ export async function setupFork(blockNumber?: number, jsonRpcUrl?: string) {
 }
 
 const toSigner = async (x: string | SignerWithAddress): Promise<SignerWithAddress> => {
-    if (typeof x !== 'string') return x;                 // already a signer (default slice)
-    const signer = await ethers.getImpersonatedSigner(x);
-    await setBalance(signer.address, ethers.utils.parseEther('10')); // gas to call the module
-    return signer;
-  };
+  if (typeof x !== 'string') return x;                 // already a signer (default slice)
+  const signer = await ethers.getImpersonatedSigner(x);
+  await setBalance(signer.address, ethers.utils.parseEther('10')); // gas to call the module
+  return signer;
+};

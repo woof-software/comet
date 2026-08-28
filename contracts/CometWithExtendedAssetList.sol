@@ -1312,19 +1312,24 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /// @notice Liquidation module hook for updating collateral balance of an account
-    function updateCollateral(address account, uint8 index, uint128 seizedAmount) external onlyLiquidationModule {
-        _updateCollateral(account, index, seizedAmount);
+    /// @param seizedAmount The amount of collateral seized from the account
+    /// @param usdValue The USD value of the seized collateral, reported in the AbsorbCollateral event
+    function updateCollateral(address absorber, address account, uint8 index, uint128 seizedAmount, uint256 usdValue) external onlyLiquidationModule {
+        _updateCollateral(absorber, account, index, seizedAmount, usdValue);
     }
 
     /// @notice Liquidation module hook for the DEX route: seizes collateral and transfers it to the module
     ///         which will re-rout it to the DEX adapter, so it can be swapped into the base asset.
-    function updateAndSeizeCollateral(address account, uint8 index, uint128 seizedAmount) external onlyLiquidationModule nonReentrant {
-        address asset = _updateCollateral(account, index, seizedAmount);
+    function updateAndSeizeCollateral(address absorber, address account, uint8 index, uint128 seizedAmount, uint256 usdValue) external onlyLiquidationModule nonReentrant {
+        address asset = _updateCollateral(absorber, account, index, seizedAmount, usdValue);
 
         doTransferOut(asset, liquidationModule, seizedAmount);
     }
 
-    function _updateCollateral(address account, uint8 index, uint128 seizedAmount) internal returns (address) {
+    /// @dev Both liquidation routes write the seizure through here, so AbsorbCollateral is emitted by Comet
+    ///      itself rather than by the module. Whoever watches the market sees every seizure on one address,
+    ///      no matter which route produced it.
+    function _updateCollateral(address absorber, address account, uint8 index, uint128 seizedAmount, uint256 usdValue) internal returns (address) {
         AssetInfo memory collateralInfo = IAssetList(assetList).getAssetInfo(index);
         uint128 initialUserBalance = userCollateral[account][collateralInfo.asset].balance;
 
@@ -1333,13 +1338,20 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
         updateAssetsIn(account, collateralInfo, initialUserBalance, initialUserBalance - seizedAmount);
 
+        emit AbsorbCollateral(absorber, account, collateralInfo.asset, seizedAmount, usdValue);
+
         return collateralInfo.asset;
     }
 
     /// @notice Liquidation module hook for updating debt and principal of an account
+    /// @param basePaidOut The amount of base debt cleared from the account, reported in the AbsorbDebt event
+    /// @param basePaidOutValue The USD value of the cleared base debt, reported in the AbsorbDebt event
     function updateDebtAndPrincipal(
+        address absorber,
         address account,
-        int256 newBalance
+        int256 newBalance,
+        uint256 basePaidOut,
+        uint256 basePaidOutValue
     ) external onlyLiquidationModule {
         UserBasic memory accountUser = userBasic[account];
         int104 oldPrincipal = accountUser.principal;
@@ -1349,6 +1361,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         updateBasePrincipal(account, accountUser, newPrincipal);
 
         totalBorrowBase -= uint104(newPrincipal - oldPrincipal);
+
+        emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
     }
 
     /**

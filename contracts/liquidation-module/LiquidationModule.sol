@@ -26,7 +26,8 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     /// @notice used for DEX-path liquidations. Zero address means module doesn't support DEX liquidation route.
     ICoreDexAdapter public immutable dexAdapter;
 
-    /// @notice Executor incentive on the DEX route.
+    /// @notice Executor incentive on the DEX route, taken as a cut of the surplus base left after the debt is
+    ///         covered — not of the whole liquidated amount.
     uint16 public incentiveBps;
 
     /**
@@ -34,7 +35,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @param multisig_         The Multisig address: controls parameter setters.
      * @param executors_        Initial set of Executor accounts (keeper liquidation callers).
      * @param pausers_          Initial set of Pauser accounts (DEX pause switch).
-     * @param incentiveBps_     Initial executor incentive (in BPS) taken on the DEX route.
+     * @param incentiveBps_     Initial executor incentive (in BPS) taken on the DEX route out of the surplus base.
      */
     constructor(
         ICoreDexAdapter dexAdapter_,
@@ -89,7 +90,7 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
      * @param account  The underwater account to liquidate.
      * @param swapData Per-collateral router calldata for the DEX route, aligned to the seizure plan order.
      */
-    function liquidate(address absorber, address account, bytes[] calldata swapData) external onlyRole(EXECUTOR_ROLE) {
+    function liquidate(address absorber, address account, bytes[] calldata swapData) external nonReentrant onlyRole(EXECUTOR_ROLE) {
         if (comet.isAbsorbPaused()) revert Paused();
         
         comet.accrueAccount(account);
@@ -104,11 +105,13 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     }
 
     /**
-     * @notice Seizes and swaps collaterals into the base asset through the DEX adapter, pays the executor a
-     *         `penaltyBps` cut of the realized base, and sends the remainder to Comet to clear the debt.
-     * @dev If an individual swap fails, the adapter sweeps that collateral back to Comet and it is absorbed
-     *      instead of sold; Reverts if bad debt occurs, or if the base left for Comet after the penalty cannot cover
-     *      the debt.
+     * @notice Seizes and swaps collaterals into the base asset through the DEX adapter, sends the base needed to
+     *         clear the debt to Comet, and pays the executor an `incentiveBps` cut of the surplus that is left
+     *         on top of it.
+     *
+     *      If an individual swap fails, the adapter sweeps that collateral back to Comet and it is absorbed
+     *      instead of sold, so its value is excluded from `baseRequired`. A shortfall beyond the rounding dust is
+     *      bad debt: no incentive is paid and the whole realized base goes to Comet.
      * @param absorber The recipient of the incentive.
      * @param account  The account being liquidated.
      * @param swapData Per-collateral router calldata, aligned to the seizure plan order.
@@ -130,20 +133,31 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
         for (uint8 i; i < plan.length; ++i) {
             if (plan[i].seizedAmount == 0) continue;
 
-            emit AbsorbCollateral(absorber, account, plan[i].asset, plan[i].seizedAmount, plan[i].wantedCollateralValue);
-            ICometLiquidationInterface(address(comet)).updateAndSeizeCollateral(account, plan[i].index, uint128(plan[i].seizedAmount));
-            // Hook transfers collateral to the module, so module re-transfers it further to the adapter
-            IERC20(plan[i].asset).safeTransfer(address(dexAdapter), plan[i].seizedAmount);
-            // A failed swap means the adapter swept that collateral back to Comet (it is absorbed instead of
-            // sold), so its debt-offset value must not be expected back in base.
-            if (!dexAdapter.swap(plan[i].asset, swapData[i]))
-                unswappedSeizedValue += plan[i].seizedValue;
+            // Comet emits AbsorbCollateral from the hook.
+            ICometLiquidationInterface(address(comet)).updateAndSeizeCollateral(
+                absorber,
+                account,
+                plan[i].index,
+                safe128(plan[i].seizedAmount),
+                plan[i].wantedCollateralValue
+            );
         }
 
         /// @dev Even if received amount is less than debt due to slippage, the DEX adapter verifies the slippage
         ///      tolerance, so we can close the whole debt.
-        ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(account, newBalance);
-        emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
+        // Comet emits AbsorbDebt from the hook.
+        ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(absorber, account, newBalance, basePaidOut, basePaidOutValue);
+
+        for (uint8 i; i < plan.length; ++i) {
+            if (plan[i].seizedAmount == 0) continue;
+
+            // Hook transfers collateral to the module, so module re-transfers it further to the adapter
+            IERC20(plan[i].asset).safeTransfer(address(dexAdapter), plan[i].seizedAmount);
+            // A failed swap means the adapter swept that collateral back to Comet (it is absorbed instead of
+            // sold), so its debt-offset value must not be expected back in base.
+            if (!dexAdapter.swap(plan[i].asset, plan[i].seizedAmount, swapData[i]))
+                unswappedSeizedValue += plan[i].seizedValue;
+        }
 
         uint256 baseReceived = baseToken.balanceOf(address(this)) - baseBefore;
         // Convert the swept collateral's value to base.
@@ -170,7 +184,8 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
             emit BadDebtLiquidate(absorber, account, msg.sender, baseReceived);
         }
         else {
-            incentive = baseReceived * incentiveBps / BPS;
+            uint256 surplus = baseReceived > baseRequired ? baseReceived - baseRequired : 0;
+            incentive = surplus * incentiveBps / BPS;
             baseForComet = baseReceived - incentive;
         }
 
@@ -193,12 +208,13 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     }
 
     /**
-     * @notice Updates the slippage value for DEX adapter.
-     * @dev Reverts if the new value exceeds 100% (1e4).
-     * @param newSlippageBps New penalty in BPS (1e4 scale).
+     * @notice Updates the global slippage (`collateral` == address(0)) or a per-collateral override on the DEX adapter.
+     * @dev Reverts if the new value exceeds 100% (1e4). A per-collateral override may be 0 to clear it.
+     * @param newSlippageBps New slippage in BPS (1e4 scale).
+     * @param collateral Collateral to override, or the zero address to set the global slippage.
      */
-    function setSlippageBps(uint16 newSlippageBps) external onlyRole(MULTISIG_ROLE) {
+    function setSlippageBps(uint16 newSlippageBps, address collateral) external onlyRole(MULTISIG_ROLE) {
         ///@dev event is emitted in DEX adapter
-        dexAdapter.setSlippageBps(newSlippageBps);
+        dexAdapter.setSlippageBps(newSlippageBps, collateral);
     }
 }

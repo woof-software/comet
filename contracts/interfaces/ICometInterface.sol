@@ -28,5 +28,10 @@ interface ICometInterface {
     function accrueAccount(address account) external;
     function presentValue(int104 principalValue_) external view returns (int256);
 
+    function totalsBasic() external view returns (ICometData.TotalsBasic memory);
+    function getUtilization() external view returns (uint256);
+    function getSupplyRate(uint256 utilization) external view returns (uint64);
+    function getBorrowRate(uint256 utilization) external view returns (uint64);
+
     function isAbsorbPaused() external view returns (bool);
 }

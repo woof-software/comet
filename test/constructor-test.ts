@@ -1,15 +1,14 @@
-import { ethers, exp, expect, makeProtocol, ONE, ZERO_ADDRESS } from './helpers';
+import { deployDefaultLiquidationModule, deployEmptyDexAdapter, ethers, exp, expect, makeProtocol, ONE, ZERO_ADDRESS } from './helpers';
 import {
   AssetListFactory__factory,
-  CometExt__factory,
   CometExtAssetList__factory,
   CometHarnessExtendedAssetList__factory,
   FaucetToken__factory,
+  LiquidationModule,
   SimplePriceFeed__factory,
 } from '../build/types';
 import type { CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList } from '../build/types';
 import { ConfigurationStruct } from 'build/types/CometWithExtendedAssetList';
-import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
 describe('constructor', function () {
   it('sets the baseBorrowMin', async function () {
@@ -186,20 +185,22 @@ describe('constructor', function () {
   context('liquidation module', function () {
     let CometFactory: CometHarnessExtendedAssetList__factory;
     let baseConfig: ConfigurationStruct;
-
-    let liquidationModule: SignerWithAddress;
+    let liquidationModule: LiquidationModule;
 
     before(async function () {
-      const [governor, pauseGuardian, liquidationModuleSigner] = await ethers.getSigners();
-      liquidationModule = liquidationModuleSigner;
+      const [governor, pauseGuardian, multisig, executor, pauser] = await ethers.getSigners();
 
       const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
       const baseToken = await FaucetFactory.deploy(exp(1, 6), 'USDC', 6, 'USDC');
       await baseToken.deployed();
+      const collateralToken = await FaucetFactory.deploy(exp(1, 18), 'COMP', 18, 'COMP');
+      await collateralToken.deployed();
 
       const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
-      const priceFeed = await PriceFeedFactory.deploy(exp(1, 8), 8);
-      await priceFeed.deployed();
+      const basePriceFeed = await PriceFeedFactory.deploy(exp(1, 8), 8);
+      await basePriceFeed.deployed();
+      const collateralPriceFeed = await PriceFeedFactory.deploy(exp(100, 8), 8);
+      await collateralPriceFeed.deployed();
 
       const AssetListFactoryFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
       const assetListFactory = await AssetListFactoryFactory.deploy();
@@ -215,6 +216,16 @@ describe('constructor', function () {
       );
       await extensionDelegate.deployed();
 
+      // Constructor calls setAssetList on the module, so it must be a real LM (not an EOA)
+      // and assetConfigs must be non-empty (InvalidNumAssets when numAssets == 0).
+      const dexAdapter = await deployEmptyDexAdapter([collateralToken.address]);
+      liquidationModule = await deployDefaultLiquidationModule({
+        dexAdapter: dexAdapter.address,
+        multisig: multisig.address,
+        executors: [executor.address],
+        pausers: [pauser.address],
+      });
+
       CometFactory = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
 
       baseConfig = {
@@ -223,7 +234,7 @@ describe('constructor', function () {
         extensionDelegate: extensionDelegate.address,
         liquidationModule: liquidationModule.address,
         baseToken: baseToken.address,
-        baseTokenPriceFeed: priceFeed.address,
+        baseTokenPriceFeed: basePriceFeed.address,
         supplyKink: exp(0.8, 18),
         supplyPerYearInterestRateBase: exp(0, 18),
         supplyPerYearInterestRateSlopeLow: exp(0.05, 18),
@@ -239,7 +250,15 @@ describe('constructor', function () {
         baseMinForRewards: exp(1, 6),
         baseBorrowMin: exp(1, 6),
         targetReserves: 0,
-        assetConfigs: [],
+        assetConfigs: [{
+          asset: collateralToken.address,
+          priceFeed: collateralPriceFeed.address,
+          decimals: 18,
+          borrowCollateralFactor: exp(0.8, 18),
+          liquidateCollateralFactor: exp(0.85, 18),
+          liquidationFactor: exp(0.9, 18),
+          supplyCap: exp(100000, 18),
+        }],
       };
     });
 

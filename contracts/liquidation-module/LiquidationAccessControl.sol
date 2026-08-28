@@ -29,9 +29,6 @@ abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessC
     ///         Is responsible for roles distribution
     address public constant DAO = 0x6d903f6003cca6255D85CcA4D3B5E5146dC33925;
 
-    /// @notice Controls parameter setters (HF boundaries, liquidation mode, DEX adapter).
-    address public immutable multisig;
-
     /// @notice When true, the DEX liquidation path is disabled and keeper liquidations fall back
     ///         to the default absorb flow regardless of the account's health factor.
     bool public dexRoutePaused;
@@ -61,7 +58,6 @@ abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessC
         _grantRole(DEFAULT_ADMIN_ROLE, DAO);
         _grantRole(PAUSER_ROLE, DAO);
         _grantRole(MULTISIG_ROLE, _multisig);
-        multisig = _multisig;
 
         for (uint8 i; i < _executors.length; ) {
             if (_executors[i] == address(0)) revert ZeroAddress();

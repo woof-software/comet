@@ -36,9 +36,9 @@ import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber } from 'ethers';
 
 describe('liquidation module dex route min amounts', function () {
-    this.timeout(600_000);
+  this.timeout(600_000);
 
-    const INCENTIVE_BPS: bigint = BigInt(500); // 5%
+  const INCENTIVE_BPS = BigInt(500); // 5%
   // Collateral info: address, decimals, initial price, minimum amount (~10 cents worth)
   const COLLATERAL_SPECS: [string, number, bigint, bigint][] = [
     [TOKENS.WBTC.address, 8, 5_882_352_941_176n, exp(0.0000016, 8)],
@@ -89,9 +89,9 @@ describe('liquidation module dex route min amounts', function () {
 
   let snapshot: SnapshotRestorer;
 
-  type PlanItem = { asset: string; seizedAmount: BigNumber; seizedValue: BigNumber };
+  type PlanItem = { asset: string, seizedAmount: BigNumber, seizedValue: BigNumber };
 
-    before(async () => {
+  before(async () => {
     // Fork mainnet so the real tokens and the Uniswap V4 / 1inch routers exist.
     await hre.network.provider.request({
       method: 'hardhat_reset',
@@ -115,7 +115,8 @@ describe('liquidation module dex route min amounts', function () {
       REDUNDANT_ROUTER,
       TOKENS.WETH.address,
       SLIPPAGE_BPS,
-      routes
+      routes,
+      []
     );
     await adapter.deployed();
 
@@ -215,7 +216,7 @@ describe('liquidation module dex route min amounts', function () {
   };
 
   // Borrower supplies a real collateral amount.
-  const supplyCollateral = async (token: ERC20, info: { address: string; slot: number | string }, amount: bigint) => {
+  const supplyCollateral = async (token: ERC20, info: { address: string, slot: number | string }, amount: bigint) => {
     await setErc20Balance(info.address, borrower.address, amount, info.slot);
     await token.connect(borrower).approve(comet.address, ethers.constants.MaxUint256);
     await comet.connect(borrower).supply(info.address, amount);
@@ -266,14 +267,14 @@ describe('liquidation module dex route min amounts', function () {
         plan.map((s) =>
           isRouted(s.asset)
             ? fetch1inchSwapData({
-                chainId: CHAIN_ID,
-                src: s.asset,
-                dst: TOKENS.USDC.address,
-                amount: s.seizedAmount.toString(),
-                from: adapter.address,
-                slippage: ONEINCH_SLIPPAGE_PCT,
-                protocols: AMM_PROTOCOLS,
-              })
+              chainId: CHAIN_ID,
+              src: s.asset,
+              dst: TOKENS.USDC.address,
+              amount: s.seizedAmount.toString(),
+              from: adapter.address,
+              slippage: ONEINCH_SLIPPAGE_PCT,
+              protocols: AMM_PROTOCOLS,
+            })
             : Promise.resolve('0x')
         )
       );

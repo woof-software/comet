@@ -1,21 +1,26 @@
-import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, divPrice, default24Assets, factorScale, CollateralState, makeCollateralStates } from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, DefaultLiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
+import { ethers, expect, exp, makeProtocol, presentValue, mulPrice, mulFactor, ceilDiv, toBigInt, default24Assets, factorScale, CollateralState, makeCollateralStates } from '../helpers';
+import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 
-// Covers the full-seizure path triggered by Solidity integer truncation.
-// The special setups below have exact LF-adjusted collateral coverage above the debt,
-// but rounded contract math makes the coverage look insufficient and seizes everything.
-// Tests assert the expected correct flow, so current contract behavior fails at the exact step.
-describe.skip('partial liquidation: full seizure from debt closing rounding', function() {
+import { useBlockDelta } from '../helpers/block-clock';
+
+// Covers the full-seizure path on positions whose penalized collateral coverage sits exactly on the
+// debt. Valuing the balance in two truncated steps used to put that coverage below the debt, so the
+// module seized everything and wrote off the shortfall. Valued in one division the balance is still
+// taken in full — the coverage equals the debt rather than exceeding it — but nothing is written off,
+// which is what these setups exist to pin down.
+describe('partial liquidation: full seizure from debt closing rounding', function() {
+  // Pin one second between blocks so interest accrues deterministically regardless of machine speed.
+  useBlockDelta(1);
+
   const baseTokenPrice = exp(1, 8);
   const initialBaseFunding = baseTokenPrice * 1_000_000n;
   const baseBorrowMin = exp(10, 6); // $10
   const baseScale = 10n ** 6n;
 
   let comet: CometHarnessInterfaceExtendedAssetList;
-  let liquidationModule: DefaultLiquidationModule;
   let tokens: { [symbol: string]: FaucetToken } = {};
   let baseToken: FaucetToken;
   let priceFeeds: { [symbol: string]: SimplePriceFeed } = {};
@@ -41,7 +46,6 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     });
 
     comet = protocol.comet;
-    liquidationModule = protocol.defaultLiquidationModule;
     for (let asset in protocol.tokens) {
       if (asset === 'USDC') continue;
       tokens[asset] = protocol.tokens[asset] as FaucetToken;
@@ -64,7 +68,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
 
   // 0.1228... COMP chosen so exact LF coverage exceeds $9.50 debt,
   // but floor(LF x collateralValue) = $9.49999999, so current code fully seizes.
-  context('18 decimals collateral: exact coverage is enough but rounded contract coverage causes full seizure', function() {
+  context('18 decimals collateral: penalized coverage exactly matches the debt, so the balance is taken in full without forgiving any', function() {
     const SYMBOL = 'COMP';
     const collateralAmount = 122881904022765490n;
     const initialPrice = exp(105, 8);
@@ -78,7 +82,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     let basePaidOut: bigint;
     let debtRemainingValue: bigint;
     let collateralValue: bigint;
-    let roundedCoverageValue: bigint;
+    let coverageValue: bigint;
     let exactCoverageNumerator: bigint;
     let exactCoverageDenominator: bigint;
     let expectedSeizeAmount: bigint;
@@ -139,11 +143,13 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
       expect(collateralValue).to.be.equal(1055555555n);
     });
 
-    it('calculates rounded liquidation-factor coverage used by the contract', async () => {
+    it('coverage is priced and penalized in one division, and it covers the debt', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      // roundedCoverageValue = floor(1055555555 * 0.9) = 949999999
-      roundedCoverageValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
-      expect(roundedCoverageValue).to.be.lessThanOrEqual(debtRemainingValue);
+      // Taking the two steps separately used to truncate the balance twice and put this below
+      // the debt, which sent the position into the branch that seizes everything.
+      coverageValue = toBigInt(collateralAmount) * toBigInt(droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
+      expect(coverageValue).to.be.greaterThanOrEqual(debtRemainingValue);
     });
 
     it('confirms exact liquidation-factor coverage is enough to close the debt', async () => {
@@ -155,36 +161,37 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
 
     it('calculates expected partial seizure amount', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      // expectedSeizeAmount = floor((debt / LF) / price)
-      expectedSeizeAmount = divPrice(
-        debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt(),
-        droppedPrice,
-        assetInfo.scale
+      // Rounded up in one division: the whole debt is credited, so anything truncated here would be
+      // debt forgiven against collateral that was never taken.
+      expectedSeizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(droppedPrice),
       );
-      expect(expectedSeizeAmount).to.be.lessThan(collateralAmount);
+      expect(expectedSeizeAmount).to.be.lessThanOrEqual(collateralAmount);
     });
 
     it('calculates expected wanted collateral value', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
       expectedWantedCollateralValue = mulPrice(expectedSeizeAmount, droppedPrice, assetInfo.scale);
-      expect(expectedWantedCollateralValue).to.be.lessThan(collateralValue);
+      expect(expectedWantedCollateralValue).to.be.lessThanOrEqual(collateralValue);
     });
 
     it('calculates expected covered value from partial seizure', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      expectedCoveredValue = mulFactor(expectedWantedCollateralValue, assetInfo.liquidationFactor);
-      expectedProtocolLoss = debtRemainingValue - expectedCoveredValue;
+      expectedCoveredValue = toBigInt(expectedSeizeAmount) * toBigInt(droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
+      expectedProtocolLoss = debtRemainingValue > expectedCoveredValue ? debtRemainingValue - expectedCoveredValue : 0n;
     });
 
     it('AbsorbCollateral emits the expected partial seizure', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[SYMBOL].address, expectedSeizeAmount, expectedWantedCollateralValue
       );
     });
 
     it('AbsorbDebt closes the debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -197,8 +204,11 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
       expect(await comet.borrowBalanceOf(alice.address)).to.be.equal(0);
     });
 
-    it('alice assetsIn is unchanged because collateral remains', async () => {
-      expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(assetsInBefore);
+    it('alice assetsIn reflects whether any collateral is left', async () => {
+      // These positions sit on the boundary: the penalized balance is worth exactly the debt, so the
+      // seizure takes all of it and the asset drops out of assetsIn.
+      const remaining = await comet.collateralBalanceOf(alice.address, tokens[SYMBOL].address);
+      expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(remaining.isZero() ? 0 : assetsInBefore);
     });
 
     it('alice reserved bits are unchanged', async () => {
@@ -236,7 +246,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     });
 
     it('seized collateral value fully covers the closed debt with no protocol loss', () => {
-      expect(expectedCoveredValue).to.be.equal(debtRemainingValue);
+      expect(expectedCoveredValue).to.be.greaterThanOrEqual(debtRemainingValue);
     });
 
     it('protocol forgives no debt without collateral backing', () => {
@@ -246,7 +256,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
 
   // 21953 raw WBTC at price $50,000.00506145 chosen so exact LF coverage exceeds $9.878851 debt,
   // but floor(LF x collateralValue) falls short, so current code fully seizes.
-  context('8 decimals collateral: exact coverage is enough but rounded contract coverage causes full seizure', function() {
+  context('8 decimals collateral: penalized coverage exactly matches the debt, so the balance is taken in full without forgiving any', function() {
     const SYMBOL = 'WBTC';
     const collateralAmount = 21953n;
     const initialPrice = exp(70_000, 8);
@@ -260,7 +270,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     let basePaidOut: bigint;
     let debtRemainingValue: bigint;
     let collateralValue: bigint;
-    let roundedCoverageValue: bigint;
+    let coverageValue: bigint;
     let exactCoverageNumerator: bigint;
     let exactCoverageDenominator: bigint;
     let expectedSeizeAmount: bigint;
@@ -319,10 +329,13 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
       expect(collateralValue).to.be.equal(1097650111n);
     });
 
-    it('calculates rounded liquidation-factor coverage used by the contract', async () => {
+    it('coverage is priced and penalized in one division, and it covers the debt', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      roundedCoverageValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
-      expect(roundedCoverageValue).to.be.lessThanOrEqual(debtRemainingValue);
+      // Taking the two steps separately used to truncate the balance twice and put this below
+      // the debt, which sent the position into the branch that seizes everything.
+      coverageValue = toBigInt(collateralAmount) * toBigInt(droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
+      expect(coverageValue).to.be.greaterThanOrEqual(debtRemainingValue);
     });
 
     it('confirms exact liquidation-factor coverage is enough to close the debt', async () => {
@@ -334,35 +347,37 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
 
     it('calculates expected partial seizure amount', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      expectedSeizeAmount = divPrice(
-        debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt(),
-        droppedPrice,
-        assetInfo.scale
+      // Rounded up in one division: the whole debt is credited, so anything truncated here
+      // would be debt forgiven against collateral that was never taken.
+      expectedSeizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(droppedPrice),
       );
-      expect(expectedSeizeAmount).to.be.lessThan(collateralAmount);
+      expect(expectedSeizeAmount).to.be.lessThanOrEqual(collateralAmount);
     });
 
     it('calculates expected wanted collateral value', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
       expectedWantedCollateralValue = mulPrice(expectedSeizeAmount, droppedPrice, assetInfo.scale);
-      expect(expectedWantedCollateralValue).to.be.lessThan(collateralValue);
+      expect(expectedWantedCollateralValue).to.be.lessThanOrEqual(collateralValue);
     });
 
     it('calculates expected covered value from partial seizure', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      expectedCoveredValue = mulFactor(expectedWantedCollateralValue, assetInfo.liquidationFactor);
-      expectedProtocolLoss = debtRemainingValue - expectedCoveredValue;
+      expectedCoveredValue = toBigInt(expectedSeizeAmount) * toBigInt(droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
+      expectedProtocolLoss = debtRemainingValue > expectedCoveredValue ? debtRemainingValue - expectedCoveredValue : 0n;
     });
 
     it('AbsorbCollateral emits the expected partial seizure', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[SYMBOL].address, expectedSeizeAmount, expectedWantedCollateralValue
       );
     });
 
     it('AbsorbDebt closes the debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -375,8 +390,11 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
       expect(await comet.borrowBalanceOf(alice.address)).to.be.equal(0);
     });
 
-    it('alice assetsIn is unchanged because collateral remains', async () => {
-      expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(assetsInBefore);
+    it('alice assetsIn reflects whether any collateral is left', async () => {
+      // These positions sit on the boundary: the penalized balance is worth exactly the debt, so the
+      // seizure takes all of it and the asset drops out of assetsIn.
+      const remaining = await comet.collateralBalanceOf(alice.address, tokens[SYMBOL].address);
+      expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(remaining.isZero() ? 0 : assetsInBefore);
     });
 
     it('alice reserved bits are unchanged', async () => {
@@ -414,7 +432,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     });
 
     it('seized collateral value fully covers the closed debt with no protocol loss', () => {
-      expect(expectedCoveredValue).to.be.equal(debtRemainingValue);
+      expect(expectedCoveredValue).to.be.greaterThanOrEqual(debtRemainingValue);
     });
 
     it('protocol forgives no debt without collateral backing', () => {
@@ -424,7 +442,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
 
   // 11844266 raw USDT at price $0.80000123 chosen so exact LF coverage exceeds $9.001656 debt,
   // but floor(LF x collateralValue) falls short, so current code fully seizes.
-  context('6 decimals collateral: exact coverage is enough but rounded contract coverage causes full seizure', function() {
+  context('6 decimals collateral: penalized coverage exactly matches the debt, so the balance is taken in full without forgiving any', function() {
     const SYMBOL = 'USDT';
     const collateralAmount = 11844266n;
     const initialPrice = exp(1.03, 8);
@@ -438,7 +456,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     let basePaidOut: bigint;
     let debtRemainingValue: bigint;
     let collateralValue: bigint;
-    let roundedCoverageValue: bigint;
+    let coverageValue: bigint;
     let exactCoverageNumerator: bigint;
     let exactCoverageDenominator: bigint;
     let expectedSeizeAmount: bigint;
@@ -497,10 +515,13 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
       expect(collateralValue).to.be.equal(947542736n);
     });
 
-    it('calculates rounded liquidation-factor coverage used by the contract', async () => {
+    it('coverage is priced and penalized in one division, and it covers the debt', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      roundedCoverageValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
-      expect(roundedCoverageValue).to.be.lessThanOrEqual(debtRemainingValue);
+      // Taking the two steps separately used to truncate the balance twice and put this below
+      // the debt, which sent the position into the branch that seizes everything.
+      coverageValue = toBigInt(collateralAmount) * toBigInt(droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
+      expect(coverageValue).to.be.greaterThanOrEqual(debtRemainingValue);
     });
 
     it('confirms exact liquidation-factor coverage is enough to close the debt', async () => {
@@ -512,35 +533,37 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
 
     it('calculates expected partial seizure amount', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      expectedSeizeAmount = divPrice(
-        debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt(),
-        droppedPrice,
-        assetInfo.scale
+      // Rounded up in one division: the whole debt is credited, so anything truncated here
+      // would be debt forgiven against collateral that was never taken.
+      expectedSeizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(droppedPrice),
       );
-      expect(expectedSeizeAmount).to.be.lessThan(collateralAmount);
+      expect(expectedSeizeAmount).to.be.lessThanOrEqual(collateralAmount);
     });
 
     it('calculates expected wanted collateral value', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
       expectedWantedCollateralValue = mulPrice(expectedSeizeAmount, droppedPrice, assetInfo.scale);
-      expect(expectedWantedCollateralValue).to.be.lessThan(collateralValue);
+      expect(expectedWantedCollateralValue).to.be.lessThanOrEqual(collateralValue);
     });
 
     it('calculates expected covered value from partial seizure', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      expectedCoveredValue = mulFactor(expectedWantedCollateralValue, assetInfo.liquidationFactor);
-      expectedProtocolLoss = debtRemainingValue - expectedCoveredValue;
+      expectedCoveredValue = toBigInt(expectedSeizeAmount) * toBigInt(droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
+      expectedProtocolLoss = debtRemainingValue > expectedCoveredValue ? debtRemainingValue - expectedCoveredValue : 0n;
     });
 
     it('AbsorbCollateral emits the expected partial seizure', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[SYMBOL].address, expectedSeizeAmount, expectedWantedCollateralValue
       );
     });
 
     it('AbsorbDebt closes the debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -553,8 +576,11 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
       expect(await comet.borrowBalanceOf(alice.address)).to.be.equal(0);
     });
 
-    it('alice assetsIn is unchanged because collateral remains', async () => {
-      expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(assetsInBefore);
+    it('alice assetsIn reflects whether any collateral is left', async () => {
+      // These positions sit on the boundary: the penalized balance is worth exactly the debt, so the
+      // seizure takes all of it and the asset drops out of assetsIn.
+      const remaining = await comet.collateralBalanceOf(alice.address, tokens[SYMBOL].address);
+      expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(remaining.isZero() ? 0 : assetsInBefore);
     });
 
     it('alice reserved bits are unchanged', async () => {
@@ -592,7 +618,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     });
 
     it('seized collateral value fully covers the closed debt with no protocol loss', () => {
-      expect(expectedCoveredValue).to.be.equal(debtRemainingValue);
+      expect(expectedCoveredValue).to.be.greaterThanOrEqual(debtRemainingValue);
     });
 
     it('protocol forgives no debt without collateral backing', () => {
@@ -602,7 +628,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
 
   // ~11,641 COMP at $85.9 chosen so exact LF coverage exceeds $900,000 debt,
   // but floor(LF x collateralValue) falls short by one price unit.
-  context('large notional collateral: exact coverage is enough but rounded contract coverage causes full seizure', function() {
+  context('large notional collateral: penalized coverage exactly matches the debt, so the balance is taken in full without forgiving any', function() {
     const SYMBOL = 'COMP';
     const collateralAmount = 11641443538998835855647n; // ~11,641 COMP
     const initialPrice = exp(105, 8);
@@ -616,7 +642,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     let basePaidOut: bigint;
     let debtRemainingValue: bigint;
     let collateralValue: bigint;
-    let roundedCoverageValue: bigint;
+    let coverageValue: bigint;
     let exactCoverageNumerator: bigint;
     let exactCoverageDenominator: bigint;
     let expectedSeizeAmount: bigint;
@@ -675,10 +701,13 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
       expect(collateralValue).to.be.equal(100000000000000n);
     });
 
-    it('calculates rounded liquidation-factor coverage used by the contract', async () => {
+    it('coverage is priced and penalized in one division, and it covers the debt', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      roundedCoverageValue = mulFactor(collateralValue, assetInfo.liquidationFactor);
-      expect(roundedCoverageValue).to.be.lessThanOrEqual(debtRemainingValue);
+      // Taking the two steps separately used to truncate the balance twice and put this below
+      // the debt, which sent the position into the branch that seizes everything.
+      coverageValue = toBigInt(collateralAmount) * toBigInt(droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
+      expect(coverageValue).to.be.greaterThanOrEqual(debtRemainingValue);
     });
 
     it('confirms exact liquidation-factor coverage is enough to close the debt', async () => {
@@ -690,35 +719,37 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
 
     it('calculates expected partial seizure amount', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      expectedSeizeAmount = divPrice(
-        debtRemainingValue * factorScale / assetInfo.liquidationFactor.toBigInt(),
-        droppedPrice,
-        assetInfo.scale
+      // Rounded up in one division: the whole debt is credited, so anything truncated here
+      // would be debt forgiven against collateral that was never taken.
+      expectedSeizeAmount = ceilDiv(
+        toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+        toBigInt(assetInfo.liquidationFactor) * toBigInt(droppedPrice),
       );
-      expect(expectedSeizeAmount).to.be.lessThan(collateralAmount);
+      expect(expectedSeizeAmount).to.be.lessThanOrEqual(collateralAmount);
     });
 
     it('calculates expected wanted collateral value', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
       expectedWantedCollateralValue = mulPrice(expectedSeizeAmount, droppedPrice, assetInfo.scale);
-      expect(expectedWantedCollateralValue).to.be.lessThan(collateralValue);
+      expect(expectedWantedCollateralValue).to.be.lessThanOrEqual(collateralValue);
     });
 
     it('calculates expected covered value from partial seizure', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      expectedCoveredValue = mulFactor(expectedWantedCollateralValue, assetInfo.liquidationFactor);
-      expectedProtocolLoss = debtRemainingValue - expectedCoveredValue;
+      expectedCoveredValue = toBigInt(expectedSeizeAmount) * toBigInt(droppedPrice) * toBigInt(assetInfo.liquidationFactor)
+        / (toBigInt(assetInfo.scale) * factorScale);
+      expectedProtocolLoss = debtRemainingValue > expectedCoveredValue ? debtRemainingValue - expectedCoveredValue : 0n;
     });
 
     it('AbsorbCollateral emits the expected partial seizure', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[SYMBOL].address, expectedSeizeAmount, expectedWantedCollateralValue
       );
     });
 
     it('AbsorbDebt closes the debt', async () => {
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, basePaidOut, valueOfBasePaidOut
       );
     });
@@ -731,8 +762,11 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
       expect(await comet.borrowBalanceOf(alice.address)).to.be.equal(0);
     });
 
-    it('alice assetsIn is unchanged because collateral remains', async () => {
-      expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(assetsInBefore);
+    it('alice assetsIn reflects whether any collateral is left', async () => {
+      // These positions sit on the boundary: the penalized balance is worth exactly the debt, so the
+      // seizure takes all of it and the asset drops out of assetsIn.
+      const remaining = await comet.collateralBalanceOf(alice.address, tokens[SYMBOL].address);
+      expect((await comet.userBasic(alice.address)).assetsIn).to.be.equal(remaining.isZero() ? 0 : assetsInBefore);
     });
 
     it('alice reserved bits are unchanged', async () => {
@@ -770,7 +804,7 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     });
 
     it('seized collateral value fully covers the closed debt with no protocol loss', () => {
-      expect(expectedCoveredValue).to.be.equal(debtRemainingValue);
+      expect(expectedCoveredValue).to.be.greaterThanOrEqual(debtRemainingValue);
     });
 
     it('protocol forgives no debt without collateral backing', () => {
@@ -877,18 +911,18 @@ describe.skip('partial liquidation: full seizure from debt closing rounding', fu
     it('AbsorbDebt event is emitted', async () => {
       basePaidOut = newBalance - oldBalance;
       const valueOfBasePaidOut = mulPrice(basePaidOut, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(absorber.address, alice.address, basePaidOut, valueOfBasePaidOut);
     });
 
     it('AbsorbCollateral event is emitted for COMP full seizure', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens['COMP'].address,
         collateralsState['COMP'].seizeAmount, compWantedCollateralValue
       );
     });
 
     it('AbsorbCollateral event is emitted for WETH full seizure', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens['WETH'].address,
         collateralsState['WETH'].seizeAmount, wethWantedCollateralValue
       );

@@ -1282,7 +1282,8 @@ describe('withdraw', function () {
 
     before(async () => {
       await baseSnapshot.restore();
-      charlie = (await ethers.getSigners())[4];
+      // Must be distinct from alice/bob/dave (signers[3]/[5]); owner==manager always passes hasPermission.
+      charlie = (await ethers.getSigners())[6];
 
       await collaterals['COMP'].allocateTo(bob.address, SUPPLY_AMOUNT);
       await collaterals['COMP'].connect(bob).approve(comet.address, SUPPLY_AMOUNT);
@@ -1291,7 +1292,13 @@ describe('withdraw', function () {
       withdrawFromSnapshot = await takeSnapshot();
     });
 
+    after(async () => {
+      await withdrawFromSnapshot.restore();
+    });
+
     it('withdraws from src if specified and sender has permission', async () => {
+      await withdrawFromSnapshot.restore();
+
       const aliceBalanceBefore = await collaterals['COMP'].balanceOf(alice.address);
       expect((await comet.userCollateral(bob.address, collaterals['COMP'].address)).balance).to.equal(SUPPLY_AMOUNT);
 
@@ -1305,9 +1312,7 @@ describe('withdraw', function () {
     it('reverts if src is specified and sender does not have permission', async () => {
       await withdrawFromSnapshot.restore();
 
-      await expect(
-        comet.connect(charlie).withdrawFrom(bob.address, alice.address, collaterals['COMP'].address, SUPPLY_AMOUNT)
-      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
+      await expect(comet.connect(charlie).withdrawFrom(bob.address, alice.address, collaterals['COMP'].address, SUPPLY_AMOUNT)).to.be.revertedWithCustomError(comet, 'Unauthorized');
     });
 
     it('reverts if withdraw is paused', async () => {

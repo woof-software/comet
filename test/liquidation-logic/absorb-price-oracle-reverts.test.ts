@@ -5,7 +5,12 @@ import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
 
+import { useBlockDelta } from '../helpers/block-clock';
+
 describe('collateral price oracle reverts across varying collateral factors during absorption', function() {
+  // Pin one second between blocks so interest accrues deterministically regardless of machine speed.
+  useBlockDelta(1);
+
   // Protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
   let configurator: Configurator;
@@ -280,14 +285,14 @@ describe('collateral price oracle reverts across varying collateral factors duri
     });
 
     it('AbsorbCollateral seizes all COMP at value 0 because the price was never fetched', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[collateralKey].address, collateralState.seizeAmount, collateralState.seizedValue
       );
     });
 
     it('AbsorbDebt writes off the full debt as bad debt', async () => {
       const valueOfBasePaidOut = mulPrice(balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, balanceBefore, valueOfBasePaidOut
       );
     });
@@ -435,7 +440,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
       // LF = 0 causes the loop to skip COMP, so debtRemainingValue never decreases;
       // bad-debt branch zeroes newBalance, absorbing the entire debt from protocol reserves
       const valueOfBasePaidOut = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, -balanceBefore, valueOfBasePaidOut
       );
     });
@@ -703,14 +708,14 @@ describe('collateral price oracle reverts across varying collateral factors duri
     });
 
     it('AbsorbCollateral seizes the deactivated COMP at value 0 because the price was never fetched', async () => {
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbCollateral').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbCollateral').withArgs(
         absorber.address, alice.address, tokens[collateralKey].address, collateralState.seizeAmount, collateralState.seizedValue
       );
     });
 
     it('AbsorbDebt writes off the full debt as bad debt', async () => {
       const valueOfBasePaidOut = mulPrice(balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, balanceBefore, valueOfBasePaidOut
       );
     });
@@ -871,7 +876,7 @@ describe('collateral price oracle reverts across varying collateral factors duri
       // LF = 0 causes the loop to skip COMP, so debtRemainingValue never decreases;
       // bad-debt branch zeroes newBalance, absorbing the entire debt from protocol reserves
       const valueOfBasePaidOut = mulPrice(balanceBefore, baseTokenPrice, baseScale);
-      await expect(absorbTx).to.emit(liquidationModule, 'AbsorbDebt').withArgs(
+      await expect(absorbTx).to.emit(comet, 'AbsorbDebt').withArgs(
         absorber.address, alice.address, balanceBefore, valueOfBasePaidOut
       );
     });

@@ -65,7 +65,7 @@ describe('OneInchV6Adapter', function () {
 
     it('swaps collateral into the base asset using 1Inch swap quote', async () => {
       minOut = await adapter.calculateMinAmountOut(wbtc.address, amountIn);
-      tx = await adapter.connect(moduleSigner).swap(wbtc.address, quote);
+      tx = await adapter.connect(moduleSigner).swap(wbtc.address, amountIn, quote);
       receipt = await tx.wait();
       received = await baseTokenErc20.balanceOf(moduleAddress);
     });
@@ -130,44 +130,44 @@ describe('OneInchV6Adapter', function () {
 
       it('swapData is too short to hold a selector', async () => {
         await expect(
-          adapter.connect(moduleSigner).swap(wbtc.address, '0xaa')
+          adapter.connect(moduleSigner).swap(wbtc.address, amountIn, '0xaa')
         ).to.be.revertedWithCustomError(adapter, 'InvalidSwapData');
       });
 
       it('swapData selector is not IOneInchV6.swap', async () => {
         const wrongSelector = ethers.utils.hexConcat(['0xdeadbeef', ethers.utils.hexZeroPad('0x', 32)]);
         await expect(
-          adapter.connect(moduleSigner).swap(wbtc.address, wrongSelector)
+          adapter.connect(moduleSigner).swap(wbtc.address, amountIn, wrongSelector)
         ).to.be.revertedWithCustomError(adapter, 'InvalidSelector');
       });
 
       it('srcToken does not match the collateral', async () => {
         await expect(
-          adapter.connect(moduleSigner).swap(wbtc.address, encodeSwap({ ...validDesc(), srcToken: baseToken }))
+          adapter.connect(moduleSigner).swap(wbtc.address, amountIn, encodeSwap({ ...validDesc(), srcToken: baseToken }))
         ).to.be.revertedWithCustomError(adapter, 'InvalidTokens');
       });
 
       it('dstToken does not match the base asset', async () => {
         await expect(
-          adapter.connect(moduleSigner).swap(wbtc.address, encodeSwap({ ...validDesc(), dstToken: wbtc.address }))
+          adapter.connect(moduleSigner).swap(wbtc.address, amountIn, encodeSwap({ ...validDesc(), dstToken: wbtc.address }))
         ).to.be.revertedWithCustomError(adapter, 'InvalidTokens');
       });
 
       it('dstReceiver is not the adapter', async () => {
         await expect(
-          adapter.connect(moduleSigner).swap(wbtc.address, encodeSwap({ ...validDesc(), dstReceiver: moduleAddress }))
+          adapter.connect(moduleSigner).swap(wbtc.address, amountIn, encodeSwap({ ...validDesc(), dstReceiver: moduleAddress }))
         ).to.be.revertedWithCustomError(adapter, 'InvalidReceiver');
       });
 
-      it('amount does not match the adapter collateral balance', async () => {
+      it('swapData amount does not match the requested amountIn', async () => {
         await expect(
-          adapter.connect(moduleSigner).swap(wbtc.address, encodeSwap({ ...validDesc(), amount: amountIn.add(1) }))
+          adapter.connect(moduleSigner).swap(wbtc.address, amountIn, encodeSwap({ ...validDesc(), amount: amountIn.add(1) }))
         ).to.be.revertedWithCustomError(adapter, 'InvalidAmountIn');
       });
 
       it('minReturnAmount is below the adapter minimum', async () => {
         await expect(
-          adapter.connect(moduleSigner).swap(wbtc.address, encodeSwap({ ...validDesc(), minReturnAmount: minOut.sub(1) }))
+          adapter.connect(moduleSigner).swap(wbtc.address, amountIn, encodeSwap({ ...validDesc(), minReturnAmount: minOut.sub(1) }))
         ).to.be.revertedWithCustomError(adapter, 'InvalidMinAmountOut');
       });
     });
@@ -202,7 +202,7 @@ describe('OneInchV6Adapter', function () {
 
     it('swaps collateral into the base asset using 1Inch swap quote', async () => {
       minOut = await adapter.calculateMinAmountOut(weth.address, amountIn);
-      tx = await adapter.connect(moduleSigner).swap(weth.address, quote);
+      tx = await adapter.connect(moduleSigner).swap(weth.address, amountIn, quote);
       receipt = await tx.wait();
       received = await baseTokenErc20.balanceOf(moduleAddress);
     });
@@ -290,7 +290,7 @@ describe('OneInchV6Adapter', function () {
 
     it('swaps collateral into the base asset using 1Inch swap quote', async () => {
       minOut = await wethAdapter.calculateMinAmountOut(usdc.address, amountIn);
-      tx = await wethAdapter.connect(wethModuleSigner).swap(usdc.address, quote);
+      tx = await wethAdapter.connect(wethModuleSigner).swap(usdc.address, amountIn, quote);
       receipt = await tx.wait();
       received = await wethBaseErc20.balanceOf(wethModuleAddress);
     });

@@ -102,7 +102,8 @@ describe('UniswapAdapter', function () {
           REDUNDANT_ROUTER,
           TOKENS.WETH.address,
           SLIPPAGE_BPS,
-          badRoutes
+          badRoutes,
+          []
         );
         await badAdapter.deployed();
         badAdapter.connect(moduleSigner).initiateAdapter(comet.address);
@@ -111,7 +112,7 @@ describe('UniswapAdapter', function () {
 
       it('weth is the zero address', async () => {
         await expect(
-          adapterFactory.deploy(CORE_ROUTER, REDUNDANT_ROUTER, ethers.constants.AddressZero, SLIPPAGE_BPS, routes)
+          adapterFactory.deploy(CORE_ROUTER, REDUNDANT_ROUTER, ethers.constants.AddressZero, SLIPPAGE_BPS, routes, [])
         ).to.be.revertedWithCustomError(adapter, 'ZeroAddress');
       });
 
@@ -221,8 +222,8 @@ describe('UniswapAdapter', function () {
     ]);
     const cometBalBefore = await unsetColErc20.balanceOf(comet.address);
     await expect(
-      adapter.connect(moduleSigner).swap(unsetCollateral, swapData)
-    ).to.emit(adapter, "RedundantSwapFailed").withArgs(unsetCollateral, amountIn);
+      adapter.connect(moduleSigner).swap(unsetCollateral, amountIn, swapData)
+    ).to.emit(adapter, 'RedundantSwapFailed').withArgs(unsetCollateral, amountIn);
     
     expect(await unsetColErc20.balanceOf(comet.address)).to.equal(cometBalBefore.add(amountIn));
   });
@@ -239,7 +240,8 @@ describe('UniswapAdapter', function () {
       REDUNDANT_ROUTER,
       TOKENS.WETH.address,
       SLIPPAGE_BPS,
-      badRoutes
+      badRoutes,
+      []
     );
     await badAdapter.deployed();
     await badAdapter.connect(moduleSigner).initiateAdapter(comet.address);
@@ -252,7 +254,7 @@ describe('UniswapAdapter', function () {
     // Empty swap data skips the core route and goes straight to the redundant route. The router swap reverts
     // on the non-existent pool, so the adapter returns the pre-transferred collateral from the router to Comet.
     await expect(
-      badAdapter.connect(moduleSigner).swap(wbtc.address, '0x')
+      badAdapter.connect(moduleSigner).swap(wbtc.address, amountIn, '0x')
     ).to.emit(badAdapter, 'RedundantSwapFailed').withArgs(wbtc.address, amountIn);
 
     expect(await wbtcErc20.balanceOf(comet.address)).to.equal(cometBalBefore.add(amountIn));
@@ -291,7 +293,7 @@ describe('UniswapAdapter', function () {
 
     it('falls back to the Uniswap V4 route when the 1inch core swap reverts', async () => {
       minOut = await adapter.calculateMinAmountOut(wbtc.address, amountIn);
-      tx = await adapter.connect(moduleSigner).swap(wbtc.address, quote);
+      tx = await adapter.connect(moduleSigner).swap(wbtc.address, amountIn, quote);
       receipt = await tx.wait();
       received = await baseTokenErc20.balanceOf(moduleAddress);
     });
@@ -374,7 +376,7 @@ describe('UniswapAdapter', function () {
 
     it('falls back to the Uniswap V4 route when the core swap reverts', async () => {
       minOut = await adapter.calculateMinAmountOut(wsteth.address, amountIn);
-      tx = await adapter.connect(moduleSigner).swap(wsteth.address, quote);
+      tx = await adapter.connect(moduleSigner).swap(wsteth.address, amountIn, quote);
       receipt = await tx.wait();
       received = await baseTokenErc20.balanceOf(moduleAddress);
     });
@@ -462,7 +464,7 @@ describe('UniswapAdapter', function () {
 
     it('falls back to the Uniswap V4 route when the core swap reverts', async () => {
       minOut = await adapter.calculateMinAmountOut(weth.address, amountIn);
-      tx = await adapter.connect(moduleSigner).swap(weth.address, quote);
+      tx = await adapter.connect(moduleSigner).swap(weth.address, amountIn, quote);
       receipt = await tx.wait();
       received = await baseTokenErc20.balanceOf(moduleAddress);
     });
@@ -556,7 +558,7 @@ describe('UniswapAdapter', function () {
 
     it('falls back to the Uniswap V4 route when the core swap reverts', async () => {
       minOut = await wethAdapter.calculateMinAmountOut(usdc.address, amountIn);
-      tx = await wethAdapter.connect(wethModuleSigner).swap(usdc.address, quote);
+      tx = await wethAdapter.connect(wethModuleSigner).swap(usdc.address, amountIn, quote);
       receipt = await tx.wait();
       received = await wethBaseErc20.balanceOf(wethModuleAddress);
     });
