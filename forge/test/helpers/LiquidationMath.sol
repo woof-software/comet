@@ -8,8 +8,11 @@ library LiquidationMath {
     uint256 internal constant FACTOR_SCALE = 1e18;
 
     /**
-     * @notice Everything the account holds that counts towards a borrow, each balance priced and
-     *         weighted by its borrow collateral factor in a single division. Carries the factors' 1e18.
+     * @notice Everything the account holds that counts towards the liquidation threshold, each balance
+     *         priced and weighted by its liquidate collateral factor in a single division. Carries the
+     *         factors' 1e18.
+     * @dev The liquidate factor, not the borrow factor: this is the value a liquidation is measured
+     *      against, and the same value the seizure planner works from.
      */
     function weightedCollateral(CometInterface comet, address account) internal view returns (uint256 weighted) {
         for (uint8 i; i < comet.numAssets(); ++i) {
@@ -17,12 +20,12 @@ library LiquidationMath {
             uint256 balance = comet.collateralBalanceOf(account, info.asset);
             if (balance == 0) continue;
 
-            weighted += balance * comet.getPrice(info.priceFeed) * info.borrowCollateralFactor / info.scale;
+            weighted += balance * comet.getPrice(info.priceFeed) * info.liquidateCollateralFactor / info.scale;
         }
     }
 
     /**
-     * @notice The account's health on the 1e18 scale: collateral weighted by the borrow collateral
+     * @notice The account's health on the 1e18 scale: collateral weighted by the liquidate collateral
      *         factors over the value of the debt. Zero when nothing is owed.
      * @dev The collateral still carries the factors' 1e18, which is the scale health is reported on,
      *      so it cancels against the debt instead of being divided out.

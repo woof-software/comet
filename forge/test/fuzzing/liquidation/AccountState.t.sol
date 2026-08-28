@@ -27,12 +27,6 @@ contract AccountStateFuzzTest is ProtocolFixture {
     /// Base liquidity, comfortably above the largest borrow the bounds below allow.
     uint256 internal constant BASE_LIQUIDITY = 1e18;
 
-    /// What the position under test was actually built from. The fuzzer reports raw arguments, which
-    /// say nothing on their own; these are the numbers a failure is read with.
-    uint256 internal builtSupply;
-    uint256 internal builtBorrow;
-    uint256 internal builtPrice;
-
     function setUp() public {
         prepareFixture();
 
@@ -40,6 +34,29 @@ contract AccountStateFuzzTest is ProtocolFixture {
         vm.startPrank(baseSupplier);
         baseToken.approve(address(comet), type(uint256).max);
         comet.supply(address(baseToken), BASE_LIQUIDITY);
+        vm.stopPrank();
+    }
+
+    function _boundSupplyAndMaxBorrow(ICometData.AssetInfo memory info, uint256 supplySeed)
+        internal view
+        returns (uint256 supply, uint256 maxBorrow)
+    {
+        uint256 scale = info.scale;
+        supply = bound(supplySeed, scale / 1000, Math.min(1_000_000 * scale, info.supplyCap));
+
+        maxBorrow = supply * comet.getPrice(info.priceFeed) / scale;
+        maxBorrow = maxBorrow * info.borrowCollateralFactor / FACTOR_SCALE;
+        maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(comet.baseTokenPriceFeed());
+    }
+
+    function _supplyAndBorrow(uint8 index, uint256 supply, uint256 borrow) internal {
+        FaucetToken collateral = collaterals[index];
+        collateral.allocateTo(borrower, supply);
+
+        vm.startPrank(borrower);
+        collateral.approve(address(comet), supply);
+        comet.supply(address(collateral), supply);
+        comet.withdraw(address(baseToken), borrow);
         vm.stopPrank();
     }
 
@@ -55,11 +72,7 @@ contract AccountStateFuzzTest is ProtocolFixture {
         for (uint8 i; i < comet.numAssets(); ++i) {
             ICometData.AssetInfo memory info = comet.getAssetInfo(i);
             uint256 scale = info.scale;
-            uint256 supply = bound(supplySeed, scale / 1000, Math.min(1_000_000 * scale, info.supplyCap));
-
-            uint256 maxBorrow = supply * comet.getPrice(info.priceFeed) / scale;
-            maxBorrow = maxBorrow * info.borrowCollateralFactor / FACTOR_SCALE;
-            maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(comet.baseTokenPriceFeed());
+            (uint256 supply, uint256 maxBorrow) = _boundSupplyAndMaxBorrow(info, supplySeed);
             // Clear of the minimum: at or under it the plan closes the debt outright and there is no
             // partial seizure to say anything about.
             if (maxBorrow < comet.baseBorrowMin() * 4) continue;
@@ -72,21 +85,13 @@ contract AccountStateFuzzTest is ProtocolFixture {
             liquidatableAt = liquidatableAt * FACTOR_SCALE / info.liquidateCollateralFactor * scale / supply;
             if (boundary * 101 / 100 >= liquidatableAt * 99 / 100) continue;
 
-            builtSupply = supply;
-            builtBorrow = borrow;
-            builtPrice = bound(priceSeed, boundary * 101 / 100, liquidatableAt * 99 / 100);
+            uint256 collateralPrice = bound(priceSeed, boundary * 101 / 100, liquidatableAt * 99 / 100);
 
             uint256 snapshot = vm.snapshotState();
 
-            FaucetToken collateral = collaterals[i];
-            collateral.allocateTo(borrower, supply);
-            vm.startPrank(borrower);
-            collateral.approve(address(comet), supply);
-            comet.supply(address(collateral), supply);
-            comet.withdraw(address(baseToken), borrow);
-            vm.stopPrank();
+            _supplyAndBorrow(i, supply, borrow);
 
-            collateralPriceFeeds[i].setRoundData(0, int256(builtPrice), 0, 0, 0);
+            collateralPriceFeeds[i].setRoundData(0, int256(collateralPrice), 0, 0, 0);
             assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
 
             address[] memory accounts = new address[](1);
@@ -105,9 +110,9 @@ contract AccountStateFuzzTest is ProtocolFixture {
         assertGt(exercised, 0, "no position was liquidatable, the property was never exercised");
     }
 
-    /// @notice A shortfall goes to reserves only once the account holds nothing that counts towards a
-    ///         borrow. Writing one off while collateral remains hands the loss to the protocol and
-    ///         leaves the borrower the rest.
+    /// @notice A shortfall goes to reserves only once the account holds nothing that counts towards the
+    ///         liquidation threshold. Writing one off while such collateral remains hands the loss to
+    ///         the protocol and leaves the borrower the rest.
     function testFuzz_badDebtOnlyAtZeroCollateralization(
         uint256 supplySeed,
         uint256 borrowSeed,
@@ -118,11 +123,7 @@ contract AccountStateFuzzTest is ProtocolFixture {
         for (uint8 i; i < comet.numAssets(); ++i) {
             ICometData.AssetInfo memory info = comet.getAssetInfo(i);
             uint256 scale = info.scale;
-            uint256 supply = bound(supplySeed, scale / 1000, Math.min(1_000_000 * scale, info.supplyCap));
-
-            uint256 maxBorrow = supply * comet.getPrice(info.priceFeed) / scale;
-            maxBorrow = maxBorrow * info.borrowCollateralFactor / FACTOR_SCALE;
-            maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(comet.baseTokenPriceFeed());
+            (uint256 supply, uint256 maxBorrow) = _boundSupplyAndMaxBorrow(info, supplySeed);
             if (maxBorrow < comet.baseBorrowMin()) continue;
 
             uint256 borrow = bound(borrowSeed, comet.baseBorrowMin(), maxBorrow);
@@ -133,21 +134,13 @@ contract AccountStateFuzzTest is ProtocolFixture {
             badDebtAt = badDebtAt * FACTOR_SCALE / info.liquidationFactor * scale / supply;
             if (badDebtAt < 100) continue;
 
-            builtSupply = supply;
-            builtBorrow = borrow;
-            builtPrice = bound(priceSeed, 1, badDebtAt * 99 / 100);
+            uint256 collateralPrice = bound(priceSeed, 1, badDebtAt * 99 / 100);
 
             uint256 snapshot = vm.snapshotState();
 
-            FaucetToken collateral = collaterals[i];
-            collateral.allocateTo(borrower, supply);
-            vm.startPrank(borrower);
-            collateral.approve(address(comet), supply);
-            comet.supply(address(collateral), supply);
-            comet.withdraw(address(baseToken), borrow);
-            vm.stopPrank();
+            _supplyAndBorrow(i, supply, borrow);
 
-            collateralPriceFeeds[i].setRoundData(0, int256(builtPrice), 0, 0, 0);
+            collateralPriceFeeds[i].setRoundData(0, int256(collateralPrice), 0, 0, 0);
             if (!liquidationModule.isLiquidatable(borrower)) {
                 vm.revertToState(snapshot);
                 continue;
@@ -162,7 +155,7 @@ contract AccountStateFuzzTest is ProtocolFixture {
             comet.absorb(liquidator, accounts);
 
             // What the seizure actually paid down, at the discount the protocol takes collateral at.
-            uint256 paid = (supply - comet.collateralBalanceOf(borrower, info.asset)) * builtPrice
+            uint256 paid = (supply - comet.collateralBalanceOf(borrower, info.asset)) * collateralPrice
                 * info.liquidationFactor / (uint256(info.scale) * FACTOR_SCALE);
 
             // A debt cleared for less than it was worth is a debt partly written off. Where the
@@ -194,11 +187,7 @@ contract AccountStateFuzzTest is ProtocolFixture {
         for (uint8 i; i < comet.numAssets(); ++i) {
             ICometData.AssetInfo memory info = comet.getAssetInfo(i);
             uint256 scale = info.scale;
-            uint256 supply = bound(supplySeed, scale / 1000, Math.min(1_000_000 * scale, info.supplyCap));
-
-            uint256 maxBorrow = supply * comet.getPrice(info.priceFeed) / scale;
-            maxBorrow = maxBorrow * info.borrowCollateralFactor / FACTOR_SCALE;
-            maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(comet.baseTokenPriceFeed());
+            (uint256 supply, uint256 maxBorrow) = _boundSupplyAndMaxBorrow(info, supplySeed);
             if (maxBorrow < minDebt) continue;
 
             uint256 boundary = minDebt * comet.getPrice(comet.baseTokenPriceFeed()) / comet.baseScale();
@@ -207,21 +196,13 @@ contract AccountStateFuzzTest is ProtocolFixture {
             liquidatableAt = liquidatableAt * FACTOR_SCALE / info.liquidateCollateralFactor * scale / supply;
             if (boundary * 101 / 100 >= liquidatableAt * 99 / 100) continue;
 
-            builtSupply = supply;
-            builtBorrow = minDebt;
-            builtPrice = bound(priceSeed, boundary * 101 / 100, liquidatableAt * 99 / 100);
+            uint256 collateralPrice = bound(priceSeed, boundary * 101 / 100, liquidatableAt * 99 / 100);
 
             uint256 snapshot = vm.snapshotState();
 
-            FaucetToken collateral = collaterals[i];
-            collateral.allocateTo(borrower, supply);
-            vm.startPrank(borrower);
-            collateral.approve(address(comet), supply);
-            comet.supply(address(collateral), supply);
-            comet.withdraw(address(baseToken), minDebt);
-            vm.stopPrank();
+            _supplyAndBorrow(i, supply, minDebt);
 
-            collateralPriceFeeds[i].setRoundData(0, int256(builtPrice), 0, 0, 0);
+            collateralPriceFeeds[i].setRoundData(0, int256(collateralPrice), 0, 0, 0);
             if (!liquidationModule.isLiquidatable(borrower)) {
                 vm.revertToState(snapshot);
                 continue;

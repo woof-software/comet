@@ -8,6 +8,8 @@ import { ICoreLiquidationModule } from "@comet-contracts/interfaces/liquidation-
 import { ProtocolFixture, FaucetToken } from "../../helpers/ProtocolFixture.sol";
 import { LiquidationMath } from "../../helpers/LiquidationMath.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { console } from "forge-std/console.sol";
+import { stdError } from "forge-std/StdError.sol";
 
 /**
  * @title Seizure precision
@@ -28,12 +30,6 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
     /// Base liquidity, comfortably above the largest borrow the bounds below allow.
     uint256 internal constant BASE_LIQUIDITY = 1e18;
 
-    /// What the position under test was actually built from. The fuzzer reports raw arguments, which
-    /// say nothing on their own; these are the numbers a failure is read with.
-    uint256 internal builtSupply;
-    uint256 internal builtBorrow;
-    uint256 internal builtPrice;
-
     function setUp() public {
         prepareFixture();
 
@@ -42,6 +38,46 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
         baseToken.approve(address(comet), type(uint256).max);
         comet.supply(address(baseToken), BASE_LIQUIDITY);
         vm.stopPrank();
+    }
+
+    /**
+     * @notice The supply and borrow bounds a position is built from: a balance the market can hold, and
+     *         the largest borrow Comet would allow against it.
+     * @dev The borrow limit is weighted by the borrow collateral factor because that is what gates the
+     *      withdraw when the position is opened. Where the liquidation window starts is a separate
+     *      question, and each test answers it for itself right after this call.
+     * @return supply the collateral balance to supply, in the asset's own units
+     * @return maxBorrow the base amount that balance can borrow, in base units
+     */
+    function _boundSupplyAndMaxBorrow(ICometData.AssetInfo memory info, uint256 supplySeed)
+        internal view
+        returns (uint256 supply, uint256 maxBorrow)
+    {
+        uint256 scale = info.scale;
+        supply = bound(supplySeed, scale / 1000, Math.min(1_000_000 * scale, info.supplyCap));
+
+        maxBorrow = supply * comet.getPrice(info.priceFeed) / scale;
+        maxBorrow = maxBorrow * info.borrowCollateralFactor / FACTOR_SCALE;
+        maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(comet.baseTokenPriceFeed());
+    }
+
+    /// @notice Funds the borrower with `supply` of the collateral at `index` and supplies all of it.
+    function _supplyCollateral(uint8 index, uint256 supply) internal {
+        FaucetToken collateral = collaterals[index];
+        collateral.allocateTo(borrower, supply);
+
+        vm.startPrank(borrower);
+        collateral.approve(address(comet), supply);
+        comet.supply(address(collateral), supply);
+        vm.stopPrank();
+    }
+
+    /// @notice Opens the position under test: supplies the collateral and draws the borrow against it.
+    function _supplyAndBorrow(uint8 index, uint256 supply, uint256 borrow) internal {
+        _supplyCollateral(index, supply);
+
+        vm.prank(borrower);
+        comet.withdraw(address(baseToken), borrow);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -71,12 +107,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
                 ? scale
                 : bound(uint256(keccak256(abi.encode(supplySeed, i))), scale / 1000, Math.min(1_000_000 * scale, info.supplyCap));
 
-            FaucetToken collateral = collaterals[i];
-            collateral.allocateTo(borrower, supply);
-            vm.startPrank(borrower);
-            collateral.approve(address(comet), supply);
-            comet.supply(address(collateral), supply);
-            vm.stopPrank();
+            _supplyCollateral(i, supply);
             ++held;
         }
 
@@ -145,12 +176,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
             ICometData.AssetInfo memory info = comet.getAssetInfo(i);
             uint256 supply = i == 0 ? uint256(info.scale) : _balanceTheTwoFormsDisagreeOn(info);
 
-            FaucetToken collateral = collaterals[i];
-            collateral.allocateTo(borrower, supply);
-            vm.startPrank(borrower);
-            collateral.approve(address(comet), supply);
-            comet.supply(address(collateral), supply);
-            vm.stopPrank();
+            _supplyCollateral(i, supply);
         }
 
         // As large a debt as Comet will allow, found by asking it. Sizing this from the valuation
@@ -273,13 +299,9 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
         for (uint8 i; i < comet.numAssets(); ++i) {
             ICometData.AssetInfo memory info = comet.getAssetInfo(i);
             uint256 scale = info.scale;
-            uint256 supply = bound(supplySeed, scale / 1000, Math.min(1_000_000 * scale, info.supplyCap));
-
             // The branch under test needs a debt at or under the market's minimum, so the position is
             // opened at the minimum and repaid down to a target inside it.
-            uint256 maxBorrow = supply * comet.getPrice(info.priceFeed) / scale;
-            maxBorrow = maxBorrow * info.borrowCollateralFactor / FACTOR_SCALE;
-            maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(comet.baseTokenPriceFeed());
+            (uint256 supply, uint256 maxBorrow) = _boundSupplyAndMaxBorrow(info, supplySeed);
             if (maxBorrow < minDebt) continue;
 
             // Just inside the minimum: far enough below to enter the branch, close enough that the
@@ -294,19 +316,11 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
             liquidatableAt = liquidatableAt * FACTOR_SCALE / info.liquidateCollateralFactor * scale / supply;
             if (boundary * 101 / 100 >= liquidatableAt * 99 / 100) continue;
 
-            builtSupply = supply;
-            builtBorrow = target;
-            builtPrice = bound(priceSeed, boundary * 101 / 100, liquidatableAt * 99 / 100);
+            uint256 collateralPrice = bound(priceSeed, boundary * 101 / 100, liquidatableAt * 99 / 100);
 
             uint256 snapshot = vm.snapshotState();
 
-            FaucetToken collateral = collaterals[i];
-            collateral.allocateTo(borrower, supply);
-            vm.startPrank(borrower);
-            collateral.approve(address(comet), supply);
-            comet.supply(address(collateral), supply);
-            comet.withdraw(address(baseToken), minDebt);
-            vm.stopPrank();
+            _supplyAndBorrow(i, supply, minDebt);
 
             uint256 owed = comet.borrowBalanceOf(borrower);
             if (owed > target) {
@@ -317,7 +331,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
                 vm.stopPrank();
             }
 
-            collateralPriceFeeds[i].setRoundData(0, int256(builtPrice), 0, 0, 0);
+            collateralPriceFeeds[i].setRoundData(0, int256(collateralPrice), 0, 0, 0);
             if (!liquidationModule.isLiquidatable(borrower)) {
                 vm.revertToState(snapshot);
                 continue;
@@ -333,7 +347,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
             comet.absorb(liquidator, accounts);
 
             uint256 seized = supply - comet.collateralBalanceOf(borrower, info.asset);
-            uint256 backing = seized * builtPrice * info.liquidationFactor / (uint256(info.scale) * FACTOR_SCALE);
+            uint256 backing = seized * collateralPrice * info.liquidationFactor / (uint256(info.scale) * FACTOR_SCALE);
             uint256 forgiven = credited > backing ? credited - backing : 0;
 
             assertLe(forgiven, 1, "the closing branch forgave debt that no collateral paid for");
@@ -369,11 +383,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
         for (uint8 i; i < comet.numAssets(); ++i) {
             ICometData.AssetInfo memory info = comet.getAssetInfo(i);
             uint256 scale = info.scale;
-            uint256 supply = bound(supplySeed, scale / 1000, Math.min(1_000_000 * scale, info.supplyCap));
-
-            uint256 maxBorrow = supply * comet.getPrice(info.priceFeed) / scale;
-            maxBorrow = maxBorrow * info.borrowCollateralFactor / FACTOR_SCALE;
-            maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(comet.baseTokenPriceFeed());
+            (uint256 supply, uint256 maxBorrow) = _boundSupplyAndMaxBorrow(info, supplySeed);
             // Well clear of the minimum. Near it the seizure that reaches target would drop the debt
             // under the floor, and the plan closes it outright instead — a different branch.
             if (maxBorrow < comet.baseBorrowMin() * 40) continue;
@@ -386,21 +396,13 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
             liquidatableAt = liquidatableAt * FACTOR_SCALE / info.liquidateCollateralFactor * scale / supply;
             if (boundary * 101 / 100 >= liquidatableAt * 99 / 100) continue;
 
-            builtSupply = supply;
-            builtBorrow = borrow;
-            builtPrice = bound(priceSeed, boundary * 101 / 100, liquidatableAt * 99 / 100);
+            uint256 collateralPrice = bound(priceSeed, boundary * 101 / 100, liquidatableAt * 99 / 100);
 
             uint256 snapshot = vm.snapshotState();
 
-            FaucetToken collateral = collaterals[i];
-            collateral.allocateTo(borrower, supply);
-            vm.startPrank(borrower);
-            collateral.approve(address(comet), supply);
-            comet.supply(address(collateral), supply);
-            comet.withdraw(address(baseToken), borrow);
-            vm.stopPrank();
+            _supplyAndBorrow(i, supply, borrow);
 
-            collateralPriceFeeds[i].setRoundData(0, int256(builtPrice), 0, 0, 0);
+            collateralPriceFeeds[i].setRoundData(0, int256(collateralPrice), 0, 0, 0);
             if (!liquidationModule.isLiquidatable(borrower)) {
                 vm.revertToState(snapshot);
                 continue;
@@ -429,8 +431,8 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
             // The collateralization the target required be removed, solved in one division.
             uint256 required = Math.ceilDiv(
                 (debtValue * TARGET_HF - collateralizationBefore * FACTOR_SCALE) * FACTOR_SCALE,
-                uint256(info.liquidationFactor) * TARGET_HF - uint256(info.borrowCollateralFactor) * FACTOR_SCALE
-            ) * info.borrowCollateralFactor / FACTOR_SCALE;
+                uint256(info.liquidationFactor) * TARGET_HF - uint256(info.liquidateCollateralFactor) * FACTOR_SCALE
+            ) * info.liquidateCollateralFactor / FACTOR_SCALE;
 
             uint256 removed = collateralizationBefore - comet.weightedCollateral(borrower) / FACTOR_SCALE;
             // What one collateral unit is worth once weighted, which is the step the seizure moves in
@@ -438,7 +440,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
             // applies on the way — one on the value it solves for, one on the units it converts that
             // into — each of which can add a value unit of its own. On a cheap collateral the unit is
             // worth less than a value unit and those two are the whole budget.
-            uint256 oneUnit = builtPrice * info.borrowCollateralFactor / (uint256(info.scale) * FACTOR_SCALE) + 2;
+            uint256 oneUnit = collateralPrice * info.liquidateCollateralFactor / (uint256(info.scale) * FACTOR_SCALE) + 2;
             uint256 overshoot = removed > required ? removed - required : 0;
 
             assertLe(overshoot, oneUnit, "the seizure removed more collateralization than one unit past the target");
@@ -508,7 +510,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
         uint256 payable_ = balance * price * info.liquidationFactor / (scale * FACTOR_SCALE);
         if (payable_ < minDebtValue + 8) return 0; // under the minimum the plan closes the debt instead
 
-        uint256 own = balance * price * info.borrowCollateralFactor / (scale * FACTOR_SCALE);
+        uint256 own = balance * price * info.liquidateCollateralFactor / (scale * FACTOR_SCALE);
 
         for (uint256 debtOffset; debtOffset < 8; ++debtOffset) {
             uint256 debt = payable_ - debtOffset;
@@ -519,7 +521,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
 
                 uint256 wanted = Math.ceilDiv(
                     (debt * TARGET_HF - collateralization * FACTOR_SCALE) * FACTOR_SCALE,
-                    uint256(info.liquidationFactor) * TARGET_HF - uint256(info.borrowCollateralFactor) * FACTOR_SCALE
+                    uint256(info.liquidationFactor) * TARGET_HF - uint256(info.liquidateCollateralFactor) * FACTOR_SCALE
                 );
 
                 uint256 cap = debt * FACTOR_SCALE / info.liquidationFactor;
@@ -532,6 +534,115 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
                 if (seizedValue > debt) ++fired;
             }
         }
+    }
+
+    /**
+     * @notice The partial-branch guard fires - seizedValue > debtRemainingValue is clamped
+     * @dev Not an invariant but a worked example, with every number fixed. The partial branch sizes
+     *      a seizure by value, then rounds that value up twice: once to a whole collateral unit and
+     *      once again when the unit is priced back. A collateral unit is coarse - one satoshi is
+     *      worth 65 000 value units - so when the debt sits within a unit of what the collateral
+     *      repays at its discount, the rounded-up seizure covers more than is owed.
+     *
+     *      The position below lands in exactly that window. The test recomputes the module's own
+     *      arithmetic, shows the unclamped value overshooting the debt, then absorbs: without
+     *      `if (seizedValue > debtRemainingValue) seizedValue = debtRemainingValue;` the very next
+     *      line subtracts one from the other and the whole call reverts on an underflow.
+     */
+    function test_partialSeizureGuardFires() public {
+        uint8 i = 3; // WBTC: eight decimals, the coarsest unit on this market
+        uint256 supply = 100_000; // 0.001 WBTC
+        uint256 borrow = 58_499_955; // 58.499955 USDC
+        uint256 priceBefore = 100_000e8;
+        uint256 priceAfter = 65_000e8;
+
+        ICometData.AssetInfo memory assetInfo = comet.getAssetInfo(i);
+        assertEq(assetInfo.asset, address(collaterals[i]), "asset 3 is not the one the numbers were built for");
+
+        // Opened at a price high enough to carry the debt, then repriced down into the window. The
+        // debt cannot be opened at the lower price at all - that is what makes it liquidatable.
+        collateralPriceFeeds[i].setRoundData(0, int256(priceBefore), 0, 0, 0);
+        collaterals[i].allocateTo(borrower, supply);
+
+        vm.startPrank(borrower);
+        collaterals[i].approve(address(comet), supply);
+        comet.supply(address(collaterals[i]), supply);
+        comet.withdraw(address(baseToken), borrow);
+        vm.stopPrank();
+
+        if (!liquidationModule.partialLiquidationEnabled()) {
+            vm.prank(pauser);
+            liquidationModule.liquidationModeToggle(true);
+        }
+
+        collateralPriceFeeds[i].setRoundData(0, int256(priceAfter), 0, 0, 0);
+        assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
+
+        // Everything the module works from, read back off the market rather than assumed.
+        uint256 debtValue = comet.borrowBalanceOf(borrower) * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
+        uint256 collateralValue = supply * priceAfter / uint256(assetInfo.scale);
+        uint256 collateralized = supply * priceAfter * assetInfo.liquidateCollateralFactor
+            / (uint256(assetInfo.scale) * FACTOR_SCALE);
+
+        console.log("debtRemainingValue      ", debtValue);
+        console.log("collateralValue         ", collateralValue);
+        console.log("totalCollateralizedValue", collateralized);
+        console.log("value of one satoshi    ", priceAfter / uint256(assetInfo.scale));
+
+        // The seizure the module wants: the value that would restore the account to target health.
+        uint256 wanted;
+        uint256 seizedAmount;
+        uint256 seizedValue;
+        {
+            uint256 gap = debtValue * TARGET_HF - collateralized * FACTOR_SCALE;
+            uint256 perSeized = uint256(assetInfo.liquidationFactor) * TARGET_HF
+                - uint256(assetInfo.liquidateCollateralFactor) * FACTOR_SCALE;
+            wanted = Math.ceilDiv(gap * FACTOR_SCALE, perSeized);
+
+            // The value that exactly repays the debt at the discount. The module caps `wanted` here,
+            // and the cap is what makes the overshoot below pure rounding rather than overreach.
+            uint256 maxWanted = debtValue * FACTOR_SCALE / assetInfo.liquidationFactor;
+            console.log("wanted (target health)  ", wanted);
+            console.log("maxWanted (repays debt) ", maxWanted);
+            assertLt(wanted, maxWanted, "the cap bound - the overshoot would not be rounding alone");
+            assertLt(wanted, collateralValue, "the partial branch would not be taken");
+
+            // First ceiling: a value becomes a whole number of collateral units.
+            seizedAmount = Math.ceilDiv(wanted * uint256(assetInfo.scale), priceAfter);
+            // Second ceiling: that unit count is priced back and weighted.
+            seizedValue = Math.ceilDiv(
+                seizedAmount * priceAfter * assetInfo.liquidationFactor,
+                uint256(assetInfo.scale) * FACTOR_SCALE
+            );
+        }
+
+        console.log("seizedAmount (satoshi)  ", seizedAmount);
+        console.log("seizedValue unclamped   ", seizedValue);
+        console.log("overshoot over the debt ", seizedValue - debtValue);
+
+        // This is the guard's branch condition. If it does not hold the example has drifted and the
+        // rest of the test proves nothing.
+        assertGt(seizedValue, debtValue, "the unclamped seizure did not exceed the debt");
+
+        // And this is what the guard prevents. The module subtracts the two on the very next line,
+        // to see whether the step drops the account under the minimum debt. Run unclamped, that
+        // subtraction panics - shown here rather than asserted in prose.
+        vm.expectRevert(stdError.arithmeticError);
+        this.subtract(debtValue, seizedValue);
+
+        // Clamped, the same subtraction is simply zero and the plan carries on.
+        assertEq(subtract(debtValue, Math.min(seizedValue, debtValue)), 0, "the clamped difference is not zero");
+
+        address[] memory accounts = new address[](1);
+        accounts[0] = borrower;
+
+        vm.prank(liquidator);
+        comet.absorb(liquidator, accounts);
+
+        // Reaching this line is the demonstration: the call went through. Without the clamp it
+        // reverts on `debtRemainingValue - seizedValue` before ever getting here.
+        assertEq(comet.borrowBalanceOf(borrower), 0, "the debt was not closed");
+        assertEq(comet.collateralBalanceOf(borrower, assetInfo.asset), 0, "the collateral was not fully taken");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -548,4 +659,8 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
         total = total * comet.baseScale() / comet.getPrice(comet.baseTokenPriceFeed());
     }
 
+    /// Public so the underflow above can be provoked through a call and caught.
+    function subtract(uint256 a, uint256 b) public pure returns (uint256) {
+        return a - b;
+    }
 }
