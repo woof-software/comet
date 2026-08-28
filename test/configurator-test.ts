@@ -9,7 +9,7 @@ import {
   SimplePriceFeed__factory,
   SimpleTimelock__factory
 } from '../build/types';
-import { AssetInfoStructOutput } from '../build/types/CometHarnessInterface';
+import { AssetInfoStructOutput } from '../build/types/CometHarnessInterfaceExtendedAssetList';
 import { ConfigurationStructOutput, Configurator } from '../build/types/Configurator';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';

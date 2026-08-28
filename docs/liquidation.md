@@ -501,12 +501,14 @@ The function walks the account's collaterals one by one and, for each, decides h
 | Value | What it is |
 |---|---|
 | **`debtRemaining`** | The debt still left to cover, in USD (`1e8` price scale). Starts at the account's full debt value and shrinks as collateral is seized. |
-| **`totalCollateralized`** | The account's collateral value weighted by **`borrowCollateralFactor`** (BCF) — its *borrowing power*. This is the number the target-health-factor math works on. |
+| **`totalCollateralized`** | The account's collateral value weighted by **`liquidateCollateralFactor`** (LCF) — the same liquidation threshold [Chapter 2](#2-collateral-value-and-health-factor) measures health against. This is the number the target-health-factor math works on. |
 | **`minDebt`** | `baseBorrowMin` valued in USD — the smallest borrow the market allows to exist. Residual debt is never left below this. |
 | **`wantedCollateralValue`** (`S`) | For one asset: the **raw** USD value of collateral we want to seize (before any penalty). |
 | **`seizedValue`** | How much **debt** that seizure clears = `S × liquidationFactor` (LF). Because `LF < 1`, clearing `$D` of debt requires seizing `$D / LF` of collateral — the difference is the liquidation penalty. |
 
-> **Important distinction from [Chapter 2](#2-collateral-value-and-health-factor).** The *liquidatable* check uses the **LCF**-weighted value (`liquidateCollateralFactor`). Partial liquidation, here, aims to restore the **BCF**-weighted value (`borrowCollateralFactor`) — the borrower's *borrowing* health — up to `TARGET_HEALTH_FACTOR = 1.05`. That is a stricter, healthier target than merely crossing back above the liquidation line: after a partial liquidation the borrower is not just "not liquidatable", they can safely borrow again with a 5% margin.
+> **One ruler, used twice.** The *liquidatable* check and the seizure are measured with the same **LCF**-weighted value. The check asks whether health fell below `1.0`; the seizure lifts it back to `TARGET_HEALTH_FACTOR = 1.05`, a 5% margin so a small further price move does not immediately make the account liquidatable again. `borrowCollateralFactor` plays no part in it — that factor gates *opening* a borrow, not liquidating one.
+>
+> A consequence worth stating plainly: after a partial liquidation the borrower is out of liquidation range but usually still **below their borrow limit**, since `BCF < LCF`. They are safe to be left alone; they cannot borrow again until they add collateral or repay.
 
 At the end, whatever debt is left becomes the account's **new balance**, and `basePaidOut` records how much base the protocol effectively injected to reduce the debt.
 
@@ -518,10 +520,10 @@ At the end, whatever debt is left becomes the account's **new balance**, and `ba
 flowchart TD
     A1["read account:<br/>principal, assetsIn"] --> A2{"still liquidatable?"}
     A2 -->|no| R["revert"]
-    A2 -->|yes| A3["collect &amp; cache:<br/>• debtRemaining — debt value<br/>• totalCollateralized — BCF borrowing power<br/>• minDebt<br/>• collateral prices"]
+    A2 -->|yes| A3["collect &amp; cache:<br/>• debtRemaining — debt value<br/>• totalCollateralized — LCF threshold value<br/>• minDebt<br/>• collateral prices"]
 ```
 
-**Then it loops** over the account's collaterals in index order (skipping any with `liquidationFactor == 0`), taking one asset per pass from top to bottom:
+**Then it loops** over the account's collaterals in index order (skipping any with `liquidationFactor == 0`), taking one asset per pass from top to bottom. Because the entry check and the target use the same number, the first pass can never find the target already met: the account was let in precisely because `debtRemaining > totalCollateralized`, so `1.05 × debtRemaining` is larger still.
 
 ```mermaid
 flowchart TD
@@ -530,7 +532,7 @@ flowchart TD
     D1 -->|no| D2{"target HF 1.05<br/>reached?"}
     D2 -->|yes| STOP["stop — partial done"]
     D2 -->|no| SZ["seize S toward target<br/>partial, or all if too small"]
-    C --> UP["update debtRemaining<br/>&amp; borrowing power"]
+    C --> UP["update debtRemaining<br/>&amp; threshold value"]
     SZ --> UP
     UP --> L
     STOP --> END{"debt left,<br/>no collateral?"}
@@ -541,7 +543,7 @@ flowchart TD
 The four cases these two steps produce:
 
 - **Full-close mode** — reached through the `Mode` branch when **partial liquidation is disabled**. Every asset goes straight to "close remaining debt": the account is fully liquidated until all debt is gone.
-- **Partial liquidation** — the `Target` / `S` / `Partial` path. Seize only enough to lift borrowing health back to `1.05`, then stop, leaving the borrower with a smaller, healthy debt.
+- **Partial liquidation** — the `Target` / `S` / `Partial` path. Seize only enough to lift health back to `1.05`, then stop, leaving the borrower with a smaller, healthy debt.
 - **Min-debt** — reached through the same `Mode` branch when `debtRemaining ≤ minDebt`, or through the `MinGuard` after a partial step. Rather than leave a dust debt below `baseBorrowMin`, the module closes the **whole** remaining debt.
 - **Bad debt** — the `Post` check: all collateral is gone (`totalCollateralized == 0`) but debt remains. The shortfall is written off — the protocol takes the loss.
 
@@ -549,14 +551,14 @@ The four cases these two steps produce:
 
 The heart of partial liquidation is deciding how much collateral value `S` to seize from an asset so that, afterwards, the account sits exactly at the target health factor. Start from what one seizure does:
 
-- seizing raw collateral value `S` reduces **borrowing power** by `S × BCF` (that collateral leaves the account),
+- seizing raw collateral value `S` reduces the **threshold value** by `S × LCF` (that collateral leaves the account),
 - and reduces **debt** by `S × LF` (that is the `seizedValue`).
 
 So the health factor *after* seizing `S` is:
 
 ```ts
 // targetHF is what we solve for S to achieve (= 1.05)
-targetHF = (totalCollateralized − S × BCF) / (debtRemaining − S × LF)
+targetHF = (totalCollateralized − S × LCF) / (debtRemaining − S × LF)
 ```
 
 Solving that for `S` gives the formula the contract uses:
@@ -564,16 +566,18 @@ Solving that for `S` gives the formula the contract uses:
 ```ts
 //        targetHF · debtRemaining − totalCollateralized
 //  S  =  ───────────────────────────────────────────────
-//              targetHF · LF − BCF
+//              targetHF · LF − LCF
 S = (TARGET_HEALTH_FACTOR * debtRemaining - totalCollateralized)
-  / (TARGET_HEALTH_FACTOR * liquidationFactor - borrowCollateralFactor);
+  / (TARGET_HEALTH_FACTOR * liquidationFactor - liquidateCollateralFactor);
 
 // Never seize more than what clears the whole debt: S · LF ≤ debtRemaining.
 const maxWanted = debtRemaining / liquidationFactor;
 if (S > maxWanted) S = maxWanted;
 ```
 
-A word on **why the denominator is always positive** (so `S` is well-defined and positive): the Configurator enforces `LF > LCF > BCF`, and `targetHF ≥ 1`, therefore `targetHF · LF ≥ LF > BCF`. The denominator can never be zero or negative.
+A word on **why the denominator is always positive** (so `S` is well-defined and positive): the Configurator enforces `LF > LCF`, and `targetHF ≥ 1`, therefore `targetHF · LF ≥ LF > LCF`. The denominator can never be zero or negative.
+
+Two things follow from `LCF` sitting in that denominator rather than `BCF`. The gap `LF − LCF` is narrower than `LF − BCF`, so the same shortfall asks for more collateral per unit of gap — but the numerator shrinks by more, because `totalCollateralized` is now the larger, LCF-weighted number. On every position that is not already past saving the net effect is a **smaller** seizure. And on an asset configured with `LCF` close to `LF` the denominator gets small, which is what makes the `maxWanted` cap above load-bearing rather than decorative.
 
 Once `S` is known, the per-asset outcome is:
 
@@ -588,7 +592,6 @@ seizedValue  = S * LF;      // debt cleared by this seizure
 |---|---|
 | Base | USDC, `$1.00`, `baseBorrowMin = 1,000` |
 | WETH price | `$2,000` |
-| WETH `borrowCollateralFactor` (BCF) | `0.80` |
 | WETH `liquidateCollateralFactor` (LCF) | `0.85` |
 | WETH `liquidationFactor` (LF) | `0.90` |
 
@@ -596,33 +599,30 @@ The borrower holds **10 WETH** (`$20,000`) and owes **$17,200**.
 
 ```
 Is it liquidatable?
-  LCF-weighted collateral = $20,000 × 0.85 = $17,000
+  totalCollateralized = $20,000 × 0.85 = $17,000     (LCF-weighted)
   debt $17,200 > $17,000  →  yes, liquidatable
 
-Borrowing power (the target-HF base):
-  totalCollateralized = $20,000 × 0.80 = $16,000
-
 How much to seize (S):
-  S = (1.05 × 17,200 − 16,000) / (1.05 × 0.90 − 0.80)
-    = (18,060 − 16,000) / (0.945 − 0.80)
-    = 2,060 / 0.145
-    ≈ $14,207                         (cap = 17,200 / 0.90 = $19,111 → not hit)
+  S = (1.05 × 17,200 − 17,000) / (1.05 × 0.90 − 0.85)
+    = (18,060 − 17,000) / (0.945 − 0.85)
+    = 1,060 / 0.095
+    ≈ $11,158                         (cap = 17,200 / 0.90 = $19,111 → not hit)
 
-  S ($14,207) < holding value ($20,000)  →  partial seize
-  seizedAmount = 14,207 / 2,000 ≈ 7.10 WETH
-  seizedValue  = 14,207 × 0.90  ≈ $12,786   (debt cleared)
+  S ($11,158) < holding value ($20,000)  →  partial seize
+  seizedAmount = 11,158 / 2,000 ≈ 5.58 WETH
+  seizedValue  = 11,158 × 0.90  ≈ $10,042   (debt cleared)
 
 After:
-  debt            = 17,200 − 12,786 ≈ $4,414   (> $1,000 min, so it stays)
-  borrowing power = 16,000 − 14,207 × 0.80 ≈ $4,635
-  new BCF health  = 4,635 / 4,414 ≈ 1.05       ✓ target restored
+  debt                = 17,200 − 10,042 ≈ $7,158   (> $1,000 min, so it stays)
+  totalCollateralized = 17,000 − 11,158 × 0.85 ≈ $7,516
+  new health factor   = 7,516 / 7,158 ≈ 1.05       ✓ target restored
 ```
 
-The borrower is left holding **≈ 2.90 WETH** and owing **≈ $4,414** — a healthy position again, rather than being fully wiped out.
+The borrower is left holding **≈ 4.42 WETH** and owing **≈ $7,158** — a healthy position again, rather than being fully wiped out.
 
 ### 5.4 The four cases, one example each
 
-All examples reuse the WETH market above (`$2,000`, BCF `0.80`, LCF `0.85`, LF `0.90`, `baseBorrowMin = $1,000`).
+All examples reuse the WETH market above (`$2,000`, LCF `0.85`, LF `0.90`, `baseBorrowMin = $1,000`).
 
 **Full-close mode (partial disabled).** With `partialLiquidationEnabled == false`, health factors are ignored — every account is taken all the way to zero debt.
 
@@ -635,14 +635,14 @@ Holding 10 WETH ($20,000), debt $9,000, partial DISABLED.
   ($10,000 of collateral cleared $9,000 of debt — the $1,000 gap is the penalty.)
 ```
 
-**Partial liquidation.** The `$17,200` example in [§5.3](#53-the-wanted-collateral-value-formula): seize ≈ 7.10 WETH to restore borrowing health to `1.05`, leaving the borrower with ≈ 2.90 WETH and ≈ $4,414 of debt.
+**Partial liquidation.** The `$17,200` example in [§5.3](#53-the-wanted-collateral-value-formula): seize ≈ 5.58 WETH to restore health to `1.05`, leaving the borrower with ≈ 4.42 WETH and ≈ $7,158 of debt.
 
 **Min-debt.** Residual debt is never left below `baseBorrowMin`. If a partial step *would* leave dust, the module closes the whole debt instead.
 
 ```
 Holding 1 WETH ($2,000), debt $1,750  (LCF threshold $1,700 → liquidatable).
-  Partial would seize S ≈ $1,638 → clear ≈ $1,474 → leave ≈ $276 of debt.
-  But $276 ≤ minDebt $1,000  →  min-debt guard fires.
+  Partial would seize S ≈ $1,447 → clear ≈ $1,303 → leave ≈ $447 of debt.
+  But $447 ≤ minDebt $1,000  →  min-debt guard fires.
   → close the whole $1,750 instead:
     seize = (1,750 / 0.90) / 2,000 ≈ 0.972 WETH
     debt  →  $0
@@ -664,47 +664,47 @@ Holding 1 WETH ($2,000), debt $2,500  (LCF threshold $1,700 → liquidatable).
 
 With several collaterals the function loops in index order, seizing each asset in turn until the target is reached. This example shows all three loop behaviours in one pass — *seize all*, *seize partial*, and *stop*.
 
-| Asset | Holding | Value | BCF | LCF | LF |
-|---|---|---|---|---|---|
-| WBTC | 0.2 | `$6,000` | 0.70 | 0.75 | 0.90 |
-| WETH | 3 | `$6,000` | 0.80 | 0.85 | 0.90 |
-| LINK | 400 | `$4,000` | 0.65 | 0.70 | 0.85 |
+| Asset | Holding | Value | LCF | LF |
+|---|---|---|---|---|
+| WBTC | 0.2 | `$6,000` | 0.75 | 0.90 |
+| WETH | 3 | `$6,000` | 0.85 | 0.90 |
+| LINK | 400 | `$4,000` | 0.70 | 0.85 |
 
 ```
 Setup:
-  LCF-weighted   = 6,000·0.75 + 6,000·0.85 + 4,000·0.70 = $12,400  (liquidation threshold)
-  totalCollat.   = 6,000·0.70 + 6,000·0.80 + 4,000·0.65 = $11,600  (borrowing power)
+  totalCollat.   = 6,000·0.75 + 6,000·0.85 + 4,000·0.70 = $12,400  (LCF-weighted)
   debt $13,000 > $12,400  →  liquidatable.   minDebt = $1,000
 
 Asset 0 — WBTC:
-  target reached? 1.05·13,000 = 13,650 ≤ 11,600 ?  no
-  S = (13,650 − 11,600) / (1.05·0.90 − 0.70) = 2,050 / 0.245 ≈ $8,367
-  S ($8,367) < WBTC value ($6,000) ?  no  →  seize ALL 0.2 WBTC
+  target reached? 1.05·13,000 = 13,650 ≤ 12,400 ?  no
+  S = (13,650 − 12,400) / (1.05·0.90 − 0.75) = 1,250 / 0.195 ≈ $6,410
+  S ($6,410) < WBTC value ($6,000) ?  no  →  seize ALL 0.2 WBTC
     seizedValue = 6,000 · 0.90 = $5,400
   debtRemaining  = 13,000 − 5,400 = $7,600
-  totalCollat.   = 11,600 − 6,000·0.70 = $7,400
+  totalCollat.   = 12,400 − 6,000·0.75 = $7,900
 
 Asset 1 — WETH:
-  target reached? 1.05·7,600 = 7,980 ≤ 7,400 ?  no
-  S = (7,980 − 7,400) / (1.05·0.90 − 0.80) = 580 / 0.145 = $4,000
-  S ($4,000) < WETH value ($6,000) ?  yes  →  seize PARTIAL
-    seizedAmount = 4,000 / 2,000 = 2 WETH
-    seizedValue  = 4,000 · 0.90 = $3,600
-    residual 7,600 − 3,600 = 4,000  >  minDebt $1,000  →  no min-debt switch
-  debtRemaining  = $4,000
-  totalCollat.   = 7,400 − 4,000·0.80 = $4,200
+  target reached? 1.05·7,600 = 7,980 ≤ 7,900 ?  no
+  S = (7,980 − 7,900) / (1.05·0.90 − 0.85) = 80 / 0.095 ≈ $842
+  S ($842) < WETH value ($6,000) ?  yes  →  seize PARTIAL
+    seizedAmount = 842 / 2,000 ≈ 0.42 WETH
+    seizedValue  = 842 · 0.90 ≈ $758
+    residual 7,600 − 758 = 6,842  >  minDebt $1,000  →  no min-debt switch
+  debtRemaining  ≈ $6,842
+  totalCollat.   = 7,900 − 842·0.85 ≈ $7,184
 
 Asset 2 — LINK:
-  target reached? 1.05·4,000 = 4,200 ≤ 4,200 ?  yes  →  STOP
+  target reached? 1.05·6,842 = 7,184 ≤ 7,184 ?  yes  →  STOP
 ```
 
-**Result:** the plan seizes **all 0.2 WBTC** and **2 of the 3 WETH**, and never touches LINK. The debt drops from `$13,000` to `$4,000`, and borrowing health is restored to exactly `4,200 / 4,000 = 1.05`. The borrower keeps **1 WETH + 400 LINK** and owes **$4,000** — healthy again.
+**Result:** the plan seizes **all 0.2 WBTC** and **≈ 0.42 of the 3 WETH**, and never touches LINK. The debt drops from `$13,000` to `≈ $6,842`, and health is restored to exactly `7,184 / 6,842 = 1.05`. The borrower keeps **≈ 2.58 WETH + 400 LINK** and owes **≈ $6,842** — healthy again.
 
 ### 5.6 Summary
 
 - Both routes share one first step: `_computeSeizurePlan` decides **which collateral to seize and how much debt it clears**, before any settlement happens.
-- It tracks `debtRemaining`, `totalCollateralized` (BCF-weighted **borrowing power**), and `minDebt`, walking the account's collaterals in order.
-- Partial liquidation restores **borrowing** health to `TARGET_HEALTH_FACTOR = 1.05` — stricter than just clearing the liquidation line — using `S = (targetHF·debt − totalCollateralized) / (targetHF·LF − BCF)`, capped at `debt / LF`.
+- It tracks `debtRemaining`, `totalCollateralized` (LCF-weighted **liquidation threshold value**), and `minDebt`, walking the account's collaterals in order.
+- Partial liquidation restores the **same health factor Chapter 2 defines** to `TARGET_HEALTH_FACTOR = 1.05` — a 5% margin over the liquidation line — using `S = (targetHF·debt − totalCollateralized) / (targetHF·LF − LCF)`, capped at `debt / LF`.
+- `borrowCollateralFactor` is not part of any of this. The borrower ends up above the liquidation line but typically below their borrow limit.
 - Four outcomes: **full-close** (partial disabled), **partial** (reach `1.05` and stop), **min-debt** (never leave dust below `baseBorrowMin` — close it all), and **bad debt** (collateral exhausted — write off the shortfall).
 - Seizing `$S` of collateral clears `$S × LF` of debt; the `1/LF − 1` gap is the liquidation penalty.
 
@@ -794,22 +794,22 @@ Because the debt shrank, `newPrincipal` is closer to zero than `oldPrincipal`, s
 
 ### 6.4 A worked example
 
-Take the single-collateral partial from [§5.3](#53-the-wanted-collateral-value-formula): the borrower held **10 WETH** and owed **$17,200**; the plan seized **≈ 7.10 WETH** and left a residual debt of **≈ $4,414**. Default settlement writes that as:
+Take the single-collateral partial from [§5.3](#53-the-wanted-collateral-value-formula): the borrower held **10 WETH** and owed **$17,200**; the plan seized **≈ 5.58 WETH** and left a residual debt of **≈ $7,158**. Default settlement writes that as:
 
 ```
 updateCollateral (WETH):
-  borrower WETH balance   10  →  ≈ 2.90
-  WETH totalSupplyAsset       −≈ 7.10        (those 7.10 WETH now protocol-owned)
+  borrower WETH balance   10  →  ≈ 4.42
+  WETH totalSupplyAsset       −≈ 5.58        (those 5.58 WETH now protocol-owned)
   assetsIn WETH bit           unchanged      (balance still > 0)
-  emit AbsorbCollateral(... seized ≈ 7.10 WETH, usdValue ≈ $14,207)
+  emit AbsorbCollateral(... seized ≈ 5.58 WETH, usdValue ≈ $11,158)
 
 updateDebtAndPrincipal:
-  newBalance      ≈ −$4,414   →  newPrincipal (present value ÷ borrow index)
-  totalBorrowBase −= (newPrincipal − oldPrincipal)   (global borrow shrinks by ≈ $12,786)
-  emit AbsorbDebt(... basePaidOut ≈ $12,786)
+  newBalance      ≈ −$7,158   →  newPrincipal (present value ÷ borrow index)
+  totalBorrowBase −= (newPrincipal − oldPrincipal)   (global borrow shrinks by ≈ $10,042)
+  emit AbsorbDebt(... basePaidOut ≈ $10,042)
 ```
 
-The borrower walks away holding ≈ 2.90 WETH and owing ≈ $4,414 — a healthy position — and the protocol now holds the seized 7.10 WETH in reserves, having cleared ≈ $12,786 of the debt.
+The borrower walks away holding ≈ 4.42 WETH and owing ≈ $7,158 — a healthy position — and the protocol now holds the seized 5.58 WETH in reserves, having cleared ≈ $10,042 of the debt.
 
 ### 6.5 Summary
 
