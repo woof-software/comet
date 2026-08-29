@@ -295,19 +295,3 @@ The `clone-multisig` script can be used to clone the multisig and its configurat
 ```bash
 DST_NETWORK=optimism npx hardhat run scripts/clone-multisig.ts
 ```
-
-### Liquidation Bot
-
-This repo includes a contract (Liquidator.sol) that will absorb an underwater
-position, purchase the absorbed collateral, and then attempt to sell it on
-Uniswap for a profit.
-
-To run the bot, you'll need the address of a deployed version of the Liquidator
-contract (or you can deploy a new instance of it yourself):
-
-`LIQUIDATOR_ADDRESS="0xABC..." DEPLOYMENT="usdc" yarn liquidation-bot --network sepolia`
-
-Initiating transactions this way via the public mempool will
-[almost certainly get frontrun](https://youtu.be/UZ-NNd6yjFM), but you might be
-able to use [flashbots](https://docs.flashbots.net/) to mask your transactions
-from frontrunners.
