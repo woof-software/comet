@@ -7,8 +7,9 @@ import { getEnvHardhatArguments } from 'hardhat/internal/core/params/env-variabl
 import { HARDHAT_PARAM_DEFINITIONS } from 'hardhat/internal/core/params/hardhat-params';
 import { Environment } from 'hardhat/internal/core/runtime-environment';
 import { ForkSpec } from '../World';
-import { HttpNetworkUserConfig } from 'hardhat/types';
+import { HttpNetworkConfig, HttpNetworkUserConfig } from 'hardhat/types';
 import { EthereumProvider } from 'hardhat/types/provider';
+import { networkConfigs } from '../../../hardhat.config';
 
 /*
 mimics https://github.com/nomiclabs/hardhat/blob/master/packages/hardhat-core/src/internal/lib/hardhat-lib.ts
@@ -89,6 +90,12 @@ function getBlockRollback(base: ForkSpec) {
     return 25;
 }
 
+let activeMigration = false;
+
+export function migrationStarted() {
+  activeMigration = true;
+}
+
 export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEnvironment> {
   const ctx: HardhatContext = HardhatContext.getHardhatContext();
 
@@ -101,17 +108,51 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
 
   const baseNetwork = networks[base.network] as HttpNetworkUserConfig;
 
-  const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
-  if(baseNetwork.url)
-    console.log(`Forking from network: ${base.network} at block number: ${await provider.getBlockNumber() - (getBlockRollback(base) || 0)}`);
+  const providerUrl = (() => {
+    if (activeMigration){
+      return networkConfigs.find(c => c.network === base.network)?.url;
+    }
+    return baseNetwork.url;
+  })();
+
+  const getBlockNumberWithRetry = async (): Promise<number> => {
+    const provider = new ethers.providers.JsonRpcProvider(providerUrl);
+    const maxAttempts = 5;
+    const retryDelayMs = 5000;
+    const requestTimeoutMs = 10000;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await Promise.race([
+          provider.getBlockNumber(),
+          new Promise<number>((_, reject) =>
+            setTimeout(() => reject(new Error(`Timed out fetching block number after ${requestTimeoutMs / 1000}s`)), requestTimeoutMs)
+          ),
+        ]);
+      } catch (error) {
+        if (attempt === maxAttempts) {
+          throw error;
+        }
+
+        console.warn(`Failed to fetch block number (attempt ${attempt}/${maxAttempts}). Retrying in ${retryDelayMs / 1000}s...`);
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+
+    throw new Error('Failed to fetch block number after retries.');
+  };
+
+  if(providerUrl){
+    console.log(`Forking from network: ${base.network}`);
+    console.log(`At block number: ${await getBlockNumberWithRetry() - (getBlockRollback(base) || 0)}`);
+  }
 
   // noNetwork otherwise
-  if (!base.blockNumber && baseNetwork.url && getBlockRollback(base) !== undefined)
-    base.blockNumber = await provider.getBlockNumber() - getBlockRollback(base); // arbitrary number of blocks to go back
+  if (!base.blockNumber && providerUrl && getBlockRollback(base) !== undefined)
+    base.blockNumber = await getBlockNumberWithRetry() - getBlockRollback(base); // arbitrary number of blocks to go back
 
   if (getBlockRollback(base) === 0) {
-    const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
-    const block = await provider.getBlockNumber();
+    const block = await getBlockNumberWithRetry();
     base.blockNumber = block - 1;
   }
 
@@ -124,7 +165,7 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
     ...{
       forking: {
         enabled: true,
-        url: baseNetwork.url,
+        url: providerUrl,
         httpHeaders: {},
         ...(base.blockNumber && { blockNumber: base.blockNumber }),
       },
@@ -158,4 +199,93 @@ export default async function hreForBase(base: ForkSpec, fork = true): Promise<H
   } else {
     return nonForkedHreForBase(base);
   }
+}
+
+/*
+Tenderly Virtual TestNets don't implement Hardhat's `hardhat_*` cheatcodes, only their own
+(tenderly_setBalance, tenderly_setStorageAt, ...) plus standard evm_* methods. This translates
+the handful of hardhat_* calls made by existing scenario helpers (impersonateAddress, mineBlocks,
+setEtherBalance, setNextBaseFeeToZero) to their Tenderly/standard equivalents, so that code can run
+unmodified against a Virtual TestNet's Admin RPC instead of a local Hardhat fork.
+*/
+function translateVnetRpcCall(
+  method: string,
+  params: any[] = []
+): { method: string, params: any[] } | null {
+  switch (method) {
+    // Virtual TestNets accept eth_sendTransaction from any `from` address without unlocking it first.
+    case 'hardhat_impersonateAccount':
+    case 'hardhat_stopImpersonatingAccount':
+      return null;
+    // Virtual TestNets accept 0 gasPrice/fee txs directly; there's no base-fee override cheatcode.
+    case 'hardhat_setNextBlockBaseFeePerGas':
+      return null;
+    case 'hardhat_setBalance':
+      return { method: 'tenderly_setBalance', params: [[params[0]], params[1]] };
+    case 'hardhat_mine':
+      return { method: 'evm_increaseBlocks', params: [params[0]] };
+    default:
+      return { method, params };
+  }
+}
+
+function patchProviderForVnet(provider: EthereumProvider): void {
+  const originalRequest = provider.request.bind(provider);
+  provider.request = (async (args: { method: string, params?: any[] }) => {
+    const translated = translateVnetRpcCall(args.method, args.params as any[]);
+    if (!translated) return null;
+    return originalRequest(translated);
+  }) as typeof provider.request;
+
+  const sendable = provider as unknown as { send?: (method: string, params?: any[]) => Promise<any> };
+  if (typeof sendable.send === 'function') {
+    const originalSend = sendable.send.bind(provider);
+    sendable.send = async (method: string, params?: any[]) => {
+      const translated = translateVnetRpcCall(method, params);
+      if (!translated) return null;
+      return originalSend(translated.method, translated.params);
+    };
+  }
+}
+
+// Connects to a Tenderly Virtual TestNet's Admin RPC as a live network, rather than forking it
+// again locally, so migrations/proposals execute as real, persistent transactions on the vnet.
+export async function vnetHreForBase(network: string, rpcUrl: string): Promise<HardhatRuntimeEnvironment> {
+  const ctx: HardhatContext = HardhatContext.getHardhatContext();
+
+  const hardhatArguments = getEnvHardhatArguments(HARDHAT_PARAM_DEFINITIONS, process.env);
+
+  const { resolvedConfig: config, userConfig } = loadConfigAndTasks(hardhatArguments);
+
+  const networks = config.networks;
+  const baseNetwork = networks[network] as HttpNetworkConfig;
+  if (!baseNetwork) {
+    throw new Error(`cannot find network config for network: ${network}`);
+  }
+
+  const vnetConfig = {
+    ...config,
+    defaultNetwork: network,
+    networks: {
+      ...networks,
+      // `accounts: 'remote'` disables Hardhat's local-accounts provider wrapper, which would
+      // otherwise reject `eth_sendTransaction` from any address besides the configured private
+      // key (e.g. an impersonated whale) with HH103. Virtual TestNets accept unsigned
+      // eth_sendTransaction from any address directly, so signing can be fully delegated to the node.
+      [network]: { ...baseNetwork, url: rpcUrl, accounts: 'remote' as const },
+    },
+  };
+
+  const env = new Environment(
+    vnetConfig,
+    { ...hardhatArguments, network },
+    ctx.tasksDSL.getTaskDefinitions(),
+    ctx.environment.scopes,
+    ctx.environmentExtenders,
+    userConfig
+  );
+
+  patchProviderForVnet(env.network.provider);
+
+  return env;
 }

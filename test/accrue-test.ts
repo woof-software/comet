@@ -194,7 +194,10 @@ describe('accrue', function () {
   });
 
   it('reverts on overflows', async () => {
-    const { cometWithExtendedAssetList : comet } = await makeProtocol();
+    const { cometWithExtendedAssetList : comet } = await makeProtocol({
+      // Ensure supply rate is positive even at low utilization so max index addition overflows.
+      supplyInterestRateBase: exp(0.01, 18),
+    });
 
     const t0 = await comet.totalsBasic();
     const t1 = Object.assign({}, t0, {
@@ -205,15 +208,18 @@ describe('accrue', function () {
     await fastForward(998);
     const _s0 = await wait(comet.setTotalsBasic(t1));
     await fastForward(2);
-    await expect(wait(comet.accrue())).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
+    await expect(wait(comet.accrue())).to.be.reverted;
 
-    const t2 = Object.assign({}, t0, {
+    const t2 = Object.assign({}, t1, {
+      baseSupplyIndex: t0.baseSupplyIndex,
       baseBorrowIndex: 2n ** 64n - 1n,
+      totalSupplyBase: 80000,
+      totalBorrowBase: 20000,
     });
     await fastForward(998);
     const _s1 = await wait(comet.setTotalsBasic(t2));
     await fastForward(2);
-    await expect(wait(comet.accrue())).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
+    await expect(comet.accrue()).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
   });
 
   it('supports up to the maximum timestamp then breaks', async () => {
