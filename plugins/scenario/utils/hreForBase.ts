@@ -71,13 +71,13 @@ function getBlockRollback(base: ForkSpec) {
   else if (base.network === 'ronin')
     return 0;
   else if (base.network === 'arbitrum') 
-    return undefined;
+    return 10;
   else if (base.network === 'unichain')
     return 0;
   else if (base.network === 'base') 
     return 100;
   else if (base.network === 'optimism') 
-    return undefined;
+    return 10;
   else if (base.network === 'mainnet')
     return 10;
   else
@@ -88,6 +88,32 @@ let activeMigration = false;
 
 export function migrationStarted() {
   activeMigration = true;
+}
+
+async function getBlockNumberWithRetry(provider: ethers.providers.JsonRpcProvider): Promise<number> {
+  const maxAttempts = 5;
+  const retryDelayMs = 5000;
+  const requestTimeoutMs = 10000;
+  
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await Promise.race([
+        provider.getBlockNumber(),
+        new Promise<number>((_, reject) =>
+          setTimeout(() => reject(new Error(`Timed out fetching block number after ${requestTimeoutMs / 1000}s`)), requestTimeoutMs)
+        ),
+      ]);
+    } catch (error) {
+      if (attempt === maxAttempts) {
+        throw error;
+      }
+
+      console.warn(`Failed to fetch block number (attempt ${attempt}/${maxAttempts}). Retrying in ${retryDelayMs / 1000}s...`);
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+
+  throw new Error('Failed to fetch block number after retries.');
 }
 
 export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEnvironment> {
@@ -103,45 +129,19 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
   const baseNetwork = networks[base.network] as HttpNetworkUserConfig;
 
   const providerUrl = activeMigration ? networkConfigs.find(c => c.network === base.network)?.url : baseNetwork.url;
-
-  const getBlockNumberWithRetry = async (): Promise<number> => {
-    const provider = new ethers.providers.JsonRpcProvider(providerUrl);
-    const maxAttempts = 5;
-    const retryDelayMs = 5000;
-    const requestTimeoutMs = 10000;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        return await Promise.race([
-          provider.getBlockNumber(),
-          new Promise<number>((_, reject) =>
-            setTimeout(() => reject(new Error(`Timed out fetching block number after ${requestTimeoutMs / 1000}s`)), requestTimeoutMs)
-          ),
-        ]);
-      } catch (error) {
-        if (attempt === maxAttempts) {
-          throw error;
-        }
-
-        console.warn(`Failed to fetch block number (attempt ${attempt}/${maxAttempts}). Retrying in ${retryDelayMs / 1000}s...`);
-        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-      }
-    }
-
-    throw new Error('Failed to fetch block number after retries.');
-  };
+  const provider = new ethers.providers.JsonRpcProvider(providerUrl);
 
   if (providerUrl) {
     console.log(`Forking from network: ${base.network}`);
-    console.log(`At block number: ${await getBlockNumberWithRetry() - (getBlockRollback(base) || 0)}`);
+    console.log(`At block number: ${await getBlockNumberWithRetry(provider) - (getBlockRollback(base) || 0)}`);
   }
 
   // noNetwork otherwise
   if (!base.blockNumber && providerUrl && getBlockRollback(base) !== undefined)
-    base.blockNumber = await getBlockNumberWithRetry() - getBlockRollback(base); // arbitrary number of blocks to go back
+    base.blockNumber = await getBlockNumberWithRetry(provider) - getBlockRollback(base); // arbitrary number of blocks to go back
 
   if (getBlockRollback(base) === 0) 
-    base.blockNumber = (await getBlockNumberWithRetry()) - 1;
+    base.blockNumber = (await getBlockNumberWithRetry(provider)) - 1;
 
   if (!baseNetwork) 
     throw new Error(`cannot find network config for network: ${base.network}`);
