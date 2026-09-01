@@ -10,7 +10,7 @@ const mixedRoutes = (_asset: string, hasRoute: boolean, index: number): Route =>
   hasRoute ? (index % 2 === 0 ? 'oneinch' : 'uniswap') : 'absorb';
 
 for (const mode of MODES) {
-  scenario.only(
+  scenario(
     `Comet#dexLiquidation > five collaterals, mixed routes [${mode}]`,
     {
       filter: (ctx: CometContext) => hasDexLiquidation(ctx).then((ok) => ok && hasCollateralCount(ctx, 5)),
@@ -23,7 +23,7 @@ for (const mode of MODES) {
     }
   );
 
-  scenario.only(
+  scenario(
     `Comet#dexLiquidation > twenty-four collaterals, mixed routes [${mode}]`,
     {
       filter: (ctx: CometContext) => hasDexLiquidation(ctx).then((ok) => ok && hasCollateralCount(ctx, 24)),

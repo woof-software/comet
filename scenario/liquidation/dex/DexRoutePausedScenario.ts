@@ -9,7 +9,7 @@ const MODES: LiquidationMode[] = ['partial', 'full'];
 const validButIgnored = (_asset: string, hasRoute: boolean): Route => (hasRoute ? 'oneinch' : 'absorb');
 
 for (const mode of MODES) {
-  scenario.only(
+  scenario(
     `Comet#dexLiquidation > route paused, all collaterals absorbed [${mode}]`,
     {
       filter: (ctx: CometContext) => hasDexLiquidation(ctx).then((ok) => ok && hasCollateralCount(ctx, 5)),

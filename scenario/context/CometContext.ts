@@ -38,7 +38,7 @@ import { AddressLike, getAddressFromNumber, resolveAddress } from './Address';
 import { fastGovernanceExecute, max, mineBlocks, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
 import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
 import { Requirements } from '../constraints/Requirements';
-import { buildRoutesFromList } from '../../test/helpers/dex-router';
+import { buildInitialCollateralSlippages, buildRoutesFromList } from '../../test/helpers/dex-router';
 
 export type ActorMap = { [name: string]: CometActor };
 export type AssetMap = { [name: string]: CometAsset };
@@ -210,7 +210,6 @@ export class CometContext {
       liquidationModuleAddress,
       [
         'function dexAdapter() view returns (address)',
-        'function multisig() view returns (address)',
         'function incentiveBps() view returns (uint16)',
       ],
       ethers.provider
@@ -242,6 +241,8 @@ export class CometContext {
         await oldDexAdapter.weth(),
         await oldDexAdapter.slippageBps(),
         buildRoutesFromList(collaterals, {}),
+        // The redeployed adapter keeps the old one's global slippage, with no per-collateral overrides.
+        buildInitialCollateralSlippages(),
       ],
       true
     );
@@ -252,7 +253,10 @@ export class CometContext {
       'liquidation-module/LiquidationModuleForComet.sol',
       [
         dexAdapter.address,
-        await oldModule.multisig(),
+        // The multisig is a role now, and plain AccessControl cannot be enumerated, so the old
+        // holder is unreadable. Scenarios drive every setting through the DAO, so the replacement
+        // only needs a non-zero holder: the deployer, which already takes the other two roles.
+        deployer.address,
         [deployer.address],
         [deployer.address],
         await oldModule.incentiveBps(),

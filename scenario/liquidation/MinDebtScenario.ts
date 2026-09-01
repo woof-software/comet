@@ -10,7 +10,7 @@ import {
   TARGET_HF,
   getUsableCollateralIndices,
 } from '../utils';
-import { mulPrice, mulFactor, divPrice, factorScale } from '../../test/helpers';
+import { mulPrice, mulFactor, mulDiv, ceilDiv, factorScale } from '../../test/helpers';
 
 /**
  * Min-debt (sub-`baseBorrowMin`) absorb scenarios for the liquidation module — the mirror of
@@ -119,13 +119,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // 6. Independently derive the expected event values. presentValue() on the captured principal at
       //    the post-absorb index gives exactly the debt the branch closed:
       //      debtValue   = debtAtAbsorb priced in USD
-      //      wantedValue = debtValue / LF                  (gross collateral value to seize)
-      //      seizeAmount = wantedValue * scale / price      (divPrice)
-      //      seizedValue = seizeAmount * price / scale      (mulPrice — the event's value field)
+      //      seizeAmount = ceil(debtValue * FACTOR_SCALE * scale / (LF * price))
+      //    Rounded up in one division: truncating forgives debt against collateral never taken.
       const debtAtAbsorb = -(await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
-      const wantedCollateralValue = (basePaidOutValue * factorScale) / collateralAssetInfo.liquidationFactor;
-      collateralState.seizeAmount = divPrice(wantedCollateralValue, droppedPrice, collateralAssetInfo.scale);
+      collateralState.seizeAmount = ceilDiv(
+        basePaidOutValue * factorScale * collateralAssetInfo.scale,
+        collateralAssetInfo.liquidationFactor * droppedPrice
+      );
 
       const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
       const [collateralStateAfter] = await makeCollateralStates(comet, context, albert.address, [collateralAssetInfo]);
@@ -298,12 +299,18 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
       collateralStates[0].seizeAmount = collateralStates[0].collateralBalance;
       collateralStates[0].seizedValue = mulPrice(collateralStates[0].seizeAmount, firstDroppedPrice, collateralInfos[0].scale);
-      const debtAfterFirst = basePaidOutValue - mulFactor(collateralStates[0].seizedValue, collateralInfos[0].liquidationFactor);
+      const debtAfterFirst = basePaidOutValue - mulDiv(
+        collateralStates[0].seizeAmount * firstDroppedPrice * collateralInfos[0].liquidationFactor,
+        collateralInfos[0].scale * factorScale
+      );
 
       //    Iter 2 (collateral [1]): covers the rest → seize only what the residual debt needs.
       //      seizeAmount = (debtAfterFirst / LF) / price                     (divPrice)
       //      seizedValue = seizeAmount * price / scale                       (mulPrice)
-      collateralStates[1].seizeAmount = divPrice((debtAfterFirst * factorScale) / collateralInfos[1].liquidationFactor, secondDroppedPrice, collateralInfos[1].scale);
+      collateralStates[1].seizeAmount = ceilDiv(
+        debtAfterFirst * factorScale * collateralInfos[1].scale,
+        collateralInfos[1].liquidationFactor * secondDroppedPrice
+      );
       collateralStates[1].seizedValue = mulPrice(collateralStates[1].seizeAmount, secondDroppedPrice, collateralInfos[1].scale);
 
       const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
@@ -492,13 +499,19 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
       collateralStates[0].seizeAmount = collateralStates[0].collateralBalance;
       collateralStates[0].seizedValue = mulPrice(collateralStates[0].seizeAmount, firstDroppedPrice, collateralInfos[0].scale);
-      const debtAfterFirst = basePaidOutValue - mulFactor(collateralStates[0].seizedValue, collateralInfos[0].liquidationFactor);
+      const debtAfterFirst = basePaidOutValue - mulDiv(
+        collateralStates[0].seizeAmount * firstDroppedPrice * collateralInfos[0].liquidationFactor,
+        collateralInfos[0].scale * factorScale
+      );
 
       //    Iter 2 (collateral [1]): the debt is now sub-min, so the full-close formula runs and seizes
       //    only what the residual debt needs.
       //      seizeAmount = (debtAfterFirst / LF) / price                     (divPrice)
       //      seizedValue = seizeAmount * price / scale                       (mulPrice)
-      collateralStates[1].seizeAmount = divPrice((debtAfterFirst * factorScale) / collateralInfos[1].liquidationFactor, secondDroppedPrice, collateralInfos[1].scale);
+      collateralStates[1].seizeAmount = ceilDiv(
+        debtAfterFirst * factorScale * collateralInfos[1].scale,
+        collateralInfos[1].liquidationFactor * secondDroppedPrice
+      );
       collateralStates[1].seizedValue = mulPrice(collateralStates[1].seizeAmount, secondDroppedPrice, collateralInfos[1].scale);
 
       const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
@@ -609,21 +622,21 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //                    part of it and a leftover remains (this also makes the outer loop's wanted
       //                    value smaller than v, i.e. a genuine partial seizure is what it computes)
       //      v < D / LCF   the account is liquidatable
-      //      v <= (targetHF * LF * m + (D - m) * BCF) / (BCF * LF)
+      //      v <= (targetHF * LF * m + (D - m) * LCF) / (LCF * LF)
       //                    the guard bound: at any larger value, reducing the debt to m WOULD restore
       //                    target health, so a legal partial stopping point exists and the guard stays
       //                    quiet. It is derived from exactly that condition:
       //                      freedCollateral = (D - m) / LF          collateral value the reduction frees
-      //                      healthAfter     = (v - freed) * BCF / m
+      //                      healthAfter     = (v - freed) * LCF / m
       //                    and solving healthAfter < targetHF for v.
-      //    The guard bound always exceeds D / LF (their difference is m * (targetHF*LF - BCF) / (BCF*LF),
+      //    The guard bound always exceeds D / LF (their difference is m * (targetHF*LF - LCF) / (LCF*LF),
       //    which is positive), so the window is never empty whatever the market's factors are.
       const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
       const lowerValue = (debtValue * factorScale) / collateralAssetInfo.liquidationFactor;
       const liquidatableBound = (debtValue * factorScale) / collateralAssetInfo.liquidateCollateralFactor;
       const guardBound =
-        ((mulFactor(minDebtValue, (TARGET_HF * collateralAssetInfo.liquidationFactor) / factorScale) + mulFactor(debtValue - minDebtValue, collateralAssetInfo.borrowCollateralFactor)) * factorScale)
-        / ((collateralAssetInfo.borrowCollateralFactor * collateralAssetInfo.liquidationFactor) / factorScale);
+        ((mulFactor(minDebtValue, (TARGET_HF * collateralAssetInfo.liquidationFactor) / factorScale) + mulFactor(debtValue - minDebtValue, collateralAssetInfo.liquidateCollateralFactor)) * factorScale)
+        / ((collateralAssetInfo.liquidateCollateralFactor * collateralAssetInfo.liquidationFactor) / factorScale);
       const upperValue = liquidatableBound < guardBound ? liquidatableBound : guardBound;
       const targetCollateralValue = (lowerValue + upperValue) / 2n;
       const droppedPrice = (targetCollateralValue * collateralAssetInfo.scale) / collateralAmount;
@@ -647,9 +660,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // The guard fires: reducing the debt only to the minimum — the largest reduction still legal —
       // would leave the position short of the target health factor, so no valid partial stop exists.
       //   freedCollateralValue = (debt - minDebt) / LF        collateral freed by that reduction
-      //   healthAfter          = (collateral - freed) * BCF / minDebt
+      //   healthAfter          = (collateral - freed) * LCF / minDebt
       const freedCollateralValue = ((debtValueBefore - minDebtValue) * factorScale) / collateralAssetInfo.liquidationFactor;
-      const collateralizedValueAfter = mulFactor(collateralValueBefore - freedCollateralValue, collateralAssetInfo.borrowCollateralFactor);
+      const collateralizedValueAfter = mulFactor(collateralValueBefore - freedCollateralValue, collateralAssetInfo.liquidateCollateralFactor);
       const healthFactorAfter = (collateralizedValueAfter * factorScale) / minDebtValue;
       expect(healthFactorAfter).to.be.lessThan(TARGET_HF);
 
@@ -667,7 +680,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      seizedValue = seizeAmount * price / scale      (mulPrice)
       const debtAtAbsorb = -(await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
-      collateralState.seizeAmount = divPrice((basePaidOutValue * factorScale) / collateralAssetInfo.liquidationFactor, droppedPrice, collateralAssetInfo.scale);
+      collateralState.seizeAmount = ceilDiv(
+        basePaidOutValue * factorScale * collateralAssetInfo.scale,
+        collateralAssetInfo.liquidationFactor * droppedPrice
+      );
       collateralState.seizedValue = mulPrice(collateralState.seizeAmount, droppedPrice, collateralAssetInfo.scale);
 
       const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
@@ -792,23 +808,23 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //                     it and a remainder is left (this also makes the outer loop's wanted value
       //                     smaller than v, i.e. a genuine partial seizure is what it computes for [1])
       //      v < (debtValue - firstLiquidity) / LCF     the account is liquidatable
-      //      v <= (targetHF * LF * m + (R - m) * BCF) / (BCF * LF)
+      //      v <= (targetHF * LF * m + (R - m) * LCF) / (LCF * LF)
       //                     the guard bound: at any larger value, reducing the remaining debt to m WOULD
       //                     restore target health, so a legal partial stop would exist and the guard
       //                     would stay quiet. It comes from exactly that condition:
       //                       freedCollateral = (R - m) / LF        collateral the reduction frees
-      //                       healthAfter     = (v - freed) * BCF / m
+      //                       healthAfter     = (v - freed) * LCF / m
       //                     solved for healthAfter < targetHF.
       //    That same bound is what keeps [0]'s full seizure identical in both modes: it implies
-      //    v * BCF < targetHF * R, which is exactly the condition for the outer loop to drain [0]
+      //    v * LCF < targetHF * R, which is exactly the condition for the outer loop to drain [0]
       //    outright rather than nibble at it.
-      //    The guard bound always exceeds R / LF (by m * (targetHF*LF - BCF) / (BCF*LF) > 0), so the
+      //    The guard bound always exceeds R / LF (by m * (targetHF*LF - LCF) / (LCF*LF) > 0), so the
       //    window is never empty whatever factors the market's collateral happens to have.
       const lowerValue = (remainingValue * factorScale) / collateralInfos[1].liquidationFactor;
       const liquidatableBound = ((debtValue - firstLiquidity) * factorScale) / collateralInfos[1].liquidateCollateralFactor;
       const guardBound =
-        ((mulFactor(minDebtValue, (TARGET_HF * collateralInfos[1].liquidationFactor) / factorScale) + mulFactor(remainingValue - minDebtValue, collateralInfos[1].borrowCollateralFactor)) * factorScale)
-        / ((collateralInfos[1].borrowCollateralFactor * collateralInfos[1].liquidationFactor) / factorScale);
+        ((mulFactor(minDebtValue, (TARGET_HF * collateralInfos[1].liquidationFactor) / factorScale) + mulFactor(remainingValue - minDebtValue, collateralInfos[1].liquidateCollateralFactor)) * factorScale)
+        / ((collateralInfos[1].liquidateCollateralFactor * collateralInfos[1].liquidationFactor) / factorScale);
       const upperValue = liquidatableBound < guardBound ? liquidatableBound : guardBound;
       const secondValue = (lowerValue + upperValue) / 2n;
       const secondDroppedPrice = (secondValue * collateralInfos[1].scale) / collateralStatesBeforeDrop[1].collateralBalance;
@@ -843,9 +859,9 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       // reduction still legal — would leave the position short of the target health factor, so no valid
       // partial stop exists and the debt is closed in full instead.
       //   freedCollateralValue = (remainingDebt - minDebt) / LF   collateral freed by that reduction
-      //   healthAfter          = (collateral - freed) * BCF / minDebt
+      //   healthAfter          = (collateral - freed) * LCF / minDebt
       const freedCollateralValue = ((debtValueAfterFirst - minDebtValue) * factorScale) / collateralInfos[1].liquidationFactor;
-      const collateralizedValueAfter = mulFactor(secondCollateralValue - freedCollateralValue, collateralInfos[1].borrowCollateralFactor);
+      const collateralizedValueAfter = mulFactor(secondCollateralValue - freedCollateralValue, collateralInfos[1].liquidateCollateralFactor);
       const healthFactorAfter = (collateralizedValueAfter * factorScale) / minDebtValue;
       expect(healthFactorAfter).to.be.lessThan(TARGET_HF);
 
@@ -866,13 +882,19 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
       collateralStates[0].seizeAmount = collateralStates[0].collateralBalance;
       collateralStates[0].seizedValue = mulPrice(collateralStates[0].seizeAmount, firstDroppedPrice, collateralInfos[0].scale);
-      const debtAfterFirst = basePaidOutValue - mulFactor(collateralStates[0].seizedValue, collateralInfos[0].liquidationFactor);
+      const debtAfterFirst = basePaidOutValue - mulDiv(
+        collateralStates[0].seizeAmount * firstDroppedPrice * collateralInfos[0].liquidationFactor,
+        collateralInfos[0].scale * factorScale
+      );
 
       //    Iter 2 (collateral [1]): the guard routes it into the full-close formula, so the whole
       //    remaining debt is closed and only the collateral it needs is seized.
       //      seizeAmount = (debtAfterFirst / LF) / price                     (divPrice)
       //      seizedValue = seizeAmount * price / scale                       (mulPrice)
-      collateralStates[1].seizeAmount = divPrice((debtAfterFirst * factorScale) / collateralInfos[1].liquidationFactor, secondDroppedPrice, collateralInfos[1].scale);
+      collateralStates[1].seizeAmount = ceilDiv(
+        debtAfterFirst * factorScale * collateralInfos[1].scale,
+        collateralInfos[1].liquidationFactor * secondDroppedPrice
+      );
       collateralStates[1].seizedValue = mulPrice(collateralStates[1].seizeAmount, secondDroppedPrice, collateralInfos[1].scale);
 
       const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);
@@ -1020,7 +1042,10 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //      seizedValue = seizeAmount * price / scale      (mulPrice)
       const debtAtAbsorb = -(await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       const basePaidOutValue = mulPrice(debtAtAbsorb, basePrice, baseScale);
-      collateralState.seizeAmount = divPrice((basePaidOutValue * factorScale) / collateralAssetInfo.liquidationFactor, droppedPrice, collateralAssetInfo.scale);
+      collateralState.seizeAmount = ceilDiv(
+        basePaidOutValue * factorScale * collateralAssetInfo.scale,
+        collateralAssetInfo.liquidationFactor * droppedPrice
+      );
       collateralState.seizedValue = mulPrice(collateralState.seizeAmount, droppedPrice, collateralAssetInfo.scale);
 
       const cometStateAfter = await captureAbsorbStateBefore(comet, context, albert.address, baseToken);

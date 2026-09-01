@@ -9,7 +9,7 @@ const single = (ctx: CometContext) => hasDexLiquidation(ctx).then((ok) => ok && 
 const fiveCollateral = (ctx: CometContext) => hasDexLiquidation(ctx).then((ok) => ok && hasCollateralCount(ctx, 5));
 
 for (const mode of MODES) {
-  scenario.only(
+  scenario(
     `Comet#dexLiquidation > single collateral sold via 1Inch [${mode}]`,
     { filter: single },
     async ({ actors }, context, world) => {
@@ -20,7 +20,7 @@ for (const mode of MODES) {
     }
   );
 
-  scenario.only(
+  scenario(
     `Comet#dexLiquidation > single collateral sold via Uniswap [${mode}]`,
     { filter: single },
     async ({ actors }, context, world) => {
@@ -31,7 +31,7 @@ for (const mode of MODES) {
     }
   );
 
-  scenario.only(
+  scenario(
     `Comet#dexLiquidation > single collateral when 1Inch call fails, falls back to Uniswap [${mode}]`,
     { filter: single },
     async ({ actors }, context, world) => {
@@ -42,7 +42,7 @@ for (const mode of MODES) {
     }
   );
 
-  scenario.only(
+  scenario(
     `Comet#dexLiquidation > route-less collateral is absorbed [${mode}]`,
     { filter: fiveCollateral },
     async ({ actors }, context, world) => {

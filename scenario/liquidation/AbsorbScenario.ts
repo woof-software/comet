@@ -10,7 +10,7 @@ import {
   getUsableCollateralIndices,
   TARGET_HF,
 } from '../utils';
-import { mulPrice, divPrice, mulFactor, factorScale } from '../../test/helpers';
+import { mulPrice, mulFactor, mulDiv, ceilDiv, factorScale } from '../../test/helpers';
 
 /**
  * Absorb / liquidation end-state scenarios for the liquidation module.
@@ -88,7 +88,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //    partial-seizure guard fires (D is the debt, m the min debt, v the post-drop market value):
       //      lowerValue        = D / LF   the collateral's LF-weighted value covers the whole debt (surplus stays)
       //      liquidatableBound = D / LCF  above this the account is no longer liquidatable
-      //      guardBound        = (targetHF*LF*m + (D - m)*BCF) / (BCF*LF)   below this, reducing the debt
+      //      guardBound        = (targetHF*LF*m + (D - m)*LCF) / (LCF*LF)   below this, reducing the debt
       //                          to m still leaves the position short of targetHF, so no legal partial
       //                          stop exists and the guard closes the debt in full
       //    Take the midpoint of [lowerValue, min(liquidatableBound, guardBound)]: the account is
@@ -99,7 +99,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         / collateralAssetInfo.liquidationFactor;
       const liquidatableBound = (debtValue * factorScale) / collateralAssetInfo.liquidateCollateralFactor;
       const guardBound =
-        (minDebtValue * TARGET_HF) / collateralAssetInfo.borrowCollateralFactor
+        (minDebtValue * TARGET_HF) / collateralAssetInfo.liquidateCollateralFactor
         + ((debtValue - minDebtValue) * factorScale) / collateralAssetInfo.liquidationFactor;
       const upperValue = liquidatableBound < guardBound ? liquidatableBound : guardBound;
       const targetCollateralValue = (lowerValue + upperValue) / 2n;
@@ -134,11 +134,14 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //    closes in full, so the protocol seizes exactly debt / LF worth of collateral, priced at the
       //    dropped collateral price. Borrow rates are zeroed, so no intra-block interest accrues and the
       //    debt re-derived from the captured principal is exactly what the seizure saw.
-      //    debtValue   = debt * basePrice / baseScale                   (mulPrice)
-      //    seizeAmount = (debtValue * FACTOR_SCALE / LF) / droppedPrice (divPrice by collateral price)
+      //      seizeAmount = ceil(debtValue * FACTOR_SCALE * scale / (LF * price))
+      //    Rounded up in one division: truncating forgives debt against collateral never taken.
       const debtAtAbsorb = (await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       const debtRemainingValue = mulPrice(-debtAtAbsorb, basePrice, baseScale);
-      collateralStateBefore.seizeAmount = divPrice(debtRemainingValue * factorScale / collateralAssetInfo.liquidationFactor, droppedPrice, collateralAssetInfo.scale);
+      collateralStateBefore.seizeAmount = ceilDiv(
+        debtRemainingValue * factorScale * collateralAssetInfo.scale,
+        collateralAssetInfo.liquidationFactor * droppedPrice
+      );
       collateralStateBefore.seizedValue = mulPrice(collateralStateBefore.seizeAmount, droppedPrice, collateralAssetInfo.scale);
       // 8. Post-absorb checks.
 
@@ -245,7 +248,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //    (R = residual debt after [0], m the min debt, v = asset [1]'s value):
       //      lowerValue        = R / LF1                               the LF-weighted value covers the residual
       //      liquidatableBound = (debtValue - firstLiquidity) / LCF1   above this the account is healthy
-      //      guardBound        = (targetHF*LF1*m + (R - m)*BCF1) / (BCF1*LF1)   below this the guard fires
+      //      guardBound        = (targetHF*LF1*m + (R - m)*LCF1) / (LCF1*LF1)  below this the guard fires
       //    Midpoint of [lowerValue, min(bounds)]: asset [1] is partially seized and the guard closes the
       //    debt in full — a surplus in either mode.
       const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
@@ -259,7 +262,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         / collateralInfos[1].liquidationFactor;
       const liquidatableBound = ((debtValue - firstLiquidity) * factorScale) / collateralInfos[1].liquidateCollateralFactor;
       const guardBound =
-        (minDebtValue * TARGET_HF) / collateralInfos[1].borrowCollateralFactor
+        (minDebtValue * TARGET_HF) / collateralInfos[1].liquidateCollateralFactor
         + ((remainingValue - minDebtValue) * factorScale) / collateralInfos[1].liquidationFactor;
       const upperValue = liquidatableBound < guardBound ? liquidatableBound : guardBound;
       const secondTargetValue = (lowerValue + upperValue) / 2n;
@@ -299,14 +302,21 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const debtAtAbsorb = (await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       const debtRemainingValue = mulPrice(-debtAtAbsorb, basePrice, baseScale);
 
-      // Iter 1 (asset 0): its whole value falls short of the debt, so it is fully seized.
-      //   debt reduction = collateralValue × LF (mulFactor).
+      // Iter 1 (asset 0): worth less than the debt, so it is fully seized. What it retires is its
+      // LF-weighted value in one division — pricing then weighting truncates twice and credits a unit short.
       collateralStatesBefore[0].seizeAmount = collateralStatesBefore[0].collateralBalance;
       collateralStatesBefore[0].seizedValue = mulPrice(collateralStatesBefore[0].seizeAmount, pricesAtAbsorb[0], collateralInfos[0].scale);
-      const debtAfterFirst = debtRemainingValue - mulFactor(collateralStatesBefore[0].seizedValue, collateralInfos[0].liquidationFactor);
+      const debtAfterFirst = debtRemainingValue - mulDiv(
+        collateralStatesBefore[0].seizeAmount * pricesAtAbsorb[0] * collateralInfos[0].liquidationFactor,
+        collateralInfos[0].scale * factorScale
+      );
 
-      // Iter 2 (asset 1): closes the residual debt, seizing exactly debtAfterFirst / LF worth; surplus stays.
-      collateralStatesBefore[1].seizeAmount = divPrice(debtAfterFirst * factorScale / collateralInfos[1].liquidationFactor, pricesAtAbsorb[1], collateralInfos[1].scale);
+      // Iter 2 (asset 1): closes the residual debt, seizing exactly debtAfterFirst / LF worth, rounded up
+      // so the whole credited debt is actually covered by collateral; surplus stays.
+      collateralStatesBefore[1].seizeAmount = ceilDiv(
+        debtAfterFirst * factorScale * collateralInfos[1].scale,
+        collateralInfos[1].liquidationFactor * pricesAtAbsorb[1]
+      );
       collateralStatesBefore[1].seizedValue = mulPrice(collateralStatesBefore[1].seizeAmount, pricesAtAbsorb[1], collateralInfos[1].scale);
 
       // 8. Post-absorb checks.
@@ -450,7 +460,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       //    fires (R = residual debt after the earlier assets, m the min debt, v = last asset's value):
       //      lowerValue        = R / LF_last                                 the LF-weighted value covers R
       //      liquidatableBound = (debtValue - earlierLiquidity) / LCF_last   above this the account is healthy
-      //      guardBound        = (targetHF*LF_last*m + (R - m)*BCF_last) / (BCF_last*LF_last)   below this the guard fires
+      //      guardBound        = (targetHF*LF_last*m + (R - m)*LCF_last) / (LCF_last*LF_last)  below this the guard fires
       //    Midpoint of [lowerValue, min(bounds)]: the last asset is partially seized and the guard closes
       //    the debt in full — a surplus in either mode.
       const debtValue = mulPrice((await comet.borrowBalanceOf(albert.address)).toBigInt(), basePrice, baseScale);
@@ -468,7 +478,7 @@ function absorbScenarios(entry: Entry, partial: boolean) {
         / collateralInfos[lastIdx].liquidationFactor;
       const liquidatableBound = ((debtValue - earlierLiquidity) * factorScale) / collateralInfos[lastIdx].liquidateCollateralFactor;
       const guardBound =
-        (minDebtValue * TARGET_HF) / collateralInfos[lastIdx].borrowCollateralFactor
+        (minDebtValue * TARGET_HF) / collateralInfos[lastIdx].liquidateCollateralFactor
         + ((remainingValue - minDebtValue) * factorScale) / collateralInfos[lastIdx].liquidationFactor;
       const upperValue = liquidatableBound < guardBound ? liquidatableBound : guardBound;
       const lastTargetValue = (lowerValue + upperValue) / 2n;
@@ -510,14 +520,22 @@ function absorbScenarios(entry: Entry, partial: boolean) {
       const debtAtAbsorb = (await comet.presentValue(cometStateBefore.user.principal)).toBigInt();
       let debtRemainingValue = mulPrice(-debtAtAbsorb, basePrice, baseScale);
       for (let i = 0; i < lastIdx; i++) {
-        // Earlier collateral: fully seized; debt drops by collateralValue × LF (mulFactor).
+        // Earlier collateral: fully seized. What it retires is its LF-weighted value in one division —
+        // splitting it truncates twice, and the shortfall compounds over every earlier asset.
         collateralStatesBefore[i].seizeAmount = collateralStatesBefore[i].collateralBalance;
         collateralStatesBefore[i].seizedValue = mulPrice(collateralStatesBefore[i].seizeAmount, pricesAtAbsorb[i], collateralInfos[i].scale);
-        debtRemainingValue -= mulFactor(collateralStatesBefore[i].seizedValue, collateralInfos[i].liquidationFactor);
+        debtRemainingValue -= mulDiv(
+          collateralStatesBefore[i].seizeAmount * pricesAtAbsorb[i] * collateralInfos[i].liquidationFactor,
+          collateralInfos[i].scale * factorScale
+        );
       }
 
-      // Closing collateral: seize exactly debtRemaining / LF worth; surplus stays.
-      collateralStatesBefore[lastIdx].seizeAmount = divPrice(debtRemainingValue * factorScale / collateralInfos[lastIdx].liquidationFactor, pricesAtAbsorb[lastIdx], collateralInfos[lastIdx].scale);
+      // Closing collateral: seize exactly debtRemaining / LF worth, rounded up so the whole credited
+      // debt is actually covered by collateral; surplus stays.
+      collateralStatesBefore[lastIdx].seizeAmount = ceilDiv(
+        debtRemainingValue * factorScale * collateralInfos[lastIdx].scale,
+        collateralInfos[lastIdx].liquidationFactor * pricesAtAbsorb[lastIdx]
+      );
       collateralStatesBefore[lastIdx].seizedValue = mulPrice(collateralStatesBefore[lastIdx].seizeAmount, pricesAtAbsorb[lastIdx], collateralInfos[lastIdx].scale);
 
       // 8. Post-absorb checks.

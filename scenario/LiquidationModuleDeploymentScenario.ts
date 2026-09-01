@@ -16,7 +16,15 @@ import {
 } from '../build/types';
 import { scenario } from './context/CometContext';
 import { fundAccount, hasModule } from './utils';
-import { buildRoutesFromList, CORE_ROUTER, exp, REDUNDANT_ROUTER, SLIPPAGE_BPS, TOKENS } from '../test/helpers';
+import {
+  buildInitialCollateralSlippages,
+  buildRoutesFromList,
+  CORE_ROUTER,
+  exp,
+  REDUNDANT_ROUTER,
+  SLIPPAGE_BPS,
+  TOKENS,
+} from '../test/helpers';
 
 /**
  * Liquidation-module attachment scenarios. These cover the two lifecycle paths rather than absorb
@@ -69,7 +77,8 @@ scenario(
       REDUNDANT_ROUTER,
       TOKENS.WETH.address,
       SLIPPAGE_BPS,
-      buildRoutesFromList([firstCollateral.address, secondCollateral.address], {})
+      buildRoutesFromList([firstCollateral.address, secondCollateral.address], {}),
+      buildInitialCollateralSlippages()
     );
     await dexAdapter.deployed();
     const LiquidationModuleFactory = (await scenarioEthers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
@@ -217,7 +226,8 @@ scenario(
       REDUNDANT_ROUTER,
       TOKENS.WETH.address,
       SLIPPAGE_BPS,
-      buildRoutesFromList(collateralAssets, {})
+      buildRoutesFromList(collateralAssets, {}),
+      buildInitialCollateralSlippages()
     );
     await dexAdapter.deployed();
     const LiquidationModuleFactory = (await scenarioEthers.getContractFactory('LiquidationModuleForComet')) as LiquidationModuleForComet__factory;

@@ -3,7 +3,7 @@ import { World } from '../../plugins/scenario';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { CometContext } from '../context/CometContext';
 import { CometInterface, LiquidationModule, LiquidationModule__factory } from '../../build/types';
-import { mulFactor, factorScale, toBigInt } from '../../test/helpers';
+import { ceilDiv, factorScale, toBigInt } from '../../test/helpers';
 import { AssetInfoBigInt, fundAccount, getLiquidationModuleAddress } from './index';
 
 // Compound governance timelock — holds DEFAULT_ADMIN_ROLE (and PAUSER_ROLE) on every liquidation
@@ -23,21 +23,26 @@ export const TARGET_HF: bigint = 105n * 10n ** 16n;
  * The collateral value the module's target-HF formula wants to seize from one collateral — the
  * mirror of the `wantedCollateralValue` branch in `CoreLiquidationModule._computeSeizurePlan`:
  *
- *   wanted = (targetHF * debtRemaining - totalCollateralizedValue) / (targetHF * LF - BCF)
+ *   wanted = (targetHF * debtRemaining - totalCollateralizedValue) / (targetHF * LF - LCF)
  *
- * `debtRemaining` is the debt still open when this collateral is reached and `totalCollateralizedValue`
- * the BCF-weighted value of the collateral still backing it at that point. The Configurator enforces
- * `targetHF * LF > LCF > BCF`, so the denominator is always positive.
+ * `debtRemainingValue` is the debt still open when this collateral is reached and
+ * `totalCollateralizedValue` the LCF-weighted value of the collateral still backing it at that point.
+ * The liquidate collateral factor is what the account is measured against, so it is also what a
+ * seizure takes out of that measurement; the borrow collateral factor plays no part.
+ *
+ * Both sides carry an extra factorScale, which keeps this to a single division, and it rounds up:
+ * asking for less than the module does would leave the account short of the target. The Configurator
+ * enforces `targetHF * LF > LCF`, so the denominator is always positive.
  */
 export function wantedCollateralValue(
   debtRemainingValue: bigint | BigNumber,
   totalCollateralizedValue: bigint | BigNumber,
-  collateralLF: bigint | BigNumber,
-  collateralBCF: bigint | BigNumber
+  assetInfo: AssetInfoBigInt
 ): bigint {
-  const numerator = mulFactor(debtRemainingValue, TARGET_HF) - toBigInt(totalCollateralizedValue);
-  const denominator = mulFactor(collateralLF, TARGET_HF) - toBigInt(collateralBCF);
-  return (numerator * factorScale) / denominator;
+  return ceilDiv(
+    (toBigInt(debtRemainingValue) * TARGET_HF - toBigInt(totalCollateralizedValue) * factorScale) * factorScale,
+    toBigInt(assetInfo.liquidationFactor) * TARGET_HF - toBigInt(assetInfo.liquidateCollateralFactor) * factorScale,
+  );
 }
 
 /**

@@ -3,6 +3,7 @@ import { DeploySpec, exp, wait } from '../../src/deploy';
 import { ethers } from 'ethers';
 import {
   RouteConfig,
+  buildInitialCollateralSlippages,
   buildRoutesFromList,
   CORE_ROUTER,
   REDUNDANT_ROUTER,
@@ -70,7 +71,8 @@ export async function deployDexMarket(
   const adapter = await deploymentManager.deploy(
     'dexAdapter',
     'dex-adapters/core/OneInchV6Adapter.sol',
-    [CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routeList],
+    // No per-collateral slippage overrides: every asset uses the global SLIPPAGE_BPS.
+    [CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routeList, buildInitialCollateralSlippages()],
     true
   );
 

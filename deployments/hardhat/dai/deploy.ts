@@ -2,7 +2,14 @@ import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager
 import { FaucetToken, SimplePriceFeed } from '../../../build/types';
 import { DeploySpec, NetworkConfiguration, cloneGov, exp, wait } from '../../../src/deploy';
 import { ethers } from 'ethers';
-import { buildRoutesFromList, CORE_ROUTER, REDUNDANT_ROUTER, SLIPPAGE_BPS, TOKENS } from '../../../test/helpers';
+import {
+  buildInitialCollateralSlippages,
+  buildRoutesFromList,
+  CORE_ROUTER,
+  REDUNDANT_ROUTER,
+  SLIPPAGE_BPS,
+  TOKENS,
+} from '../../../test/helpers';
 
 // Executor incentive (bps) on the DEX route. The DAO constant additionally holds admin + pauser roles
 // on every module by default (see LiquidationAccessControl), which scenarios impersonate.
@@ -80,7 +87,15 @@ export default async function deploy(deploymentManager: DeploymentManager, _depl
   const adapter = await deploymentManager.deploy(
     'dexAdapter',
     'dex-adapters/core/OneInchV6Adapter.sol',
-    [CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routes],
+    // No per-collateral slippage overrides: every asset uses the global SLIPPAGE_BPS.
+    [
+      CORE_ROUTER,
+      REDUNDANT_ROUTER,
+      TOKENS.WETH.address,
+      SLIPPAGE_BPS,
+      routes,
+      buildInitialCollateralSlippages(),
+    ],
     true
   );
 

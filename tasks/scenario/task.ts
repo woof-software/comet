@@ -24,13 +24,14 @@ function getBasesFromTaskArgs(givenBases: string | undefined, env: HardhatRuntim
 
 task('scenario', 'Runs scenario tests')
   .addOptionalParam('bases', 'Bases to run on [defaults to all]')
+  .addOptionalParam('glob', 'Only load scenario files matching this glob [defaults to all]')
   .addFlag('spider', 'run spider persistently before scenarios')
   .setAction(async (taskArgs, env: HardhatRuntimeEnvironment) => {
     const bases: ForkSpec[] = getBasesFromTaskArgs(taskArgs.bases, env);
     if (taskArgs.spider) {
       await env.run('scenario:spider', taskArgs);
     }
-    await runScenarios(bases);
+    await runScenarios(bases, taskArgs.glob);
   });
 
 task('scenario:spider', 'Runs spider in preparation for scenarios')
