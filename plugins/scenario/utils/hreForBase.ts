@@ -66,26 +66,20 @@ function getBlockRollback(base: ForkSpec) {
   console.log(`Getting block rollback for network: ${base.network}`);
   if (base.blockNumber)
     return base.blockNumber;
-  else if(base.network === 'linea')
+  else if (base.network === 'linea')
     return 150;
-  else if (base.network === 'ronin'){
+  else if (base.network === 'ronin')
     return 0;
-  }
-  else if (base.network === 'arbitrum') {
+  else if (base.network === 'arbitrum') 
     return undefined;
-  }
-  else if (base.network === 'unichain') {
+  else if (base.network === 'unichain')
     return 0;
-  }
-  else if (base.network === 'base') {
+  else if (base.network === 'base') 
     return 100;
-  }
-  else if (base.network === 'optimism') {
+  else if (base.network === 'optimism') 
     return undefined;
-  }
-  else if (base.network === 'mainnet') {
+  else if (base.network === 'mainnet')
     return 10;
-  }
   else
     return 25;
 }
@@ -109,9 +103,9 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
   const baseNetwork = networks[base.network] as HttpNetworkUserConfig;
 
   const providerUrl = (() => {
-    if (activeMigration){
+    if (activeMigration) 
       return networkConfigs.find(c => c.network === base.network)?.url;
-    }
+    
     return baseNetwork.url;
   })();
 
@@ -142,7 +136,7 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
     throw new Error('Failed to fetch block number after retries.');
   };
 
-  if(providerUrl){
+  if (providerUrl) {
     console.log(`Forking from network: ${base.network}`);
     console.log(`At block number: ${await getBlockNumberWithRetry() - (getBlockRollback(base) || 0)}`);
   }
@@ -151,14 +145,11 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
   if (!base.blockNumber && providerUrl && getBlockRollback(base) !== undefined)
     base.blockNumber = await getBlockNumberWithRetry() - getBlockRollback(base); // arbitrary number of blocks to go back
 
-  if (getBlockRollback(base) === 0) {
-    const block = await getBlockNumberWithRetry();
-    base.blockNumber = block - 1;
-  }
+  if (getBlockRollback(base) === 0) 
+    base.blockNumber = (await getBlockNumberWithRetry()) - 1;
 
-  if (!baseNetwork) {
+  if (!baseNetwork) 
     throw new Error(`cannot find network config for network: ${base.network}`);
-  }
 
   const forkedNetwork = {
     ...defaultNetwork,
@@ -194,9 +185,8 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
 }
 
 export default async function hreForBase(base: ForkSpec, fork = true): Promise<HardhatRuntimeEnvironment> {
-  if (fork) {
+  if (fork) 
     return forkedHreForBase(base);
-  } else {
+  else 
     return nonForkedHreForBase(base);
-  }
 }
