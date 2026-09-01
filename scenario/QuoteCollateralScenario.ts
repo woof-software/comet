@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { CometContext, scenario } from './context/CometContext';
-import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, usesAssetList, supportsExtendedPause } from './utils';
+import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, usesAssetList, supportsExtendedPause, fundAccount } from './utils';
 
 /**
  * @title Quote Collateral Scenario
@@ -55,10 +55,12 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       const expectedQuoteWithDiscount = (basePrice * QUOTE_AMOUNT * assetScale) / assetPriceDiscounted / baseScale;
       expect(quoteAmount).to.equal(expectedQuoteWithDiscount);
       
-      await context.setNextBaseFeeToZero();
-      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
-      await context.setNextBaseFeeToZero();
-      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+      await fundAccount(context.world, admin);
+      await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, asset, 0n);
+      await configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, asset, 0n);
+      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n);
+      await context.prepareFreshLiquidationModule(comet, configurator.connect(admin.signer));
+      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
 
       assetInfo = await comet.getAssetInfoByAddress(asset);
       expect(assetInfo.liquidationFactor).to.equal(0);

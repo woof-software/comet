@@ -1,8 +1,8 @@
-import { BigNumber } from 'ethers';
+import { BigNumber, utils } from 'ethers';
 import { World } from '../../plugins/scenario';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { CometContext } from '../context/CometContext';
-import { CometInterface, LiquidationModule, LiquidationModule__factory } from '../../build/types';
+import { CometInterface, Configurator, LiquidationModule, LiquidationModule__factory } from '../../build/types';
 import { ceilDiv, factorScale, toBigInt } from '../../test/helpers';
 import { AssetInfoBigInt, fundAccount, getLiquidationModuleAddress } from './index';
 
@@ -178,3 +178,35 @@ export async function configureModule(
   return module;
 }
 
+
+/** One governance action, in the four parallel arrays `fastGovernanceExecute` takes. */
+export interface ProposalSteps {
+  targets: string[];
+  values: number[];
+  signatures: string[];
+  calldata: string[];
+}
+
+/**
+ * The proposal steps that point a market at a freshly deployed liquidation module, and no steps at all
+ * for a market that runs none — hence arrays rather than plain values: a market without a module has to
+ * contribute nothing to the proposal, and a single value cannot say "nothing".
+ *
+ * Every implementation upgrade needs this: the new Comet claims a module in its constructor and a module
+ * can only be claimed once, so these steps belong ahead of the upgrade step.
+ */
+export async function setFreshLiquidationModuleProposal(
+  context: CometContext,
+  comet: CometInterface,
+  configurator: Configurator
+): Promise<ProposalSteps> {
+  const liquidationModule = await context.deployFreshLiquidationModule(comet);
+  if (liquidationModule === undefined) return { targets: [], values: [], signatures: [], calldata: [] };
+
+  return {
+    targets: [configurator.address],
+    values: [0],
+    signatures: ['setLiquidationModule(address,address)'],
+    calldata: [utils.defaultAbiCoder.encode(['address', 'address'], [comet.address, liquidationModule])],
+  };
+}

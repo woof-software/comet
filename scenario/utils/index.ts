@@ -487,16 +487,6 @@ export async function hasDexLiquidation(ctx: CometContext): Promise<boolean> {
   }
 }
 
-/**
- * True when the Comet lists at least `count` collateral assets. The DEX-liquidation scenarios use it so a
- * scenario written for N collaterals (1 / 5 / 24) can run against any Comet with that many or more, building the
- * position out of only the first N of them.
- */
-export async function hasCollateralCount(ctx: CometContext, count: number): Promise<boolean> {
-  const comet = await ctx.getComet();
-  return (await comet.numAssets()) >= count;
-}
-
 export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
 }

@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { constants } from 'ethers';
 import { LiquidationModule__factory } from '../build/types';
 import { scenario } from './context/CometContext';
 import {
@@ -295,16 +296,19 @@ scenario(
 scenario(
   'LiquidationModule#setIncentiveBps > Multisig can update the incentive',
   { filter: async (context) => await hasModule(context) },
-  async (_, context, world) => {
+  async ({ actors, dao }, context, world) => {
+    const { betty } = actors;
     const module = LiquidationModule__factory.connect(
       (await getLiquidationModuleAddress(context))!,
       world.deploymentManager.hre.ethers.provider
     );
-    const multisig = await world.impersonateAddress(await module.multisig(), { value: 10n ** 18n });
+    // The multisig is a role the DAO hands out; plain AccessControl cannot be asked who holds it.
+    await fundAccount(world, betty);
+    await module.connect(dao).grantRole(await module.MULTISIG_ROLE(), betty.address);
     const incentiveBefore = await module.incentiveBps();
     const newIncentive = incentiveBefore === 700 ? 600 : 700; // in case when we can accidentally already have wanted incentive
 
-    await module.connect(multisig).setIncentiveBps(newIncentive);
+    await module.connect(betty.signer).setIncentiveBps(newIncentive);
     expect(await module.incentiveBps()).to.equal(newIncentive);
   }
 );
@@ -347,15 +351,17 @@ scenario(
 scenario(
   'LiquidationModule#setIncentiveBps > reverts when incentive exceeds maximum',
   { filter: async (context) => await hasModule(context) },
-  async (_, context, world) => {
+  async ({ actors, dao }, context, world) => {
+    const { betty } = actors;
     const MAX_INCENTIVE = 1_000;
     const module = LiquidationModule__factory.connect(
       (await getLiquidationModuleAddress(context))!,
       world.deploymentManager.hre.ethers.provider
     );
-    const multisig = await world.impersonateAddress(await module.multisig(), { value: 10n ** 18n });
+    await fundAccount(world, betty);
+    await module.connect(dao).grantRole(await module.MULTISIG_ROLE(), betty.address);
 
-    await expect(module.connect(multisig).setIncentiveBps(MAX_INCENTIVE + 1)).to.be.revertedWithCustomError(module, 'InvalidIncentiveBps');
+    await expect(module.connect(betty.signer).setIncentiveBps(MAX_INCENTIVE + 1)).to.be.revertedWithCustomError(module, 'InvalidIncentiveBps');
   }
 );
 
@@ -388,12 +394,14 @@ scenario(
 scenario(
   'LiquidationModule#setSlippageBps > Multisig can update adapter slippage',
   { filter: async (context) => await hasModule(context) },
-  async (_, context, world) => {
+  async ({ actors, dao }, context, world) => {
+    const { betty } = actors;
     const module = LiquidationModule__factory.connect(
       (await getLiquidationModuleAddress(context))!,
       world.deploymentManager.hre.ethers.provider
     );
-    const multisig = await world.impersonateAddress(await module.multisig(), { value: 10n ** 18n });
+    await fundAccount(world, betty);
+    await module.connect(dao).grantRole(await module.MULTISIG_ROLE(), betty.address);
     const scenarioEthers = world.deploymentManager.hre.ethers;
     const adapter = new scenarioEthers.Contract(
       await module.dexAdapter(),
@@ -403,7 +411,8 @@ scenario(
     const slippageBefore = await adapter.slippageBps();
     const newSlippage = slippageBefore === 100 ? 200 : 100; // in case when we can accidentally already have wanted slippage
 
-    await module.connect(multisig).setSlippageBps(newSlippage);
+    // The zero address addresses the global slippage rather than one collateral's override.
+    await module.connect(betty.signer).setSlippageBps(newSlippage, constants.AddressZero);
 
     expect(await adapter.slippageBps()).to.equal(newSlippage);
   }
@@ -421,7 +430,7 @@ scenario(
     const multisigRole = await module.MULTISIG_ROLE();
 
     expect(await module.hasRole(multisigRole, albert.address)).to.be.false;
-    await expect(module.connect(albert.signer).setSlippageBps(100)).to.be.revertedWith(
+    await expect(module.connect(albert.signer).setSlippageBps(100, constants.AddressZero)).to.be.revertedWith(
       `AccessControl: account ${albert.address.toLowerCase()} is missing role ${multisigRole.toLowerCase()}`
     );
   }

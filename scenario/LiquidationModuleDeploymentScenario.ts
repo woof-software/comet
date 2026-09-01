@@ -95,10 +95,10 @@ scenario(
     expect(await liquidationModule.comet()).to.equal(constants.AddressZero);
     expect(await liquidationModule.assetList()).to.equal(constants.AddressZero);
     expect(await liquidationModule.dexAdapter()).to.equal(dexAdapter.address);
-    expect(await liquidationModule.multisig()).to.equal(betty.address);
     expect(await liquidationModule.incentiveBps()).to.equal(INCENTIVE_BPS);
     expect(await liquidationModule.hasRole(await liquidationModule.EXECUTOR_ROLE(), albert.address)).to.be.true;
     expect(await liquidationModule.hasRole(await liquidationModule.PAUSER_ROLE(), charles.address)).to.be.true;
+    expect(await liquidationModule.hasRole(await liquidationModule.MULTISIG_ROLE(), betty.address)).to.be.true;
 
     const ProxyAdminFactory = await scenarioEthers.getContractFactory('CometProxyAdmin');
     const proxyAdmin = await ProxyAdminFactory.deploy(admin.address);
@@ -246,7 +246,6 @@ scenario(
     expect(await liquidationModule.comet()).to.equal(cometProxyAddress);
     expect(await liquidationModule.baseScale()).to.equal(baseScale);
     expect(await liquidationModule.dexAdapter()).to.equal(dexAdapter.address);
-    expect(await liquidationModule.multisig()).to.equal(betty.address);
     expect(await liquidationModule.incentiveBps()).to.equal(INCENTIVE_BPS);
     expect(await liquidationModule.partialLiquidationEnabled()).to.be.true;
     expect(await liquidationModule.TARGET_HEALTH_FACTOR()).to.equal(exp(1.05, 18));

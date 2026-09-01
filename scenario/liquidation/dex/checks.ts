@@ -11,7 +11,7 @@ import {
 } from '../../../build/types';
 import { fetch1inchSwapData, ONEINCH_SLIPPAGE_PCT, NETWORKS, TOKENS } from '../../../test/helpers';
 import { CometContext } from '../../context/CometContext';
-import { getLiquidationModuleAddress } from '../../utils';
+import { getLiquidationModuleAddress, getUsableCollateralIndices, hasDexLiquidation } from '../../utils';
 import { getConfigForScenario } from '../../utils/scenarioHelper';
 import { impersonateAddress } from '../../../plugins/scenario/utils';
 import CometActor from '../../context/CometActor';
@@ -40,6 +40,29 @@ function tokenRegistry(address: string): { amount: bigint, slot: number | string
   const entry = TOKEN_BY_ADDRESS[address.toLowerCase()];
   if (!entry) throw new Error(`No swap-routes.ts TOKENS entry (amount/slot) for ${address}`);
   return entry;
+}
+
+/**
+ * The filter every DEX-liquidation scenario runs behind: a market with a live DEX route, at least
+ * `count` collaterals the liquidation math can use, and collaterals this file can actually fund.
+ *
+ * Funding writes straight into a token's balances mapping, so it needs that token's storage slot, and
+ * only the registry above knows them — for real mainnet tokens. A market of locally deployed ones can
+ * never be set up here, so the scenarios have to stand aside rather than fail.
+ */
+export function dexMarketWith(count: number) {
+  return async (ctx: CometContext): Promise<boolean> => {
+    if (!(await hasDexLiquidation(ctx))) return false;
+    if ((await getUsableCollateralIndices(ctx)).length < count) return false;
+
+    const comet = await ctx.getComet();
+    const numAssets = await comet.numAssets();
+    for (let i = 0; i < numAssets; i++) {
+      const { asset } = await comet.getAssetInfo(i);
+      if (!TOKEN_BY_ADDRESS[asset.toLowerCase()]) return false;
+    }
+    return true;
+  };
 }
 
 // Sets an ERC-20 balance by poking its balances-mapping slot.

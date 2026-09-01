@@ -179,7 +179,25 @@ export class CometContext {
     catch (e) {
       withAssetList = false;
     }
-    const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, withAssetList, admin);
+
+    // A module can only be initiated once, and the one already behind this proxy has been. The new
+    // implementation would try again and revert, so a market that has a module gets a freshly deployed
+    // one here, registered with the Configurator. Markets old enough to have none get nothing: the
+    // helper reads the Comet itself and hands back nothing when there is no module to replace.
+    const liquidationModule = await this.prepareFreshLiquidationModule(
+      currentComet,
+      (await this.getConfigurator()).connect(admin)
+    );
+
+    const deployed = await deployComet(
+      this.world.deploymentManager,
+      deploySpec,
+      // Last, deliberately: the overrides carry the market's current configuration, whose module has
+      // already been initiated. The freshly deployed one has to win.
+      liquidationModule ? { ...configOverrides, liquidationModule } : configOverrides,
+      withAssetList,
+      admin
+    );
 
     await this.world.deploymentManager.spider(deployed);
     await this.setAssets();
@@ -189,7 +207,12 @@ export class CometContext {
     return this;
   }
 
-  async prepareFreshLiquidationModule(comet: CometInterface, configurator: Configurator) {
+  /**
+   * Deploys a liquidation module for a market that runs one, and returns its address; a market without
+   * one gets nothing back. Registering it is left to the caller — under governance that has to happen
+   * inside the proposal, not as a direct call.
+   */
+  async deployFreshLiquidationModule(comet: CometInterface): Promise<string | undefined> {
     const ethers = this.world.deploymentManager.hre.ethers;
     const cometWithModule = new ethers.Contract(
       comet.address,
@@ -265,7 +288,16 @@ export class CometContext {
       true
     );
 
-    await configurator.setLiquidationModule(comet.address, liquidationModule.address);
+    return liquidationModule.address;
+  }
+
+  /** Deploys the replacement module and points the Configurator at it, for callers holding governor rights. */
+  async prepareFreshLiquidationModule(comet: CometInterface, configurator: Configurator): Promise<string | undefined> {
+    const liquidationModule = await this.deployFreshLiquidationModule(comet);
+    if (liquidationModule === undefined) return;
+
+    await configurator.setLiquidationModule(comet.address, liquidationModule);
+    return liquidationModule;
   }
 
   async changePriceFeeds(newPrices: Record<string, bigint>) {
@@ -345,6 +377,7 @@ export class CometContext {
       for (const [asset, cap] of Object.entries(newSupplyCaps)) {
         await configurator.updateAssetSupplyCap(comet.address, asset, cap);
       }
+      await this.prepareFreshLiquidationModule(comet, configurator);
       await cometAdmin.deployAndUpgradeTo(configurator.address, comet.address);
     }
   }

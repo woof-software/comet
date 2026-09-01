@@ -1,7 +1,5 @@
 import { scenario } from '../../context/CometContext';
-import { CometContext } from '../../context/CometContext';
-import { hasDexLiquidation, hasCollateralCount } from '../../utils';
-import { LiquidationMode, Route, runDexLiquidation, assertDexLiquidation } from './checks';
+import { dexMarketWith, LiquidationMode, Route, runDexLiquidation, assertDexLiquidation } from './checks';
 
 const MODES: LiquidationMode[] = ['partial', 'full'];
 
@@ -13,7 +11,7 @@ for (const mode of MODES) {
   scenario(
     `Comet#dexLiquidation > five collaterals, mixed routes [${mode}]`,
     {
-      filter: (ctx: CometContext) => hasDexLiquidation(ctx).then((ok) => ok && hasCollateralCount(ctx, 5)),
+      filter: dexMarketWith(5),
     },
     async ({ actors }, context, world) => {
       const { albert, betty } = actors;
@@ -26,7 +24,7 @@ for (const mode of MODES) {
   scenario(
     `Comet#dexLiquidation > twenty-four collaterals, mixed routes [${mode}]`,
     {
-      filter: (ctx: CometContext) => hasDexLiquidation(ctx).then((ok) => ok && hasCollateralCount(ctx, 24)),
+      filter: dexMarketWith(24),
     },
     async ({ actors }, context, world) => {
       const { albert, betty } = actors;

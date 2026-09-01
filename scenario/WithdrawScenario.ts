@@ -750,10 +750,10 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       expect(await comet.isBorrowCollateralized(albert.address)).to.be.true;
 
       // Zero borrowCF for target asset via governance
-      await context.setNextBaseFeeToZero();
-      await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, asset, 0n, { gasPrice: 0 });
-      await context.setNextBaseFeeToZero();
-      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+      await fundAccount(context.world, admin);
+      await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, asset, 0n);
+      await context.prepareFreshLiquidationModule(comet, configurator.connect(admin.signer));
+      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
 
       // Verify borrowCF is 0
       const assetInfo = await comet.getAssetInfoByAddress(asset);

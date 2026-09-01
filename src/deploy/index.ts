@@ -33,6 +33,7 @@ export interface ProtocolConfiguration {
   baseBorrowMin?: BigNumberish;
   targetReserves?: BigNumberish;
   assetConfigs?: AssetConfigStruct[];
+  liquidationModule?: string;
   rewardTokenAddress?: string;
 }
 

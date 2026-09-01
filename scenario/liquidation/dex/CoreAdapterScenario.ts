@@ -1,12 +1,10 @@
 import { scenario } from '../../context/CometContext';
-import { CometContext } from '../../context/CometContext';
-import { hasDexLiquidation, hasCollateralCount } from '../../utils';
-import { LiquidationMode, runDexLiquidation, assertDexLiquidation } from './checks';
+import { dexMarketWith, LiquidationMode, runDexLiquidation, assertDexLiquidation } from './checks';
 
 const MODES: LiquidationMode[] = ['partial', 'full'];
 
-const single = (ctx: CometContext) => hasDexLiquidation(ctx).then((ok) => ok && hasCollateralCount(ctx, 1));
-const fiveCollateral = (ctx: CometContext) => hasDexLiquidation(ctx).then((ok) => ok && hasCollateralCount(ctx, 5));
+const single = dexMarketWith(1);
+const fiveCollateral = dexMarketWith(5);
 
 for (const mode of MODES) {
   scenario(

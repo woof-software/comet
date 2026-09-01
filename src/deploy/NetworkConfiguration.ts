@@ -168,6 +168,9 @@ function getOverridesOrConfig(
     ...interestRateInfoMapping(config.rates),
     ...trackingInfoMapping(config.tracking),
     assetConfigs: _ => getAssetConfigs(config.assets, contracts),
+    // Markets predating the liquidation module have no such contract; the deploy path below decides
+    // what an absent one means.
+    liquidationModule: _ => contracts.get('liquidationModule')?.address,
     rewardTokenAddress: _ => (config.rewardToken || config.rewardTokenAddress) ?
       getContractAddress(config.rewardToken, contracts, config.rewardTokenAddress) :
       undefined,

@@ -117,6 +117,7 @@ export async function deployNetworkComet(
     baseBorrowMin,
     targetReserves,
     assetConfigs,
+    liquidationModule,
     rewardTokenAddress,
   } = await getConfiguration(deploymentManager, configOverrides);
 
@@ -197,6 +198,9 @@ export async function deployNetworkComet(
     baseBorrowMin,
     targetReserves,
     assetConfigs,
+    // Only the extended-asset-list Comet has this field, and it rejects the zero address: a market
+    // built with an asset list must be told which module liquidates it.
+    liquidationModule,
   };
 
   let tmpCometImpl;
