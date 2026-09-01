@@ -1577,11 +1577,11 @@ export async function executeOpenProposalAndRelay(
 
   for (const bridgeManager of bridgeManagers) {
     await mockAllRedstoneOracles(bridgeManager);
-      await relayMessage(
-        governanceDeploymentManager,
-        bridgeManager,
-        startingBlockNumber
-      );
+    await relayMessage(
+      governanceDeploymentManager,
+      bridgeManager,
+      startingBlockNumber
+    );
   }
 }
 
