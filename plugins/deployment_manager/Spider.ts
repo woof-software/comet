@@ -1,24 +1,27 @@
-import { Contract, constants } from 'ethers';
-import { HardhatRuntimeEnvironment as HRE } from 'hardhat/types';
+import { Contract, ZeroAddress } from 'ethers';
+import type { HardhatRuntimeEnvironment as HRE } from 'hardhat/types/hre';
 
-import { Cache } from './Cache';
+import { Cache } from './Cache.js';
 import {
+  aliasTemplateKey,
+  getFieldKey,
+  readAlias,
+  readField,
+} from './RelationConfig.js';
+import type {
   Ctx,
   AliasRender,
   RelationConfigMap,
   RelationConfig,
   RelationInnerConfig,
-  aliasTemplateKey,
-  getFieldKey,
-  readAlias,
-  readField,
-} from './RelationConfig';
-import { Address, Alias, BuildFile, TraceFn } from './Types';
-import { Aliases } from './Aliases';
-import { ContractMap } from './ContractMap';
-import { Roots } from './Roots';
-import { asArray, debug, getEthersContract, mergeContracts } from './Utils';
-import { fetchAndCacheContract, readContract } from './Import';
+} from './RelationConfig.js';
+import type { Address, Alias, BuildFile, TraceFn } from './Types.js';
+import type { Aliases } from './Aliases.js';
+import type { ContractMap } from './ContractMap.js';
+import type { Roots } from './Roots.js';
+import { asArray, debug, getEthersContract, mergeContracts } from './Utils.js';
+import { fetchAndCacheContract, readContract } from './Import.js';
+import { getHardhatEthers } from './hardhat3/runtime.js';
 
 export interface Spider {
   roots: Roots;
@@ -42,7 +45,7 @@ function maybeStore(alias: Alias, address: Address, into: Aliases): boolean {
   if (maybeExists) {
     if (maybeExists.toLowerCase() === address.toLowerCase()) {
       return false;
-    } else if (maybeExists === constants.AddressZero && address !== constants.AddressZero) {
+    } else if (maybeExists === ZeroAddress && address !== ZeroAddress) {
       into.set(alias, address);
       return true;
     } else {
@@ -71,18 +74,18 @@ async function discoverNodes(
 }
 
 async function isContract(hre: HRE, address: string) {
-  return await hre.ethers.provider.getCode(address) !== '0x';
+  return await (await getHardhatEthers(hre)).provider.getCode(address) !== '0x';
 }
 
 async function localBuild(cache: Cache, hre: HRE, artifact: string, network: string, address: Address): Promise<Build> {
   const buildFile = await readContract(cache, hre, artifact, network, address, !cache);
-  const contract = getEthersContract(address, buildFile, hre);
+  const contract = await getEthersContract(address, buildFile, hre);
   return { buildFile, contract };
 }
 
 async function remoteBuild(cache: Cache, hre: HRE, network: string, address: Address): Promise<Build> {
   const buildFile = await fetchAndCacheContract(cache, network, address);
-  const contract = getEthersContract(address, buildFile, hre);
+  const contract = await getEthersContract(address, buildFile, hre);
   return { buildFile, contract };
 }
 
@@ -128,7 +131,7 @@ async function crawl(
 
           // Extend the contract ABI w/ the delegate
           //trace(`Merging ${address} <- ${implNode.address} (${alias} <- ${implAlias})`);
-          contract = mergeContracts(address, [implContract, contract], hre);
+          contract = await mergeContracts(address, [implContract, contract], hre);
 
           // Add the alias in place to the relative context
           (context[implAlias] = context[implAlias] || []).push(implContract);

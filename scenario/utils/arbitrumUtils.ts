@@ -1,5 +1,5 @@
 import { BigNumber, Contract, utils } from 'ethers';
-import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
+import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager.js';
 
 // https://github.com/OffchainLabs/arbitrum/blob/master/packages/arb-bridge-eth/contracts/libraries/AddressAliasHelper.sol
 export function applyL1ToL2Alias(l1Address: string) {

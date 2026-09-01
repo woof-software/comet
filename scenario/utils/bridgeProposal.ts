@@ -1,7 +1,7 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { BridgedProposalState, OpenBridgedProposal } from '../context/Gov';
-import { fetchLogs } from '../utils';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { BridgedProposalState, OpenBridgedProposal } from '../context/Gov.js';
+import { fetchLogs } from '../utils/index.js';
+import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils.js';
 
 export async function getOpenBridgedProposals(
   deploymentManager: DeploymentManager,

@@ -1,4 +1,4 @@
-import { scenario } from './context/CometContext';
+import { scenario } from './context/CometContext.js';
 import { expect } from 'chai';
 
 scenario('initializes governor correctly', {}, async ({ comet, timelock }) => {

@@ -1,6 +1,6 @@
 import { BigNumber, BigNumberish } from 'ethers';
-import { Loader, World, debug } from '../../plugins/scenario';
-import { Migration } from '../../plugins/deployment_manager';
+import { Loader, World, debug } from '../../plugins/scenario/index.js';
+import { Migration } from '../../plugins/deployment_manager/index.js';
 import {
   NativeTokenConstraint,
   TokenBalanceConstraint,
@@ -14,9 +14,9 @@ import {
   FilterConstraint,
   PriceConstraint,
   ReservesConstraint
-} from '../constraints';
-import CometActor from './CometActor';
-import CometAsset from './CometAsset';
+} from '../constraints/index.js';
+import CometActor from './CometActor.js';
+import CometAsset from './CometAsset.js';
 import {
   CometInterface,
   ERC20__factory,
@@ -29,14 +29,14 @@ import {
   BaseBulker,
   BaseBridgeReceiver,
   ERC20,
-} from '../../build/types';
+} from '../../build/types/index.js';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
-import { ProtocolConfiguration, deployComet, COMP_WHALES, WHALES } from '../../src/deploy';
-import { AddressLike, getAddressFromNumber, resolveAddress } from './Address';
-import { fastGovernanceExecute, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
-import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
-import { Requirements } from '../constraints/Requirements';
+import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer.js';
+import { ProtocolConfiguration, deployComet, COMP_WHALES, WHALES } from '../../src/deploy/index.js';
+import { AddressLike, getAddressFromNumber, resolveAddress } from './Address.js';
+import { fastGovernanceExecute, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils/index.js';
+import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario.js';
+import { Requirements } from '../constraints/Requirements.js';
 
 export type ActorMap = { [name: string]: CometActor };
 export type AssetMap = { [name: string]: CometAsset };

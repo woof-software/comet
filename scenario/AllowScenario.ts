@@ -1,7 +1,7 @@
-import { scenario } from './context/CometContext';
-import { event, expect } from '../test/helpers';
-import { expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils';
-import { getConfigForScenario } from './utils/scenarioHelper';
+import { scenario } from './context/CometContext.js';
+import { event, expect } from '../test/helpers.js';
+import { expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils/index.js';
+import { getConfigForScenario } from './utils/scenarioHelper.js';
 import { constants } from 'ethers';
 
 scenario('Comet#allow > has default permission state', {}, async ({ comet, actors }) => {

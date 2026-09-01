@@ -1,13 +1,13 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import relayPolygonMessage from './relayPolygonMessage';
-import { relayArbitrumMessage, relayArbitrumCCTPMint } from './relayArbitrumMessage';
-import relayBaseMessage from './relayBaseMessage';
-import relayLineaMessage from './relayLineaMessage';
-import relayOptimismMessage from './relayOptimismMessage';
-import relayMantleMessage from './relayMantleMessage';
-import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMessage';
-import relayScrollMessage from './relayScrollMessage';
-import relayRoninMessage from './relayRoninMessage';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import relayPolygonMessage from './relayPolygonMessage.js';
+import { relayArbitrumMessage, relayArbitrumCCTPMint } from './relayArbitrumMessage.js';
+import relayBaseMessage from './relayBaseMessage.js';
+import relayLineaMessage from './relayLineaMessage.js';
+import relayOptimismMessage from './relayOptimismMessage.js';
+import relayMantleMessage from './relayMantleMessage.js';
+import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMessage.js';
+import relayScrollMessage from './relayScrollMessage.js';
+import relayRoninMessage from './relayRoninMessage.js';
 
 export default async function relayMessage(
   governanceDeploymentManager: DeploymentManager,

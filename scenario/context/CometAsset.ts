@@ -1,10 +1,10 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { Overrides } from 'ethers';
-import { ERC20 } from '../../build/types';
-import CometActor from './CometActor';
-import { AddressLike, resolveAddress } from './Address';
+import { ERC20 } from '../../build/types/index.js';
+import CometActor from './CometActor.js';
+import { AddressLike, resolveAddress } from './Address.js';
 import { constants } from 'ethers';
-import { wait } from '../../test/helpers';
+import { wait } from '../../test/helpers.js';
 
 export default class CometAsset {
   token: ERC20;

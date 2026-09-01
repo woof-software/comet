@@ -1,9 +1,9 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { BigNumberish, Signature, ethers, ContractReceipt, Overrides, PayableOverrides } from 'ethers';
-import { CometContext } from './CometContext';
-import { AddressLike, resolveAddress } from './Address';
-import { ERC20__factory } from '../../build/types';
-import { baseBalanceOf } from '../../test/helpers';
+import { CometContext } from './CometContext.js';
+import { AddressLike, resolveAddress } from './Address.js';
+import { ERC20__factory } from '../../build/types/index.js';
+import { baseBalanceOf } from '../../test/helpers.js';
 
 export const types = {
   Authorization: [

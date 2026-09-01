@@ -1,10 +1,10 @@
-import { scenario } from './context/CometContext';
+import { scenario } from './context/CometContext.js';
 import { expect } from 'chai';
 import { BigNumberish, constants, utils } from 'ethers';
-import { exp } from '../test/helpers';
-import { FaucetToken } from '../build/types';
-import { calldata } from '../src/deploy';
-import { expectBase, isBridgedDeployment } from './utils';
+import { exp } from '../test/helpers.js';
+import { FaucetToken } from '../build/types/index.js';
+import { calldata } from '../src/deploy/index.js';
+import { expectBase, isBridgedDeployment } from './utils/index.js';
 
 scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => {
   // For this scenario, we will be using the value of LiquidatorPoints.numAbsorbs for address ZERO to test that initialize has been called

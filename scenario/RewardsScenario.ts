@@ -1,11 +1,11 @@
-import { CometContext, CometProperties, scenario } from './context/CometContext';
+import { CometContext, CometProperties, scenario } from './context/CometContext.js';
 import { expect } from 'chai';
-import { exp } from '../test/helpers';
-import { isRewardSupported, matchesDeployment } from './utils';
+import { exp } from '../test/helpers.js';
+import { isRewardSupported, matchesDeployment } from './utils/index.js';
 import { Contract, ContractReceipt } from 'ethers';
-import { CometRewards, ERC20__factory } from '../build/types';
-import {World} from '../plugins/scenario';
-import { getConfigForScenario } from './utils/scenarioHelper';
+import { CometRewards, ERC20__factory } from '../build/types/index.js';
+import {World} from '../plugins/scenario/index.js';
+import { getConfigForScenario } from './utils/scenarioHelper.js';
 
 function calculateRewardsOwed(
   userBalance: bigint,

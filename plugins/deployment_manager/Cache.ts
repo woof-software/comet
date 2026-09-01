@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises';
 import * as nodepath from 'path';
 import { inspect } from 'util';
-import { fileExists, objectFromMap, objectToMap, stringifyJson } from './Utils';
+import { fileExists, objectFromMap, objectToMap, stringifyJson } from './Utils.js';
 
 export type FileSpec = string | string[] | { rel: string | string[] } | { top: string | string[] };
 

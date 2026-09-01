@@ -1,8 +1,8 @@
-import { Constraint } from '../../plugins/scenario';
-import { Solution } from '../../plugins/scenario/Scenario';
-import { CometContext } from '../context/CometContext';
-import { getFuzzedRequirements } from './Fuzzing';
-import { Requirements } from './Requirements';
+import { Constraint } from '../../plugins/scenario/index.js';
+import { Solution } from '../../plugins/scenario/Scenario.js';
+import { CometContext } from '../context/CometContext.js';
+import { getFuzzedRequirements } from './Fuzzing.js';
+import { Requirements } from './Requirements.js';
 
 export class ModernConstraint<T extends CometContext, R extends Requirements> implements Constraint<T, R> {
   async solve(requirements: R, _context: T) {

@@ -1,55 +1,44 @@
-import { task } from 'hardhat/config';
-import { runScenarios } from '../../plugins/scenario/Runner';
-import hreForBase from '../../plugins/scenario/utils/hreForBase';
-import '../../plugins/scenario/type-extensions';
-import { ForkSpec } from '../../plugins/scenario/World';
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
-import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
+import { task } from "hardhat/config";
+import { ArgumentType } from "hardhat/types/arguments";
+import type { NewTaskDefinition } from "hardhat/types/tasks";
 
-function getBasesFromTaskArgs(givenBases: string | undefined, env: HardhatRuntimeEnvironment): ForkSpec[] {
-  let bases: ForkSpec[] = env.config.scenario.bases;
-  if (givenBases) {
-    let baseMap = Object.fromEntries(env.config.scenario.bases.map((base) => [base.name, base]));
-    bases = givenBases.split(',').map((baseName) => {
-      let base = baseMap[baseName];
-      if (!base) {
-        throw new Error(`Unknown base: ${baseName}`);
-      }
-      return base;
-    });
-  }
+const scenarioTask = task("scenario", "Runs scenario tests")
+  .addOption({
+    name: "bases",
+    description: "Bases to run on [defaults to all]",
+    type: ArgumentType.STRING_WITHOUT_DEFAULT,
+    defaultValue: undefined,
+  })
+  .addOption({
+    name: "glob",
+    description: "Scenario files glob [default: scenario/**.ts]",
+    type: ArgumentType.STRING_WITHOUT_DEFAULT,
+    defaultValue: undefined,
+  })
+  .addFlag({
+    name: "spider",
+    description: "run spider persistently before scenarios",
+  })
+  .setAction(async () => ({
+    default: (await import("./task-actions.js")).scenarioAction,
+  }))
+  .build();
 
-  return bases;
-}
+const scenarioSpiderTask = task(
+  "scenario:spider",
+  "Runs spider in preparation for scenarios"
+)
+  .addOption({
+    name: "bases",
+    description: "Bases to run on [defaults to all]",
+    type: ArgumentType.STRING_WITHOUT_DEFAULT,
+    defaultValue: undefined,
+  })
+  .setAction(async () => ({
+    default: (await import("./task-actions.js")).scenarioSpiderAction,
+  }))
+  .build();
 
-task('scenario', 'Runs scenario tests')
-  .addOptionalParam('bases', 'Bases to run on [defaults to all]')
-  .addOptionalParam('glob', 'Scenario files glob [default: scenario/**.ts]')
-  .addFlag('spider', 'run spider persistently before scenarios')
-  .setAction(async (taskArgs, env: HardhatRuntimeEnvironment) => {
-    const bases: ForkSpec[] = getBasesFromTaskArgs(taskArgs.bases, env);
-    if (taskArgs.spider) {
-      await env.run('scenario:spider', taskArgs);
-    }
-    await runScenarios(bases, taskArgs.glob);
-  });
+const taskDefinitions: NewTaskDefinition[] = [scenarioTask, scenarioSpiderTask];
 
-task('scenario:spider', 'Runs spider in preparation for scenarios')
-  .addOptionalParam('bases', 'Bases to run on [defaults to all]')
-  .setAction(async (taskArgs, env) => {
-    const bases: ForkSpec[] = getBasesFromTaskArgs(taskArgs.bases, env);
-    await Promise.all(bases.map(async (base) => {
-      if (base.network !== 'hardhat') {
-        let hre = await hreForBase(base);
-        let dm = new DeploymentManager(
-          base.name,
-          base.deployment,
-          hre,
-          {
-            writeCacheToDisk: true,
-          }
-        );
-        await dm.spider();
-      }
-    }));
-  });
+export default taskDefinitions;

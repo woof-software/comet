@@ -1,4 +1,4 @@
-import { Requirements } from './Requirements';
+import { Requirements } from './Requirements.js';
 
 export enum FuzzType {
   INT64,
@@ -89,7 +89,7 @@ export function getFuzzedRequirements(requirements: Requirements): Requirements[
     if (isFuzzConfig(value)) {
       let fuzzedValues = getFuzzedValues(value);
       keyValues.push(fuzzedValues.map(v => ({ key, value: v.toString() })));
-    } else if (typeof value === 'object' && typeof value !== null) {
+    } else if (typeof value === 'object' && value !== null) {
       // If value is a non-null object, recursively fuzz its properties
       keyValues.push(getFuzzedRequirements(value).map(v => ({ key, value: v})));
     } else {

@@ -1,11 +1,11 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { executeBridgedProposal } from './bridgeProposal';
-import { setNextBaseFeeToZero } from './hreUtils';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import { executeBridgedProposal } from './bridgeProposal.js';
+import { setNextBaseFeeToZero } from './hreUtils.js';
 import { Contract, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
-import { OpenBridgedProposal } from '../context/Gov';
-import { isTenderlyLog } from './index';
+import { OpenBridgedProposal } from '../context/Gov.js';
+import { isTenderlyLog } from './index.js';
 
 type BridgeERC20Data = {
   syncData: string;
@@ -31,7 +31,7 @@ function tryDecodeStateSyncedData(stateSyncedData: any): BridgeERC20Data | undef
       rootToken,
       amount
     };
-  } catch (e) {
+  } catch {
     return undefined;
   }
 }

@@ -3,12 +3,12 @@
 // - Signature validation failures (tampered args, nonce, expiry, ECDSA, chain id)
 // - Operator actions on behalf of the owner (supplyFrom, withdrawFrom, transferAssetFrom)
 
-import { CometContext, scenario } from './context/CometContext';
-import { expectApproximately, expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils';
+import { CometContext, scenario } from './context/CometContext.js';
+import { expectApproximately, expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils/index.js';
 import { expect } from 'chai';
 import { constants, ethers, Signature } from 'ethers';
-import CometActor, { types as AUTHORIZATION_TYPES } from './context/CometActor';
-import { getConfigForScenario } from './utils/scenarioHelper';
+import CometActor, { types as AUTHORIZATION_TYPES } from './context/CometActor.js';
+import { getConfigForScenario } from './utils/scenarioHelper.js';
 
 // Signs an Authorization with the real domain except for the fields in `domainOverride`.
 // Used to prove the contract rejects signatures bound to the wrong EIP-712 domain

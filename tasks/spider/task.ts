@@ -1,37 +1,21 @@
-import { task } from 'hardhat/config';
-import { execSync } from 'child_process';
-import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
+import { task } from "hardhat/config";
+import { ArgumentType } from "hardhat/types/arguments";
+import type { NewTaskDefinition } from "hardhat/types/tasks";
 
-async function deleteSpiderArtifacts() {
-  [
-    'rm -rf deployments/*/.contracts',
-    'rm deployments/*/*/aliases.json',
-  ].forEach(async (command) => {
-    console.log(command);
-    execSync(command);
-  });
-}
+const spiderTask = task(
+  "spider",
+  "Use Spider method to pull in contract configs"
+)
+  .addFlag({ name: "clean", description: "Deletes spider artifacts" })
+  .addOption({
+    name: "deployment",
+    description: "The deployment to spider",
+    type: ArgumentType.STRING_WITHOUT_DEFAULT,
+    defaultValue: undefined,
+  })
+  .setAction(async () => import("./task-action.js"))
+  .build();
 
-task('spider', 'Use Spider method to pull in contract configs')
-  .addFlag('clean', 'Deletes spider artifacts')
-  .addOptionalParam('deployment', 'The deployment to spider')
-  .setAction(async ({ clean, deployment }, hre) => {
-    const network = hre.network.name;
+const taskDefinitions: NewTaskDefinition[] = [spiderTask];
 
-    if (clean) {
-      await deleteSpiderArtifacts();
-    } else {
-      if (!deployment) {
-        throw new Error('missing argument --deployment');
-      }
-      let dm = new DeploymentManager(
-        network,
-        deployment,
-        hre,
-        {
-          writeCacheToDisk: true,
-        }
-      );
-      await dm.spider();
-    }
-  });
+export default taskDefinitions;

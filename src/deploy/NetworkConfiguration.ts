@@ -1,8 +1,11 @@
-import { AssetConfigStruct } from '../../build/types/CometWithExtendedAssetList';
-import { ConfigurationStruct } from '../../build/types/Configurator';
-import { ProtocolConfiguration } from './index';
-import { ContractMap } from '../../plugins/deployment_manager/ContractMap';
-import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
+import type { CometConfiguration as CometConfigurationTypes } from '../../build/types/CometWithExtendedAssetList.js';
+import type { CometConfiguration as ConfiguratorTypes } from '../../build/types/Configurator.js';
+import type { ProtocolConfiguration } from './index.js';
+import type { ContractMap } from '../../plugins/deployment_manager/ContractMap.js';
+import type { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager.js';
+
+type AssetConfigStruct = CometConfigurationTypes.AssetConfigStruct;
+type ConfigurationStruct = ConfiguratorTypes.ConfigurationStruct;
 
 function address(a: string): string {
   if (!a.match(/^0x[a-fA-F0-9]{40}$/)) {
@@ -48,7 +51,7 @@ function stringToBigInt(x: ScientificNotation) {
   if (!Number.isInteger(coefficient)) {
     return number(Number(sanitizedInput));
   } else {
-    return BigInt(coefficient) * (10n ** BigInt(exponent));
+    return BigInt(coefficient) * 10n ** BigInt(exponent);
   }
 }
 
@@ -100,8 +103,12 @@ export interface NetworkConfiguration {
   rewardTokenAddress?: string;
 }
 
-function getContractAddress(contractName: string, contracts: ContractMap, fallbackAddress?: string): string {
-  let contract = contracts.get(contractName);
+async function getContractAddress(
+  contractName: string,
+  contracts: ContractMap,
+  fallbackAddress?: string
+): Promise<string> {
+  const contract = contracts.get(contractName);
   if (!contract) {
     if (fallbackAddress) return fallbackAddress;
     throw new Error(
@@ -110,70 +117,124 @@ function getContractAddress(contractName: string, contracts: ContractMap, fallba
       )}\``
     );
   }
-  return contract.address;
+  return contract.getAddress();
 }
 
-function getAssetConfigs(
+async function getAssetConfigs(
   assets: { [name: string]: NetworkAssetConfiguration },
-  contracts: ContractMap,
-): AssetConfigStruct[] {
-  return Object.entries(assets).map(([assetName, assetConfig]) => ({
-    asset: getContractAddress(assetName, contracts, assetConfig.address),
-    priceFeed: getContractAddress(`${assetName}:priceFeed`, contracts, assetConfig.priceFeed),
-    decimals: number(assetConfig.decimals),
-    borrowCollateralFactor: percentage(assetConfig.borrowCF),
-    liquidateCollateralFactor: percentage(assetConfig.liquidateCF),
-    liquidationFactor: percentage(assetConfig.liquidationFactor),
-    supplyCap: stringToBigInt(assetConfig.supplyCap),
-  }));
+  contracts: ContractMap
+): Promise<AssetConfigStruct[]> {
+  return Promise.all(
+    Object.entries(assets).map(async ([assetName, assetConfig]) => ({
+      asset: await getContractAddress(
+        assetName,
+        contracts,
+        assetConfig.address
+      ),
+      priceFeed: await getContractAddress(
+        `${assetName}:priceFeed`,
+        contracts,
+        assetConfig.priceFeed
+      ),
+      decimals: number(assetConfig.decimals),
+      borrowCollateralFactor: percentage(assetConfig.borrowCF),
+      liquidateCollateralFactor: percentage(assetConfig.liquidateCF),
+      liquidationFactor: percentage(assetConfig.liquidationFactor),
+      supplyCap: stringToBigInt(assetConfig.supplyCap),
+    }))
+  );
 }
 
-function getOverridesOrConfig(
+async function getOverridesOrConfig(
   overrides: ProtocolConfiguration,
   config: NetworkConfiguration,
-  contracts: ContractMap,
-): ProtocolConfiguration {
-  const interestRateInfoMapping = (rates: NetworkRateConfiguration) => ({
-    supplyKink: _ => percentage(rates.supplyKink),
-    supplyPerYearInterestRateSlopeLow: _ => percentage(rates.supplySlopeLow),
-    supplyPerYearInterestRateSlopeHigh: _ => percentage(rates.supplySlopeHigh, false),
-    supplyPerYearInterestRateBase: _ => percentage(rates.supplyBase),
-    borrowKink: _ => percentage(rates.borrowKink),
-    borrowPerYearInterestRateSlopeLow: _ => percentage(rates.borrowSlopeLow),
-    borrowPerYearInterestRateSlopeHigh: _ => percentage(rates.borrowSlopeHigh, false),
-    borrowPerYearInterestRateBase: _ => percentage(rates.borrowBase),
-  });
-  const trackingInfoMapping = (tracking: NetworkTrackingConfiguration) => ({
-    trackingIndexScale: _ => stringToBigInt(tracking.indexScale),
-    baseTrackingSupplySpeed: _ => stringToBigInt(tracking.baseSupplySpeed),
-    baseTrackingBorrowSpeed: _ => stringToBigInt(tracking.baseBorrowSpeed),
-    baseMinForRewards: _ => stringToBigInt(tracking.baseMinForRewards),
-  });
-  const mapping = () => ({
-    name: _ => config.name,
-    symbol: _ => config.symbol,
-    governor: _ => config.governor ? address(config.governor) : getContractAddress('timelock', contracts),
-    pauseGuardian: _ => config.pauseGuardian ? address(config.pauseGuardian) : getContractAddress('timelock', contracts),
-    baseToken: _ => getContractAddress(config.baseToken, contracts, config.baseTokenAddress),
-    baseTokenPriceFeed: _ => getContractAddress(`${config.baseToken}:priceFeed`, contracts, config.baseTokenPriceFeed),
-    baseBorrowMin: _ => stringToBigInt(config.borrowMin),
-    storeFrontPriceFactor: _ => percentage(config.storeFrontPriceFactor),
-    targetReserves: _ => stringToBigInt(config.targetReserves),
-    ...interestRateInfoMapping(config.rates),
-    ...trackingInfoMapping(config.tracking),
-    assetConfigs: _ => getAssetConfigs(config.assets, contracts),
-    rewardTokenAddress: _ => (config.rewardToken || config.rewardTokenAddress) ?
-      getContractAddress(config.rewardToken, contracts, config.rewardTokenAddress) :
-      undefined,
-  });
-  return Object.entries(mapping()).reduce((acc, [k, f]) => {
-    return { [k]: overrides[k] ?? f(config), ...acc };
-  }, {});
+  contracts: ContractMap
+): Promise<ProtocolConfiguration> {
+  let timelockAddress: string | undefined;
+  const getTimelockAddress = async () =>
+    (timelockAddress ??= await getContractAddress('timelock', contracts));
+
+  return {
+    name: overrides.name ?? config.name,
+    symbol: overrides.symbol ?? config.symbol,
+    governor:
+      overrides.governor ??
+      (config.governor ? address(config.governor) : await getTimelockAddress()),
+    pauseGuardian:
+      overrides.pauseGuardian ??
+      (config.pauseGuardian
+        ? address(config.pauseGuardian)
+        : await getTimelockAddress()),
+    baseToken:
+      overrides.baseToken ??
+      (await getContractAddress(
+        config.baseToken,
+        contracts,
+        config.baseTokenAddress
+      )),
+    baseTokenPriceFeed:
+      overrides.baseTokenPriceFeed ??
+      (await getContractAddress(
+        `${config.baseToken}:priceFeed`,
+        contracts,
+        config.baseTokenPriceFeed
+      )),
+    baseBorrowMin: overrides.baseBorrowMin ?? stringToBigInt(config.borrowMin),
+    storeFrontPriceFactor:
+      overrides.storeFrontPriceFactor ??
+      percentage(config.storeFrontPriceFactor),
+    targetReserves:
+      overrides.targetReserves ?? stringToBigInt(config.targetReserves),
+    supplyKink: overrides.supplyKink ?? percentage(config.rates.supplyKink),
+    supplyPerYearInterestRateSlopeLow:
+      overrides.supplyPerYearInterestRateSlopeLow ??
+      percentage(config.rates.supplySlopeLow),
+    supplyPerYearInterestRateSlopeHigh:
+      overrides.supplyPerYearInterestRateSlopeHigh ??
+      percentage(config.rates.supplySlopeHigh, false),
+    supplyPerYearInterestRateBase:
+      overrides.supplyPerYearInterestRateBase ??
+      percentage(config.rates.supplyBase),
+    borrowKink: overrides.borrowKink ?? percentage(config.rates.borrowKink),
+    borrowPerYearInterestRateSlopeLow:
+      overrides.borrowPerYearInterestRateSlopeLow ??
+      percentage(config.rates.borrowSlopeLow),
+    borrowPerYearInterestRateSlopeHigh:
+      overrides.borrowPerYearInterestRateSlopeHigh ??
+      percentage(config.rates.borrowSlopeHigh, false),
+    borrowPerYearInterestRateBase:
+      overrides.borrowPerYearInterestRateBase ??
+      percentage(config.rates.borrowBase),
+    trackingIndexScale:
+      overrides.trackingIndexScale ??
+      stringToBigInt(config.tracking.indexScale),
+    baseTrackingSupplySpeed:
+      overrides.baseTrackingSupplySpeed ??
+      stringToBigInt(config.tracking.baseSupplySpeed),
+    baseTrackingBorrowSpeed:
+      overrides.baseTrackingBorrowSpeed ??
+      stringToBigInt(config.tracking.baseBorrowSpeed),
+    baseMinForRewards:
+      overrides.baseMinForRewards ??
+      stringToBigInt(config.tracking.baseMinForRewards),
+    assetConfigs:
+      overrides.assetConfigs ??
+      (await getAssetConfigs(config.assets, contracts)),
+    rewardTokenAddress:
+      overrides.rewardTokenAddress ??
+      (config.rewardToken !== undefined
+        ? await getContractAddress(
+          config.rewardToken,
+          contracts,
+          config.rewardTokenAddress
+        )
+        : config.rewardTokenAddress),
+  };
 }
 
 export async function getConfiguration(
   deploymentManager: DeploymentManager,
-  configOverrides: ProtocolConfiguration = {},
+  configOverrides: ProtocolConfiguration = {}
 ): Promise<ProtocolConfiguration> {
   const config = await deploymentManager.readConfig<NetworkConfiguration>();
   const contracts = await deploymentManager.contracts();
@@ -182,10 +243,18 @@ export async function getConfiguration(
 
 export async function getConfigurationStruct(
   deploymentManager: DeploymentManager,
-  configOverrides: ProtocolConfiguration = {},
+  configOverrides: ProtocolConfiguration = {}
 ): Promise<ConfigurationStruct> {
   const contracts = await deploymentManager.contracts();
-  const configuration = (await getConfiguration(deploymentManager, configOverrides)) as ConfigurationStruct;
-  const extensionDelegate = configOverrides.extensionDelegate ?? getContractAddress('comet:implementation:implementation', contracts);
+  const configuration = (await getConfiguration(
+    deploymentManager,
+    configOverrides
+  )) as ConfigurationStruct;
+  const extensionDelegate =
+    configOverrides.extensionDelegate ??
+    (await getContractAddress(
+      'comet:implementation:implementation',
+      contracts
+    ));
   return { ...configuration, extensionDelegate };
 }

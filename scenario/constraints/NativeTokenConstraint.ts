@@ -1,6 +1,6 @@
-import { StaticConstraint } from '../../plugins/scenario';
-import { CometContext } from '../context/CometContext';
-import { exp } from '../../test/helpers';
+import { StaticConstraint } from '../../plugins/scenario/index.js';
+import { CometContext } from '../context/CometContext.js';
+import { exp } from '../../test/helpers.js';
 
 export class NativeTokenConstraint<T extends CometContext> implements StaticConstraint<T> {
   async solve() {

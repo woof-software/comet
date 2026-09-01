@@ -1,10 +1,10 @@
-import { scenario } from './context/CometContext';
+import { scenario } from './context/CometContext.js';
 import { expect } from 'chai';
 import { utils } from 'ethers';
-import { BaseBridgeReceiver, LineaBridgeReceiver, ScrollBridgeReceiver } from '../build/types';
-import { calldata } from '../src/deploy';
-import { isBridgedDeployment, matchesDeployment, createCrossChainProposal } from './utils';
-import { ArbitrumBridgeReceiver } from '../build/types';
+import { BaseBridgeReceiver, LineaBridgeReceiver, ScrollBridgeReceiver } from '../build/types/index.js';
+import { calldata } from '../src/deploy/index.js';
+import { isBridgedDeployment, matchesDeployment, createCrossChainProposal } from './utils/index.js';
+import { ArbitrumBridgeReceiver } from '../build/types/index.js';
 
 // This is a generic scenario that runs for all L2s and sidechains
 scenario(

@@ -1,9 +1,9 @@
-import { CometContext, scenario } from './context/CometContext';
+import { CometContext, scenario } from './context/CometContext.js';
 import { constants, utils } from 'ethers';
 import { expect } from 'chai';
-import { expectBase, isRewardSupported, isBulkerSupported, getExpectedBaseBalance, matchesDeployment } from './utils';
-import { exp } from '../test/helpers';
-import { getConfigForScenario } from './utils/scenarioHelper';
+import { expectBase, isRewardSupported, isBulkerSupported, getExpectedBaseBalance, matchesDeployment } from './utils/index.js';
+import { exp } from '../test/helpers.js';
+import { getConfigForScenario } from './utils/scenarioHelper.js';
 
 async function hasNativeAsCollateral(ctx: CometContext): Promise<boolean> {
   const comet = await ctx.getComet();

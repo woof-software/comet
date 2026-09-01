@@ -1,10 +1,10 @@
-import { Constraint, Solution } from '../../plugins/scenario';
-import { CometContext } from '../context/CometContext';
-import CometActor from '../context/CometActor';
+import { Constraint, Solution } from '../../plugins/scenario/index.js';
+import { CometContext } from '../context/CometContext.js';
+import CometActor from '../context/CometActor.js';
 import { expect } from 'chai';
-import { Requirements } from './Requirements';
-import { baseBalanceOf, exp, factorScale } from '../../test/helpers';
-import { ComparativeAmount, ComparisonOp, getAssetFromName, parseAmount, getExpectedBaseBalance, getToTransferAmount } from '../utils';
+import { Requirements } from './Requirements.js';
+import { baseBalanceOf, exp, factorScale } from '../../test/helpers.js';
+import { ComparativeAmount, ComparisonOp, getAssetFromName, parseAmount, getExpectedBaseBalance, getToTransferAmount } from '../utils/index.js';
 import { BigNumber } from 'ethers';
 
 async function borrowBase(borrowActor: CometActor, toBorrowBase: bigint, context: CometContext) {

@@ -1,8 +1,8 @@
-import { scenario } from './context/CometContext';
+import { scenario } from './context/CometContext.js';
 import { expect } from 'chai';
-import { annualize, defactor, exp } from '../test/helpers';
+import { annualize, defactor, exp } from '../test/helpers.js';
 import { BigNumber } from 'ethers';
-import { FuzzType } from './constraints/Fuzzing';
+import { FuzzType } from './constraints/Fuzzing.js';
 
 function calculateInterestRate(
   utilization: BigNumber,

@@ -1,161 +1,60 @@
-import { ethers } from 'ethers';
-import type { HardhatEthersHelpers } from '@nomiclabs/hardhat-ethers/types';
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
-import { HardhatContext } from 'hardhat/internal/context';
-import { loadConfigAndTasks } from 'hardhat/internal/core/config/config-loading';
-import { getEnvHardhatArguments } from 'hardhat/internal/core/params/env-variables';
-import { HARDHAT_PARAM_DEFINITIONS } from 'hardhat/internal/core/params/hardhat-params';
-import { Environment } from 'hardhat/internal/core/runtime-environment';
-import { ForkSpec } from '../World';
-import { HttpNetworkUserConfig } from 'hardhat/types';
-import { EthereumProvider } from 'hardhat/types/provider';
+import hre from 'hardhat';
+import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
+import type { NetworkConnection, NetworkManager } from 'hardhat/types/network';
 
-/*
-mimics https://github.com/nomiclabs/hardhat/blob/master/packages/hardhat-core/src/internal/lib/hardhat-lib.ts
+import type { ForkSpec } from '../World.js';
 
-Hardhat's Environment class implements the HardhatRuntimeEnvironment interface.
-However, the ethers and waffle plugins later extend the
-HardhatRuntimeEnvironment interface. So if we want to interact with the
-Environment class after the plugins have been loaded, we need to replicate the
-alterations made to HardhatRuntimeEnvironment on the Environment interface.
-
-These alterations will almost certainly go out-of-date as the ethers and waffle
-packages are updated, and we'll need to do a similar alteration for any
-additional packages that alter the HardhatRuntimeEnvironment interface.
-
-ethers type extension: https://github.com/nomiclabs/hardhat/blob/master/packages/hardhat-ethers/src/internal/type-extensions.ts
-waffle type extension: https://github.com/nomiclabs/hardhat/blob/master/packages/hardhat-waffle/src/type-extensions.ts
-change network extension: https://github.com/dmihal/hardhat-change-network/blob/master/src/type-extensions.ts
-*/
-declare module 'hardhat/internal/core/runtime-environment' {
-  interface Environment {
-    waffle: any;
-    ethers: typeof ethers & HardhatEthersHelpers;
-    changeNetwork(newNetwork: string): void;
-    getProvider(newNetwork: string): EthereumProvider;
-  }
+function hreForConnection(connection: NetworkConnection): HardhatRuntimeEnvironment {
+  const network = Object.create(hre.network) as NetworkManager;
+  Object.defineProperty(network, 'getOrCreate', {
+    value: async () => connection,
+  });
+  return Object.assign(Object.create(hre), { network }) as HardhatRuntimeEnvironment;
 }
 
 export async function nonForkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEnvironment> {
-  const ctx: HardhatContext = HardhatContext.getHardhatContext();
-
-  const hardhatArguments = getEnvHardhatArguments(
-    HARDHAT_PARAM_DEFINITIONS,
-    process.env
-  );
-
-  const { resolvedConfig, userConfig } = loadConfigAndTasks(hardhatArguments);
-
-  return new Environment(
-    resolvedConfig,
-    {
-      ...hardhatArguments,
-      ...{
-        network: base.network
-      }
-    },
-    ctx.tasksDSL.getTaskDefinitions(),
-    ctx.environment.scopes,
-    ctx.environmentExtenders,
-    userConfig
-  );
+  return hreForConnection(await hre.network.create(base.network));
 }
 
-function getBlockRollback(base: ForkSpec) {
+function getBlockRollback(base: ForkSpec): number | undefined {
   console.log(`Getting block rollback for network: ${base.network}`);
-  if (base.blockNumber)
-    return base.blockNumber;
-  else if(base.network === 'linea')
-    return 150;
-  else if (base.network === 'ronin'){
-    return 0;
-  }
-  else if (base.network === 'arbitrum') {
-    return undefined;
-  }
-  else if (base.network === 'unichain') {
-    return 0;
-  }
-  else if (base.network === 'base') {
-    return 100;
-  }
-  else if (base.network === 'optimism') {
-    return undefined;
-  }
-  else if (base.network === 'mainnet') {
-    return 10;
-  }
-  else
-    return 25;
+  if (base.network === 'linea') return 150;
+  if (base.network === 'ronin' || base.network === 'unichain') return 1;
+  if (base.network === 'arbitrum' || base.network === 'optimism') return undefined;
+  if (base.network === 'base') return 100;
+  if (base.network === 'mainnet') return 10;
+  return 25;
 }
 
 export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEnvironment> {
-  const ctx: HardhatContext = HardhatContext.getHardhatContext();
-
-  const hardhatArguments = getEnvHardhatArguments(HARDHAT_PARAM_DEFINITIONS, process.env);
-
-  const { resolvedConfig: config, userConfig } = loadConfigAndTasks(hardhatArguments);
-
-  const networks = config.networks;
-  const { hardhat: defaultNetwork, localhost } = networks;
-
-  const baseNetwork = networks[base.network] as HttpNetworkUserConfig;
-
-  const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
-  if(baseNetwork.url)
-    console.log(`Forking from network: ${base.network} at block number: ${await provider.getBlockNumber() - (getBlockRollback(base) || 0)}`);
-
-  // noNetwork otherwise
-  if (!base.blockNumber && baseNetwork.url && getBlockRollback(base) !== undefined)
-    base.blockNumber = await provider.getBlockNumber() - getBlockRollback(base); // arbitrary number of blocks to go back
-
-  if (getBlockRollback(base) === 0) {
-    const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
-    const block = await provider.getBlockNumber();
-    base.blockNumber = block - 1;
+  const remoteConnection = await hre.network.create(base.network);
+  const remoteEthers = remoteConnection.ethers;
+  const currentBlock = await remoteEthers.provider.getBlockNumber();
+  const rollback = getBlockRollback(base);
+  const blockNumber = base.blockNumber ?? (rollback === undefined ? undefined : currentBlock - rollback);
+  const remoteConfig = remoteConnection.networkConfig;
+  if (remoteConfig.type !== 'http') {
+    throw new Error(`Cannot fork non-HTTP network ${base.network}`);
   }
+  const url = await remoteConfig.url.get();
 
-  if (!baseNetwork) {
-    throw new Error(`cannot find network config for network: ${base.network}`);
-  }
-
-  const forkedNetwork = {
-    ...defaultNetwork,
-    ...{
+  console.log(`Forking from network: ${base.network}${blockNumber === undefined ? '' : ` at block number: ${blockNumber}`}`);
+  const forkConnection = await hre.network.create({
+    network: 'hardhat',
+    override: {
+      chainId: remoteConfig.chainId,
       forking: {
         enabled: true,
-        url: baseNetwork.url,
-        httpHeaders: {},
-        ...(base.blockNumber && { blockNumber: base.blockNumber }),
+        url,
+        blockNumber: blockNumber === undefined ? undefined : BigInt(blockNumber),
       },
     },
-    ...(baseNetwork.chainId ? { chainId: baseNetwork.chainId } : {}),
-  };
-
-  const forkedConfig = {
-    ...config,
-    ...{
-      defaultNetwork: 'hardhat',
-      networks: {
-        hardhat: forkedNetwork,
-        localhost: localhost
-      },
-    },
-  };
-  return new Environment(
-    forkedConfig,
-    hardhatArguments,
-    ctx.tasksDSL.getTaskDefinitions(),
-    ctx.environment.scopes,
-    ctx.environmentExtenders,
-    userConfig
-  );
+  });
+  return hreForConnection(forkConnection);
 }
 
 export default async function hreForBase(base: ForkSpec, fork = true): Promise<HardhatRuntimeEnvironment> {
-  if (fork) {
-    return forkedHreForBase(base);
-  } else {
-    return nonForkedHreForBase(base);
-  }
+  return fork && base.network !== 'hardhat'
+    ? forkedHreForBase(base)
+    : nonForkedHreForBase(base);
 }

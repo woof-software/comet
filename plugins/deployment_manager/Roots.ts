@@ -1,5 +1,5 @@
-import { Alias, Address } from './Types';
-import { Cache } from './Cache';
+import type { Alias, Address } from './Types.js';
+import { Cache } from './Cache.js';
 
 export type Roots = Map<Alias, Address>;
 
