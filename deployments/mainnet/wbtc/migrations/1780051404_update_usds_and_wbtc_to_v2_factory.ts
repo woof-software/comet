@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { Contract, utils } from 'ethers';
+import { Contract } from 'ethers';
 import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
 import { migration } from '../../../../plugins/deployment_manager/Migration';
 import { exp, proposal } from '../../../../src/deploy';
@@ -28,49 +28,37 @@ export default migration('1780051404_update_usds_and_wbtc_to_v2_factory', {
     } = await deploymentManager.getContracts();
 
     const mainnetActions = [
-      // 1. Update version in new Comet to the recent service patch version
-      {
-        target: COMET_FACTORY_V2,
-        signature: 'setVersion(((uint64,uint64,uint64),string))',
-        calldata: utils.defaultAbiCoder.encode(
-          ['tuple((uint64,uint64,uint64),string)'],
-          [[
-            [1, 2, 1],
-            '',
-          ]]
-        ),          
-      },
-      // 2. Update USDS Comet factory to a new one
+      // 1. Update USDS Comet factory to a new one
       {
         contract: configurator,
         signature: 'setFactory(address,address)',
         args: [USDS_COMET, COMET_FACTORY_V2],
       },
-      // 3. Set service patch version of the extension delegate for the USDS Comet
+      // 2. Set service patch version of the extension delegate for the USDS Comet
       {
         contract: configurator,
         signature: 'setExtensionDelegate(address,address)',
         args: [USDS_COMET, USDS_EXT],
       },
-      // 4. Deploy and upgrade to a new version of Comet
+      // 3. Deploy and upgrade to a new version of Comet
       {
         contract: cometAdmin,
         signature: 'deployAndUpgradeTo(address,address)',
         args: [configurator.address, USDS_COMET],
       },
-      // 5. Update WBTC Comet factory to the new one
+      // 4. Update WBTC Comet factory to the new one
       {
         contract: configurator,
         signature: 'setFactory(address,address)',
         args: [WBTC_COMET, COMET_FACTORY_V2],
       },
-      // 6. Set service patch version of the extension delegate for the WBTC Comet
+      // 5. Set service patch version of the extension delegate for the WBTC Comet
       {
         contract: configurator,
         signature: 'setExtensionDelegate(address,address)',
         args: [WBTC_COMET, WBTC_EXT],
       },
-      // 7. Deploy and upgrade WBTC Comet to a new version of Comet
+      // 6. Deploy and upgrade WBTC Comet to a new version of Comet
       {
         contract: cometAdmin,
         signature: 'deployAndUpgradeTo(address,address)',
@@ -114,19 +102,17 @@ Both service patch Comet update and Bytecode Repository have been audited by Cer
 
 ## Proposal Actions
 
-The first proposal action updates the version in the new Comet factory to the recent service patch version.
+The first proposal action updates the factory of the USDS Comet to the new V2 factory.
 
-The second proposal action updates the factory of the USDS Comet to the new V2 factory.
+The second proposal action sets the extension delegate for the USDS Comet to the new service patch version.
 
-The third proposal action sets the extension delegate for the USDS Comet to the new service patch version.
+The third proposal action deploys and upgrades the USDS Comet to the new service patch version.
 
-The fourth proposal action deploys and upgrades the USDS Comet to the new service patch version.
+The fourth proposal action updates the factory of the WBTC Comet to the new V2 factory.
 
-The fifth proposal action updates the factory of the WBTC Comet to the new V2 factory.
+The fifth proposal action sets the extension delegate for the WBTC Comet to the new service patch version.
 
-The sixth proposal action sets the extension delegate for the WBTC Comet to the new service patch version.
-
-The seventh proposal action deploys and upgrades the WBTC Comet to the new service patch version.
+The sixth proposal action deploys and upgrades the WBTC Comet to the new service patch version.
 `;
     const txn = await deploymentManager.retry(async () =>
       trace(
