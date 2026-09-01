@@ -102,12 +102,7 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
 
   const baseNetwork = networks[base.network] as HttpNetworkUserConfig;
 
-  const providerUrl = (() => {
-    if (activeMigration) 
-      return networkConfigs.find(c => c.network === base.network)?.url;
-    
-    return baseNetwork.url;
-  })();
+  const providerUrl = activeMigration ? networkConfigs.find(c => c.network === base.network)?.url : baseNetwork.url;
 
   const getBlockNumberWithRetry = async (): Promise<number> => {
     const provider = new ethers.providers.JsonRpcProvider(providerUrl);
