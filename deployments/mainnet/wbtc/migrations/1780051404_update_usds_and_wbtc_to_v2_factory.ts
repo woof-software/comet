@@ -1,0 +1,178 @@
+import { expect } from 'chai';
+import { Contract } from 'ethers';
+import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
+import { migration } from '../../../../plugins/deployment_manager/Migration';
+import { exp, proposal } from '../../../../src/deploy';
+
+const USDS_COMET = '0x5D409e56D886231aDAf00c8775665AD0f9897b56';
+const WBTC_COMET = '0xe85Dc543813B8c2CFEaAc371517b925a166a9293';
+
+const COMET_FACTORY_V2 = '0x298aC0E463cEAd4aaA73fb91Df7C639A8eFBd9c4';
+
+const USDS_EXT = '0xbEf2218271f74B58ed06197903574716709c9537';
+const WBTC_EXT = '0xecac24cBadFDF7a8F302fCD75C91Fea9335611C4';
+
+export default migration('1780051404_update_usds_and_wbtc_to_v2_factory', {
+  async prepare() {
+    return {};
+  },
+
+  async enact(deploymentManager: DeploymentManager) {
+
+    const trace = deploymentManager.tracer();
+
+    const {
+      governor,
+      cometAdmin,
+      configurator,
+    } = await deploymentManager.getContracts();
+
+    const mainnetActions = [
+      // 1. Update USDS Comet factory to a new one
+      {
+        contract: configurator,
+        signature: 'setFactory(address,address)',
+        args: [USDS_COMET, COMET_FACTORY_V2],
+      },
+      // 2. Set service patch version of the extension delegate for the USDS Comet
+      {
+        contract: configurator,
+        signature: 'setExtensionDelegate(address,address)',
+        args: [USDS_COMET, USDS_EXT],
+      },
+      // 3. Deploy and upgrade to a new version of Comet
+      {
+        contract: cometAdmin,
+        signature: 'deployAndUpgradeTo(address,address)',
+        args: [configurator.address, USDS_COMET],
+      },
+      // 4. Update WBTC Comet factory to the new one
+      {
+        contract: configurator,
+        signature: 'setFactory(address,address)',
+        args: [WBTC_COMET, COMET_FACTORY_V2],
+      },
+      // 5. Set service patch version of the extension delegate for the WBTC Comet
+      {
+        contract: configurator,
+        signature: 'setExtensionDelegate(address,address)',
+        args: [WBTC_COMET, WBTC_EXT],
+      },
+      // 6. Deploy and upgrade WBTC Comet to a new version of Comet
+      {
+        contract: cometAdmin,
+        signature: 'deployAndUpgradeTo(address,address)',
+        args: [configurator.address, WBTC_COMET],
+      },
+    ];
+
+    const description = `# Update cUSDSv3 and cWBTCv3 Comets on Mainnet to the service patch version
+
+## Proposal summary
+
+WOOF! proposes to update Mainnet cUSDSv3 and cWBTCv3 Comet markets to a new service patch version introducing several improvements and security enhancements:
+
+- Extended Pause Controls: collateral interactions can now be paused independently per collateral asset.
+- Price Feed Patch (Post-USDM incident response): skips price feed calls for assets with zero collateral factor, preventing unnecessary reverts.
+- Collateral Deactivation Mechanism: introduces a Guardian-controlled emergency mechanism to deactivate unsafe collateral assets, with reactivation requiring a governance proposal.
+- Utilization Peaking Protection: caps utilization at 200%, preventing additional borrowing when post-borrow utilization exceeds this threshold, while preserving lender withdrawals.
+- Borrow Index Fix (Empty Market): prevents borrow interest accrual in markets without active borrowers.
+- Supply Index Fix (Empty Market): ensures supply index only accrues when lenders are present.
+- Lender Illiquidity Fix in Zero-Borrow Markets: prevents reserve depletion in markets with no borrowers by capping supply rate to zero when utilization is zero and reserves are exhausted.
+- Accrue Interest on Collateral Actions (Post-USDM incident response): collateral actions (supply, withdraw, transfer) now trigger interest accrual for affected accounts.
+- Technical Improvements: includes removal of redundant arguments in supplyInternal() and optimized price caching in absorbInternal(), improving gas efficiency without affecting protocol behavior.
+
+This proposal takes the governance steps recommended and necessary to update Compound III USDS and WBTC markets on Mainnet. Simulations have confirmed the market's readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario).
+
+Detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/14).
+
+### Bytecode Repository
+
+This update is done with the use of the bytecode repository, which provides trustless and deterministic deployments.
+
+Further details on the deployment can be found in the [Bytecode Repository git](https://github.com/woof-software/bytecode-repository) and [forum discussion](https://www.comp.xyz/t/rfc-bytecode-repository-and-deployment-pipeline-modernization/6965).
+
+### Audit
+
+Both service patch Comet update and Bytecode Repository have been audited by Certora and full reports can be found here:
+
+- [Certora Comet Service Patch Audit](https://www.certora.com/reports/comet-service-patch)
+- [Certora Bytecode Repository Audit](https://www.certora.com/reports/compound-bytecoderepository)
+
+
+## Proposal Actions
+
+The first proposal action updates the factory of the USDS Comet to the new V2 factory.
+
+The second proposal action sets the extension delegate for the USDS Comet to the new service patch version.
+
+The third proposal action deploys and upgrades the USDS Comet to the new service patch version.
+
+The fourth proposal action updates the factory of the WBTC Comet to the new V2 factory.
+
+The fifth proposal action sets the extension delegate for the WBTC Comet to the new service patch version.
+
+The sixth proposal action deploys and upgrades the WBTC Comet to the new service patch version.
+`;
+    const txn = await deploymentManager.retry(async () =>
+      trace(
+        await governor.propose(...(await proposal(mainnetActions, description)))
+      ), 0, 300_000
+    );
+
+    const event = txn.events.find(
+      (event: { event: string }) => event.event === 'ProposalCreated'
+    );
+    const [proposalId] = event.args;
+    trace(`Created proposal ${proposalId}.`);
+  },
+
+  async enacted(): Promise<boolean> {
+    return false;
+  },
+
+  async verify(deploymentManager: DeploymentManager) {
+    const { configurator } = await deploymentManager.getContracts();
+    const newCometAbi = [
+      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint256)',
+      'function symbol() external view returns (string)',
+      'function name() external view returns (string)',
+      'function extensionDelegate() external view returns (address)',
+    ];
+
+    const factoryV2 = new Contract(
+      COMET_FACTORY_V2,
+      [
+        'function version() view returns ((uint64,uint64,uint64),string)',
+      ],
+      await deploymentManager.getSigner()
+    );
+
+    const [baseVersion, baseAlternative] = await factoryV2.version();
+    expect(baseVersion).to.deep.equal([1, 2, 1]);
+    expect(baseAlternative).to.equal('');
+
+    expect(await configurator.factory(USDS_COMET)).to.equal(COMET_FACTORY_V2);
+    expect(await configurator.factory(WBTC_COMET)).to.equal(COMET_FACTORY_V2);
+
+    expect((await configurator.getConfiguration(USDS_COMET)).extensionDelegate).to.equal(USDS_EXT);
+    expect((await configurator.getConfiguration(WBTC_COMET)).extensionDelegate).to.equal(WBTC_EXT);
+
+    const expectedMaxUtilization = exp(2, 18);
+    const signer = await deploymentManager.getSigner();
+
+    const newCometUsds = new Contract(USDS_COMET, newCometAbi, signer);
+
+    expect(await newCometUsds.MAX_SUPPORTED_UTILIZATION()).to.equal(expectedMaxUtilization);
+    expect(await newCometUsds.symbol()).to.equal('cUSDSv3');
+    expect(await newCometUsds.name()).to.equal('Compound USDS');
+    expect(await newCometUsds.extensionDelegate()).to.equal(USDS_EXT);
+
+    const newCometWbtc = new Contract(WBTC_COMET, newCometAbi, signer);
+
+    expect(await newCometWbtc.MAX_SUPPORTED_UTILIZATION()).to.equal(expectedMaxUtilization);
+    expect(await newCometWbtc.symbol()).to.equal('cWBTCv3');
+    expect(await newCometWbtc.name()).to.equal('Compound WBTC');
+    expect(await newCometWbtc.extensionDelegate()).to.equal(WBTC_EXT);
+  },
+});
