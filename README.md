@@ -19,29 +19,24 @@ cp .env.example .env
 Required env variables:
 
 ```
-ETHERSCAN_KEY=<key>
-MAINNET_QUICKNODE_LINK=<rpc-url>
-UNICHAIN_QUICKNODE_LINK=<rpc-url>
-LINEA_QUICKNODE_LINK=<rpc-url>
-```
-
-Per-chain env variables (required only when working with a specific chain):
-
-```
-# RPC endpoints
-POLYGON_QUICKNODE_LINK=<rpc-url>
-OPTIMISM_QUICKNODE_LINK=<rpc-url>
-MANTLE_QUICKNODE_LINK=<rpc-url>
-BASE_QUICKNODE_LINK=<rpc-url>
-ARBITRUM_QUICKNODE_LINK=<rpc-url>
-RONIN_QUICKNODE_LINK=<rpc-url>
-
-# Block explorer API keys (for contract verification)
-ETHERSCAN_KEY_FOR_OPTIMISM=<key>
-ETHERSCAN_KEY_FOR_BASE=<key>
-ETHERSCAN_KEY_FOR_ARBITRUM=<key>
-ETHERSCAN_KEY_FOR_POLYGON=<key>
-ETHERSCAN_KEY_FOR_LINEA=<key>
+ARBITRUM_QUICKNODE_LINK
+BASE_QUICKNODE_LINK
+ETHERSCAN_KEY
+ETHERSCAN_KEY_FOR_ARBITRUM
+ETHERSCAN_KEY_FOR_BASE
+ETHERSCAN_KEY_FOR_LINEA
+ETHERSCAN_KEY_FOR_OPTIMISM
+ETHERSCAN_KEY_FOR_POLYGON
+ETH_PK
+LINEA_QUICKNODE_LINK
+MAINNET_QUICKNODE_LINK
+MANTLE_QUICKNODE_LINK
+OPTIMISM_QUICKNODE_LINK
+POLYGON_QUICKNODE_LINK
+RONIN_QUICKNODE_LINK
+TENDERLY_ACCESS_KEY
+TENDERLY_USERNAME
+UNICHAIN_QUICKNODE_LINK
 ```
 
 Optional env variables:
@@ -49,6 +44,7 @@ Optional env variables:
 ```
 COINMARKETCAP_API_KEY=<key>
 REPORT_GAS=true
+SALT=<salt>                 # used for deterministic deployments
 ETH_PK=<eth-key>             # takes precedence over MNEMONIC
 MNEMONIC=<mnemonic>
 ```
