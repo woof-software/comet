@@ -193,6 +193,7 @@ export default async function relayBaseMessage(
 export async function simulateL2ToL1TokenBridging(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber?: number,
   tenderlyLogs?: any[]
 ) {
   if(tenderlyLogs) {
@@ -214,12 +215,14 @@ export async function simulateL2ToL1TokenBridging(
   // ProposalCreated(address indexed rootMessageSender, uint256 id, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 eta)
   console.log('Fetching recent ProposalCreated events from BridgeReceiver...');
   const latestBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber();
-  const proposalCreatedEvents = await bridgeDeploymentManager.hre.ethers.provider.getLogs({
-    fromBlock: latestBlockNumber - 1000, // look back 1000 blocks for ProposalCreated events, which should be sufficient to cover any recent proposals given typical block times on Base
-    toBlock: 'latest',
-    address: bridgeReceiver.address,
-    topics: [utils.id('ProposalCreated(address,uint256,address[],uint256[],string[],bytes[],uint256)')]
-  });
+  const proposalCreatedEvents = await bridgeDeploymentManager.retry(() =>
+    bridgeDeploymentManager.hre.ethers.provider.getLogs({
+      fromBlock: l2StartingBlockNumber ?? latestBlockNumber - 1000,
+      toBlock: 'latest',
+      address: bridgeReceiver.address,
+      topics: [utils.id('ProposalCreated(address,uint256,address[],uint256[],string[],bytes[],uint256)')]
+    })
+  );
 
   const bridgeERC20ToSignature = 'bridgeERC20To(address,address,address,uint256,uint32,bytes)';
 

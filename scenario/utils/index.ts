@@ -28,6 +28,8 @@ import {
   setNextBaseFeeToZero,
   setNextBlockTimestamp,
 } from './hreUtils';
+import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
+import { getOrCreateVirtualTestnet } from './tenderlyVnet';
 import { BaseBridgeReceiver, CometInterface } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
@@ -360,6 +362,10 @@ export async function isValidAssetIndex(
   if (assetNum >= MAX_ASSETS) return false;
   // Asset info checks. If any of these are false, the asset is invalid. This means that the asset is deprecated.
   const comet = await ctx.getComet();
+
+  const numAssets = await comet.numAssets();
+  if (assetNum >= numAssets) return false;
+
   const assetInfo = await comet.getAssetInfo(assetNum);
   if (assetInfo.borrowCollateralFactor.toBigInt() == 0n) return false;
   if (assetInfo.supplyCap.toBigInt() == 0n) return false;
@@ -1115,6 +1121,175 @@ async function shareSimulation(dm: DeploymentManager, simulationId: string) {
       },
     }
   );
+}
+
+// storage slot:
+//   keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.GovernorCountingFractional")) - 1))
+//   & ~bytes32(uint256(0xff))
+const GOV_COUNTING_FRACTIONAL_STORAGE_LOCATION =
+  '0xd073797d8f9d07d835a3fc13195afeafd2f137da609f97a44f7a3aa434170800';
+
+/*
+Directly sets a proposal's forVotes tally high enough to satisfy both _quorumReached() and _voteSucceeded(),
+without casting any real votes.
+*/
+async function forceProposalVotesSucceeded(
+  vnetProvider: any,
+  governorAddress: string,
+  proposalId: BigNumber
+): Promise<void> {
+  const entrySlot = BigNumber.from(
+    utils.keccak256(
+      utils.defaultAbiCoder.encode(
+        ['uint256', 'uint256'],
+        [proposalId, GOV_COUNTING_FRACTIONAL_STORAGE_LOCATION]
+      )
+    )
+  );
+  const forVotesSlot = utils.hexZeroPad(entrySlot.add(1).toHexString(), 32);
+  const forVotesValue = utils.hexZeroPad(BigNumber.from(10_000_000).mul(BigNumber.from(10).pow(18)).toHexString(), 32);
+  await vnetProvider.send('tenderly_setStorageAt', [governorAddress, forVotesSlot, forVotesValue]);
+}
+
+/*
+Alternative to tenderlyExecute() that runs the migration's cached proposal through the real
+governor on a Tenderly Virtual TestNet (a persistent, sharable fork), instead of chaining together
+stateless Tenderly simulate-bundle calls. propose(), queue() and execute() are all real
+transactions, exactly as governance requires; only the vote itself is skipped.
+
+governanceDm is the deployment manager for the network that hosts the governor (e.g. mainnet).
+marketDm is the deployment manager for the market actually being migrated - for a non-bridged
+market (e.g. mainnet USDC) this is the exact same deployment manager as governanceDm; for a
+bridged market (e.g. Base WETH) it's the L2 side, and its own Virtual TestNet is only created if
+the proposal needs relaying there.
+*/
+export async function tenderlyVnetExecute(
+  governanceDm: DeploymentManager,
+  marketDm: DeploymentManager,
+  governor: Contract,
+  _timelock: Contract
+): Promise<void> {
+  console.log(`\n========================== TENDERLY VNET ==========================\n`);
+
+  const governanceVnet = await getOrCreateVirtualTestnet(governanceDm);
+  console.log(`Virtual TestNet ready for ${governanceDm.network}`);
+  console.log(`  Public RPC: ${governanceVnet.publicRpcUrl}`);
+  if (governanceVnet.dashboardUrl) {
+    console.log(`  Dashboard:  ${governanceVnet.dashboardUrl}`);
+  }
+
+  const governanceVnetEnv = await vnetHreForBase(governanceDm.network, governanceVnet.adminRpcUrl);
+  const governanceVnetDm = new DeploymentManager(governanceDm.network, governanceDm.deployment, governanceVnetEnv, {
+    writeCacheToDisk: false,
+    verificationStrategy: 'lazy',
+  });
+
+  const governanceVnetProvider = governanceVnetDm.hre.ethers.provider;
+  const vnetGovernor = governor.connect(governanceVnetProvider);
+
+  const proposalArgs = loadCachedProposal();
+  proposalArgs.pop(); // drop signatures; governor.propose(targets, values, calldatas, description)
+
+  const deployBytecodes = loadCachedBytecodes();
+  const proposerAddress = await (await governanceDm.getSigner()).getAddress();
+
+  await setEtherBalance(governanceVnetDm, proposerAddress, 10n ** 20n);
+  const proposerSigner = await governanceVnetDm.getSigner(proposerAddress);
+
+  for (const code of deployBytecodes) {
+    const tx = await proposerSigner.sendTransaction({ data: utils.hexlify(code) });
+    await tx.wait();
+  }
+
+  console.log('Submitting proposal to Virtual TestNet governor...');
+
+  const proposeTx = await vnetGovernor.connect(proposerSigner).propose(...proposalArgs);
+  const proposeReceipt: ContractReceipt = await proposeTx.wait();
+  const proposeEvent = proposeReceipt.events.find((event: Event) => event.event === 'ProposalCreated');
+  const [proposalId] = proposeEvent.args;
+  console.log(`Proposal ${proposalId.toString()} submitted on Virtual TestNet`);
+
+  await forceProposalVotesSucceeded(governanceVnetProvider, vnetGovernor.address, proposalId);
+
+  const deadline = (await vnetGovernor.proposalDeadline(proposalId)).toNumber();
+  const currentBlock = await governanceVnetProvider.getBlockNumber();
+  if (currentBlock <= deadline) {
+    await governanceVnetProvider.send('evm_increaseBlocks', [utils.hexlify(deadline - currentBlock + 1)]);
+  }
+
+  const startingBlockNumber = await governanceVnetProvider.getBlockNumber();
+
+  console.log(`Queueing proposal ${proposalId.toString()} (vote skipped via state override)...`);
+  const queueTx = await vnetGovernor.connect(proposerSigner)['queue(uint256)'](proposalId);
+  await queueTx.wait();
+
+  const eta = (await vnetGovernor.proposalEta(proposalId)).toNumber();
+  const latestBlock = await governanceVnetProvider.getBlock('latest');
+  if (latestBlock.timestamp <= eta) {
+    await governanceVnetProvider.send('evm_setNextBlockTimestamp', [eta + 1]);
+    await governanceVnetProvider.send('evm_mine', []);
+  }
+
+  console.log('Updating CCIP prices...');
+  await updateCCIPStats(governanceVnetDm);
+
+  console.log(`Executing proposal ${proposalId.toString()}...`);
+  const executeTx = await vnetGovernor.connect(proposerSigner)['execute(uint256)'](proposalId, { gasLimit: 30_000_000 });
+  await executeTx.wait();
+
+  console.log(`\n >>> PROPOSAL EXECUTED ${proposalId.toString()} \n`);
+  console.log(`Public RPC: ${governanceVnet.publicRpcUrl}`);
+  if (governanceVnet.dashboardUrl) {
+    console.log(`Dashboard:  ${governanceVnet.dashboardUrl}`);
+  }
+
+  // Collect every L2 this proposal touches: marketDm plus whatever the migration registered via
+  // addBridgedDeploymentManager() (multichain proposals)
+  const governanceChainId = governanceDm.hre.ethers.provider.network.chainId;
+  const candidateL2Dms = [marketDm, ...governanceDm.bridgedDeploymentManagers.values()];
+  const uniqueL2DmsByChainId = new Map<number, DeploymentManager>();
+  for (const dm of candidateL2Dms) {
+    const chainId = dm.hre.ethers.provider.network.chainId;
+    if (chainId !== governanceChainId && !uniqueL2DmsByChainId.has(chainId)) {
+      uniqueL2DmsByChainId.set(chainId, dm);
+    }
+  }
+  const l2Dms = [...uniqueL2DmsByChainId.values()];
+
+  if (l2Dms.length > 0) {
+    await governanceVnetDm.spider();
+  }
+
+  for (const l2Dm of l2Dms) {
+    try {
+      const l2Vnet = await getOrCreateVirtualTestnet(l2Dm);
+      console.log(`\nVirtual TestNet ready for ${l2Dm.network}`);
+      console.log(`  Public RPC: ${l2Vnet.publicRpcUrl}`);
+      if (l2Vnet.dashboardUrl) {
+        console.log(`  Dashboard:  ${l2Vnet.dashboardUrl}`);
+      }
+
+      const l2VnetEnv = await vnetHreForBase(l2Dm.network, l2Vnet.adminRpcUrl);
+      const l2VnetDm = new DeploymentManager(l2Dm.network, l2Dm.deployment, l2VnetEnv, {
+        writeCacheToDisk: false,
+        verificationStrategy: 'lazy',
+      });
+      await l2VnetDm.spider();
+      await l2VnetDm.getSigner(proposerAddress);
+
+      await relayMessage(governanceVnetDm, l2VnetDm, startingBlockNumber);
+
+      console.log(`\n >>> PROPOSAL RELAYED to ${l2Dm.network} \n`);
+      console.log(`Public RPC: ${l2Vnet.publicRpcUrl}`);
+      if (l2Vnet.dashboardUrl) {
+        console.log(`Dashboard:  ${l2Vnet.dashboardUrl}`);
+      }
+    } catch (e) {
+      console.log(`\n >>> FAILED to relay to ${l2Dm.network}: ${e.message} \n`);
+    }
+  }
+
+  console.log(`\n================================================================\n`);
 }
 
 export async function voteForOpenProposal(
