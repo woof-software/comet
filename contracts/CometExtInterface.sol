@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import "./CometCore.sol";
+import { CometCore } from "./CometCore.sol";
+import { ICometOperationsLock } from "./interfaces/comet-operations-locker/ICometOperationsLock.sol";
 
 /**
  * @title Compound's Comet Ext Interface
  * @notice An efficient monolithic money market protocol
  * @author Compound
  */
-abstract contract CometExtInterface is CometCore {
+abstract contract CometExtInterface is CometCore, ICometOperationsLock {
     error BadAmount();
     error BadNonce();
     error BadSignatory();
