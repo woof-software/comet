@@ -110,7 +110,7 @@ describe('M-02 — DEX liquidation reentrancy (fixed)', function () {
     await borrower.openPosition(exp(1, 18), exp(1_500, 6));
 
     // Point the adapter at the attacker and drop WETH so the small position is liquidatable.
-    await adapter.setAttacker(borrower.address);
+    await adapter.setReentrantCall(borrower.address, borrower.interface.encodeFunctionData('attack'));
     const now = (await ethers.provider.getBlock('latest')).timestamp;
     await wethFeed.setRoundData(1, exp(1_700, 8), now, now, 1);
     expect(await comet.isLiquidatable(borrower.address)).to.equal(true);
