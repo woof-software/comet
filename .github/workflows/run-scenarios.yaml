@@ -87,7 +87,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        bases: [ development, mainnet, mainnet-weth, mainnet-wbtc, mainnet-usdt, mainnet-wsteth, mainnet-usds, sepolia-usdc, sepolia-weth, fuji, polygon, polygon-usdt, arbitrum-usdc.e, arbitrum-usdc, arbitrum-weth, arbitrum-usdt, base-usdbc, base-weth, base-usdc, base-aero, base-usds, optimism-usdc, optimism-usdt, optimism-weth, mantle-usde, linea-usdc, linea-weth, scroll-usdc, ronin-weth, ronin-wron, unichain-usdc, unichain-weth]
+        bases: [ development, mainnet, mainnet-weth, mainnet-wbtc, mainnet-usdt, mainnet-wsteth, mainnet-usds, mainnet-usdc-dex, mainnet-usdc-dex-1, mainnet-usdc-dex-24, sepolia-usdc, sepolia-weth, fuji, polygon, polygon-usdt, arbitrum-usdc.e, arbitrum-usdc, arbitrum-weth, arbitrum-usdt, base-usdbc, base-weth, base-usdc, base-aero, base-usds, optimism-usdc, optimism-usdt, optimism-weth, mantle-usde, linea-usdc, linea-weth, scroll-usdc, ronin-weth, ronin-wron, unichain-usdc, unichain-weth]
     name: Run scenarios
     runs-on: ubuntu-latest
     steps:
