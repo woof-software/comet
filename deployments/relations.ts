@@ -106,7 +106,7 @@ const relationConfigMap: RelationConfigMap = {
             if (address === '0xcda86a272531e8640cd7f1a92c01839911b90bb0') {
               return 'mETH:priceFeed';
             }
-            
+
             throw new Error(`Failed to get symbol for token ${assets[i].address}: ${e.message}`);
           }
         },
