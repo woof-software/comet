@@ -21,7 +21,7 @@ jobs:
         run: yarn
 
       - name: Install dependencies
-        run: forge install && yarn install --non-interactive --frozen-lockfile
+        run: yarn install --non-interactive --frozen-lockfile
 
       - name: Run tests
         run: bash forge/run-tests.sh
@@ -30,7 +30,7 @@ jobs:
           MAINNET_QUICKNODE_LINK: ${{ secrets.MAINNET_QUICKNODE_LINK }}
           OPTIMISM_QUICKNODE_LINK: ${{ secrets.OPTIMISM_QUICKNODE_LINK }}
           BASE_QUICKNODE_LINK: ${{ secrets.BASE_QUICKNODE_LINK }}
-          SCROLL_RPC_URL: ${{ secrets.SCROLL_RPC_URL }}
+          SCROLL_QUICKNODE_LINK: ${{ secrets.SCROLL_QUICKNODE_LINK }}
           UNICHAIN_QUICKNODE_LINK: ${{ secrets.UNICHAIN_QUICKNODE_LINK }}
           LINEA_QUICKNODE_LINK: ${{ secrets.LINEA_QUICKNODE_LINK }}
           RONIN_QUICKNODE_LINK: ${{ secrets.RONIN_QUICKNODE_LINK }}
@@ -39,6 +39,3 @@ jobs:
           MANTLE_QUICKNODE_LINK: ${{ secrets.MANTLE_QUICKNODE_LINK }}
           SALT: ${{ secrets.SALT }}
 
-      - name: Build Comet with older solc versions
-        run: |
-          forge build --contracts contracts/CometWithExtendedAssetList.sol --use solc:0.8.15 --via-ir --optimizer-runs 1

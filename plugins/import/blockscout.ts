@@ -65,4 +65,3 @@ export async function get(url, data) {
   const res = (await axios.get(url, { params: data }))['data'];
   return res;
 }
-
