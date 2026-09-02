@@ -9,6 +9,7 @@ import { Environment } from 'hardhat/internal/core/runtime-environment';
 import { ForkSpec } from '../World';
 import { HttpNetworkUserConfig } from 'hardhat/types';
 import { EthereumProvider } from 'hardhat/types/provider';
+import { networkConfigs } from '../../../hardhat.config';
 
 /*
 mimics https://github.com/nomiclabs/hardhat/blob/master/packages/hardhat-core/src/internal/lib/hardhat-lib.ts
@@ -65,28 +66,54 @@ function getBlockRollback(base: ForkSpec) {
   console.log(`Getting block rollback for network: ${base.network}`);
   if (base.blockNumber)
     return base.blockNumber;
-  else if(base.network === 'linea')
+  else if (base.network === 'linea')
     return 150;
-  else if (base.network === 'ronin'){
+  else if (base.network === 'ronin')
     return 0;
-  }
-  else if (base.network === 'arbitrum') {
-    return undefined;
-  }
-  else if (base.network === 'unichain') {
-    return 0;
-  }
-  else if (base.network === 'base') {
-    return 100;
-  }
-  else if (base.network === 'optimism') {
-    return undefined;
-  }
-  else if (base.network === 'mainnet') {
+  else if (base.network === 'arbitrum') 
     return 10;
-  }
+  else if (base.network === 'unichain')
+    return 0;
+  else if (base.network === 'base') 
+    return 100;
+  else if (base.network === 'optimism') 
+    return 10;
+  else if (base.network === 'mainnet')
+    return 10;
   else
     return 25;
+}
+
+let activeMigration = false;
+
+export function migrationStarted() {
+  activeMigration = true;
+}
+
+async function getBlockNumberWithRetry(provider: ethers.providers.JsonRpcProvider): Promise<number> {
+  const maxAttempts = 5;
+  const retryDelayMs = 5000;
+  const requestTimeoutMs = 10000;
+  
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await Promise.race([
+        provider.getBlockNumber(),
+        new Promise<number>((_, reject) =>
+          setTimeout(() => reject(new Error(`Timed out fetching block number after ${requestTimeoutMs / 1000}s`)), requestTimeoutMs)
+        ),
+      ]);
+    } catch (error) {
+      if (attempt === maxAttempts) {
+        throw error;
+      }
+
+      console.warn(`Failed to fetch block number (attempt ${attempt}/${maxAttempts}). Retrying in ${retryDelayMs / 1000}s...`);
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+
+  throw new Error('Failed to fetch block number after retries.');
 }
 
 export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEnvironment> {
@@ -101,30 +128,30 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
 
   const baseNetwork = networks[base.network] as HttpNetworkUserConfig;
 
-  const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
-  if(baseNetwork.url)
-    console.log(`Forking from network: ${base.network} at block number: ${await provider.getBlockNumber() - (getBlockRollback(base) || 0)}`);
+  const providerUrl = activeMigration ? networkConfigs.find(c => c.network === base.network)?.url : baseNetwork.url;
+  const provider = new ethers.providers.JsonRpcProvider(providerUrl);
+
+  if (providerUrl) {
+    console.log(`Forking from network: ${base.network}`);
+    console.log(`At block number: ${await getBlockNumberWithRetry(provider) - (getBlockRollback(base) || 0)}`);
+  }
 
   // noNetwork otherwise
-  if (!base.blockNumber && baseNetwork.url && getBlockRollback(base) !== undefined)
-    base.blockNumber = await provider.getBlockNumber() - getBlockRollback(base); // arbitrary number of blocks to go back
+  if (!base.blockNumber && providerUrl && getBlockRollback(base) !== undefined)
+    base.blockNumber = await getBlockNumberWithRetry(provider) - getBlockRollback(base); // arbitrary number of blocks to go back
 
-  if (getBlockRollback(base) === 0) {
-    const provider = new ethers.providers.JsonRpcProvider(baseNetwork.url);
-    const block = await provider.getBlockNumber();
-    base.blockNumber = block - 1;
-  }
+  if (getBlockRollback(base) === 0) 
+    base.blockNumber = (await getBlockNumberWithRetry(provider)) - 1;
 
-  if (!baseNetwork) {
+  if (!baseNetwork) 
     throw new Error(`cannot find network config for network: ${base.network}`);
-  }
 
   const forkedNetwork = {
     ...defaultNetwork,
     ...{
       forking: {
         enabled: true,
-        url: baseNetwork.url,
+        url: providerUrl,
         httpHeaders: {},
         ...(base.blockNumber && { blockNumber: base.blockNumber }),
       },
@@ -153,9 +180,8 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
 }
 
 export default async function hreForBase(base: ForkSpec, fork = true): Promise<HardhatRuntimeEnvironment> {
-  if (fork) {
+  if (fork) 
     return forkedHreForBase(base);
-  } else {
+  else 
     return nonForkedHreForBase(base);
-  }
 }
