@@ -1,4 +1,4 @@
-import { BigNumber, BigNumberish, Contract } from 'ethers';
+import { BigNumber, BigNumberish, constants, Contract } from 'ethers';
 import { Loader, World, debug } from '../../plugins/scenario';
 import { Migration } from '../../plugins/deployment_manager';
 import {
@@ -38,6 +38,7 @@ import { AddressLike, getAddressFromNumber, resolveAddress } from './Address';
 import { fastGovernanceExecute, max, mineBlocks, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
 import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
 import { Requirements } from '../constraints/Requirements';
+import { buildInitialCollateralSlippages, buildRoutesFromList } from '../../test/helpers/dex-router';
 
 export type ActorMap = { [name: string]: CometActor };
 export type AssetMap = { [name: string]: CometAsset };
@@ -49,10 +50,13 @@ export type MigrationData = {
   verified?: boolean;
 }
 
+const DAO = '0x6d903f6003cca6255D85CcA4D3B5E5146dC33925';
+
 export interface CometProperties {
   actors: ActorMap;
   assets: AssetMap;
   comet: CometInterface;
+  dao: SignerWithAddress;
   configurator: Configurator;
   proxyAdmin: CometProxyAdmin;
   timelock: SimpleTimelock;
@@ -98,6 +102,10 @@ export class CometContext {
 
   async getComet(): Promise<CometInterface> {
     return this.world.deploymentManager.contract('comet');
+  }
+
+  async getDao(): Promise<SignerWithAddress> {
+    return this.world.impersonateAddress(DAO, { value: 100n * 10n ** 18n });
   }
 
   async getCometAdmin(): Promise<CometProxyAdmin> {
@@ -171,7 +179,25 @@ export class CometContext {
     catch (e) {
       withAssetList = false;
     }
-    const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, withAssetList, admin);
+
+    // A module can only be initiated once, and the one already behind this proxy has been. The new
+    // implementation would try again and revert, so a market that has a module gets a freshly deployed
+    // one here, registered with the Configurator. Markets old enough to have none get nothing: the
+    // helper reads the Comet itself and hands back nothing when there is no module to replace.
+    const liquidationModule = await this.prepareFreshLiquidationModule(
+      currentComet,
+      (await this.getConfigurator()).connect(admin)
+    );
+
+    const deployed = await deployComet(
+      this.world.deploymentManager,
+      deploySpec,
+      // Last, deliberately: the overrides carry the market's current configuration, whose module has
+      // already been initiated. The freshly deployed one has to win.
+      liquidationModule ? { ...configOverrides, liquidationModule } : configOverrides,
+      withAssetList,
+      admin
+    );
 
     await this.world.deploymentManager.spider(deployed);
     await this.setAssets();
@@ -181,7 +207,100 @@ export class CometContext {
     return this;
   }
 
-  async changePriceFeeds(newPrices: Record<string, number>) {
+  /**
+   * Deploys a liquidation module for a market that runs one, and returns its address; a market without
+   * one gets nothing back. Registering it is left to the caller — under governance that has to happen
+   * inside the proposal, not as a direct call.
+   */
+  async deployFreshLiquidationModule(comet: CometInterface): Promise<string | undefined> {
+    const ethers = this.world.deploymentManager.hre.ethers;
+    const cometWithModule = new ethers.Contract(
+      comet.address,
+      ['function liquidationModule() view returns (address)'],
+      ethers.provider
+    );
+    let liquidationModuleAddress: string | null = null;
+    try {
+      liquidationModuleAddress = await cometWithModule.liquidationModule();
+      if (liquidationModuleAddress === constants.AddressZero) liquidationModuleAddress = null;
+    } catch {
+      liquidationModuleAddress = null;
+    }
+
+    if (liquidationModuleAddress === null) return;
+
+    const oldModule = new ethers.Contract(
+      liquidationModuleAddress,
+      [
+        'function dexAdapter() view returns (address)',
+        'function incentiveBps() view returns (uint16)',
+      ],
+      ethers.provider
+    );
+    const oldDexAdapter = new ethers.Contract(
+      await oldModule.dexAdapter(),
+      [
+        'function coreRouter() view returns (address)',
+        'function redundantRouter() view returns (address)',
+        'function weth() view returns (address)',
+        'function slippageBps() view returns (uint16)',
+      ],
+      ethers.provider
+    );
+
+    const collaterals: string[] = [];
+    const rawNumAssets = await comet.numAssets();
+    const numAssets = BigNumber.isBigNumber(rawNumAssets) ? rawNumAssets.toNumber() : Number(rawNumAssets);
+    for (let i = 0; i < numAssets; i++) {
+      collaterals.push((await comet.getAssetInfo(i)).asset);
+    }
+
+    const dexAdapter = await this.world.deploymentManager.deploy(
+      'changePriceFeeds:dexAdapter',
+      'dex-adapters/core/OneInchV6Adapter.sol',
+      [
+        await oldDexAdapter.coreRouter(),
+        await oldDexAdapter.redundantRouter(),
+        await oldDexAdapter.weth(),
+        await oldDexAdapter.slippageBps(),
+        buildRoutesFromList(collaterals, {}),
+        // The redeployed adapter keeps the old one's global slippage, with no per-collateral overrides.
+        buildInitialCollateralSlippages(),
+      ],
+      true
+    );
+
+    const deployer = await this.world.deploymentManager.getSigner();
+    const liquidationModule = await this.world.deploymentManager.deploy(
+      'changePriceFeeds:liquidationModule',
+      'liquidation-module/LiquidationModuleForComet.sol',
+      [
+        dexAdapter.address,
+        // The multisig is a role now, and plain AccessControl cannot be enumerated, so the old
+        // holder is unreadable. Scenarios drive every setting through the DAO, so the replacement
+        // only needs a non-zero holder: the deployer, which already takes the other two roles.
+        deployer.address,
+        [deployer.address],
+        [deployer.address],
+        await oldModule.incentiveBps(),
+        comet.address,
+      ],
+      true
+    );
+
+    return liquidationModule.address;
+  }
+
+  /** Deploys the replacement module and points the Configurator at it, for callers holding governor rights. */
+  async prepareFreshLiquidationModule(comet: CometInterface, configurator: Configurator): Promise<string | undefined> {
+    const liquidationModule = await this.deployFreshLiquidationModule(comet);
+    if (liquidationModule === undefined) return;
+
+    await configurator.setLiquidationModule(comet.address, liquidationModule);
+    return liquidationModule;
+  }
+
+  async changePriceFeeds(newPrices: Record<string, bigint>) {
     const comet = await this.getComet();
     const baseToken = await comet.baseToken();
 
@@ -191,7 +310,9 @@ export class CometContext {
       const priceFeed = await this.world.deploymentManager.deploy(
         `${assetName}:priceFeed`,
         'test/SimplePriceFeed.sol',
-        [newPrices[assetAddress] * 1e8, 8],
+        // The price is supplied already scaled to the feed's 8 decimals (the same scale comet.getPrice
+        // returns), so it is set directly with no float re-scaling.
+        [newPrices[assetAddress], 8],
         true
       );
       newPriceFeeds[assetAddress] = priceFeed.address;
@@ -209,6 +330,22 @@ export class CometContext {
         await configurator.updateAssetPriceFeed(comet.address, assetAddress, priceFeedAddress);
       }
     }
+
+    await this.prepareFreshLiquidationModule(comet, configurator);
+    await cometAdmin.deployAndUpgradeTo(configurator.address, comet.address);
+  }
+
+  async freezeBorrowRates() {
+    const comet = await this.getComet();
+    const gov = await this.world.impersonateAddress(await comet.governor(), { value: 10n ** 18n });
+    const cometAdmin = (await this.getCometAdmin()).connect(gov);
+    const configurator = (await this.getConfigurator()).connect(gov);
+
+    await configurator.setBorrowPerYearInterestRateBase(comet.address, 0);
+    await configurator.setBorrowPerYearInterestRateSlopeLow(comet.address, 0);
+    await configurator.setBorrowPerYearInterestRateSlopeHigh(comet.address, 0);
+
+    await this.prepareFreshLiquidationModule(comet, configurator);
     await cometAdmin.deployAndUpgradeTo(configurator.address, comet.address);
   }
 
@@ -240,6 +377,7 @@ export class CometContext {
       for (const [asset, cap] of Object.entries(newSupplyCaps)) {
         await configurator.updateAssetSupplyCap(comet.address, asset, cap);
       }
+      await this.prepareFreshLiquidationModule(comet, configurator);
       await cometAdmin.deployAndUpgradeTo(configurator.address, comet.address);
     }
   }
@@ -410,6 +548,7 @@ async function getContextProperties(context: CometContext): Promise<CometPropert
     actors: context.actors,
     assets: context.assets,
     comet,
+    dao: await context.getDao(),
     configurator: await context.getConfigurator(),
     proxyAdmin: await context.getCometAdmin(),
     timelock: await context.getTimelock(),

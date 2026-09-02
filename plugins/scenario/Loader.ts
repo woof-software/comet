@@ -31,13 +31,13 @@ export class Loader<T, U, R> {
     return this.instance;
   }
 
-  static async load<T, U, R>(glob = 'scenario/**.ts'): Promise<Loader<T, U, R>> {
+  static async load<T, U, R>(glob = 'scenario/**/*.ts'): Promise<Loader<T, U, R>> {
     if (this.instance)
       throw new Error('Loader already initialized');
     return await (this.instance = new Loader() as Loader<T, U, R>).load(glob);
   }
 
-  async load(glob = 'scenario/**.ts'): Promise<this> {
+  async load(glob = 'scenario/**/*.ts'): Promise<this> {
     for (let entry of await fg(glob))
       await import(path.join(process.cwd(), entry));
     return this;

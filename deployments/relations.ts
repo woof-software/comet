@@ -1,4 +1,17 @@
 import { RelationConfigMap } from '../plugins/deployment_manager/RelationConfig';
+import { Contract } from 'ethers';
+
+// Reads an ERC-20 `symbol()` robustly. The spider can resolve a proxy token to the proxy's ABI (which omits
+// `symbol`), so when the given contract has no `symbol` method, fall back to a plain ERC-20 interface at the same
+// address — the call then delegatecalls through the proxy to the implementation.
+async function tokenSymbol(token: Contract): Promise<string> {
+  try {
+    return await token.symbol();
+  } catch {
+    const erc20 = new Contract(token.address, ['function symbol() view returns (string)'], token.provider);
+    return await erc20.symbol();
+  }
+}
 
 const relationConfigMap: RelationConfigMap = {
   comptrollerV2: {
@@ -48,12 +61,10 @@ const relationConfigMap: RelationConfigMap = {
           const address = token.address.toLowerCase();
 
           try {
-            const symbol = await token.symbol();
-            return symbol;
+            return await tokenSymbol(token);
           }
           catch (e) {
-            // If symbol() fails (e.g., proxy contract in fork), try to get it from storage
-            // This is a workaround for contracts that don't work in Hardhat fork
+            // If symbol() still fails (e.g., proxy contract that reverts in the fork), fall back to a known map.
 
             // invalid opcode when calling symbol()
             if (address === '0xd09acb80c1e8f2291862c4978a008791c9167003') {
@@ -76,7 +87,7 @@ const relationConfigMap: RelationConfigMap = {
         },
         alias: async (_, { assets }, i) => {
           try {
-            return `${await assets[i].symbol()}:priceFeed`;
+            return `${await tokenSymbol(assets[i])}:priceFeed`;
           } catch (e) {
             // invalid opcode when calling symbol()
             const address = assets[i].address.toLowerCase();

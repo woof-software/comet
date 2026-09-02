@@ -1,8 +1,8 @@
-import { AssetConfigStruct } from '../../build/types/Comet';
+import { AssetConfigStruct } from '../../build/types/CometWithExtendedAssetList';
 import { BigNumberish, Contract, PopulatedTransaction, utils } from 'ethers';
 
 export { cloneGov, deployNetworkComet as deployComet, sameAddress } from './Network';
-export { getConfiguration, getConfigurationStruct } from './NetworkConfiguration';
+export { getConfiguration, getConfigurationStruct, NetworkConfiguration } from './NetworkConfiguration';
 export { exp, getBlock, wait } from '../../test/helpers';
 export { debug } from '../../plugins/deployment_manager/Utils';
 import { writeFileSync, mkdirSync } from 'fs';
@@ -33,6 +33,7 @@ export interface ProtocolConfiguration {
   baseBorrowMin?: BigNumberish;
   targetReserves?: BigNumberish;
   assetConfigs?: AssetConfigStruct[];
+  liquidationModule?: string;
   rewardTokenAddress?: string;
 }
 

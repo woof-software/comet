@@ -179,6 +179,39 @@ forge test
 
 See the [GitHub workflow](.github/workflows/run-forge-tests.yaml) for an example.
 
+### Run fuzz tests
+
+Property tests for the liquidation module, under `forge/test/fuzzing`. They deploy the whole protocol
+from scratch — no fork and no deployment scripts — so nothing beyond `forge` is needed.
+
+```
+yarn test:fuzz
+```
+
+They run under their own foundry profile, which narrows the test root to `forge/test/fuzzing`. Plain
+`forge test` would also pick up the deployment tests in `forge/test`, which need RPC endpoints and a
+`SALT` in the environment.
+
+Useful flags, passed straight through:
+
+```
+yarn test:fuzz --match-contract SeizurePrecisionFuzzTest   # one suite
+yarn test:fuzz --match-test testFuzz_healthAfterLiquidation
+yarn test:fuzz --fuzz-runs 20000                           # deeper than the 2000 the profile sets
+yarn test:fuzz --fuzz-seed 0xbeef                          # a different corner of the input space
+yarn test:fuzz -vv                                         # print the logs a refuted run leaves
+```
+
+The profile pins the seed, so a run is reproducible and a green suite stays green — but it also means
+every run walks the same inputs. A property that survives a few thousand runs on one seed has not been
+proven; it has only not been refuted by that seed. Before trusting a change, run it on several:
+
+```
+for seed in 0x1 0xdead 0xbeef; do yarn test:fuzz --fuzz-runs 20000 --fuzz-seed $seed; done
+```
+
+A counterexample is written to `cache/fuzz/failures` and replayed first on the next run, so a fix can
+be checked against the exact input that broke it. Delete that directory to stop replaying it.
 
 ### Deploy contracts
 

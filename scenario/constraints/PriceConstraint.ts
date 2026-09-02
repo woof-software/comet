@@ -9,10 +9,12 @@ export class PriceConstraint<T extends CometContext, R extends Requirements> imp
     return async function (ctx: T): Promise<T> {
       const prices = requirements.prices;
       if (prices !== undefined) {
-        const assetPriceMap = {};
+        const assetPriceMap: Record<string, bigint> = {};
         for (const [assetAlias, price] of Object.entries(prices)) {
           const cometAsset = await getAssetFromName(assetAlias, ctx);
-          assetPriceMap[cometAsset.address] = price;
+          // `prices` are dollar figures; scale to the feed's 8 decimals. Round first — many prices
+          // land just off an integer in floats (e.g. 0.14035087 * 1e8 = 14035086.999999998).
+          assetPriceMap[cometAsset.address] = BigInt(Math.round(Number(price) * 1e8));
         }
         await ctx.changePriceFeeds(assetPriceMap);
       }

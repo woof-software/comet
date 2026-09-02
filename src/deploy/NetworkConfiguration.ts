@@ -1,4 +1,4 @@
-import { AssetConfigStruct } from '../../build/types/Comet';
+import { AssetConfigStruct } from '../../build/types/CometWithExtendedAssetList';
 import { ConfigurationStruct } from '../../build/types/Configurator';
 import { ProtocolConfiguration } from './index';
 import { ContractMap } from '../../plugins/deployment_manager/ContractMap';
@@ -74,7 +74,10 @@ interface NetworkTrackingConfiguration {
 
 interface NetworkAssetConfiguration {
   address?: string;
-  priceFeed: string;
+  /** Existing feed address; omitted on local markets where the feed is deployed from `price`. */
+  priceFeed?: string;
+  /** USD price used by local markets to deploy a SimplePriceFeed (ignored when `priceFeed` is set). */
+  price?: number;
   decimals: number;
   borrowCF: number;
   liquidateCF: number;
@@ -89,7 +92,10 @@ export interface NetworkConfiguration {
   pauseGuardian?: string;
   baseToken: string;
   baseTokenAddress?: string;
-  baseTokenPriceFeed: string;
+  /** Existing base feed address; omitted on local markets where the feed is deployed separately. */
+  baseTokenPriceFeed?: string;
+  /** USD price used by local markets to deploy the base SimplePriceFeed. */
+  baseTokenPrice?: number;
   borrowMin: ScientificNotation;
   storeFrontPriceFactor: number;
   targetReserves: ScientificNotation;
@@ -162,6 +168,9 @@ function getOverridesOrConfig(
     ...interestRateInfoMapping(config.rates),
     ...trackingInfoMapping(config.tracking),
     assetConfigs: _ => getAssetConfigs(config.assets, contracts),
+    // Markets predating the liquidation module have no such contract; the deploy path below decides
+    // what an absent one means.
+    liquidationModule: _ => contracts.get('liquidationModule')?.address,
     rewardTokenAddress: _ => (config.rewardToken || config.rewardTokenAddress) ?
       getContractAddress(config.rewardToken, contracts, config.rewardTokenAddress) :
       undefined,

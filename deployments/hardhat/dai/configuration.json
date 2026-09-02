@@ -22,5 +22,198 @@
     "baseMinForRewards": "1000000e6"
   },
   "rewardToken": "GOLD",
-  "assets": {}
+  "assets": {
+    "WBTC": {
+      "price": 65500,
+      "decimals": 8,
+      "borrowCF": 0.7,
+      "liquidateCF": 0.77,
+      "liquidationFactor": 0.95,
+      "supplyCap": "2000e8"
+    },
+    "WETH": {
+      "price": 1960,
+      "decimals": 18,
+      "borrowCF": 0.825,
+      "liquidateCF": 0.895,
+      "liquidationFactor": 0.95,
+      "supplyCap": "100000e18"
+    },
+    "wstETH": {
+      "price": 2250,
+      "decimals": 18,
+      "borrowCF": 0.8,
+      "liquidateCF": 0.85,
+      "liquidationFactor": 0.93,
+      "supplyCap": "50000e18"
+    },
+    "cbETH": {
+      "price": 2100,
+      "decimals": 18,
+      "borrowCF": 0.78,
+      "liquidateCF": 0.84,
+      "liquidationFactor": 0.93,
+      "supplyCap": "40000e18"
+    },
+    "rETH": {
+      "price": 2200,
+      "decimals": 18,
+      "borrowCF": 0.78,
+      "liquidateCF": 0.84,
+      "liquidationFactor": 0.93,
+      "supplyCap": "40000e18"
+    },
+    "USDC": {
+      "price": 1,
+      "decimals": 6,
+      "borrowCF": 0.88,
+      "liquidateCF": 0.92,
+      "liquidationFactor": 0.97,
+      "supplyCap": "100000000e6"
+    },
+    "USDT": {
+      "price": 1,
+      "decimals": 6,
+      "borrowCF": 0.88,
+      "liquidateCF": 0.92,
+      "liquidationFactor": 0.97,
+      "supplyCap": "100000000e6"
+    },
+    "USDe": {
+      "price": 1,
+      "decimals": 18,
+      "borrowCF": 0.85,
+      "liquidateCF": 0.9,
+      "liquidationFactor": 0.96,
+      "supplyCap": "50000000e18"
+    },
+    "FRAX": {
+      "price": 1,
+      "decimals": 18,
+      "borrowCF": 0.85,
+      "liquidateCF": 0.9,
+      "liquidationFactor": 0.96,
+      "supplyCap": "50000000e18"
+    },
+    "COMP": {
+      "price": 50,
+      "decimals": 18,
+      "borrowCF": 0.65,
+      "liquidateCF": 0.7,
+      "liquidationFactor": 0.93,
+      "supplyCap": "2000000e18"
+    },
+    "UNI": {
+      "price": 8,
+      "decimals": 18,
+      "borrowCF": 0.75,
+      "liquidateCF": 0.81,
+      "liquidationFactor": 0.93,
+      "supplyCap": "5000000e18"
+    },
+    "LINK": {
+      "price": 14,
+      "decimals": 18,
+      "borrowCF": 0.79,
+      "liquidateCF": 0.85,
+      "liquidationFactor": 0.93,
+      "supplyCap": "5000000e18"
+    },
+    "AAVE": {
+      "price": 180,
+      "decimals": 18,
+      "borrowCF": 0.7,
+      "liquidateCF": 0.78,
+      "liquidationFactor": 0.93,
+      "supplyCap": "500000e18"
+    },
+    "MKR": {
+      "price": 1500,
+      "decimals": 18,
+      "borrowCF": 0.65,
+      "liquidateCF": 0.72,
+      "liquidationFactor": 0.92,
+      "supplyCap": "50000e18"
+    },
+    "SOL": {
+      "price": 80,
+      "decimals": 9,
+      "borrowCF": 0.7,
+      "liquidateCF": 0.78,
+      "liquidationFactor": 0.93,
+      "supplyCap": "2000000e9"
+    },
+    "ARB": {
+      "price": 0.4,
+      "decimals": 18,
+      "borrowCF": 0.55,
+      "liquidateCF": 0.65,
+      "liquidationFactor": 0.9,
+      "supplyCap": "50000000e18"
+    },
+    "OP": {
+      "price": 0.7,
+      "decimals": 18,
+      "borrowCF": 0.55,
+      "liquidateCF": 0.65,
+      "liquidationFactor": 0.9,
+      "supplyCap": "50000000e18"
+    },
+    "POL": {
+      "price": 0.25,
+      "decimals": 18,
+      "borrowCF": 0.5,
+      "liquidateCF": 0.6,
+      "liquidationFactor": 0.9,
+      "supplyCap": "100000000e18"
+    },
+    "DOGE": {
+      "price": 0.15,
+      "decimals": 8,
+      "borrowCF": 0.4,
+      "liquidateCF": 0.5,
+      "liquidationFactor": 0.85,
+      "supplyCap": "500000000e8"
+    },
+    "ONDO": {
+      "price": 0.9,
+      "decimals": 18,
+      "borrowCF": 0.6,
+      "liquidateCF": 0.7,
+      "liquidationFactor": 0.9,
+      "supplyCap": "20000000e18"
+    },
+    "PAXG": {
+      "price": 4070,
+      "decimals": 18,
+      "borrowCF": 0.75,
+      "liquidateCF": 0.82,
+      "liquidationFactor": 0.95,
+      "supplyCap": "20000e18"
+    },
+    "SILVER": {
+      "price": 45,
+      "decimals": 18,
+      "borrowCF": 0.5,
+      "liquidateCF": 0.6,
+      "liquidationFactor": 0.9,
+      "supplyCap": "500000e18"
+    },
+    "GOLD": {
+      "price": 0.5,
+      "decimals": 8,
+      "borrowCF": 0.9,
+      "liquidateCF": 0.91,
+      "liquidationFactor": 0.95,
+      "supplyCap": "1000000e8"
+    },
+    "LDO": {
+      "price": 1.2,
+      "decimals": 18,
+      "borrowCF": 0.55,
+      "liquidateCF": 0.65,
+      "liquidationFactor": 0.9,
+      "supplyCap": "20000000e18"
+    }
+  }
 }

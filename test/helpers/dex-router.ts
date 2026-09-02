@@ -93,6 +93,21 @@ export function buildRoutesFromList(
   }));
 }
 
+// Mirrors ICoreDexAdapter.CollateralSlippage.
+export interface CollateralSlippage {
+  collateral: string;
+  slippageBps: number;
+}
+
+// Builds the adapter's initial per-collateral slippage overrides from a map of collateral address to
+// slippage in bps. Called with nothing it returns an empty list, which leaves every collateral on the
+// global slippage the constructor is given.
+export function buildInitialCollateralSlippages(
+  overrides: Record<string, number> = {}
+): CollateralSlippage[] {
+  return Object.entries(overrides).map(([collateral, slippageBps]) => ({ collateral, slippageBps }));
+}
+
 // Builds swap routes for all Comet collaterals, leaving collaterals without a known route as unset.
 export async function buildRoutes(
   comet: CometInterface,

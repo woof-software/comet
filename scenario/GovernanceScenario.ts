@@ -4,7 +4,7 @@ import { BigNumberish, constants, utils } from 'ethers';
 import { exp } from '../test/helpers';
 import { FaucetToken } from '../build/types';
 import { calldata } from '../src/deploy';
-import { expectBase, isBridgedDeployment } from './utils';
+import { expectBase, getUsableCollateralIndices, isBridgedDeployment, MAX_ASSETS, setFreshLiquidationModuleProposal } from './utils';
 
 scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => {
   // For this scenario, we will be using the value of LiquidatorPoints.numAbsorbs for address ZERO to test that initialize has been called
@@ -21,11 +21,14 @@ scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => 
   const setFactoryCalldata = utils.defaultAbiCoder.encode(['address', 'address'], [comet.address, cometModifiedFactory.address]);
   const deployAndUpgradeToCalldata = utils.defaultAbiCoder.encode(['address', 'address'], [configurator.address, comet.address]);
   const initializeCalldata = utils.defaultAbiCoder.encode(['address'], [constants.AddressZero]);
+  // A market running a liquidation module needs a fresh one before the upgrade; one that runs none adds
+  // no steps here.
+  const setLiquidationModule = await setFreshLiquidationModuleProposal(context, comet, configurator);
   await context.fastGovernanceExecute(
-    [configurator.address, proxyAdmin.address, comet.address],
-    [0, 0, 0],
-    ['setFactory(address,address)', 'deployAndUpgradeTo(address,address)', 'initialize(address)'],
-    [setFactoryCalldata, deployAndUpgradeToCalldata, initializeCalldata]
+    [...setLiquidationModule.targets, configurator.address, proxyAdmin.address, comet.address],
+    [...setLiquidationModule.values, 0, 0, 0],
+    [...setLiquidationModule.signatures, 'setFactory(address,address)', 'deployAndUpgradeTo(address,address)', 'initialize(address)'],
+    [...setLiquidationModule.calldata, setFactoryCalldata, deployAndUpgradeToCalldata, initializeCalldata]
   );
 
   // LiquidatorPoints.numAbsorbs for address ZERO should now be set as UInt32.MAX
@@ -53,11 +56,12 @@ scenario('upgrade Comet implementation and initialize using deployUpgradeToAndCa
   const initializeCalldata = (await modifiedComet.populateTransaction.initialize(constants.AddressZero)).data;
   const deployUpgradeToAndCallCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'bytes'], [configurator.address, comet.address, initializeCalldata]);
 
+  const setLiquidationModule = await setFreshLiquidationModuleProposal(context, comet, configurator);
   await context.fastGovernanceExecute(
-    [configurator.address, proxyAdmin.address],
-    [0, 0],
-    ['setFactory(address,address)', 'deployUpgradeToAndCall(address,address,bytes)'],
-    [setFactoryCalldata, deployUpgradeToAndCallCalldata]
+    [...setLiquidationModule.targets, configurator.address, proxyAdmin.address],
+    [...setLiquidationModule.values, 0, 0],
+    [...setLiquidationModule.signatures, 'setFactory(address,address)', 'deployUpgradeToAndCall(address,address,bytes)'],
+    [...setLiquidationModule.calldata, setFactoryCalldata, deployUpgradeToAndCallCalldata]
   );
 
   // LiquidatorPoints.numAbsorbs for address ZERO should now be set as UInt32.MAX
@@ -74,11 +78,12 @@ scenario('upgrade Comet implementation and call new function', {filter: async (c
   // Upgrade Comet implementation
   const setFactoryCalldata = utils.defaultAbiCoder.encode(['address', 'address'], [comet.address, cometModifiedFactory.address]);
   const deployAndUpgradeToCalldata = utils.defaultAbiCoder.encode(['address', 'address'], [configurator.address, comet.address]);
+  const setLiquidationModule = await setFreshLiquidationModuleProposal(context, comet, configurator);
   await context.fastGovernanceExecute(
-    [configurator.address, proxyAdmin.address],
-    [0, 0],
-    ['setFactory(address,address)', 'deployAndUpgradeTo(address,address)'],
-    [setFactoryCalldata, deployAndUpgradeToCalldata]
+    [...setLiquidationModule.targets, configurator.address, proxyAdmin.address],
+    [...setLiquidationModule.values, 0, 0],
+    [...setLiquidationModule.signatures, 'setFactory(address,address)', 'deployAndUpgradeTo(address,address)'],
+    [...setLiquidationModule.calldata, setFactoryCalldata, deployAndUpgradeToCalldata]
   );
 
   const CometModified = await dm.hre.ethers.getContractFactory('CometModified');
@@ -91,7 +96,10 @@ scenario('upgrade Comet implementation and call new function', {filter: async (c
 
 scenario('add new asset',
   {
-    filter: async (ctx) => !isBridgedDeployment(ctx),
+    // A Comet holds at most MAX_ASSETS collaterals, so a market already at the limit has no room for
+    // the one this scenario adds.
+    filter: async (ctx) =>
+      !isBridgedDeployment(ctx) && (await getUsableCollateralIndices(ctx)).length < MAX_ASSETS,
     tokenBalances: {
       $comet: { $base: '>= 1000' },
     },
@@ -135,11 +143,12 @@ scenario('add new asset',
 
     const addAssetCalldata = await calldata(configurator.populateTransaction.addAsset(comet.address, newAssetConfig));
     const deployAndUpgradeToCalldata = utils.defaultAbiCoder.encode(['address', 'address'], [configurator.address, comet.address]);
+    const setLiquidationModule = await setFreshLiquidationModuleProposal(context, comet, configurator);
     await context.fastGovernanceExecute(
-      [configurator.address, proxyAdmin.address],
-      [0, 0],
-      ['addAsset(address,(address,address,uint8,uint64,uint64,uint64,uint128))', 'deployAndUpgradeTo(address,address)'],
-      [addAssetCalldata, deployAndUpgradeToCalldata]
+      [...setLiquidationModule.targets, configurator.address, proxyAdmin.address],
+      [...setLiquidationModule.values, 0, 0],
+      [...setLiquidationModule.signatures, 'addAsset(address,(address,address,uint8,uint64,uint64,uint64,uint128))', 'deployAndUpgradeTo(address,address)'],
+      [...setLiquidationModule.calldata, addAssetCalldata, deployAndUpgradeToCalldata]
     );
 
     // Try to supply new token and borrow base

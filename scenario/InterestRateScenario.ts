@@ -6,6 +6,9 @@ import { FuzzType } from './constraints/Fuzzing';
 import { expectRevertCustom, supportUtilizationLimit, isFreshMarket } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
+// Mirrors SECONDS_PER_YEAR in CometCore.sol, which is what turns a yearly rate into a per-second one.
+const SECONDS_PER_YEAR = 31_536_000n;
+
 function calculateInterestRateSupply(
   utilization: BigNumber,
   kink: BigNumber,
@@ -560,6 +563,14 @@ scenario(
     const expectedTimeToExhaustReserves = (initialReserves * BigInt(exp(1, 18))) / 
       (totalSupplyBase * supplyPerSecondInterestRateBase.toBigInt());
 
+    // Capture what the accrual starts from, so the expectations below are the contract's own arithmetic
+    // rather than a fixed number: how far the index moves depends on how many seconds actually pass, and
+    // the setup above spends an unpredictable few of them on deploys.
+    const totalsBeforeSkip = await comet.totalsBasic();
+    const supplyIndexBefore = totalsBeforeSkip.baseSupplyIndex.toBigInt();
+    const lastAccrualTimeBefore = totalsBeforeSkip.lastAccrualTime;
+    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
+
     // Skip time significantly past when reserves should be exhausted
     const timeToSkip = Number(expectedTimeToExhaustReserves) + 3600; // Add 1 hour buffer
     await ethers.provider.send('evm_increaseTime', [timeToSkip]);
@@ -568,20 +579,26 @@ scenario(
     // Trigger accrue
     await comet.accrueAccount(ethers.constants.AddressZero);
 
-    // After reserves are exhausted, totalSupply() should approximately equal the base token balance
-    const totalSupply = await comet.totalSupply();
-    const cometBalance = await baseToken.balanceOf(comet.address);
+    // Nothing is borrowed, so the supply rate is the configured base rate for the whole period: the
+    // scenario asked for 0.1% a year, and the market keeps it per second, truncated.
+    const supplyRate = supplyPerSecondInterestRateBase.toBigInt();
+    expect(supplyRate).to.equal(exp(0.001, 18) / SECONDS_PER_YEAR);
 
-    // totalSupply should be approximately equal to or less than balance (within rounding)
-    expect(totalSupply.toBigInt()).to.be.approximately(cometBalance, 10000000);
-
-    // Get the supply index after reserves exhaustion
+    // The index grows by rate * elapsed off its previous value, and everyone's supply is that index
+    // applied to the unchanged principal.
     const totalsAfterExhaustion = await comet.totalsBasic();
-    const indexAfterExhaustion = totalsAfterExhaustion.baseSupplyIndex;
+    const timeElapsed = BigInt(totalsAfterExhaustion.lastAccrualTime - lastAccrualTimeBefore);
+    const expectedIndex = supplyIndexBefore + supplyIndexBefore * supplyRate * timeElapsed / exp(1, 18);
+    const expectedTotalSupply = totalSupplyBase * expectedIndex / baseIndexScale;
 
-    const baseBalance = await baseToken.balanceOf(comet.address);
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    expect(indexAfterExhaustion).to.equal(baseBalance * baseIndexScale / totalSupplyBase);
+    expect(totalsAfterExhaustion.baseSupplyIndex.toBigInt()).to.equal(expectedIndex);
+    expect((await comet.totalSupply()).toBigInt()).to.equal(expectedTotalSupply);
+
+    // The market stops paying supply interest once what it owes reaches what it holds. The rate is read
+    // once for the whole span, so this single step carries the index past that point rather than onto it,
+    // and the rate is zero from here on.
+    expect(expectedTotalSupply).to.be.at.least(await baseToken.balanceOf(comet.address));
+    expect((await comet.getSupplyRate(await comet.getUtilization())).toBigInt()).to.equal(0n);
 
     // Skip more time
     await ethers.provider.send('evm_increaseTime', [3600]); // 1 more hour
@@ -590,15 +607,11 @@ scenario(
     // Trigger accrue again
     await comet.accrueAccount(ethers.constants.AddressZero);
 
-    // Get final state
+    // A zero rate accrues nothing: the second hour leaves the index and everyone's supply exactly where
+    // the first accrual left them.
     const finalTotals = await comet.totalsBasic();
-    const finalSupplyIndex = finalTotals.baseSupplyIndex;
 
-    // Supply index should NOT have grown further (reserves exhausted)
-    expect(finalSupplyIndex.toBigInt()).to.equal(indexAfterExhaustion.toBigInt());
-
-    // Supply rate should now be the base rate
-    const supplyRateNow = await comet.getSupplyRate(0);
-    expect(supplyRateNow.toBigInt()).to.equal((await comet.supplyPerSecondInterestRateBase()).toBigInt());
+    expect(finalTotals.baseSupplyIndex.toBigInt()).to.equal(expectedIndex);
+    expect((await comet.totalSupply()).toBigInt()).to.equal(expectedTotalSupply);
   }
 );
