@@ -1785,6 +1785,7 @@ describe('absorb: general logic', function () {
         context('base token price feed reverts during absorb', function () {
           let wasLiquidatable: boolean;
           let liquidateTx: Promise<ContractTransaction>;
+          let updatedLiquidationModule: LiquidationModule;
           const collateralKey = 'COMP';
     
           before(async function() {
@@ -1798,8 +1799,8 @@ describe('absorb: general logic', function () {
             wasLiquidatable = await comet.isLiquidatable(alice.address);
     
             await configurator.setBaseTokenPriceFeed(cometProxyAddress, priceFeedWithRevert.address);
-            const newLiquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, cometProxyAddress);
-            await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
+            updatedLiquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, cometProxyAddress);
+            await configurator.connect(governor).setLiquidationModule(cometProxyAddress, updatedLiquidationModule.address);
             await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
           });
     
@@ -1816,7 +1817,9 @@ describe('absorb: general logic', function () {
     
           it('absorb reverts because base token price feed reverts', async () => {
             viaLiquidationModule 
-              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
+              // The market now points at the freshly deployed module, and only that module may take Comet's
+              // operations lock, so the liquidation has to be driven through it.
+              ? liquidateTx = updatedLiquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
               : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
 
             await expect(liquidateTx).to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');

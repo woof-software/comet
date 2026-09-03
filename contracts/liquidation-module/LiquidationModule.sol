@@ -5,6 +5,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 
 import { ILiquidationModule } from "../interfaces/liquidation-module/ILiquidationModule.sol";
 import { ICoreDexAdapter } from "../interfaces/dex-adapters/ICoreDexAdapter.sol";
+import { CometOperationsLocker, ICometOperationsLock } from "./CometOperationsLocker.sol";
 
 import { CoreLiquidationModule, ICometData, ICometLiquidationInterface } from "./CoreLiquidationModule.sol";
 
@@ -15,7 +16,7 @@ import { CoreLiquidationModule, ICometData, ICometLiquidationInterface } from ".
  *         configurable health factor boundaries.
  * @custom:security-contact dmitriy@woof.software
  */
-contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
+contract LiquidationModule is ILiquidationModule, CoreLiquidationModule, CometOperationsLocker {
     using SafeERC20 for IERC20;
 
     /// @notice Basis-point denominator (100% = 10_000 bps).
@@ -77,20 +78,20 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     }
 
     /**
-     * @notice Routes a keeper liquidation to the appropriate path based on the account's current HF.
-     * @dev Caller must be an Executor. While the DEX path is paused every call falls back to absorb.
-     *
-     *      HF = liquidityValue * FACTOR_SCALE / debtValue  (1e18 scale)
-     *
-     *      - HF > healthPositionHF              → reverts NotLiquidatable
-     *      - borderHF < HF <= healthPositionHF  → DEX route (`_dexLiquidate`)
-     *      - HF <= borderHF                     → default absorb route (`_liquidate`)
-     *
+     * @notice Routes a keeper liquidation of an underwater account to the DEX route, or to the default
+     *         absorb route while the DEX path is paused.
+     * @dev Caller must be an Executor, and Comet must not have absorb paused. The account is accrued first,
+     *      so the seizure plan is built against its debt as of this block. An account that is not
+     *      underwater reverts with `NotLiquidatable` while the plan is computed.
+     * @dev The call holds Comet's operations lock from end to end: the DEX route updates Comet before the
+     *      seized collateral is sold, and no one may act on the market in between. See
+     *      `CometOperationsLocker.lockCometOperations`.
      * @param absorber The recipient of the liquidation incentive.
      * @param account  The underwater account to liquidate.
      * @param swapData Per-collateral router calldata for the DEX route, aligned to the seizure plan order.
+     *                 Ignored on the absorb route, which sells nothing.
      */
-    function liquidate(address absorber, address account, bytes[] calldata swapData) external nonReentrant onlyRole(EXECUTOR_ROLE) {
+    function liquidate(address absorber, address account, bytes[] calldata swapData) external nonReentrant onlyRole(EXECUTOR_ROLE) lockCometOperations {
         if (comet.isAbsorbPaused()) revert Paused();
         
         comet.accrueAccount(account);
@@ -216,5 +217,9 @@ contract LiquidationModule is ILiquidationModule, CoreLiquidationModule {
     function setSlippageBps(uint16 newSlippageBps, address collateral) external onlyRole(MULTISIG_ROLE) {
         ///@dev event is emitted in DEX adapter
         dexAdapter.setSlippageBps(newSlippageBps, collateral);
+    }
+
+    function _lockedComet() internal view override returns (ICometOperationsLock) {
+        return ICometOperationsLock(address(comet));
     }
 }

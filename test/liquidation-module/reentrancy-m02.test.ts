@@ -19,7 +19,7 @@ import {
  * Regression test for audit finding M-02: reentrancy during a DEX liquidation.
  */
 describe('M-02 — DEX liquidation reentrancy (fixed)', function () {
-  it('a reentrant borrow during the swap persists as real debt — no base is stolen', async () => {
+  it('a reentrant borrow during the swap is rejected — the whole liquidation unwinds', async () => {
     const signers = await ethers.getSigners();
     const [, pauseGuardian, multisig, executor, pauser] = signers;
     const lender = signers[9];
@@ -110,32 +110,29 @@ describe('M-02 — DEX liquidation reentrancy (fixed)', function () {
     await borrower.openPosition(exp(1, 18), exp(1_500, 6));
 
     // Point the adapter at the attacker and drop WETH so the small position is liquidatable.
-    await adapter.setAttacker(borrower.address);
+    const swapData = [ethers.utils.defaultAbiCoder.encode(
+      ['address', 'bytes'],
+      [borrower.address, borrower.interface.encodeFunctionData('attack')]
+    )];
     const now = (await ethers.provider.getBlock('latest')).timestamp;
     await wethFeed.setRoundData(1, exp(1_700, 8), now, now, 1);
     expect(await comet.isLiquidatable(borrower.address)).to.equal(true);
 
     // ── Snapshot before the attack ──
     const usdcBefore = await usdc.balanceOf(borrower.address);          // ~1,500 (initial borrow)
+    const principalBefore = (await comet.userBasic(borrower.address)).principal;
 
-    // ── Keeper liquidates → DEX route → swap → reentrancy → debt already finalized, borrow survives ──
-    await module.connect(executor).liquidate(executor.address, borrower.address, ['0x']);
+    // ── Keeper liquidates → DEX route → swap → reentrancy → Comet is locked, the whole call unwinds ──
+    await expect(module.connect(executor).liquidate(executor.address, borrower.address, swapData))
+      .to.be.revertedWithCustomError(comet, 'OperationsLocked');
 
-    // ── Results (measured right after the liquidation) ──
-    const debtAfter = await comet.borrowBalanceOf(borrower.address);
-    const usdcAfter = await usdc.balanceOf(borrower.address);
-    const gainedUsdc = usdcAfter.sub(usdcBefore);
-    const collAfter = await comet.collateralBalanceOf(borrower.address, weth.address);
-
-    console.log(`  reentrant borrow drawn:    ${ethers.utils.formatUnits(gainedUsdc, 6)} USDC`);
-    console.log(`  debt owed after:           ${ethers.utils.formatUnits(debtAfter, 6)} USDC (reentrant borrow persists)`);
-
-    // 1) The reentrant borrow still executed (attacker received the base) — the attack path runs…
-    expect(gainedUsdc.gte(exp(100_000, 6))).to.equal(true);
-    // 2) …but it is NOT erased: the account owes at least the base it drew, so there is no free base.
-    expect(debtAfter.gte(gainedUsdc)).to.equal(true);
-    // 3) The position is properly collateralized against that debt, so the flash-supplied collateral is locked.
-    await expect(borrower.withdrawCollateral(collAfter))
-      .to.be.revertedWithCustomError(comet, 'NotCollateralized');
+    // ── Results (measured right after the reverted liquidation) ──
+    // 1) The reentrant borrow never executed, so the attacker drew no base at all.
+    expect(await usdc.balanceOf(borrower.address)).to.equal(usdcBefore);
+    // 2) The liquidation wrote nothing: the stored principal is untouched. Present value is read against
+    //    the current block, so it drifts with interest; principal does not.
+    expect((await comet.userBasic(borrower.address)).principal).to.equal(principalBefore);
+    // 3) Still the 1 WETH posted up front — the flash-supplied 100 WETH never landed.
+    expect(await comet.collateralBalanceOf(borrower.address, weth.address)).to.equal(exp(1, 18));
   });
 });
