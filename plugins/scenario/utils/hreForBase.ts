@@ -184,7 +184,7 @@ export default async function hreForBase(base: ForkSpec, fork = true): Promise<H
     return forkedHreForBase(base);
   else 
     return nonForkedHreForBase(base);
-  }
+}
 
 /*
 Tenderly Virtual TestNets don't implement Hardhat's `hardhat_*` cheatcodes, only their own
