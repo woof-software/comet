@@ -7,15 +7,16 @@
 
 Further reading:
 
-- [SCENARIO.md](./SCENARIO.md) — running the scenario suite, including parallel (multistream) runs
-- [MIGRATIONS.md](./MIGRATIONS.md) — writing, running and simulating migrations
-- [docs/contracts-archive.md](./docs/contracts-archive.md) — the persisted contract build-file archive
+- [SCENARIO.md](./SCENARIO.md) - running the scenario suite, including parallel (multistream) runs
+- [MIGRATIONS.md](./MIGRATIONS.md) - writing, running and simulating migrations
+- [docs/contract-import.md](./docs/contract-import.md) - how contract ABIs and bytecode are fetched from block explorers
+- [docs/contracts-archive.md](./docs/contracts-archive.md) - the persisted contract build-file archive
 
 ## Env variables
 
 The following env variables are used in the repo. To set them up, copy
 [`.env.example`](.env.example) to a `.env` in the root directory of this repo and
-fill in the values you need — it is the complete, annotated reference and covers
+fill in the values you need - it is the complete, annotated reference and covers
 a few advanced variables not listed below.
 
 ```
