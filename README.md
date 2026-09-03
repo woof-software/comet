@@ -5,6 +5,13 @@
 1. Clone the repo
 2. Run `yarn install`
 
+Further reading:
+
+- [SCENARIO.md](./SCENARIO.md) — running the scenario suite, including parallel (multistream) runs
+- [MIGRATIONS.md](./MIGRATIONS.md) — writing, running and simulating migrations
+- [docs/contract-import.md](./docs/contract-import.md) — where contract ABIs and sources are fetched from
+- [docs/contracts-archive.md](./docs/contracts-archive.md) — the persisted contract build-file archive
+
 ## Env variables
 
 The following env variables are used in the repo. To set them up, copy
@@ -34,10 +41,12 @@ MANTLE_QUICKNODE_LINK
 OPTIMISM_QUICKNODE_LINK
 POLYGON_QUICKNODE_LINK
 RONIN_QUICKNODE_LINK
-TENDERLY_ACCESS_KEY
-TENDERLY_USERNAME
 UNICHAIN_QUICKNODE_LINK
 ```
+
+Of these, only `ETHERSCAN_KEY`, `MAINNET_QUICKNODE_LINK`, `UNICHAIN_QUICKNODE_LINK` and
+`LINEA_QUICKNODE_LINK` are checked at startup; the rest fail later, when a task actually
+reaches the chain that needs them.
 
 Optional env variables:
 
@@ -48,6 +57,16 @@ SALT=<salt>                 # used for deterministic deployments
 ETH_PK=<eth-key>             # takes precedence over MNEMONIC
 MNEMONIC=<mnemonic>
 ```
+
+Task-specific env variables:
+
+```
+TENDERLY_USERNAME=<username>       # migrate --tenderly / --tenderlyVnet
+TENDERLY_ACCESS_KEY=<key>          # migrate --tenderly / --tenderlyVnet
+TENDERLY_VNET_RPC_URL=<admin-rpc>  # reuse an existing Virtual TestNet
+```
+
+See [MIGRATIONS.md](./MIGRATIONS.md#simulating-the-governance-proposal) for what these do.
 
 ## Git hooks
 
