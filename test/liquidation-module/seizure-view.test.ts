@@ -1,4 +1,3 @@
-import hre from 'hardhat';
 import {
   ethers,
   expect,
@@ -16,6 +15,7 @@ import {
   CHAIN_ID,
   ONEINCH_SLIPPAGE_PCT,
   AMM_PROTOCOLS,
+  setupFork,
 } from '../helpers';
 import {
   CometInterface,
@@ -70,10 +70,7 @@ describe('LiquidationSeizureView', function () {
   let debtAtExec: bigint;
 
   before(async () => {
-    await hre.network.provider.request({
-      method: 'hardhat_reset',
-      params: [{ forking: { jsonRpcUrl: process.env.MAINNET_QUICKNODE_LINK } }],
-    });
+    await setupFork();
 
     const signers = await ethers.getSigners();
     const deployer = signers[0];

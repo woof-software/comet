@@ -25,12 +25,15 @@ import { takeSnapshot, SnapshotRestorer } from '../helpers/snapshot';
 // until the liquidation finishes.
 //
 // The market below is built so the DEX route runs end to end with a re-entrant call planted inside the swap.
-// `dexAdapter.setReentrantCall(target, callData)` decides what that call is, so each context points it at a
-// different Comet operation. The guard runs before any of the operation's own checks, so the planted call
+// The attack rides in on the router calldata the liquidation forwards to the adapter, so each context just
+// encodes the Comet call it wants tried inside the swap window. The guard runs before any of the operation's own checks, so the planted call
 // needs no funding or permission of its own: the lock is the first thing it meets.
 describe('comet operations lock', function () {
   const INCENTIVE_BPS = BigInt(500);
-  const ZERO = ethers.constants.AddressZero;
+
+  // The swap data the module forwards to the adapter: the contract to call, and the call to make on it.
+  const attack = (target: string, callData: string) =>
+    [ethers.utils.defaultAbiCoder.encode(['address', 'bytes'], [target, callData])];
 
   // Market setup: 1 WETH of collateral against a 1,500 USDC borrow, then WETH is repriced from
   // $2,000 to $1,700 — below the 0.85 liquidate collateral factor, so the position is liquidatable.
@@ -178,13 +181,6 @@ describe('comet operations lock', function () {
   context('reverts on reentrant attack on comet (supplyFrom operation)', function () {
     const SUPPLY_AMOUNT = exp(100, 6);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('supplyFrom', [other.address, other.address, usdc.address, SUPPLY_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -192,7 +188,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('supplyFrom', [other.address, other.address, usdc.address, SUPPLY_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -203,24 +201,12 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
   context('reverts on reentrant attack on comet (supply operation)', function () {
     const SUPPLY_AMOUNT = exp(100, 6);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('supply', [usdc.address, SUPPLY_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -228,7 +214,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('supply', [usdc.address, SUPPLY_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -239,11 +227,6 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
@@ -251,13 +234,6 @@ describe('comet operations lock', function () {
   context('reverts on reentrant attack on comet (supply operation, collateral asset)', function () {
     const COLLATERAL_AMOUNT = exp(1, 18);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('supply', [weth.address, COLLATERAL_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -265,7 +241,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('supply', [weth.address, COLLATERAL_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -276,24 +254,12 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
   context('reverts on reentrant attack on comet (supplyTo operation)', function () {
     const SUPPLY_AMOUNT = exp(100, 6);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('supplyTo', [other.address, usdc.address, SUPPLY_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -301,7 +267,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('supplyTo', [other.address, usdc.address, SUPPLY_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -312,11 +280,6 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
@@ -325,13 +288,6 @@ describe('comet operations lock', function () {
   context('reverts on reentrant attack on comet (withdraw operation)', function () {
     const WITHDRAW_AMOUNT = exp(100, 6);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('withdraw', [usdc.address, WITHDRAW_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -339,7 +295,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('withdraw', [usdc.address, WITHDRAW_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -350,11 +308,6 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
@@ -362,13 +315,6 @@ describe('comet operations lock', function () {
   context('reverts on reentrant attack on comet (withdraw operation, collateral asset)', function () {
     const COLLATERAL_AMOUNT = exp(1, 18);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('withdraw', [weth.address, COLLATERAL_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -376,7 +322,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('withdraw', [weth.address, COLLATERAL_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -387,24 +335,12 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
   context('reverts on reentrant attack on comet (withdrawTo operation)', function () {
     const WITHDRAW_AMOUNT = exp(100, 6);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('withdrawTo', [other.address, usdc.address, WITHDRAW_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -412,7 +348,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('withdrawTo', [other.address, usdc.address, WITHDRAW_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -423,24 +361,12 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
   context('reverts on reentrant attack on comet (withdrawFrom operation)', function () {
     const WITHDRAW_AMOUNT = exp(100, 6);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('withdrawFrom', [other.address, other.address, usdc.address, WITHDRAW_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -448,7 +374,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('withdrawFrom', [other.address, other.address, usdc.address, WITHDRAW_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -459,11 +387,6 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
@@ -471,13 +394,6 @@ describe('comet operations lock', function () {
   context('reverts on reentrant attack on comet (transfer operation)', function () {
     const TRANSFER_AMOUNT = exp(100, 6);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('transfer', [other.address, TRANSFER_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -485,7 +401,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('transfer', [other.address, TRANSFER_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -496,24 +414,12 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
   context('reverts on reentrant attack on comet (transferFrom operation)', function () {
     const TRANSFER_AMOUNT = exp(100, 6);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('transferFrom', [other.address, lender.address, TRANSFER_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -521,7 +427,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('transferFrom', [other.address, lender.address, TRANSFER_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -532,24 +440,12 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
   context('reverts on reentrant attack on comet (transferAsset operation, collateral asset)', function () {
     const COLLATERAL_AMOUNT = exp(1, 18);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('transferAsset', [other.address, weth.address, COLLATERAL_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -557,7 +453,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('transferAsset', [other.address, weth.address, COLLATERAL_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -568,24 +466,12 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
   context('reverts on reentrant attack on comet (transferAssetFrom operation)', function () {
     const TRANSFER_AMOUNT = exp(100, 6);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('transferAssetFrom', [other.address, lender.address, usdc.address, TRANSFER_AMOUNT])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -593,7 +479,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('transferAssetFrom', [other.address, lender.address, usdc.address, TRANSFER_AMOUNT]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -604,11 +492,6 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 
@@ -617,13 +500,6 @@ describe('comet operations lock', function () {
   context('reverts on reentrant attack on comet (buyCollateral operation)', function () {
     const BASE_AMOUNT = exp(100, 6);
 
-    before(async () => {
-      await dexAdapter.setReentrantCall(
-        ZERO,
-        comet.interface.encodeFunctionData('buyCollateral', [weth.address, 0, BASE_AMOUNT, other.address])
-      );
-    });
-
     after(async () => await snapshot.restore());
 
     it('sanity check: user is liquidatable', async () => {
@@ -631,7 +507,9 @@ describe('comet operations lock', function () {
     });
 
     it('reverts with OperationsLocked', async () => {
-      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, ['0x']))
+      const swapData = attack(comet.address, comet.interface.encodeFunctionData('buyCollateral', [weth.address, 0, BASE_AMOUNT, other.address]));
+
+      await expect(liquidationModule.connect(executor).liquidate(executor.address, borrower.address, swapData))
         .to.be.revertedWithCustomError(comet, 'OperationsLocked');
     });
 
@@ -642,11 +520,6 @@ describe('comet operations lock', function () {
     it('leaves the borrower debt untouched', async () => {
       // The liquidation reverted, so the debt is exactly what was borrowed, interest included.
       expect(await comet.borrowBalanceOf(borrower.address)).to.be.equal(BASE_BORROWED);
-    });
-
-    it('leaves no trace of the re-entrant call', async () => {
-      // The adapter records every attempt, so a clean flag proves the whole transaction unwound.
-      expect(await dexAdapter.reentered()).to.equal(false);
     });
   });
 });

@@ -902,20 +902,45 @@ export function principalValue(
                           FORK SETUP
 //////////////////////////////////////////////////////////////*/
 
+/**
+ * Points the in-process node at a mainnet fork.
+ *
+ * The reset is what actually dials the RPC, so an unreachable provider takes down a whole suite from its
+ * `before` hook. When MAINNET_FALLBACK_LINK is configured, a failed reset is retried against it once before
+ * the error is surfaced.
+ */
 export async function setupFork(blockNumber?: number, jsonRpcUrl?: string) {
   const mainnetConfig = hre.config.networks.mainnet as any;
+  const primaryUrl = jsonRpcUrl ?? mainnetConfig.url; // MAINNET_QUICKNODE_LINK
+  const fallbackUrl = process.env.MAINNET_FALLBACK_LINK;
 
-  await hre.network.provider.request({
-    method: 'hardhat_reset',
-    params: [
-      {
-        forking: {
-          jsonRpcUrl: jsonRpcUrl ?? mainnetConfig.url,
-          blockNumber: blockNumber ?? undefined,
+  const resetFork = (url: string) =>
+    hre.network.provider.request({
+      method: 'hardhat_reset',
+      params: [
+        {
+          forking: {
+            jsonRpcUrl: url,
+            blockNumber: blockNumber ?? undefined,
+          },
         },
-      },
-    ],
-  });
+      ],
+    });
+
+  try {
+    await resetFork(primaryUrl);
+  } catch (primaryError) {
+    if (!fallbackUrl || fallbackUrl === primaryUrl) throw primaryError;
+
+    console.warn(`  primary fork RPC failed (${(primaryError as Error).message}) — retrying on MAINNET_FALLBACK_LINK`);
+    await resetFork(fallbackUrl);
+  }
+
+  // Ethers sends transactions without fee fields and lets the node fill them, and the node's estimate can
+  // land below the forked block's own base fee — every state-changing call is then rejected as underpriced,
+  // while view calls still pass. Zeroing the base fee removes the fee market from forked runs: it cannot
+  // climb again, since each block derives its base fee from the previous one.
+  await hre.network.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x0']);
 }
 
 const toSigner = async (x: string | SignerWithAddress): Promise<SignerWithAddress> => {
