@@ -101,8 +101,103 @@ For more information, see the Scenarios Hardhat plugin.
 
 ## Constraints
 
+A scenario declares the world it needs; constraints are what put the world into that shape. Each constraint has two halves:
+
+- **`solve`** — returns zero or more *solutions*, functions that mutate the forked chain until the requirement holds (sourcing tokens, bumping a supply cap, pausing the market). Returning `null` means "this requirement wasn't asked for, sit this one out"; returning `[]` means "this base can't satisfy it, drop the scenario here".
+- **`check`** — runs afterwards and asserts the requirement actually held.
+
+Because a constraint may return several solutions, one scenario can expand into several runs — every combination is executed, which is how a single scenario ends up covering many starting states.
+
+Constraints come in two kinds. **Static** ones always run, in this order, before anything else:
+
+| Constraint | What it does |
+| --- | --- |
+| `NativeTokenConstraint` | Wraps native currency for any asset that looks like a wrapped-native token (has `deposit()` and `withdraw(uint256)`) and hands it to that network's whale, so later token sourcing has a supply to draw on. Throws if the network has no whale configured. |
+| `MigrationConstraint` | Runs the branch's pending migrations — see below. |
+| `ProposalConstraint` | Executes governance proposals that are already open — see below. |
+
+**Requirement-driven** ones run only when the scenario asks for them, in this order — which matters, since caps are raised before balances are sourced, and balances are set before utilization is targeted:
+
+| Requirement | Constraint |
+| --- | --- |
+| `filter` | Filter |
+| `upgrade` | Modern |
+| `pause` | Pause |
+| `supplyCaps` | Supply Cap |
+| `cometBalances` | Comet Balance |
+| `tokenBalances` | Token Balance |
+| `utilization` | Utilization |
+| `prices` | Price |
+| `reserves` | Reserves |
+
+Assets are named either by their alias in `deployments/` or with a `$` shorthand: `$base` for the base token, `$asset0`, `$asset1`, … by collateral index. Amounts are in whole units, not wei. A plain number means "at least this much" (negative means "at most"); a string may carry an explicit operator — `'>= 10000'`, `'== 5'`, `'< 100'`.
+
+### Migration Constraint
+
+**static** — always applied.
+
+Picks up every migration under `deployments/{network}/{deployment}/migrations/` that differs from `main`, and runs each one's `prepare` and then `enact` in deterministic name order, impersonating a COMP whale so proposals can actually be made. This is what makes an open PR's migration get tested against the whole suite.
+
+It works off the git diff, so **a migration must be staged in git to be picked up**. Migrations whose `enacted` check already passes on-chain are prepared but not re-enacted, and are skipped during verification. The proposal id each migration creates is recorded so the Proposal Constraint can verify it afterwards.
+
+### Proposal Constraint
+
+**static** — always applied.
+
+Executes governance proposals that are already open *before* the scenario body runs, so scenarios exercise the protocol as it will be once pending governance lands. On a bridged deployment it first drains any pending bridged proposals on the L2. It then votes each open proposal through, executes it, relays it to any L2s it touches, and runs the `verify` block of whichever migration created it.
+
+### Filter Constraint
+
+**requirements**: `{ filter: async (ctx) => boolean }`
+
+Drops the scenario on bases where the predicate is false — e.g. `filter: async (ctx) => !isBridgedDeployment(ctx)` for a scenario that only makes sense where governance is local.
+
 ### Modern Constraint
 
-**requirements**: `{ upgrade: true }`
+**requirements**: `{ upgrade: true }` or `{ upgrade: { …config overrides } }`
 
 This constraint is to indicate that all deployments must use the most recent version of the Comet contract. For instance, say your scenario uses a feature that's not available on certain test-nets (or mainnet), then you would otherwise not be able to run the scenario on those networks. But if you include `{upgrade: true}` in your constraint requirements, the scenario will deploy a new Comet instance and upgrade the proxy to that before running the scenario. Note: currently this simply uses the `deploy.ts` script for deployment.
+
+Passing an object instead of `true` merges those fields into the current configuration before upgrading. Requirements are also run through `Fuzzing.ts` first: a field given a `{ type: FuzzType.UINT64 }` config expands into one solution per generated value, so the scenario runs across a range of configurations.
+
+### Pause Constraint
+
+**requirements**: `{ pause: { all: true } }` or `{ pause: { supplyPaused: true, … } }`
+
+Has the pause guardian pause the listed actions — `supplyPaused`, `transferPaused`, `withdrawPaused`, `absorbPaused`, `buyPaused`. Anything not listed is explicitly set to `false`, and `all` sets every flag at once.
+
+### Supply Cap Constraint
+
+**requirements**: `{ supplyCaps: { $asset0: 1000 } }`, or a function of the context
+
+Raises supply caps so the scenario's supplies fit under them. Only `>=` is supported when solving; `check` verifies any comparison.
+
+### Comet Balance Constraint
+
+**requirements**: `{ cometBalances: { albert: { $base: 100 } } }`, or a function of the context
+
+Moves an actor's **in-protocol** position to the target. Short of target, it sources the tokens to the actor and supplies them. Over target, it withdraws — and for the base asset, borrows instead, first topping up Comet's own base balance if there isn't enough to withdraw against.
+
+### Token Balance Constraint
+
+**requirements**: `{ tokenBalances: { albert: { $base: 100 } } }`, or a function of the context
+
+Same shape, but for plain wallet balances rather than protocol positions — it just sources tokens to the actor.
+
+### Utilization Constraint
+
+**requirements**: `{ utilization: 0.5 }`
+
+Supplies and borrows base until the market sits at that utilization (`0`–`1`), respecting `baseBorrowMin` and making sure there is enough supply to cover existing borrows.
+
+### Price Constraint
+
+**requirements**: `{ prices: { $base: 1 } }`
+
+Swaps in mock price feeds at the given prices. `check` asserts `comet.getPrice()` returns `price * 1e8`.
+
+### Reserves Constraint
+
+**requirements**: `{ reserves: '>= 10000' }`
+
+Sources base tokens to Comet until reserves meet the requirement, with a 5% buffer so interest accrual during the run doesn't drop it back under. Only `>=` is supported when solving; `check` verifies any comparison.

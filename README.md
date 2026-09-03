@@ -261,7 +261,7 @@ The PR should include any necessary tests, which will remain in the repository.
 The migration script itself can be deleted in a separate commit, after the PR has been merged and recorded on the `main` branch, for good hygiene.
 It's important to remove migrations once they've been executed, to avoid exploding the cost of running scenarios beyond what's necessary for testing.
 
-For more information, seee [MIGRATIONS.md](./MIGRATIONS.md).
+For more information, see [MIGRATIONS.md](./MIGRATIONS.md).
 
 ### Deploying to testnets
 
