@@ -9,7 +9,6 @@ Further reading:
 
 - [SCENARIO.md](./SCENARIO.md) — running the scenario suite, including parallel (multistream) runs
 - [MIGRATIONS.md](./MIGRATIONS.md) — writing, running and simulating migrations
-- [docs/contract-import.md](./docs/contract-import.md) — where contract ABIs and sources are fetched from
 - [docs/contracts-archive.md](./docs/contracts-archive.md) — the persisted contract build-file archive
 
 ## Env variables
