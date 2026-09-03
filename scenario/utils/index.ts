@@ -1752,18 +1752,12 @@ export async function executeOpenProposalAndRelay(
 
   for (const bridgeManager of bridgeManagers) {
     await mockAllRedstoneOracles(bridgeManager);
-    if (bridgeManager) {
-      await relayMessage(
-        governanceDeploymentManager,
-        bridgeManager,
-        startingBlockNumber
-      );
-    } else {
-      console.log(
-        `[${governanceDeploymentManager.network} -> ${bridgeManager.network}] Proposal ${openProposal.id} doesn't target bridge; not relaying`
-      );
-      return;
-    }
+
+    await relayMessage(
+      governanceDeploymentManager,
+      bridgeManager,
+      startingBlockNumber
+    );
   }
 }
 
