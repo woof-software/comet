@@ -1,7 +1,7 @@
 import { Scenario, ScenarioEnv, Solution } from './Scenario';
 import { ForkSpec, World } from './World';
 import { Loader } from './Loader';
-import { showReport, pluralize, Result } from './Report';
+import { showReport, pluralize, Result, FormatConfig } from './Report';
 import { AssertionError } from 'chai';
 
 export type Address = string;
@@ -184,7 +184,7 @@ async function asyncCallWithTimeout(asyncPromise: Promise<any>, timeLimit: numbe
   });
 }
 
-export async function runScenarios(bases: ForkSpec[], glob: string = 'scenario/**.ts') {
+export async function runScenarios(bases: ForkSpec[], glob: string = 'scenario/**.ts', output?: string) {
   const loader = await Loader.load(glob);
   const [runningScenarios, skippedScenarios] = loader.splitScenarios();
 
@@ -241,5 +241,6 @@ export async function runScenarios(bases: ForkSpec[], glob: string = 'scenario/*
     }
   }
 
-  await showReport(results, startTime, Date.now());
+  const formatConfig: FormatConfig | undefined = output ? { console: {}, json: { output } } : undefined;
+  await showReport(results, startTime, Date.now(), formatConfig);
 }
