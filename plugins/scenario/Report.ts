@@ -97,7 +97,7 @@ async function showReportConsole(results: Result[], _consoleOptions: ConsoleForm
   console.log('\n');
 }
 
-interface JsonTestResult {
+export interface JsonTestResult {
   title: string;
   fullTitle: string;
   file: string;
@@ -108,7 +108,7 @@ interface JsonTestResult {
   err: any;
 }
 
-interface JsonSuiteResult {
+export interface JsonSuiteResult {
   stats: {
     suites: number;
     tests: number;
@@ -123,6 +123,15 @@ interface JsonSuiteResult {
   pending: JsonTestResult[];
   failures: JsonTestResult[];
   passes: JsonTestResult[];
+}
+
+const MAX_ERROR_TEXT_LENGTH = 500;
+
+function truncateErrorText(text: string | undefined): string | undefined {
+  if (text === undefined) {
+    return undefined;
+  }
+  return text.length > MAX_ERROR_TEXT_LENGTH ? `${text.slice(0, MAX_ERROR_TEXT_LENGTH)}... (truncated)` : text;
 }
 
 async function showJsonReport(results: Result[], jsonOptions: JsonFormatOptions, startTime: number, endTime: number) {
@@ -143,7 +152,7 @@ async function showJsonReport(results: Result[], jsonOptions: JsonFormatOptions,
       numSolutionSets: result.numSolutionSets ?? 0,
       duration: result.elapsed || 0,
       currentRetry: 0,
-      err: result.error ? result.error.message : {} // Not sure
+      err: result.error ? { message: truncateErrorText(result.error.message), stack: truncateErrorText(result.trace) } : {}
     };
 
     if (result.error) {
