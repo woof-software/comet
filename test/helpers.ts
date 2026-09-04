@@ -44,7 +44,10 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 // Snapshot
 import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
-export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer };
+// Math helpers
+export * from './helpers/math';
+
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, BigNumber };
 
 export type Numeric = number | bigint;
 
@@ -337,6 +340,7 @@ export const ONE = factorScale;
 export const ZERO = factor(0);
 export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const MAX_ASSETS = 24;
+export const BASE_INDEX_SCALE = BigInt(1e15);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;
