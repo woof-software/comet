@@ -5,26 +5,68 @@
 1. Clone the repo
 2. Run `yarn install`
 
+Further reading:
+
+- [SCENARIO.md](./SCENARIO.md) - running the scenario suite, including parallel (multistream) runs
+- [MIGRATIONS.md](./MIGRATIONS.md) - writing, running and simulating migrations
+- [docs/contract-import.md](./docs/contract-import.md) - how contract ABIs and bytecode are fetched from block explorers
+- [docs/contracts-archive.md](./docs/contracts-archive.md) - the persisted contract build-file archive
+
 ## Env variables
 
-The following env variables are used in the repo. One way to set up these env
-variables is to create a `.env` in the root directory of this repo.
+The following env variables are used in the repo. To set them up, copy
+[`.env.example`](.env.example) to a `.env` in the root directory of this repo and
+fill in the values you need - it is the complete, annotated reference and covers
+a few advanced variables not listed below.
+
+```
+cp .env.example .env
+```
 
 Required env variables:
 
 ```
-ETHERSCAN_KEY=<key>
-INFURA_KEY=<key>
+ARBITRUM_QUICKNODE_LINK
+BASE_QUICKNODE_LINK
+ETHERSCAN_KEY
+ETHERSCAN_KEY_FOR_ARBITRUM
+ETHERSCAN_KEY_FOR_BASE
+ETHERSCAN_KEY_FOR_LINEA
+ETHERSCAN_KEY_FOR_OPTIMISM
+ETHERSCAN_KEY_FOR_POLYGON
+ETH_PK
+LINEA_QUICKNODE_LINK
+MAINNET_QUICKNODE_LINK
+MANTLE_QUICKNODE_LINK
+OPTIMISM_QUICKNODE_LINK
+POLYGON_QUICKNODE_LINK
+RONIN_QUICKNODE_LINK
+UNICHAIN_QUICKNODE_LINK
 ```
+
+Of these, only `ETHERSCAN_KEY`, `MAINNET_QUICKNODE_LINK`, `UNICHAIN_QUICKNODE_LINK` and
+`LINEA_QUICKNODE_LINK` are checked at startup; the rest fail later, when a task actually
+reaches the chain that needs them.
 
 Optional env variables:
 
 ```
 COINMARKETCAP_API_KEY=<key>
 REPORT_GAS=true
+SALT=<salt>                 # used for deterministic deployments
 ETH_PK=<eth-key>             # takes precedence over MNEMONIC
 MNEMONIC=<mnemonic>
 ```
+
+Task-specific env variables:
+
+```
+TENDERLY_USERNAME=<username>       # migrate --tenderly / --tenderlyVnet
+TENDERLY_ACCESS_KEY=<key>          # migrate --tenderly / --tenderlyVnet
+TENDERLY_VNET_RPC_URL=<admin-rpc>  # reuse an existing Virtual TestNet
+```
+
+See [MIGRATIONS.md](./MIGRATIONS.md#simulating-the-governance-proposal) for what these do.
 
 ## Git hooks
 
@@ -45,13 +87,13 @@ git commit -n -m "commit without running pre-commit hook"
 
 ## Multi-chain support
 
-Currently, Avalanche mainnet and testnet (fuji) are supported. This means that deployment scripts, scenarios, and spider all work for Avalanche.
+The following chains are currently supported: `mainnet`, `ronin`, `polygon`, `optimism`, `mantle`, `unichain`, `linea`, `base`, `arbitrum`, and `scroll`. This means that deployment scripts, scenarios, and spider all work for these chains.
 
-To use this project with other chains, the block explorer API key for your target chain must be set in .env (e.g. `SNOWTRACE_KEY` for Avalanche).
+To work with a given chain, set its RPC endpoint (e.g. `BASE_QUICKNODE_LINK` for Base) and, for contract verification, its block explorer API key (`ETHERSCAN_KEY` or the chain-specific `ETHERSCAN_KEY_FOR_*` variant, e.g. `ETHERSCAN_KEY_FOR_BASE`) in `.env`.
 
 An example deployment command looks like:
 
-`yarn hardhat deploy --network fuji --deployment usdc`
+`yarn hardhat deploy --network base --deployment usdc`
 
 ## Comet protocol contracts
 
@@ -73,7 +115,9 @@ An example deployment command looks like:
 
 **[CometMath.sol](https://github.com/compound-finance/comet/blob/main/contracts/CometMath.sol)** - Contract that defines math functions that are used throughout the Comet codebase.
 
-**[CometFactory.sol](https://github.com/compound-finance/comet/blob/main/contracts/CometFactory.sol)** - Contract that inherits `CometConfiguration.sol` and is used to deploy new versions of `CometWithExtendedAssetList.sol`. This contract will mainly be called by the Configurator during the governance upgrade process.
+**[CometFactoryWithExtendedAssetList.sol](https://github.com/compound-finance/comet/blob/main/contracts/CometFactoryWithExtendedAssetList.sol)** - Contract that inherits `CometConfiguration.sol` and is used to deploy new versions of `CometWithExtendedAssetList.sol`. This contract will mainly be called by the Configurator during the governance upgrade process.
+
+**[AssetListFactory.sol](https://github.com/compound-finance/comet/blob/main/contracts/AssetListFactory.sol)** - Contract that deploys `AssetList` instances, which back the extended asset list used by `CometWithExtendedAssetList.sol`. See [IAssetListFactory.sol](https://github.com/compound-finance/comet/blob/main/contracts/interfaces/IAssetListFactory.sol) and [IAssetListFactoryHolder.sol](https://github.com/compound-finance/comet/blob/main/contracts/interfaces/IAssetListFactoryHolder.sol) for the related interfaces.
 
 ## Configurator contracts
 
@@ -83,7 +127,7 @@ An example deployment command looks like:
 
 ## Supplementary contracts
 
-**[Bulker.sol](https://github.com/compound-finance/comet/blob/main/contracts/Bulker.sol)** - Contract that allows multiple Comet functions to be called in a single transaction.
+**[BaseBulker.sol](https://github.com/compound-finance/comet/blob/main/contracts/bulkers/BaseBulker.sol)** - Contract that allows multiple Comet functions to be called in a single transaction. Chain-specific variants extend it, e.g. [MainnetBulker.sol](https://github.com/compound-finance/comet/blob/main/contracts/bulkers/MainnetBulker.sol) and [MainnetBulkerWithWstETHSupport.sol](https://github.com/compound-finance/comet/blob/main/contracts/bulkers/MainnetBulkerWithWstETHSupport.sol).
 
 **[CometRewards.sol](https://github.com/compound-finance/comet/blob/main/contracts/CometRewards.sol)** - Contract that allows Comet users to claim rewards based on their protocol participation.
 
@@ -217,7 +261,7 @@ The PR should include any necessary tests, which will remain in the repository.
 The migration script itself can be deleted in a separate commit, after the PR has been merged and recorded on the `main` branch, for good hygiene.
 It's important to remove migrations once they've been executed, to avoid exploding the cost of running scenarios beyond what's necessary for testing.
 
-For more information, seee [MIGRATIONS.md](./MIGRATIONS.md).
+For more information, see [MIGRATIONS.md](./MIGRATIONS.md).
 
 ### Deploying to testnets
 
@@ -257,7 +301,7 @@ This can also be used together with `--overwrite`, to produce the verification a
 #### Other considerations
 
 Make sure that the deploying address has a sufficient amount of the chain's
-native asset (i.e. 2 ETH for Sepolia, 2 AVAX for Fuji)
+native asset (e.g. ETH on Ethereum/L2s, POL on Polygon, MNT on Mantle)
 
 ### Clone Multisig
 
@@ -269,14 +313,14 @@ DST_NETWORK=optimism npx hardhat run scripts/clone-multisig.ts
 
 ### Liquidation Bot
 
-This repo includes a contract (Liquidator.sol) that will absorb an underwater
-position, purchase the absorbed collateral, and then attempt to sell it on
+This repo includes a contract (`contracts/liquidator/OnChainLiquidator.sol`) that will absorb an
+underwater position, purchase the absorbed collateral, and then attempt to sell it on
 Uniswap for a profit.
 
-To run the bot, you'll need the address of a deployed version of the Liquidator
+To run the bot, you'll need the address of a deployed version of the `OnChainLiquidator`
 contract (or you can deploy a new instance of it yourself):
 
-`LIQUIDATOR_ADDRESS="0xABC..." DEPLOYMENT="usdc" yarn liquidation-bot --network sepolia`
+`LIQUIDATOR_ADDRESS="0xABC..." DEPLOYMENT="usdc" yarn liquidation-bot --network mainnet`
 
 Initiating transactions this way via the public mempool will
 [almost certainly get frontrun](https://youtu.be/UZ-NNd6yjFM), but you might be

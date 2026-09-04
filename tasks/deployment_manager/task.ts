@@ -4,7 +4,7 @@ import { writeEnacted } from '../../plugins/deployment_manager/Enacted';
 import { HardhatRuntimeEnvironment, HardhatConfig } from 'hardhat/types';
 import { DeploymentManager, VerifyArgs } from '../../plugins/deployment_manager';
 import { impersonateAddress } from '../../plugins/scenario/utils';
-import hreForBase from '../../plugins/scenario/utils/hreForBase';
+import hreForBase, { migrationStarted} from '../../plugins/scenario/utils/hreForBase';
 
 // TODO: Don't depend on scenario's hreForBase
 async function getForkEnv(env: HardhatRuntimeEnvironment, deployment: string): Promise<HardhatRuntimeEnvironment> {
@@ -30,7 +30,8 @@ async function runMigration<T>(
   enact: boolean,
   migration: Migration<T>,
   overwrite: boolean,
-  tenderly: boolean = false
+  tenderly: boolean = false,
+  tenderlyVnet: boolean = false
 ) {
   await deploymentManager.cleanCache();
   console.log(`Reading artifact for migration: ${migration.name}`);
@@ -71,6 +72,10 @@ async function runMigration<T>(
     if (tenderly) {
       const { tenderlyExecute } = await import('../../scenario/utils');
       await tenderlyExecute(govDeploymentManager, deploymentManager, governor, timelock);
+    }
+    if (tenderlyVnet) {
+      const { tenderlyVnetExecute } = await import('../../scenario/utils');
+      await tenderlyVnetExecute(govDeploymentManager, deploymentManager, governor, timelock);
     }
     await govDeploymentManager.cleanCache();
   }
@@ -191,6 +196,7 @@ task('migrate', 'Runs migration')
   .addFlag('noEnacted', 'do not write enacted to the migration script')
   .addFlag('simulate', 'only simulates the blockchain effects')
   .addFlag('tenderly', 'use tenderly to simulate the migration')
+  .addFlag('tenderlyVnet', 'use a Tenderly Virtual TestNet to execute the migration as real transactions')
   .addFlag('overwrite', 'overwrites artifact if exists, fails otherwise')
   .setAction(
     async (
@@ -201,6 +207,7 @@ task('migrate', 'Runs migration')
         noEnacted,
         simulate,
         tenderly,
+        tenderlyVnet,
         overwrite,
         deployment,
         impersonate,
@@ -220,7 +227,7 @@ task('migrate', 'Runs migration')
         {
           writeCacheToDisk: !simulate || overwrite, // Don't write to disk when simulating, unless overwrite is set
           verificationStrategy: 'eager', // We use eager here to verify contracts right after they are deployed
-          saveBytecode: tenderly, // Save bytecode to cache if tenderly is enabled
+          saveBytecode: tenderly || tenderlyVnet, // Save bytecode to cache if a tenderly simulation mode is enabled
         },
       );
 
@@ -240,7 +247,7 @@ task('migrate', 'Runs migration')
           {
             writeCacheToDisk: !simulate || overwrite, // Don't write to disk when simulating, unless overwrite is set
             verificationStrategy: 'eager', // We use eager here to verify contracts right after they are deployed
-            saveBytecode: tenderly
+            saveBytecode: tenderly || tenderlyVnet
           },
         );
         await governanceDm.spider();
@@ -248,6 +255,7 @@ task('migrate', 'Runs migration')
         governanceDm = dm;
       }
 
+      migrationStarted();
       if (impersonate && !simulate) {
         throw new Error('Cannot impersonate an address if not simulating a migration. Please specify --simulate to simulate.');
       } else if (impersonate && simulate) {
@@ -271,7 +279,7 @@ task('migrate', 'Runs migration')
         prepare = true;
       }
 
-      await runMigration(dm, governanceDm, prepare, enact, migration, overwrite, tenderly);
+      await runMigration(dm, governanceDm, prepare, enact, migration, overwrite, tenderly, tenderlyVnet);
 
       if (enact && !noEnacted) {
         await writeEnacted(migration, dm, true);
@@ -376,6 +384,7 @@ task('deploy_and_migrate', 'Runs deploy and migration')
         governanceDm = dm;
       }
 
+      migrationStarted();
       if (impersonate && !simulate) {
         throw new Error('Cannot impersonate an address if not simulating a migration. Please specify --simulate to simulate.');
       } else if (impersonate && simulate) {
