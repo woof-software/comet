@@ -41,7 +41,14 @@ import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarnessExtendedAssetList';
 
-export { Comet, ethers, expect, hre };
+// Snapshot
+import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
+
+// Math helpers
+export * from './helpers/math';
+
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, BigNumber };
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, SignerWithAddress, BigNumber };
 
 export type Numeric = number | bigint;
 
@@ -142,6 +149,12 @@ export type BulkerInfo = {
   bulker: BaseBulker;
 };
 
+export type UserBasic = { principal: BigNumber, baseTrackingIndex: BigNumber, baseTrackingAccrued: BigNumber, assetsIn: number, _reserved: number };
+
+
+export const oneDay = 24 * 60 * 60;
+export const oneMonth = 30 * oneDay;
+
 export function dfn<T>(x: T | undefined | null, dflt: T): T {
   return x == undefined ? dflt : x;
 }
@@ -237,6 +250,62 @@ function toBigInt(f: bigint | BigNumber): bigint {
   }
 }
 
+export function mulFactor(n: bigint, factor: bigint):bigint {
+  return n * factor / factorScale;
+}
+
+export function divPrice(n: bigint, price: bigint, toScale: bigint): bigint {
+  return n * toScale / price;
+}
+
+const BASE_INDEX_SCALE = 1e15;
+
+export function presentValueSupply(baseSupplyIndex: bigint | BigNumber, principalValue: bigint | BigNumber): bigint {
+  const principal = toBigInt(principalValue);
+  const index = toBigInt(baseSupplyIndex);
+  return principal * index / BigInt(BASE_INDEX_SCALE);
+}
+
+export function presentValueBorrow(baseBorrowIndex: bigint | BigNumber, principalValue: bigint | BigNumber): bigint {
+  const principal = toBigInt(principalValue);
+  const index = toBigInt(baseBorrowIndex);
+  return principal * index / BigInt(BASE_INDEX_SCALE);
+}
+
+export function presentValue(
+  principalValue: bigint | BigNumber,
+  baseSupplyIndex: bigint | BigNumber,
+  baseBorrowIndex: bigint | BigNumber
+): bigint {
+  const principal = toBigInt(principalValue);
+  if (principal >= 0n) {
+    return presentValueSupply(baseSupplyIndex, principal);
+  } else {
+    return -presentValueBorrow(baseBorrowIndex, -principal);
+  }
+}
+
+function principalValueSupply(baseSupplyIndex: bigint, presentValue: bigint): bigint {
+  return (presentValue * BigInt(BASE_INDEX_SCALE)) / baseSupplyIndex;
+}
+
+function principalValueBorrow(baseBorrowIndex: bigint, presentValue: bigint): bigint {
+  return (presentValue * BigInt(BASE_INDEX_SCALE) + baseBorrowIndex - 1n) / baseBorrowIndex;
+}
+
+export async function principalValue(
+  presentValue: bigint | BigNumber,
+  baseSupplyIndex: bigint | BigNumber,
+  baseBorrowIndex: bigint | BigNumber
+): Promise<bigint> {
+  const pv = toBigInt(presentValue);
+  if (pv >= 0n) {
+    return principalValueSupply(toBigInt(baseSupplyIndex), pv);
+  } else {
+    return -principalValueBorrow(toBigInt(baseBorrowIndex), -pv);
+  }
+}
+
 export function annualize(n: bigint | BigNumber, secondsPerYear = 31536000n): number {
   return defactor(toBigInt(n) * secondsPerYear);
 }
@@ -273,7 +342,10 @@ export const factorDecimals = 18;
 export const factorScale = factor(1);
 export const ONE = factorScale;
 export const ZERO = factor(0);
+export const MAX_ASSETS = 24;
 export const ZERO_ADDRESS = ethers.constants.AddressZero;
+export const MAX_ASSETS = 24;
+export const BASE_INDEX_SCALE = BigInt(1e15);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;
