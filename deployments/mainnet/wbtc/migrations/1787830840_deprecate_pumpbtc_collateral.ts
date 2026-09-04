@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
 import { migration } from '../../../../plugins/deployment_manager/Migration';
-import { proposal, exp } from '../../../../src/deploy';
+import { proposal } from '../../../../src/deploy';
 
 const MinPricePriceFeed = '0x7BaDaB7109afBbF48eCd8d6498CaAcd2630b45B9';
 
@@ -20,23 +20,13 @@ export default migration('1787830840_deprecate_pumpbtc_collateral', {
       pumpBTC,
       configurator
     } = await deploymentManager.getContracts();
-  
-    const newAssetConfig = {
-      asset: pumpBTC.address,
-      priceFeed: MinPricePriceFeed,
-      decimals: await pumpBTC.decimals(),
-      borrowCollateralFactor: 0,
-      liquidateCollateralFactor: exp(0.0001, 18),
-      liquidationFactor: exp(1, 18),
-      supplyCap: 0,
-    };
 
     const mainnetActions = [
       // 1. Update pumpBTC price feed to return the smallest possible price
       {
         contract: configurator,
-        signature: 'updateAsset(address,(address,address,uint8,uint64,uint64,uint64,uint128))',
-        args: [comet.address, newAssetConfig],
+        signature: 'updateAssetPriceFeed(address,address,address)',
+        args: [comet.address, pumpBTC.address, MinPricePriceFeed],
       },
       // 2. Deploy and upgrade to a new version of Comet
       {
@@ -52,7 +42,7 @@ export default migration('1787830840_deprecate_pumpbtc_collateral', {
 
 Woof proposes to deprecate pumpBTC from cWBTCv3 on Ethereum network, since deprecation of its Chainlink oracle.
 
-In order to achieve this price feed will be updated to a new one, which will return the smallest acceptable price - 0.00000001 (1e-8), and the supply cap will be set to 0 to prevent further deposits.
+In order to achieve this price feed will be updated to a new one, which will return the smallest acceptable price - 0.00000001 (1e-8).
 
 This proposal takes the governance steps recommended and necessary to update a Compound III WBTC market on Ethereum. Simulations have confirmed the market’s readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario).
 
@@ -61,7 +51,7 @@ Further detailed information can be found on the corresponding [proposal pull re
 
 ## Proposal Actions
 
-The first proposal action updates pumpBTC config to a deprecated state.
+The first proposal action updates pumpBTC price feed to the price feed that returns the smallest acceptable price.
 
 The second action deploys and upgrades Comet to a new version.`;
 
@@ -94,20 +84,12 @@ The second action deploys and upgrades Comet to a new version.`;
     // 1. Compare proposed asset config with Comet asset info
     const pumpBTCAssetInfo = await comet.getAssetInfoByAddress(pumpBTC.address);
     const pumpBTCAssetIndex = pumpBTCAssetInfo.offset;
-    expect(0).to.be.equal(pumpBTCAssetInfo.supplyCap);
     expect(MinPricePriceFeed).to.be.equal(pumpBTCAssetInfo.priceFeed);
     expect(1).to.be.equal(await comet.getPrice(pumpBTCAssetInfo.priceFeed));
-    expect(0).to.be.equal(pumpBTCAssetInfo.borrowCollateralFactor);
-    expect(exp(0.0001, 18)).to.be.equal(pumpBTCAssetInfo.liquidateCollateralFactor);
-    expect(exp(1, 18)).to.be.equal(pumpBTCAssetInfo.liquidationFactor);
 
     // 2. Compare proposed asset config with Configurator asset config
     const configuratorPumpBTCAssetConfig = (await configurator.getConfiguration(comet.address)).assetConfigs[pumpBTCAssetIndex];
-    expect(0).to.be.equal(configuratorPumpBTCAssetConfig.supplyCap);
     expect(MinPricePriceFeed).to.be.equal(configuratorPumpBTCAssetConfig.priceFeed);
     expect(1).to.be.equal(await comet.getPrice(configuratorPumpBTCAssetConfig.priceFeed));
-    expect(0).to.be.equal(configuratorPumpBTCAssetConfig.borrowCollateralFactor);
-    expect(exp(0.0001, 18)).to.be.equal(configuratorPumpBTCAssetConfig.liquidateCollateralFactor);
-    expect(exp(1, 18)).to.be.equal(configuratorPumpBTCAssetConfig.liquidationFactor);
   },
 });

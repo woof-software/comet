@@ -7,15 +7,12 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
   const _pumpBTC = await deploymentManager.existing('pumpBTC', '0xF469fBD2abcd6B9de8E169d128226C0Fc90a012e');
   const COMP = await deploymentManager.existing('COMP', '0xc00e94Cb662C3520282E6f5717214004A7f26888');
 
-  // Deploy scaling price feed for pumpBTC
-  const _pumpBTCScalingPriceFeed = await deploymentManager.deploy(
+  // pumpBTC's underlying Chainlink oracle (0x6CE4Ef3689F26edD40ed3ccbE3Cc29dab62C915f) has
+  // been deprecated on-chain and now reverts on all calls, so the ScalingPriceFeed wrapper
+  // can no longer be redeployed from scratch. Reuse the already-deployed wrapper instead.
+  const _pumpBTCScalingPriceFeed = await deploymentManager.existing(
     'pumpBTC:priceFeed',
-    'pricefeeds/ScalingPriceFeed.sol',
-    [
-      '0x6CE4Ef3689F26edD40ed3ccbE3Cc29dab62C915f', // pumpBTC / BTC price feed
-      8                                             // decimals
-    ],
-    true
+    '0x7BaDaB7109afBbF48eCd8d6498CaAcd2630b45B9'
   );
 
   // Import shared contracts from cUSDCv3
