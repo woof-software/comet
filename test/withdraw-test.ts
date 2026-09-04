@@ -1115,7 +1115,6 @@ describe('withdraw', function () {
     let dave: SignerWithAddress;
     let withdrawTxs: ContractTransaction[] = [];
     let alicePrincipalBefore: BigNumber;
-    let davePrincipalBefore: BigNumber;
 
     let snapshot: SnapshotRestorer;
 
@@ -1159,7 +1158,6 @@ describe('withdraw', function () {
       }
 
       alicePrincipalBefore = (await comet.userBasic(alice.address)).principal;
-      davePrincipalBefore = (await comet.userBasic(dave.address)).principal;
 
       snapshot = await takeSnapshot();
     });

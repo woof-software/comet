@@ -1,16 +1,16 @@
-import { scenario } from "./context/CometContext";
-import { expect } from "chai";
-import { exp } from "../test/helpers";
-import { expectRevertCustom, perSecond } from "./utils";
-import { BigNumber, BigNumberish, ethers } from "ethers";
-import { FaucetToken } from "../build/types";
-import { getConfigForScenario } from "./utils/scenarioHelper";
+import { scenario } from './context/CometContext';
+import { expect } from 'chai';
+import { exp } from '../test/helpers';
+import { expectRevertCustom, perSecond } from './utils';
+import { BigNumber, BigNumberish, ethers } from 'ethers';
+import { FaucetToken } from '../build/types';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 const MIN_OFFSET_FOR_RESERVED = 16; // _reserved covers offsets 16–23
 const REQUIRED_NUM_ASSETS = MIN_OFFSET_FOR_RESERVED + 1; // index 16 has offset 16
 
 scenario(
-  "Comet#numAssets > market has at least one collateral asset",
+  'Comet#numAssets > market has at least one collateral asset',
   {},
   async ({ comet }) => {
     expect(await comet.numAssets()).to.be.greaterThan(0);
@@ -18,7 +18,7 @@ scenario(
 );
 
 scenario(
-  "Comet#governor > points to timelock",
+  'Comet#governor > points to timelock',
   {},
   async ({ comet, timelock }) => {
     expect(await comet.governor()).to.equal(timelock.address);
@@ -26,27 +26,27 @@ scenario(
 );
 
 scenario(
-  "Comet#governor > is not the same address as pause guardian",
+  'Comet#governor > is not the same address as pause guardian',
   {},
   async ({ comet }) => {
     expect(await comet.governor()).to.not.equal(await comet.pauseGuardian());
   },
 );
 
-scenario("Comet#governor > is not zero address", {}, async ({ comet }) => {
+scenario('Comet#governor > is not zero address', {}, async ({ comet }) => {
   expect(await comet.governor()).to.not.equal(ethers.constants.AddressZero);
 });
 
 scenario(
-  "Comet#initializeStorage > reverts if already initialized",
+  'Comet#initializeStorage > reverts if already initialized',
   {},
   async ({ comet }) => {
-    await expectRevertCustom(comet.initializeStorage(), "AlreadyInitialized()");
+    await expectRevertCustom(comet.initializeStorage(), 'AlreadyInitialized()');
   },
 );
 
 scenario(
-  "Comet#configuration > matches configurator parameters",
+  'Comet#configuration > matches configurator parameters',
   {},
   async ({ comet, configurator }) => {
     const cfg = await configurator.getConfiguration(comet.address);
@@ -104,17 +104,17 @@ scenario(
 );
 
 scenario(
-  "Comet#getAssetInfoByAddress > reverts if asset does not exist",
+  'Comet#getAssetInfoByAddress > reverts if asset does not exist',
   {},
   async ({ comet }) => {
     await expect(
       comet.getAssetInfoByAddress(ethers.Wallet.createRandom().address),
-    ).to.be.revertedWithCustomError(comet, "BadAsset");
+    ).to.be.revertedWithCustomError(comet, 'BadAsset');
   },
 );
 
 scenario(
-  "Comet#assetsIn > correctly sets and clears _reserved bits for assets with offset >= 16",
+  'Comet#assetsIn > correctly sets and clears _reserved bits for assets with offset >= 16',
   {},
   async ({ comet, configurator, actors }, context) => {
     const { albert, admin } = actors;
@@ -156,14 +156,14 @@ scenario(
         FaucetToken,
         [string, string, BigNumberish, string]
       >(
-        "faucetToken:extendedAssetTarget",
-        "test/FaucetToken.sol",
-        [exp(1_000_000, 18).toString(), "Mock Extended Token", 18, "MEXT"],
+        'faucetToken:extendedAssetTarget',
+        'test/FaucetToken.sol',
+        [exp(1_000_000, 18).toString(), 'Mock Extended Token', 18, 'MEXT'],
         true,
       );
       const mockPriceFeed = await dm.deploy(
-        "test:extendedAssetTargetPriceFeed",
-        "test/SimplePriceFeed.sol",
+        'test:extendedAssetTargetPriceFeed',
+        'test/SimplePriceFeed.sol',
         [1 * 10 ** 8, 8],
         true,
       );
