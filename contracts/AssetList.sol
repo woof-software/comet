@@ -4,7 +4,7 @@ pragma solidity 0.8.15;
 import "./interfaces/IPriceFeed.sol";
 import "./interfaces/IERC20NonStandard.sol";
 import "./CometMainInterface.sol";
-import "./CometCore.sol";
+import "./interfaces/ICometData.sol";
 
 /**
  * @title Compound's Asset List
@@ -171,7 +171,7 @@ contract AssetList {
      * @param i The index of the asset info to get
      * @return The asset info object
      */
-    function getAssetInfo(uint8 i) public view returns (CometCore.AssetInfo memory) {
+    function getAssetInfo(uint8 i) public view returns (ICometData.AssetInfo memory) {
         if (i >= numAssets) revert CometMainInterface.BadAsset();
         uint256 word_a;
         uint256 word_b;
@@ -283,7 +283,7 @@ contract AssetList {
         uint64 scale = uint64(10 ** decimals_);
         uint128 supplyCap = uint128(((word_b >> 168) & type(uint64).max) * scale);
 
-        return CometCore.AssetInfo({
+        return ICometData.AssetInfo({
             offset: i,
             asset: asset,
             priceFeed: priceFeed,
