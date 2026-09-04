@@ -3,7 +3,19 @@
 ## Getting started
 
 1. Clone the repo
-2. Run `yarn install`
+2. Initialize the git submodules
+
+```
+git submodule update --init --recursive
+```
+
+3. Run `yarn install`
+
+To later update the submodules to the latest upstream revisions:
+
+```
+git submodule update --remote --merge
+```
 
 Further reading:
 
