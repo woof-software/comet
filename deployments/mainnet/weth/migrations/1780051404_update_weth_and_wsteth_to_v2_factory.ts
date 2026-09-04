@@ -141,8 +141,8 @@ The seventh proposal action deploys and upgrades the wstETH Comet to the new ser
     trace(`Created proposal ${proposalId}.`);
   },
 
-  async enacted(): Promise<boolean> {
-    return false;
+  async enacted(deploymentManager: DeploymentManager): Promise<boolean> {
+    return true;
   },
 
   async verify(deploymentManager: DeploymentManager) {
