@@ -1,4 +1,4 @@
-import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, divPrice, presentValue, CollateralState, makeCollateralStates, seedMarketActivity, deployEmptyDexAdapter, deployDefaultLiquidationModuleWithComet, DeployLiquidationModuleOpts } from '../helpers';
+import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, ceilDiv, toBigInt, presentValue, CollateralState, makeCollateralStates, seedMarketActivity, deployEmptyDexAdapter, deployDefaultLiquidationModuleWithComet, DeployLiquidationModuleOpts } from '../helpers';
 import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, LiquidationModule, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
@@ -182,7 +182,10 @@ describe('absorb: general logic', function () {
     
           // _processDebtClosing: C × LF = $71.10 > D = $70 → seize exactly D / LF of COMP.
           // Debt reduction = D (full debt repaid); seizeAmount = D / LF / compPrice (in COMP tokens).
-          collateralsState[collateralKey].seizeAmount = divPrice(debtRemainingValue * factorScale / lf, compPrice, assetInfo.scale);
+          collateralsState[collateralKey].seizeAmount = ceilDiv(
+            toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+            toBigInt(lf) * toBigInt(compPrice),
+          );
           collateralsState[collateralKey].seizedValue = mulPrice(collateralsState[collateralKey].seizeAmount, compPrice, assetInfo.scale);
         });
     
@@ -326,7 +329,10 @@ describe('absorb: general logic', function () {
     
           // D ≤ minDebt → outer branch → _processDebtClosing.
           // C × LF = $13.60 > D = $10 → seize exactly D / LF of LDO; surplus stays.
-          collateralsState[collateralKey].seizeAmount = divPrice(debtRemainingValue * factorScale / lf, ldoPrice, assetInfo.scale);
+          collateralsState[collateralKey].seizeAmount = ceilDiv(
+            toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+            toBigInt(lf) * toBigInt(ldoPrice),
+          );
           collateralsState[collateralKey].seizedValue = mulPrice(collateralsState[collateralKey].seizeAmount, ldoPrice, assetInfo.scale);
         });
     
@@ -470,7 +476,10 @@ describe('absorb: general logic', function () {
     
           // D ≤ minDebt → outer branch → _processDebtClosing.
           // C × LF = $11.78 > D = $11 → seize exactly D / LF of sUSDe; surplus stays.
-          collateralsState[collateralKey].seizeAmount = divPrice(debtRemainingValue * factorScale / lf, sUsdePrice, assetInfo.scale);
+          collateralsState[collateralKey].seizeAmount = ceilDiv(
+            toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
+            toBigInt(lf) * toBigInt(sUsdePrice),
+          );
           collateralsState[collateralKey].seizedValue = mulPrice(collateralsState[collateralKey].seizeAmount, sUsdePrice, assetInfo.scale);
         });
     
@@ -630,7 +639,10 @@ describe('absorb: general logic', function () {
     
           // Iter 2 (WETH): debtAfterComp ≈ $9.50 ≤ minDebtValue $10 → outer minDebt → _processDebtClosing.
           // C × LF = $10.80 > debtAfterComp → seize exactly debtAfterComp / LF of WETH.
-          collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(debtAfterComp * factorScale / lf_weth, wethPrice, wethInfo.scale);
+          collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+            toBigInt(debtAfterComp) * factorScale * toBigInt(wethInfo.scale),
+            toBigInt(lf_weth) * toBigInt(wethPrice),
+          );
           collateralsState[collateralConfigs[1].symbol].seizedValue = mulPrice(collateralsState[collateralConfigs[1].symbol].seizeAmount, wethPrice, wethInfo.scale);
         });
     
@@ -728,10 +740,12 @@ describe('absorb: general logic', function () {
     
       context('2 collaterals: after absorb debt = 0 and some 2nd collateral surplus (AAVE index 15, LDO index 16)', function () {
         const collateralConfigs = [
-          { symbol: 'AAVE', amount: exp(1, 17),  priceDrop: 100n }, // 0.1 AAVE = $10, no price change
-          { symbol: 'LDO',  amount: exp(10, 18), priceDrop: 75n  }, // 10 LDO = $20 -> $15 after 25% drop
+          { symbol: 'AAVE', amount: exp(6, 16),    priceDrop: 100n }, // 0.06 AAVE = $6, no price change
+          { symbol: 'LDO',  amount: exp(10.5, 18), priceDrop: 75n  }, // 10.5 LDO = $21 -> $15.75 after 25% drop
         ];
-        const aaveLdoBorrowAmount = exp(16, 6); // $16
+        // $14.50: inside the $15.15 borrow limit, above the $13.67 liquidation threshold once LDO drops,
+        // and sized so the AAVE seizure leaves less than the $10 minimum debt for LDO to close.
+        const aaveLdoBorrowAmount = exp(14.5, 6);
     
         let collateralsState: Record<string, CollateralState>;
         let absorbTx: ContractTransaction;
@@ -748,7 +762,7 @@ describe('absorb: general logic', function () {
           }
           await comet.connect(alice).withdraw(baseToken.address, aaveLdoBorrowAmount);
     
-          // Drop LDO 25%: $2 -> $1.50. totalLCF = $6.50 + $9.30 = $15.80 < $16 -> liquidatable.
+          // Drop LDO 25%: $2 -> $1.50. totalLCF = $3.90 + $9.77 = $13.67 < $14.50 -> liquidatable.
           for (const config of collateralConfigs) {
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             await priceFeeds[config.symbol].connect(alice).setRoundData(0, price * config.priceDrop / 100n, 0, 0, 0);
@@ -784,7 +798,7 @@ describe('absorb: general logic', function () {
           await expect(absorbTx).to.not.be.reverted;
         });
     
-        it('calculates seize amounts: AAVE fully seized (inner minDebt), LDO partial (outer minDebt)', async () => {
+        it('calculates seize amounts: AAVE fully seized, LDO partial (outer minDebt)', async () => {
           const aaveInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
           const ldoInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
           const aavePrice = (await priceFeeds[collateralConfigs[0].symbol].latestRoundData())[1].toBigInt();
@@ -793,18 +807,20 @@ describe('absorb: general logic', function () {
           const lf_ldo = ldoInfo.liquidationFactor.toBigInt();
           const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
     
-          // Iter 1 (AAVE): wantedCV ~ $8.72 < $10, partial branch taken.
-          // D - target debt reduction ~ $8.59 <= $10 -> inner minDebt -> _processDebtClosing(D, AAVE).
-          // C_AAVE x LF = $8.50 < D = $16 -> seize all AAVE; debt reduction = C_AAVE x LF.
+          // Iter 1 (AAVE): restoring target health asks for ~$6.43 of collateral, more than the whole
+          // $6 balance is worth, so all of it goes; debt reduction = C_AAVE x LF = $5.10.
           const aaveCollateralValue = mulPrice(collateralConfigs[0].amount, aavePrice, aaveInfo.scale);
           collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
           collateralsState[collateralConfigs[0].symbol].seizedValue = aaveCollateralValue;
     
           const debtAfterAave = debtRemainingValue - mulFactor(aaveCollateralValue, lf_aave);
     
-          // Iter 2 (LDO): debtAfterAave ~ $7.50 <= minDebtValue $10 -> outer minDebt -> _processDebtClosing.
-          // C_LDO x LF = $12.75 > debtAfterAave -> seize exactly debtAfterAave / LF of LDO; surplus stays.
-          collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(debtAfterAave * factorScale / lf_ldo, ldoPrice, ldoInfo.scale);
+          // Iter 2 (LDO): debtAfterAave ~ $9.40 <= minDebtValue $10 -> outer minDebt -> _processDebtClosing.
+          // C_LDO x LF = $13.39 > debtAfterAave -> seize exactly debtAfterAave / LF of LDO; surplus stays.
+          collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+            toBigInt(debtAfterAave) * factorScale * toBigInt(ldoInfo.scale),
+            toBigInt(lf_ldo) * toBigInt(ldoPrice),
+          );
           collateralsState[collateralConfigs[1].symbol].seizedValue = mulPrice(collateralsState[collateralConfigs[1].symbol].seizeAmount, ldoPrice, ldoInfo.scale);
         });
     
@@ -978,7 +994,10 @@ describe('absorb: general logic', function () {
     
           // Iter 2 (sUSDe): debtAfterUsde ~ $7.87 <= minDebtValue $10 -> outer minDebt -> _processDebtClosing.
           // C_sUSDe x LF = $7.36 > debtAfterUsde -> seize exactly debtAfterUsde / LF of sUSDe; surplus stays.
-          collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(debtAfterUsde * factorScale / lf_susde, sUsdePrice, sUsdeInfo.scale);
+          collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+            toBigInt(debtAfterUsde) * factorScale * toBigInt(sUsdeInfo.scale),
+            toBigInt(lf_susde) * toBigInt(sUsdePrice),
+          );
           collateralsState[collateralConfigs[1].symbol].seizedValue = mulPrice(collateralsState[collateralConfigs[1].symbol].seizeAmount, sUsdePrice, sUsdeInfo.scale);
         });
     
@@ -1078,10 +1097,12 @@ describe('absorb: general logic', function () {
     
       context('2 collaterals: after absorb debt = 0 and some 2nd collateral surplus (ezETH index 10, OP index 20)', function () {
         const collateralConfigs = [
-          { symbol: 'ezETH', amount: exp(1, 17),  priceDrop: 75n  }, // 0.1 ezETH: $3350 -> $2512.50 (25% drop)
-          { symbol: 'OP',    amount: exp(15, 18), priceDrop: 100n }, // 15 OP = $30, no price change
+          { symbol: 'ezETH', amount: exp(15, 15), priceDrop: 50n  }, // 0.015 ezETH: $50.25 -> $25.12 (50% drop)
+          { symbol: 'OP',    amount: exp(5, 18),  priceDrop: 100n }, // 5 OP = $10, no price change
         ];
-        const borrowAmount248 = exp(248, 6); // $248
+        // $30: inside the $40.67 borrow limit, above the $25.29 liquidation threshold once ezETH drops,
+        // and sized so the ezETH seizure leaves less than the $10 minimum debt for OP to close.
+        const borrowAmount = exp(30, 6);
     
         let collateralsState: Record<string, CollateralState>;
         let absorbTx: ContractTransaction;
@@ -1096,9 +1117,9 @@ describe('absorb: general logic', function () {
           for (const config of collateralConfigs) {
             await comet.connect(alice).supply(tokens[config.symbol].address, config.amount);
           }
-          await comet.connect(alice).withdraw(baseToken.address, borrowAmount248);
+          await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
     
-          // Drop ezETH 25%: $3350 -> $2512.50. totalLCF = $190.95 + $18.60 = $209.55 < $248 -> liquidatable.
+          // Drop ezETH 50%: $3350 -> $1675. totalLCF = $19.10 + $6.20 = $25.29 < $30 -> liquidatable.
           for (const config of collateralConfigs) {
             const price = (await priceFeeds[config.symbol].latestRoundData())[1].toBigInt();
             await priceFeeds[config.symbol].connect(alice).setRoundData(0, price * config.priceDrop / 100n, 0, 0, 0);
@@ -1134,24 +1155,29 @@ describe('absorb: general logic', function () {
           await expect(absorbTx).to.not.be.reverted;
         });
     
-        it('calculates seize amounts: ezETH fully seized (else branch), OP partial (inner minDebt)', async () => {
+        it('calculates seize amounts: ezETH fully seized, OP partial (outer minDebt)', async () => {
           const ezethInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
           const opInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
           const ezethPrice = (await priceFeeds[collateralConfigs[0].symbol].latestRoundData())[1].toBigInt();
           const opPrice = (await priceFeeds[collateralConfigs[1].symbol].latestRoundData())[1].toBigInt();
           const debtRemainingValue = mulPrice(-balanceBefore, baseTokenPrice, baseScale);
     
-          // Iter 1 (ezETH): wantedCV ~ $266 > C_ezETH -> else branch -> seize all ezETH.
+          // Iter 1 (ezETH): restoring target health asks for ~$31.74, more than the whole $25.12 balance
+          // is worth, so all of it goes; debt reduction = C_ezETH x LF = $22.86.
           const ezethCV = mulPrice(collateralConfigs[0].amount, ezethPrice, ezethInfo.scale);
           collateralsState[collateralConfigs[0].symbol].seizeAmount = collateralConfigs[0].amount;
           collateralsState[collateralConfigs[0].symbol].seizedValue = ezethCV;
     
-          const debtAfterEzETH = debtRemainingValue - mulFactor(ezethCV, ezethInfo.liquidationFactor.toBigInt());
+          const debtAfterEzETH = debtRemainingValue - toBigInt(collateralConfigs[0].amount) * toBigInt(ezethPrice) * toBigInt(ezethInfo.liquidationFactor)
+            / (toBigInt(ezethInfo.scale) * factorScale);
     
-          // Iter 2 (OP): partial branch, then inner minDebt -> _processDebtClosing(debtAfterEzETH, OP).
-          // C_OP x LF = $25.50 > debtAfterEzETH ~ $19.36 -> seize exactly debtAfterEzETH / LF.
+          // Iter 2 (OP): debtAfterEzETH ~ $7.14 <= minDebtValue $10 -> outer minDebt -> _processDebtClosing.
+          // C_OP x LF = $8.50 > debtAfterEzETH -> seize exactly debtAfterEzETH / LF of OP; surplus stays.
           const lf_op = opInfo.liquidationFactor.toBigInt();
-          collateralsState[collateralConfigs[1].symbol].seizeAmount = divPrice(debtAfterEzETH * factorScale / lf_op, opPrice, opInfo.scale);
+          collateralsState[collateralConfigs[1].symbol].seizeAmount = ceilDiv(
+            toBigInt(debtAfterEzETH) * factorScale * toBigInt(opInfo.scale),
+            toBigInt(lf_op) * toBigInt(opPrice),
+          );
           collateralsState[collateralConfigs[1].symbol].seizedValue = mulPrice(collateralsState[collateralConfigs[1].symbol].seizeAmount, opPrice, opInfo.scale);
         });
     
@@ -1324,7 +1350,8 @@ describe('absorb: general logic', function () {
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
             collateralsState[config.symbol].seizeAmount = config.amount;
             collateralsState[config.symbol].seizedValue = collateralValue;
-            debtRemainingValue -= mulFactor(collateralValue, assetInfo.liquidationFactor.toBigInt());
+            debtRemainingValue -= toBigInt(config.amount) * toBigInt(price) * toBigInt(assetInfo.liquidationFactor)
+              / (toBigInt(assetInfo.scale) * factorScale);
           }
     
           // sUSDe: outer minDebt -> _processDebtClosing(dRemaining, sUSDe).
@@ -1333,7 +1360,10 @@ describe('absorb: general logic', function () {
           const sUsdeInfo = await comet.getAssetInfoByAddress(tokens[lastConfig.symbol].address);
           const sUsdePrice = (await priceFeeds[lastConfig.symbol].latestRoundData())[1].toBigInt();
           const lf_susde = sUsdeInfo.liquidationFactor.toBigInt();
-          collateralsState[lastConfig.symbol].seizeAmount = divPrice(debtRemainingValue * factorScale / lf_susde, sUsdePrice, sUsdeInfo.scale);
+          collateralsState[lastConfig.symbol].seizeAmount = ceilDiv(
+            toBigInt(debtRemainingValue) * factorScale * toBigInt(sUsdeInfo.scale),
+            toBigInt(lf_susde) * toBigInt(sUsdePrice),
+          );
           collateralsState[lastConfig.symbol].seizedValue = mulPrice(collateralsState[lastConfig.symbol].seizeAmount, sUsdePrice, sUsdeInfo.scale);
         });
     
@@ -1522,7 +1552,8 @@ describe('absorb: general logic', function () {
             const collateralValue = mulPrice(config.amount, price, assetInfo.scale);
             collateralsState[config.symbol].seizeAmount = config.amount;
             collateralsState[config.symbol].seizedValue = collateralValue;
-            debtRemainingValue -= mulFactor(collateralValue, assetInfo.liquidationFactor.toBigInt());
+            debtRemainingValue -= toBigInt(config.amount) * toBigInt(price) * toBigInt(assetInfo.liquidationFactor)
+              / (toBigInt(assetInfo.scale) * factorScale);
           }
     
           // sUSDe: outer minDebt → _processDebtClosing(dRemaining, sUSDe).
@@ -1531,9 +1562,13 @@ describe('absorb: general logic', function () {
           const sUsdeInfo = await comet.getAssetInfoByAddress(tokens[lastConfig.symbol].address);
           const sUsdePrice = (await priceFeeds[lastConfig.symbol].latestRoundData())[1].toBigInt();
           const lf_susde = sUsdeInfo.liquidationFactor.toBigInt();
-          const closeoutCollateralValueLeft = mulFactor(mulPrice(lastConfig.amount, sUsdePrice, sUsdeInfo.scale), lf_susde);
+          const closeoutCollateralValueLeft = toBigInt(lastConfig.amount) * toBigInt(sUsdePrice) * toBigInt(lf_susde)
+            / (toBigInt(sUsdeInfo.scale) * factorScale);
           expect(debtRemainingValue).to.be.lessThan(closeoutCollateralValueLeft);
-          collateralsState[lastConfig.symbol].seizeAmount = divPrice(debtRemainingValue * factorScale / lf_susde, sUsdePrice, sUsdeInfo.scale);
+          collateralsState[lastConfig.symbol].seizeAmount = ceilDiv(
+            toBigInt(debtRemainingValue) * factorScale * toBigInt(sUsdeInfo.scale),
+            toBigInt(lf_susde) * toBigInt(sUsdePrice),
+          );
           collateralsState[lastConfig.symbol].seizedValue = mulPrice(collateralsState[lastConfig.symbol].seizeAmount, sUsdePrice, sUsdeInfo.scale);
         });
     
