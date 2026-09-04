@@ -7,7 +7,7 @@ function toBigInt(f: bigint | BigNumber): bigint {
   if (typeof f === 'bigint') {
     return f;
   } else {
-    return f.toBigInt();
+    return BigNumber.from(f).toBigInt();
   }
 }
 

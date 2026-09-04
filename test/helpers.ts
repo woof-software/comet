@@ -44,6 +44,10 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 // Snapshot
 import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
+// Math helpers
+export * from './helpers/math';
+
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, BigNumber };
 export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, SignerWithAddress, BigNumber };
 
 export type Numeric = number | bigint;
@@ -144,6 +148,9 @@ export type BulkerInfo = {
   opts: BulkerOpts;
   bulker: BaseBulker;
 };
+
+export type UserBasic = { principal: BigNumber, baseTrackingIndex: BigNumber, baseTrackingAccrued: BigNumber, assetsIn: number, _reserved: number };
+
 
 export const oneDay = 24 * 60 * 60;
 export const oneMonth = 30 * oneDay;
