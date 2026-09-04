@@ -44,10 +44,7 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 // Snapshot
 import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
-// Math helpers
-export * from './helpers/math';
-
-export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, BigNumber };
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, SignerWithAddress, BigNumber };
 
 export type Numeric = number | bigint;
 
@@ -178,7 +175,25 @@ export function truncateDecimals(factor: bigint | BigNumber, decimals = 4) {
   return toBigInt(factor) / descaleFactor * descaleFactor;
 }
 
-export function toBigInt(f: bigint | BigNumber): bigint {
+export function mulPrice(n: bigint, price: bigint | BigNumber, fromScale: bigint | BigNumber): bigint {
+  return n * toBigInt(price) / toBigInt(fromScale);
+}
+
+const BASE_INDEX_SCALE = BigInt(1e15);
+
+export function presentValue(principalValue: bigint, baseSupplyIndex: bigint, baseBorrowIndex: bigint): bigint {
+  if (principalValue >= 0n) {
+    return principalValue * baseSupplyIndex / BASE_INDEX_SCALE;
+  } else {
+    return -((-principalValue) * baseBorrowIndex / BASE_INDEX_SCALE);
+  }
+}
+
+export function mulFactor(n: bigint, factor: bigint | BigNumber): bigint {
+  return n * toBigInt(factor) / toBigInt(factorScale);
+}
+
+function toBigInt(f: bigint | BigNumber): bigint {
   if (typeof f === 'bigint') {
     return f;
   } else {
@@ -278,6 +293,7 @@ export const factorDecimals = 18;
 export const factorScale = factor(1);
 export const ONE = factorScale;
 export const ZERO = factor(0);
+export const MAX_ASSETS = 24;
 export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const MAX_ASSETS = 24;
 export const BASE_INDEX_SCALE = BigInt(1e15);
