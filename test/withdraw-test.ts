@@ -1,12 +1,12 @@
 import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, setTotalsBasic, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS } from './helpers';
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, CometHarnessInterface, FaucetToken, CometHarnessInterfaceExtendedAssetList, SimplePriceFeed } from '../build/types';
+import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 
 describe('withdraw', function () {
   const baseTokenDecimals = 6;
 
-  let comet: CometHarnessInterface;
+  let comet: CometHarnessInterfaceExtendedAssetList;
   let baseToken: FaucetToken;
   let collaterals: { [symbol: string]: FaucetToken };
   let priceFeeds: { [symbol: string]: SimplePriceFeed };
@@ -896,7 +896,7 @@ describe('withdraw', function () {
     const COLLATERAL_SUPPLY = exp(100, 6);
     const ALICE_COLLATERAL_BALANCE = exp(1, 6);
 
-    let evilComet: CometHarnessInterface;
+    let evilComet: CometHarnessInterfaceExtendedAssetList;
     let USDC: FaucetToken;
     let EVIL: EvilToken;
     let evilAlice: SignerWithAddress;
@@ -973,7 +973,7 @@ describe('withdraw', function () {
 
   describe('non-standard tokens', function () {
     describe('USDT-like token (no return value)', function () {
-      let nstComet: CometHarnessInterface;
+      let nstComet: CometHarnessInterfaceExtendedAssetList;
       let alice: SignerWithAddress;
       let bob: SignerWithAddress;
       let usdt: NonStandardFaucetFeeToken;
@@ -1036,7 +1036,7 @@ describe('withdraw', function () {
       const NUMERATOR = 10;
       const DENOMINATOR = 10000;
 
-      let feeComet: CometHarnessInterface;
+      let feeComet: CometHarnessInterfaceExtendedAssetList;
       let feeBaseToken: NonStandardFaucetFeeToken;
       let feeCollateral: NonStandardFaucetFeeToken;
       let alice: SignerWithAddress;
@@ -1321,7 +1321,7 @@ describe('withdraw', function () {
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
         expect(await baseToken.balanceOf(alice.address)).to.equal(aliceBalanceBefore.add(borrowAmount));
-        expect(await baseBalanceOf(comet as unknown as CometHarnessInterface, alice.address)).to.equal(BigInt(-borrowAmount));
+        expect(await baseBalanceOf(comet as unknown as CometHarnessInterfaceExtendedAssetList, alice.address)).to.equal(BigInt(-borrowAmount));
       });
     });
   });
