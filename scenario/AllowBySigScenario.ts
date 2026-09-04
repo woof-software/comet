@@ -4,7 +4,7 @@
 // - Operator actions on behalf of the owner (supplyFrom, withdrawFrom, transferAssetFrom)
 
 import { CometContext, scenario } from './context/CometContext';
-import { expectApproximately, expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils';
+import { expectApproximately, expectRevertCustom, isTriviallySourceable, getActiveAsset, isValidAssetIndex } from './utils';
 import { expect } from 'chai';
 import { constants, ethers, Signature } from 'ethers';
 import CometActor, { types as AUTHORIZATION_TYPES } from './context/CometActor';
@@ -780,7 +780,7 @@ scenario(
     const txn = await betty.supplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: toSupply });
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
-    expectApproximately(await betty.getCometBaseBalance(), toSupply, scale / 1_000_000n);
+    expectApproximately(await betty.getCometBaseBalance(), toSupply, scale / 1_00_000n);
 
     return txn; // return txn to measure gas
   }
@@ -789,19 +789,35 @@ scenario(
 scenario(
   'Comet#allowBySig > authorized manager can supplyFrom collateral on behalf of owner',
   {
-    filter: async (ctx) => await isValidAssetIndex(ctx, 1) && await isTriviallySourceable(ctx, 1, getConfigForScenario(ctx, 1).supplyCollateral),
-    tokenBalances: async (ctx) => (
-      {
-        albert: { $asset1: getConfigForScenario(ctx, 1).supplyCollateral }
-      }
-    ),
+    filter: async (ctx) => await isValidAssetIndex(ctx, (await getActiveAsset(ctx)).assetIndex) && await isTriviallySourceable(ctx, (await getActiveAsset(ctx)).assetIndex, getConfigForScenario(ctx, (await getActiveAsset(ctx)).assetIndex).supplyCollateral),
+    tokenBalances: async (ctx) => {
+      const activeAsset = await getActiveAsset(ctx);
+      const assetIndex = activeAsset.assetIndex;
+
+      return {
+        albert: { [`$asset${assetIndex}`]: getConfigForScenario(ctx, assetIndex).supplyCollateral }
+      };
+    },
+    supplyCaps: async (ctx) => 
+    {
+      const activeAsset = await getActiveAsset(ctx);
+      const assetIndex = activeAsset.assetIndex;
+
+      return {
+        [`$asset${assetIndex}`]: getConfigForScenario(ctx, assetIndex).bulkerAsset,
+      };
+    },
   },
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
-    const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(1);
+    const activeAsset = await getActiveAsset(context); 
+    const assetIndex = activeAsset.assetIndex;
+
+    const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(assetIndex);
+
     const collateralAsset = context.getAssetByAddress(assetAddress);
     const scale = scaleBN.toBigInt();
-    const toSupply = BigInt(getConfigForScenario(context, 1).supplyCollateral) * scale;
+    const toSupply = BigInt(getConfigForScenario(context, assetIndex).supplyCollateral) * scale;
 
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupply);
     expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(0n);
