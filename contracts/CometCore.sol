@@ -6,17 +6,6 @@ import "./CometStorage.sol";
 import "./CometMath.sol";
 
 abstract contract CometCore is CometConfiguration, CometStorage, CometMath {
-    struct AssetInfo {
-        uint8 offset;
-        address asset;
-        address priceFeed;
-        uint64 scale;
-        uint64 borrowCollateralFactor;
-        uint64 liquidateCollateralFactor;
-        uint64 liquidationFactor;
-        uint128 supplyCap;
-    }
-
     /** Internal constants **/
 
     /// @dev The max number of assets this contract is hardcoded to support
