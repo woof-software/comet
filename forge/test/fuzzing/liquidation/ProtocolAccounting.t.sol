@@ -3,47 +3,81 @@ pragma solidity ^0.8.15;
 
 import { Vm } from "forge-std/Vm.sol";
 
+import { CometConfiguration } from "@comet-contracts/CometConfiguration.sol";
+import { CometInterface } from "@comet-contracts/CometInterface.sol";
 import { ICometData } from "@comet-contracts/interfaces/ICometData.sol";
 import { ICoreLiquidationModule } from "@comet-contracts/interfaces/liquidation-module/ICoreLiquidationModule.sol";
+import { FaucetToken } from "@comet-contracts/test/FaucetToken.sol";
 
+import { LiquidationMath } from "../../helpers/LiquidationMath.sol";
 import { ProtocolFixture } from "../../helpers/ProtocolFixture.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
- * @title Protocol accounting
- * @notice One invariant per test: a single statement a counterexample can refute.
- * @dev This group asks what a seizure does to Comet's books, and what it must leave alone. The
- *      collateral set is picked by a bit mask rather than enumerated, because a delta has to be
- *      read across several assets at once - a mistake in the traversal loop shows up as one asset
- *      being counted twice or skipped, and a single-asset position cannot see that.
+ * @title Protocol accounting after a seizure, second reading
+ * @notice One invariant per test: a single statement a counterexample can refute. The group checks
+ *         that a seizure is reflected correctly in Comet's books and is not accompanied by any token
+ *         movement.
+ * @dev A second, independent implementation of the same invariant group as
+ *      `ProtocolAccounting.t.sol`, kept alongside it on purpose. The two were written from the same
+ *      doc without sight of each other, so where they agree that is evidence about the module rather
+ *      than about one author's reading of the spec. Two places they do not overlap: this file also
+ *      covers the adapter invariant (`testFuzz_adapterIsNeverCalled`), and it switches the market's
+ *      rates off rather than relying on the clock never being advanced.
  *
- *      The deposits come from a single seed: asset `i` takes the hash of the seed and its own index,
- *      so one argument settles the whole set while every asset keeps bounds cut to its own scale and
- *      supply cap. The fall in price is one multiplier applied to every selected asset, which scales
- *      the account's liquidity by exactly the same amount and makes the liquidatable threshold one
- *      comparison for the whole set instead of a percentage picked by hand.
+ *      The collateral set is chosen by a mask rather than enumerated: deltas must be checked across
+ *      several assets at once, otherwise a bug in the traversal loop will not surface.
  *
- *      Each figure is floored the way the code that consumes it floors it - twice for the borrow
- *      ceiling, which Comet checks in two steps, once for liquidity, which the module weighs in a
- *      single division. Getting either wrong moves a bound off the real threshold. A run that cannot
- *      be built is rejected rather than passed, so a vacuous run is never counted as checked.
+ *      Actors: the borrower, the liquidator (sends the transaction and is passed as the absorber
+ *      argument), the pauser, the base supplier from the fixture. The bound chain and the scenario
+ *      every test shares are in `_boundPosition` and `_baseScenario`.
  *
- *      Nothing here advances the clock, so no interest accrues between a reading and the call that
- *      follows it and every delta below is exact rather than approximate. A test in this group that
- *      needs to warp time would have to switch the market's rates off first.
+ *      Market rates are zero throughout: accrual would shift the base totals independently of
+ *      liquidation and blur the deltas. It also holds `baseBorrowIndex` at `BASE_INDEX_SCALE`, which
+ *      keeps the plan read here identical to the one `absorb` executes and lets the reserve check
+ *      assert an equality rather than a tolerance.
  */
-contract ProtocolAccountingFuzzTest is ProtocolFixture {
+contract ProtocolAccounting2FuzzTest is ProtocolFixture {
+    using LiquidationMath for CometInterface;
+
+    uint64 internal constant BASE_INDEX_SCALE = 1e15;
+    uint256 internal constant BASE_LIQUIDITY = 1e18;
+
     address internal borrower = alice;
     address internal liquidator = bob;
     address internal baseSupplier = charlie;
-    /// Holds collateral alongside the borrower so a total can exceed one account's balance.
-    address internal coSupplier = makeAddr("coSupplier");
-    /// Carries a debt of its own so a market total is never one account's figure.
-    address internal otherBorrower = makeAddr("otherBorrower");
+    address internal secondSupplier = makeAddr("secondSupplier");
+    address internal secondBorrower = makeAddr("secondBorrower");
+
+    /// @dev `seizable` and `dropCeiling` are read only by the reserve invariant, which redraws the
+    ///      drop into the slice where the collateral still covers the debt.
+    struct Position {
+        uint256[] amounts;
+        uint256 borrow;
+        uint256 dropBps;
+        uint256 seizable;
+        uint256 dropCeiling;
+    }
+
+    /// @dev Build a Comet with zero rates
+    function buildCometConfiguration(address liquidationModule_)
+        internal
+        view
+        override
+        returns (CometConfiguration.Configuration memory config)
+    {
+        config = super.buildCometConfiguration(liquidationModule_);
+
+        config.supplyPerYearInterestRateBase = 0;
+        config.supplyPerYearInterestRateSlopeLow = 0;
+        config.supplyPerYearInterestRateSlopeHigh = 0;
+        config.borrowPerYearInterestRateBase = 0;
+        config.borrowPerYearInterestRateSlopeLow = 0;
+        config.borrowPerYearInterestRateSlopeHigh = 0;
+    }
 
     function setUp() public {
         prepareFixture();
-        uint256 BASE_LIQUIDITY = 1e18;
 
         baseToken.allocateTo(baseSupplier, BASE_LIQUIDITY);
         vm.startPrank(baseSupplier);
@@ -52,8 +86,12 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
         vm.stopPrank();
     }
 
+    /*//////////////////////////////////////////////////////////////
+                              COLLATERAL
+    //////////////////////////////////////////////////////////////*/
+
     /**
-     * @notice The asset total falls by the seized amount - totalSupplyAsset after = before - seized
+     * @notice The asset total falls by the seized amount - totalSupplyAsset after = before - seizedAmount
      * @dev Invariant. The tracked supply of an asset decreases by exactly what was taken from the
      *      borrower - no more, no less.
      */
@@ -64,124 +102,49 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
         uint256 dropSeed,
         bool partialEnabled
     ) public {
-        uint8 numAssets = comet.numAssets();
-        uint256 assetMask = bound(maskSeed, 1, (uint256(1) << numAssets) - 1);
+        Position memory p = _boundPosition(maskSeed, supplySeed, borrowAmount, dropSeed);
+        ICoreLiquidationModule.Seizure[] memory plan = _baseScenario(p, partialEnabled);
 
-        uint256[] memory amounts = new uint256[](numAssets);
-        uint256 borrow;
-        uint256 dropBps;
-        {
-            uint256 borrowLimit;
-            uint256 liquidity;
-            ICometData.AssetInfo memory assetInfo;
-
+        // A total that holds nothing but the borrower's own deposit cannot tell "fell by the seized
+        // amount" apart from "was wiped". A second supplier lifts it clear of the borrower's balance
+        // wherever the cap leaves room, and comes after the position is built so the borrower's own
+        // deposits are never the ones the cap turns away.
+        if (_coinFlip(supplySeed, "second supplier")) {
+            uint8 numAssets = comet.numAssets();
             for (uint8 i; i < numAssets; ++i) {
-                if (assetMask & (uint256(1) << i) == 0) continue;
-                assetInfo = comet.getAssetInfo(i);
+                if (p.amounts[i] == 0) continue;
 
-                amounts[i] = bound(
-                    uint256(keccak256(abi.encode(supplySeed, i))),
-                    uint256(assetInfo.scale) / 1000,
-                    Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
-                );
+                uint256 headroom = uint256(comet.getAssetInfo(i).supplyCap) - p.amounts[i];
+                if (headroom == 0) continue;
 
-                // Comet floors twice when it decides whether a borrow is collateralized, so the
-                // borrow ceiling is floored the same way and stays acceptable to it.
-                uint256 value = amounts[i] * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
-                borrowLimit += value * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
+                uint256 amount = Math.min(headroom, p.amounts[i]);
+                collaterals[i].allocateTo(secondSupplier, amount);
 
-                // The module weighs liquidity in a single division. Flooring twice here would put
-                // this figure below the module's, which would push the drop ceiling above the price
-                // at which the account really turns liquidatable.
-                liquidity += amounts[i] * comet.getPrice(assetInfo.priceFeed) * assetInfo.liquidateCollateralFactor
-                    / (uint256(assetInfo.scale) * FACTOR_SCALE);
-            }
-
-            uint256 maxBorrow = borrowLimit * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            vm.assume(maxBorrow >= comet.baseBorrowMin()); // the set is too cheap to open a borrow at all
-            vm.assume(maxBorrow <= baseToken.balanceOf(address(comet))); // more base than the market can lend
-
-            borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
-
-            uint256 maxDrop = borrow * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
-            maxDrop = maxDrop * 10_000 / liquidity;
-            vm.assume(maxDrop >= 100); // no room left below the boundary to drop the prices into
-
-            dropBps = bound(dropSeed, 1, maxDrop * 99 / 100);
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            collaterals[i].allocateTo(borrower, amounts[i]);
-
-            vm.startPrank(borrower);
-            collaterals[i].approve(address(comet), amounts[i]);
-            comet.supply(address(collaterals[i]), amounts[i]);
-            vm.stopPrank();
-        }
-
-        // On half the draws a second account holds the same assets, so the market's total sits above
-        // the borrower's balance. Against a total that equals the balance, a bug that zeroes the
-        // whole total and one that subtracts the right amount are the same arithmetic.
-        if (supplySeed % 2 == 1) {
-            for (uint8 i; i < numAssets; ++i) {
-                if (assetMask & (uint256(1) << i) == 0) continue;
-
-                // Whatever the supply cap still has room for, never more than the borrower put in.
-                uint256 room = comet.getAssetInfo(i).supplyCap - amounts[i];
-                uint256 alongside = Math.min(amounts[i], room);
-                if (alongside == 0) continue;
-
-                collaterals[i].allocateTo(coSupplier, alongside);
-
-                vm.startPrank(coSupplier);
-                collaterals[i].approve(address(comet), alongside);
-                comet.supply(address(collaterals[i]), alongside);
+                vm.startPrank(secondSupplier);
+                collaterals[i].approve(address(comet), amount);
+                comet.supply(address(collaterals[i]), amount);
                 vm.stopPrank();
             }
         }
 
-        vm.prank(borrower);
-        comet.withdraw(address(baseToken), borrow);
-
-        if (liquidationModule.partialLiquidationEnabled() != partialEnabled) {
-            vm.prank(pauser);
-            liquidationModule.liquidationModeToggle(partialEnabled);
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            uint256 dropped = comet.getPrice(address(collateralPriceFeeds[i])) * dropBps / 10_000;
-            collateralPriceFeeds[i].setRoundData(0, int256(dropped), 0, 0, 0);
-        }
-
-        assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
-
-        ICoreLiquidationModule.Seizure[] memory plan = liquidationModule.seizurePlan(borrower);
-
-        // Comet exposes `totalsCollateral` as its storage getter, so the struct arrives flattened.
         uint256[] memory totalsBefore = new uint256[](plan.length);
         for (uint256 j; j < plan.length; ++j) {
-            (totalsBefore[j],) = comet.totalsCollateral(plan[j].asset);
+            (uint128 totalSupplyAsset,) = comet.totalsCollateral(plan[j].asset);
+            totalsBefore[j] = totalSupplyAsset;
         }
 
-        {
-            address[] memory accounts = new address[](1);
-            accounts[0] = borrower;
-
-            vm.prank(liquidator);
-            comet.absorb(liquidator, accounts);
-        }
+        _absorb();
 
         for (uint256 j; j < plan.length; ++j) {
-            (uint256 totalAfter,) = comet.totalsCollateral(plan[j].asset);
+            (uint128 totalSupplyAsset,) = comet.totalsCollateral(plan[j].asset);
 
+            // Stated as an addition rather than a subtraction on the other side: a total that fell
+            // too far would underflow the subtraction and revert, and a revert says less than a
+            // failed assertion does.
             assertEq(
-                totalAfter,
-                totalsBefore[j] - plan[j].seizedAmount,
-                "the asset total did not fall by exactly the seized amount"
+                uint256(totalSupplyAsset) + plan[j].seizedAmount,
+                totalsBefore[j],
+                "the asset total did not fall by the seized amount"
             );
         }
     }
@@ -191,15 +154,11 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
      * @dev Invariant. Everything seized becomes a protocol reserve - nothing is lost on the way and
      *      nothing extra appears.
      *
-     *      Comet reports an asset's reserves as its own token balance less the supply it is holding
-     *      for accounts. The protocol route moves no tokens at all: it writes the seizure down
-     *      against the account and against the total, and the same balance is suddenly backing less
-     *      supply. That is the whole of the increase, which is why it must land unit for unit.
-     *
-     *      Because reserves are worked out from those two figures rather than stored, this cannot
-     *      fail while the asset total and the token balance both hold - it is the same write read a
-     *      third way. It is kept as the statement in the terms the protocol reports to the outside,
-     *      and it is the reading that would break first if reserves ever became a stored figure.
+     *      A collateral reserve is worked out from the token balance and the tracked total rather
+     *      than stored, so this cannot fail while the asset total and the token balance both hold -
+     *      it is the same write read a third way. It is kept as the statement in the terms the
+     *      protocol reports outward, and it is the reading that breaks first if reserves ever
+     *      become a stored figure.
      */
     function testFuzz_reservesGrowBySeizedAmount(
         uint256 maskSeed,
@@ -208,118 +167,37 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
         uint256 dropSeed,
         bool partialEnabled
     ) public {
-        uint8 numAssets = comet.numAssets();
-        uint256 assetMask = bound(maskSeed, 1, (uint256(1) << numAssets) - 1);
+        Position memory p = _boundPosition(maskSeed, supplySeed, borrowAmount, dropSeed);
 
-        uint256[] memory amounts = new uint256[](numAssets);
-        uint256 borrow;
-        uint256 dropBps;
-        {
-            uint256 borrowLimit;
-            uint256 liquidity;
-            ICometData.AssetInfo memory assetInfo;
-
+        // Reserves that start at zero would let "grew by the seized amount" pass as "was set to the
+        // seized amount". A few tokens sent to Comet directly raise the reserve without raising the
+        // tracked total, which is exactly the gap the accessor reports.
+        if (_coinFlip(supplySeed, "seeded reserves")) {
+            uint8 numAssets = comet.numAssets();
             for (uint8 i; i < numAssets; ++i) {
-                if (assetMask & (uint256(1) << i) == 0) continue;
-                assetInfo = comet.getAssetInfo(i);
+                if (p.amounts[i] == 0) continue;
 
-                amounts[i] = bound(
-                    uint256(keccak256(abi.encode(supplySeed, i))),
-                    uint256(assetInfo.scale) / 1000,
-                    Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
+                uint256 dust = bound(
+                    uint256(keccak256(abi.encode(supplySeed, "seeded reserves", i))),
+                    1,
+                    uint256(comet.getAssetInfo(i).scale)
                 );
-
-                // Comet floors twice when it decides whether a borrow is collateralized, so the
-                // borrow ceiling is floored the same way and stays acceptable to it.
-                uint256 value = amounts[i] * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
-                borrowLimit += value * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
-
-                // The module weighs liquidity in a single division. Flooring twice here would put
-                // this figure below the module's, which would push the drop ceiling above the price
-                // at which the account really turns liquidatable.
-                liquidity += amounts[i] * comet.getPrice(assetInfo.priceFeed) * assetInfo.liquidateCollateralFactor
-                    / (uint256(assetInfo.scale) * FACTOR_SCALE);
-            }
-
-            uint256 maxBorrow = borrowLimit * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            vm.assume(maxBorrow >= comet.baseBorrowMin()); // the set is too cheap to open a borrow at all
-            vm.assume(maxBorrow <= baseToken.balanceOf(address(comet))); // more base than the market can lend
-
-            borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
-
-            uint256 maxDrop = borrow * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
-            maxDrop = maxDrop * 10_000 / liquidity;
-            vm.assume(maxDrop >= 100); // no room left below the boundary to drop the prices into
-
-            dropBps = bound(dropSeed, 1, maxDrop * 99 / 100);
-        }
-
-        // On half the draws the reserves do not start at zero. Tokens sent straight to the market
-        // are backing no account's supply, so they read as reserves immediately - and a seizure that
-        // assigned reserves rather than adding to them would pass against a zero and fail here.
-        if (supplySeed % 2 == 1) {
-            for (uint8 i; i < numAssets; ++i) {
-                if (assetMask & (uint256(1) << i) == 0) continue;
-
-                collaterals[i].allocateTo(
-                    address(comet),
-                    bound(
-                        uint256(keccak256(abi.encode(supplySeed, "reserves", i))),
-                        1,
-                        uint256(comet.getAssetInfo(i).scale)
-                    )
-                );
+                collaterals[i].allocateTo(address(comet), dust);
             }
         }
 
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            collaterals[i].allocateTo(borrower, amounts[i]);
-
-            vm.startPrank(borrower);
-            collaterals[i].approve(address(comet), amounts[i]);
-            comet.supply(address(collaterals[i]), amounts[i]);
-            vm.stopPrank();
-        }
-
-        vm.prank(borrower);
-        comet.withdraw(address(baseToken), borrow);
-
-        if (liquidationModule.partialLiquidationEnabled() != partialEnabled) {
-            vm.prank(pauser);
-            liquidationModule.liquidationModeToggle(partialEnabled);
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            uint256 dropped = comet.getPrice(address(collateralPriceFeeds[i])) * dropBps / 10_000;
-            collateralPriceFeeds[i].setRoundData(0, int256(dropped), 0, 0, 0);
-        }
-
-        assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
-
-        ICoreLiquidationModule.Seizure[] memory plan = liquidationModule.seizurePlan(borrower);
+        ICoreLiquidationModule.Seizure[] memory plan = _baseScenario(p, partialEnabled);
 
         uint256[] memory reservesBefore = new uint256[](plan.length);
-        for (uint256 j; j < plan.length; ++j) {
-            reservesBefore[j] = comet.getCollateralReserves(plan[j].asset);
-        }
+        for (uint256 j; j < plan.length; ++j) reservesBefore[j] = comet.getCollateralReserves(plan[j].asset);
 
-        {
-            address[] memory accounts = new address[](1);
-            accounts[0] = borrower;
-
-            vm.prank(liquidator);
-            comet.absorb(liquidator, accounts);
-        }
+        _absorb();
 
         for (uint256 j; j < plan.length; ++j) {
             assertEq(
                 comet.getCollateralReserves(plan[j].asset),
                 reservesBefore[j] + plan[j].seizedAmount,
-                "the reserves did not grow by exactly the seized amount"
+                "the collateral reserve did not grow by the seized amount"
             );
         }
     }
@@ -328,10 +206,6 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
      * @notice Collateral tokens do not move - comet token balance unchanged
      * @dev Invariant. On the default route a seizure is an accounting move, not a token transfer:
      *      not a single unit of collateral leaves Comet or arrives into it.
-     *
-     *      The balance is read for every asset on the market, not only the ones the plan names. A
-     *      transfer of the wrong asset is exactly the kind of mistake that a plan-shaped check would
-     *      step over, and the seized asset would still balance.
      */
     function testFuzz_collateralTokensDoNotMove(
         uint256 maskSeed,
@@ -340,112 +214,34 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
         uint256 dropSeed,
         bool partialEnabled
     ) public {
+        Position memory p = _boundPosition(maskSeed, supplySeed, borrowAmount, dropSeed);
+        _baseScenario(p, partialEnabled);
+
+        // Every market asset, not only the ones in the plan: a transfer of something the plan never
+        // named is the failure this is looking for.
         uint8 numAssets = comet.numAssets();
-        uint256 assetMask = bound(maskSeed, 1, (uint256(1) << numAssets) - 1);
-
-        uint256[] memory amounts = new uint256[](numAssets);
-        uint256 borrow;
-        uint256 dropBps;
-        {
-            uint256 borrowLimit;
-            uint256 liquidity;
-            ICometData.AssetInfo memory assetInfo;
-
-            for (uint8 i; i < numAssets; ++i) {
-                if (assetMask & (uint256(1) << i) == 0) continue;
-                assetInfo = comet.getAssetInfo(i);
-
-                amounts[i] = bound(
-                    uint256(keccak256(abi.encode(supplySeed, i))),
-                    uint256(assetInfo.scale) / 1000,
-                    Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
-                );
-
-                // Comet floors twice when it decides whether a borrow is collateralized, so the
-                // borrow ceiling is floored the same way and stays acceptable to it.
-                uint256 value = amounts[i] * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
-                borrowLimit += value * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
-
-                // The module weighs liquidity in a single division. Flooring twice here would put
-                // this figure below the module's, which would push the drop ceiling above the price
-                // at which the account really turns liquidatable.
-                liquidity += amounts[i] * comet.getPrice(assetInfo.priceFeed) * assetInfo.liquidateCollateralFactor
-                    / (uint256(assetInfo.scale) * FACTOR_SCALE);
-            }
-
-            uint256 maxBorrow = borrowLimit * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            vm.assume(maxBorrow >= comet.baseBorrowMin()); // the set is too cheap to open a borrow at all
-            vm.assume(maxBorrow <= baseToken.balanceOf(address(comet))); // more base than the market can lend
-
-            borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
-
-            uint256 maxDrop = borrow * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
-            maxDrop = maxDrop * 10_000 / liquidity;
-            vm.assume(maxDrop >= 100); // no room left below the boundary to drop the prices into
-
-            dropBps = bound(dropSeed, 1, maxDrop * 99 / 100);
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            collaterals[i].allocateTo(borrower, amounts[i]);
-
-            vm.startPrank(borrower);
-            collaterals[i].approve(address(comet), amounts[i]);
-            comet.supply(address(collaterals[i]), amounts[i]);
-            vm.stopPrank();
-        }
-
-        vm.prank(borrower);
-        comet.withdraw(address(baseToken), borrow);
-
-        if (liquidationModule.partialLiquidationEnabled() != partialEnabled) {
-            vm.prank(pauser);
-            liquidationModule.liquidationModeToggle(partialEnabled);
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            uint256 dropped = comet.getPrice(address(collateralPriceFeeds[i])) * dropBps / 10_000;
-            collateralPriceFeeds[i].setRoundData(0, int256(dropped), 0, 0, 0);
-        }
-
-        assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
-
         uint256[] memory balancesBefore = new uint256[](numAssets);
-        for (uint8 i; i < numAssets; ++i) {
-            balancesBefore[i] = collaterals[i].balanceOf(address(comet));
-        }
+        for (uint8 i; i < numAssets; ++i) balancesBefore[i] = collaterals[i].balanceOf(address(comet));
 
-        {
-            address[] memory accounts = new address[](1);
-            accounts[0] = borrower;
-
-            vm.prank(liquidator);
-            comet.absorb(liquidator, accounts);
-        }
+        _absorb();
 
         for (uint8 i; i < numAssets; ++i) {
             assertEq(
                 collaterals[i].balanceOf(address(comet)),
                 balancesBefore[i],
-                "collateral tokens moved across the absorb"
+                "a collateral token moved on the default route"
             );
         }
     }
 
+    /*//////////////////////////////////////////////////////////////
+                                 BASE
+    //////////////////////////////////////////////////////////////*/
+
     /**
-     * @notice Total borrow falls by the principal delta - totalBorrow after = before - deltaPrincipal
+     * @notice Total borrow falls by the principal delta - totalBorrowBase after = before - dPrincipal
      * @dev Invariant. The reduction of the borrower's debt is reflected exactly in the market's total
      *      debt, with no divergence from index rounding.
-     *
-     *      Both figures are read as principal rather than as present value, which costs nothing here
-     *      - the index has not moved, so the two coincide - and keeps the comparison exact if this
-     *      group ever runs on a market where it has. The second borrower is what gives the test its
-     *      teeth: without another debt on the books, a total recomputed from scratch and a total
-     *      correctly decremented arrive at the same number.
      */
     function testFuzz_totalBorrowFallsByPrincipalDelta(
         uint256 maskSeed,
@@ -454,126 +250,27 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
         uint256 dropSeed,
         bool partialEnabled
     ) public {
-        uint8 numAssets = comet.numAssets();
-        uint256 assetMask = bound(maskSeed, 1, (uint256(1) << numAssets) - 1);
+        Position memory p = _boundPosition(maskSeed, supplySeed, borrowAmount, dropSeed);
 
-        uint256[] memory amounts = new uint256[](numAssets);
-        uint256 borrow;
-        uint256 dropBps;
-        {
-            uint256 borrowLimit;
-            uint256 liquidity;
-            ICometData.AssetInfo memory assetInfo;
+        // A market whose only debt is the absorbed account's cannot tell "fell by the delta" apart
+        // from "was zeroed". The second borrower stands on an asset the mask left out, so the drop
+        // never reaches them and they stay healthy through the absorb.
+        if (_coinFlip(supplySeed, "second borrower")) _openSecondBorrow(p);
 
-            for (uint8 i; i < numAssets; ++i) {
-                if (assetMask & (uint256(1) << i) == 0) continue;
-                assetInfo = comet.getAssetInfo(i);
+        _baseScenario(p, partialEnabled);
 
-                amounts[i] = bound(
-                    uint256(keccak256(abi.encode(supplySeed, i))),
-                    uint256(assetInfo.scale) / 1000,
-                    Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
-                );
-
-                // Comet floors twice when it decides whether a borrow is collateralized, so the
-                // borrow ceiling is floored the same way and stays acceptable to it.
-                uint256 value = amounts[i] * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
-                borrowLimit += value * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
-
-                // The module weighs liquidity in a single division. Flooring twice here would put
-                // this figure below the module's, which would push the drop ceiling above the price
-                // at which the account really turns liquidatable.
-                liquidity += amounts[i] * comet.getPrice(assetInfo.priceFeed) * assetInfo.liquidateCollateralFactor
-                    / (uint256(assetInfo.scale) * FACTOR_SCALE);
-            }
-
-            uint256 maxBorrow = borrowLimit * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            vm.assume(maxBorrow >= comet.baseBorrowMin()); // the set is too cheap to open a borrow at all
-            vm.assume(maxBorrow <= baseToken.balanceOf(address(comet))); // more base than the market can lend
-
-            borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
-
-            uint256 maxDrop = borrow * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
-            maxDrop = maxDrop * 10_000 / liquidity;
-            vm.assume(maxDrop >= 100); // no room left below the boundary to drop the prices into
-
-            // The whole range: a shallow drop closes part of the debt, a deep one closes all of it,
-            // and the deepest writes off what the collateral cannot cover. The total has to follow
-            // the account in each case.
-            dropBps = bound(dropSeed, 1, maxDrop * 99 / 100);
-        }
-
-        // On half the draws someone else owes the market too, on an asset outside the mask so their
-        // position is never repriced and never liquidatable. Against a market whose only debt is the
-        // borrower's, a total that is recomputed from scratch and one that is decremented correctly
-        // come to the same number.
-        if (supplySeed % 2 == 1) {
-            for (uint8 i; i < numAssets; ++i) {
-                if (assetMask & (uint256(1) << i) != 0) continue;
-
-                uint256 stake = Math.min(1_000_000 * uint256(comet.getAssetInfo(i).scale), comet.getAssetInfo(i).supplyCap);
-                collaterals[i].allocateTo(otherBorrower, stake);
-
-                vm.startPrank(otherBorrower);
-                collaterals[i].approve(address(comet), stake);
-                comet.supply(address(collaterals[i]), stake);
-                comet.withdraw(address(baseToken), comet.baseBorrowMin());
-                vm.stopPrank();
-                break;
-            }
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            collaterals[i].allocateTo(borrower, amounts[i]);
-
-            vm.startPrank(borrower);
-            collaterals[i].approve(address(comet), amounts[i]);
-            comet.supply(address(collaterals[i]), amounts[i]);
-            vm.stopPrank();
-        }
-
-        vm.prank(borrower);
-        comet.withdraw(address(baseToken), borrow);
-
-        if (liquidationModule.partialLiquidationEnabled() != partialEnabled) {
-            vm.prank(pauser);
-            liquidationModule.liquidationModeToggle(partialEnabled);
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            uint256 dropped = comet.getPrice(address(collateralPriceFeeds[i])) * dropBps / 10_000;
-            collateralPriceFeeds[i].setRoundData(0, int256(dropped), 0, 0, 0);
-        }
-
-        assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
-
-        // Comet exposes both as storage getters, so the structs arrive flattened.
         uint256 totalBorrowBefore = comet.totalsBasic().totalBorrowBase;
         (int104 principalBefore,,,,) = comet.userBasic(borrower);
 
-        {
-            address[] memory accounts = new address[](1);
-            accounts[0] = borrower;
-
-            vm.prank(liquidator);
-            comet.absorb(liquidator, accounts);
-        }
+        _absorb();
 
         uint256 totalBorrowAfter = comet.totalsBasic().totalBorrowBase;
         (int104 principalAfter,,,,) = comet.userBasic(borrower);
 
-        // The debt shrinks, so the principal moves up towards zero. Stated before it is used as an
-        // unsigned amount below, where a move the other way would read as an enormous one.
-        assertGe(principalAfter, principalBefore, "the borrower's principal moved further into debt");
-
         assertEq(
-            totalBorrowAfter,
-            totalBorrowBefore - uint256(int256(principalAfter - principalBefore)),
-            "the market total did not follow the account's principal"
+            int256(totalBorrowBefore) - int256(totalBorrowAfter),
+            int256(principalAfter) - int256(principalBefore),
+            "the market's total debt did not fall by the borrower's principal delta"
         );
     }
 
@@ -581,10 +278,6 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
      * @notice Total base supply does not change - totalSupply unchanged
      * @dev Invariant. Liquidating a borrower does not touch base suppliers: their aggregate position
      *      stays exactly as it was.
-     *
-     *      The absorb writes one base figure and one only, the total borrow. Whatever the borrower
-     *      is credited comes out of reserves, never out of what suppliers are owed, so a market with
-     *      real liquidity on it must come through the call with that side of the book untouched.
      */
     function testFuzz_totalBaseSupplyDoesNotChange(
         uint256 maskSeed,
@@ -593,102 +286,25 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
         uint256 dropSeed,
         bool partialEnabled
     ) public {
-        uint8 numAssets = comet.numAssets();
-        uint256 assetMask = bound(maskSeed, 1, (uint256(1) << numAssets) - 1);
-
-        uint256[] memory amounts = new uint256[](numAssets);
-        uint256 borrow;
-        uint256 dropBps;
-        {
-            uint256 borrowLimit;
-            uint256 liquidity;
-            ICometData.AssetInfo memory assetInfo;
-
-            for (uint8 i; i < numAssets; ++i) {
-                if (assetMask & (uint256(1) << i) == 0) continue;
-                assetInfo = comet.getAssetInfo(i);
-
-                amounts[i] = bound(
-                    uint256(keccak256(abi.encode(supplySeed, i))),
-                    uint256(assetInfo.scale) / 1000,
-                    Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
-                );
-
-                // Comet floors twice when it decides whether a borrow is collateralized, so the
-                // borrow ceiling is floored the same way and stays acceptable to it.
-                uint256 value = amounts[i] * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
-                borrowLimit += value * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
-
-                // The module weighs liquidity in a single division. Flooring twice here would put
-                // this figure below the module's, which would push the drop ceiling above the price
-                // at which the account really turns liquidatable.
-                liquidity += amounts[i] * comet.getPrice(assetInfo.priceFeed) * assetInfo.liquidateCollateralFactor
-                    / (uint256(assetInfo.scale) * FACTOR_SCALE);
-            }
-
-            uint256 maxBorrow = borrowLimit * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            vm.assume(maxBorrow >= comet.baseBorrowMin()); // the set is too cheap to open a borrow at all
-            vm.assume(maxBorrow <= baseToken.balanceOf(address(comet))); // more base than the market can lend
-
-            borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
-
-            uint256 maxDrop = borrow * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
-            maxDrop = maxDrop * 10_000 / liquidity;
-            vm.assume(maxDrop >= 100); // no room left below the boundary to drop the prices into
-
-            dropBps = bound(dropSeed, 1, maxDrop * 99 / 100);
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            collaterals[i].allocateTo(borrower, amounts[i]);
-
-            vm.startPrank(borrower);
-            collaterals[i].approve(address(comet), amounts[i]);
-            comet.supply(address(collaterals[i]), amounts[i]);
-            vm.stopPrank();
-        }
-
-        vm.prank(borrower);
-        comet.withdraw(address(baseToken), borrow);
-
-        if (liquidationModule.partialLiquidationEnabled() != partialEnabled) {
-            vm.prank(pauser);
-            liquidationModule.liquidationModeToggle(partialEnabled);
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            uint256 dropped = comet.getPrice(address(collateralPriceFeeds[i])) * dropBps / 10_000;
-            collateralPriceFeeds[i].setRoundData(0, int256(dropped), 0, 0, 0);
-        }
-
-        assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
+        Position memory p = _boundPosition(maskSeed, supplySeed, borrowAmount, dropSeed);
+        _baseScenario(p, partialEnabled);
 
         uint256 totalSupplyBefore = comet.totalSupply();
         uint256 totalSupplyBaseBefore = comet.totalsBasic().totalSupplyBase;
 
-        // A market with nothing supplied would hold this invariant by having nothing to move.
+        // A market with nothing supplied would hold this by having nothing to move.
         assertGt(totalSupplyBefore, 0, "the market carries no base supply for the invariant to protect");
 
-        {
-            address[] memory accounts = new address[](1);
-            accounts[0] = borrower;
+        _absorb();
 
-            vm.prank(liquidator);
-            comet.absorb(liquidator, accounts);
-        }
-
-        assertEq(comet.totalSupply(), totalSupplyBefore, "the base supply moved across the absorb");
+        assertEq(comet.totalSupply(), totalSupplyBefore, "absorbing a borrower moved the base suppliers");
 
         // The same claim one level down. Present value is principal through the supply index, so the
-        // two could only part company if a change in the total were offset by a change in the index.
+        // two part company only if a change in the total were offset by a change in the index.
         assertEq(
             comet.totalsBasic().totalSupplyBase,
             totalSupplyBaseBefore,
-            "the base supply principal moved across the absorb"
+            "absorbing a borrower moved the base suppliers' principal"
         );
     }
 
@@ -696,12 +312,6 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
      * @notice Base tokens do not move - comet base balance unchanged
      * @dev Invariant. Writing down a debt is a bookkeeping operation: the base token is not
      *      transferred into Comet or out of it.
-     *
-     *      The borrower is credited by moving their principal towards zero, and where the collateral
-     *      falls short the shortfall is charged to reserves - which Comet measures as the base it
-     *      holds beyond what it owes, not as a balance of its own. Neither is a payment, so the
-     *      market's base balance is the one figure that should read the same on both sides of the
-     *      call even as the totals move underneath it.
      */
     function testFuzz_baseTokensDoNotMove(
         uint256 maskSeed,
@@ -710,121 +320,33 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
         uint256 dropSeed,
         bool partialEnabled
     ) public {
-        uint8 numAssets = comet.numAssets();
-        uint256 assetMask = bound(maskSeed, 1, (uint256(1) << numAssets) - 1);
+        Position memory p = _boundPosition(maskSeed, supplySeed, borrowAmount, dropSeed);
+        _baseScenario(p, partialEnabled);
 
-        uint256[] memory amounts = new uint256[](numAssets);
-        uint256 borrow;
-        uint256 dropBps;
-        {
-            uint256 borrowLimit;
-            uint256 liquidity;
-            ICometData.AssetInfo memory assetInfo;
+        uint256 balanceBefore = baseToken.balanceOf(address(comet));
 
-            for (uint8 i; i < numAssets; ++i) {
-                if (assetMask & (uint256(1) << i) == 0) continue;
-                assetInfo = comet.getAssetInfo(i);
+        _absorb();
 
-                amounts[i] = bound(
-                    uint256(keccak256(abi.encode(supplySeed, i))),
-                    uint256(assetInfo.scale) / 1000,
-                    Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
-                );
-
-                // Comet floors twice when it decides whether a borrow is collateralized, so the
-                // borrow ceiling is floored the same way and stays acceptable to it.
-                uint256 value = amounts[i] * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
-                borrowLimit += value * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
-
-                // The module weighs liquidity in a single division. Flooring twice here would put
-                // this figure below the module's, which would push the drop ceiling above the price
-                // at which the account really turns liquidatable.
-                liquidity += amounts[i] * comet.getPrice(assetInfo.priceFeed) * assetInfo.liquidateCollateralFactor
-                    / (uint256(assetInfo.scale) * FACTOR_SCALE);
-            }
-
-            uint256 maxBorrow = borrowLimit * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            vm.assume(maxBorrow >= comet.baseBorrowMin()); // the set is too cheap to open a borrow at all
-            vm.assume(maxBorrow <= baseToken.balanceOf(address(comet))); // more base than the market can lend
-
-            borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
-
-            uint256 maxDrop = borrow * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
-            maxDrop = maxDrop * 10_000 / liquidity;
-            vm.assume(maxDrop >= 100); // no room left below the boundary to drop the prices into
-
-            dropBps = bound(dropSeed, 1, maxDrop * 99 / 100);
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            collaterals[i].allocateTo(borrower, amounts[i]);
-
-            vm.startPrank(borrower);
-            collaterals[i].approve(address(comet), amounts[i]);
-            comet.supply(address(collaterals[i]), amounts[i]);
-            vm.stopPrank();
-        }
-
-        vm.prank(borrower);
-        comet.withdraw(address(baseToken), borrow);
-
-        if (liquidationModule.partialLiquidationEnabled() != partialEnabled) {
-            vm.prank(pauser);
-            liquidationModule.liquidationModeToggle(partialEnabled);
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            uint256 dropped = comet.getPrice(address(collateralPriceFeeds[i])) * dropBps / 10_000;
-            collateralPriceFeeds[i].setRoundData(0, int256(dropped), 0, 0, 0);
-        }
-
-        assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
-
-        uint256 baseBalanceBefore = baseToken.balanceOf(address(comet));
-
-        {
-            address[] memory accounts = new address[](1);
-            accounts[0] = borrower;
-
-            vm.prank(liquidator);
-            comet.absorb(liquidator, accounts);
-        }
-
-        assertEq(baseToken.balanceOf(address(comet)), baseBalanceBefore, "base tokens moved across the absorb");
+        assertEq(baseToken.balanceOf(address(comet)), balanceBefore, "the base token moved on the default route");
     }
-
-    /// `AbsorbDebt(address indexed absorber, address indexed borrower, uint basePaidOut, uint usdValue)`
-    bytes32 internal constant ABSORB_DEBT = keccak256("AbsorbDebt(address,address,uint256,uint256)");
 
     /**
      * @notice Base reserves fall by the amount paid out - baseReserves after = before - basePaidOut
      * @dev Invariant. The value of the closed debt leaves the protocol's reserves in exactly the
      *      amount paid out - that is how the protocol funds an absorption.
      *
-     *      Reserves are the base Comet holds less what it owes suppliers plus what borrowers owe it.
-     *      The absorb leaves the balance and the supply side alone, so the whole movement comes from
-     *      the total borrow shrinking, and it has to shrink by what the borrower was credited.
+     *      The payout is worked out here from the collateral that actually left the borrower, not
+     *      read back off the `AbsorbDebt` event: a market that misfunds an absorption and misreports
+     *      it by the same amount satisfies a check that takes its own report as the source. The
+     *      event is then held to that figure rather than supplying it.
      *
-     *      The payout is worked out here from the collateral, not read back off the account. The
-     *      rule an absorption follows is that seized collateral pays the debt down by what it is
-     *      worth at its liquidation discount, and where the account is left with nothing that
-     *      carries borrowing power the rest of the debt is written off instead of surviving. Both
-     *      halves are applied below to the balances taken from the borrower, and the resulting debt
-     *      and payout are what the market is then held to. The `AbsorbDebt` figure is checked
-     *      against that rather than used as its source.
-     *
-     *      **The tolerance is zero, and that is derived rather than hoped for.** The reserves figure
-     *      converts the total borrow from principal to present value, and the paid-out figure in the
-     *      event is a present value too, so a drifted index could round the two apart by a unit or
-     *      so. Nothing in this group advances the clock, so the borrow index is still at
-     *      `BASE_INDEX_SCALE`, where that conversion is a multiply and divide by the same number and
-     *      cannot round at all. The index is asserted below rather than assumed: a later edit that
-     *      warps time invalidates the reasoning, and it should fail loudly at the reason rather than
-     *      quietly by a unit.
+     *      The tolerance on the reserve movement is zero, and derived rather than hoped for. The
+     *      reserve figure converts the market total from principal to present value and the payout
+     *      is a present value too, so a drifted index could round the two apart by a unit. Nothing
+     *      in this group advances the clock, so the borrow index still sits at `BASE_INDEX_SCALE`,
+     *      where that conversion multiplies and divides by the same number and cannot round at all.
+     *      It is asserted below rather than assumed: a later edit that warps time should fail at the
+     *      reason, not quietly by a unit.
      */
     function testFuzz_baseReservesFallByAmountPaidOut(
         uint256 maskSeed,
@@ -833,355 +355,408 @@ contract ProtocolAccountingFuzzTest is ProtocolFixture {
         uint256 dropSeed,
         bool partialEnabled
     ) public {
-        uint8 numAssets = comet.numAssets();
-        uint256 assetMask = bound(maskSeed, 1, (uint256(1) << numAssets) - 1);
+        Position memory p = _boundPosition(maskSeed, supplySeed, borrowAmount, dropSeed);
+        uint256 basePrice = comet.getPrice(comet.baseTokenPriceFeed());
 
-        uint256[] memory amounts = new uint256[](numAssets);
-        uint256 borrow;
-        uint256 dropBps;
-        {
-            uint256 borrowLimit;
-            uint256 liquidity;
-            uint256 seizableValue;
-            ICometData.AssetInfo memory assetInfo;
-
-            for (uint8 i; i < numAssets; ++i) {
-                if (assetMask & (uint256(1) << i) == 0) continue;
-                assetInfo = comet.getAssetInfo(i);
-
-                amounts[i] = bound(
-                    uint256(keccak256(abi.encode(supplySeed, i))),
-                    uint256(assetInfo.scale) / 1000,
-                    Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
-                );
-
-                // Comet floors twice when it decides whether a borrow is collateralized, so the
-                // borrow ceiling is floored the same way and stays acceptable to it.
-                uint256 value = amounts[i] * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
-                borrowLimit += value * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
-
-                // The module weighs liquidity in a single division. Flooring twice here would put
-                // this figure below the module's, which would push the drop ceiling above the price
-                // at which the account really turns liquidatable.
-                liquidity += amounts[i] * comet.getPrice(assetInfo.priceFeed) * assetInfo.liquidateCollateralFactor
-                    / (uint256(assetInfo.scale) * FACTOR_SCALE);
-
-                // What a liquidation could recover from this asset if it took all of it. Weighted by
-                // the liquidation factor rather than the liquidate collateral factor, it is the line
-                // between a seizure that covers the debt and one that runs out of collateral.
-                seizableValue += amounts[i] * comet.getPrice(assetInfo.priceFeed) * assetInfo.liquidationFactor
-                    / (uint256(assetInfo.scale) * FACTOR_SCALE);
-            }
-
-            uint256 maxBorrow = borrowLimit * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            vm.assume(maxBorrow >= comet.baseBorrowMin()); // the set is too cheap to open a borrow at all
-            vm.assume(maxBorrow <= baseToken.balanceOf(address(comet))); // more base than the market can lend
-
-            borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
-
-            uint256 maxDrop = borrow * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
-            maxDrop = maxDrop * 10_000 / liquidity;
-            vm.assume(maxDrop >= 100); // no room left below the boundary to drop the prices into
-
-            // The two outcomes this invariant speaks about are nowhere near equally likely if the
-            // drop is drawn across the whole range. Scaling the prices by k scales what a seizure
-            // can recover by k too, so the collateral still covers the debt only while
-            // `k * seizableValue >= debtValue` - the top slice of the range, and a narrow one,
-            // because the liquidation factors sit close above the liquidate collateral factors.
-            // Everything below that slice is a write-off, where the only thing left to say is that
-            // the debt reached zero. So the outcome is chosen first and the drop drawn inside it.
-            uint256 coversDebtAbove = maxDrop * liquidity / seizableValue;
-
-            if (uint256(keccak256(abi.encode(dropSeed))) % 2 == 0 && coversDebtAbove <= maxDrop * 99 / 100) {
-                dropBps = bound(dropSeed, coversDebtAbove, maxDrop * 99 / 100);
-            } else {
-                dropBps = bound(dropSeed, 1, maxDrop * 99 / 100);
-            }
+        // A drop drawn across the whole range nearly always exhausts the collateral, and a write-off
+        // leaves the bracket below with nothing to say. Scaling every price by k scales what a
+        // seizure recovers by k too, so the collateral still covers the debt exactly while
+        // `k * seizable >= debtValue`. That slice runs from `coversDebt` to the top of the range and
+        // is only a few percent of it, because the liquidation factors sit just above the liquidate
+        // collateral factors — so half the runs are drawn inside it on purpose.
+        uint256 coversDebt = (p.borrow * basePrice / comet.baseScale()) * 10_000 / p.seizable;
+        if (coversDebt <= p.dropCeiling && _coinFlip(dropSeed, "covering drop")) {
+            p.dropBps = bound(dropSeed, coversDebt, p.dropCeiling);
         }
 
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            collaterals[i].allocateTo(borrower, amounts[i]);
-
-            vm.startPrank(borrower);
-            collaterals[i].approve(address(comet), amounts[i]);
-            comet.supply(address(collaterals[i]), amounts[i]);
-            vm.stopPrank();
-        }
-
-        vm.prank(borrower);
-        comet.withdraw(address(baseToken), borrow);
-
-        if (liquidationModule.partialLiquidationEnabled() != partialEnabled) {
-            vm.prank(pauser);
-            liquidationModule.liquidationModeToggle(partialEnabled);
-        }
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            uint256 dropped = comet.getPrice(address(collateralPriceFeeds[i])) * dropBps / 10_000;
-            collateralPriceFeeds[i].setRoundData(0, int256(dropped), 0, 0, 0);
-        }
-
-        assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
+        ICoreLiquidationModule.Seizure[] memory plan = _baseScenario(p, partialEnabled);
 
         // The premise of the zero tolerance above.
-        assertEq(comet.totalsBasic().baseBorrowIndex, 1e15, "the borrow index has drifted from its scale");
+        assertEq(comet.totalsBasic().baseBorrowIndex, BASE_INDEX_SCALE, "the borrow index left BASE_INDEX_SCALE");
 
         int256 reservesBefore = comet.getReserves();
         uint256 debtBefore = comet.borrowBalanceOf(borrower);
-        uint256 debtValue = debtBefore * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
-
-        uint256[] memory balancesBefore = new uint256[](numAssets);
-        for (uint8 i; i < numAssets; ++i) {
-            balancesBefore[i] = comet.collateralBalanceOf(borrower, address(collaterals[i]));
-        }
-
-        ICoreLiquidationModule.Seizure[] memory plan = liquidationModule.seizurePlan(borrower);
 
         vm.recordLogs();
-        {
-            address[] memory accounts = new address[](1);
-            accounts[0] = borrower;
+        _absorb();
 
-            vm.prank(liquidator);
-            comet.absorb(liquidator, accounts);
-        }
-
-        // Everything below is built on what actually left the borrower's balances. The plan's own
-        // amounts are held to that first, so a payout worked out from the plan is a payout worked
-        // out from collateral that genuinely moved.
-        for (uint256 j; j < plan.length; ++j) {
-            assertEq(
-                balancesBefore[plan[j].index] - comet.collateralBalanceOf(borrower, plan[j].asset),
-                plan[j].seizedAmount,
-                "the plan named an amount the balance did not give up"
-            );
-        }
-
-        // What that collateral pays off. Each seizure covers what it is worth once the liquidation
-        // discount is applied, and never more than is still owed at that point in the walk - the
-        // protocol cannot credit a debt it has already cleared.
-        //
-        // A seizure's worth does not always land on a whole value unit, and which way that part unit
-        // goes is a real choice rather than an accident: crediting down leaves the borrower paying
-        // for collateral they were not credited for, crediting up hands them a part unit they did
-        // not cover. So the walk is run twice, once each way, and the two runs bracket the debt the
-        // seizure can honestly leave. The bracket is a value unit per seized asset wide - the
-        // resolution of the price feed - and it is derived here, not chosen to make a number fit.
-        uint256 remainingLow = debtValue; // credits rounded up: the least debt that can be left
-        uint256 remainingHigh = debtValue; // credits rounded down: the most
-        for (uint256 j; j < plan.length; ++j) {
-            ICometData.AssetInfo memory seized = comet.getAssetInfo(plan[j].index);
-
-            uint256 worth = plan[j].seizedAmount * comet.getPrice(seized.priceFeed) * seized.liquidationFactor;
-            uint256 perValueUnit = uint256(seized.scale) * FACTOR_SCALE;
-
-            remainingLow -= Math.min(Math.ceilDiv(worth, perValueUnit), remainingLow);
-            remainingHigh -= Math.min(worth / perValueUnit, remainingHigh);
-        }
-
-        // And what is left of the debt afterwards, in base. An account with nothing left that
-        // carries borrowing power has no way to ever cover the remainder, so the protocol takes the
-        // loss rather than leaving the debt standing.
         uint256 debtAfter = comet.borrowBalanceOf(borrower);
 
-        if (weightedCollateral(borrower) == 0) {
-            assertEq(debtAfter, 0, "an account stripped of collateralization was left owing");
-        } else {
-            uint256 basePrice = comet.getPrice(address(basePriceFeed));
-            assertGe(debtAfter, remainingLow * comet.baseScale() / basePrice, "the seizure paid off more than it is worth");
-            assertLe(debtAfter, remainingHigh * comet.baseScale() / basePrice, "the seizure paid off less than it is worth");
+        // What the seizure is worth, held against what the debt actually did. An account left with
+        // nothing that carries borrowing power can never cover a remainder, so the protocol takes
+        // the loss instead of leaving the debt standing.
+        {
+            (uint256 low, uint256 high) = _debtLeftBySeizure(plan, debtBefore * basePrice / comet.baseScale());
+
+            if (comet.weightedCollateral(borrower) == 0) {
+                assertEq(debtAfter, 0, "an account stripped of collateralization was left owing");
+            } else {
+                assertGe(debtAfter, low * comet.baseScale() / basePrice, "the seizure paid off more than it is worth");
+                assertLe(debtAfter, high * comet.baseScale() / basePrice, "the seizure paid off less than it is worth");
+            }
         }
 
-        // The debt left having been held to the collateral, the payout follows from it and the two
-        // readings below are exact.
-        uint256 expectedPaidOut = debtBefore - debtAfter;
-        assertGt(expectedPaidOut, 0, "the absorb paid out nothing");
+        // The debt movement is now anchored to collateral that genuinely left the borrower, so it is
+        // what both the reserve and the report are held to.
+        uint256 paidOut = debtBefore - debtAfter;
 
         assertEq(
             comet.getReserves(),
-            reservesBefore - int256(expectedPaidOut),
-            "the reserves did not fall by the amount the seizure pays off"
+            reservesBefore - int256(paidOut),
+            "base reserves did not fall by the amount the seizure pays off"
         );
+        (uint256 reported, uint256 reportedValue) = _absorbDebtReport(vm.getRecordedLogs());
 
-        // The protocol's own report, held to the same figure. A market that funds an absorption
-        // correctly but misreports it still misleads everything reading its events.
-        uint256 reported;
-        uint256 reportedValue;
-        bool sawEvent;
-        {
-            Vm.Log[] memory logs = vm.getRecordedLogs();
-            for (uint256 k; k < logs.length; ++k) {
-                if (logs[k].topics[0] != ABSORB_DEBT) continue;
+        assertEq(reported, paidOut, "AbsorbDebt reported a payout the seizure does not pay for");
 
-                (reported, reportedValue) = abi.decode(logs[k].data, (uint256, uint256));
-                sawEvent = true;
-            }
-        }
-        assertTrue(sawEvent, "the absorb emitted no AbsorbDebt");
-        assertEq(reported, expectedPaidOut, "AbsorbDebt reported a payout the seizure does not pay for");
-
-        // The event carries the same payout priced in dollars, and that second figure is held to the
-        // first. Left unread it is a number nothing in the suite would notice going wrong.
+        // The event prices that same payout, and the price is held to it. Left unread it is a figure
+        // the whole suite would let go wrong in silence.
         assertEq(
             reportedValue,
-            expectedPaidOut * comet.getPrice(address(basePriceFeed)) / comet.baseScale(),
+            paidOut * basePrice / comet.baseScale(),
             "AbsorbDebt priced the payout wrongly"
         );
     }
 
-    /// Everything the account still holds that carries borrowing power, priced and weighted in a
-    /// single division. Only whether this is zero matters here - it is the write-off condition.
-    function weightedCollateral(address account) internal view returns (uint256 weighted) {
-        for (uint8 i; i < comet.numAssets(); ++i) {
-            ICometData.AssetInfo memory info = comet.getAssetInfo(i);
-            uint256 balance = comet.collateralBalanceOf(account, info.asset);
-            if (balance == 0) continue;
-
-            weighted += balance * comet.getPrice(info.priceFeed) * info.borrowCollateralFactor
-                / (uint256(info.scale) * FACTOR_SCALE);
-        }
-    }
+    /*//////////////////////////////////////////////////////////////
+                             THE MODULE
+    //////////////////////////////////////////////////////////////*/
 
     /**
      * @notice The module receives no tokens - module balance delta = 0
      * @dev Invariant. Neither base nor collateral passes through the liquidation module: it only
      *      writes into Comet's storage.
-     *
-     *      Dust is placed on the module first, in every token on the market rather than only the
-     *      ones the position uses. An empty module makes "received nothing" and "was swept clean"
-     *      the same reading, and it is the second one that would matter: a module that hands its
-     *      balance on, or that a seizure routes through, would pass a zero-to-zero check and fail
-     *      this one. The assets the position never touches need that just as much - they are where
-     *      a stray transfer would go unnoticed.
      */
     function testFuzz_moduleReceivesNoTokens(
         uint256 maskSeed,
         uint256 supplySeed,
         uint256 borrowAmount,
         uint256 dropSeed,
-        uint256 dustSeed
+        uint256 dustSeed,
+        bool partialEnabled
     ) public {
-        uint8 numAssets = comet.numAssets();
-        uint256 assetMask = bound(maskSeed, 1, (uint256(1) << numAssets) - 1);
+        Position memory p = _boundPosition(maskSeed, supplySeed, borrowAmount, dropSeed);
+        _baseScenario(p, partialEnabled);
 
-        uint256[] memory amounts = new uint256[](numAssets);
-        uint256 borrow;
-        uint256 dropBps;
-        {
-            uint256 borrowLimit;
-            uint256 liquidity;
-            ICometData.AssetInfo memory assetInfo;
-
-            for (uint8 i; i < numAssets; ++i) {
-                if (assetMask & (uint256(1) << i) == 0) continue;
-                assetInfo = comet.getAssetInfo(i);
-
-                amounts[i] = bound(
-                    uint256(keccak256(abi.encode(supplySeed, i))),
-                    uint256(assetInfo.scale) / 1000,
-                    Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
-                );
-
-                // Comet floors twice when it decides whether a borrow is collateralized, so the
-                // borrow ceiling is floored the same way and stays acceptable to it.
-                uint256 value = amounts[i] * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
-                borrowLimit += value * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
-
-                // The module weighs liquidity in a single division. Flooring twice here would put
-                // this figure below the module's, which would push the drop ceiling above the price
-                // at which the account really turns liquidatable.
-                liquidity += amounts[i] * comet.getPrice(assetInfo.priceFeed) * assetInfo.liquidateCollateralFactor
-                    / (uint256(assetInfo.scale) * FACTOR_SCALE);
-            }
-
-            uint256 maxBorrow = borrowLimit * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            vm.assume(maxBorrow >= comet.baseBorrowMin()); // the set is too cheap to open a borrow at all
-            vm.assume(maxBorrow <= baseToken.balanceOf(address(comet))); // more base than the market can lend
-
-            borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
-
-            uint256 maxDrop = borrow * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
-            maxDrop = maxDrop * 10_000 / liquidity;
-            vm.assume(maxDrop >= 100); // no room left below the boundary to drop the prices into
-
-            dropBps = bound(dropSeed, 1, maxDrop * 99 / 100);
+        // A module that starts empty makes "took nothing" and "swept what it took straight out"
+        // indistinguishable. Dust placed in advance means a sweep has something to carry - and it
+        // goes on every token, not only the ones the position uses, because an asset the run never
+        // touches is where a stray transfer would sit unnoticed. Each pile is drawn separately so a
+        // transfer that happened to match another token's amount still shows.
+        FaucetToken[] memory tokens = _marketTokens();
+        for (uint256 t; t < tokens.length; ++t) {
+            tokens[t].allocateTo(
+                address(liquidationModule),
+                bound(
+                    uint256(keccak256(abi.encode(dustSeed, t))),
+                    0,
+                    1_000_000 * uint256(10 ** tokens[t].decimals())
+                )
+            );
         }
 
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
+        uint256[] memory balancesBefore = new uint256[](tokens.length);
+        for (uint256 t; t < tokens.length; ++t) balancesBefore[t] = tokens[t].balanceOf(address(liquidationModule));
 
-            collaterals[i].allocateTo(borrower, amounts[i]);
+        _absorb();
+
+        for (uint256 t; t < tokens.length; ++t) {
+            assertEq(
+                tokens[t].balanceOf(address(liquidationModule)),
+                balancesBefore[t],
+                "the liquidation module's balance moved on the default route"
+            );
+        }
+    }
+
+    /**
+     * @notice The adapter is never called - adapter calls = 0
+     * @dev Invariant. The default route never reaches the DEX adapter - it exists only because the
+     *      module cannot be deployed without one.
+     */
+    function testFuzz_adapterIsNeverCalled(
+        uint256 maskSeed,
+        uint256 supplySeed,
+        uint256 borrowAmount,
+        uint256 dropSeed,
+        bool partialEnabled
+    ) public {
+        // One counter behind a fallback stands in for a counter on every interface method: the claim
+        // is that none of them is reached, and which one would have been is not the question.
+        CallCounter counter = CallCounter(payable(address(dexAdapter)));
+        vm.etch(address(dexAdapter), address(new CallCounter()).code);
+
+        Position memory p = _boundPosition(maskSeed, supplySeed, borrowAmount, dropSeed);
+        _baseScenario(p, partialEnabled);
+
+        counter.reset();
+
+        _absorb();
+
+        assertEq(counter.calls(), 0, "the default route reached the DEX adapter");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          BOUNDS AND SCENARIO
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice The bound chain the group shares: a mask, a deposit per selected asset, a borrow the
+     *         market will accept, and a price drop that lands the position below the liquidation
+     *         threshold.
+     * @dev The two weighted sums are deliberately computed in different orders, because two
+     *      different contracts consume them. `borrowLimit` decides whether `withdraw` is accepted,
+     *      and Comet's `_getCollaterizedLiquidity` prices and weights in two separate divisions;
+     *      `liquidity` decides whether the position is liquidatable, and the module's `_getLiquidity`
+     *      fuses both into one, on purpose — pricing and weighting separately truncates the balance
+     *      twice. Mirroring each against the code that reads it is what keeps the top of the borrow
+     *      range acceptable and the drop on the right side of the module's own threshold.
+     */
+    function _boundPosition(uint256 maskSeed, uint256 supplySeed, uint256 borrowAmount, uint256 dropSeed)
+        internal
+        view
+        returns (Position memory p)
+    {
+        uint8 numAssets = comet.numAssets();
+        uint256 basePrice = comet.getPrice(comet.baseTokenPriceFeed());
+        uint256 baseScale = comet.baseScale();
+
+        uint256 mask = bound(maskSeed, 1, (uint256(1) << numAssets) - 1);
+        p.amounts = new uint256[](numAssets);
+
+        uint256 borrowLimit;
+        uint256 liquidity;
+
+        for (uint8 i; i < numAssets; ++i) {
+            if (mask & (uint256(1) << i) == 0) continue;
+
+            ICometData.AssetInfo memory info = comet.getAssetInfo(i);
+
+            // One seed for the whole set, one clamp per asset: the deposit is no less than a
+            // thousandth of a unit and no more than a million units or the asset's supply cap,
+            // whichever binds first. The scale is widened before it is multiplied — the asset
+            // table's scales overflow their own uint64 at a million units.
+            uint256 amount = bound(
+                uint256(keccak256(abi.encode(supplySeed, i))),
+                uint256(info.scale) / 1000,
+                Math.min(1_000_000 * uint256(info.scale), info.supplyCap)
+            );
+            p.amounts[i] = amount;
+
+            uint256 price = comet.getPrice(info.priceFeed);
+
+            uint256 weighted = amount * price / uint256(info.scale);
+            borrowLimit += weighted * info.borrowCollateralFactor / FACTOR_SCALE;
+
+            liquidity += amount * price * info.liquidateCollateralFactor / (uint256(info.scale) * FACTOR_SCALE);
+
+            // What a seizure could recover from this asset if it took all of it. Weighted by the
+            // liquidation factor rather than the liquidate collateral factor, it is the line between
+            // a seizure that covers the debt and one that runs out of collateral.
+            p.seizable += amount * price * info.liquidationFactor / (uint256(info.scale) * FACTOR_SCALE);
+        }
+
+        uint256 maxBorrow = borrowLimit * baseScale / basePrice;
+        vm.assume(maxBorrow >= comet.baseBorrowMin()); // too cheap a set to reach the minimum borrow
+        vm.assume(maxBorrow <= baseToken.balanceOf(address(comet))); // more debt than the market can fund
+
+        p.borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
+
+        // The multiplier at which the debt value meets the liquidation-weighted collateral. Every
+        // selected price is floored on the way down, so the drop only ever lands lower than this
+        // arithmetic says, and a percent of clearance covers it.
+        uint256 maxDrop = (p.borrow * basePrice / baseScale) * 10_000 / liquidity;
+        vm.assume(maxDrop >= 100); // no room left below the threshold to drop the prices into
+
+        p.dropCeiling = maxDrop * 99 / 100;
+        p.dropBps = bound(dropSeed, 1, p.dropCeiling);
+    }
+
+    /**
+     * @notice The scenario the group shares: the borrower supplies the set, draws the base, the mode
+     *         is set, the selected prices fall, and the plan is read.
+     * @dev The plan is read in the same block as the absorb that follows, with price, time and mode
+     *      untouched in between, so what is read is what is executed.
+     */
+    function _baseScenario(Position memory p, bool partialEnabled)
+        internal
+        returns (ICoreLiquidationModule.Seizure[] memory plan)
+    {
+        uint8 numAssets = comet.numAssets();
+
+        for (uint8 i; i < numAssets; ++i) {
+            if (p.amounts[i] == 0) continue;
+
+            collaterals[i].allocateTo(borrower, p.amounts[i]);
 
             vm.startPrank(borrower);
-            collaterals[i].approve(address(comet), amounts[i]);
-            comet.supply(address(collaterals[i]), amounts[i]);
+            collaterals[i].approve(address(comet), p.amounts[i]);
+            comet.supply(address(collaterals[i]), p.amounts[i]);
             vm.stopPrank();
         }
 
         vm.prank(borrower);
-        comet.withdraw(address(baseToken), borrow);
+        comet.withdraw(address(baseToken), p.borrow);
 
-        for (uint8 i; i < numAssets; ++i) {
-            if (assetMask & (uint256(1) << i) == 0) continue;
-
-            uint256 dropped = comet.getPrice(address(collateralPriceFeeds[i])) * dropBps / 10_000;
-            collateralPriceFeeds[i].setRoundData(0, int256(dropped), 0, 0, 0);
-        }
-
-        // No spare argument for the mode, so it comes off the dust seed. Both routes reach the same
-        // hook, but a test that only ever ran one of them would not be able to say so.
-        bool partialEnabled = uint256(keccak256(abi.encode(dustSeed, "mode"))) % 2 == 0;
         if (liquidationModule.partialLiquidationEnabled() != partialEnabled) {
             vm.prank(pauser);
             liquidationModule.liquidationModeToggle(partialEnabled);
         }
 
+        // Only the selected feeds move. What the mask left out keeps its price, which is what lets a
+        // second account stand on an untouched asset and stay healthy across the absorb.
+        for (uint8 i; i < numAssets; ++i) {
+            if (p.amounts[i] == 0) continue;
+
+            uint256 price = comet.getPrice(address(collateralPriceFeeds[i])) * p.dropBps / 10_000;
+            collateralPriceFeeds[i].setRoundData(0, int256(price), 0, 0, 0);
+        }
+
+        // Both hold by construction of the bounds above. If either ever does not, the bounds are
+        // wrong and the run must not pass quietly.
         assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
 
-        // Straight to the module's address, so nothing about the market's own books moves with it.
-        // Each token gets its own amount rather than a single figure repeated, so a transfer that
-        // happened to match another token's pile still shows.
-        address module = address(liquidationModule);
-        baseToken.allocateTo(module, bound(dustSeed, 0, 1_000_000 * uint256(comet.baseScale())));
-        for (uint8 i; i < numAssets; ++i) {
-            collaterals[i].allocateTo(
-                module,
-                bound(
-                    uint256(keccak256(abi.encode(dustSeed, i))),
-                    0,
-                    1_000_000 * uint256(comet.getAssetInfo(i).scale)
-                )
-            );
-        }
+        plan = liquidationModule.seizurePlan(borrower);
+        assertGt(plan.length, 0, "the position built seizes nothing");
+    }
 
-        // Every token on the market, not only the ones in the mask: a module that received the wrong
-        // asset is exactly what a mask-shaped reading would step over.
-        uint256 baseBefore = baseToken.balanceOf(module);
-        uint256[] memory balancesBefore = new uint256[](numAssets);
-        for (uint8 i; i < numAssets; ++i) {
-            balancesBefore[i] = collaterals[i].balanceOf(module);
-        }
+    function _absorb() internal {
+        address[] memory accounts = new address[](1);
+        accounts[0] = borrower;
 
-        {
-            address[] memory accounts = new address[](1);
-            accounts[0] = borrower;
+        vm.prank(liquidator);
+        comet.absorb(liquidator, accounts);
+    }
 
-            vm.prank(liquidator);
-            comet.absorb(liquidator, accounts);
-        }
+    /*//////////////////////////////////////////////////////////////
+                               HELPERS
+    //////////////////////////////////////////////////////////////*/
 
-        assertEq(baseToken.balanceOf(module), baseBefore, "the module's base balance moved across the absorb");
+    /**
+     * @notice Opens a borrow for a second account on the lowest-indexed asset the mask left out.
+     * @dev That asset's price never moves, so the account is still collateralized when the absorb
+     *      lands and its debt is still on the market's books afterwards. Half its borrowing power
+     *      keeps it clear of the threshold. A mask that selected everything leaves nowhere to stand,
+     *      and the run goes ahead without it.
+     */
+    function _openSecondBorrow(Position memory p) internal {
+        uint8 numAssets = comet.numAssets();
 
         for (uint8 i; i < numAssets; ++i) {
-            assertEq(
-                collaterals[i].balanceOf(module),
-                balancesBefore[i],
-                "the module's collateral balance moved across the absorb"
-            );
+            if (p.amounts[i] != 0) continue;
+
+            ICometData.AssetInfo memory info = comet.getAssetInfo(i);
+            uint256 amount = Math.min(1_000_000 * uint256(info.scale), info.supplyCap);
+
+            uint256 limit = amount * comet.getPrice(info.priceFeed) / uint256(info.scale);
+            limit = limit * info.borrowCollateralFactor / FACTOR_SCALE;
+            uint256 borrow = limit * comet.baseScale() / comet.getPrice(comet.baseTokenPriceFeed()) / 2;
+            if (borrow < comet.baseBorrowMin()) return;
+
+            collaterals[i].allocateTo(secondBorrower, amount);
+
+            vm.startPrank(secondBorrower);
+            collaterals[i].approve(address(comet), amount);
+            comet.supply(address(collaterals[i]), amount);
+            comet.withdraw(address(baseToken), borrow);
+            vm.stopPrank();
+
+            return;
+        }
+    }
+
+    /**
+     * @notice The debt a seizure can honestly leave, bracketed by the direction its credits round.
+     * @dev Each seizure pays the debt down by what it is worth once the liquidation discount is
+     *      applied, and never by more than is still owed at that point in the walk — the protocol
+     *      cannot credit a debt it has already cleared.
+     *
+     *      A seizure's worth rarely lands on a whole value unit, and which way that part unit goes
+     *      is a real choice rather than an accident: crediting down leaves the borrower paying for
+     *      collateral they were not credited for, crediting up hands them a part unit they did not
+     *      cover. The module makes that choice per branch, so the walk is run both ways here and the
+     *      two runs bracket the debt the seizure can leave. The bracket is one value unit per seized
+     *      asset wide — the resolution of the price feed — and it is derived, not picked to fit.
+     * @param plan The seizure plan, read before the absorb that executed it.
+     * @param debtValue The account's debt at the point the plan was built, in value units.
+     * @return low The least debt the seizure can leave, crediting every part unit up.
+     * @return high The most it can leave, crediting every part unit down.
+     */
+    function _debtLeftBySeizure(ICoreLiquidationModule.Seizure[] memory plan, uint256 debtValue)
+        internal
+        view
+        returns (uint256 low, uint256 high)
+    {
+        low = debtValue;
+        high = debtValue;
+
+        for (uint256 j; j < plan.length; ++j) {
+            ICometData.AssetInfo memory info = comet.getAssetInfo(plan[j].index);
+
+            uint256 worth = plan[j].seizedAmount * comet.getPrice(info.priceFeed) * info.liquidationFactor;
+            uint256 valueUnit = uint256(info.scale) * FACTOR_SCALE;
+
+            low -= Math.min(Math.ceilDiv(worth, valueUnit), low);
+            high -= Math.min(worth / valueUnit, high);
+        }
+    }
+
+    /**
+     * @notice What the absorb itself reported paying out, in base and in dollars.
+     * @dev Both fields are returned. The dollar figure is the one nothing else in the suite reads,
+     *      and a number no test looks at is a number that can drift without anyone noticing.
+     */
+    function _absorbDebtReport(Vm.Log[] memory logs) internal view returns (uint256 basePaidOut, uint256 usdValue) {
+        bytes32 signature = keccak256("AbsorbDebt(address,address,uint256,uint256)");
+
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(comet)) continue;
+            if (logs[i].topics.length == 0 || logs[i].topics[0] != signature) continue;
+
+            return abi.decode(logs[i].data, (uint256, uint256));
+        }
+        revert("the absorb emitted no AbsorbDebt");
+    }
+
+    /// @notice Every token the market touches, base first.
+    function _marketTokens() internal view returns (FaucetToken[] memory tokens) {
+        uint8 numAssets = comet.numAssets();
+
+        tokens = new FaucetToken[](uint256(numAssets) + 1);
+        tokens[0] = baseToken;
+        for (uint8 i; i < numAssets; ++i) tokens[uint256(i) + 1] = collaterals[i];
+    }
+
+    /**
+     * @notice Whether a run takes the noisier of two setups.
+     */
+    function _coinFlip(uint256 seed, string memory tag) internal pure returns (bool) {
+        return uint256(keccak256(abi.encode(seed, tag))) & 1 == 0;
+    }
+}
+
+/**
+ * @title Call counter
+ * @notice Stands in for the DEX adapter and counts calls instead of answering them.
+ * @dev `calls` and `reset` have selectors of their own, so reading and clearing the counter never
+ *      reaches the fallback that increments it.
+ */
+contract CallCounter {
+    uint256 public calls;
+
+    function reset() external {
+        calls = 0;
+    }
+
+    fallback() external payable {
+        unchecked {
+            ++calls;
+        }
+    }
+
+    receive() external payable {
+        unchecked {
+            ++calls;
         }
     }
 }
