@@ -1761,7 +1761,6 @@ export async function executeOpenProposalAndRelay(
   await executeOpenProposal(governanceDeploymentManager, openProposal);
 
   console.log(`Executed proposal ${openProposal.id} on ${governanceDeploymentManager.network}, checking if relay to ${bridgeDeploymentManager.network} is needed...`);
-  console.log(`All Redstone oracles on ${bridgeDeploymentManager.network} are mocked`);
 
   const bridgeManagers = await isBridgeProposal(
     governanceDeploymentManager,
@@ -1771,6 +1770,7 @@ export async function executeOpenProposalAndRelay(
 
   for (const bridgeManager of bridgeManagers) {
     await mockAllRedstoneOracles(bridgeManager);
+    console.log(`All Redstone oracles on ${bridgeManager.network} are mocked`);
     await relayMessage(
       governanceDeploymentManager,
       bridgeManager,
