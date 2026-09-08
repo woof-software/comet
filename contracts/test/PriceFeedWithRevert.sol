@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import "../vendor/@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+import {AggregatorV3Interface} from  "../vendor/@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
-contract SimplePriceFeed is AggregatorV3Interface {
+contract PriceFeedWithRevert is AggregatorV3Interface {
     string public constant override description = "Mock Chainlink price aggregator";
 
     uint public constant override version = 1;
@@ -15,6 +15,8 @@ contract SimplePriceFeed is AggregatorV3Interface {
     uint256 internal startedAt;
     uint256 internal updatedAt;
     uint80 internal answeredInRound;
+
+    error Reverted();
 
     constructor(int answer_, uint8 decimals_) {
         answer = answer_;
@@ -39,11 +41,7 @@ contract SimplePriceFeed is AggregatorV3Interface {
         return (roundId_, answer, startedAt, updatedAt, answeredInRound);
     }
 
-    function latestRoundData() override external view returns (uint80, int256, uint256, uint256, uint80) {
-        return (roundId, answer, startedAt, updatedAt, answeredInRound);
-    }
-
-    function setPrice(int256 newPrice) external {
-        answer = newPrice;
+    function latestRoundData() override external pure returns (uint80, int256, uint256, uint256, uint80) {
+        revert Reverted();
     }
 }
