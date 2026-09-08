@@ -1,5 +1,6 @@
 import { get, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan';
-import { getBlockscoutApiUrl } from './blockscout';
+import { getBlockscoutApiKey, getBlockscoutApiUrl, getBlockscoutRPCUrl, getBlockscoutUrl } from './blockscout';
+import { providers } from 'ethers';
 
 export function debug(...args: any[]) {
   if (process.env['DEBUG']) {
@@ -79,9 +80,10 @@ async function pullFirstTransactionForContractFromBlockscout(network: string, ad
     page: 1,
     offset: 10,
     sort: 'asc',
+    apikey: getBlockscoutApiKey(network),
   };
   const url = `${getBlockscoutApiUrl(network)}?${paramString(params)}`;
-  const debugUrl = `${getBlockscoutApiUrl(network)}?${paramString(params)}`;
+  const debugUrl = `${getBlockscoutApiUrl(network)}?${paramString({ ...params, apikey: '[API_KEY]' })}`;
 
   debug(`Attempting to pull Contract Creation code from first tx at ${debugUrl}`);
   const result = await get(url, {});
@@ -96,9 +98,11 @@ async function pullFirstTransactionForContractFromBlockscout(network: string, ad
 
 // Sourcify chain IDs for networks whose own Blockscout instance has real gaps in verification
 // coverage that Sourcify's independent verification database fills — seen repeatedly for Ronin
-// contracts verified via Sourcify but not (yet, or ever) through explorer.roninchain.com itself.
+// contracts verified via Sourcify but not (yet, or ever) through explorer.roninchain.com itself,
+// and for Unichain contracts verified via Sourcify but not through unichain.blockscout.com.
 const sourcifyChainIds: { [network: string]: number } = {
   ronin: 2020,
+  unichain: 130,
 };
 
 async function getSourcifyApiData(network: string, address: string): Promise<EtherscanData> {
@@ -135,7 +139,59 @@ async function getSourcifyApiData(network: string, address: string): Promise<Eth
   };
 }
 
-async function getBlockscoutApiData(
+interface BlockscoutV2Source {
+  source_code: string;
+  file_path: string;
+  additional_sources: { file_path: string, source_code: string }[];
+  abi: object;
+  name: string;
+  compiler_version: string;
+  compiler_settings: object;
+  optimization_enabled: boolean;
+  optimization_runs: number;
+  constructor_args: string;
+}
+
+// Blockscout's v2 REST API, as opposed to the legacy Etherscan-compatible `/api` used by
+// getBlockscoutV1ApiData below. Tried first since it has proven more reliable in practice
+// (e.g. it isn't subject to the rate-limiting the legacy endpoint hits on some networks), with
+// the legacy endpoint (and, from there, Sourcify) kept as a fallback rather than replaced.
+async function getBlockscoutV2ApiData(network: string, address: string): Promise<EtherscanData> {
+  const url = `${getBlockscoutUrl(network)}/api/v2/smart-contracts/${address}`;
+  const result: BlockscoutV2Source = await get(url, { apikey: getBlockscoutApiKey(network) });
+
+  if (!result?.source_code) {
+    throw new Error('Contract source code not verified');
+  }
+
+  const sources = Object.fromEntries(
+    [{ file_path: result.file_path, source_code: result.source_code }, ...(result.additional_sources ?? [])]
+      .map(({ file_path, source_code }) => [file_path, { content: source_code }])
+  );
+
+  return {
+    // Double-braced to match parseSources()'s Etherscan-style multi-file convention (see
+    // getSourcifyApiData above for the same trick).
+    source: `{${JSON.stringify({ language: 'Solidity', sources, settings: result.compiler_settings })}}`,
+    abi: result.abi,
+    contract: result.name,
+    compiler: result.compiler_version,
+    optimized: result.optimization_enabled,
+    optimizationRuns: result.optimization_runs,
+    constructorArgs: result.constructor_args ?? '',
+  };
+}
+
+async function getBlockscoutApiData(network: string, address: string): Promise<EtherscanData> {
+  try {
+    return await getBlockscoutV2ApiData(network, address);
+  } catch (e) {
+    debug(`Blockscout v2 lookup failed for ${network}@${address} (${e.message}), falling back to v1 API`);
+    return await getBlockscoutV1ApiData(network, address);
+  }
+}
+
+async function getBlockscoutV1ApiData(
   network: string,
   address: string,
   retries: number = 3,
@@ -143,11 +199,29 @@ async function getBlockscoutApiData(
 ): Promise<EtherscanData> {
   let apiUrl = await getBlockscoutApiUrl(network);
 
-  let result = await get(apiUrl, {
-    module: 'contract',
-    action: 'getsourcecode',
-    address,
-  });
+  let result;
+  try {
+    result = await get(apiUrl, {
+      module: 'contract',
+      action: 'getsourcecode',
+      address,
+      apikey: getBlockscoutApiKey(network),
+    });
+  } catch (e) {
+    // Request-level failures (e.g. a 429) never reach the "not verified" checks below,
+    // so handle the Sourcify fallback here too.
+    if (sourcifyChainIds[network]) {
+      debug(`Blockscout request failed for ${network}@${address} (${e.message}), trying Sourcify fallback`);
+      try {
+        return await getSourcifyApiData(network, address);
+      } catch {
+        // Keep the original error so importContract's retry loop doesn't mistake this for a
+        // genuine "not verified" and give up early.
+        throw e;
+      }
+    }
+    throw e;
+  }
 
   if (result.status !== '1') {
     throw new Error(`Blockscout Error: ${result.message} - ${result.result}`);
@@ -176,7 +250,7 @@ async function getBlockscoutApiData(
     debug(`Blockscout returned an incomplete response for ${network}@${address}, retrying in ${retryDelay / 1000}s; ${retries} retries left`);
 
     await new Promise(ok => setTimeout(ok, retryDelay));
-    return getBlockscoutApiData(network, address, retries - 1, retryDelay * 2 > 10000 ? 10000 : retryDelay * 2);
+    return getBlockscoutV1ApiData(network, address, retries - 1, retryDelay * 2 > 10000 ? 10000 : retryDelay * 2);
   }
 
   return {
@@ -190,26 +264,17 @@ async function getBlockscoutApiData(
   };
 }
 
-// Blockscout v2 returns the code that created the contract, even when a factory deployed it.
-// Don't swap this for eth_getCode: that returns the code already deployed at the address,
-// which reverts when deployed again as if it were creation code.
-async function pullContractCreationCodeFromBlockscoutV2(network: string, address: string) {
-  const url = `${getBlockscoutApiUrl(network)}/v2/smart-contracts/${address}`;
-
-  debug(`Attempting to pull Contract Creation code from ${url}`);
-  const result = await get(url, {});
-
-  const contractCreationCode = result?.creation_bytecode;
-  if (!contractCreationCode) {
-    throw new Error(`Unable to find Contract Creation code at ${url}`);
-  }
-  debug(`Creation Code found at ${url}`);
-  return contractCreationCode.slice(2);
+async function scrapeContractCreationCodeFromBlockscoutRPC(network: string, address: string) {
+  // get code from JSON rpc
+  const rpcUrl = await getBlockscoutRPCUrl(network);
+  const provider = new providers.JsonRpcProvider(rpcUrl);
+  const code = await provider.send('eth_getCode', [address, 'latest']);
+  return code.slice(2);
 }
 
 async function getContractCreationCodeFromBlockscout(network: string, address: string) {
   const strategies = [
-    pullContractCreationCodeFromBlockscoutV2,
+    scrapeContractCreationCodeFromBlockscoutRPC,
     pullFirstTransactionForContractFromBlockscout,
   ];
   let errors = [];
@@ -353,7 +418,7 @@ async function scrapeContractCreationCodeFromEtherscan(network: string, address:
 }
 
 function paramString(params: { [k: string]: string | number }) {
-  return Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&');
+  return Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}=${v}`).join('&');
 }
 
 async function pullFirstTransactionForContractFromEtherscan(network: string, address: string, i?: number) {
