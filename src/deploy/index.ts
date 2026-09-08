@@ -226,6 +226,7 @@ export const WHALES = {
     '0x4B2cf5C94A88934870B523983B22e6d2dd1b6577', // wstETH whale
     '0x8f5ae9CddB9f68de460C77730b018Ae7E04a140A', // wstETH whale
     '0xbaD024786995Fa29bc6311c9454d377D3B73F576', // wstETH whale
+    '0xff7b54A9ba02A30A1A8c3bFC10E579ce0f9Cb0Ab', // rsETH whale
   ],
   linea: [
     '0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f', // ETH whale

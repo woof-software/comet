@@ -327,8 +327,8 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   }
 
   if (ctx.world.base.network === 'unichain' && ctx.world.base.deployment === 'weth') {
-    config.liquidationBase = 250;
-    config.liquidationBase1 = 350;
+    config.liquidationBase = 50;
+    config.liquidationBase1 = 150;
     config.liquidationAsset = 100;
     config.bulkerAsset = 100;
     config.bulkerComet = 100;
@@ -343,10 +343,12 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
       config.withdrawCollateral = 2;
     }
     config.rewardsBase = 100;
-    config.rewardsAsset = 250;
+    config.rewardsAsset = 50;
     config.transferBase = 100;
-    config.transferAsset = 500;
-    config.transferAsset1 = 500;
+    config.transferAsset = 100;
+    config.transferAsset1 = 100;
+    config.withdrawAsset = 100;
+    config.withdrawBase = 100;
   }
 
   return config;
