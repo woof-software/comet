@@ -43,6 +43,12 @@ export function getBlockscoutUrl(network: string): string {
   return `https://${host}`;
 }
 
+export function getBlockscoutApiKey(network: string): string | undefined {
+  return {
+    unichain: process.env.UNICHAIN_BLOCKSCOUT_API_KEY,
+  }[network] || undefined;
+}
+
 export async function getBlockscoutRPCUrl(network: string): Promise<string> {
   let host = {
     'mainnet': `${process.env.MAINNET_QUICKNODE_LINK}`.replace('https://', ''),
