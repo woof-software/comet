@@ -37,7 +37,7 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
  *      keeps the plan read here identical to the one `absorb` executes and lets the reserve check
  *      assert an equality rather than a tolerance.
  */
-contract ProtocolAccounting2FuzzTest is ProtocolFixture {
+contract ProtocolAccountingFuzzTest is ProtocolFixture {
     using LiquidationMath for CometInterface;
 
     uint64 internal constant BASE_INDEX_SCALE = 1e15;
