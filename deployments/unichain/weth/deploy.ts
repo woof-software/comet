@@ -126,14 +126,7 @@ async function deployContracts(
   const l2StandardBridge = await deploymentManager.fromDep('l2StandardBridge', 'unichain', 'usdc');
   const TokenMinter = await deploymentManager.fromDep('TokenMinter', 'unichain', 'usdc');
 
-  const _cometAdmin = await deploymentManager.fromDep('cometAdmin', 'unichain', 'usdc');
-  const _assetListFactory = await deploymentManager.fromDep('assetListFactory', 'unichain', 'usdc');
-  const _cometFactory = await deploymentManager.fromDep('cometFactory', 'unichain', 'usdc');
-  const _$configuratorImpl = await deploymentManager.fromDep('configurator:implementation', 'unichain', 'usdc');
-  const _configurator = await deploymentManager.fromDep('configurator', 'unichain', 'usdc');
-  const _rewards = await deploymentManager.fromDep('rewards', 'unichain', 'usdc');
   const bulker = await deploymentManager.fromDep('bulker', 'unichain', 'usdc');
-  const _localTimelock = await deploymentManager.fromDep('timelock', 'unichain', 'usdc');
   const bridgeReceiver = await deploymentManager.fromDep('bridgeReceiver', 'unichain', 'usdc');
 
   // Deploy Comet

@@ -35,7 +35,9 @@ or both preparation and enactment via:
 yarn hardhat migrate --network mainnet --deployment usdc --prepare --enact 164443237_my_migration
 ```
 
-Also, you can simulate either of the previous steps to see what effect they would have without actually modifying the on-chain state:
+## Simulating a Migration
+
+You can simulate either of the previous steps to see what effect they would have without actually modifying the on-chain state:
 
 ```sh
 yarn hardhat migrate --network mainnet --deployment usdc --prepare --simulate 164443237_my_migration
@@ -46,6 +48,41 @@ When simulating a migration, you can also impersonate an address to run the migr
 ```sh
 yarn hardhat migrate --network mainnet --deployment usdc --prepare --simulate --impersonate ADDRESS_TO_IMPERSONATE 164443237_my_migration
 ```
+
+### Simulating the governance proposal
+
+`--simulate` runs the migration's own steps against a local fork. The two Tenderly flags go a step further and put the *resulting governance proposal* through the real governor — propose, queue and execute — skipping only the vote. Both are used alongside `--enact`, and both need `TENDERLY_USERNAME` and `TENDERLY_ACCESS_KEY` set in your `.env`.
+
+```sh
+yarn hardhat migrate --network mainnet --deployment usdc --prepare --enact --tenderly 164443237_my_migration
+```
+
+`--tenderly` chains together stateless Tenderly `simulate-bundle` API calls and prints a shareable simulation link for each step.
+
+```sh
+yarn hardhat migrate --network mainnet --deployment usdc --prepare --enact --tenderlyVnet 164443237_my_migration
+```
+
+`--tenderlyVnet` instead creates a [Tenderly Virtual TestNet](https://docs.tenderly.co/virtual-testnets) — a persistent, shareable fork — and runs `propose()`, `queue()` and `execute()` on it as real transactions. Only the vote is skipped, by writing the `forVotes` tally straight into governor storage. The run prints the Virtual TestNet's public RPC URL and dashboard link, so anyone can inspect the resulting state for themselves.
+
+If your Tenderly account or access token can't create Virtual TestNets programmatically, create one from the Tenderly dashboard and paste its **Admin RPC URL** into either variable:
+
+- `TENDERLY_VNET_RPC_URL` — used for every network
+- `TENDERLY_VNET_RPC_URL_<NETWORK>` — e.g. `TENDERLY_VNET_RPC_URL_BASE`; takes precedence for that network
+
+When one of these is set, the existing Virtual TestNet is reused instead of a new one being created.
+
+### Multichain proposals
+
+If the proposal reaches an L2, the simulation follows it there. After it executes on the governance chain, every bridge message it emitted is relayed to the corresponding L2 and the bridged proposal is executed there. For Arbitrum, Base and Optimism, any L2→L1 token bridging the proposal performs is then simulated back on the governance chain, so reserves seeded from an L2 show up where the migration's `verify` step expects them.
+
+The L2s are discovered from the proposal's own targets, so a proposal that bridges to a single market needs nothing extra. A migration that has to reach a market the proposal doesn't otherwise name can register it explicitly:
+
+```ts
+const opDm = await deploymentManager.addBridgedDeploymentManager('optimism', 'weth', opHre);
+```
+
+Under `--tenderlyVnet`, each L2 involved gets its own Virtual TestNet, and the relay runs against that.
 
 ## Running a Migration in GitHub
 
