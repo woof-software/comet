@@ -5,7 +5,7 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { Alias, Address, BuildFile, TraceFn } from './Types';
 import { getAliases, storeAliases, putAlias } from './Aliases';
 import { Cache } from './Cache';
-import { ContractMap, getBuildFile } from './ContractMap';
+import { ContractMap, getBuildFile, seedArchiveCache } from './ContractMap';
 import { DeployOpts, deploy, deployBuild } from './Deploy';
 import { fetchAndCacheContract, readContract } from './Import';
 import { getRelationConfig } from './RelationConfig';
@@ -448,6 +448,11 @@ export class DeploymentManager {
 
   /* Loads contract configuration by tracing from roots outwards, based on relationConfig */
   async spider(deployed: Deployed = {}): Promise<Spider> {
+
+    // seed the cache with archived build files for the current network
+    // the source is the comet-contracts-archive submodule (plugins/import/contracts-archive/<network>/.contracts/*.json)
+    await seedArchiveCache(this.cache, this.network);
+
     const relationConfigMap = getRelationConfig(
       this.hre.config.deploymentManager,
       this.network,

@@ -42,4 +42,8 @@ contract SimplePriceFeed is AggregatorV3Interface {
     function latestRoundData() override external view returns (uint80, int256, uint256, uint256, uint80) {
         return (roundId, answer, startedAt, updatedAt, answeredInRound);
     }
+
+    function setPrice(int256 newPrice) external {
+        answer = newPrice;
+    }
 }
