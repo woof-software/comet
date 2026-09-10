@@ -9,28 +9,23 @@ import { LiquidationModule } from "@comet-contracts/liquidation-module/Liquidati
 import { OneInchV6Adapter } from "@comet-contracts/dex-adapters/core/OneInchV6Adapter.sol";
 
 import { LiquidationModuleDeployer } from "../../helpers/LiquidationModuleDeployer.sol";
-import { ProtocolFixture } from "../../helpers/ProtocolFixture.sol";
+import { LiquidationFuzzBase } from "./LiquidationFuzzBase.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title Accrual and time
- * @notice The one group where market rates are non-zero: here accrual is the subject itself. Each
- *         position stands on a single collateral, enumerated by a loop with a snapshot per asset.
+ * @notice That a liquidation accrues interest, reads the accrued debt, and never walks an index back.
+ * @dev The one group with non-zero rates, and the only one that moves the clock. Each test sizes the
+ *      base pool itself, so it does not take the fixture's seeded market: utilization is what places
+ *      the rate, and a pre-filled pool would pin it near zero.
  */
-contract LiquidationAccrualFuzzTest is ProtocolFixture {
-    address internal borrower = alice;
-    address internal liquidator = bob;
-    address internal baseSupplier = charlie;
-
+contract LiquidationAccrualFuzzTest is LiquidationFuzzBase {
     function setUp() public {
-        // Base liquidity is supplied per test, sized to the borrow, so utilization (and therefore the
-        // rate) can be placed where each scenario needs it.
         prepareFixture();
     }
 
-    /// @dev Interest rates stay as the fixture ships them (non-zero) - accrual is the subject. Reward
-    ///      tracking is turned off: with a small base pool and a long elapsed the per-unit tracking index
-    ///      (speed x time x scale / totalBase) overflows its uint64, unrelated to interest accrual.
+    /// @dev Reward tracking off: with a small pool and a long elapsed its per-unit index overflows a
+    ///      uint64, which has nothing to do with interest accrual. Rates stay as the fixture ships them.
     function buildCometConfiguration(address liquidationModule_)
         internal
         view
@@ -43,17 +38,11 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
         config.baseTrackingBorrowSpeed = 0;
     }
 
-    /**
-     * @notice Accrual always happens - lastAccrualTime = block.timestamp
-     * @dev Invariant. Liquidation accrues interest regardless of how much time has passed since the
-     *      previous accrual - a second, a year, or zero seconds. No conditional "too little time" skip
-     *      may leave the clock behind.
-     * @param supplyAmount how much collateral the borrower supplies.
-     * @param borrowAmount how much base the borrower draws.
-     * @param priceSeed the new collateral price.
-     * @param elapsedSeed how much time passes before the call (0 and 1 second guaranteed to occur).
-     * @param utilizationSeed the market's utilization, spanning the rate kink.
-     */
+    /// @notice Accrual always happens - lastAccrualTime = block.timestamp
+    /// @dev No conditional "too little time" skip may leave the clock behind, so zero and one second
+    ///      are drawn on purpose alongside the longer intervals.
+    /// @param elapsedSeed how long passes before the call; 0 and 1 second are guaranteed to occur.
+    /// @param utilizationSeed where to put utilization, spanning the rate kink.
     function testFuzz_accrualAlwaysHappens(
         uint256 supplyAmount,
         uint256 borrowAmount,
@@ -79,31 +68,29 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
         for (uint8 i; i < comet.numAssets(); ++i) {
             assetInfo = comet.getAssetInfo(i);
 
+            // One collateral carries the whole position, so it alone has to reach the minimum borrow.
             uint256 supply = bound(
                 supplyAmount,
-                uint256(assetInfo.scale) / 1000,
-                Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
+                Math.max(uint256(assetInfo.scale) / 1000, _supplyForDebt(assetInfo, BASE_BORROW_MIN)),
+                _supplyCeiling(assetInfo)
             );
 
             uint256 maxBorrow = supply * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
             maxBorrow = maxBorrow * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
             maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            if (maxBorrow < comet.baseBorrowMin()) continue;
+            if (maxBorrow < BASE_BORROW_MIN) continue;
 
-            uint256 borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
+            uint256 borrow = bound(borrowAmount, BASE_BORROW_MIN, maxBorrow);
 
             uint256 snapshot = vm.snapshotState();
 
-            // Size the pool so utilization = borrow / pool = target, placing the rate on either side of
-            // the kink. (Deviation: the doc drives utilization with a second user's borrow; per-asset
-            // supply caps pin one account's borrow far below the base pool, so it cannot reach the kink -
-            // sizing the pool crosses it exactly and keeps the borrower's own bound faithful.)
+            // Utilization is placed by sizing the pool rather than by a second borrower: supply caps
+            // hold one account's borrow far below the pool, so it could never reach the kink.
             _supplyBase(borrow * 10_000 / targetUtilBps);
             _openPosition(i, supply, borrow);
 
-            // Threshold before the warp: the isLiquidatable gate reads the stored (build-time) debt, so
-            // the price drop is measured against the same figure. The warp then gives the absorb a real
-            // interval to accrue - which is what this invariant is about.
+            // Taken before the warp: the gate reads the stored debt, so the fall has to be measured
+            // against that same figure.
             uint256 thresholdPrice = _firstHealthyPrice(assetInfo);
             if (thresholdPrice < 2) {
                 vm.revertToState(snapshot);
@@ -119,10 +106,7 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
                 continue;
             }
 
-            address[] memory accounts = new address[](1);
-            accounts[0] = borrower;
-            vm.prank(liquidator);
-            comet.absorb(liquidator, accounts);
+            _absorb();
 
             assertEq(
                 comet.totalsBasic().lastAccrualTime,
@@ -136,45 +120,39 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
         assertGt(exercised, 0, "the invariant was never exercised");
     }
 
-    /**
-     * @notice Liquidation looks at the current debt - plan == plan after accrueAccount
-     * @dev Invariant. Eligibility and the seizure size are computed from the accrued debt, not a stale
-     *      principal: a position that went underwater from interest is seen, and an explicit accrual
-     *      changes nothing. No price moves anywhere here.
-     * @param supplyAmount how much collateral the borrower supplies.
-     * @param borrowAmount how much base the borrower draws (near the top, so interest alone tips it).
-     * @param elapsedSeed how much time passes before the call.
-     */
+    /// @notice Liquidation looks at the current debt - plan == plan after accrueAccount
+    /// @dev No price moves here: the position has to go underwater on interest alone, and an explicit
+    ///      accrual afterwards must change nothing.
     function testFuzz_liquidationUsesCurrentDebt(
         uint256 supplyAmount,
         uint256 borrowAmount,
         uint256 elapsedSeed
     ) public {
         uint256 exercised;
-        // Interest tips the position underwater only after enough time at the fixture's rate (~0.65/yr
-        // at full utilization). The doc's 1-hour floor cannot, so it is raised to where the debt reliably
-        // crosses the liquidate line from interest alone (see report - a flagged deviation).
+
+        // At the fixture's rate (~0.65/yr at full utilization) interest needs months to carry a debt
+        // over the liquidate line, so the interval starts at half a year rather than at an hour.
         uint256 elapsed = bound(elapsedSeed, 180 days, 365 days);
         ICometData.AssetInfo memory assetInfo;
 
         for (uint8 i; i < comet.numAssets(); ++i) {
             assetInfo = comet.getAssetInfo(i);
 
+            // One collateral carries the whole position, so it alone has to reach the minimum borrow.
             uint256 supply = bound(
                 supplyAmount,
-                uint256(assetInfo.scale) / 1000,
-                Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
+                Math.max(uint256(assetInfo.scale) / 1000, _supplyForDebt(assetInfo, BASE_BORROW_MIN)),
+                _supplyCeiling(assetInfo)
             );
 
             uint256 maxBorrow = supply * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
             maxBorrow = maxBorrow * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
             maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            if (maxBorrow < comet.baseBorrowMin()) continue;
+            if (maxBorrow < BASE_BORROW_MIN) continue;
 
-            // Near the top of the borrow capacity, so interest alone can carry it over the liquidate line.
-            // Floor clamped to baseBorrowMin: when maxBorrow sits just above it, 95% of maxBorrow would
-            // fall under the minimum and Comet rejects the withdraw with BorrowTooSmall.
-            uint256 borrow = bound(borrowAmount, Math.max(maxBorrow * 95 / 100, comet.baseBorrowMin()), maxBorrow);
+            // Near the top of the capacity, so interest alone can carry it over the line. Clamped to
+            // the minimum: 95% of a maxBorrow that barely clears it would fall under and be rejected.
+            uint256 borrow = bound(borrowAmount, Math.max(maxBorrow * 95 / 100, BASE_BORROW_MIN), maxBorrow);
 
             uint256 snapshot = vm.snapshotState();
 
@@ -184,12 +162,10 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
 
             vm.warp(block.timestamp + elapsed);
 
-            // The standalone views read the stored index, so the interest just accrued is invisible to
-            // isLiquidatable/seizurePlan until it is written back. Accrue it in, so the account is seen as
-            // the interest left it - which is the point: liquidation reads the accrued debt.
+            // The views read the stored index, so interest stays invisible to them until it is
+            // written back. Accrued in here so the account is seen as the interest left it.
             comet.accrueAccount(borrower);
 
-            // Precondition: the position went underwater with no price movement.
             if (!liquidationModule.isLiquidatable(borrower)) {
                 vm.revertToState(snapshot);
                 continue;
@@ -218,18 +194,10 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
         assertGt(exercised, 0, "the invariant was never exercised");
     }
 
-    /**
-     * @notice Indexes never decrease - index after >= index before
-     * @dev Invariant. The supply and borrow indexes grow monotonically or stay put across a liquidation.
-     *      An index moving backwards would mean accrued interest disappeared. `rateKind` picks the regime:
-     *      0 redeploys the market with zero rates (indexes stay put), 1 keeps the non-zero default
-     *      (indexes grow) - both must satisfy `after >= before`.
-     * @param supplyAmount how much collateral the borrower supplies.
-     * @param borrowAmount how much base the borrower draws.
-     * @param priceSeed the new collateral price.
-     * @param elapsedSeed how much time passes before the call.
-     * @param rateKind 0 zero rates (via redeploy), 1 the non-zero default.
-     */
+    /// @notice Indexes never decrease - index after >= index before
+    /// @dev An index moving backwards would mean accrued interest disappeared. Both regimes have to
+    ///      satisfy it: with zero rates the indexes stay put, with the default they grow.
+    /// @param rateKind 0 zero rates via a redeploy, 1 the non-zero default.
     function testFuzz_indexesNeverDecrease(
         uint256 supplyAmount,
         uint256 borrowAmount,
@@ -246,25 +214,26 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
         for (uint8 i; i < comet.numAssets(); ++i) {
             assetInfo = comet.getAssetInfo(i);
 
+            // One collateral carries the whole position, so it alone has to reach the minimum borrow.
             uint256 supply = bound(
                 supplyAmount,
-                uint256(assetInfo.scale) / 1000,
-                Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
+                Math.max(uint256(assetInfo.scale) / 1000, _supplyForDebt(assetInfo, BASE_BORROW_MIN)),
+                _supplyCeiling(assetInfo)
             );
 
             uint256 maxBorrow = supply * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
             maxBorrow = maxBorrow * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
             maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            if (maxBorrow < comet.baseBorrowMin()) continue;
+            if (maxBorrow < BASE_BORROW_MIN) continue;
 
-            uint256 borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
+            uint256 borrow = bound(borrowAmount, BASE_BORROW_MIN, maxBorrow);
 
             uint256 snapshot = vm.snapshotState();
 
             _supplyBase(borrow * 2);
             _openPosition(i, supply, borrow);
 
-            // Threshold before the warp: the gate reads the stored (build-time) debt either way.
+            // Taken before the warp: the gate reads the stored debt either way.
             uint256 thresholdPrice = _firstHealthyPrice(assetInfo);
             if (thresholdPrice < 2) {
                 vm.revertToState(snapshot);
@@ -283,10 +252,7 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
             uint64 supplyIndexBefore = comet.totalsBasic().baseSupplyIndex;
             uint64 borrowIndexBefore = comet.totalsBasic().baseBorrowIndex;
 
-            address[] memory accounts = new address[](1);
-            accounts[0] = borrower;
-            vm.prank(liquidator);
-            comet.absorb(liquidator, accounts);
+            _absorb();
 
             ICometData.TotalsBasic memory totals = comet.totalsBasic();
             assertGe(totals.baseSupplyIndex, supplyIndexBefore, "the supply index moved backwards across the absorb");
@@ -302,14 +268,10 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
                                 HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Redeploys the market implementation with zeroed interest rates.
-     * @dev Rates are constructor immutables, so the regime is a new implementation. The redeploy re-runs
-     *      the constructor's `setAssetList`, which the live module rejects with AlreadySet - so it is
-     *      pointed at a fresh adapter + `LiquidationModuleForComet` (bound to the existing Comet, so it
-     *      needs no `initializeStorage`). Storage - balances, indexes, the borrower's position - survives
-     *      the upgrade; only the immutables (rates, assetList, module) change.
-     */
+    /// @notice Redeploys the market implementation with zeroed interest rates.
+    /// @dev Rates are constructor immutables, so changing them means a new implementation - and the
+    ///      constructor re-runs `setAssetList`, which the live module rejects, so it needs a fresh
+    ///      module too. Storage survives the upgrade; only the immutables change.
     function _switchToZeroRates() internal {
         OneInchV6Adapter newAdapter =
             LiquidationModuleDeployer.deployAdapter(DEX_ROUTER, weth, DEX_SLIPPAGE_BPS, collateralAddresses());
@@ -329,12 +291,11 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
         proxyAdmin.deployAndUpgradeTo(Deployable(address(configuratorProxy)), cometProxy);
         vm.stopPrank();
 
-        // Point the test's handles at the freshly bound module and adapter.
         liquidationModule = newModule;
         dexAdapter = newAdapter;
     }
 
-    /// The base supplier funds the pool with `amount`, the market's only source of borrowable base.
+    /// @notice Funds the pool. Sized per test, because utilization is what places the rate.
     function _supplyBase(uint256 amount) internal {
         baseToken.allocateTo(baseSupplier, amount);
         vm.startPrank(baseSupplier);
@@ -343,7 +304,6 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
         vm.stopPrank();
     }
 
-    /// The borrower supplies collateral `i` and draws `borrow` of base, at the market's current price.
     function _openPosition(uint8 i, uint256 supply, uint256 borrow) internal {
         collaterals[i].allocateTo(borrower, supply);
         vm.startPrank(borrower);
@@ -353,12 +313,8 @@ contract LiquidationAccrualFuzzTest is ProtocolFixture {
         vm.stopPrank();
     }
 
-    /**
-     * @notice The smallest collateral price at which the borrower is no longer liquidatable, inverted
-     *         from the module's own single-floor liquidity off the borrower's live balances.
-     * @param assetInfo the borrower's single collateral, whose scale and liquidate factor set the boundary.
-     * @return the first collateral price at which the LCF-weighted collateral covers the debt.
-     */
+    /// @notice The smallest collateral price at which the borrower is no longer liquidatable.
+    /// @dev Assumes a single supplied collateral, which every position here has.
     function _firstHealthyPrice(ICometData.AssetInfo memory assetInfo) internal view returns (uint256) {
         uint256 debtValue =
             comet.borrowBalanceOf(borrower) * comet.getPrice(address(basePriceFeed)) / comet.baseScale();

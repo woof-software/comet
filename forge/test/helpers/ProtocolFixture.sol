@@ -28,17 +28,6 @@ import { IUniswapAdapter } from "@comet-contracts/interfaces/dex-adapters/IUnisw
 import { FaucetToken } from "@comet-contracts/test/FaucetToken.sol";
 import { SimplePriceFeed } from "@comet-contracts/test/SimplePriceFeed.sol";
 
-/**
- * @title Compound protocol fixture
- * @notice Deploys the whole protocol from scratch — mock tokens, price feeds, the Comet proxy and
- *         its admin, the Configurator, the market admin permission checker and the liquidation
- *         module — so fuzz tests get a live protocol with no fork and no deployment scripts.
- *         Inherit this contract and call `prepareFixture()` from `setUp()`.
- *
- *         The market mirrors `test/helpers/default-assets.ts`: USDC as the base token and the
- *         other 24 entries as collateral. Every step is its own function so a test can override
- *         one piece (a different asset table, different market parameters) and reuse the rest.
- */
 abstract contract ProtocolFixture is Test {
     /// One row of the market's asset table. Mirrors an entry of default-assets.ts.
     /// `price` is in whole dollars; the collateral factors are 1e18-scaled.
@@ -55,10 +44,11 @@ abstract contract ProtocolFixture is Test {
     uint8 internal constant PRICE_FEED_DECIMALS = 8;
     uint256 internal constant TARGET_HF = 1.05e18;
 
-    /// Incentive the executor earns on the DEX liquidation route.
+    uint256 internal constant BASE_BORROW_MIN_USD = 350;
+    uint256 internal constant BASE_BORROW_MIN = BASE_BORROW_MIN_USD * 1e6;
+
+    // dex settings
     uint16 internal constant INCENTIVE_BPS = 500;
-    /// The DEX adapter refuses a zero router and a zero slippage, but nothing here ever swaps:
-    /// the routes are left unconfigured, so a liquidation falls back to sweeping collateral to Comet.
     uint16 internal constant DEX_SLIPPAGE_BPS = 500;
     address internal constant DEX_ROUTER = 0x111111125421cA6dc452d289314280a0f8842A65;
 
@@ -120,9 +110,6 @@ abstract contract ProtocolFixture is Test {
         deployAssets();
         deployExtensionDelegate();
 
-        // A Comet binds its liquidation module for good in the constructor, so the throwaway
-        // implementation the proxy is born with needs a throwaway module of its own. The module the
-        // market actually runs on is deployed below and reaches the proxy through the Configurator.
         deployMarketContracts(buildCometConfiguration(deployLiquidationModule()));
 
         liquidationModule = LiquidationModule(deployLiquidationModule());
@@ -140,8 +127,7 @@ abstract contract ProtocolFixture is Test {
             assetSpecs.push(spec);
 
             FaucetToken token = new FaucetToken(0, spec.symbol, spec.decimals, spec.symbol);
-            SimplePriceFeed priceFeed =
-                new SimplePriceFeed(int256(spec.price * 10 ** PRICE_FEED_DECIMALS), PRICE_FEED_DECIMALS);
+            SimplePriceFeed priceFeed = new SimplePriceFeed(int256(spec.price * 10 ** PRICE_FEED_DECIMALS), PRICE_FEED_DECIMALS);
             vm.label(address(token), spec.symbol);
 
             if (i == 0) {
@@ -172,7 +158,7 @@ abstract contract ProtocolFixture is Test {
     {
         CometConfiguration.AssetConfig[] memory assetConfigs =
             new CometConfiguration.AssetConfig[](collaterals.length);
-
+        
         for (uint256 i; i < collaterals.length; ++i) {
             AssetSpec memory spec = assetSpecs[i + 1]; // index 0 is the base token
             assetConfigs[i] = CometConfiguration.AssetConfig({
@@ -182,7 +168,7 @@ abstract contract ProtocolFixture is Test {
                 borrowCollateralFactor: spec.borrowCollateralFactor,
                 liquidateCollateralFactor: spec.liquidateCollateralFactor,
                 liquidationFactor: spec.liquidationFactor,
-                supplyCap: uint128(150_000 * 10 ** spec.decimals)
+                supplyCap: uint128(4_000_000 * 10 ** spec.decimals / spec.price) // supply cap is $4 million for each collateral
             });
         }
 
@@ -207,7 +193,8 @@ abstract contract ProtocolFixture is Test {
             baseTrackingSupplySpeed: 1e15,
             baseTrackingBorrowSpeed: 1e15,
             baseMinForRewards: baseUnit,
-            baseBorrowMin: baseUnit,
+            // In dollars, converted at the price the base token is configured with.
+            baseBorrowMin: uint104(BASE_BORROW_MIN_USD * uint256(baseUnit) / assetSpecs[0].price),
             targetReserves: 0,
             assetConfigs: assetConfigs,
             liquidationModule: liquidationModule_
@@ -239,13 +226,6 @@ abstract contract ProtocolFixture is Test {
         });
     }
 
-    /**
-     * @notice Deploys a liquidation module and the DEX adapter behind it.
-     * @dev The adapter only accepts an asset list it has exactly one route per collateral for, so the
-     *      routes are built from the asset table. They stay unconfigured: no route means a liquidation
-     *      sweeps the collateral to Comet instead of swapping it. A module accepts one asset list and
-     *      one Comet in its lifetime, which is why every implementation needs its own module.
-     */
     function deployLiquidationModule() internal returns (address) {
         dexAdapter = LiquidationModuleDeployer.deployAdapter(DEX_ROUTER, weth, DEX_SLIPPAGE_BPS, collateralAddresses());
 
@@ -308,7 +288,7 @@ abstract contract ProtocolFixture is Test {
         specs = new AssetSpec[](25);
 
         //                     symbol   decimals   price   borrow  liquidate  liquidation
-        specs[0]  = AssetSpec("USDC",      6,          1,       0,       0,       0);
+        specs[0]  = AssetSpec("USDC",      6,          1,       0,       0,       0); // base token
         specs[1]  = AssetSpec("COMP",     18,        100, 0.80e18, 0.85e18, 0.90e18);
         specs[2]  = AssetSpec("WETH",     18,       2000, 0.75e18, 0.80e18, 0.90e18);
         specs[3]  = AssetSpec("USDT",      6,          1, 0.85e18, 0.90e18, 0.95e18);
@@ -333,5 +313,49 @@ abstract contract ProtocolFixture is Test {
         specs[22] = AssetSpec("GMX",      18,         40, 0.50e18, 0.58e18, 0.82e18);
         specs[23] = AssetSpec("USDe",     18,          1, 0.75e18, 0.82e18, 0.92e18);
         specs[24] = AssetSpec("sUSDe",    18,          1, 0.72e18, 0.80e18, 0.92e18);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             MARKET ACTIVITY
+    //////////////////////////////////////////////////////////////*/
+
+    function seedMarketActivity() internal {
+        uint256 SEED_BASE_LIQUIDITY_USD = 100_000_000;
+        uint256 SEED_COLLATERAL_USD = 30_000;
+        uint256 SEED_BORROW_USD = 300_000;
+
+        address baseTokenLender = makeAddr("baseTokenLender");
+        address baseTokenBorrower = makeAddr("baseTokenBorrower");
+
+        uint256 baseScale = 10 ** assetSpecs[0].decimals;
+        uint256 basePrice = comet.getPrice(address(basePriceFeed));
+
+        uint256 liquidity = _dollarsToAmount(SEED_BASE_LIQUIDITY_USD, baseScale, basePrice);
+        baseToken.allocateTo(baseTokenLender, liquidity);
+
+        vm.startPrank(baseTokenLender);
+        baseToken.approve(address(comet), type(uint256).max);
+        comet.supply(address(baseToken), liquidity);
+        vm.stopPrank();
+
+        for (uint256 i; i < collaterals.length; ++i) {
+            uint256 scale = 10 ** assetSpecs[i + 1].decimals; // index 0 is the base token
+            uint256 amount =
+                _dollarsToAmount(SEED_COLLATERAL_USD, scale, comet.getPrice(address(collateralPriceFeeds[i])));
+
+            collaterals[i].allocateTo(baseTokenBorrower, amount);
+
+            vm.startPrank(baseTokenBorrower);
+            collaterals[i].approve(address(comet), amount);
+            comet.supply(address(collaterals[i]), amount);
+            vm.stopPrank();
+        }
+
+        vm.prank(baseTokenBorrower);
+        comet.withdraw(address(baseToken), _dollarsToAmount(SEED_BORROW_USD, baseScale, basePrice));
+    }
+    
+    function _dollarsToAmount(uint256 usd, uint256 scale, uint256 price) internal pure returns (uint256) {
+        return usd * 10 ** PRICE_FEED_DECIMALS * scale / price;
     }
 }

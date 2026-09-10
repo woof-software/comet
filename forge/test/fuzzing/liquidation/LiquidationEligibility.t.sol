@@ -4,42 +4,26 @@ pragma solidity ^0.8.15;
 import { ICometData } from "@comet-contracts/interfaces/ICometData.sol";
 import { ICoreLiquidationModuleErrors } from "@comet-contracts/interfaces/liquidation-module/ICoreLiquidationModuleErrors.sol";
 
-import { ProtocolFixture } from "../../helpers/ProtocolFixture.sol";
+import { LiquidationFuzzBase } from "./LiquidationFuzzBase.sol";
 import { SimplePriceFeed } from "@comet-contracts/test/SimplePriceFeed.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title Eligibility for liquidation
+ * @notice When the module says an account may be absorbed, and that the entry points agree with it.
+ * @dev Positions stand on one collateral, enumerated rather than fuzzed. The liquidation mode is
+ *      left as the market ships it: the entry predicate does not depend on it.
  */
-contract LiquidationEligibilityFuzzTest is ProtocolFixture {
-    address internal borrower = alice;
-    address internal liquidator = bob;
-    address internal baseSupplier = charlie;
-
+contract LiquidationEligibilityFuzzTest is LiquidationFuzzBase {
     function setUp() public {
         prepareFixture();
-
-        // Partial liquidation is on by default; this suite is about the entry predicate, which is
-        // mode-independent, so it is left as the market ships it.
-        uint256 BASE_LIQUIDITY = 1e18;
-
-        baseToken.allocateTo(baseSupplier, BASE_LIQUIDITY);
-        vm.startPrank(baseSupplier);
-        baseToken.approve(address(comet), type(uint256).max);
-        comet.supply(address(baseToken), BASE_LIQUIDITY);
-        vm.stopPrank();
+        seedMarketActivity();
     }
 
-    /**
-     * @notice A non-borrower is never liquidatable - no debt → isLiquidatable = false
-     * @dev Invariant. An account with no debt cannot be liquidated at any price: having no debt is
-     *      not a state in which collateralization can be insufficient. Proven even when the oracle
-     *      is switched to revert mode — the predicate must answer false without reaching the feed.
-     * @param accountKind 0 empty, 1 collateral only, 2 positive base balance.
-     * @param supplyAmount how much collateral or base is supplied.
-     * @param priceSeed the collateral price at the time of the check.
-     * @param revertFeed in some runs the collateral feed is switched to revert mode.
-     */
+    /// @notice A non-borrower is never liquidatable - no debt → isLiquidatable = false
+    /// @dev Held even with the oracle mocked to revert: the predicate must answer false without
+    ///      reaching the feed at all.
+    /// @param accountKind 0 empty, 1 collateral only, 2 positive base balance.
     function testFuzz_nonBorrowerIsNeverLiquidatable(
         uint8 accountKind,
         uint256 supplyAmount,
@@ -53,12 +37,13 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
         for (uint8 i; i < comet.numAssets(); ++i) {
             assetInfo = comet.getAssetInfo(i);
 
+            // One collateral carries the whole position, so it alone has to reach the minimum borrow.
             uint256 supply = bound(
                 supplyAmount,
-                uint256(assetInfo.scale) / 1000,
-                Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
+                Math.max(uint256(assetInfo.scale) / 1000, _supplyForDebt(assetInfo, BASE_BORROW_MIN)),
+                _supplyCeiling(assetInfo)
             );
-            // The whole feed range, from a collapse to one up to the largest value the feed can carry.
+            // The whole feed range: a collapse to one, up to the largest value it can carry.
             uint256 newPrice = bound(priceSeed, 1, uint256(type(int256).max));
 
             uint256 snapshot = vm.snapshotState();
@@ -97,15 +82,9 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
         assertGt(exercised, 0, "the invariant was never exercised");
     }
 
-    /**
-     * @notice The threshold is strict - debtValue <= liquidity → not liquidatable
-     * @dev Invariant. Eligibility appears only when the debt value is strictly greater than the
-     *      LCF-weighted liquidity. Equality is still a healthy state; one step past it is liquidating
-     *      a solvent position.
-     * @param supplyAmount how much collateral the borrower supplies.
-     * @param borrowAmount how much base the borrower draws.
-     * @param offsetKind which side of the threshold the position is placed on.
-     */
+    /// @notice The threshold is strict - debtValue <= liquidity → not liquidatable
+    /// @dev Equality is still healthy; one step past it would be liquidating a solvent position.
+    /// @param offsetKind which side of the threshold the position is placed on.
     function testFuzz_thresholdIsStrict(uint256 supplyAmount, uint256 borrowAmount, uint8 offsetKind) public {
         uint256 exercised;
         ICometData.AssetInfo memory assetInfo;
@@ -113,18 +92,19 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
         for (uint8 i; i < comet.numAssets(); ++i) {
             assetInfo = comet.getAssetInfo(i);
 
+            // One collateral carries the whole position, so it alone has to reach the minimum borrow.
             uint256 supply = bound(
                 supplyAmount,
-                uint256(assetInfo.scale) / 1000,
-                Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
+                Math.max(uint256(assetInfo.scale) / 1000, _supplyForDebt(assetInfo, BASE_BORROW_MIN)),
+                _supplyCeiling(assetInfo)
             );
 
             uint256 maxBorrow = supply * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
             maxBorrow = maxBorrow * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
             maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            if (maxBorrow < comet.baseBorrowMin()) continue; // too cheap to reach the minimum borrow
+            if (maxBorrow < BASE_BORROW_MIN) continue; // too cheap to reach the minimum borrow
 
-            uint256 borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
+            uint256 borrow = bound(borrowAmount, BASE_BORROW_MIN, maxBorrow);
 
             uint256 snapshot = vm.snapshotState();
 
@@ -136,7 +116,7 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
             vm.stopPrank();
 
             uint256 thresholdPrice = _firstHealthyPrice(assetInfo);
-            if (thresholdPrice < 2) { // the neighbouring points are not representable
+            if (thresholdPrice < 2) { // no room to probe a unit either side
                 vm.revertToState(snapshot);
                 continue;
             }
@@ -162,14 +142,9 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
         assertGt(exercised, 0, "the invariant was never exercised");
     }
 
-    /**
-     * @notice Absorbing a healthy account reverts - healthy → absorb reverts NotLiquidatable
-     * @dev Invariant. The predicate and the entry point agree: an account the predicate calls
-     *      healthy cannot be absorbed.
-     * @param supplyAmount how much collateral the borrower supplies.
-     * @param borrowAmount how much base the borrower draws.
-     * @param offsetKind how far above the threshold the position sits (at it, or one above).
-     */
+    /// @notice Absorbing a healthy account reverts - healthy → absorb reverts NotLiquidatable
+    /// @dev The predicate and the entry point have to agree.
+    /// @param offsetKind how far above the threshold the position sits: at it, or one above.
     function testFuzz_absorbingHealthyReverts(uint256 supplyAmount, uint256 borrowAmount, uint8 offsetKind) public {
         uint256 exercised;
         ICometData.AssetInfo memory assetInfo;
@@ -177,18 +152,19 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
         for (uint8 i; i < comet.numAssets(); ++i) {
             assetInfo = comet.getAssetInfo(i);
 
+            // One collateral carries the whole position, so it alone has to reach the minimum borrow.
             uint256 supply = bound(
                 supplyAmount,
-                uint256(assetInfo.scale) / 1000,
-                Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
+                Math.max(uint256(assetInfo.scale) / 1000, _supplyForDebt(assetInfo, BASE_BORROW_MIN)),
+                _supplyCeiling(assetInfo)
             );
 
             uint256 maxBorrow = supply * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
             maxBorrow = maxBorrow * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
             maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-            if (maxBorrow < comet.baseBorrowMin()) continue;
+            if (maxBorrow < BASE_BORROW_MIN) continue;
 
-            uint256 borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
+            uint256 borrow = bound(borrowAmount, BASE_BORROW_MIN, maxBorrow);
 
             uint256 snapshot = vm.snapshotState();
 
@@ -208,17 +184,12 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
             uint256 offset = bound(offsetKind, 0, 1);
             collateralPriceFeeds[i].setRoundData(0, int256(offset == 0 ? thresholdPrice : thresholdPrice + 1), 0, 0, 0);
 
-            // Precondition: the position must be healthy. With an exact threshold this holds by
-            // construction; asserted rather than skipped, so a boundary drift surfaces here instead of
-            // slipping through the absorb below.
+            // Asserted rather than skipped, so a boundary drift surfaces here instead of slipping
+            // through the revert below for the wrong reason.
             assertFalse(liquidationModule.isLiquidatable(borrower), "precondition: the built position is not healthy");
 
-            address[] memory accounts = new address[](1);
-            accounts[0] = borrower;
-
             vm.expectRevert(ICoreLiquidationModuleErrors.NotLiquidatable.selector);
-            vm.prank(liquidator);
-            comet.absorb(liquidator, accounts);
+            _absorb();
             ++exercised;
 
             vm.revertToState(snapshot);
@@ -226,14 +197,9 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
         assertGt(exercised, 0, "the invariant was never exercised");
     }
 
-    /**
-     * @notice Planning for a healthy account reverts - healthy → seizurePlan reverts NotLiquidatable
-     * @dev Invariant. The view does not build a plan where liquidation is impossible: it must not
-     *      return an empty array or a draft that someone will mistake for a course of action.
-     * @param supplyAmount how much collateral the borrower supplies.
-     * @param borrowAmount how much base the borrower draws.
-     * @param accountKind 0 a borrower with the price exactly at the threshold, 1 an account with no debt.
-     */
+    /// @notice Planning for a healthy account reverts - healthy → seizurePlan reverts NotLiquidatable
+    /// @dev It must revert rather than return an empty array someone could mistake for a plan.
+    /// @param accountKind 0 a borrower priced exactly at the threshold, 1 an account with no debt.
     function testFuzz_planningForHealthyReverts(uint256 supplyAmount, uint256 borrowAmount, uint8 accountKind) public {
         uint256 exercised;
         uint256 kind = bound(accountKind, 0, 1);
@@ -242,10 +208,11 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
         for (uint8 i; i < comet.numAssets(); ++i) {
             assetInfo = comet.getAssetInfo(i);
 
+            // One collateral carries the whole position, so it alone has to reach the minimum borrow.
             uint256 supply = bound(
                 supplyAmount,
-                uint256(assetInfo.scale) / 1000,
-                Math.min(1_000_000 * uint256(assetInfo.scale), assetInfo.supplyCap)
+                Math.max(uint256(assetInfo.scale) / 1000, _supplyForDebt(assetInfo, BASE_BORROW_MIN)),
+                _supplyCeiling(assetInfo)
             );
 
             uint256 snapshot = vm.snapshotState();
@@ -254,12 +221,12 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
                 uint256 maxBorrow = supply * comet.getPrice(assetInfo.priceFeed) / uint256(assetInfo.scale);
                 maxBorrow = maxBorrow * assetInfo.borrowCollateralFactor / FACTOR_SCALE;
                 maxBorrow = maxBorrow * comet.baseScale() / comet.getPrice(address(basePriceFeed));
-                if (maxBorrow < comet.baseBorrowMin()) {
+                if (maxBorrow < BASE_BORROW_MIN) {
                     vm.revertToState(snapshot);
                     continue;
                 }
 
-                uint256 borrow = bound(borrowAmount, comet.baseBorrowMin(), maxBorrow);
+                uint256 borrow = bound(borrowAmount, BASE_BORROW_MIN, maxBorrow);
 
                 collaterals[i].allocateTo(borrower, supply);
                 vm.startPrank(borrower);
@@ -274,8 +241,7 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
                     continue;
                 }
 
-                // The borrower sits exactly at the threshold - the first price at which the account is
-                // healthy again.
+                // Exactly at the threshold: the first price at which the account is healthy again.
                 collateralPriceFeeds[i].setRoundData(0, int256(thresholdPrice), 0, 0, 0);
             } else {
                 // An account with no debt at all: collateral supplied, nothing drawn.
@@ -286,9 +252,8 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
                 vm.stopPrank();
             }
 
-            // Precondition: the account is healthy. Asserted rather than skipped now the threshold is
-            // exact - a borrower drifted over the line, or a no-debt account read as liquidatable,
-            // fails here rather than passing the revert below for the wrong reason.
+            // Asserted rather than skipped: a drifted boundary must fail here, not pass the revert
+            // below for the wrong reason.
             assertFalse(liquidationModule.isLiquidatable(borrower), "precondition: the account is not healthy");
 
             vm.expectRevert(ICoreLiquidationModuleErrors.NotLiquidatable.selector);
@@ -300,19 +265,10 @@ contract LiquidationEligibilityFuzzTest is ProtocolFixture {
         assertGt(exercised, 0, "the invariant was never exercised");
     }
 
-    /**
-     * @notice The smallest collateral price at which the borrower is no longer liquidatable.
-     * @dev Inverts the module's own liquidity, read off the borrower's live balances:
-     *
-     *          liquidatable  ⟺  debtValue > collBalance * price * LCF / (scale * 1e18)
-     *
-     *      The single floor on the right makes the inversion exact - `ceilDiv` returns the first
-     *      integer price at which the weighted collateral covers the debt, so `price - 1` is the last
-     *      liquidatable price and `price` the first healthy one. Assumes a single supplied collateral,
-     *      which every position in this suite has.
-     * @param assetInfo the borrower's single collateral, whose scale and liquidate factor set the boundary.
-     * @return the smallest collateral price at which the borrower is no longer liquidatable.
-     */
+    /// @notice The smallest collateral price at which the borrower is no longer liquidatable.
+    /// @dev Exact, so `price - 1` is the last liquidatable price and `price` the first healthy one -
+    ///      which is what lets the threshold test probe both sides a unit apart. Assumes a single
+    ///      supplied collateral, which every position here has.
     function _firstHealthyPrice(ICometData.AssetInfo memory assetInfo) internal view returns (uint256) {
         uint256 debtValue =
             comet.borrowBalanceOf(borrower) * comet.getPrice(address(basePriceFeed)) / comet.baseScale();

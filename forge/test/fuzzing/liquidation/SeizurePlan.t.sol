@@ -6,58 +6,26 @@ import { ICometData } from "@comet-contracts/interfaces/ICometData.sol";
 import { ICoreLiquidationModule } from "@comet-contracts/interfaces/liquidation-module/ICoreLiquidationModule.sol";
 
 import { LiquidationModuleDeployer } from "../../helpers/LiquidationModuleDeployer.sol";
-import { ProtocolFixture } from "../../helpers/ProtocolFixture.sol";
+import { LiquidationFuzzBase } from "./LiquidationFuzzBase.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title Seizure plan structure
- * @notice One invariant per test: a single statement a counterexample can refute. The group checks
- *         the plan as an object rather than as arithmetic - order, composition, absence of
- *         duplicates and of junk.
- * @dev Nothing is executed here. Reading `seizurePlan` is the whole of it, so the scenarios are
- *      shorter than the groups either side of this one and no liquidator takes part: the actors are
- *      the borrower, the pauser and the base supplier from the fixture.
- *
- *      The collateral set is chosen by a mask, and the mask is biased towards boundary indexes on
- *      purpose. The plan walks the assets by number and Comet's bitmap is discontinuous at 15/16 -
- *      the first sixteen assets live in `assetsIn` and the rest in `_reserved` - so a traversal bug
- *      is far likelier to show at the ends of those two words than in the middle. Leaving that to an
- *      unbiased draw would spend most runs where nothing is at stake.
- *
- *      The bound chain and the scenario the group shares are in `_boundPosition` and `_baseScenario`.
- *      A test that needs a narrower slice of the range redraws from the fields the chain leaves on
- *      the `Position` rather than repeating the chain. A run that cannot be built - too little
- *      collateral to reach the minimum borrow, more base than the market holds, no room left to drop
- *      the price into - is rejected rather than passed, so a vacuous run is never counted as a
- *      checked one.
- *
- *      `_baseScenario` deliberately does not assert that the plan holds anything. An empty plan for a
- *      liquidatable account is a claim about composition, and it belongs to the test that makes it
- *      rather than to the scaffolding every test stands on.
+ * @notice The plan as an object rather than as arithmetic: order, composition, no duplicates, no junk.
+ * @dev Nothing is executed here - reading `seizurePlan` is the whole of it, so no liquidator takes
+ *      part. The mask is biased towards the ends of the bitmap's two words, because the plan walks
+ *      assets by number and a traversal bug shows there rather than in the middle.
  */
-contract SeizurePlanFuzzTest is ProtocolFixture {
-    uint256 internal constant BASE_LIQUIDITY = 1e18;
+contract SeizurePlanFuzzTest is LiquidationFuzzBase {
 
-    address internal borrower = alice;
-    address internal baseSupplier = charlie;
-    address internal secondSupplier = makeAddr("secondSupplier");
-
-    /// @dev `dropCeiling` is the top of the drawable range, for the invariants that need a plan which
-    ///      stops early and redraw the drop into the shallow end against it. `seizable` is read by the
-    ///      non-seizable-asset invariant, which redraws the drop into the slice where the collateral
-    ///      runs out altogether.
-    struct Position {
-        uint256[] amounts;
-        uint256 borrow;
-        uint256 dropBps;
-        uint256 seizable;
-        uint256 dropCeiling;
-    }
-
-    /// @dev What a test asks the shared chain to aim at. Every field is off at zero, so a test
-    ///      declares an empty one and sets only what it needs. `dustMask` presses deposits far below
-    ///      a thousandth of a unit; `topMask` and `bottomMask` pin them to the ends of their range;
-    ///      the two borrow fields cut the borrow range down to a slice of what the collateral carries.
+    /**
+     * @notice What a test asks the draw to aim at. Every field off at zero leaves the plain draw.
+     * @param dustMask         assets to press far below a thousandth of a unit
+     * @param topMask          assets to pin to the top of their range
+     * @param bottomMask       assets to pin to the bottom of their range
+     * @param borrowFloorBps   lift the borrow floor to this fraction of the ceiling
+     * @param borrowCeilingBps cut the borrow ceiling to this fraction of the capacity
+     */
     struct Bias {
         uint256 dustMask;
         uint256 topMask;
@@ -68,19 +36,11 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
 
     function setUp() public {
         prepareFixture();
-
-        baseToken.allocateTo(baseSupplier, BASE_LIQUIDITY);
-        vm.startPrank(baseSupplier);
-        baseToken.approve(address(comet), type(uint256).max);
-        comet.supply(address(baseToken), BASE_LIQUIDITY);
-        vm.stopPrank();
+        seedMarketActivity();
     }
 
-    /**
-     * @notice Indexes are increasing - plan[j].index < plan[j+1].index
-     * @dev Invariant. The plan walks assets in list order rather than an arbitrary one: the order
-     *      decides what gets seized first and must be predictable.
-     */
+    /// @notice Indexes are increasing - plan[j].index < plan[j+1].index
+    /// @dev The order decides what gets seized first, so it has to be predictable.
     function testFuzz_indexesAreIncreasing(
         uint256 maskSeed,
         uint256 supplySeed,
@@ -91,10 +51,8 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         uint8 numAssets = comet.numAssets();
         uint256 mask = _assetMask(maskSeed);
 
-        // Order is a claim about pairs, so the set is widened rather than discarded when the draw is
-        // too thin to make one. Assets are needed on both sides of the 15/16 seam first - a plan that
-        // stays inside one word of the bitmap cannot catch a traversal that crosses them in the wrong
-        // order - and then the set is topped up until three assets are in it.
+        // Order is a claim about pairs, so a thin draw is widened rather than discarded. Both sides
+        // of the 15/16 seam first: a plan inside one bitmap word cannot catch a bad crossing.
         if (mask & ((uint256(1) << 16) - 1) == 0) mask |= uint256(1) << (maskSeed % 16);
         if (mask >> 16 == 0) mask |= uint256(1) << (16 + maskSeed % (numAssets - 16));
 
@@ -104,14 +62,13 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
 
         Position memory p = _boundPosition(mask, supplySeed, borrowAmount, dropSeed);
 
-        // Half the threshold or less. The collateral is worth so much less than the debt that the
-        // seizure works its way well down the list instead of being satisfied by the first asset it
-        // reaches, which is what puts entries in the plan for the ordering to be about.
-        p.dropBps = bound(dropSeed, 1, p.dropCeiling * 50 / 99);
+        // Half the threshold or less, so the seizure works well down the list instead of being
+        // satisfied by the first asset - otherwise there are no entries for the order to be about.
+        p.dropPpb = bound(dropSeed, _minDropPpb(p.amounts), p.dropCeiling * 50 / 99);
 
         ICoreLiquidationModule.Seizure[] memory plan = _baseScenario(p, partialEnabled);
 
-        // A plan of one entry has no adjacent pair and would pass on an empty loop.
+        // One entry has no adjacent pair, and the loop below would pass on nothing.
         vm.assume(plan.length > 1);
 
         for (uint256 j; j + 1 < plan.length; ++j) {
@@ -121,11 +78,8 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         }
     }
 
-    /**
-     * @notice The plan holds only what the borrower owns - plan[j].index in assetsIn || _reserved
-     * @dev Invariant. The planner cannot pick an asset the account does not hold: it reads the
-     *      bitmap, not the market list.
-     */
+    /// @notice The plan holds only what the borrower owns - plan[j].index in assetsIn || _reserved
+    /// @dev The planner has to read the account's bitmap, not the market list.
     function testFuzz_planHoldsOnlyWhatTheBorrowerOwns(
         uint256 maskSeed,
         uint256 supplySeed,
@@ -136,10 +90,8 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         uint8 numAssets = comet.numAssets();
         uint256 mask = _assetMask(maskSeed);
 
-        // Thinned to every other index, so an unoccupied asset sits between every pair of occupied
-        // ones. A dense set has no gap for the planner to fall into: reading the market list instead
-        // of the bitmap would return the same assets either way and the run would prove nothing.
-        // Which half of the list the gaps fall on comes from the seed, so neither is left untried.
+        // Thinned to every other index so a gap sits between every pair. A dense set would return
+        // the same assets whichever list the planner read, and the run would prove nothing.
         mask &= maskSeed % 2 == 0
             ? 0x5555555555555555555555555555555555555555555555555555555555555555
             : 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;
@@ -147,9 +99,8 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
 
         Position memory p = _boundPosition(mask, supplySeed, borrowAmount, dropSeed);
 
-        // On some runs the gaps are filled in by somebody else, so the market carries a total for
-        // assets this borrower has never held. A planner reading those totals rather than the
-        // account's own bitmap would reach for them here.
+        // On some runs somebody else fills the gaps, so the market carries totals for assets this
+        // borrower never held. A planner reading those totals would reach for them here.
         if (_coinFlip(supplySeed, "second supplier")) {
             for (uint8 i; i < numAssets; ++i) {
                 if (p.amounts[i] != 0) continue;
@@ -158,7 +109,7 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
                 uint256 amount = bound(
                     uint256(keccak256(abi.encode(supplySeed, "second supplier", i))),
                     uint256(info.scale) / 1000,
-                    Math.min(1_000_000 * uint256(info.scale), info.supplyCap)
+                    _supplyCeiling(info)
                 );
 
                 collaterals[i].allocateTo(secondSupplier, amount);
@@ -172,8 +123,7 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
 
         ICoreLiquidationModule.Seizure[] memory plan = _baseScenario(p, partialEnabled);
 
-        // Read after the plan rather than before it, which is the same thing here: reading a plan is
-        // a view call and nothing in this group absorbs, so the bitmap cannot have moved in between.
+        // Read after the plan, which is the same thing here: nothing in this group absorbs.
         (,,, uint16 assetsIn, uint8 reservedBits) = comet.userBasic(borrower);
 
         for (uint256 j; j < plan.length; ++j) {
@@ -184,11 +134,8 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         }
     }
 
-    /**
-     * @notice Address matches index - plan[j].asset = getAssetInfo(plan[j].index).asset
-     * @dev Invariant. The asset address in a plan entry is exactly the one sitting at that index in
-     *      the market list. The index/address pair does not drift apart.
-     */
+    /// @notice Address matches index - plan[j].asset = getAssetInfo(plan[j].index).asset
+    /// @dev The index and the address must not drift apart.
     function testFuzz_addressMatchesIndex(
         uint256 maskSeed,
         uint256 supplySeed,
@@ -198,10 +145,8 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
     ) public {
         uint256 mask = _assetMask(maskSeed);
 
-        // A pair the amounts cannot tell apart is put in the position on every run. Where two assets
-        // share a scale and a price, one index standing in for the other produces a plan that is
-        // arithmetically perfect and still points at the wrong token, which is the only way this can
-        // go wrong quietly.
+        // Two assets sharing a scale and a price are always in the set: one index standing in for
+        // the other gives a plan that is arithmetically perfect and still points at the wrong token.
         (uint8 twinA, uint8 twinB) = _confusableIndexes();
         mask |= (uint256(1) << twinA) | (uint256(1) << twinB);
 
@@ -217,11 +162,8 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         }
     }
 
-    /**
-     * @notice No empty entries - plan[j].seizedAmount > 0
-     * @dev Invariant. The plan contains no zero-sized seizures: an entry that takes nothing is junk
-     *      that will later be walked by the execution loop.
-     */
+    /// @notice No empty entries - plan[j].seizedAmount > 0
+    /// @dev An entry that takes nothing is junk the execution loop will still walk.
     function testFuzz_noEmptyEntries(
         uint256 maskSeed,
         uint256 supplySeed,
@@ -231,15 +173,11 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
     ) public {
         uint256 mask = _assetMask(maskSeed);
 
-        // Some of the set is pressed to the bottom of its range, where a deposit is worth so little
-        // that pricing it floors to nothing. Which ones comes from the seed the deposits already come
-        // from; if the draw picks none, the lowest asset in the set is pressed down instead, because
-        // a run with no dust in it cannot say anything about empty entries.
+        // Part of the set is pressed down to where pricing a deposit floors to nothing, which is
+        // where a zero-sized entry would be written. A run with no dust in it proves nothing here.
         uint256 dustMask = mask & uint256(keccak256(abi.encode(supplySeed, "dust")));
         if (dustMask == 0) dustMask = mask & (~mask + 1);
 
-        // The whole drop range. Deep in it the small deposits reprice to nothing at all, which is
-        // where an entry claiming to take zero of them would be written.
         Bias memory bias;
         bias.dustMask = dustMask;
 
@@ -251,11 +189,8 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         }
     }
 
-    /**
-     * @notice No duplicates - indexes are pairwise distinct
-     * @dev Invariant. One asset cannot be seized twice in a single plan: the second entry would write
-     *      off what is already gone.
-     */
+    /// @notice No duplicates - indexes are pairwise distinct
+    /// @dev A second entry for the same asset would write off what is already gone.
     function testFuzz_noDuplicates(
         uint256 maskSeed,
         uint256 supplySeed,
@@ -263,24 +198,21 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         uint256 dropSeed,
         bool partialEnabled
     ) public {
-        // A debt in the top fifth of what the collateral carries, against prices at half the
-        // threshold or below. Neither on its own is enough: a large debt with a shallow drop is
-        // settled by the first asset the loop reaches, and a deep drop with a small debt likewise.
-        // Together they make the loop travel, which is the only way a repeat could be written.
+        // A large debt and a deep fall together: either alone is settled by the first asset the loop
+        // reaches, and only a travelling loop could write a repeat.
         Bias memory bias;
         bias.borrowFloorBps = 8_000;
 
         Position memory p = _boundPosition(_assetMask(maskSeed), supplySeed, borrowAmount, dropSeed, bias);
-        p.dropBps = bound(dropSeed, 1, p.dropCeiling * 50 / 99);
+        p.dropPpb = bound(dropSeed, _minDropPpb(p.amounts), p.dropCeiling * 50 / 99);
 
         ICoreLiquidationModule.Seizure[] memory plan = _baseScenario(p, partialEnabled);
 
-        // A plan of one entry has no pair to be distinct and would pass on an empty claim.
+        // One entry has no pair to be distinct.
         vm.assume(plan.length > 1);
 
-        // Each index is struck off as it is met. Kept independent of the order the plan arrives in,
-        // because comparing neighbours would only catch a repeat that happens to be adjacent and
-        // would quietly lean on the ordering invariant holding.
+        // Struck off in a set rather than compared pairwise: neighbours would only catch an adjacent
+        // repeat, and would lean on the ordering invariant holding.
         uint256 seen;
         for (uint256 j; j < plan.length; ++j) {
             uint256 bit = uint256(1) << plan[j].index;
@@ -290,49 +222,35 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         }
     }
 
-    /**
-     * @notice The plan is no longer than the asset list - plan.length <= numAssets
-     * @dev Invariant. The number of seizures does not exceed the number of market assets: the loop
-     *      terminates, and the array length matches the entries actually filled.
-     */
+    /// @notice The plan is no longer than the asset list - plan.length <= numAssets
+    /// @dev The loop terminates, and the array length matches the entries actually filled.
     function testFuzz_planIsNoLongerThanTheAssetList(
         uint256 supplySeed,
         uint256 borrowAmount,
         uint256 dropSeed,
         bool partialEnabled
     ) public {
-        // Every asset on the market, so there is no mask seed to draw. A length bound is a claim
-        // about the largest plan the module can produce, and the largest plan needs the fullest
-        // position - a set the mask thinned out could not reach the limit even if the loop overran
-        // it.
+        // Every asset, no mask: a thinned set could not reach the limit even if the loop overran.
         uint8 numAssets = comet.numAssets();
         uint256 mask = (uint256(1) << numAssets) - 1;
 
-        // A debt in the top tenth of what the collateral carries, against a crash that leaves prices
-        // at a tenth of the threshold or less. Nothing survives that: the seizure works through the
-        // whole list and stops only when it runs out of assets, which is where an overrun would show.
+        // A large debt and a crash: the seizure works through the whole list and stops only when it
+        // runs out of assets, which is where an overrun would show.
         Bias memory bias;
         bias.borrowFloorBps = 9_000;
 
         Position memory p = _boundPosition(mask, supplySeed, borrowAmount, dropSeed, bias);
-        p.dropBps = bound(dropSeed, 1, p.dropCeiling * 10 / 99);
+        p.dropPpb = bound(dropSeed, _minDropPpb(p.amounts), p.dropCeiling * 10 / 99);
 
         ICoreLiquidationModule.Seizure[] memory plan = _baseScenario(p, partialEnabled);
 
         assertLe(plan.length, numAssets, "the plan holds more entries than the market has assets");
     }
 
-    /**
-     * @notice A non-seizable asset is not in the plan - LF = 0 → asset not in plan
-     * @dev Invariant. An asset with a zero liquidation factor never enters the plan, not even when
-     *      everything else is exhausted and the protocol goes into bad debt.
-     *
-     *      The market is the ordinary one and the position is built the ordinary way. Only afterwards
-     *      does one of the assets the borrower is already standing on lose its factors, on a market
-     *      that already holds the position - which is what governance stripping an asset it no longer
-     *      wants to lend against actually looks like. Which asset it is comes from the mask seed, so
-     *      no index is special and none is left untried.
-     */
+    /// @notice A non-seizable asset is not in the plan - LF = 0 → asset not in plan
+    /// @dev Holds even once everything else is exhausted. The asset is stripped only after the
+    ///      position is built, which is how governance dropping an asset plays out; which asset it
+    ///      is comes from the seed, so no index is special.
     function testFuzz_nonSeizableAssetIsNotInThePlan(
         uint256 maskSeed,
         uint256 supplySeed,
@@ -343,8 +261,7 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         uint8 numAssets = comet.numAssets();
         uint256 mask = _assetMask(maskSeed);
 
-        // One asset to strip and at least one to leave standing. A position on the stripped asset
-        // alone has nothing for the seizure to exhaust first.
+        // One asset to strip and at least one to leave standing, or there is nothing to exhaust.
         for (uint256 n = 1; _bitCount(mask) < 2; ++n) {
             mask |= uint256(1) << (uint256(keccak256(abi.encode(maskSeed, n))) % numAssets);
         }
@@ -362,33 +279,30 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
             }
         }
 
-        // The chain sees the position without the asset that is about to be stripped. That is right on
-        // either side: the asset still carries its factors while the borrow is drawn, so the real
-        // borrowing power is larger than the chain's and the withdraw is accepted with room to spare,
-        // and its liquidation factor is zero by the time anything is planned.
+        // The draw never sees the asset about to be stripped: while the borrow is drawn it still
+        // carries its factors, so the withdraw is accepted with room to spare, and by planning time
+        // its liquidation factor is zero.
         Position memory p = _boundPosition(mask & ~(uint256(1) << dead), supplySeed, borrowAmount, dropSeed);
 
-        // Below this multiplier every seizable unit taken together no longer covers the debt, so the
-        // seizure runs out of collateral it may touch and the rest is written off. That is the state
-        // the invariant is about: nothing left to take, and one attractive asset standing right there.
+        // Below this the seizable collateral no longer covers the debt, so the seizure runs out and
+        // the rest is written off - nothing left to take, one attractive asset standing right there.
         {
             uint256 badDebtDrop = p.borrow * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
-            badDebtDrop = badDebtDrop * 10_000 / p.seizable;
+            badDebtDrop = badDebtDrop * DROP_SCALE / p.seizable;
             vm.assume(badDebtDrop >= 100); // no room left below the boundary to drop the prices into
 
-            p.dropBps = bound(dropSeed, 1, badDebtDrop * 99 / 100);
+            p.dropPpb = bound(dropSeed, _minDropPpb(p.amounts), badDebtDrop * 99 / 100);
         }
 
-        // Large on purpose, and its price never moves. The asset has to look well worth taking, so
-        // that surviving is the module refusing to touch it rather than the arithmetic quietly
-        // valuing it at nothing.
+        // Large, and its price never moves: surviving has to be the module refusing to touch it,
+        // not the arithmetic valuing it at nothing.
         uint256 deadSupply;
         {
             ICometData.AssetInfo memory deadInfo = comet.getAssetInfo(dead);
             deadSupply = bound(
                 deadAmount,
                 uint256(deadInfo.scale) / 1000,
-                Math.min(1_000_000 * uint256(deadInfo.scale), deadInfo.supplyCap)
+                _supplyCeiling(deadInfo)
             );
         }
 
@@ -414,7 +328,7 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         for (uint8 i; i < numAssets; ++i) {
             if (p.amounts[i] == 0) continue;
 
-            uint256 dropped = comet.getPrice(address(collateralPriceFeeds[i])) * p.dropBps / 10_000;
+            uint256 dropped = comet.getPrice(address(collateralPriceFeeds[i])) * p.dropPpb / DROP_SCALE;
             collateralPriceFeeds[i].setRoundData(0, int256(dropped), 0, 0, 0);
         }
 
@@ -424,10 +338,8 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         configurator.updateAssetLiquidationFactor(address(cometProxy), address(collaterals[dead]), 0);
         vm.stopPrank();
 
-        // A Comet binds its module for good in the constructor and a module accepts one asset list in
-        // its lifetime, so new configuration means a new implementation and a new module behind it.
-        // `LiquidationModuleForComet` is the one meant for this: it takes the live proxy in its
-        // constructor, which is how a market that is already running gets upgraded.
+        // Comet binds its module in the constructor and a module accepts one asset list for life,
+        // so new configuration needs a new implementation and a new module behind it.
         dexAdapter =
             LiquidationModuleDeployer.deployAdapter(DEX_ROUTER, weth, DEX_SLIPPAGE_BPS, collateralAddresses());
         liquidationModule = LiquidationModuleDeployer.deployDefaultLiquidationModuleWithComet(
@@ -448,17 +360,9 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         }
     }
 
-    /**
-     * @notice The plan stops once the debt is covered - debt covered → plan ends
-     * @dev Invariant. As soon as the debt is covered, seizures stop: later assets do not enter the
-     *      plan even though the borrower holds them.
-     *
-     *      The position is built lopsided on purpose. The lowest asset in the set is pinned to the top
-     *      of its range and everything after it to the bottom, the borrow is held to a fifth of what
-     *      the set can carry, and the drop is shallow - so the first asset the loop meets is worth
-     *      several times the debt and there is no arithmetic reason to go further. Whether the loop
-     *      stops anyway is the claim.
-     */
+    /// @notice The plan stops once the debt is covered - debt covered → plan ends
+    /// @dev Built lopsided on purpose: the first asset the loop meets is worth several times the
+    ///      debt, so there is no arithmetic reason to go further. Whether it stops anyway is the claim.
     function testFuzz_planStopsOnceTheDebtIsCovered(
         uint256 maskSeed,
         uint256 supplySeed,
@@ -468,7 +372,7 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         uint8 numAssets = comet.numAssets();
         uint256 mask = _assetMask(maskSeed);
 
-        // Something has to be left after the first asset for the plan to have stopped short of.
+        // Something has to be left after the first asset for the plan to have stopped short of it.
         for (uint256 n = 1; _bitCount(mask) < 2; ++n) {
             mask |= uint256(1) << (uint256(keccak256(abi.encode(maskSeed, n))) % numAssets);
         }
@@ -484,36 +388,39 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
 
         ICometData.AssetInfo memory info = comet.getAssetInfo(_lowestIndex(first));
 
-        // The drop has to leave the position liquidatable and still leave the first asset able to
+        // The fall has to leave the position liquidatable and still leave the first asset able to
         // cover the debt on its own, and those two pull against each other. Liquidatable means the
         // collateral falls short of the debt under the liquidate collateral factor; covering means it
         // clears the debt under the liquidation factor. Both hold only in the gap between the two
-        // factors, which is why the floor is that ratio rather than a percentage picked by hand - and
-        // why it is read off the asset that has to do the covering. The range starts halfway up the
-        // gap so rounding at either end cannot push a run out of it.
+        // factors, so the floor is the multiplier at which that asset's own deposit, discounted by
+        // its liquidation factor, still clears the debt.
+        //
+        // Read off that deposit and its price rather than recovered from the ceiling the chain left
+        // behind: multiplying `dropCeiling` back up floors a second time, and the unit lost there is
+        // a unit of headroom out of the gap - which is a real share of it whenever the gap is narrow.
+        // The range starts halfway up so rounding at either end cannot push a run out of it.
         {
-            uint256 threshold = p.dropCeiling * 100 / 99;
-            uint256 coverageFloor =
-                threshold * info.liquidateCollateralFactor / info.liquidationFactor;
+            uint256 coverageFloor = Math.ceilDiv(
+                (p.borrow * comet.getPrice(address(basePriceFeed)) / comet.baseScale())
+                    * DROP_SCALE * uint256(info.scale) * FACTOR_SCALE,
+                p.amounts[_lowestIndex(first)] * comet.getPrice(info.priceFeed) * info.liquidationFactor
+            );
+            vm.assume(coverageFloor <= p.dropCeiling); // no gap between covering the debt and the threshold
 
-            p.dropBps = bound(dropSeed, (coverageFloor + p.dropCeiling) / 2, p.dropCeiling);
+            p.dropPpb = bound(dropSeed, (coverageFloor + p.dropCeiling) / 2, p.dropCeiling);
         }
 
-        // Partial liquidation off, so the debt-closing branch is the one taken and the plan has to
-        // end on the entry that closes it rather than on a health target.
+        // Partial off, so the plan ends on the entry that closes the debt, not on a health target.
         ICoreLiquidationModule.Seizure[] memory plan = _baseScenario(p, false);
 
         assertEq(plan.length, 1, "the plan did not stop at the asset that covered the debt");
         assertEq(uint256(1) << plan[0].index, first, "the plan did not start at the lowest asset held");
 
-        // What the seizure is worth against what is owed, both computed here. The debt comes from the
-        // borrow balance and the base price; the credit comes from the amount the plan takes, priced
-        // and discounted by the asset's liquidation factor. Neither is read off the module.
+        // Both sides computed here rather than read off the module, which is the thing under test.
         uint256 perValueUnit = uint256(info.scale) * FACTOR_SCALE;
         uint256 price = comet.getPrice(info.priceFeed);
 
-        uint256 debtValue = comet.borrowBalanceOf(borrower) * comet.getPrice(address(basePriceFeed))
-            / comet.baseScale();
+        uint256 debtValue = comet.borrowBalanceOf(borrower) * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
 
         assertGe(
             plan[0].seizedAmount * price * info.liquidationFactor / perValueUnit,
@@ -521,16 +428,14 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
             "the single entry does not cover the debt it ended on"
         );
 
-        // One unit less would not have covered it. Without this the entry could be taking far more
-        // than closing the debt requires and the test above would still be green.
+        // Without this the entry could take far more than closing the debt needs and still be green.
         assertLt(
             (plan[0].seizedAmount - 1) * price * info.liquidationFactor / perValueUnit,
             debtValue,
             "the entry seizes more than closing the debt requires"
         );
 
-        // The asset was not merely exhausted - the loop had the option of taking more from it and did
-        // not - and everything after it is still on the balance untouched.
+        // Not merely exhausted: the loop had the option of taking more and did not.
         assertLt(
             plan[0].seizedAmount,
             comet.collateralBalanceOf(borrower, plan[0].asset),
@@ -552,15 +457,10 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
                             SHARED CHAIN
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice The set of collaterals the position stands on, one bit per asset, weighted towards the
-     *         indexes where a traversal goes wrong.
-     * @dev Bounded away from zero, because a position on nothing has no plan to state anything about.
-     *      A draw that misses every boundary index has one forced on rather than being discarded:
-     *      that reshapes the run instead of throwing it away, and it leaves the rest of the set
-     *      exactly as the seed drew it.
-     */
-    function _assetMask(uint256 maskSeed) internal view returns (uint256 mask) {
+    /// @notice The set of collaterals, biased towards the indexes where a traversal goes wrong.
+    /// @dev A draw that misses every boundary index has one forced on rather than being discarded,
+    ///      which reshapes the run instead of throwing it away.
+    function _assetMask(uint256 maskSeed) internal view override returns (uint256 mask) {
         uint8 numAssets = comet.numAssets();
         mask = bound(maskSeed, 1, (uint256(1) << numAssets) - 1);
 
@@ -573,22 +473,10 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         if (mask & boundaries == 0) mask |= uint256(1) << edges[maskSeed % 4];
     }
 
-    /**
-     * @notice The deposits for the selected set, the largest borrow the market will accept against
-     *         them, and a price drop that lands the position below the liquidation threshold.
-     * @dev The two weighted sums are deliberately computed in different orders, because two different
-     *      contracts consume them. `borrowLimit` decides whether `withdraw` is accepted, and Comet's
-     *      `_getCollaterizedLiquidity` prices and weights in two separate divisions; `liquidity`
-     *      decides whether the position is liquidatable, and the module's `_getLiquidity` fuses both
-     *      into one, on purpose - pricing and weighting separately truncates the balance twice.
-     *      Mirroring each against the code that reads it is what keeps the top of the borrow range
-     *      acceptable and the drop on the right side of the module's own threshold.
-     *
-     *      The knobs in `Bias` are all off at zero, so a test that wants one declares an empty struct
-     *      and sets the single field it cares about. They exist because several invariants need the
-     *      same chain aimed at a different corner of it, and repeating the chain per corner is how the
-     *      two halves drift apart.
-     */
+    /// @notice The group's own draw: `_boundPositionMask` with the `Bias` knobs this group needs.
+    /// @dev `borrowLimit` and `liquidity` weigh the same deposits in different orders on purpose -
+    ///      Comet gates the withdrawal in two divisions, the module fuses them into one, and each is
+    ///      mirrored against its own consumer.
     function _boundPosition(uint256 mask, uint256 supplySeed, uint256 borrowAmount, uint256 dropSeed)
         internal
         view
@@ -619,26 +507,18 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
 
             ICometData.AssetInfo memory info = comet.getAssetInfo(i);
 
-            // One seed for the whole set, one clamp per asset: the deposit is no less than a
-            // thousandth of a unit and no more than a million units or the asset's supply cap,
-            // whichever binds first, or the range below that thousandth where the asset was named as
-            // dust. The scale is widened before it is multiplied, because the asset table's scales
-            // overflow their own uint64 at a million units.
             uint256 floor = uint256(info.scale) / 1000;
-            uint256 ceiling = Math.min(1_000_000 * uint256(info.scale), info.supplyCap);
+            uint256 ceiling = _supplyCeiling(info);
 
-            // A dust deposit is drawn under a ceiling that is itself drawn, that thousandth shifted
-            // down by up to sixty bits. Bounding flat into the range below it would not do: the range
-            // spans fifteen decimal places on an eighteen-decimal asset and a flat draw lands in the
-            // top one almost every time, nowhere near low enough for the price to floor. Moving the
-            // ceiling instead gives every order of magnitude a turn.
+            // Dust is drawn under a ceiling that is itself drawn. Bounding flat into the range
+            // below the thousandth lands in its top decade almost every time, nowhere near low
+            // enough for a price to floor; moving the ceiling gives every order of magnitude a turn.
             if (bias.dustMask & (uint256(1) << i) != 0) {
                 ceiling = floor >> bound(uint256(keccak256(abi.encode(supplySeed, "decade", i))), 0, 60);
                 floor = 1;
             }
 
-            // Pinning collapses the range onto one of its own ends, so an asset can be made certain
-            // to carry the position or certain to be beside the point.
+            // Pinning makes an asset certain to carry the position, or certain to be beside the point.
             if (bias.topMask & (uint256(1) << i) != 0) floor = ceiling;
             if (bias.bottomMask & (uint256(1) << i) != 0) ceiling = floor;
 
@@ -648,22 +528,16 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
 
             uint256 price = comet.getPrice(info.priceFeed);
 
-            // What the deposit is worth, then the same worth under the borrow collateral factor,
-            // which sets how much can be drawn against it.
             uint256 weighted = amount * price / uint256(info.scale);
             borrowLimit += weighted * info.borrowCollateralFactor / FACTOR_SCALE;
 
-            // How far the price may fall before the deposit stops covering the debt.
             liquidity += amount * price * info.liquidateCollateralFactor / (uint256(info.scale) * FACTOR_SCALE);
 
-            // What a seizure could recover from this asset if it took all of it. Weighted by the
-            // liquidation factor rather than the liquidate collateral factor, it is the line between
-            // a seizure that covers the debt and one that runs out of collateral.
             p.seizable += amount * price * info.liquidationFactor / (uint256(info.scale) * FACTOR_SCALE);
         }
 
         uint256 maxBorrow = borrowLimit * baseScale / basePrice;
-        uint256 borrowFloor = Math.max(comet.baseBorrowMin(), maxBorrow * bias.borrowFloorBps / 10_000);
+        uint256 borrowFloor = Math.max(BASE_BORROW_MIN, maxBorrow * bias.borrowFloorBps / 10_000);
         uint256 borrowCeiling =
             bias.borrowCeilingBps == 0 ? maxBorrow : maxBorrow * bias.borrowCeilingBps / 10_000;
 
@@ -672,74 +546,22 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
 
         p.borrow = bound(borrowAmount, borrowFloor, borrowCeiling);
 
-        // The multiplier at which the debt value meets the liquidation-weighted collateral, in basis
-        // points of where the prices stand now. Every selected price is floored on the way down, so
-        // the drop only ever lands lower than this arithmetic says, and a percent of clearance covers
-        // it - the boundary itself belongs to its own invariant.
-        uint256 maxDrop = (p.borrow * basePrice / baseScale) * 10_000 / liquidity;
+        // Prices floor on the way down, so the fall always lands a shade lower than this says. A
+        // percent of clearance covers that; the boundary itself belongs to its own invariant.
+        uint256 maxDrop = (p.borrow * basePrice / baseScale) * DROP_SCALE / liquidity;
         vm.assume(maxDrop >= 100); // no room left below the boundary to drop the prices into
 
         p.dropCeiling = maxDrop * 99 / 100;
-        p.dropBps = bound(dropSeed, 1, p.dropCeiling);
-    }
-
-    /**
-     * @notice The scenario the group shares: the borrower supplies the set, draws the base, the mode
-     *         is set, the selected prices fall, and the plan is read.
-     * @dev The plan is read against a market that has not moved since the prices were written - no
-     *      warp, no second reprice - so what a test inspects is what the module would execute.
-     */
-    function _baseScenario(Position memory p, bool partialEnabled)
-        internal
-        returns (ICoreLiquidationModule.Seizure[] memory plan)
-    {
-        uint8 numAssets = comet.numAssets();
-
-        for (uint8 i; i < numAssets; ++i) {
-            if (p.amounts[i] == 0) continue;
-
-            collaterals[i].allocateTo(borrower, p.amounts[i]);
-
-            vm.startPrank(borrower);
-            collaterals[i].approve(address(comet), p.amounts[i]);
-            comet.supply(address(collaterals[i]), p.amounts[i]);
-            vm.stopPrank();
-        }
-
-        vm.prank(borrower);
-        comet.withdraw(address(baseToken), p.borrow);
-
-        if (liquidationModule.partialLiquidationEnabled() != partialEnabled) {
-            vm.prank(pauser);
-            liquidationModule.liquidationModeToggle(partialEnabled);
-        }
-
-        // Only the selected feeds move. What the mask left out keeps its price.
-        for (uint8 i; i < numAssets; ++i) {
-            if (p.amounts[i] == 0) continue;
-
-            uint256 dropped = comet.getPrice(address(collateralPriceFeeds[i])) * p.dropBps / 10_000;
-            collateralPriceFeeds[i].setRoundData(0, int256(dropped), 0, 0, 0);
-        }
-
-        // Holds by construction of the bounds above. If it ever does not, the bounds are wrong and
-        // the run must not pass quietly.
-        assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
-
-        plan = liquidationModule.seizurePlan(borrower);
+        p.dropPpb = bound(dropSeed, _minDropPpb(p.amounts), p.dropCeiling);
     }
 
     /*//////////////////////////////////////////////////////////////
                                HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Two indexes whose assets are interchangeable on the numbers: same scale, same price.
-     * @dev Found on the market rather than named, so the pair follows whatever asset table the
-     *      fixture is built with. A market that holds no such pair cannot state the invariant this
-     *      serves - a swapped index would show up in the amounts - so the absence is a failure rather
-     *      than something to work around.
-     */
+    /// @notice Two indexes whose assets are interchangeable on the numbers: same scale, same price.
+    /// @dev Found on the market rather than named, so it follows whatever asset table is built. A
+    ///      market without such a pair cannot state the invariant, so the absence is a failure.
     function _confusableIndexes() internal view returns (uint8, uint8) {
         uint8 numAssets = comet.numAssets();
         uint64[] memory scales = new uint64[](numAssets);
@@ -760,19 +582,17 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         revert("the market holds no two assets a swapped index could hide behind");
     }
 
-    /// @dev The bitmap is split across two of `userBasic`'s fields: the first sixteen assets live in
-    ///      `assetsIn`, the rest in `_reserved`, which is not reserved in this Comet.
+    /// @dev The bitmap spans two `userBasic` fields: the first sixteen assets in `assetsIn`, the
+    ///      rest in `_reserved`, which is not reserved in this Comet.
     function _inBitmap(uint16 assetsIn, uint8 reservedBits, uint8 i) internal pure returns (bool) {
         return i < 16 ? assetsIn & (uint16(1) << i) != 0 : reservedBits & (uint8(1) << (i - 16)) != 0;
     }
 
-    /// Splits the runs of a test in two on a seed it is already drawing from, so a branch the group
-    /// wants both sides of does not cost an argument.
+    /// @notice Splits runs in two on a seed already in hand, so a branch costs no extra argument.
     function _coinFlip(uint256 seed, string memory tag) internal pure returns (bool) {
         return uint256(keccak256(abi.encode(seed, tag))) % 2 == 0;
     }
 
-    /// The index of the lowest asset in a mask.
     function _lowestIndex(uint256 mask) internal pure returns (uint8 i) {
         while (mask & 1 == 0) {
             mask >>= 1;
@@ -780,7 +600,6 @@ contract SeizurePlanFuzzTest is ProtocolFixture {
         }
     }
 
-    /// How many assets the mask selected, which is how many the borrower supplied.
     function _bitCount(uint256 mask) internal pure returns (uint256 count) {
         while (mask != 0) {
             mask &= mask - 1;
