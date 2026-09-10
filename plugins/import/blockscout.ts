@@ -16,6 +16,7 @@ export function getBlockscoutApiUrl(network: string): string {
     'unichain': 'unichain.blockscout.com',
     'scroll': 'scrollscan.com',
     'ronin': 'explorer.roninchain.com',
+    'polygon': 'polygon.blockscout.com',
   }[network];
 
   if (!host) {
@@ -34,6 +35,7 @@ export function getBlockscoutUrl(network: string): string {
     'unichain': 'unichain.blockscout.com',
     'scroll': 'scrollscan.com',
     'ronin': 'explorer.roninchain.com',
+    'polygon': 'polygon.blockscout.com',
   }[network];
 
   if (!host) {
@@ -41,6 +43,12 @@ export function getBlockscoutUrl(network: string): string {
   }
 
   return `https://${host}`;
+}
+
+export function getBlockscoutApiKey(network: string): string | undefined {
+  return {
+    unichain: process.env.UNICHAIN_BLOCKSCOUT_API_KEY,
+  }[network] || undefined;
 }
 
 export async function getBlockscoutRPCUrl(network: string): Promise<string> {
@@ -52,6 +60,7 @@ export async function getBlockscoutRPCUrl(network: string): Promise<string> {
     'unichain': `${process.env.UNICHAIN_QUICKNODE_LINK}`.replace('https://', ''),
     'scroll': `scroll-mainnet.gateway.tenderly.co`,
     'ronin': `${process.env.RONIN_QUICKNODE_LINK}`.replace('https://', ''),
+    'polygon': `${process.env.POLYGON_QUICKNODE_LINK}`.replace('https://', ''),
   }[network];
 
   if (!host) {

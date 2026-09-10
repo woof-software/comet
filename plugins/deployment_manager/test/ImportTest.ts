@@ -66,7 +66,8 @@ export const blockscoutTestResult = {
   ],
 };
 
-// `mainnet` imports go through Blockscout (see `blockScoutNetworks` in Import.ts), not Etherscan.
+// `mainnet` has a Blockscout host configured, so the waterfall's first two tiers hit it
+// before Etherscan would ever be tried (see docs/contract-import.md).
 export function mockImportSuccess(address: string) {
   nock('https://eth.blockscout.com')
     .get('/api')
