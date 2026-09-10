@@ -111,7 +111,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
                 absorber,
                 account,
                 plan[i].index,
-                uint128(plan[i].seizedAmount),
+                safe128(plan[i].seizedAmount),
                 plan[i].wantedCollateralValue
             );
         }
@@ -155,7 +155,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
             baseScale
         );
 
-        (uint256 liquidity, ) = _getLiquidity(accountUser, account, true, new uint256[](0));
+        (uint256 liquidity, ) = _getLiquidity(accountUser, account);
         return debt + int256(liquidity) < 0;
     }
 

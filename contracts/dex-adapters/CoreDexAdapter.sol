@@ -22,6 +22,8 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
 
     /// @notice Basis-points denominator (100%).
     uint16 public constant BPS = 10_000;
+    /// @notice Factor denominator (1e18), matching Comet's liquidationFactor scale.
+    uint64 internal constant FACTOR_SCALE = 1e18;
     /// @notice The Comet market for this adapter; source of prices and asset config. Set in initiateAdapter.
     CometMainInterface public comet;
     /// @notice The base asset that collateral is swapped into. Set in initiateAdapter.
@@ -122,7 +124,8 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
 
     /**
      * @notice Computes the minimum acceptable base-asset output for swapping `amountIn` of `collateral`.
-     * @dev Values collateral and base asset via Comet's price feeds and applies slippage BPS to the converted base asset value.
+     * @dev Values collateral and base asset via Comet's price feeds, applies slippage BPS to the converted base
+     *      asset value, and floors the result at the debt credited against the collateral (value × liquidationFactor).
      * @param collateral Address of the collateral token being swapped.
      * @param amountIn The amount of `collateral` (in its native units) being swapped.
      * @return minAmountOut The minimum base-asset amount the swap must return.
@@ -139,7 +142,11 @@ abstract contract CoreDexAdapter is ICoreDexAdapter {
         // A per-collateral override (when set) takes priority over the global slippageBps.
         uint16 slippage = collateralSlippageBps[collateral] != 0 ? collateralSlippageBps[collateral] : slippageBps;
 
-        minAmountOut = baseAssetValue * (BPS - slippage) / BPS;
+        uint256 slippageFloor = baseAssetValue * (BPS - slippage) / BPS;
+        // Never accept less than the debt this collateral was credited against (its penalized value), so a
+        // loose slippage cannot force the shortfall onto reserves. Per-asset exact via its liquidationFactor.
+        uint256 debtFloor = baseAssetValue * assetInfo.liquidationFactor / FACTOR_SCALE;
+        minAmountOut = slippageFloor > debtFloor ? slippageFloor : debtFloor;
     }
 
     /**

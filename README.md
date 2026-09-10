@@ -179,7 +179,6 @@ forge test
 
 See the [GitHub workflow](.github/workflows/run-forge-tests.yaml) for an example.
 
-
 ### Deploy contracts
 
 Deploys contracts to a specified chain using a deployment script.
