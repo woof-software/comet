@@ -98,8 +98,8 @@ describe('buyCollateral', function () {
     // Set reserves to -100 wei
     let t0 = await comet.totalsBasic();
     t0 = Object.assign({}, t0, {
-      totalSupplyBase: 100e6,
-      totalBorrowBase: 0n,
+      totalSupplyBase: 100e6 + 1,
+      totalBorrowBase: 1n,
     });
     await wait(comet.setTotalsBasic(t0));
 

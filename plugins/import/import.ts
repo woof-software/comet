@@ -1,4 +1,4 @@
-import { get, post, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan';
+import { get, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan';
 import { getBlockscoutApiUrl, getBlockscoutRPCUrl } from './blockscout';
 import { providers } from 'ethers';
 
@@ -28,8 +28,6 @@ export async function loadContract(source: string, network: string, address: str
       return await loadBlockscoutContract(network, address);
     case 'etherscan':
       return await loadEtherscanContract(network, address);
-    case 'ronin':
-      return await loadRoninContract(network, address);
     default:
       throw new Error(`Unknown source \`${source}\`, expected one of [etherscan]`);
   }
@@ -72,42 +70,6 @@ interface EtherscanData {
   constructorArgs: string;
 }
 
-async function getRoninApiData(network: string, address: string, apiKey: string): Promise<EtherscanData> {
-  let apiUrl = await getEtherscanUrl(network);
-  let contract = (await get(`${apiUrl}/contract/${address}`, {})).result.contract_name;
-  let abi = (await get(`${apiUrl}/contract/${address}/abi`, {})).result.output.abi;
-  let src;
-  if (address.toLowerCase() === '0xe514d9deb7966c8be0ca922de8a064264ea6bcd4') {
-    let apiUrl = await getEtherscanApiUrl('mainnet');
-
-    let result = await get(apiUrl, {
-      module: 'contract',
-      action: 'getsourcecode',
-      address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-      apikey: apiKey,
-    });
-
-    let s = <EtherscanSource>(<unknown>result.result[0]);
-    src = s.SourceCode;
-  } else {
-    src = (await get(`${apiUrl}/contract/${address}/src`, {})).result[0].content;
-  }
-  let metadata = (await get(`${apiUrl}/contract/${address}/metadata`, {})).result;
-  let deploymentBytecode = (await get(`${apiUrl}/contract/${address}`, {})).result.at_tx;
-  let compiler = metadata.compiler.version;
-  let optimized = metadata.settings.optimizer.enabled;
-  let optimizationRuns = metadata.settings.optimizer.runs;
-
-  return {
-    source: src,
-    abi: abi,
-    contract,
-    compiler,
-    optimized: optimized,
-    optimizationRuns: optimizationRuns,
-    constructorArgs: deploymentBytecode,
-  };
-}
 async function pullFirstTransactionForContractFromBlockscout(network: string, address: string) {
   const params = {
     module: 'account',
@@ -125,8 +87,7 @@ async function pullFirstTransactionForContractFromBlockscout(network: string, ad
   debug(`Attempting to pull Contract Creation code from first tx at ${debugUrl}`);
   const result = await get(url, {});
 
-  const contractCreationCode = result.result[0].input;
-  console.log('code', contractCreationCode);
+  const contractCreationCode = result.result?.[0]?.input;
   if (!contractCreationCode) {
     throw new Error(`Unable to find Contract Creation tx at ${debugUrl}`);
   }
@@ -134,7 +95,53 @@ async function pullFirstTransactionForContractFromBlockscout(network: string, ad
   return contractCreationCode.slice(2);
 }
 
-async function getBlockscoutApiData(network: string, address: string): Promise<EtherscanData> {
+// Sourcify chain IDs for networks whose own Blockscout instance has real gaps in verification
+// coverage that Sourcify's independent verification database fills — seen repeatedly for Ronin
+// contracts verified via Sourcify but not (yet, or ever) through explorer.roninchain.com itself.
+const sourcifyChainIds: { [network: string]: number } = {
+  ronin: 2020,
+};
+
+async function getSourcifyApiData(network: string, address: string): Promise<EtherscanData> {
+  const chainId = sourcifyChainIds[network];
+  if (!chainId) {
+    throw new Error('Contract source code not verified');
+  }
+
+  const result = await get(`https://sourcify.dev/server/v2/contract/${chainId}/${address}`, {
+    fields: 'abi,compilation,metadata,sources',
+  });
+
+  if (!result?.metadata) {
+    throw new Error('Contract source code not verified');
+  }
+
+  const { abi, compilation, metadata, sources } = result;
+
+  return {
+    // Etherscan's SourceCode field double-wraps standard-json-input sources in an extra pair
+    // of braces (see parseSources() below); mimic that so multi-file Sourcify sources parse
+    // the same way, using real file content instead of just the keccak256/urls that
+    // metadata.sources normally carries.
+    source: `{${JSON.stringify({ ...metadata, sources })}}`,
+    abi,
+    contract: compilation.name,
+    compiler: compilation.compilerVersion,
+    optimized: metadata.settings?.optimizer?.enabled ?? false,
+    optimizationRuns: metadata.settings?.optimizer?.runs ?? 0,
+    // Sourcify's creation-time constructor args aren't fetched here, so contractCreationCode
+    // won't get its constructor-args suffix stripped for this fallback path — a minor
+    // completeness gap, not a correctness one (bin just retains that trailing data).
+    constructorArgs: '',
+  };
+}
+
+async function getBlockscoutApiData(
+  network: string,
+  address: string,
+  retries: number = 3,
+  retryDelay: number = 2000
+): Promise<EtherscanData> {
   let apiUrl = await getBlockscoutApiUrl(network);
 
   let result = await get(apiUrl, {
@@ -150,7 +157,27 @@ async function getBlockscoutApiData(network: string, address: string): Promise<E
   let s = <BlockscoutSource>(<unknown>result.result[0]);
 
   if (s.ABI === 'Contract source code not verified') {
-    throw new Error('Contract source code not verified');
+    return await getSourcifyApiData(network, address);
+  }
+
+  if (!s.ABI) {
+    // For networks with a Sourcify fallback configured, an incomplete Blockscout response has
+    // consistently turned out to be permanent (Blockscout never gets it), not transient — so
+    // retrying Blockscout here just wastes up to ~14s per contract for nothing. Go straight to
+    // Sourcify instead. Networks without a Sourcify fallback keep the retry-then-fail behavior,
+    // since for those an incomplete response really has been a transient hiccup.
+    if (sourcifyChainIds[network]) {
+      return await getSourcifyApiData(network, address);
+    }
+
+    if (retries === 0) {
+      throw new Error('Contract source code not verified');
+    }
+
+    debug(`Blockscout returned an incomplete response for ${network}@${address}, retrying in ${retryDelay / 1000}s; ${retries} retries left`);
+
+    await new Promise(ok => setTimeout(ok, retryDelay));
+    return getBlockscoutApiData(network, address, retries - 1, retryDelay * 2 > 10000 ? 10000 : retryDelay * 2);
   }
 
   return {
@@ -158,7 +185,7 @@ async function getBlockscoutApiData(network: string, address: string): Promise<E
     abi: JSON.parse(s.ABI),
     contract: s.ContractName,
     compiler: s.CompilerVersion,
-    optimized: s.OptimizationUsed as unknown as boolean,
+    optimized: s.OptimizationUsed !== '0',
     optimizationRuns: Number(s.OptimizationRuns),
     constructorArgs: s.ConstructorArguments,
   };
@@ -346,17 +373,6 @@ async function pullFirstTransactionForContractFromEtherscan(network: string, add
   return contractCreationCode.slice(2);
 }
 
-async function getRoninContractDeploymentData(tx: string) {
-  const res = await post(`https://api.roninchain.com/rpc`, {
-    jsonrpc: '2.0',
-    method: 'eth_getTransactionByHash',
-    params: [tx],
-    id: 1
-  });
-
-  return res.result.input;
-}
-
 async function getContractCreationCode(network: string, address: string, i: number = 0) {
   const strategies = [
     (net: string, addr: string) => scrapeContractCreationCodeFromEtherscan(net, addr),
@@ -364,19 +380,6 @@ async function getContractCreationCode(network: string, address: string, i: numb
     (net: string, addr: string) => pullFirstTransactionForContractFromEtherscan(net, addr, i),
   ];
   let errors = [];
-  if (network === 'ronin') {
-    try {
-      const res = await post(`https://api.roninchain.com/rpc`, {
-        jsonrpc: '2.0',
-        method: 'eth_getCode',
-        params: [address, 'latest'],
-        id: 1
-      });
-      return res.result;
-    } catch (error) {
-      errors.push(error);
-    }
-  }
   for (const strategy of strategies) {
     try {
       return await strategy(network, address);
@@ -423,73 +426,6 @@ function parseSources({ source, contract, optimized, optimizationRuns }: Ethersc
     };
   }
 }
-
-export async function loadRoninContract(network: string, address: string) {
-  const networkName = network;
-  const maxRetries = 12; // Maximum number of API key rotations
-  let lastError: Error | null = null;
-
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const apiKey = getEtherscanApiKey('mainnet', i);
-      const roninData = await getRoninApiData(networkName, address, apiKey);
-      const { language, settings, sources } = parseSources(roninData);
-      let contractCreationCode = await getContractCreationCode(networkName, address, i);
-      let {
-        abi,
-        contract,
-        compiler,
-        constructorArgs
-      } = roninData;
-      let bytecodeWithTxArgs = await getRoninContractDeploymentData(constructorArgs);
-
-      constructorArgs = bytecodeWithTxArgs.slice(contractCreationCode.length);
-      const encodedABI = JSON.stringify(abi);
-      const contractPath = Object.keys(sources)[0];
-      const contractFQN = `${contractPath}:${contract}`;
-
-      const contractBuild = {
-        contract,
-        contracts: {
-          [contractFQN]: {
-            network,
-            address,
-            name: contract,
-            abi: encodedABI,
-            bin: contractCreationCode.slice(0, 1),
-            constructorArgs,
-            metadata: JSON.stringify({
-              compiler: {
-                version: compiler,
-              },
-              language,
-              output: {
-                abi: encodedABI,
-              },
-              devdoc: {},
-              sources,
-              settings,
-              version: 1,
-            }),
-          },
-        },
-        version: compiler,
-      };
-
-      return contractBuild;
-    } catch (error) {
-      lastError = error;
-      debug(`Attempt ${i + 1} failed for loadRoninContract: ${error.message}`);
-      if (i < maxRetries - 1) {
-        debug(`Retrying with next API key...`);
-      }
-    }
-  }
-
-  throw new Error(`Failed to load Ronin contract after ${maxRetries} attempts: ${lastError?.message}`);
-}
-
-
 
 export async function loadEtherscanContract(network: string, address: string) {
   const networkName = network;

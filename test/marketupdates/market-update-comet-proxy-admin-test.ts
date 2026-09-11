@@ -80,6 +80,7 @@ describe('CometProxyAdmin', function() {
     const abi = [
       'event CometDeployed(address indexed cometProxy, address indexed newComet)',
       'event Upgraded(address indexed implementation)',
+      'event AssetListCreated(address indexed assetList, tuple(address asset, address priceFeed, uint8 decimals, uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint128 supplyCap)[] assetConfigs)',
     ];
 
     // Initialize the contract interface
@@ -96,7 +97,9 @@ describe('CometProxyAdmin', function() {
     txnForGovernorTimelock.receipt.events.forEach((event) => {
       try {
         const decodedEvent = iface.parseLog(event);
-        eventsForGovernorTimelock.push(decodedEvent);
+        if (decodedEvent.name !== 'AssetListCreated') {
+          eventsForGovernorTimelock.push(decodedEvent);
+        }
       } catch (error) {
         console.log('Failed to decode event:', error);
       }
@@ -121,7 +124,9 @@ describe('CometProxyAdmin', function() {
     txnForMarketAdmin.receipt.events.forEach((event) => {
       try {
         const decodedEvent = iface.parseLog(event);
-        eventsForMarketAdmin.push(decodedEvent);
+        if (decodedEvent.name !== 'AssetListCreated') {
+          eventsForMarketAdmin.push(decodedEvent);
+        }
       } catch (error) {
         console.log('Failed to decode event:', error);
       }
@@ -154,6 +159,7 @@ describe('CometProxyAdmin', function() {
     const abiToCheck = [
       'event CometDeployed(address indexed cometProxy, address indexed newComet)',
       'event Upgraded(address indexed implementation)',
+      'event AssetListCreated(address indexed assetList, tuple(address asset, address priceFeed, uint8 decimals, uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint128 supplyCap)[] assetConfigs)',
     ];
 
     // Initialize the contract interface
@@ -174,7 +180,9 @@ describe('CometProxyAdmin', function() {
     txnForGovernorTimelock.receipt.events.forEach((event) => {
       try {
         const decodedEvent = iface.parseLog(event);
-        eventsForGovernorTimelock.push(decodedEvent);
+        if (decodedEvent.name !== 'AssetListCreated') {
+          eventsForGovernorTimelock.push(decodedEvent);
+        }
       } catch (error) {
         console.log('Failed to decode event:', error);
       }
@@ -203,7 +211,9 @@ describe('CometProxyAdmin', function() {
     txnForMarketAdmin.receipt.events.forEach((event) => {
       try {
         const decodedEvent = iface.parseLog(event);
-        eventsForMarketAdmin.push(decodedEvent);
+        if (decodedEvent.name !== 'AssetListCreated') {
+          eventsForMarketAdmin.push(decodedEvent);
+        }
       } catch (error) {
         console.log('Failed to decode event:', error);
       }

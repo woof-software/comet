@@ -1,78 +1,23 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
-import { BigNumber, ethers } from 'ethers';
+import { ethers } from 'ethers';
 import { CometContext, scenario } from './context/CometContext';
 import { exp } from '../test/helpers';
-import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker } from './utils';
+import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker, normalizeStructOutput, getActiveAsset, hasActiveAsset } from './utils';
 import { MarketAdminPermissionChecker } from '../build/types';
 
 const SECONDS_PER_YEAR = 31_536_000n;
 // Based on contract's internal precision: FACTOR_SCALE=1e18 with 4 decimal places
-const FACTOR_SCALE = 10n ** 18n;
-const MIN_FACTOR_INCREMENT = FACTOR_SCALE / 10n ** 4n;
+// const FACTOR_SCALE = exp(1, 18);
+const MIN_FACTOR_INCREMENT =  exp(0.0001, 18); // FACTOR_SCALE / 10 ** 4
 
-type ArrayMethods = keyof Omit<any[], number>;
-
-type NamedKeys<T> = {
-  [K in keyof T as K extends number | `${number}` | ArrayMethods ? never : K]: T[K];
-};
-
-type Normalize<T> = T extends BigNumber
-  ? bigint
-  : T extends string | number | boolean
-  ? T
-  : [NamedKeys<T>] extends [Record<string, never>]
-  ? T extends (infer U)[]
-    ? Normalize<U>[]
-    : T
-  : { [K in keyof NamedKeys<T>]: Normalize<NamedKeys<T>[K]> };
-
-type NormalizedStruct<T> = Normalize<NamedKeys<T>>;
-
-/**
- * Hybrid array-objects with both numeric and named keys are stripped to plain
- * objects with native bigint values, safe to destructure, compare, and serialize.
- */
-function normalizeStructOutput<T>(value: T): NormalizedStruct<T> {
-  function normalize(val: any): any {
-    if (BigNumber.isBigNumber(val)) {
-      return val.toBigInt();
-    }
-    if (val && typeof val === 'object') {
-      const namedKeys = Object.keys(val).filter((key) => isNaN(Number(key)));
-      if (namedKeys.length > 0) {
-        return Object.fromEntries(namedKeys.map((key) => [key, normalize(val[key])]));
-      }
-      if (Array.isArray(val)) {
-        return val.map(normalize);
-      }
-    }
-    return val;
-  }
-
-  return normalize(value) as NormalizedStruct<T>;
-}
-
-async function hasActiveAsset(ctx: CometContext): Promise<boolean> {
-  const configurator = await ctx.getConfigurator();
-  const cometAddress = (await ctx.getComet()).address;
-  const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
-
-  return assetConfigs.some((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
-}
-
-/// Finds the first asset with non-zero configuration values
-async function getActiveAsset(context: CometContext) {
-  const configurator = await context.getConfigurator();
-  const cometAddress = (await context.getComet()).address;
-  const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
-
-  const assetIndex = assetConfigs.findIndex((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
-
-  return {
-    assetIndex,
-    assetConfig: assetConfigs[assetIndex]
-  };
+// Mirrors AssetList.sol's pack/unpack round-trip (lines 152-157, 284-287): factors are descaled
+// to a uint16 (`value / descale`) when packed into AssetInfo, then rescaled back out
+// (`unpacked * rescale`) with descale == rescale == FACTOR_SCALE / 1e4. Net effect is flooring to
+// this 4-decimal grid, so any raw config value must go through the same floor division before
+// comparing against what gets read back from AssetInfo post-upgrade.
+function quantizeFactor(value: bigint): bigint {
+  return (value / MIN_FACTOR_INCREMENT) * MIN_FACTOR_INCREMENT;
 }
 
 function getMinSupplyCapIncrement(decimals: number): bigint {
@@ -949,7 +894,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfigsBefore = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs;
     const existingAssetConfig = assetConfigsBefore.at(assetIndex);
 
@@ -969,8 +914,8 @@ scenario(
 
     const updatedAssetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(existingAssetConfig.asset));
 
-    expect(updatedAssetInfo.borrowCollateralFactor).to.be.equal(updatedAssetConfig.borrowCollateralFactor);
-    expect(updatedAssetInfo.liquidateCollateralFactor).to.be.equal(updatedAssetConfig.liquidateCollateralFactor);
+    expect(updatedAssetInfo.borrowCollateralFactor).to.be.equal(quantizeFactor(updatedAssetConfig.borrowCollateralFactor));
+    expect(updatedAssetInfo.liquidateCollateralFactor).to.be.equal(quantizeFactor(updatedAssetConfig.liquidateCollateralFactor));
   }
 );
 
@@ -980,7 +925,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -1011,7 +956,7 @@ scenario('Configurator#updateAsset reverts if called by non-governor', {}, async
   const { albert } = actors;
 
   const existingAssetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
-    -1
+    0
   );
 
   const updatedAssetConfig = {
@@ -1029,7 +974,7 @@ scenario('Configurator#updateAsset reverts if asset does not exist', {}, async (
   const { admin } = actors;
 
   const existingAssetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
-    -1
+    0
   );
 
   const updatedAssetConfig = {
@@ -1049,7 +994,7 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
     // use the last asset in the existing configuration to ensure the asset exists
-    const assetIndex = -1;
+    const assetIndex = 0;
     const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).asset;
     const newPriceFeed = await deployPriceFeed(context, 'asset');
 
@@ -1069,7 +1014,7 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
     // use the last asset in the existing configuration to ensure the asset exists
-    const assetIndex = -1;
+    const assetIndex = 0;
     const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).asset;
 
     const firstNewPriceFeed = await deployPriceFeed(context, 'asset');
@@ -1099,7 +1044,7 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { albert } = actors;
 
-    const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(-1).asset;
+    const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(0).asset;
     const newPriceFeed = await deployPriceFeed(context, 'asset');
 
     await expectRevertCustom(
@@ -2290,7 +2235,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.borrowCollateralFactor).to.be.equal(newAssetBorrowCollateralFactor);
+    expect(assetInfo.borrowCollateralFactor).to.be.equal(quantizeFactor(newAssetBorrowCollateralFactor));
   }
 );
 
@@ -2300,7 +2245,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -2383,7 +2328,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.borrowCollateralFactor).to.be.equal(newAssetBorrowCollateralFactor);
+    expect(assetInfo.borrowCollateralFactor).to.be.equal(quantizeFactor(newAssetBorrowCollateralFactor));
   }
 );
 
@@ -2423,7 +2368,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(-1);
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(0);
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
     const newAssetBorrowCollateralFactor = oldAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
 
@@ -2442,7 +2387,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
     // use the existing config to get a valid factor value
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(-1);
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(0);
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
     const newAssetBorrowCollateralFactor = oldAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
 
@@ -2463,7 +2408,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -2483,7 +2428,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.liquidateCollateralFactor).to.be.equal(newAssetLiquidateCollateralFactor);
+    expect(assetInfo.liquidateCollateralFactor).to.be.equal(quantizeFactor(newAssetLiquidateCollateralFactor));
   }
 );
 
@@ -2493,7 +2438,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -2530,7 +2475,7 @@ scenario(
     const { admin } = actors;
 
     const marketAdminSigner = await getMarketAdminSigner(context);
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -2550,7 +2495,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.liquidateCollateralFactor).to.be.equal(newAssetLiquidateCollateralFactor);
+    expect(assetInfo.liquidateCollateralFactor).to.be.equal(quantizeFactor(newAssetLiquidateCollateralFactor));
   }
 );
 
@@ -2565,7 +2510,7 @@ scenario(
     await expectRevertCustom(
       configurator
         .connect(albert.signer)
-        .updateAssetLiquidateCollateralFactor(comet.address, assetConfigs.at(-1).asset, 1n),
+        .updateAssetLiquidateCollateralFactor(comet.address, assetConfigs.at(0).asset, 1n),
       'Unauthorized()'
     );
   }
@@ -2592,7 +2537,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -2612,7 +2557,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.liquidationFactor).to.be.equal(newAssetLiquidationFactor);
+    expect(assetInfo.liquidationFactor).to.be.equal(quantizeFactor(newAssetLiquidationFactor));
   }
 );
 
@@ -2622,7 +2567,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -2659,7 +2604,7 @@ scenario(
     const { admin } = actors;
 
     const marketAdminSigner = await getMarketAdminSigner(context);
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -2679,7 +2624,7 @@ scenario(
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
-    expect(assetInfo.liquidationFactor).to.be.equal(newAssetLiquidationFactor);
+    expect(assetInfo.liquidationFactor).to.be.equal(quantizeFactor(newAssetLiquidationFactor));
   }
 );
 
@@ -2692,7 +2637,7 @@ scenario(
     const assetConfigs = (await configurator.getConfiguration(comet.address)).assetConfigs;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).updateAssetLiquidationFactor(comet.address, assetConfigs.at(-1).asset, 1n),
+      configurator.connect(albert.signer).updateAssetLiquidationFactor(comet.address, assetConfigs.at(0).asset, 1n),
       'Unauthorized()'
     );
   }
@@ -2719,7 +2664,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -2748,7 +2693,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -2810,7 +2755,7 @@ scenario(
     const { admin } = actors;
 
     const marketAdminSigner = await getMarketAdminSigner(context);
-    const assetIndex = -1;
+    const assetIndex = 0;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
       assetIndex
     );
@@ -2870,7 +2815,7 @@ scenario(
     const assetConfigs = (await configurator.getConfiguration(comet.address)).assetConfigs;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).updateAssetSupplyCap(comet.address, assetConfigs.at(-1).asset, 1n),
+      configurator.connect(albert.signer).updateAssetSupplyCap(comet.address, assetConfigs.at(0).asset, 1n),
       'Unauthorized()'
     );
   }

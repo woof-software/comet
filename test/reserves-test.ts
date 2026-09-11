@@ -45,9 +45,9 @@ describe('getReserves', function () {
 
     await setTotalsBasic(comet, {
       baseSupplyIndex: 2e15,
-      baseBorrowIndex: 3e15,
+      baseBorrowIndex: 0,
       totalSupplyBase: 50n,
-      totalBorrowBase: 0n,
+      totalBorrowBase: 1n,
     });
 
     const reserves = await comet.getReserves();
