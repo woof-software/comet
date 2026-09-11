@@ -17,7 +17,7 @@ import { BigNumber, ContractTransaction } from 'ethers';
  * - Sensitivity of post-absorb principal to different price drop magnitudes (borrower becomes
  *   lender vs principal zero) and behavior when absorbing across many (24) collateral assets.
  */
-describe.only('abosorb', function () {
+describe('abosorb', function () {
   // Constants
   const baseTokenDecimals = 6;
   const usdcPrice = exp(1, 8);
