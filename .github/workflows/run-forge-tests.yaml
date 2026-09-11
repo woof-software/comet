@@ -17,9 +17,6 @@ jobs:
         with:
           version: nightly
 
-      - name: Install yarn
-        run: yarn
-
       - name: Install dependencies
         run: forge install && yarn install --non-interactive --frozen-lockfile
 
@@ -49,7 +46,3 @@ jobs:
           POLYGON_QUICKNODE_LINK: ${{ secrets.POLYGON_QUICKNODE_LINK }}
           MANTLE_QUICKNODE_LINK: ${{ secrets.MANTLE_QUICKNODE_LINK }}
           SALT: ${{ secrets.SALT }}
-
-      - name: Build Comet with older solc versions
-        run: |
-          forge build --contracts contracts/Comet.sol --use solc:0.8.15 --via-ir --optimizer-runs 1
