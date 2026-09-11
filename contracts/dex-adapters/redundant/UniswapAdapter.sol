@@ -67,8 +67,6 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
     mapping(address => SingleRoute) public singleRoutes;
     /// @notice Multi-hop path per collateral asset (set when `routeKind == Multi`).
     mapping(address => PathKey[]) internal _multiPaths;
-    /// @notice Encoded SETTLE action per collateral asset.
-    mapping(address => bytes) public settleActions;
 
     /**
      * @notice Stores a V4 route per collateral, keyed by `RouteConfig.collateral`. Router/slippage parameters are forwarded to {CoreDexAdapter}.
@@ -101,12 +99,6 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
             } else if (cfg.kind == RouteKind.Multi) {
                 _multiPaths[collateral] = cfg.path;
             }
-            // SETTLE pays the input currency (the collateral, or native ETH when it is WETH) from the router.
-            settleActions[collateral] = abi.encode(
-                Currency.wrap(collateral == _weth ? address(0) : collateral),
-                CONTRACT_BALANCE,
-                false
-            );
         }
     }
 
@@ -267,7 +259,11 @@ abstract contract UniswapAdapter is CoreDexAdapter, IUniswapAdapter {
             revert MissingSwapRoute(collateral);
         }
 
-        params[1] = settleActions[collateral];
+        params[1] = abi.encode(
+            Currency.wrap(collateral == weth ? address(0) : collateral),
+            amountIn,
+            false
+        );
         params[2] = takeAction;
         v4Input = abi.encode(actions, params);
     }

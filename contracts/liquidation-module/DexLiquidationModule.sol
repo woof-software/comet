@@ -9,6 +9,7 @@ import { IDexLiquidationModuleErrors } from "../interfaces/liquidation-module/ID
 import { IDexLiquidationModuleEvents } from "../interfaces/liquidation-module/IDexLiquidationModuleEvents.sol";
 
 import { LiquidationModule } from "./LiquidationModule.sol";
+import { CometOperationsLocker, ICometOperationsLock } from "./CometOperationsLocker.sol";
 
 /**
  * @title Dex Liquidation Module
@@ -16,7 +17,7 @@ import { LiquidationModule } from "./LiquidationModule.sol";
  * @notice Extends LiquidationModule with a DEX-based liquidation path.
  * @custom:security-contact dmitriy@woof.software
  */
-contract DexLiquidationModule is LiquidationModule, IDexLiquidationModuleErrors, IDexLiquidationModuleEvents {
+contract DexLiquidationModule is LiquidationModule, CometOperationsLocker, IDexLiquidationModuleErrors, IDexLiquidationModuleEvents {
     using SafeERC20 for IERC20;
 
     /// @notice Basis-point denominator (100% = 10_000 bps).
@@ -81,20 +82,20 @@ contract DexLiquidationModule is LiquidationModule, IDexLiquidationModuleErrors,
     }
 
     /**
-     * @notice Routes a keeper liquidation to the appropriate path based on the account's current HF.
-     * @dev Caller must be an Executor. While the DEX path is paused every call falls back to absorb.
-     *
-     *      HF = liquidityValue * FACTOR_SCALE / debtValue  (1e18 scale)
-     *
-     *      - HF > healthPositionHF              → reverts NotLiquidatable
-     *      - borderHF < HF <= healthPositionHF  → DEX route (`_dexLiquidate`)
-     *      - HF <= borderHF                     → default absorb route (`_liquidate`)
-     *
+     * @notice Routes a keeper liquidation of an underwater account to the DEX route, or to the default
+     *         absorb route while the DEX path is paused.
+     * @dev Caller must be an Executor, and Comet must not have absorb paused. The account is accrued first,
+     *      so the seizure plan is built against its debt as of this block. An account that is not
+     *      underwater reverts with `NotLiquidatable` while the plan is computed.
+     * @dev The call holds Comet's operations lock from end to end: the DEX route updates Comet before the
+     *      seized collateral is sold, and no one may act on the market in between. See
+     *      `CometOperationsLocker.lockCometOperations`.
      * @param absorber The recipient of the liquidation incentive.
      * @param account  The underwater account to liquidate.
      * @param swapData Per-collateral router calldata for the DEX route, aligned to the seizure plan order.
+     *                 Ignored on the absorb route, which sells nothing.
      */
-    function liquidate(address absorber, address account, bytes[] calldata swapData) external override nonReentrant onlyRole(EXECUTOR_ROLE) {
+    function liquidate(address absorber, address account, bytes[] calldata swapData) external override nonReentrant onlyRole(EXECUTOR_ROLE) lockCometOperations {
         if (comet.isAbsorbPaused()) revert Paused();
 
         comet.accrueAccount(account);
@@ -142,9 +143,19 @@ contract DexLiquidationModule is LiquidationModule, IDexLiquidationModuleErrors,
                 absorber,
                 account,
                 plan[i].index,
-                uint128(plan[i].seizedAmount),
+                safe128(plan[i].seizedAmount),
                 plan[i].wantedCollateralValue
             );
+        }
+
+        /// @dev Even if received amount is less than debt due to slippage, the DEX adapter verifies the slippage
+        ///      tolerance, so we can close the whole debt.
+        // Comet emits AbsorbDebt from the hook.
+        ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(absorber, account, newBalance, basePaidOut, basePaidOutValue);
+
+        for (uint8 i; i < plan.length; ++i) {
+            if (plan[i].seizedAmount == 0) continue;
+
             // Hook transfers collateral to the module, so module re-transfers it further to the adapter
             IERC20(plan[i].asset).safeTransfer(address(dexAdapter), plan[i].seizedAmount);
             // A failed swap means the adapter swept that collateral back to Comet (it is absorbed instead of
@@ -152,11 +163,6 @@ contract DexLiquidationModule is LiquidationModule, IDexLiquidationModuleErrors,
             if (!dexAdapter.swap(plan[i].asset, plan[i].seizedAmount, swapData[i]))
                 unswappedSeizedValue += plan[i].seizedValue;
         }
-
-        /// @dev Even if received amount is less than debt due to slippage, the DEX adapter verifies the slippage
-        ///      tolerance, so we can close the whole debt.
-        // Comet emits AbsorbDebt from the hook.
-        ICometLiquidationInterface(address(comet)).updateDebtAndPrincipal(absorber, account, newBalance, basePaidOut, basePaidOutValue);
 
         uint256 baseReceived = baseToken.balanceOf(address(this)) - baseBefore;
         // Convert the swept collateral's value to base.
@@ -225,5 +231,9 @@ contract DexLiquidationModule is LiquidationModule, IDexLiquidationModuleErrors,
         dexRoutePaused = paused;
         
         emit DexPausedSet(paused);
+    }
+
+    function _lockedComet() internal view override returns (ICometOperationsLock) {
+        return ICometOperationsLock(address(comet));
     }
 }
