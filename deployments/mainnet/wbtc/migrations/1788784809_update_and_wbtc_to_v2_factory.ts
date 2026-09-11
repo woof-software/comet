@@ -23,6 +23,7 @@ export default migration('1788784809_update_and_wbtc_to_v2_factory', {
       governor,
       cometAdmin,
       configurator,
+      pumpBTC,
     } = await deploymentManager.getContracts();
 
     const mainnetActions = [
@@ -50,7 +51,27 @@ export default migration('1788784809_update_and_wbtc_to_v2_factory', {
         signature: 'setExtensionDelegate(address,address)',
         args: [WBTC_COMET, WBTC_EXT],
       },
-      // 4. Deploy and upgrade WBTC Comet to a new version of Comet
+      // 4. Fully deprecate pumpBTC as collateral: zero its borrow collateral factor
+      {
+        contract: configurator,
+        signature: 'updateAssetBorrowCollateralFactor(address,address,uint64)',
+        args: [WBTC_COMET, pumpBTC.address, 0],
+      },
+      // 5. Fully deprecate pumpBTC as collateral: zero its liquidate collateral factor
+      {
+        contract: configurator,
+        signature: 'updateAssetLiquidateCollateralFactor(address,address,uint64)',
+        args: [WBTC_COMET, pumpBTC.address, 0],
+      },
+      // 6. Set pumpBTC's liquidation factor to 100% so any pumpBTC seized during
+      //    absorption of unrelated debt is credited to protocol reserves and
+      //    remains sellable via buyCollateral, instead of getting stuck unseized
+      {
+        contract: configurator,
+        signature: 'updateAssetLiquidationFactor(address,address,uint64)',
+        args: [WBTC_COMET, pumpBTC.address, exp(1,18)],
+      },
+      // 7. Deploy and upgrade WBTC Comet to a new version of Comet
       {
         contract: cometAdmin,
         signature: 'deployAndUpgradeTo(address,address)',
@@ -58,39 +79,15 @@ export default migration('1788784809_update_and_wbtc_to_v2_factory', {
       },
     ];
 
-    const description = `# Update cWBTCv3 Comets on Mainnet to the service patch version
+    const description = `# Completion of pumpBTC Deprecation on cWBTCv3
 
 ## Proposal summary
 
-WOOF! proposes to update Mainnet cWBTCv3 Comet markets to a new service patch version introducing several improvements and security enhancements:
+WOOF! proposes to complete the deprecation of pumpBTC as collateral on cWBTCv3. pumpBTC's supply cap was already reduced to 0 and its price feed already points to a constant price feed of 1 wei ([Compound Governance Proposal 605](https://www.tally.xyz/gov/compound/proposal/605)). This proposal finishes the process by zeroing out pumpBTC's borrow collateral factor and liquidate collateral factor, fully de-listing it (both factors zero ⇒ fully de-listed), while setting its liquidation factor to 100% so that any pumpBTC seized when liquidating unrelated debt is credited to protocol reserves and remains sellable via buyCollateral rather than getting stuck with the borrower.
 
-- Extended Pause Controls: collateral interactions can now be paused independently per collateral asset.
-- Price Feed Patch (Post-USDM incident response): skips price feed calls for assets with zero collateral factor, preventing unnecessary reverts.
-- Collateral Deactivation Mechanism: introduces a Guardian-controlled emergency mechanism to deactivate unsafe collateral assets, with reactivation requiring a governance proposal.
-- Utilization Peaking Protection: caps utilization at 200%, preventing additional borrowing when post-borrow utilization exceeds this threshold, while preserving lender withdrawals.
-- Borrow Index Fix (Empty Market): prevents borrow interest accrual in markets without active borrowers.
-- Supply Index Fix (Empty Market): ensures supply index only accrues when lenders are present.
-- Lender Illiquidity Fix in Zero-Borrow Markets: prevents reserve depletion in markets with no borrowers by capping supply rate to zero when utilization is zero and reserves are exhausted.
-- Accrue Interest on Collateral Actions (Post-USDM incident response): collateral actions (supply, withdraw, transfer) now trigger interest accrual for affected accounts.
-- Technical Improvements: includes removal of redundant arguments in supplyInternal() and optimized price caching in absorbInternal(), improving gas efficiency without affecting protocol behavior.
-
-This proposal takes the governance steps recommended and necessary to update Compound III WBTC markets on Mainnet. Simulations have confirmed the market's readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario).
+These configuration changes are bundled with an update of the cWBTCv3 Comet to the recent service patch version, and both are applied together in a single deployAndUpgradeTo call.
 
 Detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/21).
-
-### Bytecode Repository
-
-This update is done with the use of the bytecode repository, which provides trustless and deterministic deployments.
-
-Further details on the deployment can be found in the [Bytecode Repository git](https://github.com/woof-software/bytecode-repository) and [forum discussion](https://www.comp.xyz/t/rfc-bytecode-repository-and-deployment-pipeline-modernization/6965).
-
-### Audit
-
-Both service patch Comet update and Bytecode Repository have been audited by Certora and full reports can be found here:
-
-- [Certora Comet Service Patch Audit](https://www.certora.com/reports/comet-service-patch)
-- [Certora Bytecode Repository Audit](https://www.certora.com/reports/compound-bytecoderepository)
-
 
 ## Proposal Actions
 
@@ -100,8 +97,11 @@ The second proposal action updates the factory of the WBTC Comet to the new V2 f
 
 The third proposal action sets the extension delegate for the WBTC Comet to the new service patch version.
 
-The fourth proposal action deploys and upgrades the WBTC Comet to the new service patch version.
+The fourth and fifth proposal actions zero out pumpBTC's borrow collateral factor and liquidate collateral factor, respectively, completing its deprecation as collateral on cWBTCv3. The sixth proposal action sets pumpBTC's liquidation factor to 100%, so pumpBTC seized while liquidating unrelated debt is credited to protocol reserves and remains sellable via buyCollateral.
+
+The seventh proposal action deploys and upgrades the WBTC Comet, applying all of the above configuration changes.
 `;
+
     const txn = await deploymentManager.retry(async () =>
       trace(
         await governor.propose(...(await proposal(mainnetActions, description)))
@@ -120,12 +120,17 @@ The fourth proposal action deploys and upgrades the WBTC Comet to the new servic
   },
 
   async verify(deploymentManager: DeploymentManager) {
-    const { configurator } = await deploymentManager.getContracts();
+    const {
+      configurator,
+      pumpBTC,
+    } = await deploymentManager.getContracts();
     const newCometAbi = [
       'function MAX_SUPPORTED_UTILIZATION() external view returns (uint256)',
       'function symbol() external view returns (string)',
       'function name() external view returns (string)',
       'function extensionDelegate() external view returns (address)',
+      'function getAssetInfoByAddress(address asset) external view returns ((uint8 offset, address asset, address priceFeed, uint64 scale, uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint128 supplyCap))',
+      'function getPrice(address priceFeed) external view returns (uint256)',
     ];
 
     const factoryV2 = new Contract(
@@ -153,5 +158,20 @@ The fourth proposal action deploys and upgrades the WBTC Comet to the new servic
     expect(await newCometWbtc.symbol()).to.equal('cWBTCv3');
     expect(await newCometWbtc.name()).to.equal('Compound WBTC');
     expect(await newCometWbtc.extensionDelegate()).to.equal(WBTC_EXT);
+
+    // pumpBTC is fully deprecated: BCF and LCF are zeroed; liquidation factor is set
+    // to 100% so seized pumpBTC lands in protocol reserves and stays sellable
+    const pumpBTCInCometInfo = await newCometWbtc.getAssetInfoByAddress(pumpBTC.address);
+    expect(pumpBTCInCometInfo.borrowCollateralFactor).to.equal(0);
+    expect(pumpBTCInCometInfo.liquidateCollateralFactor).to.equal(0);
+    expect(pumpBTCInCometInfo.liquidationFactor).to.equal(exp(1, 18));
+    expect(pumpBTCInCometInfo.supplyCap).to.equal(0);
+    expect(await newCometWbtc.getPrice(pumpBTCInCometInfo.priceFeed)).to.equal(1);
+
+    const pumpBTCIndex = await configurator.getAssetIndex(WBTC_COMET, pumpBTC.address);
+    const pumpBTCInConfiguratorInfo = (await configurator.getConfiguration(WBTC_COMET)).assetConfigs[pumpBTCIndex];
+    expect(pumpBTCInConfiguratorInfo.borrowCollateralFactor).to.equal(0);
+    expect(pumpBTCInConfiguratorInfo.liquidateCollateralFactor).to.equal(0);
+    expect(pumpBTCInConfiguratorInfo.liquidationFactor).to.equal(exp(1, 18));
   },
 });
