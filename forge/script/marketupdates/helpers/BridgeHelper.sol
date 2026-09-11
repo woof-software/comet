@@ -47,11 +47,10 @@ library BridgeHelper {
             // Common setup for Optimism and Base
             address crossDomainMessenger = 0x4200000000000000000000000000000000000007;
             vm.prank(crossDomainMessenger);
-            address crossDomainMessengerImpl = 0xC0d3c0d3c0D3c0D3C0d3C0D3C0D3c0d3c0d30007;
 
             // Mock message sender
             vm.mockCall(
-                crossDomainMessengerImpl,
+                crossDomainMessenger,
                 abi.encodeWithSelector(IOvmL2CrossDomainMessengerInterface.xDomainMessageSender.selector),
                 abi.encode(messageSender)
             );
