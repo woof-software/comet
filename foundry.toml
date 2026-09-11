@@ -26,6 +26,20 @@ remappings = [
     "@comet-contracts/=contracts/",
 ]
 
+# Fuzzing runs on its own test root: the deployment tests under forge/test reference
+# contracts/Comet.sol, which this branch does not carry, so they would not compile.
+# TODO: change when the rest of the forge tests will be fixed
+[profile.fuzz]
+test = 'forge/test/fuzzing'
+# Narrowed to our own files. forge-std ships a suite of its own that needs filesystem permissions and
+# RPC endpoints this repo does not grant it, and it is discovered through the library path regardless
+# of the test root above.
+match_path = 'forge/test/fuzzing/**'
+
+[profile.fuzz.fuzz]
+runs = 2000
+seed = "0xdead"
+
 [rpc_endpoints]
 mainnet = "${MAINNET_QUICKNODE_LINK}"
 polygon = "${POLYGON_QUICKNODE_LINK}"

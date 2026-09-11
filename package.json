@@ -37,6 +37,7 @@
     "scenario": "hardhat scenario",
     "spider": "hardhat spider",
     "test": "hardhat test ./test/*.ts ./test/**/*.ts ./plugins/deployment_manager/test/*.ts ",
+    "test:fuzz": "FOUNDRY_PROFILE=fuzz forge test",
     "test:coverage": "NODE_OPTIONS='--max-old-space-size=8192' hardhat coverage",
     "audit:liquidator": "vendoza contracts/liquidator/vendor/manifest.json",
     "audit:vendor": "vendoza contracts/vendor/manifest.json",
