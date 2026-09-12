@@ -9,6 +9,7 @@ import "./IAssetListFactoryHolder.sol";
 import "./IAssetList.sol";
 
 import { ICoreLiquidationModule } from "./interfaces/liquidation-module/ICoreLiquidationModule.sol";
+import { ICometOperationsLockErrors } from "./interfaces/comet-operations-locker/ICometOperationsLockErrors.sol";
 
 /**
  * @title Compound's Comet Contract
@@ -194,7 +195,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
             status := sload(slot)
         }
 
+        // The market is open only when the slot is clean: `ENTERED` means this call re-enters a guarded one,
+        // any other non-zero value is the liquidation module's address holding the operations lock.
         if (status == REENTRANCY_GUARD_ENTERED) revert ReentrantCallBlocked();
+        if (status != REENTRANCY_GUARD_NOT_ENTERED) revert ICometOperationsLockErrors.OperationsLocked();
+
         assembly ("memory-safe") {
             sstore(slot, REENTRANCY_GUARD_ENTERED)
         }
@@ -205,7 +210,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
      */
     function nonReentrantAfter() internal {
         bytes32 slot = REENTRANCY_GUARD_FLAG_SLOT;
-        uint256 status;
+
         assembly ("memory-safe") {
             sstore(slot, REENTRANCY_GUARD_NOT_ENTERED)
         }
@@ -1320,7 +1325,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
     /// @notice Liquidation module hook for the DEX route: seizes collateral and transfers it to the module
     ///         which will re-rout it to the DEX adapter, so it can be swapped into the base asset.
-    function updateAndSeizeCollateral(address absorber, address account, uint8 index, uint128 seizedAmount, uint256 usdValue) external onlyLiquidationModule nonReentrant {
+    function updateAndSeizeCollateral(address absorber, address account, uint8 index, uint128 seizedAmount, uint256 usdValue) external onlyLiquidationModule {
         address asset = _updateCollateral(absorber, account, index, seizedAmount, usdValue);
 
         doTransferOut(asset, liquidationModule, seizedAmount);

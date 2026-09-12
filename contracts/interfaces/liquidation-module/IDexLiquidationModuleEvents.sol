@@ -2,13 +2,13 @@
 pragma solidity =0.8.15;
 
 /**
- * @title Liquidation Module Interface
+ * @title Dex Liquidation Module Events
  * @author Woof
- * @notice Errors and events specific to LiquidationModule — the extended module that adds a
- *         DEX-based liquidation path gated by configurable health factor boundaries.
+ * @notice Events specific to DexLiquidationModule — the extended module that adds a DEX-based
+ *         liquidation path on top of the base LiquidationModule.
  * @custom:security-contact dmitriy@woof.software
  */
-interface ILiquidationModuleEvents {
+interface IDexLiquidationModuleEvents {
     /// @notice Emitted when the multisig updates the executor incentive (in BPS) taken on the DEX route.
     event IncentiveBpsUpdated(uint16 oldIncentiveBps, uint16 newIncentiveBps);
 

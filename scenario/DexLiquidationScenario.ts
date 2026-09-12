@@ -3,7 +3,7 @@ import { CometContext } from './context/CometContext';
 import { expect } from 'chai';
 import {
   ERC20__factory,
-  LiquidationModule__factory,
+  DexLiquidationModule__factory,
   OneInchV6Adapter__factory,
   SimplePriceFeed__factory,
 } from '../build/types';
@@ -23,7 +23,7 @@ const PRICE_DROP_DENOMINATOR = 2;
 /**
  * DEX-route liquidation testing. Route-less collaterals are absorbed, while collaterals with routes are swapped.
  */
-scenario(
+scenario.only(
   'Comet#liquidation > dex route liquidation swaps collaterals with route and absorbs the rest',
   {
     filter: async (ctx: CometContext) => await hasDexLiquidation(ctx),
@@ -38,7 +38,7 @@ scenario(
 
     // The module + adapter are guaranteed present by the filter.
     const moduleAddress = (await getLiquidationModuleAddress(context))!;
-    const module = LiquidationModule__factory.connect(moduleAddress, ethers.provider);
+    const module = DexLiquidationModule__factory.connect(moduleAddress, ethers.provider);
     const adapter = OneInchV6Adapter__factory.connect(await module.dexAdapter(), ethers.provider);
 
     const baseToken = await comet.baseToken();

@@ -9,10 +9,10 @@ import {
   SimplePriceFeed__factory,
   FaucetToken__factory,
   OneInchV6Adapter__factory,
-  LiquidationModule,
-  LiquidationModule__factory,
-  LiquidationModuleForComet,
-  LiquidationModuleForComet__factory,
+  DexLiquidationModule,
+  DexLiquidationModule__factory,
+  DexLiquidationModuleForComet,
+  DexLiquidationModuleForComet__factory,
 } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
@@ -27,11 +27,11 @@ describe('liquidation module', function () {
     `AccessControl: account ${account.toLowerCase()} is missing role ${role}`;
 
   let comet: CometInterface;
-  let liquidationModule: LiquidationModule;
-  let moduleForComet: LiquidationModuleForComet;
+  let liquidationModule: DexLiquidationModule;
+  let moduleForComet: DexLiquidationModuleForComet;
   let moduleAssetList: string;
-  let LiquidationModuleFactory: LiquidationModule__factory;
-  let LiquidationModuleForCometFactory: LiquidationModuleForComet__factory;
+  let DexLiquidationModuleFactory: DexLiquidationModule__factory;
+  let DexLiquidationModuleForCometFactory: DexLiquidationModuleForComet__factory;
   let dexAdapter: string;
   let protocol: ConfiguratorAndProtocol;
   let configuratorAsProxy: Configurator;
@@ -103,9 +103,9 @@ describe('liquidation module', function () {
     dexAdapter = adapter.address;
 
     // Liquidation module (bound to the Comet below via initializeStorage)
-    LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
-    LiquidationModuleForCometFactory = (await ethers.getContractFactory('LiquidationModuleForComet')) as LiquidationModuleForComet__factory;
-    liquidationModule = await LiquidationModuleFactory.deploy(
+    DexLiquidationModuleFactory = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
+    DexLiquidationModuleForCometFactory = (await ethers.getContractFactory('DexLiquidationModuleForComet')) as DexLiquidationModuleForComet__factory;
+    liquidationModule = await DexLiquidationModuleFactory.deploy(
       dexAdapter,
       governor.address, // multisig == DAO for this suite
       executors,
@@ -168,9 +168,9 @@ describe('liquidation module', function () {
     configuratorProxyAddress = configuratorAsProxy.address;
     configuratorBaseToken = protocol.tokens.USDC.address;
 
-    // A fresh LiquidationModuleForComet used to exercise the manual setAssetList initializer.
+    // A fresh DexLiquidationModuleForComet used to exercise the manual setAssetList initializer.
     const moduleAdapter = await deployEmptyDexAdapter([protocol.tokens.COMP.address]);
-    moduleForComet = await LiquidationModuleForCometFactory.deploy(
+    moduleForComet = await DexLiquidationModuleForCometFactory.deploy(
       moduleAdapter.address,
       protocol.multisig.address,
       [protocol.executors[0].address],
@@ -202,14 +202,14 @@ describe('liquidation module', function () {
     });
 
     it('IncentiveBps exceeds maximum bps', async () => {
-      await expect(LiquidationModuleFactory.deploy(dexAdapter, governor.address, [moduleExecutor.address], [modulePauser.address], 1_001))
+      await expect(DexLiquidationModuleFactory.deploy(dexAdapter, governor.address, [moduleExecutor.address], [modulePauser.address], 1_001))
         .to.be.revertedWithCustomError(liquidationModule, 'InvalidIncentiveBps');
     });
 
     context('revert when', function () {
-      it('comet address is zero for LiquidationModuleForComet', async () => {
+      it('comet address is zero for DexLiquidationModuleForComet', async () => {
         await expect(
-          LiquidationModuleForCometFactory.deploy(
+          DexLiquidationModuleForCometFactory.deploy(
             dexAdapter,
             governor.address,
             [moduleExecutor.address],
@@ -222,7 +222,7 @@ describe('liquidation module', function () {
     });
   });
 
-  // setAssetList is the one-shot manual initializer for a fresh LiquidationModuleForComet.
+  // setAssetList is the one-shot manual initializer for a fresh DexLiquidationModuleForComet.
   // It validates each argument is non-zero, and once stored it makes the subsequent
   // Comet-driven initialization (during a proxy upgrade) revert with AlreadySet.
   context('manual setAssetList before Comet upgrade', function () {
