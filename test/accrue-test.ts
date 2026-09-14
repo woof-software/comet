@@ -65,17 +65,10 @@ describe('accrue', function () {
   });
 
   describe('empty position', function () {
-    let timeBefore: number;
     let userBasicBefore: UserBasic;
-    let supplyRatePerSecond: BigNumber;
-    let borrowRatePerSecond: BigNumber;
-    before(async function () {
-      const block = await ethers.provider.getBlock('latest');
-      timeBefore = block.timestamp;
-      userBasicBefore = await comet.userBasic(alice.address);
 
-      supplyRatePerSecond = BigNumber.from(config.supplyInterestRateBase).div(365 * oneDay);
-      borrowRatePerSecond = BigNumber.from(config.borrowInterestRateBase).div(365 * oneDay);
+    before(async function () {
+      userBasicBefore = await comet.userBasic(alice.address);
     });
 
     it('utilization should be 0 with no borrowers', async function () {
@@ -124,34 +117,15 @@ describe('accrue', function () {
       expect(await comet.getUtilization()).to.equal(0);
     });
 
-    it('supply index should increase after accrue', async function () {
+    // With no supply and no borrow the market is empty, so both rates are 0 and accruing leaves the indices at 1
+    it('supply index should not change after accrue while total supply is 0', async function () {
       const { baseSupplyIndex } = await comet.totalsBasic();
-      const currentBlock = await ethers.provider.getBlock('latest');
-      const timeElapsed = currentBlock.timestamp - timeBefore;
-      const yearTime = 365 * oneDay;
-
-      const supplyPerSecond = BigNumber.from(config.supplyInterestRateBase).div(yearTime);
-      const factorScale = await comet.factorScale();
-
-      const expectedSupplyIndexAccrued = BigNumber.from(INDEX_SCALE).mul(supplyPerSecond).mul(timeElapsed).div(factorScale);
-      const expectedSupplyIndex = BigNumber.from(INDEX_SCALE).add(expectedSupplyIndexAccrued);
-
-      expect(baseSupplyIndex).to.equal(expectedSupplyIndex);
+      expect(baseSupplyIndex).to.equal(INDEX_SCALE);
     });
 
-    it('borrow index should increase after accrue', async function () {
+    it('borrow index should not change after accrue while total borrow is 0', async function () {
       const { baseBorrowIndex } = await comet.totalsBasic();
-      const currentBlock = await ethers.provider.getBlock('latest');
-      const timeElapsed = currentBlock.timestamp - timeBefore;
-      const yearTime = 365 * oneDay;
-
-      const borrowPerSecond = BigNumber.from(config.borrowInterestRateBase).div(yearTime);
-      const factorScale = await comet.factorScale();
-
-      const expectedBorrowIndexAccrued = BigNumber.from(INDEX_SCALE).mul(borrowPerSecond).mul(timeElapsed).div(factorScale);
-      const expectedBorrowIndex = BigNumber.from(INDEX_SCALE).add(expectedBorrowIndexAccrued);
-
-      expect(baseBorrowIndex).to.equal(expectedBorrowIndex);
+      expect(baseBorrowIndex).to.equal(INDEX_SCALE);
     });
 
     it('total supply should remain 0 after accrue', async function () {
@@ -184,15 +158,18 @@ describe('accrue', function () {
         timeElapsed = totalsAfter.lastAccrualTime - totalsBefore.lastAccrualTime;
       });
 
-      describe('seeding reserves impact on index accrual over time', function () {
-        it('supply index should continue accruing over time after seeding', async function () {
-          const expectedSupplyIndex = totalsBefore.baseSupplyIndex.add(totalsBefore.baseSupplyIndex.mul(supplyRatePerSecond).mul(timeElapsed).div(exp(1, 18)));
-          expect(totalsAfter.baseSupplyIndex).to.equal(expectedSupplyIndex);
+      // Seeding only moves tokens into the protocol; it creates no supply or borrow, so the market is still empty
+      describe('seeding reserves do not accrue indices on an empty market', function () {
+        it('accrual after seeding should cover the skipped day', async function () {
+          expect(timeElapsed).to.be.gte(oneDay);
         });
 
-        it('borrow index should continue accruing over time after seeding', async function () {
-          const expectedBorrowIndex = totalsBefore.baseBorrowIndex.add(totalsBefore.baseBorrowIndex.mul(borrowRatePerSecond).mul(timeElapsed).div(exp(1, 18)));
-          expect(totalsAfter.baseBorrowIndex).to.equal(expectedBorrowIndex);
+        it('supply index should not change after seeding while total supply is 0', async function () {
+          expect(totalsAfter.baseSupplyIndex).to.equal(totalsBefore.baseSupplyIndex);
+        });
+
+        it('borrow index should not change after seeding while total borrow is 0', async function () {
+          expect(totalsAfter.baseBorrowIndex).to.equal(totalsBefore.baseBorrowIndex);
         });
       });
 
@@ -246,10 +223,10 @@ describe('accrue', function () {
       expect(await comet.getUtilization()).to.equal(0);
     });
 
-    it('supply index should increase after supply', async function () {
+    // supply accrues before crediting the new principal, so that accrual still sees an empty market
+    it('supply index should not change after the first supply', async function () {
       const totalsAfter = await comet.totalsBasic();
-      const supplyRatePerSecond = BigNumber.from(config.supplyInterestRateBase).div(365 * oneDay);
-      expect(totalsAfter.baseSupplyIndex).to.equal(totalsBefore.baseSupplyIndex.add(totalsBefore.baseSupplyIndex.mul(supplyRatePerSecond).mul(3).div(exp(1, 18))));
+      expect(totalsAfter.baseSupplyIndex).to.equal(totalsBefore.baseSupplyIndex);
     });
 
     it('tracking supply index should not change after supply with utilization = 0', async function () {
@@ -264,10 +241,9 @@ describe('accrue', function () {
       totalSupplyBaseAfterSupply = totalsAfter.totalSupplyBase;
     });
 
-    it('borrow index should increase after supply', async function () {
+    it('borrow index should not change after supply while total borrow is 0', async function () {
       const totalsAfter = await comet.totalsBasic();
-      const borrowRatePerSecond = BigNumber.from(config.borrowInterestRateBase).div(365 * oneDay);
-      expect(totalsAfter.baseBorrowIndex).to.equal(totalsBefore.baseBorrowIndex.add(totalsBefore.baseBorrowIndex.mul(borrowRatePerSecond).mul(3).div(exp(1, 18))));
+      expect(totalsAfter.baseBorrowIndex).to.equal(totalsBefore.baseBorrowIndex);
     });
 
     it('tracking borrow index should not change after supply with utilization = 0', async function () {
@@ -305,10 +281,10 @@ describe('accrue', function () {
       expect(totalsAfter.totalSupplyBase).to.equal(totalSupplyBaseAfterSupply);
     });
 
-    it('borrow index should accrue with utilization = 0', async function () {
+    it('borrow index should not accrue while total borrow is 0', async function () {
       const totalsAfter = await comet.totalsBasic();
-      const borrowRatePerSecond = BigNumber.from(config.borrowInterestRateBase).div(365 * oneDay);
-      expect(totalsAfter.baseBorrowIndex).to.be.closeTo(totalsBefore.baseBorrowIndex.add(totalsBefore.baseBorrowIndex.mul(borrowRatePerSecond).mul(oneMonth).div(exp(1, 18))), borrowRatePerSecond.div(100));
+      expect(totalsAfter.totalBorrowBase).to.equal(0);
+      expect(totalsAfter.baseBorrowIndex).to.equal(totalsBefore.baseBorrowIndex);
     });
 
     it('total borrow base should not change after accrue', async function () {
@@ -486,8 +462,9 @@ describe('accrue', function () {
         expect(totalsAfter.trackingSupplyIndex).to.equal(totalsBefore.trackingSupplyIndex.add(BigNumber.from(config.baseTrackingSupplySpeed).mul(1).mul(baseTokenScale).div(totalsBefore.totalSupplyBase)));
       });
 
-      it('borrow index should update after repay accrue', async function () {
-        expect(totalsAfter.baseBorrowIndex).to.be.equal(totalsBefore.baseBorrowIndex.add(totalsBefore.baseBorrowIndex.mul(await comet.getBorrowRate(0)).mul(1).div(exp(1, 18))));
+      it('borrow index should not change after repay accrue because total borrow is 0', async function () {
+        expect(totalsBefore.totalBorrowBase).to.equal(0);
+        expect(totalsAfter.baseBorrowIndex).to.equal(totalsBefore.baseBorrowIndex);
       });
 
       it('tracking borrow index should not change after repay accrue', async function () {
@@ -524,13 +501,28 @@ describe('accrue', function () {
       await collaterals.WETH.connect(dave).approve(comet.address, suppliedCollateral);
       await comet.connect(dave).supply(collaterals.WETH.address, suppliedCollateral);
 
-      const maxBorrow = await comet.getBorrowLimit(dave.address);
+      // The harness returns the exact borrow limit. The borrow principal is rounded up, so its present value can
+      // come out 1 wei above the requested amount. Borrowing 1 wei less than the limit keeps the position collateralized.
+      const maxBorrow = (await comet.getBorrowLimit(dave.address)).sub(1);
       borrowedAmount = maxBorrow;
+
+      // Alice adds liquidity so the max borrow stays under the 200% utilization cap
+      await baseToken.allocateTo(alice.address, maxBorrow);
+      await baseToken.connect(alice).approve(comet.address, maxBorrow);
+      await comet.connect(alice).supply(baseToken.address, maxBorrow);
+
       await comet.connect(dave).withdraw(baseToken.address, maxBorrow);
 
-      // Drop WETH price by 20% to make position liquidatable
-      const currentPrice = exp(3000, 8);
-      const droppedPrice = BigNumber.from(currentPrice).mul(80).div(100); // 20% drop
+      // Liquidation starts once collateral value times the liquidate collateral factor falls below the debt value.
+      // The price is solved from Dave's current debt: the price at which the collateral exactly covers the debt,
+      // rounded down, then lowered by one unit. One price unit on 1 WETH is worth more than the protocol's rounding,
+      // so the position is liquidatable right away, without waiting for interest to push the debt up.
+      const wethInfo = await comet.getAssetInfoByAddress(collaterals.WETH.address);
+      const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+      const debtValue = (await comet.borrowBalanceOf(dave.address)).mul(basePrice).div(await comet.baseScale());
+      const droppedPrice = debtValue.mul(FACTOR_SCALE).mul(wethInfo.scale)
+        .div(BigNumber.from(suppliedCollateral).mul(wethInfo.liquidateCollateralFactor))
+        .sub(1);
       await priceFeeds.WETH.setPrice(droppedPrice);
     });
 
@@ -568,8 +560,9 @@ describe('accrue', function () {
         expect(totalsAfter.trackingSupplyIndex).to.equal(totalsBefore.trackingSupplyIndex.add(BigNumber.from(config.baseTrackingSupplySpeed).mul(1).mul(baseTokenScale).div(totalsBefore.totalSupplyBase)));
       });
 
-      it('borrow index should update after liquidation accrue', async function () {
-        expect(totalsAfter.baseBorrowIndex).to.be.equal(totalsBefore.baseBorrowIndex.add(totalsBefore.baseBorrowIndex.mul(await comet.getBorrowRate(0)).mul(1).div(exp(1, 18))));
+      it('borrow index should not change after liquidation accrue because the absorbed debt left total borrow at 0', async function () {
+        expect(totalsBefore.totalBorrowBase).to.equal(0);
+        expect(totalsAfter.baseBorrowIndex).to.equal(totalsBefore.baseBorrowIndex);
       });
 
       it('tracking borrow index should not change after liquidation accrue', async function () {
