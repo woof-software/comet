@@ -158,6 +158,9 @@ export type BulkerInfo = {
   bulker: BaseBulker;
 };
 
+export const oneDay = 24 * 60 * 60;
+export const oneMonth = 30 * oneDay;
+
 export type UserCollateral = {
   balance: BigNumber;
   _reserved: BigNumber;
@@ -218,7 +221,7 @@ export function presentValueSupply(baseSupplyIndex: bigint | BigNumber, principa
   return principal * index / BASE_INDEX_SCALE;
 }
 
-function presentValueBorrow(baseBorrowIndex: bigint | BigNumber, principalValue: bigint | BigNumber): bigint {
+export function presentValueBorrow(baseBorrowIndex: bigint | BigNumber, principalValue: bigint | BigNumber): bigint {
   const principal = toBigInt(principalValue);
   const index = toBigInt(baseBorrowIndex);
   return principal * index / BigInt(BASE_INDEX_SCALE);
