@@ -2,7 +2,6 @@ import {
   CometExt,
   CometHarnessInterfaceExtendedAssetList,
   CometProxyAdmin,
-  CometWithExtendedAssetList,
   Configurator,
   FaucetToken,
   NonStandardFaucetFeeToken,
@@ -2267,7 +2266,7 @@ describe('isBorrowCollateralized', function () {
     let configuratorProxyAddress: string;
     let proxyAdmin: CometProxyAdmin;
     let cometProxyAddress: string;
-    let comet: CometWithExtendedAssetList;
+    let comet: CometHarnessInterfaceExtendedAssetList;
     let priceFeedWithRevert: PriceFeedWithRevert;
 
     // Tokens
@@ -2302,7 +2301,7 @@ describe('isBorrowCollateralized', function () {
       configuratorProxyAddress = protocol.configuratorProxy.address;
       proxyAdmin = protocol.proxyAdmin;
       cometProxyAddress = protocol.cometProxy.address;
-      comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress) as CometWithExtendedAssetList;
+      comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
       tokens = protocol.tokens;
 
       baseSymbol = protocol.base;
@@ -2646,7 +2645,7 @@ describe('isBorrowCollateralized', function () {
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           collateralAssetIndex = (await comet.getAssetInfoByAddress(collateralToken.address)).offset;
-          cometExt = comet.attach(cometProxyAddress) as CometExt;
+          cometExt = comet.attach(cometProxyAddress) as CometHarnessInterfaceExtendedAssetList;
         });
 
         it('isBorrowCollateralized works with the normal price feed', async () => {
