@@ -52,8 +52,10 @@ export { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
 // Network helpers
 export * from './helpers/network-helpers';
+// Math helpers
+export * from './helpers/math';
 
-export { Comet, ethers, expect, hre };
+export { Comet, ethers, expect, hre, BigNumber };
 
 export type Numeric = number | bigint;
 
@@ -202,15 +204,13 @@ export function mulPrice(n: bigint, price: bigint | BigNumber, fromScale: bigint
   return (n * toBigInt(price)) / toBigInt(fromScale);
 }
 
-export function mulFactor(n: bigint, factor: bigint):bigint {
-  return n * factor / factorScale;
+export function mulFactor(n: bigint, factor: bigint | BigNumber):bigint {
+  return n * toBigInt(factor) / factorScale;
 }
 
 export function divPrice(n: bigint, price: bigint | BigNumber, toScale: bigint | BigNumber): bigint {
   return (n * toBigInt(toScale)) / toBigInt(price);
 }
-
-const BASE_INDEX_SCALE = 10n ** 15n;
 
 export function presentValueSupply(baseSupplyIndex: bigint | BigNumber, principalValue: bigint | BigNumber): bigint {
   const principal = toBigInt(principalValue);
@@ -321,6 +321,7 @@ export const ZERO = factor(0);
 export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const DEFAULT_PRICEFEED_DECIMALS = 8;
 export const MAX_ASSETS = 24;
+export const BASE_INDEX_SCALE = 10n ** 15n;
 export const MAX_SUPPORTED_UTILIZATION = exp(2, 18);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
