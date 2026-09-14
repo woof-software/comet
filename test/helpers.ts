@@ -163,13 +163,7 @@ export type UserCollateral = {
   _reserved: BigNumber;
 };
 
-export type UserBasic = {
-  principal: BigNumber;
-  baseTrackingIndex: BigNumber;
-  baseTrackingAccrued: BigNumber;
-  assetsIn: number;
-  _reserved: number;
-};
+export type UserBasic = { principal: BigNumber, baseTrackingIndex: BigNumber, baseTrackingAccrued: BigNumber, assetsIn: number, _reserved: number };
 
 export function dfn<T>(x: T | undefined | null, dflt: T): T {
   return x == undefined ? dflt : x;
@@ -198,16 +192,24 @@ export function truncateDecimals(factor: bigint | BigNumber, decimals = 4) {
   return (toBigInt(factor) / descaleFactor) * descaleFactor;
 }
 
+export function toBigInt(f: bigint | BigNumber): bigint {
+  if (typeof f === 'bigint') {
+    return f;
+  } else {
+    return f.toBigInt();
+  }
+}
+
 export function mulPrice(n: bigint, price: bigint | BigNumber, fromScale: bigint | BigNumber): bigint {
   return (n * toBigInt(price)) / toBigInt(fromScale);
 }
 
-export function mulFactor(n: bigint, factor: bigint):bigint {
-  return n * factor / factorScale;
+export function mulFactor(n: bigint, factor: bigint | BigNumber):bigint {
+  return n * toBigInt(factor) / factorScale;
 }
 
-export function divPrice(n: bigint, price: bigint | BigNumber, toScale: bigint | BigNumber): bigint {
-  return (n * toBigInt(toScale)) / toBigInt(price);
+export function divPrice(n: bigint | BigNumber, price: bigint | BigNumber, toScale: bigint | BigNumber): bigint {
+  return (toBigInt(n) * toBigInt(toScale)) / toBigInt(price);
 }
 
 const BASE_INDEX_SCALE = 10n ** 15n;
@@ -245,7 +247,7 @@ function principalValueBorrow(baseBorrowIndex: bigint, presentValue: bigint): bi
   return (presentValue * BigInt(BASE_INDEX_SCALE) + baseBorrowIndex - 1n) / baseBorrowIndex;
 }
 
-export  function principalValue(
+export function principalValue(
   presentValue: bigint | BigNumber,
   baseSupplyIndex: bigint | BigNumber,
   baseBorrowIndex: bigint | BigNumber
@@ -255,14 +257,6 @@ export  function principalValue(
     return principalValueSupply(toBigInt(baseSupplyIndex), pv);
   } else {
     return -principalValueBorrow(toBigInt(baseBorrowIndex), -pv);
-  }
-}
-
-export function toBigInt(f: bigint | BigNumber): bigint {
-  if (typeof f === 'bigint') {
-    return f;
-  } else {
-    return f.toBigInt();
   }
 }
 
@@ -322,6 +316,8 @@ export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const DEFAULT_PRICEFEED_DECIMALS = 8;
 export const MAX_ASSETS = 24;
 export const MAX_SUPPORTED_UTILIZATION = exp(2, 18);
+export const oneDay = 24 * 60 * 60;
+export const oneMonth = 30 * oneDay;
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;
