@@ -20,6 +20,7 @@ abstract contract CometMainInterface is CometCore {
     error BorrowCFTooLarge();
     error InsufficientReserves();
     error LiquidateCFTooLarge();
+    error LiqPenaltyTooHigh();
     error NoSelfTransfer();
     error NotCollateralized();
     error NotForSale();
@@ -34,6 +35,8 @@ abstract contract CometMainInterface is CometCore {
     error TransferOutFailed();
     error Unauthorized();
 
+    /// @dev Error emitted when the utilization exceeds the supported utilization
+    error ExceedsSupportedUtilization();
     /// @notice Error emitted when base supply is paused
     error BaseSupplyPaused();
     /// @notice Error emitted when collateral supply is paused
@@ -59,6 +62,12 @@ abstract contract CometMainInterface is CometCore {
     /// @notice Error emitted when a specific collateral asset withdrawal is paused
     /// @param assetIndex The index of the collateral asset
     error CollateralAssetWithdrawPaused(uint24 assetIndex);
+    /// @notice Error emitted when a user with debt tries to transfer and their position uses deactivated collateral
+    error DeactivatedCollateralTransferBlocked();
+    /// @notice Error emitted when trying to borrow or increase debt using deactivated collateral
+    error DeactivatedCollateralBorrowBlocked();
+    /// @notice Error emitted when deactivated token balance is > 0 on the balance of the account
+    error TokenIsDeactivated(address asset);
 
     event Supply(address indexed from, address indexed dst, uint amount);
     event Transfer(address indexed from, address indexed to, uint amount);
