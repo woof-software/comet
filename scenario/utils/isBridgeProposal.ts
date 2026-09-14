@@ -39,11 +39,8 @@ const ROOT_TO_NETWORK: Record<string, string> = {
   roninl1NativeBridge: 'ronin',
 };
 
-// IGovernorBravo.propose() takes no separate signatures array (see
-// contracts/interfaces/IGovernorBravo.sol) — every action's calldata carries its
-// own 4-byte function selector, and openProposal.signatures[i] is always ''.
-// So a depositForBurn action is identified by its calldata's selector, not by a
-// signature string.
+// openProposal.signatures[i] is always '' (propose() takes no signatures array),
+// so match depositForBurn by its calldata selector instead.
 const DEPOSIT_FOR_BURN_SIGNATURE = 'depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)';
 const DEPOSIT_FOR_BURN_SELECTOR = utils.id(DEPOSIT_FOR_BURN_SIGNATURE).slice(0, 10);
 
@@ -57,8 +54,7 @@ function parseCCTPNetworks(openProposal: OpenProposal, cctpAddress: string): str
     const calldata = openProposal.calldatas[i];
     if (utils.hexDataSlice(calldata, 0, 4) !== DEPOSIT_FOR_BURN_SELECTOR) continue;
 
-    // destinationDomain is the second parameter (uint32) in all depositForBurn variants;
-    // params start right after the 4-byte selector.
+    // destinationDomain is the second param (uint32); params start after the selector
     const decoded = utils.defaultAbiCoder.decode(['uint256', 'uint32'], utils.hexDataSlice(calldata, 4, 68));
     const domain = decoded[1];
     const network = CCTP_DOMAIN_TO_NETWORK[domain];
