@@ -1,10 +1,10 @@
 import hre, { ethers } from 'hardhat';
-import { exp, setTotalsBasic } from '../helpers';
+import { exp, setTotalsBasic, deployDefaultLiquidationModule, deployEmptyDexAdapter } from '../helpers';
 import { HttpNetworkConfig } from 'hardhat/types/config';
 import {
   CometExt__factory,
-  CometHarness__factory,
-  CometHarnessInterface,
+  CometHarnessExtendedAssetList__factory,
+  CometHarnessInterfaceExtendedAssetList,
   OnChainLiquidator__factory
 } from '../../build/types';
 import {
@@ -58,11 +58,24 @@ export async function makeProtocol() {
   const extensionDelegate = await CometExtFactory.deploy({ name32, symbol32 });
   await extensionDelegate.deployed();
 
-  const CometFactory = (await ethers.getContractFactory('CometHarness')) as CometHarness__factory;
+  const CometFactory = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
+
+  // The extended Comet refuses a zero liquidation module, so one is deployed alongside it. The DEX
+  // adapter is left without routes: nothing here liquidates through a swap.
+  const [, executor, pauser] = await ethers.getSigners();
+  const dexAdapter = await deployEmptyDexAdapter([COMP, LINK, WBTC, WETH9]);
+  const liquidationModule = await deployDefaultLiquidationModule({
+    dexAdapter: dexAdapter.address,
+    multisig: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
+    executors: [executor.address],
+    pausers: [pauser.address],
+  });
+
   const config = {
     governor: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
     pauseGuardian: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
     extensionDelegate: extensionDelegate.address,
+    liquidationModule: liquidationModule.address,
     baseToken: USDC,
     baseTokenPriceFeed: USDC_USD_PRICE_FEED,
     supplyKink: exp(0.8, 18),
@@ -131,7 +144,7 @@ export async function makeProtocol() {
 
   const comet = await CometFactory.deploy(config);
   await comet.deployed();
-  const cometHarnessInterface = await ethers.getContractAt('CometHarnessInterface', comet.address) as CometHarnessInterface;
+  const cometHarnessInterface = await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', comet.address) as CometHarnessInterfaceExtendedAssetList;
 
   const [signer,, recipient] = await ethers.getSigners();
 

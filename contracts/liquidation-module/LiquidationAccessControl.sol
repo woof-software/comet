@@ -29,10 +29,6 @@ abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessC
     ///         Is responsible for roles distribution
     address public constant DAO = 0x6d903f6003cca6255D85CcA4D3B5E5146dC33925;
 
-    /// @notice When true, the DEX liquidation path is disabled and keeper liquidations fall back
-    ///         to the default absorb flow regardless of the account's health factor.
-    bool public dexRoutePaused;
-
     /// @notice Whether partial liquidation or full liquidation is enabled. Enabled by default.
     bool public partialLiquidationEnabled;
 
@@ -74,16 +70,6 @@ abstract contract LiquidationAccessControl is AccessControl, ILiquidationAccessC
             _grantRole(PAUSER_ROLE, _pausers[i]);
             unchecked { ++i; }
         }
-    }
-
-    /// @notice Toggles the DEX pause switch. Callable by a Pauser or the DAO.
-    /// @dev While paused, keeper liquidations bypass the DEX/HF routing and run the default absorb flow.
-    function setDexRoutePaused(bool paused) external onlyRole(PAUSER_ROLE) {
-        if (dexRoutePaused == paused) revert AlreadySet();
-
-        dexRoutePaused = paused;
-        
-        emit DexPausedSet(paused);
     }
 
     /// @notice Toggle the liquidation mode. Callable by a Pauser or the DAO.

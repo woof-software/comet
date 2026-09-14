@@ -7,8 +7,8 @@ import {
   FaucetToken__factory,
   OneInchV6Adapter,
   OneInchV6Adapter__factory,
-  LiquidationModule,
-  LiquidationModule__factory,
+  DexLiquidationModule,
+  DexLiquidationModule__factory,
 } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
@@ -19,7 +19,7 @@ describe('CoreDexAdapter.calculateMinAmountOut — debt floor', function () {
   const DEBT_FLOOR = exp(1800, 6);     // MARKET × LF — the debt this collateral is credited against
 
   let adapter: OneInchV6Adapter;
-  let module: LiquidationModule;
+  let module: DexLiquidationModule;
   let multisig: SignerWithAddress;
   let wethAddr: string;
 
@@ -64,7 +64,7 @@ describe('CoreDexAdapter.calculateMinAmountOut — debt floor', function () {
       },
     ], [])).deployed()) as OneInchV6Adapter;
 
-    const ModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
+    const ModuleFactory = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
     module = await (await ModuleFactory.deploy(
       adapter.address, multisig.address, executors, pausers, BigInt(500)
     )).deployed();

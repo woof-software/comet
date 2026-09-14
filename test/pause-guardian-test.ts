@@ -1,4 +1,5 @@
-import { Comet, expect, event, makeProtocol, wait } from './helpers';
+import { expect, event, makeProtocol, wait } from './helpers';
+import { CometHarnessInterfaceExtendedAssetList } from '../build/types';
 
 describe('Pause Guardian', function () {
   it('Should pause supply', async function () {
@@ -168,7 +169,7 @@ describe('Pause Guardian', function () {
   });
 });
 
-async function assertNoActionsArePaused(comet: Comet) {
+async function assertNoActionsArePaused(comet: CometHarnessInterfaceExtendedAssetList) {
   // All pause flags should be false by default.
   expect(await comet.isSupplyPaused()).to.be.false;
   expect(await comet.isTransferPaused()).to.be.false;
@@ -177,7 +178,7 @@ async function assertNoActionsArePaused(comet: Comet) {
   expect(await comet.isBuyPaused()).to.be.false;
 }
 
-async function assertAllActionsArePaused(comet: Comet) {
+async function assertAllActionsArePaused(comet: CometHarnessInterfaceExtendedAssetList) {
   expect(await comet.isSupplyPaused()).to.be.true;
   expect(await comet.isTransferPaused()).to.be.true;
   expect(await comet.isWithdrawPaused()).to.be.true;

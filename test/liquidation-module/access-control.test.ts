@@ -6,8 +6,8 @@ import {
   SimplePriceFeed__factory,
   FaucetToken__factory,
   OneInchV6Adapter__factory,
-  LiquidationModule,
-  LiquidationModule__factory,
+  DexLiquidationModule,
+  DexLiquidationModule__factory,
 } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
@@ -35,8 +35,8 @@ describe('liquidation module access control', function () {
   const missingRole = (account: string, role: string) =>
     `AccessControl: account ${account.toLowerCase()} is missing role ${role}`;
 
-  let LiquidationModuleFactory: LiquidationModule__factory;
-  let liquidationModule: LiquidationModule;
+  let DexLiquidationModuleFactory: DexLiquidationModule__factory;
+  let liquidationModule: DexLiquidationModule;
   let dexAdapter: string;
 
   let governor: SignerWithAddress;
@@ -108,8 +108,8 @@ describe('liquidation module access control', function () {
     dexAdapter = adapter.address;
 
     // Liquidation module
-    LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
-    liquidationModule = await LiquidationModuleFactory.deploy(dexAdapter, multisig.address, executors, pausers, INCENTIVE_BPS);
+    DexLiquidationModuleFactory = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
+    liquidationModule = await DexLiquidationModuleFactory.deploy(dexAdapter, multisig.address, executors, pausers, INCENTIVE_BPS);
     await liquidationModule.deployed();
 
     // Comet (the real implementation, not the test harness)
@@ -192,24 +192,28 @@ describe('liquidation module access control', function () {
           expect(await liquidationModule.hasRole(PAUSER_ROLE, pausers[i])).to.be.true;
         });
       });
+
+      it('starts with partial liquidation enabled', async () => {
+        expect(await liquidationModule.partialLiquidationEnabled()).to.be.true;
+      });
     });
 
     describe('revert when', function () {
       it('the Multisig is the zero address', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(dexAdapter, ZERO, executors, pausers, INCENTIVE_BPS)
+          DexLiquidationModuleFactory.deploy(dexAdapter, ZERO, executors, pausers, INCENTIVE_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
       });
 
       it('the Executors list is empty', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(dexAdapter, multisig.address, [], pausers, INCENTIVE_BPS)
+          DexLiquidationModuleFactory.deploy(dexAdapter, multisig.address, [], pausers, INCENTIVE_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
       });
 
       it('the Pausers list is empty', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(dexAdapter, multisig.address, executors, [], INCENTIVE_BPS)
+          DexLiquidationModuleFactory.deploy(dexAdapter, multisig.address, executors, [], INCENTIVE_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'EmptyArray');
       });
 
@@ -218,7 +222,7 @@ describe('liquidation module access control', function () {
         // zero-address entries never reach the ZeroAddress check.
         const tooManyExecutors = new Array(256).fill(ZERO);
         await expect(
-          LiquidationModuleFactory.deploy(dexAdapter, multisig.address, tooManyExecutors, pausers, INCENTIVE_BPS)
+          DexLiquidationModuleFactory.deploy(dexAdapter, multisig.address, tooManyExecutors, pausers, INCENTIVE_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'ArrayLengthMismatch');
       });
 
@@ -227,13 +231,13 @@ describe('liquidation module access control', function () {
         // zero-address entries never reach the ZeroAddress check.
         const tooManyPausers = new Array(256).fill(ZERO);
         await expect(
-          LiquidationModuleFactory.deploy(dexAdapter, multisig.address, executors, tooManyPausers, INCENTIVE_BPS)
+          DexLiquidationModuleFactory.deploy(dexAdapter, multisig.address, executors, tooManyPausers, INCENTIVE_BPS)
         ).to.be.revertedWithCustomError(liquidationModule, 'ArrayLengthMismatch');
       });
 
       it('the Executors list has duplicates', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(
+          DexLiquidationModuleFactory.deploy(
             dexAdapter,
             multisig.address,
             [executors[0], executors[1], executors[0]],
@@ -245,7 +249,7 @@ describe('liquidation module access control', function () {
 
       it('the Pausers list has duplicates', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(
+          DexLiquidationModuleFactory.deploy(
             dexAdapter,
             multisig.address,
             executors,
@@ -257,7 +261,7 @@ describe('liquidation module access control', function () {
 
       it('an Executor address is the zero address', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(
+          DexLiquidationModuleFactory.deploy(
             dexAdapter,
             multisig.address,
             [executors[0], executors[1], ZERO],
@@ -269,7 +273,7 @@ describe('liquidation module access control', function () {
 
       it('a Pauser address is the zero address', async () => {
         await expect(
-          LiquidationModuleFactory.deploy(
+          DexLiquidationModuleFactory.deploy(
             dexAdapter,
             multisig.address,
             executors,
@@ -277,6 +281,25 @@ describe('liquidation module access control', function () {
             INCENTIVE_BPS
           )
         ).to.be.revertedWithCustomError(liquidationModule, 'ZeroAddress');
+      });
+
+      // type(uint8).max is 255, so a 256-element array exceeds it and reverts before the grant loop.
+      it('the Executors list exceeds the uint8 max length', async () => {
+        const tooManyExecutors = Array.from({ length: 256 }, (_, i) =>
+          ethers.utils.hexZeroPad(ethers.utils.hexlify(i + 1), 20)
+        );
+        await expect(
+          DexLiquidationModuleFactory.deploy(dexAdapter, multisig.address, tooManyExecutors, pausers, INCENTIVE_BPS)
+        ).to.be.revertedWithCustomError(liquidationModule, 'ArrayLengthMismatch');
+      });
+
+      it('the Pausers list exceeds the uint8 max length', async () => {
+        const tooManyPausers = Array.from({ length: 256 }, (_, i) =>
+          ethers.utils.hexZeroPad(ethers.utils.hexlify(i + 1), 20)
+        );
+        await expect(
+          DexLiquidationModuleFactory.deploy(dexAdapter, multisig.address, executors, tooManyPausers, INCENTIVE_BPS)
+        ).to.be.revertedWithCustomError(liquidationModule, 'ArrayLengthMismatch');
       });
     });
   });
@@ -350,6 +373,10 @@ describe('liquidation module access control', function () {
         await expect(liquidationModule.connect(other).revokeRole(EXECUTOR_ROLE, executors[0]))
           .to.be.revertedWith(missingRole(other.address, ADMIN_ROLE));
       });
+    });
+
+    it('executor role can be granted to zero address', async () => {
+      await expect(liquidationModule.connect(dao).grantRole(EXECUTOR_ROLE, ZERO)).to.not.be.reverted;
     });
   });
 

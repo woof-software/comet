@@ -3,7 +3,7 @@ import {
   CometHarnessInterfaceExtendedAssetList,
   CometProxyAdmin,
   Configurator,
-  LiquidationModuleForComet,
+  DexLiquidationModuleForComet,
   OneInchV6Adapter,
 } from 'build/types';
 import {
@@ -24,7 +24,7 @@ describe('upgrade liquidation module', function () {
   let configuratorAsProxy: Configurator;
   let cometAsProxy: CometHarnessInterfaceExtendedAssetList;
   let proxyAdmin: CometProxyAdmin;
-  let liquidationModule: LiquidationModuleForComet;
+  let liquidationModule: DexLiquidationModuleForComet;
   let dexAdapter: OneInchV6Adapter;
 
   let cometProxyAddress: string;
@@ -82,7 +82,7 @@ describe('upgrade liquidation module', function () {
           incentiveBps: INCENTIVE_BPS,
         },
         cometProxyAddress
-      ) as unknown as LiquidationModuleForComet;
+      ) as unknown as DexLiquidationModuleForComet;
       deployTx = liquidationModule.deployTransaction;
 
       expect(liquidationModule.address).to.properAddress;

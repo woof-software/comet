@@ -62,14 +62,15 @@ export default async function deploy(
   const adapter = await deploymentManager.deploy(
     'dexAdapter',
     'dex-adapters/core/OneInchV6Adapter.sol',
-    [CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routes],
+    // Last arg: per-collateral slippage overrides (none — use the global slippage for every route).
+    [CORE_ROUTER, REDUNDANT_ROUTER, TOKENS.WETH.address, SLIPPAGE_BPS, routes, []],
     true
   );
 
-  // Base liquidation module.
+  // DEX liquidation module.
   const liquidationModule = await deploymentManager.deploy(
     'liquidationModule',
-    'liquidation-module/LiquidationModule.sol',
+    'liquidation-module/DexLiquidationModule.sol',
     [adapter.address, signer.address, [signer.address], [signer.address], INCENTIVE_BPS],
     true
   );

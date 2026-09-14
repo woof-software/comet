@@ -155,7 +155,7 @@ abstract contract CoreLiquidationModule is ICoreLiquidationModule, LiquidationAc
             baseScale
         );
 
-        (uint256 liquidity, ) = _getLiquidity(accountUser, account, true, new uint256[](0));
+        (uint256 liquidity, ) = _getLiquidity(accountUser, account);
         return debt + int256(liquidity) < 0;
     }
 

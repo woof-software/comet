@@ -20,6 +20,14 @@ export function divPrice(n: bigint | BigNumber, price: bigint | BigNumber, toSca
   return toBigInt(n) * toBigInt(toScale) / toBigInt(price);
 }
 
+// Division rounded towards infinity rather than towards zero.
+export function ceilDiv(a: bigint | BigNumber, b: bigint | BigNumber): bigint {
+  const numerator = toBigInt(a);
+  const denominator = toBigInt(b);
+
+  return numerator === 0n ? 0n : (numerator - 1n) / denominator + 1n;
+}
+
 export function factor(f: number): bigint {
   return exp(f, 18);
 }
@@ -36,6 +44,13 @@ export function truncateDecimals(factor: bigint | BigNumber, decimals = 4) {
 
 export function mulPrice(n: bigint | BigNumber, price: bigint | BigNumber, fromScale: bigint | BigNumber): bigint {
   return toBigInt(n) * toBigInt(price) / toBigInt(fromScale);
+}
+
+// Division rounded towards zero, the floor counterpart of ceilDiv. Pass the whole product on each
+// side: the contracts value a weighted balance in a single division, and splitting it truncates the
+// balance at every step, losing a unit of value each time.
+export function mulDiv(numerator: bigint | BigNumber, denominator: bigint | BigNumber): bigint {
+  return toBigInt(numerator) / toBigInt(denominator);
 }
 
 export function annualize(n: bigint | BigNumber, secondsPerYear = 31536000n): number {

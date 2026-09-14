@@ -17,14 +17,15 @@ import {
   CHAIN_ID,
   ONEINCH_SLIPPAGE_PCT,
   AMM_PROTOCOLS,
+  RouteKind,
 } from '../helpers';
 import {
   CometInterface,
   CometWithExtendedAssetList__factory,
   CometExtAssetList__factory,
   AssetListFactory__factory,
-  LiquidationModule,
-  LiquidationModule__factory,
+  DexLiquidationModule,
+  DexLiquidationModule__factory,
   OneInchV6Adapter,
   OneInchV6Adapter__factory,
   ERC20,
@@ -75,7 +76,7 @@ describe('liquidation module dex route min amounts', function () {
 
   let comet: CometInterface;
   let adapter: OneInchV6Adapter;
-  let liquidationModule: LiquidationModule;
+  let liquidationModule: DexLiquidationModule;
 
   let feeds: Map<string, SimplePriceFeed>;
   let tokens: Map<string, ERC20>;
@@ -165,8 +166,8 @@ describe('liquidation module dex route min amounts', function () {
     await extensionDelegate.deployed();
 
     // Keeper liquidation module, bound to the adapter deployed above.
-    const LiquidationModuleFactory = (await ethers.getContractFactory('LiquidationModule')) as LiquidationModule__factory;
-    liquidationModule = await LiquidationModuleFactory.deploy(
+    const DexLiquidationModuleFactory = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
+    liquidationModule = await DexLiquidationModuleFactory.deploy(
       adapter.address,
       multisig.address,
       executors,
@@ -227,9 +228,22 @@ describe('liquidation module dex route min amounts', function () {
     // position can cover after a 20% drop, below the ~$1.78 BCF cap — so every collateral is seized.
     const LENDER_USDC = exp(10, 6);
     const BORROW_USDC = exp(1.69, 6);
-    // Collaterals with swap routes
-    const ROUTED = [TOKENS.WBTC.address, TOKENS.WETH.address, TOKENS.WSTETH.address, TOKENS.LINK.address];
+    // Collaterals quoted on 1inch, so the adapter's core swap sells them. WBTC and wstETH are deliberately
+    // absent: at these dust amounts 1inch answers with unoswap-style calldata the adapter rejects.
+    const ROUTED = [TOKENS.SKY.address, TOKENS.WETH.address, TOKENS.UNI.address, TOKENS.LINK.address];
     const isRouted = (asset: string) => ROUTED.some((a) => a.toLowerCase() === asset.toLowerCase());
+
+    // The adapter is deployed with the market's real Uniswap routes (minus UNI), so a collateral holding one
+    // is sold by the redundant router even with no 1inch calldata — WBTC and wstETH leave Comet that way.
+    // Only a collateral that fails both routers is swept back and becomes reserves.
+    const hasUniswapRoute = (asset: string) =>
+      Object.entries(MARKETS.usdc.routes).some(
+        ([addr, route]) =>
+          addr.toLowerCase() === asset.toLowerCase() &&
+          addr.toLowerCase() !== TOKENS.UNI.address.toLowerCase() &&
+          route.kind !== RouteKind.Unset
+      );
+    const isSold = (asset: string) => isRouted(asset) || hasUniswapRoute(asset);
 
     let plan: PlanItem[];
     let swapData: string[];
@@ -238,7 +252,7 @@ describe('liquidation module dex route min amounts', function () {
     const cometBalanceBefore = new Map<string, bigint>();
     const reservesBefore = new Map<string, bigint>();
 
-    let tx: Awaited<ReturnType<LiquidationModule['liquidate']>>;
+    let tx: Awaited<ReturnType<DexLiquidationModule['liquidate']>>;
 
     before(async () => {
       snapshot = await takeSnapshot();
@@ -318,7 +332,7 @@ describe('liquidation module dex route min amounts', function () {
       for (const s of plan) {
         const cometAfter = (await ERC20__factory.connect(s.asset, ethers.provider).balanceOf(comet.address)).toBigInt();
         const reservesAfter = (await comet.getCollateralReserves(s.asset)).toBigInt();
-        if (isRouted(s.asset)) {
+        if (isSold(s.asset)) {
           // Sold: the tokens left Comet and reserves are unchanged.
           expect(cometBalanceBefore.get(s.asset)! - cometAfter).to.equal(s.seizedAmount.toBigInt());
           expect(reservesAfter - reservesBefore.get(s.asset)!).to.equal(0n);
