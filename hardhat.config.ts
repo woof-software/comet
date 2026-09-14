@@ -383,7 +383,7 @@ const config: HardhatUserConfig = {
       mantle: ETHERSCAN_KEY,
       unichain: ETHERSCAN_KEY,
       // Scroll
-      'scroll': ETHERSCAN_KEY,
+      scroll: ETHERSCAN_KEY,
       linea: ETHERSCAN_KEY_FOR_LINEA,
     },
     customChains: [
