@@ -183,8 +183,12 @@ describe('reserves', function () {
       describe('interest accrual with utilization = 0', function () {
         let baseSupplyIndexBefore: BigNumber;
         let baseBorrowIndexBefore: BigNumber;
+
         before(async function () {
-          ({ baseSupplyIndex: baseSupplyIndexBefore, baseBorrowIndex: baseBorrowIndexBefore } = await comet.totalsBasic());
+          ({ 
+            baseSupplyIndex: baseSupplyIndexBefore, 
+            baseBorrowIndex: baseBorrowIndexBefore 
+          } = await comet.totalsBasic());
         });
 
         it('base supply index should be > 0', async function () {
@@ -214,9 +218,12 @@ describe('reserves', function () {
           expect(baseSupplyIndex).to.equal(baseSupplyIndexBefore);
         });
 
-        it('borrow index should increase regardless of utilization = 0', async function () {
+        it('borrow index should stay the same while total borrow is 0', async function () {
+          const { totalBorrowBase } = await comet.totalsBasic();
+          expect(totalBorrowBase).to.equal(0);
+
           const { baseBorrowIndex } = await comet.totalsBasic();
-          expect(baseBorrowIndex).to.be.gt(baseBorrowIndexBefore);
+          expect(baseBorrowIndex).to.equal(baseBorrowIndexBefore);
         });
 
         it('reserves should not be affected without interest accruing', async function () {
@@ -410,21 +417,32 @@ describe('reserves', function () {
         await collaterals.WETH.connect(dave).approve(comet.address, suppliedCollateral);
         await comet.connect(dave).supply(collaterals.WETH.address, suppliedCollateral);
 
-        // Calculate borrow limit from collateral value
+        // Calculate borrow limit from collateral value, the same way isBorrowCollateralized does
         const wethInfo = await comet.getAssetInfoByAddress(collaterals.WETH.address);
         const wethPrice = await comet.getPrice(wethInfo.priceFeed);
+        const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
         const baseScale = BigNumber.from(await comet.baseScale());
         const factorScale = BigNumber.from(exp(1, 18));
+        // The borrow principal is rounded up, so its present value can come out 1 wei above the
+        // requested amount. Borrowing 1 wei less than the limit keeps the position collateralized.
         const maxBorrow = BigNumber.from(suppliedCollateral)
           .mul(wethPrice).div(wethInfo.scale)
           .mul(wethInfo.borrowCollateralFactor).div(factorScale)
-          .mul(baseScale).div(1e8);
+          .mul(baseScale).div(basePrice)
+          .sub(1);
         borrowedAmount = maxBorrow;
+
+        // Alice adds liquidity so the max borrow stays under the 200% utilization cap
+        await baseToken.connect(alice).allocateTo(alice.address, maxBorrow);
+        await baseToken.connect(alice).approve(comet.address, maxBorrow);
+        await comet.connect(alice).supply(baseToken.address, maxBorrow);
+
         await comet.connect(dave).withdraw(baseToken.address, maxBorrow);
 
-        // Drop WETH price by 20% to make position liquidatable
-        const currentPrice = exp(3000, 8);
-        const droppedPrice = BigNumber.from(currentPrice).mul(80).div(100); // 20% drop
+        // At the max borrow the debt equals collateral value times the borrow collateral factor.
+        // Liquidation starts once collateral value times the liquidate collateral factor falls below the debt,
+        // so scaling the price by borrowCF / liquidateCF (rounded down) is the smallest drop that makes it liquidatable.
+        const droppedPrice = wethPrice.mul(wethInfo.borrowCollateralFactor).div(wethInfo.liquidateCollateralFactor);
         await priceFeeds.WETH.setPrice(droppedPrice);
 
         await comet.accrueAccount(dave.address);
@@ -485,11 +503,27 @@ describe('reserves', function () {
     describe('negative reserves', function () {
       describe('forming negative reserves', function () {
         it('should allow borrowing all available base tokens (using reserves)', async function () {
-          await collaterals.WETH.connect(charlie).allocateTo(charlie.address, exp(80, 18));
-          await collaterals.WETH.connect(charlie).approve(comet.address, exp(80, 18));
-          await comet.connect(charlie).supply(collaterals.WETH.address, exp(80, 18));
+          // Borrowing the whole balance means borrowing reserves plus total supply, so utilization is
+          // (reserves + supply) / supply. Alice supplies an amount equal to the reserves, which keeps
+          // utilization below the 200% cap.
+          const reserves = await comet.getReserves();
+          await baseToken.connect(alice).allocateTo(alice.address, reserves);
+          await baseToken.connect(alice).approve(comet.address, reserves);
+          await comet.connect(alice).supply(baseToken.address, reserves);
 
+          // Charlie supplies just enough WETH to borrow the whole balance, with 1 base unit of headroom for rounding
           const currentBalance = await baseToken.balanceOf(comet.address);
+          const wethInfo = await comet.getAssetInfoByAddress(collaterals.WETH.address);
+          const wethPrice = await comet.getPrice(wethInfo.priceFeed);
+          const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+          const baseScale = BigNumber.from(await comet.baseScale());
+          const collateralAmount = currentBalance.add(baseScale)
+            .mul(basePrice).mul(exp(1, 18)).mul(wethInfo.scale)
+            .div(baseScale.mul(wethInfo.borrowCollateralFactor).mul(wethPrice));
+          await collaterals.WETH.connect(charlie).allocateTo(charlie.address, collateralAmount);
+          await collaterals.WETH.connect(charlie).approve(comet.address, collateralAmount);
+          await comet.connect(charlie).supply(collaterals.WETH.address, collateralAmount);
+
           await comet.connect(charlie).withdraw(baseToken.address, currentBalance);
           expect(await baseToken.balanceOf(charlie.address)).to.equal(currentBalance);
         });
@@ -510,9 +544,11 @@ describe('reserves', function () {
 
       describe('liquidation causing negative reserves', function () {
         it('position should become liquidatable after price drop', async function () {
-        // Drop WETH price by 20% to make Charlie's position liquidatable
-          const [, currentPrice] = await priceFeeds.WETH.latestRoundData();
-          const droppedPrice = currentPrice.mul(80).div(100);
+          // Charlie borrowed at the limit, so scaling the price by borrowCF / liquidateCF pushes the
+          // position past the liquidation threshold (accrued interest only pushes it further)
+          const wethInfo = await comet.getAssetInfoByAddress(collaterals.WETH.address);
+          const wethPrice = await comet.getPrice(wethInfo.priceFeed);
+          const droppedPrice = wethPrice.mul(wethInfo.borrowCollateralFactor).div(wethInfo.liquidateCollateralFactor);
           await priceFeeds.WETH.setPrice(droppedPrice);
           await comet.accrueAccount(charlie.address);
 
@@ -534,9 +570,12 @@ describe('reserves', function () {
       describe('buying collateral to restore reserves', function () {
         let collateralReservesBefore: BigNumber;
         let reservesBefore: BigNumber;
+        let buyerWethBefore: BigNumber;
+        let expectedCollateralBought: BigNumber;
 
         before(async function () {
           reservesBefore = await comet.getReserves();
+          buyerWethBefore = await collaterals.WETH.balanceOf(dave.address);
         });
 
         it('collateral reserves should be available for purchase', async function () {
@@ -553,12 +592,28 @@ describe('reserves', function () {
           await baseToken.connect(dave).allocateTo(dave.address, amountToPay);
           await baseToken.connect(dave).approve(comet.address, amountToPay);
 
+          // The protocol sells collateral below the oracle price. The discount is the store front price factor
+          // applied to (1 - liquidationFactor). The buyer gets the value of the payment divided by that
+          // discounted price, with every step rounded down as in quoteCollateral.
+          const wethInfo = await comet.getAssetInfoByAddress(collaterals.WETH.address);
+          const factorScale = BigNumber.from(exp(1, 18));
+          const baseScale = BigNumber.from(await comet.baseScale());
+          const discountFactor = BigNumber.from(await comet.storeFrontPriceFactor())
+            .mul(factorScale.sub(wethInfo.liquidationFactor)).div(factorScale);
+          const discountedPrice = priceWETH.mul(factorScale.sub(discountFactor)).div(factorScale);
+          expectedCollateralBought = priceBase.mul(amountToPay).mul(wethInfo.scale).div(discountedPrice).div(baseScale);
+
           await comet.connect(dave).buyCollateral(collaterals.WETH.address, availableCollateral, amountToPay, dave.address);
         });
 
-        it('collateral reserves should decrease after buying collateral', async function () {
+        it('collateral reserves should decrease by exactly the collateral bought', async function () {
           const collateralReservesAfter = await comet.getCollateralReserves(collaterals.WETH.address);
-          expect(collateralReservesAfter).to.be.equal(0);
+          expect(collateralReservesAfter).to.equal(collateralReservesBefore.sub(expectedCollateralBought));
+        });
+
+        it('buyer should receive exactly the collateral bought', async function () {
+          const buyerWethAfter = await collaterals.WETH.balanceOf(dave.address);
+          expect(buyerWethAfter).to.equal(buyerWethBefore.add(expectedCollateralBought));
         });
 
         it('reserves should increase after buying collateral', async function () {
@@ -577,6 +632,8 @@ describe('reserves', function () {
 
   describe('collateral reserves', function () {
     const suppliedCollateral = exp(1, 18); // 1 WETH
+    // Large enough that Bob's max borrow against 1 WETH stays under the 200% utilization cap
+    const supplyAmount = exp(10_000, baseTokenDecimals);
 
     before(async () => {
       await snapshotAfterSetup.restore();
@@ -718,17 +775,10 @@ describe('reserves', function () {
         expect(await comet.getUtilization()).to.equal(0);
       });
 
-      it('supply rate should be > 0 even at utilization = 0', async function () {
-        const utilization = await comet.getUtilization();
-        expect(utilization).to.equal(0);
-        const supplyRate = await comet.getSupplyRate(utilization);
-        expect(supplyRate).to.be.gt(0);
-      });
-
-      it('supply rate at utilization = 0 should equal supplyPerSecondInterestRateBase', async function () {
-        const rateBase = await comet.supplyPerSecondInterestRateBase();
-        const supplyRate = await comet.getSupplyRate(0);
-        expect(supplyRate).to.equal(rateBase);
+      it('supply rate should be 0 while total supply is 0', async function () {
+        const { totalSupplyBase } = await comet.totalsBasic();
+        expect(totalSupplyBase).to.equal(0);
+        expect(await comet.getSupplyRate(0)).to.equal(0);
       });
     });
 
@@ -756,6 +806,11 @@ describe('reserves', function () {
 
       it('utilization should still be 0', async function () {
         expect(await comet.getUtilization()).to.equal(0);
+      });
+
+      it('supply rate at utilization = 0 should equal supplyPerSecondInterestRateBase once there is supply', async function () {
+        const rateBase = await comet.supplyPerSecondInterestRateBase();
+        expect(await comet.getSupplyRate(0)).to.equal(rateBase);
       });
 
       it('save base supply index before accrual', async function () {
@@ -1280,7 +1335,8 @@ describe('reserves', function () {
 
   describe('getCollateralReserves - multiple collateral types seized from one user', function () {
     const seedAmount = exp(50_000, baseTokenDecimals);
-    const supplyAmount = exp(10_000, baseTokenDecimals);
+    // Large enough that Bob's max borrow stays under the 200% utilization cap
+    const supplyAmount = exp(50_000, baseTokenDecimals);
 
     const suppliedWETH = exp(1, 18);
     const suppliedWBTC = exp(1, 8);
@@ -1408,7 +1464,8 @@ describe('reserves', function () {
   describe('getCollateralReserves - all 24 collateral slots after one absorb', function () {
     const numCollaterals = MAX_ASSETS;
     const seedAmount = exp(500_000, baseTokenDecimals);
-    const supplyAmount = exp(100_000, baseTokenDecimals);
+    // Large enough that Bob's max borrow stays under the 200% utilization cap
+    const supplyAmount = exp(500_000, baseTokenDecimals);
 
     const collateralTokens: FaucetToken[] = [];
     const collateralFeeds: SimplePriceFeed[] = [];
