@@ -525,8 +525,8 @@ export async function relayArbitrumCCTPMint(
     // msgDestinationDomain, skip won't use
 
     start = end;
-    end = start + length.uint64;
-    // msgNonce, skip won't use
+    end = start + length.bytes32;
+    // msgNonce (bytes32 in MessageTransmitterV2 — was uint64 in CCTP V1), skip won't use
 
     start = end;
     end = start + length.bytes32;
@@ -539,6 +539,14 @@ export async function relayArbitrumCCTPMint(
     start = end;
     end = start + length.bytes32;
     // msgDestination, skip won't use
+
+    start = end;
+    end = start + length.uint32;
+    // minFinalityThreshold (CCTP V2 only), skip won't use
+
+    start = end;
+    end = start + length.uint32;
+    // finalityThresholdExecuted (CCTP V2 only), skip won't use
 
     start = end;
     end = start + length.uint32;
