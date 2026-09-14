@@ -245,7 +245,7 @@ function principalValueBorrow(baseBorrowIndex: bigint, presentValue: bigint): bi
   return (presentValue * BigInt(BASE_INDEX_SCALE) + baseBorrowIndex - 1n) / baseBorrowIndex;
 }
 
-export  function principalValue(
+export function principalValue(
   presentValue: bigint | BigNumber,
   baseSupplyIndex: bigint | BigNumber,
   baseBorrowIndex: bigint | BigNumber
