@@ -325,7 +325,7 @@ export async function simulateL2ToL1TokenBridging(
             const router = new Contract(
               ARBITRUM_GATEWAY_ROUTER,
               ['function l1TokenToGateway(address l1Token) view returns (address)'],
-              await governanceDeploymentManager.getSigner()
+              await bridgeDeploymentManager.getSigner()
             );
             return await router.l1TokenToGateway(l1Token);
           }
