@@ -204,8 +204,8 @@ export function mulPrice(n: bigint, price: bigint | BigNumber, fromScale: bigint
   return (n * toBigInt(price)) / toBigInt(fromScale);
 }
 
-export function mulFactor(n: bigint, factor: bigint):bigint {
-  return n * factor / factorScale;
+export function mulFactor(n: bigint, factor: bigint | BigNumber):bigint {
+  return n * toBigInt(factor) / factorScale;
 }
 
 export function divPrice(n: bigint, price: bigint | BigNumber, toScale: bigint | BigNumber): bigint {
