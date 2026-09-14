@@ -52,6 +52,8 @@ export { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
 // Network helpers
 export * from './helpers/network-helpers';
+// Math helpers
+export * from './helpers/math';
 
 export { Comet, ethers, expect, hre };
 
