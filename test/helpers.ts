@@ -158,6 +158,11 @@ export type BulkerInfo = {
   bulker: BaseBulker;
 };
 
+export type UserCollateral = {
+  balance: BigNumber;
+  _reserved: BigNumber;
+};
+
 export type UserBasic = { principal: BigNumber, baseTrackingIndex: BigNumber, baseTrackingAccrued: BigNumber, assetsIn: number, _reserved: number };
 
 export function dfn<T>(x: T | undefined | null, dflt: T): T {
@@ -203,19 +208,19 @@ export function mulFactor(n: bigint, factor: bigint | BigNumber):bigint {
   return n * toBigInt(factor) / factorScale;
 }
 
-export function divPrice(n: bigint, price: bigint, toScale: bigint): bigint {
-  return n * toScale / price;
+export function divPrice(n: bigint | BigNumber, price: bigint | BigNumber, toScale: bigint | BigNumber): bigint {
+  return (toBigInt(n) * toBigInt(toScale)) / toBigInt(price);
 }
 
-const BASE_INDEX_SCALE = 1e15;
+const BASE_INDEX_SCALE = 10n ** 15n;
 
 export function presentValueSupply(baseSupplyIndex: bigint | BigNumber, principalValue: bigint | BigNumber): bigint {
   const principal = toBigInt(principalValue);
   const index = toBigInt(baseSupplyIndex);
-  return principal * index / BigInt(BASE_INDEX_SCALE);
+  return principal * index / BASE_INDEX_SCALE;
 }
 
-export function presentValueBorrow(baseBorrowIndex: bigint | BigNumber, principalValue: bigint | BigNumber): bigint {
+function presentValueBorrow(baseBorrowIndex: bigint | BigNumber, principalValue: bigint | BigNumber): bigint {
   const principal = toBigInt(principalValue);
   const index = toBigInt(baseBorrowIndex);
   return principal * index / BigInt(BASE_INDEX_SCALE);
@@ -242,11 +247,11 @@ function principalValueBorrow(baseBorrowIndex: bigint, presentValue: bigint): bi
   return (presentValue * BigInt(BASE_INDEX_SCALE) + baseBorrowIndex - 1n) / baseBorrowIndex;
 }
 
-export async function principalValue(
+export function principalValue(
   presentValue: bigint | BigNumber,
   baseSupplyIndex: bigint | BigNumber,
   baseBorrowIndex: bigint | BigNumber
-): Promise<bigint> {
+): bigint {
   const pv = toBigInt(presentValue);
   if (pv >= 0n) {
     return principalValueSupply(toBigInt(baseSupplyIndex), pv);
