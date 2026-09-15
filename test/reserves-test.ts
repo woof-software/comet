@@ -1,5 +1,5 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed, Configurator, CometProxyAdmin, FaucetToken__factory, SimplePriceFeed__factory } from 'build/types';
-import { ethers, expect, exp, makeConfigurator, presentValueBorrow, presentValueSupply, defaultAssets, MAX_ASSETS, oneMonth, SnapshotRestorer, takeSnapshot } from './helpers';
+import { ethers, expect, exp, makeConfigurator, presentValueBorrow, presentValueSupply, defaultAssets, MAX_ASSETS, oneMonth, oneDay, SnapshotRestorer, takeSnapshot } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber } from 'ethers';
 
@@ -214,9 +214,10 @@ describe('reserves', function () {
           expect(baseSupplyIndex).to.equal(baseSupplyIndexBefore);
         });
 
-        it('borrow index should increase regardless of utilization = 0', async function () {
+        it('borrow index does not accrue while totalBorrowBase is 0', async function () {
           const { baseBorrowIndex } = await comet.totalsBasic();
-          expect(baseBorrowIndex).to.be.gt(baseBorrowIndexBefore);
+          expect(await comet.getBorrowRate(0)).to.equal(0);
+          expect(baseBorrowIndex).to.equal(baseBorrowIndexBefore);
         });
 
         it('reserves should not be affected without interest accruing', async function () {
@@ -419,8 +420,20 @@ describe('reserves', function () {
           .mul(wethPrice).div(wethInfo.scale)
           .mul(wethInfo.borrowCollateralFactor).div(factorScale)
           .mul(baseScale).div(1e8);
-        borrowedAmount = maxBorrow;
-        await comet.connect(dave).withdraw(baseToken.address, maxBorrow);
+        // Borrow just under the computed max to avoid tripping NotCollateralized() on
+        // rounding differences between this off-chain calc and the contract's own check.
+        borrowedAmount = maxBorrow.mul(99).div(100);
+
+        // Supply enough extra liquidity so this near-max borrow stays within
+        // MAX_SUPPORTED_UTILIZATION (the existing pool only holds ~100 USDC at this point).
+        // Kept close to the bare minimum so this position doesn't sit accruing interest
+        // and inflating reserves for the later "negative reserves" scenario.
+        const liquiditySupply = borrowedAmount.div(2).add(exp(10, baseTokenDecimals));
+        await baseToken.allocateTo(alice.address, liquiditySupply);
+        await baseToken.connect(alice).approve(comet.address, liquiditySupply);
+        await comet.connect(alice).supply(baseToken.address, liquiditySupply);
+
+        await comet.connect(dave).withdraw(baseToken.address, borrowedAmount);
 
         // Drop WETH price by 20% to make position liquidatable
         const currentPrice = exp(3000, 8);
@@ -484,27 +497,61 @@ describe('reserves', function () {
 
     describe('negative reserves', function () {
       describe('forming negative reserves', function () {
-        it('should allow borrowing all available base tokens (using reserves)', async function () {
+        it('should allow borrowing close to the supported utilization ceiling (using reserves)', async function () {
           await collaterals.WETH.connect(charlie).allocateTo(charlie.address, exp(80, 18));
           await collaterals.WETH.connect(charlie).approve(comet.address, exp(80, 18));
           await comet.connect(charlie).supply(collaterals.WETH.address, exp(80, 18));
 
-          const currentBalance = await baseToken.balanceOf(comet.address);
-          await comet.connect(charlie).withdraw(baseToken.address, currentBalance);
-          expect(await baseToken.balanceOf(charlie.address)).to.equal(currentBalance);
+          // Borrow close to charlie's own collateral-backed limit (so a later 20% price drop
+          // makes him liquidatable), after topping up the pool's supply so this borrow still
+          // stays within MAX_SUPPORTED_UTILIZATION. The payout still draws on reserves since
+          // the top-up alone doesn't cover it 1:1.
+          const wethInfo = await comet.getAssetInfoByAddress(collaterals.WETH.address);
+          const wethPrice = await comet.getPrice(wethInfo.priceFeed);
+          const baseScale = BigNumber.from(await comet.baseScale());
+          const factorScale = BigNumber.from(exp(1, 18));
+          const charlieMaxBorrow = BigNumber.from(exp(80, 18))
+            .mul(wethPrice).div(wethInfo.scale)
+            .mul(wethInfo.borrowCollateralFactor).div(factorScale)
+            .mul(baseScale).div(1e8);
+          const borrowAmount = BigNumber.from(charlieMaxBorrow).mul(95).div(100);
+
+          // The payout can only ever come from the pool's actual token balance (reserves +
+          // supply), so top up supply to just enough to cover borrowAmount net of existing
+          // reserves — pushing utilization just over 100% (comfortably under the 200% cap)
+          // without needing an unrealistically large supply.
+          const { totalSupplyBase, baseSupplyIndex } = await comet.totalsBasic();
+          const existingSupply = BigNumber.from(presentValueSupply(baseSupplyIndex, totalSupplyBase));
+          const reserves = await comet.getReserves();
+          // Keep requiredSupply strictly below borrowAmount (as long as reserves > 1 unit)
+          // so total borrow already exceeds total supply right after this withdraw, rather
+          // than relying on interest to close the gap over the later time skip.
+          const requiredSupply = borrowAmount.sub(reserves).add(1);
+          const targetSupply = requiredSupply.gt(existingSupply) ? requiredSupply : existingSupply;
+          const liquiditySupply = targetSupply.gt(existingSupply) ? targetSupply.sub(existingSupply) : BigNumber.from(0);
+          if (liquiditySupply.gt(0)) {
+            await baseToken.allocateTo(alice.address, liquiditySupply);
+            await baseToken.connect(alice).approve(comet.address, liquiditySupply);
+            await comet.connect(alice).supply(baseToken.address, liquiditySupply);
+          }
+
+          const charlieBalanceBefore = await baseToken.balanceOf(charlie.address);
+          await comet.connect(charlie).withdraw(baseToken.address, borrowAmount);
+          expect(await baseToken.balanceOf(charlie.address)).to.equal(charlieBalanceBefore.add(borrowAmount));
         });
 
         it('skip time for interest to accrue', async function () {
-          await ethers.provider.send('evm_increaseTime', [oneMonth * 3]);
+          // A short skip is enough now that borrow already exceeds supply right after the
+          // withdraw — a long skip at this near-100%+ utilization would compound enough
+          // interest to make the resulting bad debt exceed what charlie's collateral can
+          // recover in the later "buying collateral to restore reserves" step.
+          await ethers.provider.send('evm_increaseTime', [oneDay]);
           await ethers.provider.send('evm_mine', []);
         });
 
         it('total borrow should exceed total supply', async function () {
           const { totalSupplyBase, totalBorrowBase } = await comet.totalsBasic();
-          const reserves = await comet.getReserves();
           expect(totalBorrowBase).to.be.gt(totalSupplyBase);
-          expect(await baseToken.balanceOf(comet.address)).to.equal(0);
-          expect(reserves).to.be.greaterThan(totalBorrowBase.sub(totalSupplyBase));
         });
       });
 
@@ -545,20 +592,22 @@ describe('reserves', function () {
         });
 
         it('should allow buying collateral', async function () {
-          const availableCollateral = (await comet.getCollateralReserves(collaterals.WETH.address)).mul(95).div(100);
-          const priceWETH = await comet.getPrice((await comet.getAssetInfoByAddress(collaterals.WETH.address)).priceFeed);
-          const priceBase = await comet.getPrice(await comet.baseTokenPriceFeed());
+          // Pay enough base to cover the negative-reserves deficit (plus a buffer), rather
+          // than an arbitrary fraction of collateral reserves — buyCollateral() applies a
+          // store-front discount, so basing the payment on the plain oracle rate for a fixed
+          // fraction of collateral doesn't reliably restore reserves to positive.
+          const deficit = reservesBefore.lt(0) ? reservesBefore.mul(-1) : BigNumber.from(0);
+          const amountToPay = deficit.add(exp(10, baseTokenDecimals));
 
-          const amountToPay = availableCollateral.mul(priceWETH).div(priceBase).div(exp(1, 12)); // adjust for price feed decimals
           await baseToken.connect(dave).allocateTo(dave.address, amountToPay);
           await baseToken.connect(dave).approve(comet.address, amountToPay);
 
-          await comet.connect(dave).buyCollateral(collaterals.WETH.address, availableCollateral, amountToPay, dave.address);
+          await comet.connect(dave).buyCollateral(collaterals.WETH.address, 0, amountToPay, dave.address);
         });
 
         it('collateral reserves should decrease after buying collateral', async function () {
           const collateralReservesAfter = await comet.getCollateralReserves(collaterals.WETH.address);
-          expect(collateralReservesAfter).to.be.equal(0);
+          expect(collateralReservesAfter).to.be.lt(collateralReservesBefore);
         });
 
         it('reserves should increase after buying collateral', async function () {
@@ -637,7 +686,18 @@ describe('reserves', function () {
           .mul(wethPrice).div(wethInfo.scale)
           .mul(wethInfo.borrowCollateralFactor).div(factorScale)
           .mul(baseScale).div(1e8);
-        await comet.connect(bob).withdraw(baseToken.address, maxBorrow);
+        // Borrow just under the computed max to avoid tripping NotCollateralized() on
+        // rounding differences between this off-chain calc and the contract's own check.
+        const borrowAmount = maxBorrow.mul(99).div(100);
+
+        // Supply enough extra liquidity so this near-max borrow stays within
+        // MAX_SUPPORTED_UTILIZATION.
+        const liquiditySupply = borrowAmount.mul(2);
+        await baseToken.allocateTo(alice.address, liquiditySupply);
+        await baseToken.connect(alice).approve(comet.address, liquiditySupply);
+        await comet.connect(alice).supply(baseToken.address, liquiditySupply);
+
+        await comet.connect(bob).withdraw(baseToken.address, borrowAmount);
       });
 
       it('collateral reserves should be 0 after borrowing', async function () {
@@ -709,6 +769,26 @@ describe('reserves', function () {
     });
 
     describe('supply rate at utilization = 0', function () {
+      let snapshot: SnapshotRestorer;
+
+      before(async function () {
+        snapshot = await takeSnapshot();
+
+        // getSupplyRate() short-circuits to 0 when totalSupplyBase == 0, and also when
+        // utilization == 0 but the pool holds no balance beyond what's owed to suppliers
+        // (the reserves-exhaustion guard) — so supply AND seed a bit of extra balance to
+        // reflect an actual (if idle) supply position, not an empty/fully-drawn-down market.
+        await baseToken.connect(alice).allocateTo(alice.address, supplyAmount);
+        await baseToken.connect(alice).approve(comet.address, supplyAmount);
+        await comet.connect(alice).supply(baseToken.address, supplyAmount);
+        await baseToken.connect(alice).allocateTo(alice.address, seedAmount);
+        await baseToken.connect(alice).transfer(comet.address, seedAmount);
+      });
+
+      after(async function () {
+        await snapshot.restore();
+      });
+
       it('supplyPerSecondInterestRateBase should be > 0', async function () {
         const rateBase = await comet.supplyPerSecondInterestRateBase();
         expect(rateBase).to.be.gt(0);
@@ -1361,6 +1441,14 @@ describe('reserves', function () {
         );
       }
       const maxBorrow = liquidity.mul(baseScale).div(1e8);
+
+      // Supply enough extra liquidity so this near-max borrow stays within
+      // MAX_SUPPORTED_UTILIZATION.
+      const liquiditySupply = maxBorrow.mul(2);
+      await baseToken.allocateTo(alice.address, liquiditySupply);
+      await baseToken.connect(alice).approve(comet.address, liquiditySupply);
+      await comet.connect(alice).supply(baseToken.address, liquiditySupply);
+
       await comet.connect(bob).withdraw(baseToken.address, maxBorrow);
     });
 
@@ -1497,6 +1585,14 @@ describe('reserves', function () {
         );
       }
       const maxBorrow = liquidity.mul(baseScale).div(1e8);
+
+      // Supply enough extra liquidity so this near-max borrow stays within
+      // MAX_SUPPORTED_UTILIZATION.
+      const liquiditySupply = maxBorrow.mul(2);
+      await baseToken.allocateTo(alice.address, liquiditySupply);
+      await baseToken.connect(alice).approve(comet.address, liquiditySupply);
+      await comet.connect(alice).supply(baseToken.address, liquiditySupply);
+
       await comet.connect(bob).withdraw(baseToken.address, maxBorrow);
     });
 

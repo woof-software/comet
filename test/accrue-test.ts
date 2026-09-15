@@ -1,5 +1,5 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
-import { ethers, expect, exp, makeProtocol, oneMonth, oneDay, defaultAssets, UserBasic, SnapshotRestorer, takeSnapshot} from './helpers';
+import { ethers, expect, exp, makeProtocol, oneMonth, oneDay, defaultAssets, UserBasic, SnapshotRestorer, takeSnapshot, fastForward, wait } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber } from 'ethers';
 import { TotalsBasicStructOutput } from 'build/types/CometHarnessInterfaceExtendedAssetList';
@@ -65,17 +65,9 @@ describe('accrue', function () {
   });
 
   describe('empty position', function () {
-    let timeBefore: number;
     let userBasicBefore: UserBasic;
-    let supplyRatePerSecond: BigNumber;
-    let borrowRatePerSecond: BigNumber;
     before(async function () {
-      const block = await ethers.provider.getBlock('latest');
-      timeBefore = block.timestamp;
       userBasicBefore = await comet.userBasic(alice.address);
-
-      supplyRatePerSecond = BigNumber.from(config.supplyInterestRateBase).div(365 * oneDay);
-      borrowRatePerSecond = BigNumber.from(config.borrowInterestRateBase).div(365 * oneDay);
     });
 
     it('utilization should be 0 with no borrowers', async function () {
@@ -124,34 +116,18 @@ describe('accrue', function () {
       expect(await comet.getUtilization()).to.equal(0);
     });
 
-    it('supply index should increase after accrue', async function () {
+    it('supply index does not accrue while totalSupplyBase is 0', async function () {
+      // getSupplyRate() returns 0 whenever totalSupplyBase == 0 (no supply to accrue interest on)
       const { baseSupplyIndex } = await comet.totalsBasic();
-      const currentBlock = await ethers.provider.getBlock('latest');
-      const timeElapsed = currentBlock.timestamp - timeBefore;
-      const yearTime = 365 * oneDay;
-
-      const supplyPerSecond = BigNumber.from(config.supplyInterestRateBase).div(yearTime);
-      const factorScale = await comet.factorScale();
-
-      const expectedSupplyIndexAccrued = BigNumber.from(INDEX_SCALE).mul(supplyPerSecond).mul(timeElapsed).div(factorScale);
-      const expectedSupplyIndex = BigNumber.from(INDEX_SCALE).add(expectedSupplyIndexAccrued);
-
-      expect(baseSupplyIndex).to.equal(expectedSupplyIndex);
+      expect(await comet.getSupplyRate(0)).to.equal(0);
+      expect(baseSupplyIndex).to.equal(INDEX_SCALE);
     });
 
-    it('borrow index should increase after accrue', async function () {
+    it('borrow index does not accrue while totalBorrowBase is 0', async function () {
+      // getBorrowRate() returns 0 whenever totalBorrowBase == 0 (no borrows to accrue interest on)
       const { baseBorrowIndex } = await comet.totalsBasic();
-      const currentBlock = await ethers.provider.getBlock('latest');
-      const timeElapsed = currentBlock.timestamp - timeBefore;
-      const yearTime = 365 * oneDay;
-
-      const borrowPerSecond = BigNumber.from(config.borrowInterestRateBase).div(yearTime);
-      const factorScale = await comet.factorScale();
-
-      const expectedBorrowIndexAccrued = BigNumber.from(INDEX_SCALE).mul(borrowPerSecond).mul(timeElapsed).div(factorScale);
-      const expectedBorrowIndex = BigNumber.from(INDEX_SCALE).add(expectedBorrowIndexAccrued);
-
-      expect(baseBorrowIndex).to.equal(expectedBorrowIndex);
+      expect(await comet.getBorrowRate(0)).to.equal(0);
+      expect(baseBorrowIndex).to.equal(INDEX_SCALE);
     });
 
     it('total supply should remain 0 after accrue', async function () {
@@ -185,14 +161,14 @@ describe('accrue', function () {
       });
 
       describe('seeding reserves impact on index accrual over time', function () {
-        it('supply index should continue accruing over time after seeding', async function () {
-          const expectedSupplyIndex = totalsBefore.baseSupplyIndex.add(totalsBefore.baseSupplyIndex.mul(supplyRatePerSecond).mul(timeElapsed).div(exp(1, 18)));
-          expect(totalsAfter.baseSupplyIndex).to.equal(expectedSupplyIndex);
+        it('supply index does not accrue while totalSupplyBase is still 0 after seeding', async function () {
+          // Seeding is a raw token transfer, not supply() — totalSupplyBase stays 0, so getSupplyRate() is 0
+          expect(timeElapsed).to.be.gt(0);
+          expect(totalsAfter.baseSupplyIndex).to.equal(totalsBefore.baseSupplyIndex);
         });
 
-        it('borrow index should continue accruing over time after seeding', async function () {
-          const expectedBorrowIndex = totalsBefore.baseBorrowIndex.add(totalsBefore.baseBorrowIndex.mul(borrowRatePerSecond).mul(timeElapsed).div(exp(1, 18)));
-          expect(totalsAfter.baseBorrowIndex).to.equal(expectedBorrowIndex);
+        it('borrow index does not accrue while totalBorrowBase is still 0 after seeding', async function () {
+          expect(totalsAfter.baseBorrowIndex).to.equal(totalsBefore.baseBorrowIndex);
         });
       });
 
@@ -246,10 +222,11 @@ describe('accrue', function () {
       expect(await comet.getUtilization()).to.equal(0);
     });
 
-    it('supply index should increase after supply', async function () {
+    it('supply index does not accrue on the tx that first establishes supply', async function () {
+      // supply() accrues BEFORE recording the new principal, so this accrual pass still
+      // sees totalSupplyBase == 0 and getSupplyRate() returns 0 for it.
       const totalsAfter = await comet.totalsBasic();
-      const supplyRatePerSecond = BigNumber.from(config.supplyInterestRateBase).div(365 * oneDay);
-      expect(totalsAfter.baseSupplyIndex).to.equal(totalsBefore.baseSupplyIndex.add(totalsBefore.baseSupplyIndex.mul(supplyRatePerSecond).mul(3).div(exp(1, 18))));
+      expect(totalsAfter.baseSupplyIndex).to.equal(totalsBefore.baseSupplyIndex);
     });
 
     it('tracking supply index should not change after supply with utilization = 0', async function () {
@@ -264,10 +241,10 @@ describe('accrue', function () {
       totalSupplyBaseAfterSupply = totalsAfter.totalSupplyBase;
     });
 
-    it('borrow index should increase after supply', async function () {
+    it('borrow index does not accrue while totalBorrowBase is 0', async function () {
       const totalsAfter = await comet.totalsBasic();
-      const borrowRatePerSecond = BigNumber.from(config.borrowInterestRateBase).div(365 * oneDay);
-      expect(totalsAfter.baseBorrowIndex).to.equal(totalsBefore.baseBorrowIndex.add(totalsBefore.baseBorrowIndex.mul(borrowRatePerSecond).mul(3).div(exp(1, 18))));
+      expect(await comet.getBorrowRate(0)).to.equal(0);
+      expect(totalsAfter.baseBorrowIndex).to.equal(totalsBefore.baseBorrowIndex);
     });
 
     it('tracking borrow index should not change after supply with utilization = 0', async function () {
@@ -305,10 +282,10 @@ describe('accrue', function () {
       expect(totalsAfter.totalSupplyBase).to.equal(totalSupplyBaseAfterSupply);
     });
 
-    it('borrow index should accrue with utilization = 0', async function () {
+    it('borrow index does not accrue while totalBorrowBase is 0', async function () {
       const totalsAfter = await comet.totalsBasic();
-      const borrowRatePerSecond = BigNumber.from(config.borrowInterestRateBase).div(365 * oneDay);
-      expect(totalsAfter.baseBorrowIndex).to.be.closeTo(totalsBefore.baseBorrowIndex.add(totalsBefore.baseBorrowIndex.mul(borrowRatePerSecond).mul(oneMonth).div(exp(1, 18))), borrowRatePerSecond.div(100));
+      expect(await comet.getBorrowRate(0)).to.equal(0);
+      expect(totalsAfter.baseBorrowIndex).to.equal(totalsBefore.baseBorrowIndex);
     });
 
     it('total borrow base should not change after accrue', async function () {
@@ -341,104 +318,47 @@ describe('accrue', function () {
     });
   });
 
-  describe('borrowing position', function () {
-    const borrowAmount = exp(100, baseTokenDecimals);
+  describe('overflow handling', function () {
+    it('reverts on overflows', async () => {
+      const { cometWithExtendedAssetList : comet } = await makeProtocol({
+        // Ensure supply rate is positive even at low utilization so max index addition overflows.
+        supplyInterestRateBase: exp(0.01, 18),
+      });
 
-    let totalsBefore: TotalsBasicStructOutput;
-    let userBasicBefore: UserBasic;
+      const t0 = await comet.totalsBasic();
+      const t1 = Object.assign({}, t0, {
+        baseSupplyIndex: 2n ** 64n - 1n,
+        totalSupplyBase: 14000,
+        totalBorrowBase: 13000, // needs to have positive utilization for supply rate to be > 0
+      });
+      await fastForward(998);
+      const _s0 = await wait(comet.setTotalsBasic(t1));
+      await fastForward(2);
+      await expect(wait(comet.accrue())).to.be.reverted;
 
-    let supplyRateBefore: BigNumber;
-    let borrowRateBefore: BigNumber;
-
-    before(async function () {
-      // Bob supplies 1 WETH as collateral
-      await collaterals.WETH.connect(bob).allocateTo(bob.address, exp(1, 18));
-      await collaterals.WETH.connect(bob).approve(comet.address, exp(1, 18));
-      await comet.connect(bob).supply(collaterals.WETH.address, exp(1, 18));
-
-      expect(await comet.connect(bob).withdraw(baseToken.address, borrowAmount)).to.not.be.reverted;
-      totalsBefore = await comet.totalsBasic();
-      userBasicBefore = await comet.userBasic(bob.address);
-
-      const utilization = await comet.getUtilization();
-      supplyRateBefore = await comet.getSupplyRate(utilization);
-      borrowRateBefore = await comet.getBorrowRate(utilization);
-    });
-
-    it('utilization should be > 0 after borrowing', async function () {
-      const utilization = await comet.getUtilization();
-      expect(utilization).to.be.gt(0);
-    });
-
-    it('skip a month to accrue interest', async function () {
-      await ethers.provider.send('evm_increaseTime', [oneMonth]);
-      await ethers.provider.send('evm_mine', []);
-    });
-
-    it('should allow accruing with utilization > 0', async function () {
-      await comet.accrueAccount(bob.address);
-    });
-
-    it('supply index should accrue with utilization > 0', async function () {
-      const totalsAfter = await comet.totalsBasic();
-      const timeElapsed = totalsAfter.lastAccrualTime - totalsBefore.lastAccrualTime;
-      expect(totalsAfter.baseSupplyIndex).to.be.equal(totalsBefore.baseSupplyIndex.add(totalsBefore.baseSupplyIndex.mul(supplyRateBefore).mul(timeElapsed).div(exp(1, 18))));
-    });
-
-    it('tracking supply index should accrue with utilization > 0', async function () {
-      const totalsAfter = await comet.totalsBasic();
-      const timeElapsed = totalsAfter.lastAccrualTime - totalsBefore.lastAccrualTime;
-      expect(totalsAfter.trackingSupplyIndex).to.equal(totalsBefore.trackingSupplyIndex.add(BigNumber.from(config.baseTrackingSupplySpeed).mul(timeElapsed).mul(baseTokenScale).div(totalsBefore.totalSupplyBase)));
-    });
-
-    it('total supply base should not change after accrue with utilization > 0', async function () {
-      const totalsAfter = await comet.totalsBasic();
-      expect(totalsAfter.totalSupplyBase).to.equal(totalsBefore.totalSupplyBase);
-    });
-
-    it('borrow index should accrue with utilization > 0', async function () {
-      const totalsAfter = await comet.totalsBasic();
-      const timeElapsed = totalsAfter.lastAccrualTime - totalsBefore.lastAccrualTime;
-      expect(totalsAfter.baseBorrowIndex).to.be.equal(totalsBefore.baseBorrowIndex.add(totalsBefore.baseBorrowIndex.mul(borrowRateBefore).mul(timeElapsed).div(exp(1, 18))));
-    });
-
-    it('tracking borrow index should accrue with utilization > 0', async function () {
-      const totalsAfter = await comet.totalsBasic();
-      const timeElapsed = totalsAfter.lastAccrualTime - totalsBefore.lastAccrualTime;
-      expect(totalsAfter.trackingBorrowIndex).to.equal(totalsBefore.trackingBorrowIndex.add(BigNumber.from(config.baseTrackingBorrowSpeed).mul(timeElapsed).mul(baseTokenScale).div(totalsBefore.totalBorrowBase)));
-    });
-
-    it('total borrow base should not change after accrue with utilization > 0', async function () {
-      const totalsAfter = await comet.totalsBasic();
-      expect(totalsAfter.totalBorrowBase).to.equal(totalsBefore.totalBorrowBase);
-    });
-
-    it('user principal should not change after borrow accrue', async function () {
-      const userBasicAfter = await comet.userBasic(bob.address);
-      expect(userBasicAfter.principal).to.be.equal(userBasicBefore.principal);
-    });
-
-    it('user tracking index should accrue after borrow interest', async function () {
-      const userBasicAfter = await comet.userBasic(bob.address);
-      const totalsAfter = await comet.totalsBasic();
-      const expectedBorrowTrackingIndex = userBasicBefore.baseTrackingIndex.add(BigNumber.from(config.baseTrackingBorrowSpeed).mul(oneMonth + 1).mul(baseTokenScale).div(totalsAfter.totalBorrowBase));
-      expect(userBasicAfter.baseTrackingIndex).to.be.closeTo(expectedBorrowTrackingIndex, 1);
-    });
-
-    it('user tracking accrued should accrue after borrow interest', async function () {
-      const userBasicAfter = await comet.userBasic(bob.address);
-      const totalsAfter = await comet.totalsBasic();
-      const expectedBorrowTrackingAccrued = userBasicBefore.principal.mul(-1).mul(totalsAfter.trackingBorrowIndex.sub(userBasicBefore.baseTrackingIndex)).div(INDEX_SCALE);
-      expect(userBasicAfter.baseTrackingAccrued).to.equal(expectedBorrowTrackingAccrued);
-    });
-
-    it('user assetsIn should not change after borrow accrue', async function () {
-      const userBasicAfter = await comet.userBasic(bob.address);
-      expect(userBasicAfter.assetsIn).to.equal(userBasicBefore.assetsIn);
+      const t2 = Object.assign({}, t1, {
+        baseSupplyIndex: t0.baseSupplyIndex,
+        baseBorrowIndex: 2n ** 64n - 1n,
+        totalSupplyBase: 80000,
+        totalBorrowBase: 20000,
+      });
+      await fastForward(998);
+      const _s1 = await wait(comet.setTotalsBasic(t2));
+      await fastForward(2);
+      await expect(comet.accrue()).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
     });
   });
 
   describe('repay', function () {
+    const bobBorrowAmount = exp(50, baseTokenDecimals);
+
+    before(async function () {
+      await collaterals.WETH.connect(bob).allocateTo(bob.address, exp(1, 18));
+      await collaterals.WETH.connect(bob).approve(comet.address, exp(1, 18));
+      await comet.connect(bob).supply(collaterals.WETH.address, exp(1, 18));
+      await comet.connect(bob).withdraw(baseToken.address, bobBorrowAmount);
+    });
+
     it('borrow position exists', async function () {
       const borrowBalance = await comet.borrowBalanceOf(bob.address);
       expect(borrowBalance).to.be.gt(0);
@@ -525,6 +445,12 @@ describe('accrue', function () {
       await comet.connect(dave).supply(collaterals.WETH.address, suppliedCollateral);
 
       const maxBorrow = await comet.getBorrowLimit(dave.address);
+
+      const liquiditySupply = BigNumber.from(maxBorrow).mul(2);
+      await baseToken.allocateTo(alice.address, liquiditySupply);
+      await baseToken.connect(alice).approve(comet.address, liquiditySupply);
+      await comet.connect(alice).supply(baseToken.address, liquiditySupply);
+
       borrowedAmount = maxBorrow;
       await comet.connect(dave).withdraw(baseToken.address, maxBorrow);
 

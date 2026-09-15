@@ -3,6 +3,7 @@ import { ConfigurationStruct } from '../../build/types/Configurator';
 import { ProtocolConfiguration } from './index';
 import { ContractMap } from '../../plugins/deployment_manager/ContractMap';
 import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
+import { exp } from '../../test/helpers';
 
 function address(a: string): string {
   if (!a.match(/^0x[a-fA-F0-9]{40}$/)) {
@@ -27,7 +28,7 @@ function percentage(n: number, checkRange: boolean = true): bigint {
       throw new Error(`percentage less than 0% [received=${n}]`);
     }
   }
-  return floor(n * 1e18);
+  return exp(n, 18, 18);
 }
 
 // Note: Expects a string in scientific notation format (e.g. 1000e18 or 1_000e18)

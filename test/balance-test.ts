@@ -728,6 +728,11 @@ describe('balance tests', function () {
         await baseToken.allocateTo(comet.address, exp(1_000_000, baseTokenDecimals));
 
         const borrowLimit = await comet.getBorrowLimit(bob.address);
+
+        await baseToken.allocateTo(dave.address, borrowLimit);
+        await baseToken.connect(dave).approve(comet.address, borrowLimit);
+        await comet.connect(dave).supply(baseToken.address, borrowLimit);
+
         await comet.connect(bob).withdraw(baseToken.address, borrowLimit);
 
         const userBasic = await comet.userBasic(bob.address);
@@ -758,6 +763,11 @@ describe('balance tests', function () {
         await comet.connect(dave).supply(collaterals.WETH.address, collateralAmount);
 
         const maxBorrow = await comet.getBorrowLimit(dave.address);
+
+        await baseToken.allocateTo(bob.address, maxBorrow);
+        await baseToken.connect(bob).approve(comet.address, maxBorrow);
+        await comet.connect(bob).supply(baseToken.address, maxBorrow);
+
         await comet.connect(dave).withdraw(baseToken.address, maxBorrow);
 
         // Drop WETH price by 20% to make position liquidatable
