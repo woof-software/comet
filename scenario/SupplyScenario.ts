@@ -3,7 +3,6 @@ import { expect } from 'chai';
 import {
   expectApproximately,
   expectBase,
-  expectRevertCustom,
   expectRevertMatches,
   getExpectedBaseBalance,
   getInterest,
@@ -809,10 +808,9 @@ scenario(
     const scale = (await comet.baseScale()).toBigInt();
 
     await baseAsset.approve(albert, comet.address);
-    await expectRevertCustom(
-      comet.connect(betty.signer).supplyFrom(albert.address, betty.address, baseAsset.address, 100n * scale),
-      'Unauthorized()'
-    );
+    await expect(
+      comet.connect(betty.signer).supplyFrom(albert.address, betty.address, baseAsset.address, 100n * scale)
+    ).to.be.revertedWithCustomError(comet, 'Unauthorized');
   }
 );
 
@@ -833,10 +831,9 @@ scenario(
 
     await collateralAsset.approve(albert, comet.address, amountToSupply);
 
-    await expectRevertCustom(
-      comet.connect(albert.signer).supply(collateralAsset.address, amountToSupply),
-      'SupplyCapExceeded()'
-    );
+    await expect(
+      comet.connect(albert.signer).supply(collateralAsset.address, amountToSupply)
+    ).to.be.revertedWithCustomError(comet, 'SupplyCapExceeded');
   }
 );
 
@@ -857,10 +854,9 @@ scenario(
 
     await collateralAsset.approve(albert, comet.address, amountToSupply);
 
-    await expectRevertCustom(
-      comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, amountToSupply),
-      'SupplyCapExceeded()'
-    );
+    await expect(
+      comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, amountToSupply)
+    ).to.be.revertedWithCustomError(comet, 'SupplyCapExceeded');
   }
 );
 
@@ -882,10 +878,9 @@ scenario(
     await collateralAsset.approve(albert, comet.address, amountToSupply);
     await albert.allow(betty, true);
 
-    await expectRevertCustom(
-      comet.connect(betty.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, amountToSupply),
-      'SupplyCapExceeded()'
-    );
+    await expect(
+      comet.connect(betty.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, amountToSupply)
+    ).to.be.revertedWithCustomError(comet, 'SupplyCapExceeded');
   }
 );
 
@@ -902,7 +897,7 @@ scenario(
     const baseToken = await comet.baseToken();
     const scale = (await comet.baseScale()).toBigInt();
 
-    await expectRevertCustom(comet.connect(albert.signer).supply(baseToken, 100n * scale), 'Paused()');
+    await expect(comet.connect(albert.signer).supply(baseToken, 100n * scale)).to.be.revertedWithCustomError(comet, 'Paused');
   }
 );
 
@@ -919,7 +914,7 @@ scenario(
     const baseToken = await comet.baseToken();
     const scale = (await comet.baseScale()).toBigInt();
 
-    await expectRevertCustom(comet.connect(albert.signer).supplyTo(betty.address, baseToken, 100n * scale), 'Paused()');
+    await expect(comet.connect(albert.signer).supplyTo(betty.address, baseToken, 100n * scale)).to.be.revertedWithCustomError(comet, 'Paused');
   }
 );
 
@@ -938,10 +933,9 @@ scenario(
 
     await betty.allow(albert, true);
 
-    await expectRevertCustom(
-      comet.connect(albert.signer).supplyFrom(betty.address, albert.address, baseToken, 100n * scale),
-      'Paused()'
-    );
+    await expect(
+      comet.connect(albert.signer).supplyFrom(betty.address, albert.address, baseToken, 100n * scale)
+    ).to.be.revertedWithCustomError(comet, 'Paused');
   }
 );
 
@@ -956,10 +950,9 @@ scenario('Comet#supply > reverts on unregistered asset', {}, async ({ comet, act
 
   await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
-  await expectRevertCustom(
-    comet.connect(albert.signer).supply(unregisteredAsset.address, collateralAmount),
-    'BadAsset()'
-  );
+  await expect(
+    comet.connect(albert.signer).supply(unregisteredAsset.address, collateralAmount)
+  ).to.be.revertedWithCustomError(comet, 'BadAsset');
 });
 
 scenario('Comet#supplyTo > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
@@ -973,13 +966,12 @@ scenario('Comet#supplyTo > reverts on unregistered asset', {}, async ({ comet, a
 
   await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
-  await expectRevertCustom(
-    comet.connect(albert.signer).supplyTo(betty.address, unregisteredAsset.address, collateralAmount),
-    'BadAsset()'
-  );
+  await expect(
+    comet.connect(albert.signer).supplyTo(betty.address, unregisteredAsset.address, collateralAmount)
+  ).to.be.revertedWithCustomError(comet, 'BadAsset');
 });
 
-scenario('Comet#supplyFrom > reverts on unregistered asset', {}, async ({ comet, actors, cometExt }, context) => {
+scenario('Comet#supplyFrom > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
   const { albert, betty } = actors;
 
   const unregisteredAsset = await deployMockERC20(context, 'asset');
@@ -990,10 +982,9 @@ scenario('Comet#supplyFrom > reverts on unregistered asset', {}, async ({ comet,
 
   await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
-  await expectRevertCustom(
-    comet.connect(albert.signer).supplyFrom(albert.address, betty.address, unregisteredAsset.address, collateralAmount),
-    'BadAsset()'
-  );
+  await expect(
+    comet.connect(albert.signer).supplyFrom(albert.address, betty.address, unregisteredAsset.address, collateralAmount)
+  ).to.be.revertedWithCustomError(comet, 'BadAsset');
 });
 
 scenario(
@@ -1025,12 +1016,11 @@ scenario(
     await cometExt.connect(pauseGuardian.signer).pauseBaseSupply(true);
 
     await baseAsset.approve(albert, comet.address);
-    await expectRevertCustom(
+    await expect(
       comet
         .connect(albert.signer)
-        .supply(baseAsset.address, BigInt(getConfigForScenario(context).transferBase) * scale),
-      'BaseSupplyPaused()'
-    );
+        .supply(baseAsset.address, BigInt(getConfigForScenario(context).transferBase) * scale)
+    ).to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
   }
 );
 
@@ -1063,12 +1053,11 @@ scenario(
     await cometExt.connect(pauseGuardian.signer).pauseBaseSupply(true);
 
     await baseAsset.approve(albert, comet.address);
-    await expectRevertCustom(
+    await expect(
       comet
         .connect(albert.signer)
-        .supplyTo(betty.address, baseAsset.address, BigInt(getConfigForScenario(context).transferBase) * scale),
-      'BaseSupplyPaused()'
-    );
+        .supplyTo(betty.address, baseAsset.address, BigInt(getConfigForScenario(context).transferBase) * scale)
+    ).to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
   }
 );
 
@@ -1103,7 +1092,7 @@ scenario(
     // Pause base supply
     await cometExt.connect(pauseGuardian.signer).pauseBaseSupply(true);
 
-    await expectRevertCustom(
+    await expect(
       comet
         .connect(charles.signer)
         .supplyFrom(
@@ -1111,9 +1100,8 @@ scenario(
           betty.address,
           baseAsset.address,
           BigInt(getConfigForScenario(context).transferBase) * scale
-        ),
-      'BaseSupplyPaused()'
-    );
+        )
+    ).to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
   }
 );
 
@@ -1146,10 +1134,9 @@ scenario(
     await cometExt.connect(pauseGuardian.signer).pauseCollateralSupply(true);
 
     await collateralAsset.approve(albert, comet.address);
-    await expectRevertCustom(
-      comet.connect(albert.signer).supply(collateralAsset.address, amountToSupply),
-      'CollateralSupplyPaused()'
-    );
+    await expect(
+      comet.connect(albert.signer).supply(collateralAsset.address, amountToSupply)
+    ).to.be.revertedWithCustomError(comet, 'CollateralSupplyPaused');
   }
 );
 
@@ -1182,10 +1169,9 @@ scenario(
     await cometExt.connect(pauseGuardian.signer).pauseCollateralSupply(true);
 
     await collateralAsset.approve(albert, comet.address);
-    await expectRevertCustom(
-      comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, amountToSupply),
-      'CollateralSupplyPaused()'
-    );
+    await expect(
+      comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, amountToSupply)
+    ).to.be.revertedWithCustomError(comet, 'CollateralSupplyPaused');
   }
 );
 
@@ -1220,10 +1206,9 @@ scenario(
     // Pause collateral supply
     await cometExt.connect(pauseGuardian.signer).pauseCollateralSupply(true);
 
-    await expectRevertCustom(
-      comet.connect(charles.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, amountToSupply),
-      'CollateralSupplyPaused()'
-    );
+    await expect(
+      comet.connect(charles.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, amountToSupply)
+    ).to.be.revertedWithCustomError(comet, 'CollateralSupplyPaused');
   }
 );
 
@@ -1256,10 +1241,9 @@ scenario(
     await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetSupply(0, true);
 
     await collateralAsset.approve(albert, comet.address);
-    await expectRevertCustom(
-      comet.connect(albert.signer).supply(collateralAsset.address, amountToSupply),
-      'CollateralAssetSupplyPaused(0)'
-    );
+    await expect(
+      comet.connect(albert.signer).supply(collateralAsset.address, amountToSupply)
+    ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(0);
   }
 );
 
@@ -1292,10 +1276,9 @@ scenario(
     await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetSupply(0, true);
 
     await collateralAsset.approve(albert, comet.address);
-    await expectRevertCustom(
-      comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, amountToSupply),
-      'CollateralAssetSupplyPaused(0)'
-    );
+    await expect(
+      comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, amountToSupply)
+    ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(0);
   }
 );
 
@@ -1330,10 +1313,9 @@ scenario(
     // Pause specific collateral asset supply
     await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetSupply(0, true);
 
-    await expectRevertCustom(
-      comet.connect(charles.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, amountToSupply),
-      'CollateralAssetSupplyPaused(0)'
-    );
+    await expect(
+      comet.connect(charles.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, amountToSupply)
+    ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(0);
   }
 );
 
@@ -1368,10 +1350,9 @@ scenario(
       await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetSupply(i, true);
 
       await collateralAsset.approve(albert, comet.address);
-      await expectRevertCustom(
-        comet.connect(albert.signer).supply(collateralAsset.address, amountToSupply),
-        `CollateralAssetSupplyPaused(${i})`
-      );
+      await expect(
+        comet.connect(albert.signer).supply(collateralAsset.address, amountToSupply)
+      ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`Supplying is allowed when collateral asset ${i} supply is unpaused`);
 
@@ -1416,10 +1397,9 @@ scenario(
       await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetSupply(i, true);
 
       await collateralAsset.approve(albert, comet.address);
-      await expectRevertCustom(
-        comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, amountToSupply),
-        `CollateralAssetSupplyPaused(${i})`
-      );
+      await expect(
+        comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, amountToSupply)
+      ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`Supplying is allowed when collateral asset ${i} supply is unpaused`);
 
@@ -1466,10 +1446,9 @@ scenario(
       await collateralAsset.approve(albert, comet.address);
       await albert.allow(betty, true);
 
-      await expectRevertCustom(
-        comet.connect(betty.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, amountToSupply),
-        `CollateralAssetSupplyPaused(${i})`
-      );
+      await expect(
+        comet.connect(betty.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, amountToSupply)
+      ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`Supplying is allowed when collateral asset ${i} supply is unpaused`);
 
@@ -1523,10 +1502,9 @@ scenario(
       // Deactivate collateral asset
       await cometExt.connect(pauseGuardian.signer).deactivateCollateral(i);
 
-      await expectRevertCustom(
-        comet.connect(albert.signer).supply(collateralAsset.address, supplyAmount),
-        `CollateralAssetSupplyPaused(${i})`
-      );
+      await expect(
+        comet.connect(albert.signer).supply(collateralAsset.address, supplyAmount)
+      ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`Supply is allowed when collateral asset ${i} is activated`);
 
@@ -1574,10 +1552,9 @@ scenario(
       // Deactivate collateral asset
       await cometExt.connect(pauseGuardian.signer).deactivateCollateral(i);
 
-      await expectRevertCustom(
-        comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, supplyAmount),
-        `CollateralAssetSupplyPaused(${i})`
-      );
+      await expect(
+        comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, supplyAmount)
+      ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`SupplyTo is allowed when collateral asset ${i} is activated`);
 
@@ -1599,10 +1576,11 @@ scenario(
     }
   },
   async ({ comet, actors, cometExt }, context, world) => {
-    const { pauseGuardian, albert, betty } = actors;
+    const { admin: governor, pauseGuardian, albert, betty } = actors;
 
-    // Fund pause guardian account for gas fees
+    // Fund pause guardian (deactivates) and governor (activates) accounts for gas fees
     await fundAccount(world, pauseGuardian);
+    await fundAccount(world, governor);
 
     // Allow betty to act on behalf of albert
     await albert.allow(betty, true);
@@ -1628,15 +1606,14 @@ scenario(
       // Deactivate collateral asset
       await cometExt.connect(pauseGuardian.signer).deactivateCollateral(i);
 
-      await expectRevertCustom(
-        comet.connect(betty.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, supplyAmount),
-        `CollateralAssetSupplyPaused(${i})`
-      );
+      await expect(
+        comet.connect(betty.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, supplyAmount)
+      ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`SupplyFrom is allowed when collateral asset ${i} is activated`);
 
-      // Activate collateral asset
-      await cometExt.connect(pauseGuardian.signer).activateCollateral(i);
+      // Activate collateral asset (only the governor is allowed to)
+      await cometExt.connect(governor.signer).activateCollateral(i);
 
       await comet
         .connect(betty.signer)
