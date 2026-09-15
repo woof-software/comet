@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
 import { migration } from '../../../../plugins/deployment_manager/Migration';
-import { calldata, exp, proposal } from '../../../../src/deploy';
+import { calldata, proposal } from '../../../../src/deploy';
 import { utils } from 'ethers';
 
 let newRsEthPriceFeed: string;
@@ -48,8 +48,8 @@ export default migration('1788868615_deprecate_rseth', {
       priceFeed: rsEthMinPriceFeedAddress,
       decimals: await rsETH.decimals(),
       borrowCollateralFactor: 0,
-      liquidateCollateralFactor: exp(0.0001, 18),
-      liquidationFactor: exp(1, 18),
+      liquidateCollateralFactor: 0,
+      liquidationFactor: 0,
       supplyCap: 0,
     };
 
@@ -92,7 +92,7 @@ export default migration('1788868615_deprecate_rseth', {
 
 Woof proposes to deprecate rsETH from cWETHv3 on Unichain network, due to its Kelp oracle deprecation.
 
-In order to achieve this, rsETH's price feed will be updated to a new one, which will return the smallest acceptable price - 0.00000001 (1e-8), the borrow collateral factor will be set to 0, the liquidate collateral factor will be lowered to 0.0001, the liquidation factor will be set to 1, and the supply cap will be set to 0 to prevent further deposits.
+In order to achieve this, rsETH's price feed will be updated to a new one, which will return the smallest acceptable price - 0.00000001 (1e-8); the borrow collateral factor, liquidation factor and liquidate collateral factor will be set to 0; the supply cap will be set to 0 to prevent further deposits.
 
 This proposal takes the governance steps recommended and necessary to update a Compound III WETH market on Unichain. Simulations have confirmed the market's readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario).
 
@@ -136,8 +136,8 @@ The first proposal action updates rsETH config to a deprecated state and deploys
     expect(newRsEthPriceFeed).to.be.equal(rsEthAssetInfo.priceFeed);
     expect(1).to.be.equal(await comet.getPrice(rsEthAssetInfo.priceFeed));
     expect(0).to.be.equal(rsEthAssetInfo.borrowCollateralFactor);
-    expect(exp(0.0001, 18)).to.be.equal(rsEthAssetInfo.liquidateCollateralFactor);
-    expect(exp(1, 18)).to.be.equal(rsEthAssetInfo.liquidationFactor);
+    expect(0).to.be.equal(rsEthAssetInfo.liquidateCollateralFactor);
+    expect(0).to.be.equal(rsEthAssetInfo.liquidationFactor);
 
     // 2. Compare proposed asset config with Configurator asset config
     const configuratorRsEthAssetConfig = (await configurator.getConfiguration(comet.address)).assetConfigs[rsEthAssetIndex];
@@ -145,7 +145,7 @@ The first proposal action updates rsETH config to a deprecated state and deploys
     expect(newRsEthPriceFeed).to.be.equal(configuratorRsEthAssetConfig.priceFeed);
     expect(1).to.be.equal(await comet.getPrice(configuratorRsEthAssetConfig.priceFeed));
     expect(0).to.be.equal(configuratorRsEthAssetConfig.borrowCollateralFactor);
-    expect(exp(0.0001, 18)).to.be.equal(configuratorRsEthAssetConfig.liquidateCollateralFactor);
-    expect(exp(1, 18)).to.be.equal(configuratorRsEthAssetConfig.liquidationFactor);
+    expect(0).to.be.equal(configuratorRsEthAssetConfig.liquidateCollateralFactor);
+    expect(0).to.be.equal(configuratorRsEthAssetConfig.liquidationFactor);
   },
 });
