@@ -526,7 +526,7 @@ scenario(
       albert: { $asset0: getConfigForScenario(ctx).withdrawCollateral }
     })
   },
-  async ({ comet, actors, cometExt }, context, world) => {
+  async ({ comet, actors }, context, world) => {
     const { albert, pauseGuardian } = actors;
     const { asset, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(asset);
@@ -536,7 +536,7 @@ scenario(
     await fundAccount(world, pauseGuardian);
 
     // Pause collateral withdraw
-    await cometExt.connect(pauseGuardian.signer).pauseCollateralWithdraw(true);
+    await comet.connect(pauseGuardian.signer).pauseCollateralWithdraw(true);
 
     await expect(
       comet.connect(albert.signer).withdraw(collateralAsset.address, amountToWithdraw)
@@ -594,7 +594,7 @@ scenario(
       albert: { $asset0: getConfigForScenario(ctx).withdrawCollateral }
     })
   },
-  async ({ comet, actors, cometExt }, context, world) => {
+  async ({ comet, actors }, context, world) => {
     const { albert, betty, pauseGuardian } = actors;
     const { asset, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(asset);
@@ -605,7 +605,7 @@ scenario(
     await fundAccount(world, pauseGuardian);
 
     // Pause collateral withdraw
-    await cometExt.connect(pauseGuardian.signer).pauseCollateralWithdraw(true);
+    await comet.connect(pauseGuardian.signer).pauseCollateralWithdraw(true);
 
     await expect(
       comet
@@ -635,7 +635,7 @@ scenario(
       albert: { $asset0: getConfigForScenario(ctx).withdrawAsset }
     })
   },
-  async ({ comet, actors, cometExt }, context, world) => {
+  async ({ comet, actors }, context, world) => {
     const { albert, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const amountToWithdraw = BigInt(getConfigForScenario(context).withdrawBase) * (await comet.baseScale()).toBigInt();
@@ -644,7 +644,7 @@ scenario(
     await fundAccount(world, pauseGuardian);
 
     // Pause borrowers withdraw
-    await cometExt.connect(pauseGuardian.signer).pauseBorrowersWithdraw(true);
+    await comet.connect(pauseGuardian.signer).pauseBorrowersWithdraw(true);
 
     await expect(
       comet.connect(albert.signer).withdraw(baseAssetAddress, amountToWithdraw)
@@ -698,7 +698,7 @@ scenario(
       albert: { $asset0: getConfigForScenario(ctx).withdrawAsset }
     })
   },
-  async ({ comet, actors, cometExt }, context, world) => {
+  async ({ comet, actors }, context, world) => {
     const { albert, betty, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const amountToWithdraw = BigInt(getConfigForScenario(context).withdrawBase) * (await comet.baseScale()).toBigInt();
@@ -708,7 +708,7 @@ scenario(
     await fundAccount(world, pauseGuardian);
 
     // Pause borrowers withdraw
-    await cometExt.connect(pauseGuardian.signer).pauseBorrowersWithdraw(true);
+    await comet.connect(pauseGuardian.signer).pauseBorrowersWithdraw(true);
 
     await expect(
       comet.connect(betty.signer).withdrawFrom(albert.address, betty.address, baseAssetAddress, amountToWithdraw)
@@ -732,7 +732,7 @@ scenario(
       albert: { $base: getConfigForScenario(ctx).withdrawBase }
     })
   },
-  async ({ comet, actors, cometExt }, context, world) => {
+  async ({ comet, actors }, context, world) => {
     const { albert, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
@@ -742,7 +742,7 @@ scenario(
     await fundAccount(world, pauseGuardian);
 
     // Pause lenders withdraw
-    await cometExt.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
+    await comet.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
 
     await expect(
       comet.connect(albert.signer).withdraw(baseAsset.address, baseSupplied)
@@ -766,7 +766,7 @@ scenario(
       albert: { $base: getConfigForScenario(ctx).withdrawBase }
     })
   },
-  async ({ comet, actors, cometExt }, context, world) => {
+  async ({ comet, actors }, context, world) => {
     const { albert, betty, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
@@ -776,7 +776,7 @@ scenario(
     await fundAccount(world, pauseGuardian);
 
     // Pause lenders withdraw
-    await cometExt.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
+    await comet.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
 
     await expect(
       comet.connect(albert.signer).withdrawTo(betty.address, baseAsset.address, baseSupplied)
@@ -800,7 +800,7 @@ scenario(
       albert: { $base: getConfigForScenario(ctx).withdrawBase }
     })
   },
-  async ({ comet, actors, cometExt }, _context, world) => {
+  async ({ comet, actors }, _, world) => {
     const { albert, betty, pauseGuardian } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
@@ -810,7 +810,7 @@ scenario(
     await fundAccount(world, pauseGuardian);
 
     // Pause lenders withdraw
-    await cometExt.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
+    await comet.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
 
     await expect(
       comet.connect(betty.signer).withdrawFrom(albert.address, betty.address, baseAssetAddress, baseSupplied)
@@ -836,7 +836,7 @@ scenario(
       }
     })
   },
-  async ({ comet, actors, cometExt }, context, world) => {
+  async ({ comet, actors }, context, world) => {
     const { albert, pauseGuardian } = actors;
     const offset = 0;
     const { asset, scale: scaleBN } = await comet.getAssetInfo(offset);
@@ -847,7 +847,7 @@ scenario(
     await fundAccount(world, pauseGuardian);
 
     // Pause only asset0 withdraw
-    await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
+    await comet.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
 
     // Asset0 withdraw should revert
     await expect(
@@ -1290,19 +1290,19 @@ scenario(
       return (await usesAssetList(ctx)) && (await supportsExtendedPause(ctx));
     }
   },
-  async ({ comet, actors, cometExt }, context, world) => {
+  async ({ comet, actors }, context, world) => {
     const { albert, pauseGuardian } = actors;
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
 
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
-      if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context).withdrawCollateral))) continue;
+      if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context, offset).withdrawCollateral))) continue;
       if (await isAssetDelisted(context, offset)) continue;
 
       const { asset, scale: scaleBN } = await comet.getAssetInfo(offset);
       const collateralAsset = context.getAssetByAddress(asset);
-      const withdrawCollateral = BigInt(getConfigForScenario(context).withdrawCollateral) * scaleBN.toBigInt();
+      const withdrawCollateral = BigInt(getConfigForScenario(context, offset).withdrawCollateral) * scaleBN.toBigInt();
 
       log(`Withdrawing reverts when collateral asset ${offset} withdraw is paused`);
 
@@ -1313,7 +1313,7 @@ scenario(
       // Supply collateral asset
       await comet.connect(albert.signer).supply(collateralAsset.address, withdrawCollateral);
       // Pause specific collateral withdraw by asset offset
-      await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
+      await comet.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
 
       await expect(
         comet.connect(albert.signer).withdraw(collateralAsset.address, withdrawCollateral)
@@ -1321,7 +1321,7 @@ scenario(
 
       log(`Withdrawing is allowed when collateral asset ${offset} withdraw is unpaused`);
       // Unpause specific collateral withdraw by asset offset
-      await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, false);
+      await comet.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, false);
       // Save balance
       const albertBalanceBefore = await comet.collateralBalanceOf(albert.address, collateralAsset.address);
       // Withdraw asset from albert
@@ -1341,7 +1341,7 @@ scenario(
       return (await usesAssetList(ctx)) && (await supportsExtendedPause(ctx));
     }
   },
-  async ({ comet, actors, cometExt }, context, world) => {
+  async ({ comet, actors }, context, world) => {
     const { albert, betty, pauseGuardian } = actors;
 
     // Fund pause guardian account for gas fees
@@ -1355,7 +1355,7 @@ scenario(
       const { asset, scale: scaleBN } = await comet.getAssetInfo(offset);
       const collateralAsset = context.getAssetByAddress(asset);
       const scale = scaleBN.toBigInt();
-      const withdrawCollateral = BigInt(getConfigForScenario(context).withdrawCollateral) * scale;
+      const withdrawCollateral = BigInt(getConfigForScenario(context, offset).withdrawCollateral) * scale;
 
       log(`Withdrawing reverts when collateral asset ${offset} withdraw is paused`);
 
@@ -1372,7 +1372,7 @@ scenario(
       });
 
       // Pause specific collateral asset withdraw at index offset
-      await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
+      await comet.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
 
       await expect(
         comet.connect(albert.signer).withdrawTo(betty.address, collateralAsset.address, withdrawCollateral)
@@ -1381,7 +1381,7 @@ scenario(
       log(`Withdrawing is allowed when collateral asset ${offset} withdraw is unpaused`);
 
       // Unpause specific collateral asset withdraw at index offset
-      await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, false);
+      await comet.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, false);
 
       // Save balance
       const albertBalanceBefore = await comet.collateralBalanceOf(albert.address, collateralAsset.address);
