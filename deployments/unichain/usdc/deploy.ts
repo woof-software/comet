@@ -2,7 +2,7 @@ import {
   Deployed,
   DeploymentManager,
 } from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet, exp } from '../../../src/deploy';
+import { DeploySpec, deployComet } from '../../../src/deploy';
 
 const HOUR = 60 * 60;
 const DAY = 24 * HOUR;
