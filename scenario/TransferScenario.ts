@@ -12,25 +12,12 @@ import {
   usesAssetList,
   isAssetDelisted,
   supportsExtendedPause,
-  getExpectedBaseBalance
+  getExpectedBaseBalance,
+  deployUnsupportedAsset
 } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';
 import { exp, factorScale } from '../test/helpers';
-import { MockERC20 } from '../build/types';
-
-async function deployMockERC20(context: CometContext, alias: string, force?: boolean): Promise<MockERC20> {
-  const dm = context.world.deploymentManager;
-
-  const mockERC20 = (await dm.deploy(
-    `mockERC20:${alias}`,
-    'capo/contracts/test/MockERC20.sol',
-    ['Mock Token', 'MOCK', 18],
-    force
-  )) as MockERC20;
-
-  return mockERC20;
-}
 
 for (let offset = 0; offset < MAX_ASSETS; offset++) {
   scenario(
@@ -1309,7 +1296,7 @@ scenario(
 scenario('Comet#transferAsset > reverts on unregistered asset', {}, async ({ actors, comet }, context) => {
   const { albert, betty } = actors;
 
-  const unregisteredAsset = await deployMockERC20(context, 'asset');
+  const unregisteredAsset = await deployUnsupportedAsset(context);
   const collateralAmount = exp(getConfigForScenario(context).transferCollateral, await unregisteredAsset.decimals());
 
   // NOTE: with the current contract implementation it is impossible to get BadAsset()
@@ -1327,7 +1314,7 @@ scenario('Comet#transferAsset > reverts on unregistered asset', {}, async ({ act
 scenario('Comet#transferAssetFrom > reverts on unregistered asset', {}, async ({ actors, comet }, context) => {
   const { albert, betty } = actors;
 
-  const unregisteredAsset = await deployMockERC20(context, 'asset');
+  const unregisteredAsset = await deployUnsupportedAsset(context);
   const collateralAmount = exp(getConfigForScenario(context).transferCollateral, await unregisteredAsset.decimals());
 
   await albert.allow(betty, true);

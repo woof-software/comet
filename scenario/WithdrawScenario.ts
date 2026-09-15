@@ -10,25 +10,12 @@ import {
   isAssetDelisted,
   supportsExtendedPause,
   getExpectedBaseBalance,
-  expectBase
+  expectBase,
+  deployUnsupportedAsset
 } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';
 import { exp } from '../test/helpers';
-import { MockERC20 } from '../build/types';
-
-async function deployMockERC20(context: CometContext, alias: string, force?: boolean): Promise<MockERC20> {
-  const dm = context.world.deploymentManager;
-
-  const mockERC20 = (await dm.deploy(
-    `mockERC20:${alias}`,
-    'capo/contracts/test/MockERC20.sol',
-    ['Mock Token', 'MOCK', 18],
-    force
-  )) as MockERC20;
-
-  return mockERC20;
-}
 
 for (let offset = 0; offset < MAX_ASSETS; offset++) {
   scenario(
@@ -1496,7 +1483,7 @@ scenario(
 scenario('Comet#withdraw > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
   const { albert } = actors;
 
-  const unregisteredAsset = await deployMockERC20(context, 'asset');
+  const unregisteredAsset = await deployUnsupportedAsset(context);
   const collateralAmount = exp(getConfigForScenario(context).withdrawCollateral, await unregisteredAsset.decimals());
 
   // NOTE: with the current contract implementation it is impossible to get BadAsset()
@@ -1514,7 +1501,7 @@ scenario('Comet#withdraw > reverts on unregistered asset', {}, async ({ comet, a
 scenario('Comet#withdrawTo > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
   const { albert, betty } = actors;
 
-  const unregisteredAsset = await deployMockERC20(context, 'asset');
+  const unregisteredAsset = await deployUnsupportedAsset(context);
   const collateralAmount = exp(getConfigForScenario(context).withdrawCollateral, await unregisteredAsset.decimals());
 
   // NOTE: with the current contract implementation it is impossible to get BadAsset()
@@ -1532,7 +1519,7 @@ scenario('Comet#withdrawTo > reverts on unregistered asset', {}, async ({ comet,
 scenario('Comet#withdrawFrom > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
   const { albert, betty } = actors;
 
-  const unregisteredAsset = await deployMockERC20(context, 'asset');
+  const unregisteredAsset = await deployUnsupportedAsset(context);
   const collateralAmount = exp(getConfigForScenario(context).withdrawCollateral, await unregisteredAsset.decimals());
 
   await albert.allow(betty, true);

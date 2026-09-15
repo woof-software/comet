@@ -13,14 +13,14 @@ import {
   fundAccount,
   usesAssetList,
   isAssetDelisted,
-  supportsExtendedPause
+  supportsExtendedPause,
+  deployUnsupportedAsset
 } from './utils';
 import { matchesDeployment } from './utils';
 import { exp } from '../test/helpers';
 import { ethers } from 'hardhat';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';
-import { MockERC20 } from '../build/types';
 
 async function getSupplyCapExceedingAmount(ctx: CometContext, assetIndex: number): Promise<number> {
   const comet = await ctx.getComet();
@@ -33,19 +33,6 @@ async function getSupplyCapExceedingAmount(ctx: CometContext, assetIndex: number
   const remainingWei = supplyCap - totalSupplyAsset.toBigInt();
 
   return Number(remainingWei / scale) + 1;
-}
-
-async function deployMockERC20(context: CometContext, alias: string, force?: boolean): Promise<MockERC20> {
-  const dm = context.world.deploymentManager;
-
-  const mockERC20 = (await dm.deploy(
-    `mockERC20:${alias}`,
-    'capo/contracts/test/MockERC20.sol',
-    ['Mock Token', 'MOCK', 18],
-    force
-  )) as MockERC20;
-
-  return mockERC20;
 }
 
 for (let offset = 0; offset < MAX_ASSETS; offset++) {
@@ -942,11 +929,11 @@ scenario(
 scenario('Comet#supply > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
   const { albert } = actors;
 
-  const unregisteredAsset = await deployMockERC20(context, 'asset');
+  const unregisteredAsset = await deployUnsupportedAsset(context);
 
   const collateralAmount = exp(getConfigForScenario(context).supplyCollateral, await unregisteredAsset.decimals());
 
-  await unregisteredAsset.mint(albert.address, collateralAmount);
+  await unregisteredAsset.allocateTo(albert.address, collateralAmount);
 
   await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
@@ -958,11 +945,11 @@ scenario('Comet#supply > reverts on unregistered asset', {}, async ({ comet, act
 scenario('Comet#supplyTo > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
   const { albert, betty } = actors;
 
-  const unregisteredAsset = await deployMockERC20(context, 'asset');
+  const unregisteredAsset = await deployUnsupportedAsset(context);
 
   const collateralAmount = exp(getConfigForScenario(context).supplyCollateral, await unregisteredAsset.decimals());
 
-  await unregisteredAsset.mint(albert.address, collateralAmount);
+  await unregisteredAsset.allocateTo(albert.address, collateralAmount);
 
   await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
@@ -974,11 +961,11 @@ scenario('Comet#supplyTo > reverts on unregistered asset', {}, async ({ comet, a
 scenario('Comet#supplyFrom > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
   const { albert, betty } = actors;
 
-  const unregisteredAsset = await deployMockERC20(context, 'asset');
+  const unregisteredAsset = await deployUnsupportedAsset(context);
 
   const collateralAmount = exp(getConfigForScenario(context).supplyCollateral, await unregisteredAsset.decimals());
 
-  await unregisteredAsset.mint(albert.address, collateralAmount);
+  await unregisteredAsset.allocateTo(albert.address, collateralAmount);
 
   await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
