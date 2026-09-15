@@ -29,7 +29,6 @@ import {
   BaseBulker,
   BaseBridgeReceiver,
   ERC20,
-  CometExtAssetList,
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
@@ -60,7 +59,6 @@ export interface CometProperties {
   rewards: CometRewards;
   bulker: BaseBulker;
   bridgeReceiver: BaseBridgeReceiver;
-  cometExt?: CometExtAssetList;
 }
 
 export class CometContext {
@@ -404,7 +402,6 @@ async function getInitialContext(world: World): Promise<CometContext> {
 
 async function getContextProperties(context: CometContext): Promise<CometProperties> {
   const comet = await context.getComet();
-  const cometExt = await context.world.deploymentManager.hre.ethers.getContractAt('CometExtAssetList', comet.address) as CometExtAssetList;
   
   return {
     actors: context.actors,
@@ -417,7 +414,6 @@ async function getContextProperties(context: CometContext): Promise<CometPropert
     rewards: await context.getRewards(),
     bulker: await context.getBulker(),
     bridgeReceiver: await context.getBridgeReceiver(),
-    cometExt
   };
 }
 

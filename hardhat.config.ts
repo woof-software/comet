@@ -66,17 +66,15 @@ const {
   ETHERSCAN_KEY_FOR_LINEA,
   SNOWTRACE_KEY,
   MAINNET_QUICKNODE_LINK,
-  SEPOLIA_QUICKNODE_LINK,
   RONIN_QUICKNODE_LINK,
   POLYGON_QUICKNODE_LINK,
   OPTIMISM_QUICKNODE_LINK,
   MANTLE_QUICKNODE_LINK,
   BASE_QUICKNODE_LINK,
   ARBITRUM_QUICKNODE_LINK,
+  SCROLL_QUICKNODE_LINK,
   UNICHAIN_QUICKNODE_LINK = '',
   LINEA_QUICKNODE_LINK = '',
-  _TENDERLY_KEY_RONIN,
-  _TENDERLY_KEY_POLYGON,
   MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
@@ -120,7 +118,7 @@ interface NetworkConfig {
 
 subtask(TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS).setAction(async (_, __, runSuper) => {
   const paths = await runSuper();
-  
+
   return paths.filter((p: string) => {
     return !(
       p.includes('contracts/capo/contracts/test/') ||
@@ -136,11 +134,6 @@ export const networkConfigs: NetworkConfig[] = [
     network: 'mainnet',
     chainId: 1,
     url: `${MAINNET_QUICKNODE_LINK}`,
-  },
-  {
-    network: 'sepolia',
-    chainId: 11155111,
-    url: `${SEPOLIA_QUICKNODE_LINK}`,
   },
   {
     network: 'ronin',
@@ -198,7 +191,7 @@ export const networkConfigs: NetworkConfig[] = [
   {
     network: 'scroll',
     chainId: 534352,
-    url: 'https://scroll.drpc.org',
+    url: `${SCROLL_QUICKNODE_LINK}`,
   },
 ];
 
@@ -383,7 +376,7 @@ const config: HardhatUserConfig = {
       mantle: ETHERSCAN_KEY,
       unichain: ETHERSCAN_KEY,
       // Scroll
-      'scroll': ETHERSCAN_KEY,
+      scroll: ETHERSCAN_KEY,
       linea: ETHERSCAN_KEY_FOR_LINEA,
     },
     customChains: [
