@@ -29,7 +29,6 @@
   "scripts": {
     "build": "hardhat compile",
     "clean": "hardhat clean && rm -rf build/ cache/ coverage* dist/",
-    "cover": "hardhat coverage && npx istanbul report --include coverage.json html lcov",
     "gas": "REPORT_GAS=true yarn test",
     "lint": "eslint 'plugins/**/*' 'scenario/**/*' 'scripts/**/*' 'src/**/*' 'tasks/**/*' 'test/**/*' hardhat.config.ts",
     "lint-contracts": "solhint 'contracts/**/*.sol'",
@@ -37,7 +36,7 @@
     "scenario": "hardhat scenario",
     "spider": "hardhat spider",
     "test": "hardhat test ./test/*.ts ./test/**/*.ts ./plugins/deployment_manager/test/*.ts ",
-    "test:coverage": "NODE_OPTIONS='--max-old-space-size=8192' hardhat coverage --no-compile",
+    "test:coverage": "NODE_OPTIONS='--max-old-space-size=8192' hardhat coverage",
     "audit:liquidator": "vendoza contracts/liquidator/vendor/manifest.json",
     "audit:vendor": "vendoza contracts/vendor/manifest.json",
     "slither:fn-clashes": "slither-check-upgradeability contracts/Configurator.sol Configurator --proxy-filename contracts/ConfiguratorProxy.sol --proxy-name ConfiguratorProxy",

@@ -5,27 +5,24 @@
 1. Clone the repo
 2. Run `yarn install`
 
+No environment variables are required for compilation (`yarn build`) or for running Comet unit tests (`yarn test`).
+
 ## Env variables
 
-The following env variables are used in the repo. One way to set up these env
-variables is to create a `.env` in the root directory of this repo.
+One way to set up env variables is to create a `.env` in the root directory of this repo.
 
-Required env variables:
+No env variables are required for:
+- Compiling contracts (`yarn build`)
+- Running Comet unit tests (`yarn test`)
 
-```
-ETHERSCAN_KEY=<key>
-INFURA_KEY=<key>
+The following env variable is required for running **Liquidation Bot** and **Liquidator** tests:
+
+```ts
+MAINNET_QUICKNODE_LINK=<quicknode-mainnet-rpc-url>
 ```
 
-Optional env variables:
+Other environment variables that can be used throughout the repository can be found in the `.env.example` file.
 
-```
-SNOWTRACE_KEY=<key>
-COINMARKETCAP_API_KEY=<key>
-REPORT_GAS=true
-ETH_PK=<eth-key>             # takes precedence over MNEMONIC
-MNEMONIC=<mnemonic>
-```
 
 ## Git hooks
 

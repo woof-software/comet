@@ -1,3 +1,9 @@
 module.exports = {
-  skipFiles: ['test/', 'vendor/', 'ERC20.sol']
+  skipFiles: [
+    "test/",
+    "vendor/",
+    "liquidator/vendor/",
+    "capo/",
+    "node_modules/",
+  ],
 };
