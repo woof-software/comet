@@ -611,12 +611,7 @@ scenario('Comet#transferFrom > disallows self-transfer of base', {}, async ({ co
   await betty.allow(albert, true);
 
   await expect(
-    albert.transferAssetFrom({
-      src: betty.address,
-      dst: betty.address,
-      asset: baseToken,
-      amount: 100
-    })
+    comet.connect(albert.signer).transferAssetFrom(betty.address, betty.address, baseToken, 100)
   ).to.be.revertedWithCustomError(comet, 'NoSelfTransfer');
 });
 
@@ -1095,11 +1090,13 @@ scenario(
 
     // Asset0 transfer should revert
     await expect(
-      albert.transferAsset({
-        dst: betty.address,
-        asset: collateralAsset.address,
-        amount: BigInt(getConfigForScenario(context).transferCollateral) * scale
-      }),
+      comet
+        .connect(albert.signer)
+        .transferAsset(
+          betty.address,
+          collateralAsset.address,
+          BigInt(getConfigForScenario(context).transferCollateral) * scale
+        )
     ).to.be.revertedWithCustomError(comet, 'CollateralAssetTransferPaused').withArgs(0);
   }
 );
@@ -1122,7 +1119,7 @@ scenario(
       }
     })
   },
-  async ({ comet, actors, cometExt }, context, world) => {
+  async ({ comet, actors }, context, world) => {
     const { albert, betty, pauseGuardian } = actors;
     const offset = 0;
     const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(offset);
@@ -1133,7 +1130,7 @@ scenario(
     await fundAccount(world, pauseGuardian);
 
     // Pause only asset0 transfer
-    await cometExt.connect(pauseGuardian.signer).pauseCollateralAssetTransfer(offset, true);
+    await comet.connect(pauseGuardian.signer).pauseCollateralAssetTransfer(offset, true);
 
     await albert.allow(betty, true);
 
