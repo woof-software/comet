@@ -47,6 +47,7 @@ import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
 // Math helpers
 export * from './helpers/math';
+export * from './helpers/network-helpers';
 
 export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, SignerWithAddress, BigNumber };
 
