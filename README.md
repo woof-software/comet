@@ -3,12 +3,37 @@
 ## Getting started
 
 1. Clone the repo
-2. Run `yarn install`
+2. Initialize the git submodules
+
+```
+git submodule update --init --recursive
+```
+
+3. Run `yarn install`
+
+To later update the submodules to the latest upstream revisions:
+
+```
+git submodule update --remote --merge
+```
+
+Further reading:
+
+- [SCENARIO.md](./SCENARIO.md) - running the scenario suite, including parallel (multistream) runs
+- [MIGRATIONS.md](./MIGRATIONS.md) - writing, running and simulating migrations
+- [docs/contract-import.md](./docs/contract-import.md) - how contract ABIs and bytecode are fetched from block explorers
+- [docs/contracts-archive.md](./docs/contracts-archive.md) - the persisted contract build-file archive
 
 ## Env variables
 
-The following env variables are used in the repo. One way to set up these env
-variables is to create a `.env` in the root directory of this repo.
+The following env variables are used in the repo. To set them up, copy
+[`.env.example`](.env.example) to a `.env` in the root directory of this repo and
+fill in the values you need - it is the complete, annotated reference and covers
+a few advanced variables not listed below.
+
+```
+cp .env.example .env
+```
 
 Required env variables:
 
@@ -234,7 +259,7 @@ The PR should include any necessary tests, which will remain in the repository.
 The migration script itself can be deleted in a separate commit, after the PR has been merged and recorded on the `main` branch, for good hygiene.
 It's important to remove migrations once they've been executed, to avoid exploding the cost of running scenarios beyond what's necessary for testing.
 
-For more information, seee [MIGRATIONS.md](./MIGRATIONS.md).
+For more information, see [MIGRATIONS.md](./MIGRATIONS.md).
 
 ### Deploying to testnets
 

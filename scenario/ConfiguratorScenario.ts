@@ -4,9 +4,9 @@ import { ethers } from 'ethers';
 import { CometContext, scenario } from './context/CometContext';
 import { exp } from '../test/helpers';
 import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker, normalizeStructOutput, getActiveAsset, hasActiveAsset } from './utils';
+import { SECONDS_PER_YEAR } from './utils/constants';
 import { MarketAdminPermissionChecker } from '../build/types';
 
-const SECONDS_PER_YEAR = 31_536_000n;
 // Based on contract's internal precision: FACTOR_SCALE=1e18 with 4 decimal places
 // const FACTOR_SCALE = exp(1, 18);
 const MIN_FACTOR_INCREMENT =  exp(0.0001, 18); // FACTOR_SCALE / 10 ** 4

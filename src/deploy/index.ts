@@ -115,6 +115,8 @@ export const WHALES = {
     '0x65906988ADEe75306021C417a1A3458040239602', // LBTC whale
     '0xF469fBD2abcd6B9de8E169d128226C0Fc90a012e', // wbtc whale
     '0x7667095Caa12b79fCa489ff6E2198Ca01fDAe057',
+    '0xce8c60fd8390eFCc3Fc66A3f0bd64BEb969e750E', // tETH whale
+    '0xf7b6B32492c2e13799D921E84202450131bd238B', // pufETH whale
   ],
   polygon: [
     '0xF977814e90dA44bFA03b6295A0616a897441aceC', // USDT whale
@@ -225,6 +227,7 @@ export const WHALES = {
     '0x4B2cf5C94A88934870B523983B22e6d2dd1b6577', // wstETH whale
     '0x8f5ae9CddB9f68de460C77730b018Ae7E04a140A', // wstETH whale
     '0xbaD024786995Fa29bc6311c9454d377D3B73F576', // wstETH whale
+    '0xff7b54A9ba02A30A1A8c3bFC10E579ce0f9Cb0Ab', // rsETH whale
   ],
   linea: [
     '0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f', // ETH whale

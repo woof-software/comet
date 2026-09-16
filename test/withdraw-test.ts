@@ -1,4 +1,4 @@
-import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS, UserCollateral } from './helpers';
+import { ethers, expect, exp, makeProtocol, setTotalsBasic, defaultAssets, ReentryAttack, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS, UserCollateral } from './helpers';
 import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList, SimplePriceFeed } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
@@ -433,6 +433,50 @@ describe('withdraw', function () {
         });
       });
 
+
+      describe('rounding quirk - withdraw 0 emits Transfer of 1 (harness)', function () {
+        let withdrawTx: ContractTransaction;
+
+        before(async () => {
+          await baseSnapshot.restore();
+
+          // Harness required: This tests a specific rounding edge case where withdrawing 0 tokens
+          // causes the principal to round down by 1 due to integer division in presentValue/principalValue.
+          // These exact values (principal=99999992291226, index=1000000131467072) were found to
+          // trigger this edge case. Cannot be achieved through natural supply/borrow flows.
+          await comet.setBasePrincipal(alice.address, 99999992291226);
+          await setTotalsBasic(comet, {
+            totalSupplyBase: 699999944771920,
+            baseSupplyIndex: 1000000131467072,
+          });
+
+          withdrawTx = await comet.connect(alice).withdraw(baseToken.address, 0);
+        });
+
+        it('emits exactly 3 events', async () => {
+          const receipt = await withdrawTx.wait();
+          expect(receipt.events.length).to.be.equal(3);
+        });
+
+        it('emits Transfer event with 0 amount (ERC20)', async () => {
+          await expect(withdrawTx)
+            .to.emit(baseToken, 'Transfer')
+            .withArgs(comet.address, alice.address, 0);
+        });
+
+        it('emits Withdraw event with 0 amount', async () => {
+          await expect(withdrawTx)
+            .to.emit(comet, 'Withdraw')
+            .withArgs(alice.address, alice.address, 0);
+        });
+
+        it('emits Transfer burn event with amount 1 (rounding)', async () => {
+          await expect(withdrawTx)
+            .to.emit(comet, 'Transfer')
+            .withArgs(alice.address, ethers.constants.AddressZero, 1);
+        });
+      });
+
       describe('withdraw 0 with collateral only position', function () {
         const COLLATERAL_AMOUNT = exp(1, 18);
 
@@ -790,6 +834,11 @@ describe('withdraw', function () {
         const totalSupplyPresent = totals.totalSupplyBase.mul(totals.baseSupplyIndex).div(exp(1, 15));
         const expectedUtilization = totalBorrowPresent.mul(exp(1, 18)).div(totalSupplyPresent);
         expect(await comet.getUtilization()).to.equal(expectedUtilization);
+      });
+
+      it('gas used is within expected bounds', async () => {
+        const receipt = await withdrawTx.wait();
+        expect(Number(receipt.gasUsed)).to.be.lessThan(110000);
       });
     });
 
