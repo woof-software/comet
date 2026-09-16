@@ -85,7 +85,7 @@ WOOF! proposes to complete the deprecation of pumpBTC as collateral on cWBTCv3. 
 
 These configuration changes are bundled with an update of the cWBTCv3 Comet to the recent service patch version, and both are applied together in a single deployAndUpgradeTo call.
 
-Detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/21).
+Detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/24).
 
 ## Proposal Actions
 
