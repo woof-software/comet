@@ -1,0 +1,17 @@
+{
+  "contracts/capo": {
+    "branch": {
+      "name": "main",
+      "rev": "3020ec85ccddde176a7b379e162e6c0d50239d42"
+    }
+  },
+  "forge/lib/forge-std": {
+    "rev": "452bdecf8772bf113532f67c5cf3accb71895cd0"
+  },
+  "plugins/import/contracts-archive": {
+    "branch": {
+      "name": "develop",
+      "rev": "59b03d6eee7c3b4214b970c2d05e7073a4791ffb"
+    }
+  }
+}
