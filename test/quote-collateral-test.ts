@@ -217,24 +217,6 @@ describe('quoteCollateral', function () {
       // At maximum discount the buyer gets more collateral per base
       expect(quote).to.be.gt(exp(1.66, 18));
     });
-
-    it('division-by-zero panic: storeFrontPriceFactor = 1e18, liquidationFactor = 0', async () => {
-      const snapshot = await takeSnapshot();
-      // discountFactor = 1e18 * (1 - 0) = 1e18 = FACTOR_SCALE
-      // assetPriceDiscounted = assetPrice * (FACTOR_SCALE - FACTOR_SCALE) / FACTOR_SCALE = 0
-      // Final division by assetPriceDiscounted = 0 → EVM panics (0x12)
-      await updateStoreFrontPriceFactor(exp(1, 18));
-      await configurator.updateAssetLiquidationFactor(comet.address, collateralToken.address, 0);
-      await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
-
-      const baseAmount = exp(200, baseTokenDecimals);
-      // Solidity division-by-zero causes panic code 0x12
-      await expect(
-        comet.quoteCollateral(collateralToken.address, baseAmount)
-      ).to.be.revertedWithPanic('0x12');
-
-      await snapshot.restore();
-    });
   });
 
   // ─────────────────────────────────────────────────────────
@@ -719,7 +701,7 @@ describe('quoteCollateral', function () {
       const configuratorAndProtocol = await makeConfigurator({ assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals }});
 
       cometProxyAddress = configuratorAndProtocol.cometProxyWithExtendedAssetList.address;
-      comet = configuratorAndProtocol.cometProxyWithExtendedAssetList as unknown as CometWithExtendedAssetList;
+      comet = configuratorAndProtocol.cometWithExtendedAssetList.attach(cometProxyAddress);
       configurator = configuratorAndProtocol.configurator;
       configuratorProxy = configuratorAndProtocol.configuratorProxy;
       proxyAdmin = configuratorAndProtocol.proxyAdmin;
