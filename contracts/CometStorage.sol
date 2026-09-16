@@ -1,50 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
+import { ICometData } from "./interfaces/ICometData.sol";
+
 /**
  * @title Compound's Comet Storage Interface
  * @dev Versions can enforce append-only storage slots via inheritance.
  * @author Compound
  */
-contract CometStorage {
-    // 512 bits total = 2 slots
-    struct TotalsBasic {
-        // 1st slot
-        uint64 baseSupplyIndex;
-        uint64 baseBorrowIndex;
-        uint64 trackingSupplyIndex;
-        uint64 trackingBorrowIndex;
-        // 2nd slot
-        uint104 totalSupplyBase;
-        uint104 totalBorrowBase;
-        uint40 lastAccrualTime;
-        uint8 pauseFlags;
-    }
-
-    struct TotalsCollateral {
-        uint128 totalSupplyAsset;
-        uint128 _reserved;
-    }
-
-    struct UserBasic {
-        int104 principal;
-        uint64 baseTrackingIndex;
-        uint64 baseTrackingAccrued;
-        uint16 assetsIn;
-        uint8 _reserved;
-    }
-
-    struct UserCollateral {
-        uint128 balance;
-        uint128 _reserved;
-    }
-
-    struct LiquidatorPoints {
-        uint32 numAbsorbs;
-        uint64 numAbsorbed;
-        uint128 approxSpend;
-        uint32 _reserved;
-    }
+contract CometStorage is ICometData {
 
     /// @dev Aggregate variables tracked for the entire market
     uint64 internal baseSupplyIndex;
@@ -73,4 +37,34 @@ contract CometStorage {
 
     /// @notice Mapping of magic liquidator points
     mapping(address => LiquidatorPoints) public liquidatorPoints;
+
+    /**
+     * @notice The extended pause flags represented as a bitmap
+     * @dev Each bit represents a pause flag for a different action
+     */
+    uint24 public extendedPauseFlags;
+
+    /**
+     * @notice The collaterals withdraw pause flags represented as a bitmap
+     * @dev Each bit represents a pause flag for an asset index
+     */
+    uint24 public collateralsWithdrawPauseFlags;
+
+    /**
+     * @notice The collaterals supply pause flags represented as a bitmap
+     * @dev Each bit represents a pause flag for an asset index
+     */
+    uint24 public collateralsSupplyPauseFlags;
+
+    /**
+     * @notice The collaterals transfer pause flags represented as a bitmap
+     * @dev Each bit represents a pause flag for an asset index
+     */
+    uint24 public collateralsTransferPauseFlags;
+
+    /**
+     * @notice The deactivated collaterals flags represented as a bitmap
+     * @dev Each bit represents whether a collateral asset is deactivated
+     */
+    uint24 public deactivatedCollaterals;
 }

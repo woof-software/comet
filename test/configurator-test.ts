@@ -1,982 +1,2186 @@
-import { annualize, defactor, defaultAssets, ethers, event, exp, expect, factor, makeConfigurator, Numeric, truncateDecimals, wait } from './helpers';
+import { ethers, exp, expect, makeConfigurator, SnapshotRestorer, takeSnapshot, ZERO_ADDRESS } from './helpers';
 import {
+  CometExtAssetList,
   CometExtAssetList__factory,
-  CometModifiedFactory__factory,
+  CometFactoryWithExtendedAssetList,
+  CometFactoryWithExtendedAssetList__factory,
+  CometHarnessInterfaceExtendedAssetList,
+  CometProxyAdmin,
+  Configurator__factory,
+  ConfiguratorProxy__factory,
+  MarketAdminPermissionChecker,
   MarketAdminPermissionChecker__factory,
+  SimplePriceFeed,
   SimplePriceFeed__factory,
-  SimpleTimelock__factory
+  TransparentUpgradeableProxy
 } from '../build/types';
-import { AssetInfoStructOutput } from '../build/types/CometHarnessInterfaceExtendedAssetList';
-import { ConfigurationStructOutput } from '../build/types/Configurator';
-import { BigNumber } from 'ethers';
-
-type ConfiguratorAssetConfig = {
-  asset: string;
-  priceFeed: string;
-  decimals: Numeric;
-  borrowCollateralFactor: Numeric;
-  liquidateCollateralFactor: Numeric;
-  liquidationFactor: Numeric;
-  supplyCap: Numeric;
-};
-
-function convertToEventAssetConfig(assetConfig: ConfiguratorAssetConfig) {
-  return [
-    assetConfig.asset,
-    assetConfig.priceFeed,
-    assetConfig.decimals,
-    assetConfig.borrowCollateralFactor,
-    assetConfig.liquidateCollateralFactor,
-    assetConfig.liquidationFactor,
-    assetConfig.supplyCap,
-  ];
-}
-
-function convertToEventConfiguration(configuration: ConfigurationStructOutput) {
-  return [
-    configuration.governor,
-    configuration.pauseGuardian,
-    configuration.baseToken,
-    configuration.baseTokenPriceFeed,
-    configuration.extensionDelegate,
-    configuration.supplyKink.toBigInt(),
-    configuration.supplyPerYearInterestRateSlopeLow.toBigInt(),
-    configuration.supplyPerYearInterestRateSlopeHigh.toBigInt(),
-    configuration.supplyPerYearInterestRateBase.toBigInt(),
-    configuration.borrowKink.toBigInt(),
-    configuration.borrowPerYearInterestRateSlopeLow.toBigInt(),
-    configuration.borrowPerYearInterestRateSlopeHigh.toBigInt(),
-    configuration.borrowPerYearInterestRateBase.toBigInt(),
-    configuration.storeFrontPriceFactor.toBigInt(),
-    configuration.trackingIndexScale.toBigInt(),
-    configuration.baseTrackingSupplySpeed.toBigInt(),
-    configuration.baseTrackingBorrowSpeed.toBigInt(),
-    configuration.baseMinForRewards.toBigInt(),
-    configuration.baseBorrowMin.toBigInt(),
-    configuration.targetReserves.toBigInt(),
-    [] // leave asset configs empty for simplicity
-  ];
-}
-
-// Checks that the Configurator asset config matches the Comet asset info
-function expectAssetConfigsToMatch(
-  configuratorAssetConfigs: ConfiguratorAssetConfig,
-  cometAssetInfo: AssetInfoStructOutput
-) {
-  expect(configuratorAssetConfigs.asset).to.be.equal(cometAssetInfo.asset);
-  expect(configuratorAssetConfigs.priceFeed).to.be.equal(cometAssetInfo.priceFeed);
-  expect(exp(1, configuratorAssetConfigs.decimals)).to.be.equal(cometAssetInfo.scale);
-  expect(configuratorAssetConfigs.borrowCollateralFactor).to.be.equal(cometAssetInfo.borrowCollateralFactor);
-  expect(configuratorAssetConfigs.liquidateCollateralFactor).to.be.equal(cometAssetInfo.liquidateCollateralFactor);
-  expect(configuratorAssetConfigs.liquidationFactor).to.be.equal(cometAssetInfo.liquidationFactor);
-  expect(configuratorAssetConfigs.supplyCap).to.be.equal(cometAssetInfo.supplyCap);
-}
+import { ConfigurationStruct, Configurator } from '../build/types/Configurator';
+import { BigNumber, ContractTransaction } from 'ethers';
+import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
 describe('configurator', function () {
-  it('deploys Comet', async () => {
-    const { configurator, configuratorProxy, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+  // Configurator and its proxy
+  let configurator: Configurator;
+  let configuratorProxy: Configurator;
+  // Comet
+  let cometImplementation: CometHarnessInterfaceExtendedAssetList;
+  let comet: CometHarnessInterfaceExtendedAssetList;
+  let cometProxy: TransparentUpgradeableProxy;
+  let cometProxyAdmin: CometProxyAdmin;
+  // Signers
+  let governor: SignerWithAddress;
+  let alice: SignerWithAddress;
+  let pauseGuardian: SignerWithAddress;
+  // Variables
+  let assetListFactoryAddr: string;
+  let unsupportedTokenAddr: string;
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-    const txn = await wait(configuratorAsProxy.deploy(cometProxy.address)) as any;
-    const cometDeployedEvent = txn.receipt.events.find((receiptEvent) => receiptEvent.event === 'CometDeployed');
-    const [, newCometAddress] = cometDeployedEvent.args;
+  before(async () => {
+    const protocol = await makeConfigurator();
+    configurator = protocol.configurator;
+    configuratorProxy = configurator.attach(protocol.configuratorProxy.address);
+    cometImplementation = protocol.cometWithExtendedAssetList;
+    cometProxy = protocol.cometProxyWithExtendedAssetList;
+    comet = cometImplementation.attach(cometProxy.address);
+    cometProxyAdmin = protocol.proxyAdmin;
+    governor = protocol.governor;
+    alice = protocol.users[1];
+    pauseGuardian = protocol.pauseGuardian;
+    assetListFactoryAddr = protocol.assetListFactory.address;
+    unsupportedTokenAddr = protocol.unsupportedToken.address;
+  });
 
-    expect({
-      CometDeployed: {
-        cometProxy: cometDeployedEvent.args.cometProxy,
-        newComet: newCometAddress,
-      }
-    }).to.be.deep.equal({
-      CometDeployed: {
-        cometProxy: cometProxy.address,
-        newComet: newCometAddress,
-      }
+  describe('initialization', function () {
+    it('version is set to 1 by default', async () => {
+      expect(await configuratorProxy.version()).to.be.equal(1);
+    });
+
+    it('governor is set to the address of the governor', async () => {
+      expect(await configuratorProxy.governor()).to.be.equal(governor.address);
+    });
+
+    it('reverts by reinitialization', async () => {
+      await expect(configuratorProxy.initialize(governor.address)).to.be.revertedWithCustomError(configurator, 'AlreadyInitialized');
+    });
+
+    it('implementation contract cannot be initialized (version == type(uint256).max)', async () => {
+      expect(await configurator.version()).to.equal(ethers.constants.MaxUint256);
+
+      await expect(configurator.initialize(governor.address))
+        .to.be.revertedWithCustomError(configurator, 'AlreadyInitialized');
+    });
+
+    describe('fresh proxy initialization', function() {
+      let configuratorImplementation: Configurator;
+      let proxyFactory: ConfiguratorProxy__factory;
+
+      before(async () => {
+        const ConfiguratorFactory = (await ethers.getContractFactory('Configurator')) as Configurator__factory;
+        configuratorImplementation = await ConfiguratorFactory.deploy();
+
+        proxyFactory = await ethers.getContractFactory('ConfiguratorProxy') as ConfiguratorProxy__factory;
+        const newConfiguratorProxy = await proxyFactory.deploy(configuratorImplementation.address, cometProxyAdmin.address, '0x');
+        await newConfiguratorProxy.deployed();
+        configuratorImplementation = configuratorImplementation.attach(newConfiguratorProxy.address);
+      });
+
+      it('reverts if initialized with zero address governor (InvalidAddress)', async () => {
+        const snapshot = await takeSnapshot();
+
+        expect(await configuratorImplementation.version()).to.equal(0);
+
+        await expect(configuratorImplementation.initialize(ZERO_ADDRESS))
+          .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
+
+        await snapshot.restore();
+      });
+
+      it('fresh proxy can be initialized with a valid governor', async () => {
+        await expect(configuratorImplementation.initialize(governor.address)).to.not.be.reverted;
+
+        expect(await configuratorImplementation.governor()).to.equal(governor.address);
+        expect(await configuratorImplementation.version()).to.equal(1);
+      });
+
+      it('already initialized proxy cannot be reinitialized', async () => {
+        await expect(configuratorImplementation.initialize(alice.address))
+          .to.be.revertedWithCustomError(configurator, 'AlreadyInitialized');
+
+        expect(await configuratorImplementation.governor()).to.equal(governor.address);
+      });
     });
   });
 
-  it('deploys Comet from ProxyAdmin', async () => {
-    const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+  describe('comet factory setter', function() {
+    let setFactoryTx: ContractTransaction;
+    let newFactory: CometFactoryWithExtendedAssetList;
+    let oldFactory: string;
+    before(async () => {
+      // Deploy new CometFactory
+      const CometFactoryWithExtendedAssetList = (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')) as CometFactoryWithExtendedAssetList__factory;
+      newFactory = await CometFactoryWithExtendedAssetList.deploy();
+      await newFactory.deployed();
+    });
+    
+    describe('revert cases', function() {
+      it('reverts by non-governor', async () => {
+        expect(alice.address).to.not.equal(governor.address);
+        await expect(configuratorProxy.connect(alice).setFactory(cometProxy.address, ethers.constants.AddressZero)).to.be.revertedWithCustomError(configurator, 'Unauthorized');
+      });
+    });
 
-    expect(await proxyAdmin.getProxyImplementation(cometProxy.address)).to.be.equal(comet.address);
-    expect(await proxyAdmin.getProxyImplementation(configuratorProxy.address)).to.be.equal(configurator.address);
+    describe('happy path', function() {
+      it('sanity check: current factory != new factory', async () => {
+        oldFactory = await configuratorProxy.factory(cometProxy.address);
+        expect(oldFactory).to.be.not.equal(newFactory.address);
+      });
 
-    await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-    const newCometAddress = await proxyAdmin.getProxyImplementation(cometProxy.address);
+      it('sets factory is successful', async () => {
+        setFactoryTx = await configuratorProxy.setFactory(cometProxy.address, newFactory.address);
+        await expect(setFactoryTx).to.not.be.reverted;
+      });
 
-    expect(newCometAddress).to.not.be.equal(comet.address);
+      it('setting new factory emits SetFactory event', async () => {
+        await expect(setFactoryTx).to.emit(configuratorProxy, 'SetFactory').withArgs(cometProxy.address, oldFactory, newFactory.address);
+      });
+
+      it('new factory is set and stored in the configurator', async () => {
+        expect(await configuratorProxy.factory(cometProxy.address)).to.be.equal(newFactory.address);
+      });
+    });
+
+    describe('edge cases', function() {
+      let snapshot: SnapshotRestorer;
+      before(async () => snapshot = await takeSnapshot());
+
+      it('factory can be set to the same factory', async () => {
+        // check current factory
+        expect(await configuratorProxy.factory(cometProxy.address)).to.be.equal(newFactory.address);
+
+        // set factory to the same factory
+        await configuratorProxy.connect(governor).setFactory(cometProxy.address, newFactory.address);
+
+        // check factory is still the same
+        expect(await configuratorProxy.factory(cometProxy.address)).to.be.equal(newFactory.address);
+      });
+
+      it('factory can be set to zero address', async () => {
+        await configuratorProxy.connect(governor).setFactory(cometProxy.address, ZERO_ADDRESS);
+
+        // check factory is set to address(0)
+        expect(await configuratorProxy.factory(cometProxy.address)).to.be.equal(ethers.constants.AddressZero);
+
+        await snapshot.restore();
+      });
+    });
   });
 
-  it('reverts if deploy is called from non-governor', async () => {
-    const { configuratorProxy, proxyAdmin, cometProxyWithExtendedAssetList: cometProxy, users: [alice], governor } = await makeConfigurator();
+  describe('configuration setting', function() {
+    let oldConfiguration: ConfigurationStruct;
+    let newConfiguration: ConfigurationStruct;
+    before(async () => {
+      oldConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
 
-    const MarketAdminPermissionCheckerFactory = (await ethers.getContractFactory(
-      'MarketAdminPermissionChecker'
-    )) as MarketAdminPermissionChecker__factory;
+      // We clone entire oldConfiguration with some modifications
+      newConfiguration = oldConfiguration;
+    });
 
+    describe('revert cases', function() {
+      it('reverts by non-governor', async () => {
+        expect(alice.address).to.not.equal(governor.address);
+        await expect(configuratorProxy.connect(alice).setConfiguration(cometProxy.address, newConfiguration)).to.be.revertedWithCustomError(configurator, 'Unauthorized');
+      });
 
-    const marketAdminPermissionCheckerContract =  await MarketAdminPermissionCheckerFactory.deploy(
-      governor.address,
-      ethers.constants.AddressZero,
-      ethers.constants.AddressZero
-    );
+      it('reverts if trackingIndexScale values is changed', async () => {
+        newConfiguration = { ...newConfiguration, trackingIndexScale: BigNumber.from(oldConfiguration.trackingIndexScale).add(1) };
 
-    await expect(proxyAdmin.connect(alice).deployAndUpgradeTo(configuratorProxy.address, cometProxy.address)).to.be.revertedWithCustomError(marketAdminPermissionCheckerContract, 'Unauthorized');
+        await expect(configuratorProxy.connect(governor).setConfiguration(cometProxy.address, newConfiguration)).to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
+
+        newConfiguration = { ...newConfiguration, trackingIndexScale: oldConfiguration.trackingIndexScale };
+      });
+
+      it('reverts if base token is changed', async () => {
+        newConfiguration = { ...newConfiguration, baseToken: alice.address };
+
+        await expect(configuratorProxy.connect(governor).setConfiguration(cometProxy.address, newConfiguration)).to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
+      });
+
+      it('reverts if base token is set to zero address', async () => {
+        newConfiguration = { ...newConfiguration, baseToken: ZERO_ADDRESS };
+
+        await expect(configuratorProxy.connect(governor).setConfiguration(cometProxy.address, newConfiguration)).to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
+
+        newConfiguration = { ...newConfiguration, baseToken: oldConfiguration.baseToken };
+      });
+    });
+
+    describe('happy path', function() {
+      let setConfigurationTx: ContractTransaction;
+      before(async () => {
+        // Make new configuration different from old configuration
+        newConfiguration = {
+          ...newConfiguration,
+          baseBorrowMin: BigNumber.from(newConfiguration.baseBorrowMin).add(1),
+          pauseGuardian: alice.address,
+          targetReserves: BigNumber.from(newConfiguration.targetReserves).add(1),
+        };
+      });
+
+      it('sets configuration is successful', async () => {
+        setConfigurationTx = await configuratorProxy.connect(governor).setConfiguration(cometProxy.address, newConfiguration);
+        await expect(setConfigurationTx).to.not.be.reverted;
+      });
+
+      it('setting new configuration emits SetConfiguration event (deep equal)', async () => {
+        const receipt = await setConfigurationTx.wait();
+        const setConfigurationEvent = receipt.events?.find((e) => e.event === 'SetConfiguration');
+
+        expect(setConfigurationEvent).to.not.be.undefined;
+
+        const {
+          cometProxy: cometProxyArg,
+          oldConfiguration: oldConfigurationArg,
+          newConfiguration: newConfigurationArg,
+        } = (setConfigurationEvent).args;
+
+        expect(cometProxyArg).to.equal(cometProxy.address);
+        // oldConfiguration is a struct Result from getConfiguration(), same shape as event arg
+        expect(oldConfigurationArg).to.deep.equal(oldConfiguration);
+        // newConfiguration was spread into a plain object, so re-fetch from storage to get a matching struct Result
+        const storedNewConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
+        expect(newConfigurationArg).to.deep.equal(storedNewConfiguration);
+      });
+
+      it('new configuration is updated in the configurator in storage', async () => {
+        const updatedConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
+        
+        expect(updatedConfiguration.baseBorrowMin).to.be.equal(newConfiguration.baseBorrowMin);
+        expect(updatedConfiguration.pauseGuardian).to.be.equal(newConfiguration.pauseGuardian);
+        expect(updatedConfiguration.targetReserves).to.be.equal(newConfiguration.targetReserves);
+      });
+    });
+
+    describe('edge cases', function() {
+      it('same configuration can be set multiple times', async () => {
+        const currentConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
+        await configuratorProxy.connect(governor).setConfiguration(cometProxy.address, currentConfiguration);
+
+        const updatedConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
+        expect(updatedConfiguration).to.deep.eq(currentConfiguration);
+      });
+    });
   });
 
-  it('e2e governance actions from timelock', async () => {
-    const { governor, configurator, configuratorProxy, proxyAdmin, cometProxyWithExtendedAssetList: cometProxy, users: [alice] } = await makeConfigurator();
+  describe('comet upgrade', function () {
+    // New comet implementation address
+    let newCometImplementation: string;
+    // Deploy transaction
+    let deployTx: ContractTransaction;
 
-    const TimelockFactory = (await ethers.getContractFactory(
-      'SimpleTimelock'
-    )) as SimpleTimelock__factory;
+    describe('new implementation deployment', function() {
+      it('sanity check: configurations and changes', async () => {
+        // Current implementation pauseGuardian check
+        expect(await comet.pauseGuardian()).to.be.equal(pauseGuardian.address);
 
-    const timelock = await TimelockFactory.deploy(governor.address);
-    await timelock.deployed();
-    await proxyAdmin.transferOwnership(timelock.address);
+        // New configuration pauseGuardian check
+        const newConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
+        expect(newConfiguration.pauseGuardian).to.be.equal(alice.address);
+      });
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-    await configuratorAsProxy.transferGovernor(timelock.address); // set timelock as admin of Configurator
+      it('deploy new implementation is successful', async () => {
+        newCometImplementation = await configuratorProxy.callStatic.deploy(cometProxy.address);
+        deployTx = await configuratorProxy.deploy(cometProxy.address);
+        await expect(deployTx).to.not.be.reverted;
+      });
 
-    expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).governor).to.be.equal(governor.address);
+      it('deploy emits CometDeployed event', async () => {
+        await expect(deployTx)
+          .to.emit(configuratorProxy, 'CometDeployed')
+          .withArgs(cometProxy.address, newCometImplementation);
+      });
 
-    // 1. SetGovernor
-    // 2. DeployAndUpgradeTo
-    let setGovernorCalldata = ethers.utils.defaultAbiCoder.encode(['address', 'address'], [cometProxy.address, alice.address]);
-    let deployAndUpgradeToCalldata = ethers.utils.defaultAbiCoder.encode(['address', 'address'], [configuratorProxy.address, cometProxy.address]);
-    await timelock.executeTransactions([configuratorProxy.address, proxyAdmin.address], [0, 0], ['setGovernor(address,address)', 'deployAndUpgradeTo(address,address)'], [setGovernorCalldata, deployAndUpgradeToCalldata]);
+      it('new implementation has new pauseGuardian', async () => {
+        const newComet = await ethers.getContractAt('CometWithExtendedAssetList', newCometImplementation);
+        expect(await newComet.pauseGuardian()).to.be.equal(alice.address);
+      });
 
-    expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).governor).to.be.equal(alice.address);
+      describe('edge cases', function() {
+        it('anyone can deploy new implementation', async () => {
+          // From Alice
+          await expect(configuratorProxy.connect(alice).deploy(cometProxy.address)).to.not.be.reverted;
+  
+          // From Governor
+          await expect(configuratorProxy.connect(governor).deploy(cometProxy.address)).to.not.be.reverted;
+  
+          // From Pause Guardian
+          await expect(configuratorProxy.connect(pauseGuardian).deploy(cometProxy.address)).to.not.be.reverted;
+        });
+      });
+    });
+
+    describe('comet deployment from ProxyAdmin', function() {
+      let deployTx: ContractTransaction;
+
+      before(async () => {
+        // Change configuration back (pauseguardian to pauseGuardian)
+        const currentConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
+        await configuratorProxy.connect(governor).setConfiguration(
+          cometProxy.address,
+          { ...currentConfiguration, pauseGuardian: pauseGuardian.address }
+        );
+      });
+
+      it('deploy comet from ProxyAdmin is successful', async () => {
+        deployTx = await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+        await expect(deployTx).to.not.be.reverted;
+      });
+
+      it('deploy emits CometDeployed event', async () => {
+        const newImplementation = await cometProxyAdmin.getProxyImplementation(cometProxy.address);
+        await expect(deployTx)
+          .to.emit(configuratorProxy, 'CometDeployed')
+          .withArgs(cometProxy.address, newImplementation);
+      });
+    });
+
+    describe('deploy edge cases', function() {
+      it('reverts when factory is not set (zero address)', async () => {
+        const snapshot = await takeSnapshot();
+
+        await configuratorProxy.connect(governor).setFactory(cometProxy.address, ZERO_ADDRESS);
+
+        // Reverts with "Error: Transaction reverted without a reason string"
+        await expect(configuratorProxy.deploy(cometProxy.address)).to.be.reverted;
+
+        await snapshot.restore();
+      });
+
+      it('reverts when deploying for a proxy with no configuration', async () => {
+        const randomAddr = '0x0000000000000000000000000000000000000042';
+
+        // Reverts with "Error: Transaction reverted without a reason string"
+        await expect(configuratorProxy.deploy(randomAddr)).to.be.reverted;
+      });
+    });
   });
 
-  it('reverts if initialized more than once', async () => {
-    const { governor, configurator, configuratorProxy } = await makeConfigurator();
+  describe('setters', function() {
+    describe('governor setter', function() {
+      let setGovernorTx: ContractTransaction;
+      let newCometGovernor: SignerWithAddress;
+      let oldCometGovernor: string;
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-    await expect(configuratorAsProxy.initialize(governor.address)).to.be.revertedWith("custom error 'AlreadyInitialized()'");
-  });
-
-  it('reverts if initializing the implementation contract', async () => {
-    const { governor, configurator } = await makeConfigurator();
-
-    await expect(configurator.initialize(governor.address)).to.be.revertedWith("custom error 'AlreadyInitialized()'");
-  });
-
-  describe('configuration setters', function () {
-    it('sets factory and deploys Comet using new factory', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometFactoryWithExtendedAssetList: cometFactory, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
-
-      // Deploy modified CometFactory
-      const CometModifiedFactoryFactory = (await ethers.getContractFactory('CometModifiedFactory')) as CometModifiedFactory__factory;
-      const cometModifiedFactory = await CometModifiedFactoryFactory.deploy();
-      await cometModifiedFactory.deployed();
-      const oldFactory = cometFactory.address;
-      const newFactory = cometModifiedFactory.address;
-
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      const txn = await wait(configuratorAsProxy.setFactory(cometProxy.address, cometModifiedFactory.address));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetFactory: {
-          cometProxy: cometProxy.address,
-          oldFactory,
-          newFactory,
-        }
-      });
-      expect(oldFactory).to.be.not.equal(newFactory);
-      expect(await configuratorAsProxy.factory(cometProxy.address)).to.be.equal(newFactory);
-      // Call new function on Comet
-      const CometModified = await ethers.getContractFactory('CometModified');
-      const modifiedCometAsProxy = CometModified.attach(cometProxy.address);
-      expect(await modifiedCometAsProxy.newFunction()).to.be.equal(101n);
-    });
-
-    it('sets Configuration for a new Comet proxy', async () => {
-      const { configurator, configuratorProxy, proxyAdmin } = await makeConfigurator();
-
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      const newCometProxyAddress = ethers.constants.AddressZero;
-      const oldConfiguration = await configuratorAsProxy.getConfiguration(newCometProxyAddress);
-      const newConfiguration = { ...oldConfiguration, governor: proxyAdmin.address } as ConfigurationStructOutput;
-
-      const txn = await wait(configuratorAsProxy.setConfiguration(newCometProxyAddress, newConfiguration));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetConfiguration: {
-          cometProxy: newCometProxyAddress,
-          oldConfiguration: convertToEventConfiguration(oldConfiguration),
-          newConfiguration: convertToEventConfiguration(newConfiguration),
-        }
-      });
-      expect(oldConfiguration).to.be.not.equal(newConfiguration);
-      expect((await configuratorAsProxy.getConfiguration(newCometProxyAddress)).governor).to.be.equal(newConfiguration.governor);
-    });
-
-    it('sets Configuration for a Comet proxy with an existing configuration', async () => {
-      const { configurator, configuratorProxy, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator({
-        assets: {
-          USDC: { initial: 1e6, decimals: 6 },
-        }
+      describe('revert cases', function() {
+        it('reverts by non-governor', async () => {
+          newCometGovernor = (await ethers.getSigners())[5];
+          expect(alice.address).to.not.equal(governor.address);
+          await expect(configuratorProxy.connect(alice).setGovernor(cometProxy.address, newCometGovernor.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
       });
 
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      const oldConfiguration = await configuratorAsProxy.getConfiguration(cometProxy.address);
-      const newConfiguration = { ...oldConfiguration, baseBorrowMin: BigNumber.from(1) } as ConfigurationStructOutput;
+      describe('happy path', function() {
+        let deployTx: ContractTransaction;
 
-      const txn = await wait(configuratorAsProxy.setConfiguration(cometProxy.address, newConfiguration));
+        it('sanity check: current comet governor != new governor', async () => {
+          const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+          oldCometGovernor = configuration.governor;
+          newCometGovernor = (await ethers.getSigners())[5];
+          expect(oldCometGovernor).to.not.equal(newCometGovernor.address);
+        });
 
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetConfiguration: {
-          cometProxy: cometProxy.address,
-          oldConfiguration: convertToEventConfiguration(oldConfiguration),
-          newConfiguration: convertToEventConfiguration(newConfiguration),
-        }
-      });
-      expect(oldConfiguration).to.be.not.equal(newConfiguration);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).baseBorrowMin).to.be.equal(newConfiguration.baseBorrowMin);
-    });
+        it('sanity check: comet proxy has old governor before change', async () => {
+          expect(await comet.governor()).to.be.equal(oldCometGovernor);
+        });
 
-    it('reverts when setting Configuration and changing baseToken for a Comet proxy with an existing configuration', async () => {
-      const { configurator, configuratorProxy, cometProxyWithExtendedAssetList: cometProxy, tokens } = await makeConfigurator();
-      const { COMP } = tokens;
+        it('setGovernor is successful', async () => {
+          setGovernorTx = await configuratorProxy.connect(governor).setGovernor(cometProxy.address, newCometGovernor.address);
+          await expect(setGovernorTx).to.not.be.reverted;
+        });
 
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      const oldConfiguration = await configuratorAsProxy.getConfiguration(cometProxy.address);
-      const newConfiguration = { ...oldConfiguration, baseToken: COMP.address } as ConfigurationStructOutput;
+        it('setting new governor emits SetGovernor event', async () => {
+          await expect(setGovernorTx)
+            .to.emit(configuratorProxy, 'SetGovernor')
+            .withArgs(cometProxy.address, oldCometGovernor, newCometGovernor.address);
+        });
 
-      await expect(
-        configuratorAsProxy.setConfiguration(cometProxy.address, newConfiguration)
-      ).to.be.revertedWith("custom error 'ConfigurationAlreadyExists()'");
-    });
+        it('new governor is stored in configurator configuration', async () => {
+          const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+          expect(configuration.governor).to.be.equal(newCometGovernor.address);
+        });
 
-    it('reverts when setting Configuration and changing trackingIndexScale for a Comet proxy with an existing configuration', async () => {
-      const { configurator, configuratorProxy, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+        it('deploy and upgrade from ProxyAdmin is successful', async () => {
+          deployTx = await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          await expect(deployTx).to.not.be.reverted;
+        });
 
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      const oldConfiguration = await configuratorAsProxy.getConfiguration(cometProxy.address);
-      const newConfiguration = { ...oldConfiguration, trackingIndexScale: BigNumber.from(1e7) } as ConfigurationStructOutput;
+        it('deploy emits CometDeployed event', async () => {
+          const newCometImplementation = await cometProxyAdmin.getProxyImplementation(cometProxy.address);
+          await expect(deployTx)
+            .to.emit(configuratorProxy, 'CometDeployed')
+            .withArgs(cometProxy.address, newCometImplementation);
+        });
 
-      await expect(
-        configuratorAsProxy.setConfiguration(cometProxy.address, newConfiguration)
-      ).to.be.revertedWith("custom error 'ConfigurationAlreadyExists()'");
-    });
-
-    it('reverts when setting bad Configuration for a Comet proxy with an existing configuration', async () => {
-      const { configurator, configuratorProxy, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
-
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      const oldConfiguration = await configuratorAsProxy.getConfiguration(cometProxy.address);
-      const newConfiguration = { ...oldConfiguration, baseToken: ethers.constants.AddressZero };
-
-      await expect(
-        configuratorAsProxy.setConfiguration(cometProxy.address, newConfiguration)
-      ).to.be.revertedWith("custom error 'ConfigurationAlreadyExists()'");
-    });
-
-    it('sets governor and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy, users: [alice] } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).governor).to.be.equal(await comet.governor());
-
-      const oldGovernor = await comet.governor();
-      const newGovernor = alice.address;
-      const txn = await wait(configuratorAsProxy.setGovernor(cometProxy.address, newGovernor));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetGovernor: {
-          cometProxy: cometProxy.address,
-          oldGovernor,
-          newGovernor,
-        }
-      });
-      expect(oldGovernor).to.be.not.equal(newGovernor);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).governor).to.be.equal(newGovernor);
-      expect(await cometAsProxy.governor()).to.be.equal(newGovernor);
-    });
-
-    it('sets pauseGuardian and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy, users: [alice] } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).pauseGuardian).to.be.equal(await comet.pauseGuardian());
-
-      const oldPauseGuardian = await comet.pauseGuardian();
-      const newPauseGuardian = alice.address;
-      const txn = await wait(configuratorAsProxy.setPauseGuardian(cometProxy.address, newPauseGuardian));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetPauseGuardian: {
-          cometProxy: cometProxy.address,
-          oldPauseGuardian,
-          newPauseGuardian,
-        }
-      });
-      expect(oldPauseGuardian).to.be.not.equal(newPauseGuardian);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).pauseGuardian).to.be.equal(newPauseGuardian);
-      expect(await cometAsProxy.pauseGuardian()).to.be.equal(newPauseGuardian);
-    });
-
-    it('sets baseTokenPriceFeed and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).baseTokenPriceFeed).to.be.equal(await comet.baseTokenPriceFeed());
-
-      // Deploy new price feed
-      const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
-      const priceFeed = await PriceFeedFactory.deploy(exp(20, 8), 8);
-      await priceFeed.deployed();
-
-      const oldPriceFeed = await comet.baseTokenPriceFeed();
-      const newPriceFeed = priceFeed.address;
-      const txn = await wait(configuratorAsProxy.setBaseTokenPriceFeed(cometProxy.address, newPriceFeed));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetBaseTokenPriceFeed: {
-          cometProxy: cometProxy.address,
-          oldBaseTokenPriceFeed: oldPriceFeed,
-          newBaseTokenPriceFeed: newPriceFeed,
-        }
-      });
-      expect(oldPriceFeed).to.be.not.equal(newPriceFeed);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).baseTokenPriceFeed).to.be.equal(newPriceFeed);
-      expect(await cometAsProxy.baseTokenPriceFeed()).to.be.equal(newPriceFeed);
-    });
-
-    it('sets extensionDelegate and deploys Comet with new configuration', async () => {
-      const {
-        configurator,
-        configuratorProxy,
-        proxyAdmin,
-        assetListFactory,
-        cometWithExtendedAssetList: comet,
-        cometProxyWithExtendedAssetList: cometProxy,
-      } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).extensionDelegate).to.be.equal(await comet.extensionDelegate());
-
-      const CometExtAssetListFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
-      const newExtensionDelegateContract = await CometExtAssetListFactory.deploy(
-        {
-          name32: ethers.utils.formatBytes32String('Test Comet'),
-          symbol32: ethers.utils.formatBytes32String('tCOMET')
-        },
-        assetListFactory.address
-      );
-      await newExtensionDelegateContract.deployed();
-
-      const oldExt = await comet.extensionDelegate();
-      const newExt = newExtensionDelegateContract.address;
-      const txn = await wait(configuratorAsProxy.setExtensionDelegate(cometProxy.address, newExt));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetExtensionDelegate: {
-          cometProxy: cometProxy.address,
-          oldExt,
-          newExt,
-        }
-      });
-      expect(oldExt).to.be.not.equal(newExt);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).extensionDelegate).to.be.equal(newExt);
-      expect(await cometAsProxy.extensionDelegate()).to.be.equal(newExt);
-    });
-
-    it('sets supplyKink and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).supplyKink).to.be.equal(await comet.supplyKink());
-
-      const oldKink = (await comet.supplyKink()).toBigInt();
-      const newKink = 100n;
-      const txn = await wait(configuratorAsProxy.setSupplyKink(cometProxy.address, newKink));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetSupplyKink: {
-          cometProxy: cometProxy.address,
-          oldKink,
-          newKink,
-        }
-      });
-      expect(oldKink).to.be.not.equal(newKink);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).supplyKink).to.be.equal(newKink);
-      expect(await cometAsProxy.supplyKink()).to.be.equal(newKink);
-    });
-
-    it('sets supplyPerYearInterestRateSlopeLow and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect(defactor((await configuratorAsProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateSlopeLow))
-        .to.be.approximately(annualize(await comet.supplyPerSecondInterestRateSlopeLow()), 0.00001);
-
-      const oldIRSlopeLow = (await configuratorAsProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateSlopeLow.toBigInt();
-      const newIRSlopeLow = exp(5.5, 18);
-      const txn = await wait(configuratorAsProxy.setSupplyPerYearInterestRateSlopeLow(cometProxy.address, newIRSlopeLow));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetSupplyPerYearInterestRateSlopeLow: {
-          cometProxy: cometProxy.address,
-          oldIRSlopeLow,
-          newIRSlopeLow,
-        }
-      });
-      expect(oldIRSlopeLow).to.be.not.equal(newIRSlopeLow);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateSlopeLow).to.be.equal(newIRSlopeLow);
-      expect(annualize(await cometAsProxy.supplyPerSecondInterestRateSlopeLow()))
-        .to.be.approximately(defactor(newIRSlopeLow), 0.00001);
-    });
-
-    it('sets supplyPerYearInterestRateSlopeHigh and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect(defactor((await configuratorAsProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateSlopeHigh))
-        .to.be.approximately(annualize(await comet.supplyPerSecondInterestRateSlopeHigh()), 0.00001);
-
-      const oldIRSlopeHigh = (await configuratorAsProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateSlopeHigh.toBigInt();
-      const newIRSlopeHigh = exp(5.5, 18);
-      const txn = await wait(configuratorAsProxy.setSupplyPerYearInterestRateSlopeHigh(cometProxy.address, newIRSlopeHigh));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetSupplyPerYearInterestRateSlopeHigh: {
-          cometProxy: cometProxy.address,
-          oldIRSlopeHigh,
-          newIRSlopeHigh,
-        }
-      });
-      expect(oldIRSlopeHigh).to.be.not.equal(newIRSlopeHigh);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateSlopeHigh).to.be.equal(newIRSlopeHigh);
-      expect(annualize(await cometAsProxy.supplyPerSecondInterestRateSlopeHigh()))
-        .to.be.approximately(defactor(newIRSlopeHigh), 0.00001);
-    });
-
-    it('sets supplyPerYearInterestRateBase and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect(defactor((await configuratorAsProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateBase))
-        .to.be.approximately(annualize(await comet.supplyPerSecondInterestRateBase()), 0.00001);
-
-      const oldIRBase = (await configuratorAsProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateBase.toBigInt();
-      const newIRBase = exp(5.5, 18);
-      const txn = await wait(configuratorAsProxy.setSupplyPerYearInterestRateBase(cometProxy.address, newIRBase));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetSupplyPerYearInterestRateBase: {
-          cometProxy: cometProxy.address,
-          oldIRBase,
-          newIRBase,
-        }
-      });
-      expect(oldIRBase).to.be.not.equal(newIRBase);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateBase).to.be.equal(newIRBase);
-      expect(annualize(await cometAsProxy.supplyPerSecondInterestRateBase()))
-        .to.be.approximately(defactor(newIRBase), 0.00001);
-    });
-
-    it('sets borrowKink and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).borrowKink).to.be.equal(await comet.borrowKink());
-
-      const oldKink = (await comet.borrowKink()).toBigInt();
-      const newKink = 100n;
-      const txn = await wait(configuratorAsProxy.setBorrowKink(cometProxy.address, newKink));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetBorrowKink: {
-          cometProxy: cometProxy.address,
-          oldKink,
-          newKink,
-        }
-      });
-      expect(oldKink).to.be.not.equal(newKink);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).borrowKink).to.be.equal(newKink);
-      expect(await cometAsProxy.borrowKink()).to.be.equal(newKink);
-    });
-
-    it('sets borrowPerYearInterestRateSlopeLow and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect(defactor((await configuratorAsProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateSlopeLow))
-        .to.be.approximately(annualize(await comet.borrowPerSecondInterestRateSlopeLow()), 0.00001);
-
-      const oldIRSlopeLow = (await configuratorAsProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateSlopeLow.toBigInt();
-      const newIRSlopeLow = exp(5.5, 18);
-      const txn = await wait(configuratorAsProxy.setBorrowPerYearInterestRateSlopeLow(cometProxy.address, newIRSlopeLow));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetBorrowPerYearInterestRateSlopeLow: {
-          cometProxy: cometProxy.address,
-          oldIRSlopeLow,
-          newIRSlopeLow,
-        }
-      });
-      expect(oldIRSlopeLow).to.be.not.equal(newIRSlopeLow);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateSlopeLow).to.be.equal(newIRSlopeLow);
-      expect(annualize(await cometAsProxy.borrowPerSecondInterestRateSlopeLow()))
-        .to.be.approximately(defactor(newIRSlopeLow), 0.00001);
-    });
-
-    it('sets borrowPerYearInterestRateSlopeHigh and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect(defactor((await configuratorAsProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateSlopeHigh))
-        .to.be.approximately(annualize(await comet.borrowPerSecondInterestRateSlopeHigh()), 0.00001);
-
-      const oldIRSlopeHigh = (await configuratorAsProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateSlopeHigh.toBigInt();
-      const newIRSlopeHigh = exp(5.5, 18);
-      const txn = await wait(configuratorAsProxy.setBorrowPerYearInterestRateSlopeHigh(cometProxy.address, newIRSlopeHigh));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetBorrowPerYearInterestRateSlopeHigh: {
-          cometProxy: cometProxy.address,
-          oldIRSlopeHigh,
-          newIRSlopeHigh,
-        }
-      });
-      expect(oldIRSlopeHigh).to.be.not.equal(newIRSlopeHigh);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateSlopeHigh).to.be.equal(newIRSlopeHigh);
-      expect(annualize(await cometAsProxy.borrowPerSecondInterestRateSlopeHigh()))
-        .to.be.approximately(defactor(newIRSlopeHigh), 0.00001);
-    });
-
-    it('sets borrowPerYearInterestRateBase and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
-
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect(defactor((await configuratorAsProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateBase))
-        .to.be.approximately(annualize(await comet.borrowPerSecondInterestRateBase()), 0.00001);
-
-      const oldIRBase = (await configuratorAsProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateBase.toBigInt();
-      const newIRBase = exp(5.5, 18);
-      const txn = await wait(configuratorAsProxy.setBorrowPerYearInterestRateBase(cometProxy.address, newIRBase));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetBorrowPerYearInterestRateBase: {
-          cometProxy: cometProxy.address,
-          oldIRBase,
-          newIRBase,
-        }
-      });
-      expect(oldIRBase).to.be.not.equal(newIRBase);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateBase).to.be.equal(newIRBase);
-      expect(annualize(await cometAsProxy.borrowPerSecondInterestRateBase()))
-        .to.be.approximately(defactor(newIRBase), 0.00001);
-    });
-
-    it('sets storeFrontPriceFactor and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator({
-        assets: {
-          USDC: { decimals: 6, },
-          COMP: {
-            decimals: 18,
-            // This needs to be < 1e18 (default) so the StoreFrontPriceFactor can be < 1e18
-            liquidationFactor: exp(0.8, 18),
-          },
-        },
+        it('comet proxy has new governor after upgrade', async () => {
+          expect(await comet.governor()).to.be.equal(newCometGovernor.address);
+        });
       });
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).storeFrontPriceFactor).to.be.equal(await comet.storeFrontPriceFactor());
+      describe('edge cases', function() {
+        let snapshot: SnapshotRestorer;
+        before(async () => (snapshot = await takeSnapshot()));
 
-      const oldStoreFrontPriceFactor = (await comet.storeFrontPriceFactor()).toBigInt();
-      const newStoreFrontPriceFactor = factor(0.95);
-      const txn = await wait(configuratorAsProxy.setStoreFrontPriceFactor(cometProxy.address, newStoreFrontPriceFactor));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
+        it('governor can be set to the same address', async () => {
+          const currentConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
 
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetStoreFrontPriceFactor: {
-          cometProxy: cometProxy.address,
-          oldStoreFrontPriceFactor,
-          newStoreFrontPriceFactor,
-        }
+          await configuratorProxy.connect(governor).setGovernor(cometProxy.address, currentConfiguration.governor);
+
+          const updatedConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
+          expect(updatedConfiguration.governor).to.be.equal(currentConfiguration.governor);
+        });
+
+        it('governor can be set to zero address', async () => {
+          await configuratorProxy.connect(governor).setGovernor(cometProxy.address, ZERO_ADDRESS);
+
+          const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+
+          expect(configuration.governor).to.be.equal(ZERO_ADDRESS);
+          await snapshot.restore();
+        });
       });
-      expect(oldStoreFrontPriceFactor).to.be.not.equal(newStoreFrontPriceFactor);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).storeFrontPriceFactor).to.be.equal(newStoreFrontPriceFactor);
-      expect(await cometAsProxy.storeFrontPriceFactor()).to.be.equal(newStoreFrontPriceFactor);
     });
 
-    it('sets baseTrackingSupplySpeed and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+    describe('pauseGuardian setter', function() {
+      let setPauseGuardianTx: ContractTransaction;
+      let newPauseGuardian: SignerWithAddress;
+      let oldPauseGuardian: string;
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).baseTrackingSupplySpeed).to.be.equal(await comet.baseTrackingSupplySpeed());
-
-      const oldSpeed = (await comet.baseTrackingSupplySpeed()).toBigInt();
-      const newSpeed = 100n;
-      const txn = await wait(configuratorAsProxy.setBaseTrackingSupplySpeed(cometProxy.address, newSpeed));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetBaseTrackingSupplySpeed: {
-          cometProxy: cometProxy.address,
-          oldBaseTrackingSupplySpeed: oldSpeed,
-          newBaseTrackingSupplySpeed: newSpeed,
-        }
+      describe('revert cases', function() {
+        it('reverts by non-governor', async () => {
+          newPauseGuardian = (await ethers.getSigners())[6];
+          await expect(configuratorProxy.connect(alice).setPauseGuardian(cometProxy.address, newPauseGuardian.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
       });
-      expect(oldSpeed).to.be.not.equal(newSpeed);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).baseTrackingSupplySpeed).to.be.equal(newSpeed);
-      expect(await cometAsProxy.baseTrackingSupplySpeed()).to.be.equal(newSpeed);
+
+      describe('edge cases', function() {
+        it('can be set to zero address', async () => {
+          await configuratorProxy.connect(governor).setPauseGuardian(cometProxy.address, ZERO_ADDRESS);
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).pauseGuardian).to.be.equal(ZERO_ADDRESS);
+        });
+      });
+
+      describe('happy path', function() {
+        it('sanity check: current and new pause guardian are different', async () => {
+          newPauseGuardian = (await ethers.getSigners())[6];
+          const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+          oldPauseGuardian = configuration.pauseGuardian;
+          expect(oldPauseGuardian).to.not.equal(newPauseGuardian.address);
+        });
+
+        it('setPauseGuardian is successful', async () => {
+          setPauseGuardianTx = await configuratorProxy.connect(governor).setPauseGuardian(cometProxy.address, newPauseGuardian.address);
+          await expect(setPauseGuardianTx).to.not.be.reverted;
+        });
+
+        it('emits SetPauseGuardian event', async () => {
+          await expect(setPauseGuardianTx)
+            .to.emit(configuratorProxy, 'SetPauseGuardian')
+            .withArgs(cometProxy.address, oldPauseGuardian, newPauseGuardian.address);
+        });
+
+        it('new pauseGuardian is updated in configuration', async () => {
+          const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+          expect(configuration.pauseGuardian).to.be.equal(newPauseGuardian.address);
+        });
+
+        it('deploy and upgrade comet with new configuration', async () => {
+          await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+        });
+
+        it('pauseGuardian is updated in comet', async () => {
+          expect(await comet.pauseGuardian()).to.be.equal(newPauseGuardian.address);
+        });
+      });
     });
 
-    it('sets baseTrackingBorrowSpeed and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+    describe('setMarketAdminPermissionChecker', function() {
+      let setTx: ContractTransaction;
+      let newChecker: MarketAdminPermissionChecker;
+      let oldChecker: string;
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).baseTrackingBorrowSpeed).to.be.equal(await comet.baseTrackingBorrowSpeed());
-
-      const oldSpeed = (await comet.baseTrackingBorrowSpeed()).toBigInt();
-      const newSpeed = 100n;
-      const txn = await wait(configuratorAsProxy.setBaseTrackingBorrowSpeed(cometProxy.address, newSpeed));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetBaseTrackingBorrowSpeed: {
-          cometProxy: cometProxy.address,
-          oldBaseTrackingBorrowSpeed: oldSpeed,
-          newBaseTrackingBorrowSpeed: newSpeed,
-        }
+      before(async () => {
+        const Factory = await ethers.getContractFactory('MarketAdminPermissionChecker') as MarketAdminPermissionChecker__factory;
+        newChecker = await Factory.deploy(governor.address, ZERO_ADDRESS, ZERO_ADDRESS);
+        await newChecker.deployed();
       });
-      expect(oldSpeed).to.be.not.equal(newSpeed);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).baseTrackingBorrowSpeed).to.be.equal(newSpeed);
-      expect(await cometAsProxy.baseTrackingBorrowSpeed()).to.be.equal(newSpeed);
+
+      describe('revert cases', function() {
+        it('reverts by non-governor', async () => {
+          await expect(configuratorProxy.connect(alice).setMarketAdminPermissionChecker(newChecker.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+      });
+
+      describe('edge cases', function() {
+        it('can be set to zero address', async () => {
+          await configuratorProxy.connect(governor).setMarketAdminPermissionChecker(ZERO_ADDRESS);
+          expect(await configuratorProxy.marketAdminPermissionChecker()).to.be.equal(ZERO_ADDRESS);
+        });
+      });
+
+      describe('happy path', function() {
+        it('sanity check: current and new checker are different', async () => {
+          oldChecker = await configuratorProxy.marketAdminPermissionChecker();
+          expect(oldChecker).to.not.equal(newChecker.address);
+        });
+
+        it('sets MarketAdminPermissionChecker successfully', async () => {
+          setTx = await configuratorProxy.connect(governor).setMarketAdminPermissionChecker(newChecker.address);
+          await expect(setTx).to.not.be.reverted;
+        });
+
+        it('emits SetMarketAdminPermissionChecker event', async () => {
+          await expect(setTx)
+            .to.emit(configuratorProxy, 'SetMarketAdminPermissionChecker')
+            .withArgs(oldChecker, newChecker.address);
+        });
+
+        it('new checker is stored', async () => {
+          expect(await configuratorProxy.marketAdminPermissionChecker()).to.be.equal(newChecker.address);
+        });
+      });
     });
 
-    it('sets baseMinForRewards and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+    describe('setBaseTokenPriceFeed', function() {
+      let setTx: ContractTransaction;
+      let newPriceFeed: SimplePriceFeed;
+      let oldPriceFeed: string;
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).baseMinForRewards).to.be.equal(await comet.baseMinForRewards());
-
-      const oldBaseMinForRewards = (await comet.baseMinForRewards()).toBigInt();
-      const newBaseMinForRewards = 100n;
-      const txn = await wait(configuratorAsProxy.setBaseMinForRewards(cometProxy.address, newBaseMinForRewards));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetBaseMinForRewards: {
-          cometProxy: cometProxy.address,
-          oldBaseMinForRewards,
-          newBaseMinForRewards,
-        }
+      before(async () => {
+        oldPriceFeed = (await configuratorProxy.getConfiguration(cometProxy.address)).baseTokenPriceFeed;
+        const PriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed') as SimplePriceFeed__factory;
+        newPriceFeed = await PriceFeedFactory.deploy(exp(200, 8), 8);
       });
-      expect(oldBaseMinForRewards).to.be.not.equal(newBaseMinForRewards);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).baseMinForRewards).to.be.equal(newBaseMinForRewards);
-      expect(await cometAsProxy.baseMinForRewards()).to.be.equal(newBaseMinForRewards);
+
+      describe('revert cases', function() {
+        it('reverts by non-governor', async () => {
+          await expect(configuratorProxy.connect(alice).setBaseTokenPriceFeed(cometProxy.address, newPriceFeed.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+      });
+
+      describe('edge cases', function() {
+        it('can be set to zero address', async () => {
+          const snapshot: SnapshotRestorer = await takeSnapshot();
+
+          await configuratorProxy.connect(governor).setBaseTokenPriceFeed(cometProxy.address, ZERO_ADDRESS);
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).baseTokenPriceFeed).to.be.equal(ZERO_ADDRESS);
+
+          await snapshot.restore();
+        });
+      });
+
+      describe('happy path', function() {
+        it('sets baseTokenPriceFeed successfully', async () => {
+          setTx = await configuratorProxy.connect(governor).setBaseTokenPriceFeed(cometProxy.address, newPriceFeed.address);
+          await expect(setTx).to.not.be.reverted;
+        });
+
+        it('emits SetBaseTokenPriceFeed event', async () => {
+          await expect(setTx)
+            .to.emit(configuratorProxy, 'SetBaseTokenPriceFeed')
+            .withArgs(cometProxy.address, oldPriceFeed, newPriceFeed.address);
+        });
+
+        it('new baseTokenPriceFeed is stored in configuration', async () => {
+          const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+          expect(configuration.baseTokenPriceFeed).to.be.equal(newPriceFeed.address);
+        });
+
+        it('deploy and upgrade comet with new configuration', async () => {
+          await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+        });
+
+        it('baseTokenPriceFeed is updated in comet', async () => {
+          expect(await comet.baseTokenPriceFeed()).to.be.equal(newPriceFeed.address);
+        });
+      });
     });
 
-    it('sets baseBorrowMin and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+    describe('setExtensionDelegate', function() {
+      let setTx: ContractTransaction;
+      let newExtensionDelegate: CometExtAssetList;
+      let oldExtensionDelegate: string;
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).baseBorrowMin).to.be.equal(await comet.baseBorrowMin());
+      before(async () => {
+        oldExtensionDelegate = (await configuratorProxy.getConfiguration(cometProxy.address)).extensionDelegate;
 
-      const oldBaseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-      const newBaseBorrowMin = 100n;
-      const txn = await wait(configuratorAsProxy.setBaseBorrowMin(cometProxy.address, newBaseBorrowMin));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetBaseBorrowMin: {
-          cometProxy: cometProxy.address,
-          oldBaseBorrowMin,
-          newBaseBorrowMin,
-        }
+        const name32 = ethers.utils.formatBytes32String('Compound Comet');
+        const symbol32 = ethers.utils.formatBytes32String('cBASE');
+        const ExtFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
+        newExtensionDelegate = await ExtFactory.deploy({ name32, symbol32 }, assetListFactoryAddr);
       });
-      expect(oldBaseBorrowMin).to.be.not.equal(newBaseBorrowMin);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).baseBorrowMin).to.be.equal(newBaseBorrowMin);
-      expect(await cometAsProxy.baseBorrowMin()).to.be.equal(newBaseBorrowMin);
+
+      describe('revert cases', function() {
+        it('reverts by non-governor', async () => {
+          await expect(configuratorProxy.connect(alice).setExtensionDelegate(cometProxy.address, newExtensionDelegate.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+      });
+
+      describe('edge cases', function() {
+        it('can be set to zero address', async () => {
+          const snapshot: SnapshotRestorer = await takeSnapshot();
+
+          await configuratorProxy.connect(governor).setExtensionDelegate(cometProxy.address, ZERO_ADDRESS);
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).extensionDelegate).to.be.equal(ZERO_ADDRESS);
+
+          await snapshot.restore();
+        });
+      });
+
+      describe('happy path', function() {
+        it('sets extensionDelegate successfully', async () => {
+          setTx = await configuratorProxy.connect(governor).setExtensionDelegate(cometProxy.address, newExtensionDelegate.address);
+          await expect(setTx).to.not.be.reverted;
+        });
+
+        it('emits SetExtensionDelegate event', async () => {
+          await expect(setTx)
+            .to.emit(configuratorProxy, 'SetExtensionDelegate')
+            .withArgs(cometProxy.address, oldExtensionDelegate, newExtensionDelegate.address);
+        });
+
+        it('new extensionDelegate is stored in configuration', async () => {
+          const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+          expect(configuration.extensionDelegate).to.be.equal(newExtensionDelegate.address);
+        });
+
+        it('deploy and upgrade comet with new configuration', async () => {
+          await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+        });
+
+        it('extensionDelegate is updated in comet', async () => {
+          expect(await comet.extensionDelegate()).to.be.equal(newExtensionDelegate.address);
+        });
+      });
     });
 
-    it('sets targetReserves and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+    describe('interest rate setters (governorOrMarketAdmin)', function() {
+      const SECONDS_PER_YEAR = 31_536_000n;
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).targetReserves).to.be.equal(await comet.targetReserves());
+      describe('setSupplyKink', function() {
+        const NEW_SUPPLY_KINK = exp(0.7, 18);
+        let oldSupplyKink: BigNumber;
+        let setTx: ContractTransaction;
 
-      const oldTargetReserves = (await comet.targetReserves()).toBigInt();
-      const newTargetReserves = 100n;
-      const txn = await wait(configuratorAsProxy.setTargetReserves(cometProxy.address, newTargetReserves));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setSupplyKink(cometProxy.address, exp(0.7, 18)))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
 
-      expect(event(txn, 0)).to.be.deep.equal({
-        SetTargetReserves: {
-          cometProxy: cometProxy.address,
-          oldTargetReserves,
-          newTargetReserves,
-        }
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            await configuratorProxy.connect(governor).setSupplyKink(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).supplyKink).to.be.equal(0);
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new supply kink are different', async () => {
+            oldSupplyKink = (await configuratorProxy.getConfiguration(cometProxy.address)).supplyKink;
+            expect(oldSupplyKink).to.not.equal(NEW_SUPPLY_KINK);
+          });
+
+          it('sets supplyKink successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setSupplyKink(cometProxy.address, NEW_SUPPLY_KINK);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetSupplyKink event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetSupplyKink')
+              .withArgs(cometProxy.address, oldSupplyKink, NEW_SUPPLY_KINK);
+          });
+
+          it('new supplyKink is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.supplyKink).to.be.equal(NEW_SUPPLY_KINK);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('supplyKink is updated in comet', async () => {
+            expect(await comet.supplyKink()).to.be.equal(NEW_SUPPLY_KINK);
+          });
+        });
       });
-      expect(oldTargetReserves).to.be.not.equal(newTargetReserves);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).targetReserves).to.be.equal(newTargetReserves);
-      expect(await cometAsProxy.targetReserves()).to.be.equal(newTargetReserves);
+
+      describe('setSupplyPerYearInterestRateSlopeLow', function() {
+        const NEW_SLOPE_LOW = exp(0.06, 18);
+        let oldSlopeLow: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setSupplyPerYearInterestRateSlopeLow(cometProxy.address, NEW_SLOPE_LOW))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            await configuratorProxy.connect(governor).setSupplyPerYearInterestRateSlopeLow(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateSlopeLow).to.be.equal(0);
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new supply slope low are different', async () => {
+            oldSlopeLow = (await configuratorProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateSlopeLow;
+            expect(oldSlopeLow).to.not.equal(NEW_SLOPE_LOW);
+          });
+
+          it('sets supplyPerYearInterestRateSlopeLow successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setSupplyPerYearInterestRateSlopeLow(cometProxy.address, NEW_SLOPE_LOW);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetSupplyPerYearInterestRateSlopeLow event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetSupplyPerYearInterestRateSlopeLow')
+              .withArgs(cometProxy.address, oldSlopeLow, NEW_SLOPE_LOW);
+          });
+
+          it('new supplyPerYearInterestRateSlopeLow is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.supplyPerYearInterestRateSlopeLow).to.be.equal(NEW_SLOPE_LOW);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('supplyPerSecondInterestRateSlopeLow is updated in comet', async () => {
+            const expectedPerSecond = NEW_SLOPE_LOW / SECONDS_PER_YEAR;
+            expect(await comet.supplyPerSecondInterestRateSlopeLow()).to.equal(expectedPerSecond);
+          });
+        });
+      });
+
+      describe('setSupplyPerYearInterestRateSlopeHigh', function() {
+        const NEW_SLOPE_HIGH = exp(2.5, 18);
+        let oldSlopeHigh: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setSupplyPerYearInterestRateSlopeHigh(cometProxy.address, NEW_SLOPE_HIGH))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            await configuratorProxy.connect(governor).setSupplyPerYearInterestRateSlopeHigh(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateSlopeHigh).to.be.equal(0);
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new supply slope high are different', async () => {
+            oldSlopeHigh = (await configuratorProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateSlopeHigh;
+            expect(oldSlopeHigh).to.not.equal(NEW_SLOPE_HIGH);
+          });
+
+          it('sets supplyPerYearInterestRateSlopeHigh successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setSupplyPerYearInterestRateSlopeHigh(cometProxy.address, NEW_SLOPE_HIGH);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetSupplyPerYearInterestRateSlopeHigh event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetSupplyPerYearInterestRateSlopeHigh')
+              .withArgs(cometProxy.address, oldSlopeHigh, NEW_SLOPE_HIGH);
+          });
+
+          it('new supplyPerYearInterestRateSlopeHigh is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.supplyPerYearInterestRateSlopeHigh).to.be.equal(NEW_SLOPE_HIGH);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('supplyPerSecondInterestRateSlopeHigh is updated in comet', async () => {
+            const expectedPerSecond = NEW_SLOPE_HIGH / SECONDS_PER_YEAR;
+            expect(await comet.supplyPerSecondInterestRateSlopeHigh()).to.equal(expectedPerSecond);
+          });
+        });
+      });
+
+      describe('setSupplyPerYearInterestRateBase', function() {
+        const NEW_BASE = exp(0.01, 18);
+        let oldBase: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setSupplyPerYearInterestRateBase(cometProxy.address, NEW_BASE))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            await configuratorProxy.connect(governor).setSupplyPerYearInterestRateBase(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateBase).to.be.equal(0);
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new supply base are different', async () => {
+            oldBase = (await configuratorProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateBase;
+            expect(oldBase).to.not.equal(NEW_BASE);
+          });
+
+          it('sets supplyPerYearInterestRateBase successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setSupplyPerYearInterestRateBase(cometProxy.address, NEW_BASE);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetSupplyPerYearInterestRateBase event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetSupplyPerYearInterestRateBase')
+              .withArgs(cometProxy.address, oldBase, NEW_BASE);
+          });
+
+          it('new supplyPerYearInterestRateBase is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.supplyPerYearInterestRateBase).to.be.equal(NEW_BASE);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('supplyPerSecondInterestRateBase is updated in comet', async () => {
+            const expectedPerSecond = NEW_BASE / SECONDS_PER_YEAR;
+            expect(await comet.supplyPerSecondInterestRateBase()).to.equal(expectedPerSecond);
+          });
+        });
+      });
+
+      describe('setBorrowKink', function() {
+        const NEW_BORROW_KINK = exp(0.75, 18);
+        let oldBorrowKink: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setBorrowKink(cometProxy.address, NEW_BORROW_KINK))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            await configuratorProxy.connect(governor).setBorrowKink(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).borrowKink).to.be.equal(0);
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new borrow kink are different', async () => {
+            oldBorrowKink = (await configuratorProxy.getConfiguration(cometProxy.address)).borrowKink;
+            expect(oldBorrowKink).to.not.equal(NEW_BORROW_KINK);
+          });
+
+          it('sets borrowKink successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setBorrowKink(cometProxy.address, NEW_BORROW_KINK);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetBorrowKink event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetBorrowKink')
+              .withArgs(cometProxy.address, oldBorrowKink, NEW_BORROW_KINK);
+          });
+
+          it('new borrowKink is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.borrowKink).to.be.equal(NEW_BORROW_KINK);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('borrowKink is updated in comet', async () => {
+            expect(await comet.borrowKink()).to.be.equal(NEW_BORROW_KINK);
+          });
+        });
+      });
+
+      describe('setBorrowPerYearInterestRateSlopeLow', function() {
+        const NEW_SLOPE_LOW = exp(0.12, 18);
+        let oldSlopeLow: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setBorrowPerYearInterestRateSlopeLow(cometProxy.address, NEW_SLOPE_LOW))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            await configuratorProxy.connect(governor).setBorrowPerYearInterestRateSlopeLow(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateSlopeLow).to.be.equal(0);
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new borrow slope low are different', async () => {
+            oldSlopeLow = (await configuratorProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateSlopeLow;
+            expect(oldSlopeLow).to.not.equal(NEW_SLOPE_LOW);
+          });
+
+          it('sets borrowPerYearInterestRateSlopeLow successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setBorrowPerYearInterestRateSlopeLow(cometProxy.address, NEW_SLOPE_LOW);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetBorrowPerYearInterestRateSlopeLow event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetBorrowPerYearInterestRateSlopeLow')
+              .withArgs(cometProxy.address, oldSlopeLow, NEW_SLOPE_LOW);
+          });
+
+          it('new borrowPerYearInterestRateSlopeLow is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.borrowPerYearInterestRateSlopeLow).to.be.equal(NEW_SLOPE_LOW);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('borrowPerSecondInterestRateSlopeLow is updated in comet', async () => {
+            const expectedPerSecond = NEW_SLOPE_LOW / SECONDS_PER_YEAR;
+            expect(await comet.borrowPerSecondInterestRateSlopeLow()).to.equal(expectedPerSecond);
+          });
+        });
+      });
+
+      describe('setBorrowPerYearInterestRateSlopeHigh', function() {
+        const NEW_SLOPE_HIGH = exp(3.5, 18);
+        let oldSlopeHigh: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setBorrowPerYearInterestRateSlopeHigh(cometProxy.address, NEW_SLOPE_HIGH))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            await configuratorProxy.connect(governor).setBorrowPerYearInterestRateSlopeHigh(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateSlopeHigh).to.be.equal(0);
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new borrow slope high are different', async () => {
+            oldSlopeHigh = (await configuratorProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateSlopeHigh;
+            expect(oldSlopeHigh).to.not.equal(NEW_SLOPE_HIGH);
+          });
+
+          it('sets borrowPerYearInterestRateSlopeHigh successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setBorrowPerYearInterestRateSlopeHigh(cometProxy.address, NEW_SLOPE_HIGH);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetBorrowPerYearInterestRateSlopeHigh event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetBorrowPerYearInterestRateSlopeHigh')
+              .withArgs(cometProxy.address, oldSlopeHigh, NEW_SLOPE_HIGH);
+          });
+
+          it('new borrowPerYearInterestRateSlopeHigh is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.borrowPerYearInterestRateSlopeHigh).to.be.equal(NEW_SLOPE_HIGH);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('borrowPerSecondInterestRateSlopeHigh is updated in comet', async () => {
+            const expectedPerSecond = NEW_SLOPE_HIGH / SECONDS_PER_YEAR;
+            expect(await comet.borrowPerSecondInterestRateSlopeHigh()).to.equal(expectedPerSecond);
+          });
+        });
+      });
+
+      describe('setBorrowPerYearInterestRateBase', function() {
+        const NEW_BASE = exp(0.006, 18);
+        let oldBase: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setBorrowPerYearInterestRateBase(cometProxy.address, NEW_BASE))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            await configuratorProxy.connect(governor).setBorrowPerYearInterestRateBase(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateBase).to.be.equal(0);
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new borrow base are different', async () => {
+            oldBase = (await configuratorProxy.getConfiguration(cometProxy.address)).borrowPerYearInterestRateBase;
+            expect(oldBase).to.not.equal(NEW_BASE);
+          });
+
+          it('sets borrowPerYearInterestRateBase successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setBorrowPerYearInterestRateBase(cometProxy.address, NEW_BASE);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetBorrowPerYearInterestRateBase event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetBorrowPerYearInterestRateBase')
+              .withArgs(cometProxy.address, oldBase, NEW_BASE);
+          });
+
+          it('new borrowPerYearInterestRateBase is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.borrowPerYearInterestRateBase).to.be.equal(NEW_BASE);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('borrowPerSecondInterestRateBase is updated in comet', async () => {
+            const expectedPerSecond = NEW_BASE / SECONDS_PER_YEAR;
+            expect(await comet.borrowPerSecondInterestRateBase()).to.equal(expectedPerSecond);
+          });
+        });
+      });
     });
 
-    it('adds asset and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy, unsupportedToken } = await makeConfigurator();
+    describe('other governor-only setters', function() {
+      describe('setStoreFrontPriceFactor', function() {
+        const NEW_STORE_FRONT_PRICE_FACTOR = exp(0.95, 18);
+        let oldStoreFrontPriceFactor: BigNumber;
+        let setTx: ContractTransaction;
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      const oldNumAssets = await comet.numAssets();
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs.length).to.be.equal(oldNumAssets);
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setStoreFrontPriceFactor(cometProxy.address, NEW_STORE_FRONT_PRICE_FACTOR))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
 
-      const newAssetConfig: ConfiguratorAssetConfig = {
-        asset: unsupportedToken.address,
-        priceFeed: await comet.baseTokenPriceFeed(),
-        decimals: await unsupportedToken.decimals(),
-        borrowCollateralFactor: exp(0.9, 18),
-        liquidateCollateralFactor: exp(1, 18),
-        liquidationFactor: exp(0.95, 18),
-        supplyCap: exp(1_000_000, 8),
-      };
-      const txn = await wait(configuratorAsProxy.addAsset(cometProxy.address, newAssetConfig));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            const snapshot: SnapshotRestorer = await takeSnapshot();
 
-      expect(event(txn, 0)).to.be.deep.equal({
-        AddAsset: {
-          cometProxy: cometProxy.address,
-          assetConfig: convertToEventAssetConfig(newAssetConfig),
-        }
+            await configuratorProxy.connect(governor).setStoreFrontPriceFactor(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).storeFrontPriceFactor).to.be.equal(0);
+
+            await snapshot.restore();
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new store front price factor are different', async () => {
+            oldStoreFrontPriceFactor = (await configuratorProxy.getConfiguration(cometProxy.address)).storeFrontPriceFactor;
+            expect(oldStoreFrontPriceFactor).to.not.equal(NEW_STORE_FRONT_PRICE_FACTOR);
+          });
+
+          it('sets storeFrontPriceFactor successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setStoreFrontPriceFactor(cometProxy.address, NEW_STORE_FRONT_PRICE_FACTOR);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetStoreFrontPriceFactor event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetStoreFrontPriceFactor')
+              .withArgs(cometProxy.address, oldStoreFrontPriceFactor, NEW_STORE_FRONT_PRICE_FACTOR);
+          });
+
+          it('new storeFrontPriceFactor is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.storeFrontPriceFactor).to.equal(NEW_STORE_FRONT_PRICE_FACTOR);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('storeFrontPriceFactor is updated in comet', async () => {
+            expect(await comet.storeFrontPriceFactor()).to.equal(NEW_STORE_FRONT_PRICE_FACTOR);
+          });
+        });
       });
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs.length).to.be.equal(oldNumAssets + 1);
-      expect(await cometAsProxy.numAssets()).to.be.equal(oldNumAssets + 1);
-      expectAssetConfigsToMatch(newAssetConfig, await cometAsProxy.getAssetInfo(oldNumAssets));
+
+      describe('setBaseTrackingSupplySpeed', function() {
+        const NEW_BASE_TRACKING_SUPPLY_SPEED = exp(2, 15);
+        let oldBaseTrackingSupplySpeed: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setBaseTrackingSupplySpeed(cometProxy.address, NEW_BASE_TRACKING_SUPPLY_SPEED))
+              .to.be.reverted;
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            const snapshot: SnapshotRestorer = await takeSnapshot();
+            await configuratorProxy.connect(governor).setBaseTrackingSupplySpeed(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).baseTrackingSupplySpeed).to.be.equal(0);
+            await snapshot.restore();
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new base tracking supply speed are different', async () => {
+            oldBaseTrackingSupplySpeed = (await configuratorProxy.getConfiguration(cometProxy.address)).baseTrackingSupplySpeed;
+            expect(oldBaseTrackingSupplySpeed).to.not.equal(NEW_BASE_TRACKING_SUPPLY_SPEED);
+          });
+
+          it('sets baseTrackingSupplySpeed successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setBaseTrackingSupplySpeed(cometProxy.address, NEW_BASE_TRACKING_SUPPLY_SPEED);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetBaseTrackingSupplySpeed event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetBaseTrackingSupplySpeed')
+              .withArgs(cometProxy.address, oldBaseTrackingSupplySpeed, NEW_BASE_TRACKING_SUPPLY_SPEED);
+          });
+
+          it('new baseTrackingSupplySpeed is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.baseTrackingSupplySpeed).to.equal(NEW_BASE_TRACKING_SUPPLY_SPEED);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('baseTrackingSupplySpeed is updated in comet', async () => {
+            expect(await comet.baseTrackingSupplySpeed()).to.equal(NEW_BASE_TRACKING_SUPPLY_SPEED);
+          });
+        });
+      });
+
+      describe('setBaseTrackingBorrowSpeed', function() {
+        const NEW_BASE_TRACKING_BORROW_SPEED = exp(2, 15);
+        let oldBaseTrackingBorrowSpeed: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setBaseTrackingBorrowSpeed(cometProxy.address, NEW_BASE_TRACKING_BORROW_SPEED))
+              .to.be.reverted;
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            const snapshot: SnapshotRestorer = await takeSnapshot();
+            await configuratorProxy.connect(governor).setBaseTrackingBorrowSpeed(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).baseTrackingBorrowSpeed).to.be.equal(0);
+            await snapshot.restore();
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new base tracking borrow speed are different', async () => {
+            oldBaseTrackingBorrowSpeed = (await configuratorProxy.getConfiguration(cometProxy.address)).baseTrackingBorrowSpeed;
+            expect(oldBaseTrackingBorrowSpeed).to.not.equal(NEW_BASE_TRACKING_BORROW_SPEED);
+          });
+
+          it('sets baseTrackingBorrowSpeed successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setBaseTrackingBorrowSpeed(cometProxy.address, NEW_BASE_TRACKING_BORROW_SPEED);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetBaseTrackingBorrowSpeed event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetBaseTrackingBorrowSpeed')
+              .withArgs(cometProxy.address, oldBaseTrackingBorrowSpeed, NEW_BASE_TRACKING_BORROW_SPEED);
+          });
+
+          it('new baseTrackingBorrowSpeed is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.baseTrackingBorrowSpeed).to.equal(NEW_BASE_TRACKING_BORROW_SPEED);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('baseTrackingBorrowSpeed is updated in comet', async () => {
+            expect(await comet.baseTrackingBorrowSpeed()).to.equal(NEW_BASE_TRACKING_BORROW_SPEED);
+          });
+        });
+      });
+
+      describe('setBaseMinForRewards', function() {
+        const NEW_BASE_MIN_FOR_REWARDS = exp(2, 6);
+        let oldBaseMinForRewards: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setBaseMinForRewards(cometProxy.address, NEW_BASE_MIN_FOR_REWARDS))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to same value', async () => {
+            const config = await configuratorProxy.getConfiguration(cometProxy.address);
+            await configuratorProxy.connect(governor).setBaseMinForRewards(cometProxy.address, config.baseMinForRewards);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).baseMinForRewards).to.equal(config.baseMinForRewards);
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new base min for rewards are different', async () => {
+            oldBaseMinForRewards = (await configuratorProxy.getConfiguration(cometProxy.address)).baseMinForRewards;
+            expect(oldBaseMinForRewards).to.not.equal(NEW_BASE_MIN_FOR_REWARDS);
+          });
+
+          it('sets baseMinForRewards successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setBaseMinForRewards(cometProxy.address, NEW_BASE_MIN_FOR_REWARDS);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetBaseMinForRewards event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetBaseMinForRewards')
+              .withArgs(cometProxy.address, oldBaseMinForRewards, NEW_BASE_MIN_FOR_REWARDS);
+          });
+
+          it('new baseMinForRewards is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.baseMinForRewards).to.equal(NEW_BASE_MIN_FOR_REWARDS);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('baseMinForRewards is updated in comet', async () => {
+            expect(await comet.baseMinForRewards()).to.equal(NEW_BASE_MIN_FOR_REWARDS);
+          });
+        });
+      });
+
+      describe('setBaseBorrowMin', function() {
+        const NEW_BASE_BORROW_MIN = exp(2, 6);
+        let oldBaseBorrowMin: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setBaseBorrowMin(cometProxy.address, NEW_BASE_BORROW_MIN))
+              .to.be.reverted;
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            const snapshot: SnapshotRestorer = await takeSnapshot();
+            await configuratorProxy.connect(governor).setBaseBorrowMin(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).baseBorrowMin).to.be.equal(0);
+            await snapshot.restore();
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new base borrow min are different', async () => {
+            oldBaseBorrowMin = (await configuratorProxy.getConfiguration(cometProxy.address)).baseBorrowMin;
+            expect(oldBaseBorrowMin).to.not.equal(NEW_BASE_BORROW_MIN);
+          });
+
+          it('sets baseBorrowMin successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setBaseBorrowMin(cometProxy.address, NEW_BASE_BORROW_MIN);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetBaseBorrowMin event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetBaseBorrowMin')
+              .withArgs(cometProxy.address, oldBaseBorrowMin, NEW_BASE_BORROW_MIN);
+          });
+
+          it('new baseBorrowMin is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.baseBorrowMin).to.equal(NEW_BASE_BORROW_MIN);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('baseBorrowMin is updated in comet', async () => {
+            expect(await comet.baseBorrowMin()).to.equal(NEW_BASE_BORROW_MIN);
+          });
+        });
+      });
+
+      describe('setTargetReserves', function() {
+        const NEW_TARGET_RESERVES = exp(1, 6);
+        let oldTargetReserves: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).setTargetReserves(cometProxy.address, NEW_TARGET_RESERVES))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            const snapshot: SnapshotRestorer = await takeSnapshot();
+            await configuratorProxy.connect(governor).setTargetReserves(cometProxy.address, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).targetReserves).to.be.equal(0);
+            await snapshot.restore();
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new target reserves are different', async () => {
+            oldTargetReserves = (await configuratorProxy.getConfiguration(cometProxy.address)).targetReserves;
+            expect(oldTargetReserves).to.not.equal(NEW_TARGET_RESERVES);
+          });
+
+          it('sets targetReserves successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).setTargetReserves(cometProxy.address, NEW_TARGET_RESERVES);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits SetTargetReserves event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'SetTargetReserves')
+              .withArgs(cometProxy.address, oldTargetReserves, NEW_TARGET_RESERVES);
+          });
+
+          it('new targetReserves is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.targetReserves).to.equal(NEW_TARGET_RESERVES);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('targetReserves is updated in comet', async () => {
+            expect(await comet.targetReserves()).to.equal(NEW_TARGET_RESERVES);
+          });
+        });
+      });
     });
 
-    it('updates asset and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy, tokens } = await makeConfigurator();
-      const { COMP } = tokens;
+    describe('asset update setters', function() {
+      let firstAsset: { asset: string, priceFeed: string };
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      const oldNumAssets = await comet.numAssets();
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs.length).to.be.equal(oldNumAssets);
-
-      const oldAssetConfig = (await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0];
-      const updatedAssetConfig: ConfiguratorAssetConfig = {
-        asset: COMP.address,
-        priceFeed: await comet.baseTokenPriceFeed(),
-        decimals: await COMP.decimals(),
-        borrowCollateralFactor: exp(0.5, 18),
-        liquidateCollateralFactor: exp(0.6, 18),
-        liquidationFactor: exp(0.8, 18),
-        supplyCap: exp(888, 18),
-      };
-      const txn = await wait(configuratorAsProxy.updateAsset(cometProxy.address, updatedAssetConfig));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        UpdateAsset: {
-          cometProxy: cometProxy.address,
-          oldAssetConfig: [
-            oldAssetConfig.asset,
-            oldAssetConfig.priceFeed,
-            oldAssetConfig.decimals,
-            oldAssetConfig.borrowCollateralFactor.toBigInt(),
-            oldAssetConfig.liquidateCollateralFactor.toBigInt(),
-            oldAssetConfig.liquidationFactor.toBigInt(),
-            oldAssetConfig.supplyCap.toBigInt(),
-          ],
-          newAssetConfig: convertToEventAssetConfig(updatedAssetConfig),
-        }
+      before(async () => {
+        const config = await configuratorProxy.getConfiguration(cometProxy.address);
+        firstAsset = {
+          asset: config.assetConfigs[0].asset,
+          priceFeed: config.assetConfigs[0].priceFeed,
+        };
       });
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs.length).to.be.equal(oldNumAssets);
-      expect(await cometAsProxy.numAssets()).to.be.equal(oldNumAssets);
-      expectAssetConfigsToMatch(updatedAssetConfig, await cometAsProxy.getAssetInfo(0));
+
+      describe('updateAssetPriceFeed', function() {
+        let newPriceFeed: SimplePriceFeed;
+        let oldPriceFeed: string;
+        let setTx: ContractTransaction;
+
+        before(async () => {
+          const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
+          newPriceFeed = await PriceFeedFactory.deploy(exp(500, 8), 8);
+          await newPriceFeed.deployed();
+        });
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).updateAssetPriceFeed(cometProxy.address, firstAsset.asset, newPriceFeed.address))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero address', async () => {
+            const snapshot = await takeSnapshot();
+
+            await configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, firstAsset.asset, ZERO_ADDRESS);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].priceFeed).to.be.equal(ZERO_ADDRESS);
+            
+            await snapshot.restore();
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new price feed are different', async () => {
+            oldPriceFeed = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].priceFeed;
+            expect(oldPriceFeed).to.not.equal(newPriceFeed.address);
+          });
+
+          it('updates asset price feed successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, firstAsset.asset, newPriceFeed.address);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits UpdateAssetPriceFeed event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'UpdateAssetPriceFeed')
+              .withArgs(cometProxy.address, firstAsset.asset, oldPriceFeed, newPriceFeed.address);
+          });
+
+          it('new priceFeed is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.assetConfigs[0].priceFeed).to.be.equal(newPriceFeed.address);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('priceFeed is updated in comet', async () => {
+            const assetInfo = await comet.getAssetInfoByAddress(firstAsset.asset);
+            expect(assetInfo.priceFeed).to.be.equal(newPriceFeed.address);
+          });
+        });
+      });
+
+      describe('updateAssetBorrowCollateralFactor', function() {
+        const NEW_BORROW_CF = exp(0.9, 18);
+        let oldBorrowCF: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).updateAssetBorrowCollateralFactor(cometProxy.address, firstAsset.asset, NEW_BORROW_CF))
+              .to.be.reverted;
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            const snapshot = await takeSnapshot();
+
+            await configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor(cometProxy.address, firstAsset.asset, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].borrowCollateralFactor).to.be.equal(0);
+
+            await snapshot.restore();
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new borrow collateral factor are different', async () => {
+            oldBorrowCF = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].borrowCollateralFactor;
+            expect(oldBorrowCF).to.not.equal(NEW_BORROW_CF);
+          });
+
+          it('updates asset borrow collateral factor successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor(cometProxy.address, firstAsset.asset, NEW_BORROW_CF);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits UpdateAssetBorrowCollateralFactor event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'UpdateAssetBorrowCollateralFactor')
+              .withArgs(cometProxy.address, firstAsset.asset, oldBorrowCF, NEW_BORROW_CF);
+          });
+
+          it('new borrowCollateralFactor is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.assetConfigs[0].borrowCollateralFactor).to.be.equal(NEW_BORROW_CF);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('borrowCollateralFactor is updated in comet', async () => {
+            const assetInfo = await comet.getAssetInfoByAddress(firstAsset.asset);
+            expect(assetInfo.borrowCollateralFactor).to.be.equal(NEW_BORROW_CF);
+          });
+        });
+      });
+
+      describe('updateAssetLiquidateCollateralFactor', function() {
+        const NEW_LIQUIDATE_CF = exp(0.95, 18);
+        let oldLiquidateCF: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).updateAssetLiquidateCollateralFactor(cometProxy.address, firstAsset.asset, NEW_LIQUIDATE_CF))
+              .to.be.reverted;
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            const snapshot = await takeSnapshot();
+
+            await configuratorProxy.connect(governor).updateAssetLiquidateCollateralFactor(cometProxy.address, firstAsset.asset, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidateCollateralFactor).to.be.equal(0);
+
+            await snapshot.restore();
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new liquidate collateral factor are different', async () => {
+            oldLiquidateCF = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidateCollateralFactor;
+            expect(oldLiquidateCF).to.not.equal(NEW_LIQUIDATE_CF);
+          });
+
+          it('updates asset liquidate collateral factor successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).updateAssetLiquidateCollateralFactor(cometProxy.address, firstAsset.asset, NEW_LIQUIDATE_CF);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits UpdateAssetLiquidateCollateralFactor event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'UpdateAssetLiquidateCollateralFactor')
+              .withArgs(cometProxy.address, firstAsset.asset, oldLiquidateCF, NEW_LIQUIDATE_CF);
+          });
+
+          it('new liquidateCollateralFactor is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.assetConfigs[0].liquidateCollateralFactor).to.be.equal(NEW_LIQUIDATE_CF);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('liquidateCollateralFactor is updated in comet', async () => {
+            const assetInfo = await comet.getAssetInfoByAddress(firstAsset.asset);
+            expect(assetInfo.liquidateCollateralFactor).to.be.equal(NEW_LIQUIDATE_CF);
+          });
+        });
+      });
+
+      describe('updateAssetLiquidationFactor', function() {
+        const NEW_LIQUIDATION_FACTOR = exp(0.95, 18);
+        let oldLiquidationFactor: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).updateAssetLiquidationFactor(cometProxy.address, firstAsset.asset, NEW_LIQUIDATION_FACTOR))
+              .to.be.reverted;
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            const snapshot = await takeSnapshot();
+            await configuratorProxy.connect(governor).updateAssetLiquidationFactor(cometProxy.address, firstAsset.asset, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidationFactor).to.be.equal(0);
+            await snapshot.restore();
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new liquidation factor are different', async () => {
+            oldLiquidationFactor = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidationFactor;
+            expect(oldLiquidationFactor).to.not.equal(NEW_LIQUIDATION_FACTOR);
+          });
+
+          it('updates asset liquidation factor successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).updateAssetLiquidationFactor(cometProxy.address, firstAsset.asset, NEW_LIQUIDATION_FACTOR);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits UpdateAssetLiquidationFactor event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'UpdateAssetLiquidationFactor')
+              .withArgs(cometProxy.address, firstAsset.asset, oldLiquidationFactor, NEW_LIQUIDATION_FACTOR);
+          });
+
+          it('new liquidationFactor is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.assetConfigs[0].liquidationFactor).to.be.equal(NEW_LIQUIDATION_FACTOR);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('liquidationFactor is updated in comet', async () => {
+            const assetInfo = await comet.getAssetInfoByAddress(firstAsset.asset);
+            expect(assetInfo.liquidationFactor).to.be.equal(NEW_LIQUIDATION_FACTOR);
+          });
+        });
+      });
+
+      describe('updateAssetSupplyCap', function() {
+        const NEW_SUPPLY_CAP = exp(200, 18);
+        let oldSupplyCap: BigNumber;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).updateAssetSupplyCap(cometProxy.address, firstAsset.asset, NEW_SUPPLY_CAP))
+              .to.be.reverted;
+          });
+        });
+
+        describe('edge cases', function() {
+          it('can be set to zero', async () => {
+            await configuratorProxy.connect(governor).updateAssetSupplyCap(cometProxy.address, firstAsset.asset, 0);
+            expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].supplyCap).to.be.equal(0);
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new supply cap are different', async () => {
+            oldSupplyCap = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].supplyCap;
+            expect(oldSupplyCap).to.not.equal(NEW_SUPPLY_CAP);
+          });
+
+          it('updates asset supply cap successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).updateAssetSupplyCap(cometProxy.address, firstAsset.asset, NEW_SUPPLY_CAP);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits UpdateAssetSupplyCap event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'UpdateAssetSupplyCap')
+              .withArgs(cometProxy.address, firstAsset.asset, oldSupplyCap, NEW_SUPPLY_CAP);
+          });
+
+          it('new supplyCap is stored in configuration', async () => {
+            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(configuration.assetConfigs[0].supplyCap).to.be.equal(NEW_SUPPLY_CAP);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('supplyCap is updated in comet', async () => {
+            const assetInfo = await comet.getAssetInfoByAddress(firstAsset.asset);
+            expect(assetInfo.supplyCap).to.be.equal(NEW_SUPPLY_CAP);
+          });
+        });
+      });
+
+      describe('addAsset', function() {
+        let newPriceFeedAddr: string;
+        let newAssetConfig: { asset: string, priceFeed: string, decimals: number, borrowCollateralFactor: bigint, liquidateCollateralFactor: bigint, liquidationFactor: bigint, supplyCap: bigint };
+        let setTx: ContractTransaction;
+
+        before(async () => {
+          const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
+          const feed = await PriceFeedFactory.deploy(exp(100, 8), 8);
+          await feed.deployed();
+          newPriceFeedAddr = feed.address;
+          newAssetConfig = {
+            asset: unsupportedTokenAddr,
+            priceFeed: newPriceFeedAddr,
+            decimals: 6,
+            borrowCollateralFactor: exp(0.8, 18),
+            liquidateCollateralFactor: exp(0.9, 18),
+            liquidationFactor: exp(0.95, 18),
+            supplyCap: exp(100, 6),
+          };
+        });
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            await expect(configuratorProxy.connect(alice).addAsset(cometProxy.address, newAssetConfig))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: asset does not exist in comet yet', async () => {
+            await expect(comet.getAssetInfoByAddress(unsupportedTokenAddr)).to.be.reverted;
+          });
+
+          it('adds asset successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).addAsset(cometProxy.address, newAssetConfig);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits AddAsset event', async () => {
+            await expect(setTx).to.emit(configuratorProxy, 'AddAsset');
+          });
+
+          it('new asset is stored in configuration', async () => {
+            const updated = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(updated.assetConfigs[updated.assetConfigs.length - 1].asset).to.equal(unsupportedTokenAddr);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('new asset is available in comet', async () => {
+            const assetInfo = await comet.getAssetInfoByAddress(unsupportedTokenAddr);
+            expect(assetInfo.asset).to.equal(unsupportedTokenAddr);
+          });
+        });
+      });
+
+      describe('updateAsset', function() {
+        const NEW_BORROW_CF = exp(0.85, 18);
+        let oldAssetConfig: any;
+        let setTx: ContractTransaction;
+
+        describe('revert cases', function() {
+          it('reverts by non-governor', async () => {
+            const config = await configuratorProxy.getConfiguration(cometProxy.address);
+            const assetConfig0 = config.assetConfigs[0];
+            const newAssetConfig = {
+              ...assetConfig0,
+              borrowCollateralFactor: NEW_BORROW_CF,
+            };
+            await expect(configuratorProxy.connect(alice).updateAsset(cometProxy.address, newAssetConfig))
+              .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+        });
+
+        describe('happy path', function() {
+          it('sanity check: current and new borrow collateral factor are different', async () => {
+            oldAssetConfig = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0];
+            expect(oldAssetConfig.borrowCollateralFactor).to.not.equal(NEW_BORROW_CF);
+          });
+
+          it('updates asset successfully', async () => {
+            const config = await configuratorProxy.getConfiguration(cometProxy.address);
+            const assetConfig0 = config.assetConfigs[0];
+            const newAssetConfig = {
+              ...assetConfig0,
+              borrowCollateralFactor: NEW_BORROW_CF,
+            };
+            setTx = await configuratorProxy.connect(governor).updateAsset(cometProxy.address, newAssetConfig);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits UpdateAsset event', async () => {
+            await expect(setTx).to.emit(configuratorProxy, 'UpdateAsset');
+          });
+
+          it('new borrowCollateralFactor is stored in configuration', async () => {
+            const updated = await configuratorProxy.getConfiguration(cometProxy.address);
+            expect(updated.assetConfigs[0].borrowCollateralFactor).to.equal(NEW_BORROW_CF);
+          });
+
+          it('deploy and upgrade comet with new configuration', async () => {
+            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('borrowCollateralFactor is updated in comet', async () => {
+            const assetInfo = await comet.getAssetInfoByAddress(firstAsset.asset);
+            expect(assetInfo.borrowCollateralFactor).to.equal(NEW_BORROW_CF);
+          });
+        });
+      });
+
+      describe('getAssetIndex', function() {
+        it('returns correct index for existing asset', async () => {
+          const config = await configuratorProxy.getConfiguration(cometProxy.address);
+          const firstAssetAddr = config.assetConfigs[0].asset;
+          const index = await configuratorProxy.getAssetIndex(cometProxy.address, firstAssetAddr);
+          expect(index).to.equal(0);
+        });
+
+        it('reverts with AssetDoesNotExist for non-existent asset', async () => {
+          await expect(configuratorProxy.getAssetIndex(cometProxy.address, ZERO_ADDRESS))
+            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+        });
+
+        it('reverts with AssetDoesNotExist for random address', async () => {
+          await expect(configuratorProxy.getAssetIndex(cometProxy.address, alice.address))
+            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+        });
+      });
+
+      describe('asset setter reverts on non-existent asset', function() {
+        const NON_EXISTENT_ASSET = '0x0000000000000000000000000000000000000001';
+
+        it('updateAssetPriceFeed reverts with AssetDoesNotExist', async () => {
+          await expect(configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, NON_EXISTENT_ASSET, ZERO_ADDRESS))
+            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+        });
+
+        it('updateAssetBorrowCollateralFactor reverts with AssetDoesNotExist', async () => {
+          await expect(configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor(cometProxy.address, NON_EXISTENT_ASSET, exp(0.5, 18)))
+            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+        });
+
+        it('updateAssetLiquidateCollateralFactor reverts with AssetDoesNotExist', async () => {
+          await expect(configuratorProxy.connect(governor).updateAssetLiquidateCollateralFactor(cometProxy.address, NON_EXISTENT_ASSET, exp(0.5, 18)))
+            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+        });
+
+        it('updateAssetLiquidationFactor reverts with AssetDoesNotExist', async () => {
+          await expect(configuratorProxy.connect(governor).updateAssetLiquidationFactor(cometProxy.address, NON_EXISTENT_ASSET, exp(0.5, 18)))
+            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+        });
+
+        it('updateAssetSupplyCap reverts with AssetDoesNotExist', async () => {
+          await expect(configuratorProxy.connect(governor).updateAssetSupplyCap(cometProxy.address, NON_EXISTENT_ASSET, exp(100, 18)))
+            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+        });
+
+        it('updateAsset reverts with AssetDoesNotExist', async () => {
+          const config = {
+            asset: NON_EXISTENT_ASSET,
+            priceFeed: ZERO_ADDRESS,
+            decimals: 6,
+            borrowCollateralFactor: exp(0.8, 18),
+            liquidateCollateralFactor: exp(0.9, 18),
+            liquidationFactor: exp(0.95, 18),
+            supplyCap: exp(100, 6),
+          };
+          await expect(configuratorProxy.connect(governor).updateAsset(cometProxy.address, config))
+            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+        });
+      });
+
+      describe('addAsset edge cases', function() {
+        it('can add duplicate asset (no on-chain guard)', async () => {
+          const snapshot = await takeSnapshot();
+
+          const config = await configuratorProxy.getConfiguration(cometProxy.address);
+          const existingAsset = config.assetConfigs[0];
+          const numAssetsBefore = config.assetConfigs.length;
+
+          await configuratorProxy.connect(governor).addAsset(cometProxy.address, existingAsset);
+
+          const updated = await configuratorProxy.getConfiguration(cometProxy.address);
+          expect(updated.assetConfigs.length).to.equal(numAssetsBefore + 1);
+          expect(updated.assetConfigs[updated.assetConfigs.length - 1].asset).to.equal(existingAsset.asset);
+
+          await snapshot.restore();
+        });
+      });
     });
 
-    it('updates asset priceFeed and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy, tokens, priceFeeds } = await makeConfigurator();
-      const { COMP } = tokens;
+    describe('transferGovernor', function() {
+      let transferTx: ContractTransaction;
+      let newGovernor: SignerWithAddress;
+      let oldGovernor: string;
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].priceFeed)
-        .to.be.equal((await comet.getAssetInfo(0)).priceFeed);
-
-      const oldPriceFeed = (await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].priceFeed;
-      const newPriceFeed = priceFeeds['WETH'].address;
-      const txn = await wait(configuratorAsProxy.updateAssetPriceFeed(cometProxy.address, COMP.address, newPriceFeed));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        UpdateAssetPriceFeed: {
-          cometProxy: cometProxy.address,
-          asset: COMP.address,
-          oldPriceFeed,
-          newPriceFeed,
-        }
+      describe('revert cases', function() {
+        it('reverts by non-governor', async () => {
+          await expect(configuratorProxy.connect(alice).transferGovernor(alice.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
       });
-      expect(oldPriceFeed).to.be.not.equal(newPriceFeed);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].priceFeed).to.be.equal(newPriceFeed);
-      expect((await cometAsProxy.getAssetInfo(0)).priceFeed).to.be.equal(newPriceFeed);
+
+      describe('edge cases', function() {
+        it('can transfer to zero address (bricks the configurator)', async () => {
+          const snapshot = await takeSnapshot();
+
+          await configuratorProxy.connect(governor).transferGovernor(ZERO_ADDRESS);
+          expect(await configuratorProxy.governor()).to.equal(ZERO_ADDRESS);
+
+          await expect(configuratorProxy.connect(governor).transferGovernor(governor.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+
+          await snapshot.restore();
+        });
+
+        it('can transfer to the same governor', async () => {
+          await configuratorProxy.connect(governor).transferGovernor(governor.address);
+          expect(await configuratorProxy.governor()).to.equal(governor.address);
+        });
+      });
+
+      describe('happy path', function() {
+        let snapshot: SnapshotRestorer;
+        before(async () => {
+          snapshot = await takeSnapshot();
+          newGovernor = alice;
+        });
+        after(async () => await snapshot.restore());
+
+        it('sanity check: current and new governor are different', async () => {
+          oldGovernor = await configuratorProxy.governor();
+          expect(oldGovernor).to.not.equal(newGovernor.address);
+        });
+
+        it('transfers governor successfully', async () => {
+          transferTx = await configuratorProxy.connect(governor).transferGovernor(newGovernor.address);
+          await expect(transferTx).to.not.be.reverted;
+        });
+
+        it('emits GovernorTransferred event', async () => {
+          await expect(transferTx)
+            .to.emit(configuratorProxy, 'GovernorTransferred')
+            .withArgs(oldGovernor, newGovernor.address);
+        });
+
+        it('new governor is stored in configurator', async () => {
+          expect(await configuratorProxy.governor()).to.equal(newGovernor.address);
+        });
+
+        it('new governor can call governor-only functions', async () => {
+          await expect(configuratorProxy.connect(newGovernor).setGovernor(cometProxy.address, newGovernor.address))
+            .to.not.be.reverted;
+        });
+
+        it('old governor can no longer call governor-only functions', async () => {
+          await expect(configuratorProxy.connect(governor).setGovernor(cometProxy.address, governor.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+      });
     });
 
-    it('updates asset borrowCollateralFactor and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy, tokens } = await makeConfigurator();
-      const { COMP } = tokens;
+    describe('governorOrMarketAdmin modifier', function() {
+      let marketAdmin: SignerWithAddress;
+      let permissionChecker: MarketAdminPermissionChecker;
+      let snapshot: SnapshotRestorer;
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect(truncateDecimals((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].borrowCollateralFactor))
-        .to.be.equal((await comet.getAssetInfo(0)).borrowCollateralFactor);
+      before(async () => {
+        snapshot = await takeSnapshot();
 
-      const oldBorrowCF = (await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].borrowCollateralFactor.toBigInt();
-      const newBorrowCF = exp(0.5, 18);
-      const txn = await wait(configuratorAsProxy.updateAssetBorrowCollateralFactor(cometProxy.address, COMP.address, newBorrowCF));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
+        marketAdmin = (await ethers.getSigners())[7];
 
-      expect(event(txn, 0)).to.be.deep.equal({
-        UpdateAssetBorrowCollateralFactor: {
-          cometProxy: cometProxy.address,
-          asset: COMP.address,
-          oldBorrowCF,
-          newBorrowCF,
-        }
+        const Factory = (await ethers.getContractFactory('MarketAdminPermissionChecker')) as MarketAdminPermissionChecker__factory;
+        permissionChecker = await Factory.deploy(governor.address, marketAdmin.address, ZERO_ADDRESS);
+        await permissionChecker.deployed();
+
+        await configuratorProxy.connect(governor).setMarketAdminPermissionChecker(permissionChecker.address);
       });
-      expect(oldBorrowCF).to.be.not.equal(newBorrowCF);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].borrowCollateralFactor).to.be.equal(newBorrowCF);
-      expect((await cometAsProxy.getAssetInfo(0)).borrowCollateralFactor).to.be.equal(newBorrowCF);
+
+      after(async () => await snapshot.restore());
+
+      describe('market admin can call governorOrMarketAdmin functions', function() {
+        it('market admin can call setSupplyKink', async () => {
+          const innerSnapshot = await takeSnapshot();
+          const newKink = exp(0.85, 18);
+          await expect(configuratorProxy.connect(marketAdmin).setSupplyKink(cometProxy.address, newKink))
+            .to.not.be.reverted;
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).supplyKink).to.equal(newKink);
+          await innerSnapshot.restore();
+        });
+
+        it('market admin can call setBorrowKink', async () => {
+          const innerSnapshot = await takeSnapshot();
+          const newKink = exp(0.65, 18);
+          await expect(configuratorProxy.connect(marketAdmin).setBorrowKink(cometProxy.address, newKink))
+            .to.not.be.reverted;
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).borrowKink).to.equal(newKink);
+          await innerSnapshot.restore();
+        });
+
+        it('market admin can call setSupplyPerYearInterestRateSlopeLow', async () => {
+          const innerSnapshot = await takeSnapshot();
+          const newVal = exp(0.05, 18);
+          await expect(configuratorProxy.connect(marketAdmin).setSupplyPerYearInterestRateSlopeLow(cometProxy.address, newVal))
+            .to.not.be.reverted;
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).supplyPerYearInterestRateSlopeLow).to.equal(newVal);
+          await innerSnapshot.restore();
+        });
+
+        it('market admin can call updateAssetBorrowCollateralFactor', async () => {
+          const innerSnapshot = await takeSnapshot();
+          const config = await configuratorProxy.getConfiguration(cometProxy.address);
+          const assetAddr = config.assetConfigs[0].asset;
+          const newVal = exp(0.8, 18);
+          await expect(configuratorProxy.connect(marketAdmin).updateAssetBorrowCollateralFactor(cometProxy.address, assetAddr, newVal))
+            .to.not.be.reverted;
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].borrowCollateralFactor).to.equal(newVal);
+          await innerSnapshot.restore();
+        });
+
+        it('market admin can call updateAssetLiquidateCollateralFactor', async () => {
+          const innerSnapshot = await takeSnapshot();
+          const config = await configuratorProxy.getConfiguration(cometProxy.address);
+          const assetAddr = config.assetConfigs[0].asset;
+          const newVal = exp(0.92, 18);
+          await expect(configuratorProxy.connect(marketAdmin).updateAssetLiquidateCollateralFactor(cometProxy.address, assetAddr, newVal))
+            .to.not.be.reverted;
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidateCollateralFactor).to.equal(newVal);
+          await innerSnapshot.restore();
+        });
+
+        it('market admin can call updateAssetLiquidationFactor', async () => {
+          const innerSnapshot = await takeSnapshot();
+          const config = await configuratorProxy.getConfiguration(cometProxy.address);
+          const assetAddr = config.assetConfigs[0].asset;
+          const newVal = exp(0.93, 18);
+          await expect(configuratorProxy.connect(marketAdmin).updateAssetLiquidationFactor(cometProxy.address, assetAddr, newVal))
+            .to.not.be.reverted;
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidationFactor).to.equal(newVal);
+          await innerSnapshot.restore();
+        });
+
+        it('market admin can call updateAssetSupplyCap', async () => {
+          const innerSnapshot = await takeSnapshot();
+          const config = await configuratorProxy.getConfiguration(cometProxy.address);
+          const assetAddr = config.assetConfigs[0].asset;
+          const newVal = exp(500, 18);
+          await expect(configuratorProxy.connect(marketAdmin).updateAssetSupplyCap(cometProxy.address, assetAddr, newVal))
+            .to.not.be.reverted;
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].supplyCap).to.equal(newVal);
+          await innerSnapshot.restore();
+        });
+
+        it('market admin can call setBaseBorrowMin', async () => {
+          const innerSnapshot = await takeSnapshot();
+          const newVal = exp(5, 6);
+          await expect(configuratorProxy.connect(marketAdmin).setBaseBorrowMin(cometProxy.address, newVal))
+            .to.not.be.reverted;
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).baseBorrowMin).to.equal(newVal);
+          await innerSnapshot.restore();
+        });
+      });
+
+      describe('market admin cannot call governor-only functions', function() {
+        it('market admin cannot call setFactory', async () => {
+          await expect(configuratorProxy.connect(marketAdmin).setFactory(cometProxy.address, ZERO_ADDRESS))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+
+        it('market admin cannot call setGovernor', async () => {
+          await expect(configuratorProxy.connect(marketAdmin).setGovernor(cometProxy.address, marketAdmin.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+
+        it('market admin cannot call setPauseGuardian', async () => {
+          await expect(configuratorProxy.connect(marketAdmin).setPauseGuardian(cometProxy.address, marketAdmin.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+
+        it('market admin cannot call setConfiguration', async () => {
+          const config = await configuratorProxy.getConfiguration(cometProxy.address);
+          await expect(configuratorProxy.connect(marketAdmin).setConfiguration(cometProxy.address, config))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+
+        it('market admin cannot call addAsset', async () => {
+          const assetConfig = {
+            asset: unsupportedTokenAddr,
+            priceFeed: ZERO_ADDRESS,
+            decimals: 6,
+            borrowCollateralFactor: exp(0.8, 18),
+            liquidateCollateralFactor: exp(0.9, 18),
+            liquidationFactor: exp(0.95, 18),
+            supplyCap: exp(100, 6),
+          };
+          await expect(configuratorProxy.connect(marketAdmin).addAsset(cometProxy.address, assetConfig))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+
+        it('market admin cannot call transferGovernor', async () => {
+          await expect(configuratorProxy.connect(marketAdmin).transferGovernor(marketAdmin.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+      });
+
+      describe('paused market admin cannot call governorOrMarketAdmin functions', function() {
+        let innerSnapshot: SnapshotRestorer;
+        before(async () => {
+          innerSnapshot = await takeSnapshot();
+          await permissionChecker.connect(governor).pauseMarketAdmin();
+        });
+        after(async () => await innerSnapshot.restore());
+
+        it('paused market admin cannot call setSupplyKink', async () => {
+          await expect(configuratorProxy.connect(marketAdmin).setSupplyKink(cometProxy.address, exp(0.5, 18)))
+            .to.be.reverted;
+        });
+      });
     });
 
-    it('updates asset liquidateCollateralFactor and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy, tokens } = await makeConfigurator({
-        assets: defaultAssets({}, {
-          COMP: { borrowCF: exp(0.5, 18) }
-        })
+    describe('idempotency (setting same value)', function() {
+      it('setSupplyKink emits event with old == new when setting same value', async () => {
+        const config = await configuratorProxy.getConfiguration(cometProxy.address);
+        const currentKink = config.supplyKink;
+
+        const tx = await configuratorProxy.connect(governor).setSupplyKink(cometProxy.address, currentKink);
+        await expect(tx)
+          .to.emit(configuratorProxy, 'SetSupplyKink')
+          .withArgs(cometProxy.address, currentKink, currentKink);
       });
-      const { COMP } = tokens;
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidateCollateralFactor)
-        .to.be.equal((await comet.getAssetInfo(0)).liquidateCollateralFactor);
+      it('setBorrowKink emits event with old == new when setting same value', async () => {
+        const config = await configuratorProxy.getConfiguration(cometProxy.address);
+        const currentKink = config.borrowKink;
 
-      const oldLiquidateCF = (await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidateCollateralFactor.toBigInt();
-      const newLiquidateCF = exp(0.6, 18); // must be higher than borrowCF
-      const txn = await wait(configuratorAsProxy.updateAssetLiquidateCollateralFactor(cometProxy.address, COMP.address, newLiquidateCF));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        UpdateAssetLiquidateCollateralFactor: {
-          cometProxy: cometProxy.address,
-          asset: COMP.address,
-          oldLiquidateCF,
-          newLiquidateCF,
-        }
+        const tx = await configuratorProxy.connect(governor).setBorrowKink(cometProxy.address, currentKink);
+        await expect(tx)
+          .to.emit(configuratorProxy, 'SetBorrowKink')
+          .withArgs(cometProxy.address, currentKink, currentKink);
       });
-      expect(oldLiquidateCF).to.be.not.equal(newLiquidateCF);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidateCollateralFactor).to.be.equal(newLiquidateCF);
-      expect((await cometAsProxy.getAssetInfo(0)).liquidateCollateralFactor).to.be.equal(newLiquidateCF);
-    });
 
-    it('updates asset liquidationFactor and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy, tokens } = await makeConfigurator();
-      const { COMP } = tokens;
+      it('setPauseGuardian emits event with old == new when setting same value', async () => {
+        const config = await configuratorProxy.getConfiguration(cometProxy.address);
+        const currentGuardian = config.pauseGuardian;
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidationFactor)
-        .to.be.equal((await comet.getAssetInfo(0)).liquidationFactor);
-
-      const oldLiquidationFactor = (await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidationFactor.toBigInt();
-      const newLiquidationFactor = exp(0.5, 18);
-      const txn = await wait(configuratorAsProxy.updateAssetLiquidationFactor(cometProxy.address, COMP.address, newLiquidationFactor));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        UpdateAssetLiquidationFactor: {
-          cometProxy: cometProxy.address,
-          asset: COMP.address,
-          oldLiquidationFactor,
-          newLiquidationFactor,
-        }
+        const tx = await configuratorProxy.connect(governor).setPauseGuardian(cometProxy.address, currentGuardian);
+        await expect(tx)
+          .to.emit(configuratorProxy, 'SetPauseGuardian')
+          .withArgs(cometProxy.address, currentGuardian, currentGuardian);
       });
-      expect(oldLiquidationFactor).to.be.not.equal(newLiquidationFactor);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidationFactor).to.be.equal(newLiquidationFactor);
-      expect((await cometAsProxy.getAssetInfo(0)).liquidationFactor).to.be.equal(newLiquidationFactor);
-    });
 
-    it('updates asset supplyCap and deploys Comet with new configuration', async () => {
-      const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy, tokens } = await makeConfigurator();
-      const { COMP } = tokens;
+      it('setBaseTokenPriceFeed emits event with old == new when setting same value', async () => {
+        const config = await configuratorProxy.getConfiguration(cometProxy.address);
+        const currentFeed = config.baseTokenPriceFeed;
 
-      const cometAsProxy = comet.attach(cometProxy.address);
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].supplyCap)
-        .to.be.equal((await comet.getAssetInfo(0)).supplyCap);
-
-      const oldSupplyCap = (await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].supplyCap.toBigInt();
-      const newSupplyCap = exp(555, 18);
-      const txn = await wait(configuratorAsProxy.updateAssetSupplyCap(cometProxy.address, COMP.address, newSupplyCap));
-      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
-
-      expect(event(txn, 0)).to.be.deep.equal({
-        UpdateAssetSupplyCap: {
-          cometProxy: cometProxy.address,
-          asset: COMP.address,
-          oldSupplyCap,
-          newSupplyCap,
-        }
+        const tx = await configuratorProxy.connect(governor).setBaseTokenPriceFeed(cometProxy.address, currentFeed);
+        await expect(tx)
+          .to.emit(configuratorProxy, 'SetBaseTokenPriceFeed')
+          .withArgs(cometProxy.address, currentFeed, currentFeed);
       });
-      expect(oldSupplyCap).to.be.not.equal(newSupplyCap);
-      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).assetConfigs[0].supplyCap).to.be.equal(newSupplyCap);
-      expect((await cometAsProxy.getAssetInfo(0)).supplyCap).to.be.equal(newSupplyCap);
-    });
 
-    it('reverts if updating a non-existent asset', async () => {
-      const { configurator, configuratorProxy, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+      it('setTargetReserves emits event with old == new when setting same value', async () => {
+        const config = await configuratorProxy.getConfiguration(cometProxy.address);
+        const currentReserves = config.targetReserves;
 
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+        const tx = await configuratorProxy.connect(governor).setTargetReserves(cometProxy.address, currentReserves);
+        await expect(tx)
+          .to.emit(configuratorProxy, 'SetTargetReserves')
+          .withArgs(cometProxy.address, currentReserves, currentReserves);
+      });
 
-      await expect(
-        configuratorAsProxy.updateAssetSupplyCap(cometProxy.address, ethers.constants.AddressZero, exp(555, 18))
-      ).to.be.revertedWith("custom error 'AssetDoesNotExist()'");
-    });
+      it('updateAssetSupplyCap emits event with old == new when setting same value', async () => {
+        const config = await configuratorProxy.getConfiguration(cometProxy.address);
+        const assetAddr = config.assetConfigs[0].asset;
+        const currentCap = config.assetConfigs[0].supplyCap;
 
-    it('reverts if setter is called from non-governor', async () => {
-      const { configuratorProxy, configurator, cometProxyWithExtendedAssetList: cometProxy, users: [alice] } = await makeConfigurator();
-
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-      await expect(
-        configuratorAsProxy.connect(alice).setGovernor(cometProxy.address, alice.address)
-      ).to.be.revertedWith("custom error 'Unauthorized()'");
+        const tx = await configuratorProxy.connect(governor).updateAssetSupplyCap(cometProxy.address, assetAddr, currentCap);
+        await expect(tx)
+          .to.emit(configuratorProxy, 'UpdateAssetSupplyCap')
+          .withArgs(cometProxy.address, assetAddr, currentCap, currentCap);
+      });
     });
   });
 });

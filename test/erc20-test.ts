@@ -20,11 +20,14 @@ describe('erc20', function () {
   });
 
   it('has correct totalSupply', async () => {
-    const { cometWithExtendedAssetList: comet } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet } = await makeProtocol({
+      baseTokenBalance: 100e6,
+    });
 
     await setTotalsBasic(comet, {
       baseSupplyIndex: 2e15,
       totalSupplyBase: 50e6,
+      totalBorrowBase: 1n,
     });
 
     const totalSupply = await comet.totalSupply();

@@ -17,7 +17,7 @@ if (!match) {
 
 let configs;
 try {
-  // Replace any variable references (e.g., ANKR_KEY) with their values from process.env
+  // Replace any variable references with their values from process.env
   const replaced = match[1].replace(/\b([A-Z0-9_]+)\b/g, (m) => {
     if (process.env[m] !== undefined) return JSON.stringify(process.env[m]);
     return m;
@@ -29,9 +29,7 @@ try {
 }
 
 function getUrl(network) {
-  if(network === 'scroll') {
-    return 'https://rpc.scroll.io';
-  }
+
   const config = configs.find(cfg => cfg.network === network);
   return config ? config.url : '';
 }
@@ -42,7 +40,7 @@ const envVar = {
   POLYGON_QUICKNODE_LINK: getUrl('polygon'),
   ARBITRUM_QUICKNODE_LINK: getUrl('arbitrum'),
   OPTIMISM_QUICKNODE_LINK: getUrl('optimism'),
-  SCROLL_RPC_URL: getUrl('scroll'),
+  SCROLL_QUICKNODE_LINK: getUrl('scroll'),
   BASE_QUICKNODE_LINK: getUrl('base'),
   MANTLE_QUICKNODE_LINK: getUrl('mantle'),
 };
