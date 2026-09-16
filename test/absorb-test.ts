@@ -520,15 +520,9 @@ describe('absorb', function () {
     let totalSupplyBaseBefore: BigNumber;
     let totalBorrowBaseBefore: BigNumber;
     let absorbTxMultiple: ContractTransaction;
-    let oldBalanceUser1: bigint;
-    let oldBalanceUser2: bigint;
-    let oldBalanceUser3: bigint;
+    let principalsBefore: BigNumber[];
 
     let users: SignerWithAddress[] = [];
-
-    let newBalanceUser1: bigint;
-    let newBalanceUser2: bigint;
-    let newBalanceUser3: bigint;
 
     let newTotalSupply: BigNumber;
 
@@ -537,8 +531,6 @@ describe('absorb', function () {
     before(async () => {
       // WIthdraw all base tokens from Alice to make sure it has no balance
       await comet.connect(alice).withdraw(baseToken.address, ethers.constants.MaxUint256);
-
-      const totalsBasicBefore = await comet.totalsBasic();
 
       // Restore comp price to 100
       compPrice = 100;
@@ -575,13 +567,14 @@ describe('absorb', function () {
       expect(await comet.isLiquidatable(user2.address)).to.be.true;
       expect(await comet.isLiquidatable(user3.address)).to.be.true;
 
-      // Snapshot protocol state before absorb
-      const principal1 = (await comet.userBasic(user1.address)).principal;
-      const principal2 = (await comet.userBasic(user2.address)).principal;
-      const principal3 = (await comet.userBasic(user3.address)).principal;
-      oldBalanceUser1 = presentValue(principal1, totalsBasicBefore.baseSupplyIndex, totalsBasicBefore.baseBorrowIndex);
-      oldBalanceUser2 = presentValue(principal2, totalsBasicBefore.baseSupplyIndex, totalsBasicBefore.baseBorrowIndex);
-      oldBalanceUser3 = presentValue(principal3, totalsBasicBefore.baseSupplyIndex, totalsBasicBefore.baseBorrowIndex);
+      // Snapshot protocol state before absorb. Only the principals are stored: a balance is
+      // principal scaled by an interest index, and the index that matters is the one absorb
+      // itself accrues to, which is not known until the absorb transaction has been mined.
+      principalsBefore = [
+        (await comet.userBasic(user1.address)).principal,
+        (await comet.userBasic(user2.address)).principal,
+        (await comet.userBasic(user3.address)).principal,
+      ];
 
       compTotalsBefore = (await comet.totalsCollateral(collaterals['COMP'].address)).totalSupplyAsset;
       compReservesBefore = await comet.getCollateralReserves(collaterals['COMP'].address);
@@ -643,27 +636,23 @@ describe('absorb', function () {
     it('AbsorbDebt events are emitted for each user', async () => {
       const deltaValue = mulFactor(compValue, LIQUIDATION_FACTOR);
       const deltaBalance = divPrice(deltaValue, usdcPrice, baseScale);
-      
-      // Calculate for each user using the old balances from before block
-      newBalanceUser1 = oldBalanceUser1 + deltaBalance;
-      const basePaidOutUser1 = newBalanceUser1 - oldBalanceUser1;
-      const valueOfBasePaidOutUser1 = mulPrice(basePaidOutUser1, usdcPrice, baseScale);
 
-      newBalanceUser2 = oldBalanceUser2 + deltaBalance;
-      const basePaidOutUser2 = newBalanceUser2 - oldBalanceUser2;
-      const valueOfBasePaidOutUser2 = mulPrice(basePaidOutUser2, usdcPrice, baseScale);
+      // Absorb accrues interest before it reads the borrowers' balances, so the indices left
+      // behind by the absorb transaction are the ones it used. Re-price each stored principal
+      // with them to get the debt absorb actually saw.
+      const totalsBasicAfter = await comet.totalsBasic();
 
-      newBalanceUser3 = oldBalanceUser3 + deltaBalance;
-      const basePaidOutUser3 = newBalanceUser3 - oldBalanceUser3;
-      const valueOfBasePaidOutUser3 = mulPrice(basePaidOutUser3, usdcPrice, baseScale);
+      for (const [i, user] of users.entries()) {
+        const oldBalance = presentValue(principalsBefore[i], totalsBasicAfter.baseSupplyIndex, totalsBasicAfter.baseBorrowIndex);
+        // Debt beyond what the collateral covers is written off by reserves, so the balance
+        // floors at zero and the protocol pays out only what the borrower actually owed.
+        const newBalance = oldBalance + deltaBalance < 0n ? 0n : oldBalance + deltaBalance;
+        const basePaidOut = newBalance - oldBalance;
 
-      await expect(absorbTxMultiple)
-        .to.emit(comet, 'AbsorbDebt')
-        .withArgs(absorber.address, user1.address, basePaidOutUser1, valueOfBasePaidOutUser1)
-        .to.emit(comet, 'AbsorbDebt')
-        .withArgs(absorber.address, user2.address, basePaidOutUser2, valueOfBasePaidOutUser2)
-        .to.emit(comet, 'AbsorbDebt')
-        .withArgs(absorber.address, user3.address, basePaidOutUser3, valueOfBasePaidOutUser3);
+        await expect(absorbTxMultiple)
+          .to.emit(comet, 'AbsorbDebt')
+          .withArgs(absorber.address, user.address, basePaidOut, mulPrice(basePaidOut, usdcPrice, baseScale));
+      }
     });
 
     it('all users principal becomes 0', async () => {

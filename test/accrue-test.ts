@@ -32,8 +32,6 @@ describe('accrue', function () {
   let bob: SignerWithAddress;
   let dave: SignerWithAddress;
 
-
-
   before(async () => {
     const protocol = await makeProtocol(
       {
