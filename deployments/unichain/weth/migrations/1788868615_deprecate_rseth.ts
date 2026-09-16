@@ -98,6 +98,7 @@ This proposal takes the governance steps recommended and necessary to update a C
 
 Further detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/22).
 
+[Forum](https://www.comp.xyz/t/rseth-oracle-updates-on-unichain-and-linea/8074)
 
 ## Proposal Actions
 
