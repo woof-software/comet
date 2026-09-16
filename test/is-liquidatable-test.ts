@@ -996,6 +996,11 @@ describe('isLiquidatable', function () {
 
       await baseToken.allocateTo(comet.address, BORROW_AMOUNT);
 
+      // to avoid over utilization, supply more base token.
+      await baseToken.allocateTo(alice.address, BORROW_AMOUNT * 2n);
+      await baseToken.connect(alice).approve(comet.address, BORROW_AMOUNT * 2n);
+      await comet.connect(alice).supply(baseToken.address, BORROW_AMOUNT * 2n);
+
       for (let i = 0; i < MAX_ASSETS; i++) {
         const asset = tokens[`ASSET${i}`];
         await asset.allocateTo(charlie.address, SUPPLY_COLLATERAL_AMOUNT);
@@ -1132,7 +1137,7 @@ describe('isLiquidatable', function () {
       configuratorProxyAddress = protocol.configuratorProxy.address;
       proxyAdmin = protocol.proxyAdmin;
       cometProxyAddress = protocol.cometProxyWithExtendedAssetList.address;
-      comet = protocol.cometProxyWithExtendedAssetList as unknown as CometHarnessInterfaceExtendedAssetList;
+      comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
 
       baseSymbol = protocol.base;
       baseToken = protocol.tokens[baseSymbol];
