@@ -1,8 +1,8 @@
 import { ethers, event, expect, exp, makeProtocol, portfolio, ReentryAttack, setTotalsBasic, wait, fastForward, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS } from './helpers';
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, CometHarnessInterface, FaucetToken, CometExtAssetList, CometHarnessInterfaceExtendedAssetList } from '../build/types';
+import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometExtAssetList, CometHarnessInterfaceExtendedAssetList } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-import { TotalsCollateralStruct } from 'build/types/CometHarness';
+import { TotalsCollateralStruct } from 'build/types/CometHarnessInterfaceExtendedAssetList';
 
 // Note: isolated supply functionality, withdraw and repay are tested in separate testsets
 describe('supply', function () {
@@ -1654,7 +1654,7 @@ describe('supply', function () {
 
   describe('non-standard tokens', function () {
     describe('USDT-like token', function () {
-      let comet: CometHarnessInterface;
+      let comet: CometHarnessInterfaceExtendedAssetList;
       let alice: SignerWithAddress;
       let usdt: NonStandardFaucetFeeToken;
       let nonStdCollateral: NonStandardFaucetFeeToken;
@@ -1709,7 +1709,7 @@ describe('supply', function () {
       const COLLATERAL_TOKEN_AMOUNT = exp(0.5, 18);
       const NUMERATOR = 10;
       const DENOMINATOR = 10000;
-      let feeComet: CometHarnessInterface;
+      let feeComet: CometHarnessInterfaceExtendedAssetList;
       let feeBaseToken: NonStandardFaucetFeeToken;
       let feeCollateral: NonStandardFaucetFeeToken;
       let alice: SignerWithAddress;
@@ -2101,7 +2101,7 @@ describe('supply', function () {
 });
 
 async function getPrincipalChange(
-  comet: CometHarnessInterface,
+  comet: CometHarnessInterfaceExtendedAssetList,
   lastUpdated: number,
   utilization: number,
   user: string,
