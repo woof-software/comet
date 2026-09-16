@@ -100,7 +100,7 @@ scenario('add new asset',
     }
   },
   async ({ comet, configurator, proxyAdmin, actors }, context) => {
-    const { albert } = actors;
+    const { albert, betty } = actors;
 
     // Deploy new token and pricefeed
     const dm = context.world.deploymentManager;
@@ -144,7 +144,20 @@ scenario('add new asset',
 
     // Try to supply new token and borrow base
     const baseAssetAddress = await comet.baseToken();
+    const baseToken = context.getAssetByAddress(baseAssetAddress);
     const borrowAmount = 1000n * (await comet.baseScale()).toBigInt();
+
+    // Ensure enough accounted supply so the borrow doesn't exceed MAX_SUPPORTED_UTILIZATION
+    const totalBorrowBefore = (await comet.totalBorrow()).toBigInt();
+    const totalSupplyBefore = (await comet.totalSupply()).toBigInt();
+    const requiredSupply = (totalBorrowBefore + borrowAmount) * 2n;
+    if (requiredSupply > totalSupplyBefore) {
+      const additionalSupply = requiredSupply - totalSupplyBefore;
+      await context.sourceTokens(additionalSupply, baseAssetAddress, betty.address);
+      await baseToken.approve(betty, comet.address);
+      await betty.supplyAsset({ asset: baseAssetAddress, amount: additionalSupply });
+    }
+
     await dogecoin.connect(albert.signer).approve(comet.address, exp(100, 8));
     await albert.supplyAsset({ asset: dogecoin.address, amount: exp(100, 8) });
     await albert.withdrawAsset({ asset: baseAssetAddress, amount: borrowAmount });
