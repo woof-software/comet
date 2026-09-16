@@ -29,7 +29,7 @@ export default migration('1730466050_add_ethx_as_collaterals', {
       'ETHx',
       ETHX_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const ETHxPricefeed = await deploymentManager.existing(
       'ETHx:priceFeed',
@@ -96,7 +96,7 @@ export default migration('1730466050_add_ethx_as_collaterals', {
       'ETHx',
       ETHX_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const ETHxAssetConfig = {
       asset: ETHx.address,

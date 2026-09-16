@@ -1395,7 +1395,7 @@ describe('withdraw', function () {
     let reentrancySnapshot: SnapshotRestorer;
 
     before(async () => {
-      const { comet, tokens, users } = await makeProtocol({
+      const { cometWithExtendedAssetList: comet, tokens, users } = await makeProtocol({
         assets: {
           USDC: { decimals: 6 },
           EVIL: {
@@ -1486,7 +1486,7 @@ describe('withdraw', function () {
         };
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
-        nstComet = protocol.comet;
+        nstComet = protocol.cometWithExtendedAssetList;
         [alice, bob] = protocol.users;
 
         const tokens = protocol.tokens;
@@ -1547,7 +1547,7 @@ describe('withdraw', function () {
         };
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
-        feeComet = protocol.comet;
+        feeComet = protocol.cometWithExtendedAssetList;
         feeBaseToken = protocol.tokens['USDT'] as NonStandardFaucetFeeToken;
         feeCollateral = protocol.tokens['FeeCollateral'] as NonStandardFaucetFeeToken;
         [alice, bob] = protocol.users;

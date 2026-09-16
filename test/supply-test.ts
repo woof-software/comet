@@ -514,7 +514,7 @@ describe('supply', function () {
     describe('supply max base (repay borrow)', function () {
       it('supplies max base borrow balance (including accrued) from sender', async () => {
         const protocol = await makeProtocol({ base: 'USDC' });
-        const { comet, tokens, users: [alice, bob] } = protocol;
+        const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
         const { USDC } = tokens;
 
         await USDC.allocateTo(bob.address, 100e6);
@@ -577,7 +577,7 @@ describe('supply', function () {
 
       it('supply max base should supply 0 if user has no borrow position', async () => {
         const protocol = await makeProtocol({ base: 'USDC' });
-        const { comet, tokens, users: [alice, bob] } = protocol;
+        const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
         const { USDC } = tokens;
 
         await USDC.allocateTo(bob.address, 100e6);
@@ -612,7 +612,7 @@ describe('supply', function () {
 
       it('does not emit Transfer for 0 mint when repaying exact borrow', async () => {
         const protocol = await makeProtocol({ base: 'USDC' });
-        const { comet, tokens, users: [alice, bob] } = protocol;
+        const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = protocol;
         const { USDC } = tokens;
 
         await USDC.allocateTo(bob.address, 100e6);
@@ -636,7 +636,7 @@ describe('supply', function () {
 
       // Edge-case: when supplying 0, dstPrincipalNew can be less than dstPrincipal due to rounding
       it('supplies 0 and does not revert when dstPrincipalNew < dstPrincipal', async () => {
-        const { comet, tokens, users: [alice] } = await makeProtocol({ base: 'USDC' });
+        const { cometWithExtendedAssetList: comet, tokens, users: [alice] } = await makeProtocol({ base: 'USDC' });
         const { USDC } = tokens;
 
         await comet.setBasePrincipal(alice.address, 99999992291226);
@@ -657,7 +657,7 @@ describe('supply', function () {
       });
 
       it('reverts if supply max for a collateral asset', async () => {
-        const { comet, tokens, users: [alice, bob] } = await makeProtocol({ base: 'USDC' });
+        const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = await makeProtocol({ base: 'USDC' });
         const { COMP } = tokens;
 
         await COMP.allocateTo(bob.address, 100e6);
@@ -1675,7 +1675,7 @@ describe('supply', function () {
         };
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
-        comet = protocol.comet;
+        comet = protocol.cometWithExtendedAssetList;
         alice = protocol.users[0];
 
         const tokens = protocol.tokens;
@@ -1731,7 +1731,7 @@ describe('supply', function () {
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
         
-        feeComet = protocol.comet;
+        feeComet = protocol.cometWithExtendedAssetList;
         feeBaseToken = protocol.tokens['USDT'] as NonStandardFaucetFeeToken;
         feeCollateral = protocol.tokens['FeeCollateral'] as NonStandardFaucetFeeToken;
         alice = protocol.users[0];
@@ -1817,7 +1817,7 @@ describe('supply', function () {
 
   describe('reentrancy protection', function () {
     it('blocks reentrancy from exceeding the supply cap', async () => {
-      const { comet, tokens, users: [alice, bob] } = await makeProtocol({
+      const { cometWithExtendedAssetList: comet, tokens, users: [alice, bob] } = await makeProtocol({
         assets: {
           USDC: { decimals: 6 },
           EVIL: {

@@ -5,7 +5,7 @@ import { AddressLike, resolveAddress } from './Address';
 import { ERC20__factory } from '../../build/types';
 import { baseBalanceOf } from '../../test/helpers';
 
-const types = {
+export const types = {
   Authorization: [
     { name: 'owner', type: 'address' },
     { name: 'manager', type: 'address' },
