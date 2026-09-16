@@ -27,7 +27,7 @@ export default migration('1788784809_deprecate_pump_btc', {
     } = await deploymentManager.getContracts();
 
     const mainnetActions = [
-      // 1. Update version in new Comet to the recent service patch version
+      // 1. Update version in new Comet to the new version
       {
         target: COMET_FACTORY_V2,
         signature: 'setVersion(((uint64,uint64,uint64),string))',
@@ -45,7 +45,7 @@ export default migration('1788784809_deprecate_pump_btc', {
         signature: 'setFactory(address,address)',
         args: [WBTC_COMET, COMET_FACTORY_V2],
       },
-      // 3. Set service patch version of the extension delegate for the WBTC Comet
+      // 3. Set the new version of the extension delegate for the WBTC Comet
       {
         contract: configurator,
         signature: 'setExtensionDelegate(address,address)',
@@ -83,7 +83,7 @@ export default migration('1788784809_deprecate_pump_btc', {
 
 WOOF! proposes to complete the deprecation of pumpBTC as collateral on cWBTCv3. pumpBTC's supply cap was already reduced to 0 and its price feed already points to a constant price feed of 1 wei ([Compound Governance Proposal 605](https://www.tally.xyz/gov/compound/proposal/605)). This proposal finishes the process by zeroing out pumpBTC's borrow collateral factor, liquidate collateral factor, and liquidation factor, fully de-listing it as collateral.
 
-These configuration changes are bundled with an update of the cWBTCv3 Comet to the recent service patch version, and both are applied together in a single deployAndUpgradeTo call.
+These configuration changes are bundled with an update of the cWBTCv3 Comet to the new version, and both are applied together in a single deployAndUpgradeTo call.
 
 Detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/24).
 
