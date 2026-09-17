@@ -15,6 +15,16 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
 
     IGovernorBravo public governorBravo = IGovernorBravo(MarketUpdateAddresses.GOVERNOR_BRAVO_PROXY_ADDRESS);
 
+    // Forks the chain a few blocks behind its latest block. The newest block on chains like Polygon
+    // can still be reorged away, or be missing on some of the RPC provider's nodes, and the fork
+    // then fails with "header for hash not found". A block this far back is settled everywhere,
+    // and still recent enough that a non-archive node keeps its state.
+    function createSelectForkBehindHead(string memory chain, uint256 blocksBehind) internal {
+        bytes memory head = vm.rpc(chain, "eth_blockNumber", "[]");
+        uint256 headBlock = uint256(bytes32(head)) >> (256 - head.length * 8);
+        vm.createSelectFork(chain, headBlock - blocksBehind);
+    }
+
     function createMarketUpdateDeployment(Vm vm) public returns (MarketUpdateContractsDeployer.DeployedContracts memory) {
         bytes32 salt = keccak256(abi.encodePacked(vm.envString("SALT")));
         ChainAddresses.Chain chain = ChainAddresses.getChainBasedOnChainId(1);
