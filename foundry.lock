@@ -6,7 +6,10 @@
     }
   },
   "forge/lib/forge-std": {
-    "rev": "452bdecf8772bf113532f67c5cf3accb71895cd0"
+    "tag": {
+      "name": "v1.16.2",
+      "rev": "bf647bd6046f2f7da30d0c2bf435e5c76a780c1b"
+    }
   },
   "plugins/import/contracts-archive": {
     "branch": {
