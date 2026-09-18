@@ -1,0 +1,151 @@
+/* Everything inside a panel: fields, buttons, presets, tiles, tables, chips, charts. */
+
+  /* ---------- fields ---------- */
+  .field { display: grid; grid-template-columns: 1fr; gap: 3px; margin-bottom: 10px; align-content: start; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { font-size: 11.5px; color: var(--ink-2); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1px 8px; }
+  .field label code { color: var(--muted); font-size: 10.5px; font-family: "IBM Plex Mono", monospace; }
+  input[type="text"], select {
+    width: 100%; height: 30px; padding: 0 8px; font-size: 12.5px; line-height: normal;
+    color: var(--ink); background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  input[type="text"]:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+  }
+  .derived { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--muted); }
+  /* Grid items stretch by default, so a row2 child with a different bottom margin
+     would grow its own rows and push its control out of line. Pin both. */
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; margin-bottom: 10px; }
+  .row2 > .field { margin-bottom: 0; }
+  .row2:last-child { margin-bottom: 0; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); margin-bottom: 9px; }
+  .check input { accent-color: var(--accent); }
+
+  button {
+    font-family: inherit; font-size: 12px; padding: 6px 11px; border-radius: 3px;
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent-ink); }
+  button:disabled { opacity: .42; cursor: not-allowed; }
+  button:disabled:hover { border-color: var(--line); color: var(--ink); }
+  /* ---------- the market rail ---------- */
+  .preset-list { display: flex; flex-direction: column; gap: 6px; max-height: 340px; overflow-y: auto; }
+  .preset {
+    text-align: left; padding: 8px 10px; line-height: 1.35; display: grid; gap: 2px;
+  }
+  .preset strong { font-size: 12.5px; font-weight: 600; }
+  .preset span { font-size: 11px; color: var(--muted); }
+  .preset[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--surface-2)); }
+  .preset span.stale { color: var(--warning); }
+
+  .provenance {
+    margin-top: 10px; padding: 8px 10px; border-left: 2px solid var(--line);
+    font-size: 11px; color: var(--muted); background: var(--surface-2);
+  }
+  .provenance code { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; overflow-wrap: anywhere; }
+  .saved-row { display: flex; gap: 6px; align-items: stretch; }
+  .saved-row .preset { flex: 1; min-width: 0; }
+  .saved-row .preset strong { overflow-wrap: anywhere; }
+  .saved-row .del { flex: 0 0 30px; padding: 0; font-size: 14px; line-height: 1; color: var(--muted); }
+  .saved-row .del:hover { border-color: var(--critical); color: var(--critical); }
+
+  /* ---------- the actions panel ---------- */
+  /* The sign is the input convention, so the hint that says so is not muted away. */
+  #actionsPanel .derived b { color: var(--ink-2); font-weight: 600; }
+  #actionNet { margin-top: 12px; color: var(--ink-2); font-size: 11.5px; }
+
+  /* An inline warning inside a rail panel: the cap the protocol would have applied,
+     or the fact that the state fields are no longer the chain's. */
+  .note-inline {
+    margin-top: 9px; padding: 7px 9px; border-left: 2px solid var(--warning);
+    background: var(--chip-warn-bg); font-size: 11px; color: var(--ink-2);
+  }
+  .note-inline div + div { margin-top: 5px; }
+  .note-inline code { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; }
+  .note-inline b { font-family: "IBM Plex Mono", monospace; font-weight: 600; }
+  b.warn { color: #a2730b; }
+  :root[data-theme="dark"] b.warn, :root:not([data-theme="light"]) b.warn { color: var(--warning); }
+
+  /* State fields are the chain's until the viewer takes the pencil. */
+  .edit-toggle { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+  .edit-toggle input { accent-color: var(--accent); margin: 0; }
+  input[type="text"].locked { background: transparent; border-style: dashed; color: var(--ink-2); cursor: default; }
+  input[type="text"].locked:focus-visible { outline-color: var(--muted); }
+
+  /* ---------- readout tiles ---------- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 1px; background: var(--line-soft); }
+  .tile { background: var(--surface); padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .tile .t-lab { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .tile .t-val { font-family: "IBM Plex Mono", monospace; font-size: 17px; font-weight: 500; letter-spacing: -.01em; overflow-wrap: anywhere; }
+  .tile .t-sub { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--muted); overflow-wrap: anywhere; }
+  /* What the number was before the actions. Only rendered when it actually moved. */
+  .tile .t-was { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--accent-ink); overflow-wrap: anywhere; }
+
+  /* ---------- rate curves ---------- */
+  /* One card per curve, side by side while there is room: the whole question is
+     reading one against the other, and the two kinks need not agree. */
+  .curve-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(318px, 1fr)); gap: 1px; background: var(--line-soft); }
+  .curve-side { background: var(--surface); padding: 12px 14px 14px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .cs-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .cs-name { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .cs-now { display: flex; flex-direction: column; gap: 3px; }
+  .cs-now > b { font-family: "IBM Plex Mono", monospace; font-size: 21px; font-weight: 500; letter-spacing: -.01em; }
+  .cs-now span { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--muted); overflow-wrap: anywhere; line-height: 1.5; }
+  .cs-now span b { color: var(--ink-2); font-weight: 600; }
+  /* The term table is a breakdown inside a card, not a page-width table: it wraps
+     rather than scrolls, and drops the horizontal padding it would inherit. */
+  .curve-side table { font-size: 11.5px; }
+  .curve-side th, .curve-side td { padding: 5px 0; }
+  .curve-side td:first-child, .curve-side th:first-child { padding-right: 10px; white-space: normal; }
+  .cs-foot { display: flex; flex-direction: column; gap: 4px; margin-top: auto; }
+  .cs-foot .derived { line-height: 1.55; }
+  .cs-foot b { color: var(--ink-2); font-weight: 600; }
+  .curve-grid + .legend { padding-top: 12px; border-top: 1px solid var(--line-soft); }
+
+  /* ---------- tables ---------- */
+  .scroller { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+  th {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--muted); font-weight: 500;
+  }
+  td.num, th.num { text-align: right; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tr.tripped td { background: color-mix(in srgb, var(--critical) 7%, transparent); }
+  td .site-name { font-weight: 500; }
+  td .site-loc { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--muted); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px; border-radius: 2px;
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 500; border: 1px solid;
+  }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .chip-ok   { color: var(--good);     background: var(--chip-good-bg); border-color: color-mix(in srgb, var(--good) 34%, transparent); }
+  .chip-trip { color: var(--critical); background: var(--chip-crit-bg); border-color: color-mix(in srgb, var(--critical) 38%, transparent); }
+  .chip-sat  { color: #a2730b;         background: var(--chip-warn-bg); border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
+  :root[data-theme="dark"] .chip-sat, :root:not([data-theme="light"]) .chip-sat { color: var(--warning); }
+  .chip-idle { color: var(--muted);    background: var(--surface-2);    border-color: var(--line); }
+
+  /* ---------- charts ---------- */
+  .chart-wrap { position: relative; padding: 6px 14px 12px; }
+  svg.chart { display: block; width: 100%; height: auto; }
+  .legend { display: flex; gap: 16px; padding: 0 14px 4px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-2); }
+  .legend i { width: 14px; height: 2px; border-radius: 1px; display: block; }
+  .tip {
+    position: absolute; pointer-events: none; opacity: 0; transition: opacity .09s;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 3px;
+    box-shadow: var(--shadow); padding: 7px 9px; font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; white-space: nowrap; z-index: 5;
+  }
+  .tip .tt-h { color: var(--muted); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 3px; }
+  .tip .tt-r { display: flex; justify-content: space-between; gap: 14px; }
+  .tip .tt-r i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+
+  .note { padding: 10px 14px 13px; font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--line-soft); }
+  .note b { color: var(--ink-2); font-weight: 500; }
+  .note code { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-2); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

@@ -1,0 +1,71 @@
+/* Palette and themes. Every colour has its light value on bare :root, so a
+   token defined only inside a media query cannot exist. */
+
+  :root {
+    color-scheme: light;
+    --ground:      #eceff3;
+    --surface:     #fbfcfd;
+    --surface-2:   #f2f5f8;
+    --ink:         #11161b;
+    --ink-2:       #3d4852;
+    --muted:       #66727e;
+    --line:        #d3dae1;
+    --line-soft:   #e2e8ee;
+    --accent:      #2a78d6;
+    --accent-ink:  #1b5aa6;
+    --series-1:    #2a78d6;
+    --series-2:    #eb6834;
+    --good:        #0ca30c;
+    --warning:     #fab219;
+    --critical:    #d03b3b;
+    --chip-good-bg:  #e4f4e4;
+    --chip-warn-bg:  #fdf1d8;
+    --chip-crit-bg:  #fae5e5;
+    --shadow: 0 1px 2px rgba(17, 22, 27, .06), 0 8px 24px -16px rgba(17, 22, 27, .3);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground:      #0e1216;
+      --surface:     #171c22;
+      --surface-2:   #1e242b;
+      --ink:         #e5eaef;
+      --ink-2:       #bcc6d0;
+      --muted:       #8b97a3;
+      --line:        #2a323b;
+      --line-soft:   #232a32;
+      --accent:      #3987e5;
+      --accent-ink:  #7cb2f0;
+      --series-1:    #3987e5;
+      --series-2:    #d95926;
+      --good:        #0ca30c;
+      --warning:     #fab219;
+      --critical:    #d03b3b;
+      --chip-good-bg:  #122a15;
+      --chip-warn-bg:  #33280d;
+      --chip-crit-bg:  #331616;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 28px -18px rgba(0, 0, 0, .9);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground:      #0e1216;
+    --surface:     #171c22;
+    --surface-2:   #1e242b;
+    --ink:         #e5eaef;
+    --ink-2:       #bcc6d0;
+    --muted:       #8b97a3;
+    --line:        #2a323b;
+    --line-soft:   #232a32;
+    --accent:      #3987e5;
+    --accent-ink:  #7cb2f0;
+    --series-1:    #3987e5;
+    --series-2:    #d95926;
+    --good:        #0ca30c;
+    --warning:     #fab219;
+    --critical:    #d03b3b;
+    --chip-good-bg:  #122a15;
+    --chip-warn-bg:  #33280d;
+    --chip-crit-bg:  #331616;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 28px -18px rgba(0, 0, 0, .9);
+  }

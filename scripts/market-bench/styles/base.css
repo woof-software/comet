@@ -1,0 +1,24 @@
+/* Reset and page-level typography. */
+
+:root { color-scheme: light }
+img { max-width: 100% }
+/* Load-bearing: panels hidden with [hidden] carry their own `display`, which
+   would otherwise beat the UA rule and leave them on screen. */
+[hidden]:not([hidden=until-found]) { display: none !important }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .mono, input, select, td.num, th.num {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }

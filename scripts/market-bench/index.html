@@ -1,0 +1,389 @@
+<!doctype html>
+<!--
+  Comet Market Bench — market state, accrual and liveness.
+
+  Needs an http origin (ES modules and fetch are blocked on file://):
+
+      node scripts/market-bench/serve.mjs        # or: yarn market-bench
+
+  Markup only. Styles live in styles/, behaviour in src/, snapshots in data/.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Comet Market Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="./styles/tokens.css">
+<link rel="stylesheet" href="./styles/base.css">
+<link rel="stylesheet" href="./styles/layout.css">
+<link rel="stylesheet" href="./styles/components.css">
+<script type="module" src="./src/main.mjs"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <div>
+      <div class="eyebrow">market · accrual liveness</div>
+      <h1>Comet Market Bench</h1>
+      <p>
+        A real market read from the network, plus user actions — and what happens to it next.
+        An exact port of <code class="mono">accrueInternal</code>, <code class="mono">getSupplyRate</code>,
+        <code class="mono">getBorrowRate</code> and <code class="mono">getUtilization</code> from
+        <code class="mono">CometWithExtendedAssetList.sol</code>. All the arithmetic is <code class="mono">BigInt</code>:
+        the <code class="mono">uint64</code> limit has 20 digits, while a <code class="mono">double</code> holds 16.
+      </p>
+    </div>
+    <div class="verdict">
+      <div class="lamps" id="lamps"></div>
+      <div class="verdict-badge v-live" id="verdict">
+        <span class="vb-state">—</span>
+        <span class="vb-note mono">—</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="cols">
+    <!-- ================= RAIL ================= -->
+    <aside class="rail">
+
+      <section class="panel" id="marketPanel">
+        <header><h2>Market</h2><span class="hint">on-chain, via the SDK</span></header>
+        <div class="body">
+          <div class="preset-list" id="marketPresets"></div>
+          <div id="marketAdd">
+            <div class="row2" style="margin-top:10px">
+              <div class="field">
+                <label for="marketChain">Network</label>
+                <select id="marketChain"></select>
+              </div>
+              <div class="field">
+                <label for="marketPick">Market</label>
+                <select id="marketPick"></select>
+              </div>
+            </div>
+            <button id="marketAddBtn" style="width:100%">Read the state from the network</button>
+          </div>
+          <div class="derived" id="marketMsg" style="margin-top:8px">—</div>
+          <div class="provenance" id="provenance"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="actionsPanel">
+        <header><h2>User actions</h2><span class="hint">applied on top of the state</span></header>
+        <div class="body">
+          <div class="field">
+            <label for="actSupply">Liquidity <code>base units</code></label>
+            <input type="text" id="actSupply" value="" inputmode="decimal" placeholder="0">
+            <span class="derived">
+              <b>−</b> in front of the number means a withdrawal, no sign means a deposit.
+              Moves <code>cash</code> and <code>S</code> together, i.e. it changes <code>u = B/S</code>.
+            </span>
+          </div>
+
+          <div class="field">
+            <label for="actReserves">Reserves <code>base units</code></label>
+            <input type="text" id="actReserves" value="" inputmode="decimal" placeholder="0">
+            <span class="derived">
+              Same sign convention. Moves <code>cash</code> alone, so it <b>does not touch utilization at all</b>.
+            </span>
+          </div>
+
+          <div class="row2">
+            <div class="field">
+              <label for="actDelayValue">After</label>
+              <input type="text" id="actDelayValue" value="" inputmode="numeric" placeholder="0 — the same block">
+            </div>
+            <div class="field">
+              <label for="actDelayUnit">Unit</label>
+              <select id="actDelayUnit">
+                <option value="1">seconds</option>
+                <option value="60">minutes</option>
+                <option value="3600" selected>hours</option>
+                <option value="86400">days</option>
+              </select>
+            </div>
+          </div>
+          <span class="derived" id="actWhen">—</span>
+
+          <div class="derived" id="actionNet" style="margin-top:10px">—</div>
+          <div class="note-inline" id="actionNotes" hidden></div>
+          <button id="actionsReset" style="width:100%;margin-top:10px">Reset actions</button>
+          <div class="derived" style="margin-top:8px">
+            The actions land at t₀, before the first <code>accrueInternal</code>, in the contract's order:
+            deposits first, withdrawals after — <code>doTransferOut</code> pays out of the balance, and that balance is smaller before a deposit.
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Time</h2><span class="hint">range and cadence</span></header>
+        <div class="body">
+          <div class="row2">
+            <div class="field">
+              <label for="rangeValue">Range</label>
+              <input type="text" id="rangeValue" value="30" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="rangeUnit">Unit</label>
+              <select id="rangeUnit">
+                <option value="3600">hours</option>
+                <option value="86400" selected>days</option>
+                <option value="31536000">years</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="freq"><code>accrueInternal</code> cadence</label>
+            <select id="freq">
+              <option value="12">every 12 s — a block</option>
+              <option value="60">every minute</option>
+              <option value="3600" selected>every hour</option>
+              <option value="21600">every 6 hours</option>
+              <option value="86400">once a day</option>
+              <option value="604800">once a week</option>
+              <option value="2592000">once every 30 days</option>
+            </select>
+          </div>
+          <div class="derived" id="horizon">—</div>
+          <div class="derived" style="margin-top:8px">
+            The index compounds between touches: <code>index += index · rate · dt / 1e18</code>.
+            That is why the cadence is not cosmetic: a rare accrual is safer than a frequent one.
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header>
+          <h2>Market state</h2>
+          <label class="hint edit-toggle" for="editState">
+            <input type="checkbox" id="editState"> edit
+          </label>
+        </header>
+        <div class="body">
+          <div class="note-inline" id="editStateNote" hidden>
+            The fields are unlocked. The moment you change anything here, this is no longer the market that is on the network —
+            the provenance above refers to the snapshot, not to what is on the screen.
+          </div>
+          <div class="field">
+            <label for="decimals">Base asset decimals <code>baseScale</code></label>
+            <input type="text" id="decimals" value="6">
+          </div>
+          <div class="field">
+            <label for="totalSupplyBase">totalSupplyBase <code>principal</code></label>
+            <input type="text" id="totalSupplyBase" value="0">
+            <span class="derived" id="dSupply">—</span>
+          </div>
+          <div class="field">
+            <label for="totalBorrowBase">totalBorrowBase <code>principal</code></label>
+            <input type="text" id="totalBorrowBase" value="0">
+            <span class="derived" id="dBorrow">—</span>
+          </div>
+          <div class="field">
+            <label for="bsi">baseSupplyIndex <code>1e15</code></label>
+            <input type="text" id="bsi" value="1e15">
+          </div>
+          <div class="field">
+            <label for="bbi">baseBorrowIndex <code>1e15</code></label>
+            <input type="text" id="bbi" value="1e15">
+          </div>
+          <div class="field">
+            <label for="reserves">reserves <code>balanceOf(market) − totalSupply + totalBorrow</code></label>
+            <input type="text" id="reserves" value="0">
+            <span class="derived" id="dCash">—</span>
+          </div>
+          <div class="field">
+            <label for="pendingSecs">Not accrued <code>blockTime − lastAccrualTime, s</code></label>
+            <input type="text" id="pendingSecs" value="0">
+            <span class="derived" id="dPending">—</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Supply curve</h2><span class="hint"><b id="supplyLeg">—</b> · per year, 1e18</span></header>
+        <div class="body">
+          <div class="field">
+            <label for="supplyKink">supplyKink</label>
+            <input type="text" id="supplyKink" value="0.9e18">
+          </div>
+          <div class="field">
+            <label for="sBaseY">…InterestRateBase</label>
+            <input type="text" id="sBaseY" value="0">
+            <span class="derived" id="dSBase">—</span>
+          </div>
+          <div class="field">
+            <label for="sLowY">…SlopeLow</label>
+            <input type="text" id="sLowY" value="0">
+            <span class="derived" id="dSLow">—</span>
+          </div>
+          <div class="field">
+            <label for="sHighY">…SlopeHigh</label>
+            <input type="text" id="sHighY" value="0">
+            <span class="derived" id="dSHigh">—</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Borrow curve</h2><span class="hint"><b id="borrowLeg">—</b> · per year, 1e18</span></header>
+        <div class="body">
+          <div class="field">
+            <label for="borrowKink">borrowKink</label>
+            <input type="text" id="borrowKink" value="0.9e18">
+          </div>
+          <div class="field">
+            <label for="bBaseY">…InterestRateBase</label>
+            <input type="text" id="bBaseY" value="0">
+            <span class="derived" id="dBBase">—</span>
+          </div>
+          <div class="field">
+            <label for="bLowY">…SlopeLow</label>
+            <input type="text" id="bLowY" value="0">
+            <span class="derived" id="dBLow">—</span>
+          </div>
+          <div class="field">
+            <label for="bHighY">…SlopeHigh</label>
+            <input type="text" id="bHighY" value="0">
+            <span class="derived" id="dBHigh">—</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Tracking</h2><span class="hint">reward indices</span></header>
+        <div class="body">
+          <div class="field">
+            <label for="tsi">trackingSupplyIndex</label>
+            <input type="text" id="tsi" value="0">
+          </div>
+          <div class="field">
+            <label for="tbi">trackingBorrowIndex</label>
+            <input type="text" id="tbi" value="0">
+          </div>
+          <div class="field">
+            <label for="baseMinForRewards">baseMinForRewards</label>
+            <input type="text" id="baseMinForRewards" value="1">
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="trackSupplySpeed">supplySpeed</label>
+              <input type="text" id="trackSupplySpeed" value="0">
+            </div>
+            <div class="field">
+              <label for="trackBorrowSpeed">borrowSpeed</label>
+              <input type="text" id="trackBorrowSpeed" value="0">
+            </div>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- ================= MAIN ================= -->
+    <main>
+      <section class="panel" id="invariantsPanel" hidden>
+        <header><h2>State outside the contract's bounds</h2><span class="hint">constructor or field width</span></header>
+        <div class="note" id="invariants"></div>
+      </section>
+
+      <section class="panel">
+        <header><h2>State at t₀</h2><span class="hint" id="t0hint">—</span></header>
+        <div class="tiles" id="tiles"></div>
+        <div class="note" id="t0note"></div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Position on the rate curves</h2><span class="hint" id="curveHint">—</span></header>
+        <div class="curve-grid" id="curveCards"></div>
+        <div class="legend">
+          <span><i style="background: var(--series-1)"></i> supply APR</span>
+          <span><i style="background: var(--series-2)"></i> borrow APR</span>
+          <span><i style="background: var(--muted)"></i> kink — where slopeLow ends</span>
+          <span><i style="background: var(--accent)"></i> u — where the market stands now</span>
+        </div>
+        <div class="chart-wrap" id="wrapCurve">
+          <svg class="chart" id="chartCurve" viewBox="0 0 900 260" role="img" aria-label="Supply and borrow rate curves against utilization, with the market's position marked"></svg>
+          <div class="tip" id="tipCurve"></div>
+        </div>
+        <div class="note" id="curveNote"></div>
+      </section>
+
+      <section class="panel">
+        <header><h2>What to expect from the market</h2><span class="hint" id="forecastHint">—</span></header>
+        <div class="tiles" id="forecast"></div>
+        <div class="note" id="forecastNote"></div>
+      </section>
+
+      <section class="panel">
+        <header>
+          <h2>Breakdown sites in accrueInternal</h2>
+          <span class="hint">evaluated at t₀ at the current cadence</span>
+        </header>
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr>
+                <th>Site</th>
+                <th class="num">Computed value</th>
+                <th class="num">Type limit</th>
+                <th class="num">× of the limit</th>
+                <th>State</th>
+              </tr>
+            </thead>
+            <tbody id="sites"></tbody>
+          </table>
+        </div>
+        <div class="note">
+          <b>Six sites, not one.</b> The rate reverts immediately; the index outlives the rate and reverts later,
+          because it compounds. That is exactly why the "fatal band" starts not at 1–2 wei, but higher.
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Indices against the type limit</h2><span class="hint">log scale · uint64</span></header>
+        <div class="legend">
+          <span><i style="background: var(--series-1)"></i> baseSupplyIndex</span>
+          <span><i style="background: var(--series-2)"></i> baseBorrowIndex</span>
+          <span><i style="background: var(--critical)"></i> index type limit</span>
+        </div>
+        <div class="chart-wrap" id="wrapIdx">
+          <svg class="chart" id="chartIdx" viewBox="0 0 900 290" role="img" aria-label="Index growth against the type limit"></svg>
+          <div class="tip" id="tipIdx"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Utilization over time</h2><span class="hint">1e18 scale</span></header>
+        <div class="chart-wrap" id="wrapU">
+          <svg class="chart" id="chartU" viewBox="0 0 900 230" role="img" aria-label="Utilization over time"></svg>
+          <div class="tip" id="tipU"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Step-by-step trajectory</h2><span class="hint" id="stepHint">—</span></header>
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr>
+                <th class="num">step</th>
+                <th class="num">t</th>
+                <th class="num">utilization</th>
+                <th class="num">supply APR</th>
+                <th class="num">borrow APR</th>
+                <th class="num">baseSupplyIndex</th>
+                <th class="num">baseBorrowIndex</th>
+                <th>state</th>
+              </tr>
+            </thead>
+            <tbody id="stepRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+</body>
+</html>
