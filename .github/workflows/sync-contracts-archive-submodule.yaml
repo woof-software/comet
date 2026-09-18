@@ -1,0 +1,99 @@
+name: Sync Contracts Archive Submodule
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  bump:
+    name: Pull latest archive and open a submodule-bump PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Check for new archive commits
+        id: check
+        run: |
+          cd plugins/import/contracts-archive
+          git fetch origin develop
+          latest=$(git rev-parse origin/develop)
+          current=$(git rev-parse HEAD)
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          [ "$latest" = "$current" ] && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Bump submodule pointer
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          cd plugins/import/contracts-archive
+          git checkout "${{ steps.check.outputs.latest }}"
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.changed == 'true'
+        with:
+          node-version: '18'
+          cache: 'yarn'
+
+      - name: Install packages
+        if: steps.check.outputs.changed == 'true'
+        run: yarn install --non-interactive --frozen-lockfile
+
+      - name: Compile
+        if: steps.check.outputs.changed == 'true'
+        run: yarn build
+
+      - name: Lint
+        if: steps.check.outputs.changed == 'true'
+        id: lint
+        continue-on-error: true
+        run: yarn lint
+
+      - name: Typecheck
+        if: steps.check.outputs.changed == 'true'
+        id: tsc
+        continue-on-error: true
+        run: yarn tsc --noEmit -p .
+
+      - name: Open submodule-bump PR
+        if: steps.check.outputs.changed == 'true' && steps.lint.outcome == 'success' && steps.tsc.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="chore/bump-contracts-archive"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add plugins/import/contracts-archive
+          git commit -m "chore: bump contracts-archive submodule to ${{ steps.check.outputs.latest }}"
+          git push --force origin "$branch"
+          if ! gh pr list --state open --head "$branch" --json number --jq '.[0].number' | grep -q .; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore: bump contracts-archive submodule" \
+              --body "Pulls in new archive entries (up to \`${{ steps.check.outputs.latest }}\`). yarn lint and yarn tsc pass."
+          fi
+
+      - name: File tracking issue on failure
+        if: steps.check.outputs.changed == 'true' && (steps.lint.outcome == 'failure' || steps.tsc.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Archive submodule bump failing checks"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          body="Bumping the contracts-archive submodule to \`${{ steps.check.outputs.latest }}\` fails checks (lint: ${{ steps.lint.outcome }}, tsc: ${{ steps.tsc.outcome }}). See $run_url."
+          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Still failing as of $(date -u +%F). $body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

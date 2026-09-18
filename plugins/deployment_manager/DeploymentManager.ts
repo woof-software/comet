@@ -5,7 +5,7 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { Alias, Address, BuildFile, TraceFn } from './Types';
 import { getAliases, storeAliases, putAlias } from './Aliases';
 import { Cache } from './Cache';
-import { ContractMap, getBuildFile } from './ContractMap';
+import { ContractMap, getBuildFile, seedArchiveCache } from './ContractMap';
 import { DeployOpts, deploy, deployBuild } from './Deploy';
 import { fetchAndCacheContract, readContract } from './Import';
 import { getRelationConfig } from './RelationConfig';
@@ -51,6 +51,7 @@ export class DeploymentManager {
   cache: Cache; // TODO: kind of a misnomer since its handling *all* path stuff
   contractsCache: ContractMap | null;
   _signers: SignerWithAddress[];
+  bridgedDeploymentManagers: Map<string, DeploymentManager> = new Map();
 
   constructor(
     network: string,
@@ -73,6 +74,20 @@ export class DeploymentManager {
 
     this.contractsCache = null;
     this._signers = [];
+  }
+
+  async addBridgedDeploymentManager(network: string, deployment: string, hre?: HardhatRuntimeEnvironment): Promise<DeploymentManager> {
+    const key = `${network}:${deployment}`;
+    if (!this.bridgedDeploymentManagers.has(key)) {
+      if(!hre && this.network !== network) {
+        throw new Error(`Must provide hre to bridge to a different network deployment manager`);
+      }
+      const dm = new DeploymentManager(network, deployment, hre ?? this.hre, { writeCacheToDisk: true });
+      await dm.loadContractsFromExistingCache();
+      await dm.spider();
+      this.bridgedDeploymentManagers.set(key, dm);
+    }
+    return this.bridgedDeploymentManagers.get(key)!;
   }
 
   async getSigners(): Promise<SignerWithAddress[]> {
@@ -433,6 +448,11 @@ export class DeploymentManager {
 
   /* Loads contract configuration by tracing from roots outwards, based on relationConfig */
   async spider(deployed: Deployed = {}): Promise<Spider> {
+
+    // seed the cache with archived build files for the current network
+    // the source is the comet-contracts-archive submodule (plugins/import/contracts-archive/<network>/.contracts/*.json)
+    await seedArchiveCache(this.cache, this.network);
+
     const relationConfigMap = getRelationConfig(
       this.hre.config.deploymentManager,
       this.network,
