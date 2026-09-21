@@ -2,7 +2,7 @@ import { DeploymentManager } from '../../plugins/deployment_manager';
 import relayPolygonMessage from './relayPolygonMessage';
 import { relayArbitrumMessage, relayArbitrumCCTPMint, simulateL2ToL1TokenBridging } from './relayArbitrumMessage';
 import relayBaseMessage,{ simulateL2ToL1TokenBridging as simulateBaseL2ToL1TokenBridging} from './relayBaseMessage';
-import relayLineaMessage from './relayLineaMessage';
+import relayLineaMessage, { simulateL2ToL1CCTPBridging as simulateLineaL2ToL1CCTPBridging } from './relayLineaMessage';
 import relayOptimismMessage, { simulateL2ToL1TokenBridging as simulateOptimismL2ToL1TokenBridging } from './relayOptimismMessage';
 import relayMantleMessage from './relayMantleMessage';
 import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMessage';
@@ -104,13 +104,23 @@ export default async function relayMessage(
       );
       return proposal;
     }
-    case 'linea':
-      return await relayLineaMessage(
+    case 'linea': {
+      const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
+      proposal = await relayLineaMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         startingBlockNumber,
         tenderlyLogs
       );
+      await simulateLineaL2ToL1CCTPBridging(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
+        proposal,
+        tenderlyLogs
+      );
+      return proposal;
+    }
     case 'scroll':
       return await relayScrollMessage(
         governanceDeploymentManager,
