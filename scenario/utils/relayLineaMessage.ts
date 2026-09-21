@@ -1,12 +1,13 @@
 import { DeploymentManager } from '../../plugins/deployment_manager';
 import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
-import { constants, ethers } from 'ethers';
+import { constants, Contract, ethers, utils } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { isTenderlyLog } from './index';
 
-const LINEA_SETTER_ROLE_ACCOUNT = '0xc1C6B09D1eB6fCA0fF3cA11027E5Bc4AeDb47F67';
+const LINEA_SETTER_ROLE_ACCOUNT = '0x2b0F9C76970975aec03784EFd763623757EF7652';
+const DEPOSIT_FOR_BURN_SIGNATURE = 'depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)';
 
 export default async function relayLineaMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -245,9 +246,9 @@ export default async function relayLineaMessage(
       // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
       openBridgedProposals.push({ id, eta });
     } else {
-      throw new Error(
-        `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Unrecognized target for cross-chain message`
-      );
+      // throw error only on last relay message and no proposal created event found
+      if(messageSentEvents.indexOf(messageSentEvent) === messageSentEvents.length - 1 && openBridgedProposals.length === 0)
+        throw new Error(`[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Unrecognized target for cross-chain message`);
     }
   }
 
@@ -276,7 +277,99 @@ export default async function relayLineaMessage(
       `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Executed bridged proposal ${id}`
     );
   }
+
   return openBridgedProposals;
+}
+
+/**
+ * Simulates the L1 side of Circle CCTP transfers initiated by executed Linea proposals.
+ *
+ * Executing a bridged proposal only burns USDC on Linea; the mint on Ethereum mainnet needs an off-chain
+ * attestation that does not exist on a fork. For every `depositForBurn` action of the given proposals, mint
+ * the burned amount to the `mintRecipient` on the governance network through the L1 CCTP TokenMinter.
+ */
+export async function simulateL2ToL1CCTPBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber: number,
+  proposals: OpenBridgedProposal[],
+  tenderlyLogs?: any[]
+) {
+  if (tenderlyLogs || proposals.length === 0) {
+    return;
+  }
+
+  const bridgeReceiver = await bridgeDeploymentManager.getContractOrThrow('bridgeReceiver');
+  const proposalIds = proposals.map(({ id }) => id.toString());
+
+  // ProposalCreated(address indexed rootMessageSender, uint256 id, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 eta)
+  const proposalCreatedEvents = await bridgeDeploymentManager.retry(() =>
+    bridgeDeploymentManager.hre.ethers.provider.getLogs({
+      fromBlock: l2StartingBlockNumber,
+      toBlock: 'latest',
+      address: bridgeReceiver.address,
+      topics: [utils.id('ProposalCreated(address,uint256,address[],uint256[],string[],bytes[],uint256)')]
+    })
+  );
+
+  for (const event of proposalCreatedEvents) {
+    const { id, targets, signatures, calldatas } = bridgeReceiver.interface.parseLog(event).args;
+    // Only handle the proposals that were just executed, so earlier ones are never minted twice
+    if (!proposalIds.includes(id.toString())) continue;
+
+    for (let i = 0; i < signatures.length; i++) {
+      if (signatures[i] !== DEPOSIT_FOR_BURN_SIGNATURE) continue;
+
+      const [amount, , mintRecipientBytes32, burnToken] = utils.defaultAbiCoder.decode(
+        ['uint256', 'uint32', 'bytes32', 'address', 'bytes32', 'uint256', 'uint32'],
+        calldatas[i]
+      );
+      const mintRecipient = utils.getAddress(utils.hexDataSlice(mintRecipientBytes32, 12));
+
+      // L2: the domain of the chain the USDC was burned on, resolved through the target TokenMessenger
+      const l2TokenMessenger = new Contract(
+        targets[i],
+        ['function localMessageTransmitter() view returns (address)'],
+        bridgeDeploymentManager.hre.ethers.provider
+      );
+      const l2MessageTransmitter = new Contract(
+        await l2TokenMessenger.localMessageTransmitter(),
+        ['function localDomain() view returns (uint32)'],
+        bridgeDeploymentManager.hre.ethers.provider
+      );
+      const sourceDomain = await l2MessageTransmitter.localDomain();
+
+      // L1: the TokenMinter maps (sourceDomain, burnToken) to the local USDC and is only callable by the TokenMessenger
+      const l1TokenMessenger = await governanceDeploymentManager.getContractOrThrow('CCTPTokenMessenger');
+      const l1TokenMinter = new Contract(
+        await l1TokenMessenger.localMinter(),
+        ['function mint(uint32 sourceDomain, bytes32 burnToken, address recipientOne, address recipientTwo, uint256 amountOne, uint256 amountTwo) returns (address)'],
+        await governanceDeploymentManager.getSigner()
+      );
+      const l1TokenMessengerSigner = await impersonateAddress(
+        governanceDeploymentManager,
+        l1TokenMessenger.address
+      );
+      await governanceDeploymentManager.hre.network.provider.send('hardhat_setBalance', [
+        l1TokenMessengerSigner.address,
+        '0x1000000000000000000',
+      ]);
+
+      console.log(
+        `[${bridgeDeploymentManager.network} -> ${governanceDeploymentManager.network}] Simulating CCTP mint of ${amount} of ${burnToken} to ${mintRecipient}`
+      );
+      await (
+        await l1TokenMinter.connect(l1TokenMessengerSigner).mint(
+          sourceDomain,
+          utils.hexZeroPad(burnToken, 32),
+          mintRecipient,
+          l1TokenMinter.address, // second recipient, same call shape as the Optimism and Arbitrum simulations
+          amount,
+          1
+        )
+      ).wait();
+    }
+  }
 }
 
 // Helper to fetch logs in chunks of 10,000 blocks

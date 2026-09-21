@@ -133,7 +133,8 @@ describe('configurator', function() {
 
     const abi = [
       'event CometDeployed(address indexed cometProxy, address indexed newComet)',
-      'event Upgraded(address indexed implementation)'
+      'event Upgraded(address indexed implementation)',
+      'event AssetListCreated(address indexed assetList, tuple(address asset, address priceFeed, uint8 decimals, uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint128 supplyCap)[] assetConfigs)',
     ];
 
     // Initialize the contract interface
@@ -143,7 +144,9 @@ describe('configurator', function() {
     txn.receipt.events.forEach(event => {
       try {
         const decodedEvent = iface.parseLog(event);
-        events.push(decodedEvent);
+        if (decodedEvent.name !== 'AssetListCreated') {
+          events.push(decodedEvent);
+        }
       } catch (error) {
         console.log('Failed to decode event:', error);
       }
