@@ -403,6 +403,25 @@ export async function isAssetDelisted(
   return assetInfo.borrowCollateralFactor.toBigInt() === 0n;
 }
 
+/// Finds the index of the first collateral asset that can back a borrow in the bulker scenarios.
+/// The wrapped native token is skipped, since it is supplied and withdrawn through the native token actions,
+/// and so are delisted assets, which have a zero borrow collateral factor. Returns -1 if there is none.
+export async function getBulkerCollateralIndex(ctx: CometContext): Promise<number> {
+  const bulker = await ctx.getBulker();
+  if (bulker == null) return -1;
+
+  const comet = await ctx.getComet();
+  const wrappedNativeToken = (await bulker.wrappedNativeToken()).toLowerCase();
+  const numAssets = await comet.numAssets();
+  for (let i = 0; i < numAssets; i++) {
+    const { asset } = await comet.getAssetInfo(i);
+    if (asset.toLowerCase() === wrappedNativeToken) continue;
+    if (await isAssetDelisted(ctx, i)) continue;
+    return i;
+  }
+  return -1;
+}
+
 export async function isTriviallySourceable(
   ctx: CometContext,
   assetNum: number,
