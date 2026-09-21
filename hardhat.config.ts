@@ -422,6 +422,7 @@ const config: HardhatUserConfig = {
   typechain: {
     outDir: 'build/types',
     target: 'ethers-v5',
+    externalArtifacts: ['artifacts/contracts/interfaces/IWstETH.sol/IWstETH.json'],
   },
 
   deploymentManager: {
