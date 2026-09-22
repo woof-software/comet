@@ -1,10 +1,10 @@
 import { expect } from 'chai';
-import { Contract } from 'ethers';
+import { Contract, utils } from 'ethers';
 import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
 import { migration } from '../../../../plugins/deployment_manager/Migration';
 import { exp, proposal } from '../../../../src/deploy';
 
-const COMET_FACTORY_V2 = '0x298aC0E463cEAd4aaA73fb91Df7C639A8eFBd9c4';
+const COMET_FACTORY_V2 = '0x7692CBe715F799977D6B1B87079e97e328C8355F';
 
 const USDS_EXT = '0xbEf2218271f74B58ed06197903574716709c9537';
 
@@ -25,19 +25,31 @@ export default migration('1790001296_update_usds_to_v2_factory', {
     } = await deploymentManager.getContracts();
 
     const mainnetActions = [
-      // 1. Update USDS Comet factory to a new one
+      // 1. Update version in new Comet to the recent service patch version
+      {
+        target: COMET_FACTORY_V2,
+        signature: 'setVersion(((uint64,uint64,uint64),string))',
+        calldata: utils.defaultAbiCoder.encode(
+          ['tuple((uint64,uint64,uint64),string)'],
+          [[
+            [1, 2, 1],
+            '',
+          ]]
+        ),          
+      },
+      // 2. Update USDS Comet factory to a new one
       {
         contract: configurator,
         signature: 'setFactory(address,address)',
         args: [comet.address, COMET_FACTORY_V2],
       },
-      // 2. Set service patch version of the extension delegate for the USDS Comet
+      // 3. Set service patch version of the extension delegate for the USDS Comet
       {
         contract: configurator,
         signature: 'setExtensionDelegate(address,address)',
         args: [comet.address, USDS_EXT],
       },
-      // 3. Deploy and upgrade to a new version of Comet
+      // 4. Deploy and upgrade to a new version of Comet
       {
         contract: cometAdmin,
         signature: 'deployAndUpgradeTo(address,address)',
