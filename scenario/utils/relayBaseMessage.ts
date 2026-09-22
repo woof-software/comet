@@ -143,15 +143,23 @@ export default async function relayBaseMessage(
     } else if (target === bridgeReceiver.address) {
       // Cross-chain message passing
       if (relayMessageTxn) {
-        const proposalCreatedEvent = relayMessageTxn.events.find(
-          (event) => event.address === bridgeReceiver.address
-        );
-        const {
-          args: { id, eta },
-        } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+        try {
+          const proposalCreatedEvent = relayMessageTxn.events.find(
+            (event) => event.address === bridgeReceiver.address
+          );
+          const {
+            args: { id, eta },
+          } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
 
-        // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
-        openBridgedProposals.push({ id, eta });
+          // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
+          openBridgedProposals.push({ id, eta });
+        } catch (e) {
+          if (relayMessageTxn.events[0]?.event === 'FailedRelayedMessage') {
+            console.log(`[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Failed to relay message (FailedRelayedMessage) — bridgeReceiver did not emit ProposalCreated`);
+            continue;
+          }
+          throw e;
+        }
       }
     } else {
       // throw error only on last relay message and no proposal created event found
@@ -194,7 +202,8 @@ export async function simulateL2ToL1TokenBridging(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
   l2StartingBlockNumber?: number,
-  tenderlyLogs?: any[]
+  tenderlyLogs?: any[],
+  proposalIds?: BigNumber[]
 ) {
   if(tenderlyLogs) {
     return;
@@ -228,8 +237,11 @@ export async function simulateL2ToL1TokenBridging(
 
   for (const event of proposalCreatedEvents) {
     const decodedEvent = bridgeReceiver.interface.parseLog(event);
-    const { signatures, calldatas } = decodedEvent.args;
+    const { id, signatures, calldatas } = decodedEvent.args;
 
+    if (proposalIds && !proposalIds.some((p) => p.toString() === id.toString())) {
+      continue;
+    }
 
     for (let i = 0; i < signatures.length; i++) {
       if (signatures[i] === bridgeERC20ToSignature) {
