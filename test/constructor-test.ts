@@ -1,11 +1,12 @@
-import { ethers, exp, expect, makeProtocol, ONE } from './helpers';
-import {
-  AssetListFactory__factory,
-  CometExtAssetList__factory,
-  CometHarnessExtendedAssetList__factory,
-  FaucetToken__factory,
-  SimplePriceFeed__factory,
-} from '../build/types';
+import { encodeBytes32String } from 'ethers';
+import type { Contract } from 'ethers';
+
+import { CometHarnessExtendedAssetList__factory } from '../build/types/index.js';
+import { ethers, exp, expect, makeProtocol, ONE } from './helpers.js';
+
+const cometErrors = {
+  interface: CometHarnessExtendedAssetList__factory.createInterface(),
+};
 
 describe('constructor', function () {
   it('sets the baseBorrowMin', async function () {
@@ -19,16 +20,16 @@ describe('constructor', function () {
     const [governor, pauseGuardian] = await ethers.getSigners();
 
     // extension delegate
-    const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
+    const AssetListFactory = await ethers.getContractFactory('AssetListFactory');
     const assetListFactory = await AssetListFactory.deploy();
-    await assetListFactory.deployed();
+    await assetListFactory.waitForDeployment();
 
-    const CometExtFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
+    const CometExtFactory = await ethers.getContractFactory('CometExtAssetList');
     const extensionDelegate = await CometExtFactory.deploy({
-      name32: ethers.utils.formatBytes32String('Compound Comet'),
-      symbol32: ethers.utils.formatBytes32String('📈BASE')
-    }, assetListFactory.address);
-    await extensionDelegate.deployed();
+      name32: encodeBytes32String('Compound Comet'),
+      symbol32: encodeBytes32String('📈BASE')
+    }, await assetListFactory.getAddress());
+    await extensionDelegate.waitForDeployment();
 
     // tokens
     const assets = {
@@ -38,31 +39,31 @@ describe('constructor', function () {
         packedDecimals: 19,
       }
     };
-    const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
-    const tokens = {};
+    const FaucetFactory = await ethers.getContractFactory('FaucetToken');
+    const tokens: Record<string, Contract> = {};
     for (const symbol in assets) {
       const config = assets[symbol];
       const decimals = config.decimals;
       const token = (tokens[symbol] = await FaucetFactory.deploy(1e6, symbol, decimals, symbol));
-      await token.deployed();
+      await token.waitForDeployment();
     }
 
     // price feeds
-    let priceFeeds = {};
-    const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
+    const priceFeeds: Record<string, Contract> = {};
+    const PriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');
     for (const asset in assets) {
       const priceFeed = await PriceFeedFactory.deploy(exp(1, 8), 8);
-      await priceFeed.deployed();
+      await priceFeed.waitForDeployment();
       priceFeeds[asset] = priceFeed;
     }
 
-    const CometFactory = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
+    const CometFactory = await ethers.getContractFactory('CometHarnessExtendedAssetList');
     await expect(CometFactory.deploy({
-      governor: governor.address,
-      pauseGuardian: pauseGuardian.address,
-      extensionDelegate: extensionDelegate.address,
-      baseToken: tokens['USDC'].address,
-      baseTokenPriceFeed: priceFeeds['USDC'].address,
+      governor: await governor.getAddress(),
+      pauseGuardian: await pauseGuardian.getAddress(),
+      extensionDelegate: await extensionDelegate.getAddress(),
+      baseToken: await tokens['USDC'].getAddress(),
+      baseTokenPriceFeed: await priceFeeds['USDC'].getAddress(),
       supplyKink: exp(8, 17),
       supplyPerYearInterestRateBase: exp(5, 15),
       supplyPerYearInterestRateSlopeLow: exp(1, 17),
@@ -79,15 +80,15 @@ describe('constructor', function () {
       baseBorrowMin: exp(1, 6),
       targetReserves: 0,
       assetConfigs: [{
-        asset: tokens['EVIL'].address,
-        priceFeed: priceFeeds['EVIL'].address,
+        asset: await tokens['EVIL'].getAddress(),
+        priceFeed: await priceFeeds['EVIL'].getAddress(),
         decimals: assets['EVIL'].packedDecimals, // <-- packed decimals differ from deployed token's decimals
         borrowCollateralFactor: ONE - 1n,
         liquidateCollateralFactor: ONE,
         liquidationFactor: ONE,
         supplyCap: exp(100, 18),
       }],
-    })).to.be.revertedWith("custom error 'BadDecimals()'");
+    })).to.be.revertedWithCustomError(CometFactory, 'BadDecimals');
   });
 
   it('reverts if baseTokenPriceFeed does not have 8 decimals', async () => {
@@ -99,7 +100,7 @@ describe('constructor', function () {
           },
         },
       })
-    ).to.be.revertedWith("custom error 'BadDecimals()'");
+    ).to.be.revertedWithCustomError(cometErrors, 'BadDecimals');
   });
 
   it('reverts if asset has a price feed that does not have 8 decimals', async () => {
@@ -115,7 +116,7 @@ describe('constructor', function () {
           },
         },
       })
-    ).to.be.revertedWith("custom error 'BadDecimals()'");
+    ).to.be.revertedWithCustomError(cometErrors, 'BadDecimals');
   });
 
   it('reverts if base token has fewer than 6 decimals', async () => {
@@ -127,7 +128,7 @@ describe('constructor', function () {
           },
         },
       })
-    ).to.be.revertedWith("custom error 'BadDecimals()'");
+    ).to.be.revertedWithCustomError(cometErrors, 'BadDecimals');
   });
 
   it('reverts if base token has more than 18 decimals', async () => {
@@ -139,14 +140,14 @@ describe('constructor', function () {
           },
         },
       })
-    ).to.be.revertedWith("custom error 'BadDecimals()'");
+    ).to.be.revertedWithCustomError(cometErrors, 'BadDecimals');
   });
 
   it('reverts if initializeStorage is called after initialization', async () => {
     const { cometWithExtendedAssetList: comet } = await makeProtocol();
     await expect(
       comet.initializeStorage()
-    ).to.be.revertedWith("custom error 'AlreadyInitialized()'");
+    ).to.be.revertedWithCustomError(comet, 'AlreadyInitialized');
   });
 
   it('is not possible to create a perSecondInterestRateSlopeLow above FACTOR_SCALE', async () => {

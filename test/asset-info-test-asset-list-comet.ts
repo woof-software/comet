@@ -1,4 +1,9 @@
-import { expect, exp, makeConfigurator, ONE, makeProtocol } from './helpers';
+import { CometHarnessExtendedAssetList__factory } from '../build/types/index.js';
+import { expect, exp, makeConfigurator, ONE, makeProtocol } from './helpers.js';
+
+const cometErrors = {
+  interface: CometHarnessExtendedAssetList__factory.createInterface(),
+};
 
 describe('asset info', function () {
   it('initializes protocol', async () => {
@@ -16,17 +21,17 @@ describe('asset info', function () {
     expect(cometNumAssets).to.be.equal(3);
 
     const assetInfo00 = await comet.getAssetInfo(0);
-    expect(assetInfo00.asset).to.be.equal(tokens['ASSET1'].address);
+    expect(assetInfo00.asset).to.be.equal(await tokens['ASSET1'].getAddress());
     expect(assetInfo00.borrowCollateralFactor).to.equal(ONE - exp(1, 14));
     expect(assetInfo00.liquidateCollateralFactor).to.equal(ONE);
 
     const assetInfo01 = await comet.getAssetInfo(1);
-    expect(assetInfo01.asset).to.be.equal(tokens['ASSET2'].address);
+    expect(assetInfo01.asset).to.be.equal(await tokens['ASSET2'].getAddress());
     expect(assetInfo01.borrowCollateralFactor).to.equal(ONE - exp(1, 14));
     expect(assetInfo01.liquidateCollateralFactor).to.equal(ONE);
 
     const assetInfo02 = await comet.getAssetInfo(2);
-    expect(assetInfo02.asset).to.be.equal(tokens['ASSET3'].address);
+    expect(assetInfo02.asset).to.be.equal(await tokens['ASSET3'].getAddress());
     expect(assetInfo02.borrowCollateralFactor).to.equal(ONE - exp(1, 14));
     expect(assetInfo02.liquidateCollateralFactor).to.equal(ONE);
   });
@@ -64,12 +69,15 @@ describe('asset info', function () {
         },
         reward: 'ASSET1',
       })
-    ).to.be.revertedWith("custom error 'TooManyAssets()'");
+    ).to.be.revertedWithCustomError(cometErrors, 'TooManyAssets');
   });
 
   it('reverts if index is greater than numAssets', async () => {
     const { cometWithExtendedAssetList } = await makeConfigurator();
-    await expect(cometWithExtendedAssetList.getAssetInfo(3)).to.be.revertedWith("custom error 'BadAsset()'");
+    await expect(cometWithExtendedAssetList.getAssetInfo(3)).to.be.revertedWithCustomError(
+      cometWithExtendedAssetList,
+      'BadAsset'
+    );
   });
 
   it('reverts if collateral factors are out of range', async () => {
@@ -79,7 +87,7 @@ describe('asset info', function () {
         ASSET1: {borrowCF: exp(0.9, 18), liquidateCF: exp(0.9, 18)},
         ASSET2: {},
       },
-    })).to.be.revertedWith("custom error 'BorrowCFTooLarge()'");
+    })).to.be.revertedWithCustomError(cometErrors, 'BorrowCFTooLarge');
 
     // check descaled factors
     await expect(makeConfigurator({
@@ -88,7 +96,7 @@ describe('asset info', function () {
         ASSET1: {borrowCF: exp(0.9, 18), liquidateCF: exp(0.9, 18) + 1n},
         ASSET2: {},
       },
-    })).to.be.revertedWith("custom error 'BorrowCFTooLarge()'");
+    })).to.be.revertedWithCustomError(cometErrors, 'BorrowCFTooLarge');
 
     await expect(makeConfigurator({
       assets: {
@@ -96,6 +104,6 @@ describe('asset info', function () {
         ASSET1: {borrowCF: exp(0.99, 18), liquidateCF: exp(1.1, 18)},
         ASSET2: {},
       },
-    })).to.be.revertedWith("custom error 'LiquidateCFTooLarge()'");
+    })).to.be.revertedWithCustomError(cometErrors, 'LiquidateCFTooLarge');
   });
 });

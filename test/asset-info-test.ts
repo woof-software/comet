@@ -1,10 +1,12 @@
-import { expect, exp, makeProtocol, ONE } from './helpers';
-import { ethers } from 'hardhat';
-import {
-  SimplePriceFeed__factory,
-  FaucetToken__factory,
-  CometHarnessExtendedAssetList__factory
-} from '../build/types';
+import { ZeroAddress } from 'ethers';
+import type { Contract } from 'ethers';
+
+import { ethers, expect, exp, makeProtocol, ONE } from './helpers.js';
+import { CometHarnessExtendedAssetList__factory } from '../build/types/index.js';
+
+const cometErrors = {
+  interface: CometHarnessExtendedAssetList__factory.createInterface(),
+};
 
 describe('asset info', function () {
   it('initializes protocol', async () => {
@@ -24,23 +26,23 @@ describe('asset info', function () {
     expect(cometNumAssets).to.be.equal(3);
 
     const assetInfo00 = await comet.getAssetInfo(0);
-    expect(assetInfo00.asset).to.be.equal(tokens['ASSET1'].address);
+    expect(assetInfo00.asset).to.be.equal(await tokens['ASSET1'].getAddress());
     expect(assetInfo00.borrowCollateralFactor).to.equal(ONE - exp(1, 14));
     expect(assetInfo00.liquidateCollateralFactor).to.equal(ONE);
 
     const assetInfo01 = await comet.getAssetInfo(1);
-    expect(assetInfo01.asset).to.be.equal(tokens['ASSET2'].address);
+    expect(assetInfo01.asset).to.be.equal(await tokens['ASSET2'].getAddress());
     expect(assetInfo01.borrowCollateralFactor).to.equal(ONE - exp(1, 14));
     expect(assetInfo01.liquidateCollateralFactor).to.equal(ONE);
 
     const assetInfo02 = await comet.getAssetInfo(2);
-    expect(assetInfo02.asset).to.be.equal(tokens['ASSET3'].address);
+    expect(assetInfo02.asset).to.be.equal(await tokens['ASSET3'].getAddress());
     expect(assetInfo02.borrowCollateralFactor).to.equal(ONE - exp(1, 14));
     expect(assetInfo02.liquidateCollateralFactor).to.equal(ONE);
   });
 
   it('reverts if too many assets are passed', async () => {
-    let priceFeeds = {};
+    const priceFeeds: Record<string, Contract> = {};
     const assets = {
       USDC: {},
       ASSET1: {},
@@ -70,32 +72,46 @@ describe('asset info', function () {
       ASSET25: {},
     };
     const base = 'USDC';
-    const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
+    const PriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');
     for (const asset in assets) {
       const initialPrice = exp(assets[asset].initialPrice || 1, 8);
       const priceFeedDecimals = assets[asset].priceFeedDecimals || 8;
       const priceFeed = await PriceFeedFactory.deploy(initialPrice, priceFeedDecimals);
-      await priceFeed.deployed();
+      await priceFeed.waitForDeployment();
       priceFeeds[asset] = priceFeed;
     }
-    const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
-    const tokens = {};
+    const FaucetFactory = await ethers.getContractFactory('FaucetToken');
+    const tokens: Record<string, Contract> = {};
     for (const symbol in assets) {
       const config = assets[symbol];
       const decimals = config.decimals || 18;
       const initial = config.initial || 1e6;
       const name = config.name || symbol;
       const factory = config.factory || FaucetFactory;
-      let token;
-      token = (tokens[symbol] = await factory.deploy(initial, name, decimals, symbol));
-      await token.deployed();
+      const token = (tokens[symbol] = await factory.deploy(initial, name, decimals, symbol));
+      await token.waitForDeployment();
     }
+    const assetConfigs = [];
+    for (const symbol of Object.keys(assets)) {
+      if (symbol !== base) {
+        assetConfigs.push({
+          asset: await tokens[symbol].getAddress(),
+          priceFeed: await priceFeeds[symbol].getAddress(),
+          decimals: 18,
+          borrowCollateralFactor: ONE - 1n,
+          liquidateCollateralFactor: ONE,
+          liquidationFactor: ONE,
+          supplyCap: exp(100, 18),
+        });
+      }
+    }
+
     const config = {
-      governor: ethers.constants.AddressZero,
-      pauseGuardian: ethers.constants.AddressZero,
-      extensionDelegate: ethers.constants.AddressZero,
-      baseToken: tokens[base].address,
-      baseTokenPriceFeed: priceFeeds[base].address,
+      governor: ZeroAddress,
+      pauseGuardian: ZeroAddress,
+      extensionDelegate: ZeroAddress,
+      baseToken: await tokens[base].getAddress(),
+      baseTokenPriceFeed: await priceFeeds[base].getAddress(),
       supplyKink: 0,
       supplyPerYearInterestRateBase: 0,
       supplyPerYearInterestRateSlopeLow: 0,
@@ -111,30 +127,17 @@ describe('asset info', function () {
       baseMinForRewards: 0,
       baseBorrowMin: 0,
       targetReserves: 0,
-      assetConfigs: Object.entries(assets).reduce((acc, [symbol], _i) => {
-        if (symbol != base) {
-          acc.push({
-            asset: tokens[symbol].address,
-            priceFeed: priceFeeds[symbol].address,
-            decimals: 18,
-            borrowCollateralFactor: ONE - 1n,
-            liquidateCollateralFactor: ONE,
-            liquidationFactor: ONE,
-            supplyCap: exp(100, 18),
-          });
-        }
-        return acc;
-      }, []),
+      assetConfigs,
     };
-    const CometFactory = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
+    const CometFactory = await ethers.getContractFactory('CometHarnessExtendedAssetList');
     await expect(
       CometFactory.deploy(config)
-    ).to.be.revertedWith("custom error 'TooManyAssets()'");
+    ).to.be.revertedWithCustomError(CometFactory, 'TooManyAssets');
   });
 
   it('reverts if index is greater than numAssets', async () => {
     const { cometWithExtendedAssetList : comet } = await makeProtocol();
-    await expect(comet.getAssetInfo(3)).to.be.revertedWith("custom error 'BadAsset()'");
+    await expect(comet.getAssetInfo(3)).to.be.revertedWithCustomError(comet, 'BadAsset');
   });
 
   it('reverts if collateral factors are out of range', async () => {
@@ -144,7 +147,7 @@ describe('asset info', function () {
         ASSET1: {borrowCF: exp(0.9, 18), liquidateCF: exp(0.9, 18)},
         ASSET2: {},
       },
-    })).to.be.revertedWith("custom error 'BorrowCFTooLarge()'");
+    })).to.be.revertedWithCustomError(cometErrors, 'BorrowCFTooLarge');
 
     // check descaled factors
     await expect(makeProtocol({
@@ -153,7 +156,7 @@ describe('asset info', function () {
         ASSET1: {borrowCF: exp(0.9, 18), liquidateCF: exp(0.9, 18) + 1n},
         ASSET2: {},
       },
-    })).to.be.revertedWith("custom error 'BorrowCFTooLarge()'");
+    })).to.be.revertedWithCustomError(cometErrors, 'BorrowCFTooLarge');
 
     await expect(makeProtocol({
       assets: {
@@ -161,6 +164,6 @@ describe('asset info', function () {
         ASSET1: {borrowCF: exp(0.99, 18), liquidateCF: exp(1.1, 18)},
         ASSET2: {},
       },
-    })).to.be.revertedWith("custom error 'LiquidateCFTooLarge()'");
+    })).to.be.revertedWithCustomError(cometErrors, 'LiquidateCFTooLarge');
   });
 });
