@@ -2,7 +2,7 @@ import {
   Deployed,
   DeploymentManager,
 } from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet, exp } from '../../../src/deploy';
+import { DeploySpec, deployComet } from '../../../src/deploy';
 
 const HOUR = 60 * 60;
 const DAY = 24 * HOUR;
@@ -44,33 +44,6 @@ async function deployContracts(
     'COMP',
     '0xdf78e4f0a8279942ca68046476919a90f2288656',
     'unichain'
-  );
-
-  const _WETHPriceFeed = await deploymentManager.deploy(
-    'WETH:priceFeed',
-    'pricefeeds/ScalingPriceFeed.sol',
-    [
-      '0xe8D9FbC10e00ecc9f0694617075fDAF657a76FB2', // oracle
-      8,                                            // decimals
-    ]
-  );
-
-  const _USDCPriceFeed = await deploymentManager.deploy(
-    'USDC:priceFeed',
-    'pricefeeds/ScalingPriceFeed.sol',
-    [
-      '0xD15862FC3D5407A03B696548b6902D6464A69b8c', // oracle
-      8,                                            // decimals
-    ]
-  );
-
-  const _UNIPriceFeed = await deploymentManager.deploy(
-    'UNI:priceFeed',
-    'pricefeeds/ScalingPriceFeed.sol',
-    [
-      '0xf1454949C6dEdfb500ae63Aa6c784Aa1Dde08A6c', // oracle
-      8,                                            // decimals
-    ]
   );
 
   const l2CrossDomainMessenger = await deploymentManager.existing(

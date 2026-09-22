@@ -9,8 +9,13 @@ export interface Result {
 
 export function getBlockscoutApiUrl(network: string): string {
   let host = {
+    'mainnet': 'eth.blockscout.com',
+    'optimism': 'optimism.blockscout.com',
+    'base': 'base.blockscout.com',
+    'arbitrum': 'arbitrum.blockscout.com',
     'unichain': 'unichain.blockscout.com',
-    'scroll': 'scrollscan.com'
+    'scroll': 'scrollscan.com',
+    'ronin': 'explorer.roninchain.com',
   }[network];
 
   if (!host) {
@@ -22,8 +27,13 @@ export function getBlockscoutApiUrl(network: string): string {
 
 export function getBlockscoutUrl(network: string): string {
   let host = {
+    'arbitrum': 'arbitrum.blockscout.com',
+    'base': 'base.blockscout.com',
+    'optimism': 'optimism.blockscout.com',
+    'mainnet': 'eth.blockscout.com',
     'unichain': 'unichain.blockscout.com',
-    'scroll': 'scrollscan.com'
+    'scroll': 'scrollscan.com',
+    'ronin': 'explorer.roninchain.com',
   }[network];
 
   if (!host) {
@@ -33,21 +43,7 @@ export function getBlockscoutUrl(network: string): string {
   return `https://${host}`;
 }
 
-export async function getBlockscoutRPCUrl(network: string): Promise<string> {
-  let host = {
-    'unichain': `${process.env.UNICHAIN_QUICKNODE_LINK}`.replace('https://', ''),
-    'scroll': `scroll-mainnet.gateway.tenderly.co`,
-  }[network];
-
-  if (!host) {
-    throw new Error(`Unknown blockscout RPC host for network ${network}`);
-  }
-
-  return `https://${host}`;
-}
-
 export async function get(url, data) {
   const res = (await axios.get(url, { params: data }))['data'];
   return res;
 }
-

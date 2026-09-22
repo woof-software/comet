@@ -23,4 +23,8 @@ export default {
       }
     }
   },
+
+  Proxy: {
+    artifact: 'contracts/interfaces/ERC20.sol:ERC20'
+  },
 };

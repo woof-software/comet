@@ -4,7 +4,7 @@ pragma solidity 0.8.15;
 import "./interfaces/IPriceFeed.sol";
 import "./interfaces/IERC20NonStandard.sol";
 import "./CometMainInterface.sol";
-import "./CometCore.sol";
+import "./interfaces/ICometData.sol";
 
 /**
  * @title Compound's Asset List
@@ -137,9 +137,17 @@ contract AssetList {
         if (IPriceFeed(priceFeed).decimals() != PRICE_FEED_DECIMALS) revert CometMainInterface.BadDecimals();
         if (IERC20NonStandard(asset).decimals() != decimals_) revert CometMainInterface.BadDecimals();
 
-        // Ensure collateral factors are within range
-        if (assetConfig.borrowCollateralFactor >= assetConfig.liquidateCollateralFactor) revert CometMainInterface.BorrowCFTooLarge();
+        // Sanity checks for factors ordering: BCF < LCF; LCF <= MAX; LF <= MAX
+        if (assetConfig.borrowCollateralFactor >= assetConfig.liquidateCollateralFactor && assetConfig.borrowCollateralFactor != 0)
+            revert CometMainInterface.BorrowCFTooLarge();
         if (assetConfig.liquidateCollateralFactor > MAX_COLLATERAL_FACTOR) revert CometMainInterface.LiquidateCFTooLarge();
+        if (assetConfig.liquidationFactor > MAX_COLLATERAL_FACTOR) revert CometMainInterface.LiqPenaltyTooHigh();
+
+        // Valid collateral factor configurations:
+        //  1. Both BCF and LCF are 0 => collateral is fully de-listed
+        //  2. borrowCF=0, liquidateCF>0 => soft de-list (no new borrows, controlled liquidation wind-down)
+        //  3. Both non-zero, properly ordered => active collateral
+        // Invalid: borrowCF>0, liquidateCF=0 => reverts (borrow power without liquidation coverage)
 
         unchecked {
             // Keep 4 decimals for each factor
@@ -148,8 +156,8 @@ contract AssetList {
             uint16 liquidateCollateralFactor = uint16(assetConfig.liquidateCollateralFactor / descale);
             uint16 liquidationFactor = uint16(assetConfig.liquidationFactor / descale);
 
-            // Be nice and check descaled values are still within range
-            if (borrowCollateralFactor >= liquidateCollateralFactor) revert CometMainInterface.BorrowCFTooLarge();
+            // safety check duplicate sanity check on original values to ensure no values skewing after descaling and type conversion
+            if (borrowCollateralFactor >= liquidateCollateralFactor && borrowCollateralFactor != 0) revert CometMainInterface.BorrowCFTooLarge();
 
             // Keep whole units of asset for supply cap
             uint64 supplyCap = uint64(assetConfig.supplyCap / (10 ** decimals_));
@@ -171,7 +179,7 @@ contract AssetList {
      * @param i The index of the asset info to get
      * @return The asset info object
      */
-    function getAssetInfo(uint8 i) public view returns (CometCore.AssetInfo memory) {
+    function getAssetInfo(uint8 i) public view returns (ICometData.AssetInfo memory) {
         if (i >= numAssets) revert CometMainInterface.BadAsset();
         uint256 word_a;
         uint256 word_b;
@@ -283,7 +291,7 @@ contract AssetList {
         uint64 scale = uint64(10 ** decimals_);
         uint128 supplyCap = uint128(((word_b >> 168) & type(uint64).max) * scale);
 
-        return CometCore.AssetInfo({
+        return ICometData.AssetInfo({
             offset: i,
             asset: asset,
             priceFeed: priceFeed,

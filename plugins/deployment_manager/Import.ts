@@ -23,7 +23,7 @@ export async function fetchAndCacheContract(
   return buildFile;
 }
 
-const blockScoutNetworks = ['unichain', 'scroll'];
+const blockScoutNetworks = ['mainnet', 'unichain', 'scroll', 'optimism', 'base', 'arbitrum', 'ronin'];
 
 // Wrapper for pulling contract data from Etherscan
 export async function importContract(
@@ -49,9 +49,6 @@ export async function importContract(
   }
 
   try {
-    if(network === 'ronin') {
-      return (await loadContract('ronin', network, address)) as BuildFile;
-    }
     return (await loadContract('etherscan', network, address)) as BuildFile;
   } catch (e) {
     if (retries === 0 || (e.message && e.message.includes('Contract source code not verified'))) {
