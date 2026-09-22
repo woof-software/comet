@@ -63,7 +63,7 @@ WOOF! proposes to update Mainnet cUSDSv3 Comet markets to a new service patch ve
 
 This proposal takes the governance steps recommended and necessary to update Compound III USDS markets on Mainnet. Simulations have confirmed the market's readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario).
 
-Detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/14).
+Detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/26).
 
 ### Bytecode Repository
 
