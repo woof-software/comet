@@ -1,6 +1,8 @@
-import { Comet, ethers, event, expect, makeProtocol, wait } from './helpers';
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { BigNumber, Signature } from 'ethers';
+import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
+import { MaxUint256, Signature, ZeroAddress } from 'ethers';
+
+import { ethers, expect, makeProtocol } from './helpers.js';
+import type { Comet } from './helpers.js';
 
 let comet: Comet;
 let _admin: SignerWithAddress;
@@ -13,7 +15,7 @@ let signatureArgs: {
   owner: string;
   manager: string;
   isAllowed: boolean;
-  nonce: BigNumber;
+  nonce: bigint;
   expiry: number;
 };
 
@@ -31,12 +33,13 @@ describe('allowBySig', function () {
   beforeEach(async () => {
     comet = (await makeProtocol()).cometWithExtendedAssetList;
     [_admin, pauseGuardian, signer, manager] = await ethers.getSigners();
+    const { chainId } = await ethers.provider.getNetwork();
 
     domain = {
       name: await comet.name(),
       version: await comet.version(),
-      chainId: 1337,
-      verifyingContract: comet.address,
+      chainId,
+      verifyingContract: await comet.getAddress(),
     };
     const blockNumber = await ethers.provider.getBlockNumber();
     const timestamp = (await ethers.provider.getBlock(blockNumber)).timestamp;
@@ -49,14 +52,14 @@ describe('allowBySig', function () {
       expiry: timestamp + 10,
     };
 
-    const rawSignature = await signer._signTypedData(domain, types, signatureArgs);
-    signature = ethers.utils.splitSignature(rawSignature);
+    const rawSignature = await signer.signTypedData(domain, types, signatureArgs);
+    signature = Signature.from(rawSignature);
   });
 
   it('authorizes with a valid signature', async () => {
     expect(await comet.isAllowed(signer.address, manager.address)).to.be.false;
 
-    const tx = await wait(comet
+    const tx = await comet
       .connect(manager)
       .allowBySig(
         signatureArgs.owner,
@@ -67,21 +70,17 @@ describe('allowBySig', function () {
         signature.v,
         signature.r,
         signature.s
-      ));
+      );
+
+    await expect(tx)
+      .to.emit(comet, 'Approval')
+      .withArgs(signer.address, manager.address, MaxUint256);
 
     // authorizes manager
     expect(await comet.isAllowed(signer.address, manager.address)).to.be.true;
 
     // increments nonce
-    expect(await comet.userNonce(signer.address)).to.equal(signatureArgs.nonce.add(1));
-
-    expect(event(tx, 0)).to.be.deep.equal({
-      Approval: {
-        owner: signer.address,
-        spender: manager.address,
-        amount: ethers.constants.MaxUint256.toBigInt(),
-      }
-    });
+    expect(await comet.userNonce(signer.address)).to.equal(signatureArgs.nonce + 1n);
   });
 
   it('fails if owner argument is altered', async () => {
@@ -100,7 +99,7 @@ describe('allowBySig', function () {
         signature.r,
         signature.s
       )
-    ).to.be.revertedWith("custom error 'BadSignatory()'");
+    ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
     // does not authorize
     expect(await comet.isAllowed(invalidOwnerAddress, manager.address)).to.be.false;
@@ -125,7 +124,7 @@ describe('allowBySig', function () {
         signature.r,
         signature.s
       )
-    ).to.be.revertedWith("custom error 'BadSignatory()'");
+    ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
     // does not authorize
     expect(await comet.isAllowed(signer.address, invalidManagerAddress)).to.be.false;
@@ -148,7 +147,7 @@ describe('allowBySig', function () {
         signature.r,
         signature.s
       )
-    ).to.be.revertedWith("custom error 'BadSignatory()'");
+    ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
     // does not authorize
     expect(await comet.isAllowed(signer.address, manager.address)).to.be.false;
@@ -165,13 +164,13 @@ describe('allowBySig', function () {
         signatureArgs.owner,
         signatureArgs.manager,
         signatureArgs.isAllowed,
-        signatureArgs.nonce.add(1), // altered nonce
+        signatureArgs.nonce + 1n, // altered nonce
         signatureArgs.expiry,
         signature.v,
         signature.r,
         signature.s
       )
-    ).to.be.revertedWith("custom error 'BadSignatory()'");
+    ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
     // does not authorize
     expect(await comet.isAllowed(signer.address, manager.address)).to.be.false;
@@ -194,7 +193,7 @@ describe('allowBySig', function () {
         signature.r,
         signature.s
       )
-    ).to.be.revertedWith("custom error 'BadSignatory()'");
+    ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
     // does not authorize
     expect(await comet.isAllowed(signer.address, manager.address)).to.be.false;
@@ -204,12 +203,12 @@ describe('allowBySig', function () {
   });
 
   it('fails if signature contains invalid nonce', async () => {
-    const invalidNonce = signatureArgs.nonce.add(1);
-    const rawSignature = await signer._signTypedData(domain, types, {
+    const invalidNonce = signatureArgs.nonce + 1n;
+    const rawSignature = await signer.signTypedData(domain, types, {
       ...signatureArgs,
       nonce: invalidNonce,
     });
-    const signatureWithInvalidNonce = ethers.utils.splitSignature(rawSignature);
+    const signatureWithInvalidNonce = Signature.from(rawSignature);
 
     expect(await comet.isAllowed(signer.address, manager.address)).to.be.false;
 
@@ -226,7 +225,7 @@ describe('allowBySig', function () {
           signatureWithInvalidNonce.r,
           signatureWithInvalidNonce.s
         )
-    ).to.be.revertedWith("custom error 'BadNonce()'");
+    ).to.be.revertedWithCustomError(comet, 'BadNonce');
 
     // does not authorize
     expect(await comet.isAllowed(signer.address, manager.address)).to.be.false;
@@ -263,7 +262,7 @@ describe('allowBySig', function () {
           signature.r,
           signature.s
         )
-    ).to.be.revertedWith("custom error 'BadNonce()'");
+    ).to.be.revertedWithCustomError(comet, 'BadNonce');
   });
 
   it('fails if signature expiry has passed', async () => {
@@ -275,8 +274,8 @@ describe('allowBySig', function () {
       ...signatureArgs,
       expiry: invalidExpiry,
     };
-    const rawSignature = await signer._signTypedData(domain, types, expiredSignatureArgs);
-    const expiredSignature = ethers.utils.splitSignature(rawSignature);
+    const rawSignature = await signer.signTypedData(domain, types, expiredSignatureArgs);
+    const expiredSignature = Signature.from(rawSignature);
 
     expect(await comet.isAllowed(signer.address, manager.address)).to.be.false;
 
@@ -293,7 +292,7 @@ describe('allowBySig', function () {
           expiredSignature.r,
           expiredSignature.s
         )
-    ).to.be.revertedWith("custom error 'SignatureExpired()'");
+    ).to.be.revertedWithCustomError(comet, 'SignatureExpired');
 
     // does not authorize
     expect(await comet.isAllowed(signer.address, manager.address)).to.be.false;
@@ -318,7 +317,7 @@ describe('allowBySig', function () {
           signature.r,
           signature.s
         )
-    ).to.be.revertedWith("custom error 'InvalidValueV()'");
+    ).to.be.revertedWithCustomError(comet, 'InvalidValueV');
 
     // does not authorize
     expect(await comet.isAllowed(signer.address, manager.address)).to.be.false;
@@ -346,7 +345,7 @@ describe('allowBySig', function () {
           signature.r,
           invalidS
         )
-    ).to.be.revertedWith("custom error 'InvalidValueS()'");
+    ).to.be.revertedWithCustomError(comet, 'InvalidValueS');
 
     // does not authorize
     expect(await comet.isAllowed(signer.address, manager.address)).to.be.false;
@@ -356,7 +355,7 @@ describe('allowBySig', function () {
   });
 
   it('fails if owner is zero address', async () => {
-    expect(await comet.isAllowed(ethers.constants.AddressZero, manager.address)).to.be.false;
+    expect(await comet.isAllowed(ZeroAddress, manager.address)).to.be.false;
 
     const blockNumber = await ethers.provider.getBlockNumber();
     const timestamp = (await ethers.provider.getBlock(blockNumber)).timestamp;
@@ -372,18 +371,18 @@ describe('allowBySig', function () {
       comet
         .connect(manager)
         .allowBySig(
-          ethers.constants.AddressZero,
+          ZeroAddress,
           manager.address,
           true,
-          await comet.userNonce(ethers.constants.AddressZero),
+          await comet.userNonce(ZeroAddress),
           timestamp + 100,
           invalidSignature.v,
           invalidSignature.r,
           invalidSignature.s,
         )
-    ).to.be.revertedWith("custom error 'BadSignatory()'");
+    ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
     // does not authorize manager for address(0)
-    expect(await comet.isAllowed(ethers.constants.AddressZero, manager.address)).to.be.false;
+    expect(await comet.isAllowed(ZeroAddress, manager.address)).to.be.false;
   });
 });
