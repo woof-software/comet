@@ -1,6 +1,9 @@
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { ContractReceipt } from 'ethers';
-import { Comet, ethers, event, expect, makeProtocol } from './helpers';
+import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
+import { EventLog, MaxUint256, ZeroAddress } from 'ethers';
+import type { ContractTransactionReceipt } from 'ethers';
+
+import { ethers, expect, makeProtocol } from './helpers.js';
+import type { Comet } from './helpers.js';
 
 describe('CometExt allow / approve permissions', function () {
   // shared environment, built ONCE
@@ -8,19 +11,38 @@ describe('CometExt allow / approve permissions', function () {
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let carol: SignerWithAddress;
+  let aliceAddress: string;
+  let bobAddress: string;
+  let carolAddress: string;
   let baseId: string; // snapshot of the prepared env
 
   // shared across the sequential happy-path `it`s
-  let receipt: ContractReceipt;
+  let receipt: ContractTransactionReceipt;
 
   const snapshot = (): Promise<string> => ethers.provider.send('evm_snapshot', []);
   const revert = (id: string): Promise<void> => ethers.provider.send('evm_revert', [id]);
+  const approvalEvent = (receipt: ContractTransactionReceipt) => {
+    const log = receipt.logs[0];
+    if (!(log instanceof EventLog) || log.eventName !== 'Approval') {
+      throw new Error('Approval event not found');
+    }
+    return {
+      Approval: {
+        owner: log.args.owner,
+        spender: log.args.spender,
+        amount: log.args.amount,
+      },
+    };
+  };
 
   // prepare: allow/approve are pure permission flips, so no balance seeding is required
   before(async () => {
     const protocol = await makeProtocol();
     comet = protocol.cometWithExtendedAssetList;
     [alice, bob, carol] = protocol.users;
+    aliceAddress = await alice.getAddress();
+    bobAddress = await bob.getAddress();
+    carolAddress = await carol.getAddress();
 
     baseId = await snapshot();
   });
@@ -28,23 +50,23 @@ describe('CometExt allow / approve permissions', function () {
   // read-only: these never mutate storage, so no snapshot/revert is needed between them
   describe('defaults', function () {
     it('isAllowed defaults to false', async () => {
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.false;
     });
 
     it('allowance defaults to 0', async () => {
-      expect(await comet.allowance(alice.address, bob.address)).to.equal(0);
+      expect(await comet.allowance(aliceAddress, bobAddress)).to.equal(0n);
     });
 
     it('hasPermission is false by default for others', async () => {
-      expect(await comet.hasPermission(alice.address, bob.address)).to.be.false;
+      expect(await comet.hasPermission(aliceAddress, bobAddress)).to.be.false;
     });
 
     it('hasPermission is true for self', async () => {
-      expect(await comet.hasPermission(alice.address, alice.address)).to.be.true;
+      expect(await comet.hasPermission(aliceAddress, aliceAddress)).to.be.true;
     });
 
     it('allowance(self, self) is MaxUint256', async () => {
-      expect(await comet.allowance(alice.address, alice.address)).to.equal(ethers.constants.MaxUint256);
+      expect(await comet.allowance(aliceAddress, aliceAddress)).to.equal(MaxUint256);
     });
   });
 
@@ -56,26 +78,26 @@ describe('CometExt allow / approve permissions', function () {
     });
 
     it('executes without reverting', async () => {
-      const txn = await comet.connect(alice).allow(bob.address, true);
-      receipt = await txn.wait();
+      const txn = await comet.connect(alice).allow(bobAddress, true);
+      receipt = (await txn.wait())!;
     });
 
     it('emits Approval with MaxUint256', async () => {
-      expect(event({ receipt }, 0)).to.be.deep.equal({
-        Approval: { owner: alice.address, spender: bob.address, amount: ethers.constants.MaxUint256.toBigInt() },
+      expect(approvalEvent(receipt)).to.be.deep.equal({
+        Approval: { owner: aliceAddress, spender: bobAddress, amount: MaxUint256 },
       });
     });
 
     it('sets isAllowed to true', async () => {
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.true;
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.true;
     });
 
     it('sets hasPermission to true', async () => {
-      expect(await comet.hasPermission(alice.address, bob.address)).to.be.true;
+      expect(await comet.hasPermission(aliceAddress, bobAddress)).to.be.true;
     });
 
     it('sets allowance to MaxUint256', async () => {
-      expect(await comet.allowance(alice.address, bob.address)).to.equal(ethers.constants.MaxUint256);
+      expect(await comet.allowance(aliceAddress, bobAddress)).to.equal(MaxUint256);
     });
   });
 
@@ -84,30 +106,30 @@ describe('CometExt allow / approve permissions', function () {
     before(async () => {
       await revert(baseId);
       baseId = await snapshot();
-      await comet.connect(alice).allow(bob.address, true);
+      await comet.connect(alice).allow(bobAddress, true);
     });
 
     it('executes without reverting', async () => {
-      const txn = await comet.connect(alice).allow(bob.address, false);
-      receipt = await txn.wait();
+      const txn = await comet.connect(alice).allow(bobAddress, false);
+      receipt = (await txn.wait())!;
     });
 
     it('emits Approval with 0', async () => {
-      expect(event({ receipt }, 0)).to.be.deep.equal({
-        Approval: { owner: alice.address, spender: bob.address, amount: 0n },
+      expect(approvalEvent(receipt)).to.be.deep.equal({
+        Approval: { owner: aliceAddress, spender: bobAddress, amount: 0n },
       });
     });
 
     it('sets isAllowed to false', async () => {
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.false;
     });
 
     it('sets hasPermission to false', async () => {
-      expect(await comet.hasPermission(alice.address, bob.address)).to.be.false;
+      expect(await comet.hasPermission(aliceAddress, bobAddress)).to.be.false;
     });
 
     it('sets allowance to 0', async () => {
-      expect(await comet.allowance(alice.address, bob.address)).to.equal(0);
+      expect(await comet.allowance(aliceAddress, bobAddress)).to.equal(0n);
     });
   });
 
@@ -117,12 +139,12 @@ describe('CometExt allow / approve permissions', function () {
     before(async () => {
       await revert(baseId);
       baseId = await snapshot();
-      ret = await comet.connect(alice).callStatic.approve(bob.address, ethers.constants.MaxUint256);
+      ret = await comet.connect(alice).approve.staticCall(bobAddress, MaxUint256);
     });
 
     it('executes without reverting', async () => {
-      const txn = await comet.connect(alice).approve(bob.address, ethers.constants.MaxUint256);
-      receipt = await txn.wait();
+      const txn = await comet.connect(alice).approve(bobAddress, MaxUint256);
+      receipt = (await txn.wait())!;
     });
 
     it('returns true', async () => {
@@ -130,17 +152,17 @@ describe('CometExt allow / approve permissions', function () {
     });
 
     it('emits Approval with MaxUint256', async () => {
-      expect(event({ receipt }, 0)).to.be.deep.equal({
-        Approval: { owner: alice.address, spender: bob.address, amount: ethers.constants.MaxUint256.toBigInt() },
+      expect(approvalEvent(receipt)).to.be.deep.equal({
+        Approval: { owner: aliceAddress, spender: bobAddress, amount: MaxUint256 },
       });
     });
 
     it('sets isAllowed to true', async () => {
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.true;
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.true;
     });
 
     it('sets allowance to MaxUint256', async () => {
-      expect(await comet.allowance(alice.address, bob.address)).to.equal(ethers.constants.MaxUint256);
+      expect(await comet.allowance(aliceAddress, bobAddress)).to.equal(MaxUint256);
     });
   });
 
@@ -149,26 +171,26 @@ describe('CometExt allow / approve permissions', function () {
     before(async () => {
       await revert(baseId);
       baseId = await snapshot();
-      await comet.connect(alice).allow(bob.address, true);
+      await comet.connect(alice).allow(bobAddress, true);
     });
 
     it('executes without reverting', async () => {
-      const txn = await comet.connect(alice).approve(bob.address, 0);
-      receipt = await txn.wait();
+      const txn = await comet.connect(alice).approve(bobAddress, 0);
+      receipt = (await txn.wait())!;
     });
 
     it('emits Approval with 0', async () => {
-      expect(event({ receipt }, 0)).to.be.deep.equal({
-        Approval: { owner: alice.address, spender: bob.address, amount: 0n },
+      expect(approvalEvent(receipt)).to.be.deep.equal({
+        Approval: { owner: aliceAddress, spender: bobAddress, amount: 0n },
       });
     });
 
     it('sets isAllowed to false', async () => {
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.false;
     });
 
     it('sets allowance to 0', async () => {
-      expect(await comet.allowance(alice.address, bob.address)).to.equal(0);
+      expect(await comet.allowance(aliceAddress, bobAddress)).to.equal(0n);
     });
   });
 
@@ -182,34 +204,34 @@ describe('CometExt allow / approve permissions', function () {
 
     it('reverts with BadAmount for 1', async () => {
       await expect(
-        comet.connect(alice).approve(bob.address, 1)
-      ).to.be.revertedWith("custom error 'BadAmount()'");
+        comet.connect(alice).approve(bobAddress, 1)
+      ).to.be.revertedWithCustomError(comet, 'BadAmount');
     });
 
     it('reverts with BadAmount for 2', async () => {
       await expect(
-        comet.connect(alice).approve(bob.address, 2)
-      ).to.be.revertedWith("custom error 'BadAmount()'");
+        comet.connect(alice).approve(bobAddress, 2)
+      ).to.be.revertedWithCustomError(comet, 'BadAmount');
     });
 
     it('reverts with BadAmount for MaxUint256 - 1', async () => {
       await expect(
-        comet.connect(alice).approve(bob.address, ethers.constants.MaxUint256.sub(1))
-      ).to.be.revertedWith("custom error 'BadAmount()'");
+        comet.connect(alice).approve(bobAddress, MaxUint256 - 1n)
+      ).to.be.revertedWithCustomError(comet, 'BadAmount');
     });
 
     it('reverts with BadAmount for 2**255', async () => {
       await expect(
-        comet.connect(alice).approve(bob.address, ethers.BigNumber.from(2).pow(255))
-      ).to.be.revertedWith("custom error 'BadAmount()'");
+        comet.connect(alice).approve(bobAddress, 2n ** 255n)
+      ).to.be.revertedWithCustomError(comet, 'BadAmount');
     });
 
     it('does not authorize the spender on the BadAmount path', async () => {
       await expect(
-        comet.connect(alice).approve(bob.address, 1)
-      ).to.be.revertedWith("custom error 'BadAmount()'");
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
-      expect(await comet.allowance(alice.address, bob.address)).to.equal(0);
+        comet.connect(alice).approve(bobAddress, 1)
+      ).to.be.revertedWithCustomError(comet, 'BadAmount');
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.false;
+      expect(await comet.allowance(aliceAddress, bobAddress)).to.equal(0n);
     });
   });
 
@@ -221,38 +243,38 @@ describe('CometExt allow / approve permissions', function () {
     });
 
     it('idempotent grant re-emits Approval(max) and stays allowed', async () => {
-      await comet.connect(alice).allow(bob.address, true);
-      const second = await (await comet.connect(alice).allow(bob.address, true)).wait();
+      await comet.connect(alice).allow(bobAddress, true);
+      const second = (await (await comet.connect(alice).allow(bobAddress, true)).wait())!;
 
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.true;
-      expect(event({ receipt: second }, 0)).to.be.deep.equal({
-        Approval: { owner: alice.address, spender: bob.address, amount: ethers.constants.MaxUint256.toBigInt() },
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.true;
+      expect(approvalEvent(second)).to.be.deep.equal({
+        Approval: { owner: aliceAddress, spender: bobAddress, amount: MaxUint256 },
       });
     });
 
     it('idempotent revoke re-emits Approval(0) and stays disallowed', async () => {
-      const txn = await (await comet.connect(alice).allow(bob.address, false)).wait();
+      const txn = (await (await comet.connect(alice).allow(bobAddress, false)).wait())!;
 
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
-      expect(event({ receipt: txn }, 0)).to.be.deep.equal({
-        Approval: { owner: alice.address, spender: bob.address, amount: 0n },
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.false;
+      expect(approvalEvent(txn)).to.be.deep.equal({
+        Approval: { owner: aliceAddress, spender: bobAddress, amount: 0n },
       });
     });
 
     it('handles a true -> false -> true cycle', async () => {
-      await comet.connect(alice).allow(bob.address, true);
-      await comet.connect(alice).allow(bob.address, false);
-      await comet.connect(alice).allow(bob.address, true);
+      await comet.connect(alice).allow(bobAddress, true);
+      await comet.connect(alice).allow(bobAddress, false);
+      await comet.connect(alice).allow(bobAddress, true);
 
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.true;
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.true;
     });
 
     it('does not special-case the zero address', async () => {
-      const txn = await (await comet.connect(alice).allow(ethers.constants.AddressZero, true)).wait();
+      const txn = (await (await comet.connect(alice).allow(ZeroAddress, true)).wait())!;
 
-      expect(await comet.isAllowed(alice.address, ethers.constants.AddressZero)).to.be.true;
-      expect(event({ receipt: txn }, 0)).to.be.deep.equal({
-        Approval: { owner: alice.address, spender: ethers.constants.AddressZero, amount: ethers.constants.MaxUint256.toBigInt() },
+      expect(await comet.isAllowed(aliceAddress, ZeroAddress)).to.be.true;
+      expect(approvalEvent(txn)).to.be.deep.equal({
+        Approval: { owner: aliceAddress, spender: ZeroAddress, amount: MaxUint256 },
       });
     });
   });
@@ -265,27 +287,27 @@ describe('CometExt allow / approve permissions', function () {
     });
 
     it('approve(max) then allow(false) disallows', async () => {
-      await comet.connect(alice).approve(bob.address, ethers.constants.MaxUint256);
-      await comet.connect(alice).allow(bob.address, false);
+      await comet.connect(alice).approve(bobAddress, MaxUint256);
+      await comet.connect(alice).allow(bobAddress, false);
 
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
-      expect(await comet.allowance(alice.address, bob.address)).to.equal(0);
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.false;
+      expect(await comet.allowance(aliceAddress, bobAddress)).to.equal(0n);
     });
 
     it('allow(true) then approve(0) disallows', async () => {
-      await comet.connect(alice).allow(bob.address, true);
-      await comet.connect(alice).approve(bob.address, 0);
+      await comet.connect(alice).allow(bobAddress, true);
+      await comet.connect(alice).approve(bobAddress, 0);
 
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
-      expect(await comet.allowance(alice.address, bob.address)).to.equal(0);
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.false;
+      expect(await comet.allowance(aliceAddress, bobAddress)).to.equal(0n);
     });
 
     it('approve(max) then allow(true) stays allowed', async () => {
-      await comet.connect(alice).approve(bob.address, ethers.constants.MaxUint256);
-      await comet.connect(alice).allow(bob.address, true);
+      await comet.connect(alice).approve(bobAddress, MaxUint256);
+      await comet.connect(alice).allow(bobAddress, true);
 
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.true;
-      expect(await comet.allowance(alice.address, bob.address)).to.equal(ethers.constants.MaxUint256);
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.true;
+      expect(await comet.allowance(aliceAddress, bobAddress)).to.equal(MaxUint256);
     });
   });
 
@@ -297,17 +319,17 @@ describe('CometExt allow / approve permissions', function () {
     });
 
     it('allow(self, false) does not revoke self-permission', async () => {
-      await comet.connect(alice).allow(alice.address, false);
+      await comet.connect(alice).allow(aliceAddress, false);
 
-      expect(await comet.hasPermission(alice.address, alice.address)).to.be.true;
-      expect(await comet.allowance(alice.address, alice.address)).to.equal(ethers.constants.MaxUint256);
+      expect(await comet.hasPermission(aliceAddress, aliceAddress)).to.be.true;
+      expect(await comet.allowance(aliceAddress, aliceAddress)).to.equal(MaxUint256);
     });
 
     it('approve(self, 0) does not revoke self-permission', async () => {
-      await comet.connect(alice).approve(alice.address, 0);
+      await comet.connect(alice).approve(aliceAddress, 0);
 
-      expect(await comet.hasPermission(alice.address, alice.address)).to.be.true;
-      expect(await comet.allowance(alice.address, alice.address)).to.equal(ethers.constants.MaxUint256);
+      expect(await comet.hasPermission(aliceAddress, aliceAddress)).to.be.true;
+      expect(await comet.allowance(aliceAddress, aliceAddress)).to.equal(MaxUint256);
     });
   });
 
@@ -319,21 +341,21 @@ describe('CometExt allow / approve permissions', function () {
     });
 
     it('revoking one manager leaves another authorized', async () => {
-      await comet.connect(alice).allow(bob.address, true);
-      await comet.connect(alice).allow(carol.address, true);
-      await comet.connect(alice).allow(bob.address, false);
+      await comet.connect(alice).allow(bobAddress, true);
+      await comet.connect(alice).allow(carolAddress, true);
+      await comet.connect(alice).allow(bobAddress, false);
 
-      expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
-      expect(await comet.isAllowed(alice.address, carol.address)).to.be.true;
+      expect(await comet.isAllowed(aliceAddress, bobAddress)).to.be.false;
+      expect(await comet.isAllowed(aliceAddress, carolAddress)).to.be.true;
     });
 
     it('a grant by one owner does not authorize the manager for another owner', async () => {
       // alice grants carol; bob never did
-      await comet.connect(alice).allow(carol.address, true);
+      await comet.connect(alice).allow(carolAddress, true);
 
-      expect(await comet.isAllowed(alice.address, carol.address)).to.be.true;
-      expect(await comet.isAllowed(bob.address, carol.address)).to.be.false;
-      expect(await comet.hasPermission(bob.address, carol.address)).to.be.false;
+      expect(await comet.isAllowed(aliceAddress, carolAddress)).to.be.true;
+      expect(await comet.isAllowed(bobAddress, carolAddress)).to.be.false;
+      expect(await comet.hasPermission(bobAddress, carolAddress)).to.be.false;
     });
   });
 });
