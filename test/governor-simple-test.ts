@@ -1,11 +1,13 @@
-import { GovernorSimple__factory } from '../build/types';
-import { ethers } from 'hardhat';
-import { expect } from 'chai';
+import { ZeroAddress } from 'ethers';
+
+import { GovernorSimple__factory } from '../build/types/index.js';
+import { ethers, expect } from './helpers.js';
 
 async function buildGovernorSimple() {
-  const GovernorSimpleFactory = (await ethers.getContractFactory('GovernorSimple')) as GovernorSimple__factory;
+  const [deployer] = await ethers.getSigners();
+  const GovernorSimpleFactory = new GovernorSimple__factory(deployer);
   const governorSimple = await GovernorSimpleFactory.deploy();
-  await governorSimple.deployed();
+  await governorSimple.waitForDeployment();
   return governorSimple;
 }
 
@@ -14,7 +16,7 @@ describe('GovernorSimple', function () {
     const [alice, bob] = await ethers.getSigners();
     const governorSimple = await buildGovernorSimple();
     await governorSimple.initialize(
-      ethers.constants.AddressZero,
+      ZeroAddress,
       [alice.address]
     );
 
@@ -29,7 +31,7 @@ describe('GovernorSimple', function () {
     const [alice, bob] = await ethers.getSigners();
     const governorSimple = await buildGovernorSimple();
     await governorSimple.initialize(
-      ethers.constants.AddressZero,
+      ZeroAddress,
       [alice.address, bob.address]
     );
 
