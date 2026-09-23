@@ -1,12 +1,9 @@
-import { ethers, exp, expect, getBlock } from '../helpers';
-import {
-  ConstantPriceFeed__factory
-} from '../../build/types';
+import { ethers, exp, expect, getBlock } from '../helpers.js';
 
 export async function makeConstantPriceFeed({ decimals, constantPrice }) {
-  const constantPriceFeedFactory = (await ethers.getContractFactory('ConstantPriceFeed')) as ConstantPriceFeed__factory;
+  const constantPriceFeedFactory = await ethers.getContractFactory('ConstantPriceFeed');
   const constantPriceFeed = await constantPriceFeedFactory.deploy(decimals, constantPrice);
-  await constantPriceFeed.deployed();
+  await constantPriceFeed.waitForDeployment();
 
   return constantPriceFeed;
 }
@@ -16,7 +13,7 @@ describe('constant price feed', function () {
     it('returns constant price for 8 decimals', async () => {
       const constantPriceFeed = await makeConstantPriceFeed({ decimals: 8, constantPrice: exp(1, 8) });
       const latestRoundData = await constantPriceFeed.latestRoundData();
-      const price = latestRoundData.answer.toBigInt();
+      const price = latestRoundData.answer;
 
       expect(price).to.eq(exp(1, 8));
     });
@@ -24,7 +21,7 @@ describe('constant price feed', function () {
     it('returns constant price for 18 decimals', async () => {
       const constantPriceFeed = await makeConstantPriceFeed({ decimals: 18, constantPrice: exp(1, 18) });
       const latestRoundData = await constantPriceFeed.latestRoundData();
-      const price = latestRoundData.answer.toBigInt();
+      const price = latestRoundData.answer;
 
       expect(price).to.eq(exp(1, 18));
     });
@@ -40,10 +37,10 @@ describe('constant price feed', function () {
       } = await constantPriceFeed.latestRoundData();
       const currentTimestamp = (await getBlock()).timestamp;
 
-      expect(roundId).to.eq(1);
-      expect(startedAt).to.eq(currentTimestamp);
-      expect(updatedAt).to.eq(currentTimestamp);
-      expect(answeredInRound).to.eq(1);
+      expect(roundId).to.eq(1n);
+      expect(startedAt).to.eq(BigInt(currentTimestamp));
+      expect(updatedAt).to.eq(BigInt(currentTimestamp));
+      expect(answeredInRound).to.eq(1n);
     });
   });
 });

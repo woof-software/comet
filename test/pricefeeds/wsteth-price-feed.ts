@@ -1,24 +1,21 @@
-import { ethers, exp, expect } from '../helpers';
-import {
-  SimplePriceFeed__factory,
-  SimpleWstETH__factory,
-  WstETHPriceFeed__factory
-} from '../../build/types';
+import { ethers, exp, expect } from '../helpers.js';
 
 export async function makeWstETH({ stEthPrice, tokensPerStEth }) {
-  const SimplePriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
+  const SimplePriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');
   const stETHPriceFeed = await SimplePriceFeedFactory.deploy(stEthPrice, 18);
+  await stETHPriceFeed.waitForDeployment();
 
-  const SimpleWstETHFactory = (await ethers.getContractFactory('SimpleWstETH')) as SimpleWstETH__factory;
+  const SimpleWstETHFactory = await ethers.getContractFactory('SimpleWstETH');
   const simpleWstETH = await SimpleWstETHFactory.deploy(tokensPerStEth);
+  await simpleWstETH.waitForDeployment();
 
-  const wstETHPriceFeedFactory = (await ethers.getContractFactory('WstETHPriceFeed')) as WstETHPriceFeed__factory;
+  const wstETHPriceFeedFactory = await ethers.getContractFactory('WstETHPriceFeed');
   const wstETHPriceFeed = await wstETHPriceFeedFactory.deploy(
-    stETHPriceFeed.address,
-    simpleWstETH.address,
+    await stETHPriceFeed.getAddress(),
+    await simpleWstETH.getAddress(),
     8
   );
-  await wstETHPriceFeed.deployed();
+  await wstETHPriceFeed.waitForDeployment();
 
   return {
     simpleWstETH,
@@ -62,18 +59,20 @@ const testCases = [
 
 describe('wstETH price feed', function () {
   it('reverts if constructed with bad decimals', async () => {
-    const SimplePriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
+    const SimplePriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');
     const stETHPriceFeed = await SimplePriceFeedFactory.deploy(exp(1, 18), 18);
+    await stETHPriceFeed.waitForDeployment();
 
-    const SimpleWstETHFactory = (await ethers.getContractFactory('SimpleWstETH')) as SimpleWstETH__factory;
+    const SimpleWstETHFactory = await ethers.getContractFactory('SimpleWstETH');
     const simpleWstETH = await SimpleWstETHFactory.deploy(exp(0.9, 18));
+    await simpleWstETH.waitForDeployment();
 
-    const wstETHPriceFeedFactory = (await ethers.getContractFactory('WstETHPriceFeed')) as WstETHPriceFeed__factory;
+    const wstETHPriceFeedFactory = await ethers.getContractFactory('WstETHPriceFeed');
     await expect(wstETHPriceFeedFactory.deploy(
-      stETHPriceFeed.address,
-      simpleWstETH.address,
+      await stETHPriceFeed.getAddress(),
+      await simpleWstETH.getAddress(),
       20 // decimals_ is too high
-    )).to.be.revertedWith("custom error 'BadDecimals()'");
+    )).to.be.revertedWithCustomError(wstETHPriceFeedFactory, 'BadDecimals');
   });
 
   describe('latestRoundData', function () {
@@ -81,7 +80,7 @@ describe('wstETH price feed', function () {
       it(`stEthPrice (${stEthPrice}), tokensPerStEth (${tokensPerStEth}) -> ${result}`, async () => {
         const { wstETHPriceFeed } = await makeWstETH({ stEthPrice, tokensPerStEth });
         const latestRoundData = await wstETHPriceFeed.latestRoundData();
-        const price = latestRoundData.answer.toBigInt();
+        const price = latestRoundData.answer;
 
         expect(price).to.eq(result);
       });
@@ -108,10 +107,10 @@ describe('wstETH price feed', function () {
         answeredInRound
       } = await wstETHPriceFeed.latestRoundData();
 
-      expect(roundId.toBigInt()).to.eq(exp(15, 18));
-      expect(startedAt.toBigInt()).to.eq(exp(16, 8));
-      expect(updatedAt.toBigInt()).to.eq(exp(17, 8));
-      expect(answeredInRound.toBigInt()).to.eq(exp(18, 18));
+      expect(roundId).to.eq(exp(15, 18));
+      expect(startedAt).to.eq(exp(16, 8));
+      expect(updatedAt).to.eq(exp(17, 8));
+      expect(answeredInRound).to.eq(exp(18, 18));
     });
   });
 });

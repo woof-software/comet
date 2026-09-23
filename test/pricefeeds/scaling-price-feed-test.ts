@@ -1,17 +1,13 @@
-import { ethers, exp, expect } from '../helpers';
-import {
-  SimplePriceFeed__factory,
-  ScalingPriceFeed__factory
-} from '../../build/types';
+import { ethers, exp, expect } from '../helpers.js';
 
 export async function makeScalingPriceFeed({ price, priceFeedDecimals }) {
-  const SimplePriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
+  const SimplePriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');
   const simplePriceFeed = await SimplePriceFeedFactory.deploy(price, priceFeedDecimals);
-  await simplePriceFeed.deployed();
+  await simplePriceFeed.waitForDeployment();
 
-  const scalingPriceFeedFactory = (await ethers.getContractFactory('ScalingPriceFeed')) as ScalingPriceFeed__factory;
-  const scalingPriceFeed = await scalingPriceFeedFactory.deploy(simplePriceFeed.address, 8);
-  await scalingPriceFeed.deployed();
+  const scalingPriceFeedFactory = await ethers.getContractFactory('ScalingPriceFeed');
+  const scalingPriceFeed = await scalingPriceFeedFactory.deploy(await simplePriceFeed.getAddress(), 8);
+  await scalingPriceFeed.waitForDeployment();
 
   return {
     simplePriceFeed,
@@ -82,7 +78,7 @@ describe('scaling price feed', function () {
       it(`price (${price}), priceFeedDecimals (${priceFeedDecimals}) -> ${result}`, async () => {
         const { scalingPriceFeed } = await makeScalingPriceFeed({ price, priceFeedDecimals });
         const latestRoundData = await scalingPriceFeed.latestRoundData();
-        const res = latestRoundData.answer.toBigInt();
+        const res = latestRoundData.answer;
 
         expect(res).to.eq(result);
       });
@@ -106,10 +102,10 @@ describe('scaling price feed', function () {
         answeredInRound
       } = await scalingPriceFeed.latestRoundData();
 
-      expect(roundId.toBigInt()).to.eq(exp(15, 18));
-      expect(startedAt.toBigInt()).to.eq(exp(16, 8));
-      expect(updatedAt.toBigInt()).to.eq(exp(17, 8));
-      expect(answeredInRound.toBigInt()).to.eq(exp(18, 18));
+      expect(roundId).to.eq(exp(15, 18));
+      expect(startedAt).to.eq(exp(16, 8));
+      expect(updatedAt).to.eq(exp(17, 8));
+      expect(answeredInRound).to.eq(exp(18, 18));
     });
   });
 });
