@@ -552,7 +552,7 @@ export async function updateCCIPStats(
     },
     {
       network: 'ronin',
-      commitStore: '0x28c66d9693b2634b2f3b170f6d9584eec2f72ff0',
+      commitStore: '0xd154a8ce39b93098f3C55FFD94418deF75B33627',
       priceRegistry: '0xefCEa3CFA330adcDdeCe99219C57fd45cd166ac1'
     }
   ];
