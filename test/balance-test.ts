@@ -1,4 +1,4 @@
-import { expect, makeProtocol, setTotalsBasic } from './helpers';
+import { expect, makeProtocol, setTotalsBasic } from './helpers.js';
 
 describe('totalBorrow', function () {
   it('has correct totalBorrow', async () => {
@@ -7,7 +7,7 @@ describe('totalBorrow', function () {
       baseBorrowIndex: 2e15,
       totalBorrowBase: 50e6,
     });
-    expect(await comet.totalBorrow()).to.eq(100e6);
+    expect(await comet.totalBorrow()).to.eq(100_000_000n);
   });
 });
 
@@ -20,7 +20,7 @@ describe('borrowBalanceOf', function () {
     });
     await comet.setBasePrincipal(user.address, -100e6); // borrow of $100 USDC
     const borrowBalanceOf = await comet.borrowBalanceOf(user.address);
-    expect(borrowBalanceOf).to.eq(300e6); // baseSupplyIndex = 3e15
+    expect(borrowBalanceOf).to.eq(300_000_000n); // baseSupplyIndex = 3e15
   });
 
   it('returns 0 when principal amount is positive', async () => {
@@ -31,7 +31,7 @@ describe('borrowBalanceOf', function () {
     });
     await comet.setBasePrincipal(user.address, 100e6);
     const borrowBalanceOf = await comet.borrowBalanceOf(user.address);
-    expect(borrowBalanceOf).to.eq(0);
+    expect(borrowBalanceOf).to.eq(0n);
   });
 });
 
