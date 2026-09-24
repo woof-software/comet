@@ -617,11 +617,24 @@ export async function bumpTotalsCollateral(cometWithExtendedAssetList: CometHarn
   return t1;
 }
 
-export async function setTotalsBasic(cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList, overrides = {}): Promise<TotalsBasicStructOutput> {
+export async function setTotalsBasic(
+  cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList,
+  overrides: Partial<CometStorage.TotalsBasicStruct> = {}
+): Promise<TotalsBasicStructOutput> {
   const t0 = await cometWithExtendedAssetList.totalsBasic();
-  const t1 = Object.assign({}, t0, overrides);
+  const t1: CometStorage.TotalsBasicStruct = {
+    baseSupplyIndex: t0.baseSupplyIndex,
+    baseBorrowIndex: t0.baseBorrowIndex,
+    trackingSupplyIndex: t0.trackingSupplyIndex,
+    trackingBorrowIndex: t0.trackingBorrowIndex,
+    totalSupplyBase: t0.totalSupplyBase,
+    totalBorrowBase: t0.totalBorrowBase,
+    lastAccrualTime: t0.lastAccrualTime,
+    pauseFlags: t0.pauseFlags,
+    ...overrides,
+  };
   await wait(cometWithExtendedAssetList.setTotalsBasic(t1));
-  return t1;
+  return cometWithExtendedAssetList.totalsBasic();
 }
 
 export function objectify(arrayObject) {

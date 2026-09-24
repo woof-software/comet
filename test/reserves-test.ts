@@ -1,11 +1,11 @@
-import { expect, makeProtocol, setTotalsBasic } from './helpers';
+import { expect, makeProtocol, setTotalsBasic } from './helpers.js';
 
 describe('getReserves', function () {
   it('calculates 0 reserves', async () => {
     const protocol = await makeProtocol({base: 'USDC'});
     const { cometWithExtendedAssetList: comet, tokens } = protocol;
     const { USDC } = tokens;
-    await USDC.allocateTo(comet.address, 100);
+    await USDC.allocateTo(await comet.getAddress(), 100);
 
     await setTotalsBasic(comet, {
       baseSupplyIndex: 4e15,
@@ -23,7 +23,7 @@ describe('getReserves', function () {
     const protocol = await makeProtocol({base: 'USDC'});
     const { cometWithExtendedAssetList: comet, tokens } = protocol;
     const { USDC } = tokens;
-    await USDC.allocateTo(comet.address, 100);
+    await USDC.allocateTo(await comet.getAddress(), 100);
 
     await setTotalsBasic(comet, {
       baseSupplyIndex: 2e15,
