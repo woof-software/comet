@@ -1,4 +1,4 @@
-import { ethers, expect, exp, fastForward, getBlock, makeProtocol } from './helpers';
+import { ethers, expect, exp, fastForward, getBlock, makeProtocol } from './helpers.js';
 
 describe('baseTrackingAccrued', function() {
   it('supply updates baseTrackingAccrued to 6 decimal value', async () => {
@@ -13,32 +13,34 @@ describe('baseTrackingAccrued', function() {
       start
     });
     const { USDC } = tokens;
+    const cometAddress = await comet.getAddress();
+    const usdcAddress = await USDC.getAddress();
 
     // allocate and approve transfers
     await USDC.allocateTo(alice.address, 2e6);
-    await USDC.connect(alice).approve(comet.address, 2e6);
+    await USDC.connect(alice).approve(cometAddress, 2e6);
 
     await ethers.provider.send('evm_setAutomine', [false]);
 
     // supply once
-    await comet.connect(alice).supply(USDC.address, 1e6);
+    await comet.connect(alice).supply(usdcAddress, 1e6);
     const firstSupplyTime = start + 100;
     await ethers.provider.send('evm_mine', [firstSupplyTime]);
 
     const userBasic1 = await comet.userBasic(alice.address);
-    expect(userBasic1.principal).to.eq(1_000_000);
-    expect(userBasic1.baseTrackingAccrued).to.eq(0);
+    expect(userBasic1.principal).to.eq(1_000_000n);
+    expect(userBasic1.baseTrackingAccrued).to.eq(0n);
 
     // supply again
-    await comet.connect(alice).supply(USDC.address, 1e6);
+    await comet.connect(alice).supply(usdcAddress, 1e6);
     await ethers.provider.send('evm_mine', [firstSupplyTime + 1]);
     await ethers.provider.send('evm_setAutomine', [true]);
 
     const userBasic2 = await comet.userBasic(alice.address);
-    expect(userBasic2.principal).to.eq(2_000_000);
+    expect(userBasic2.principal).to.eq(2_000_000n);
 
     // 1 second elapsed = 1 unit of rewards accrued (for 1 unit of base)
-    expect(userBasic2.baseTrackingAccrued).to.eq(1_000_000);
+    expect(userBasic2.baseTrackingAccrued).to.eq(1_000_000n);
   });
 
   it('updates with precision up to 6 decimal places', async () => {
@@ -50,26 +52,28 @@ describe('baseTrackingAccrued', function() {
       baseTrackingSupplySpeed: 1e9, // supplySpeed=0.000001 (1e-6) Comp/s
     });
     const { USDC } = tokens;
+    const cometAddress = await comet.getAddress();
+    const usdcAddress = await USDC.getAddress();
 
     // allocate and approve transfers
     await USDC.allocateTo(alice.address, 2e6);
-    await USDC.connect(alice).approve(comet.address, 2e6);
+    await USDC.connect(alice).approve(cometAddress, 2e6);
 
     // supply once
-    await comet.connect(alice).supply(USDC.address, 1e6);
+    await comet.connect(alice).supply(usdcAddress, 1e6);
 
     const userBasic1 = await comet.userBasic(alice.address);
-    expect(userBasic1.principal).to.eq(1_000_000);
-    expect(userBasic1.baseTrackingAccrued).to.eq(0);
+    expect(userBasic1.principal).to.eq(1_000_000n);
+    expect(userBasic1.baseTrackingAccrued).to.eq(0n);
 
     // supply again
-    await comet.connect(alice).supply(USDC.address, 1e6);
+    await comet.connect(alice).supply(usdcAddress, 1e6);
 
     const userBasic2 = await comet.userBasic(alice.address);
-    expect(userBasic2.principal).to.eq(2_000_000);
+    expect(userBasic2.principal).to.eq(2_000_000n);
 
     // 1 second elapsed = .000001 unit of rewards accrued (for 1 unit of base)
-    expect(userBasic2.baseTrackingAccrued).to.eq(1);
+    expect(userBasic2.baseTrackingAccrued).to.eq(1n);
   });
 
   it('rounds down to zero for values below 6 decimal places', async () => {
@@ -81,24 +85,26 @@ describe('baseTrackingAccrued', function() {
       baseTrackingSupplySpeed: 1e8, // supplySpeed=0.0000001 (1e-7) Comp/s
     });
     const { USDC } = tokens;
+    const cometAddress = await comet.getAddress();
+    const usdcAddress = await USDC.getAddress();
 
     // allocate and approve transfers
     await USDC.allocateTo(alice.address, 2e6);
-    await USDC.connect(alice).approve(comet.address, 2e6);
+    await USDC.connect(alice).approve(cometAddress, 2e6);
 
     // supply once
-    await comet.connect(alice).supply(USDC.address, 1e6);
+    await comet.connect(alice).supply(usdcAddress, 1e6);
 
     const userBasic1 = await comet.userBasic(alice.address);
-    expect(userBasic1.principal).to.eq(1_000_000);
-    expect(userBasic1.baseTrackingAccrued).to.eq(0);
+    expect(userBasic1.principal).to.eq(1_000_000n);
+    expect(userBasic1.baseTrackingAccrued).to.eq(0n);
 
     // supply again
-    await comet.connect(alice).supply(USDC.address, 1e6);
+    await comet.connect(alice).supply(usdcAddress, 1e6);
 
     const userBasic2 = await comet.userBasic(alice.address);
-    expect(userBasic2.principal).to.eq(2_000_000);
-    expect(userBasic2.baseTrackingAccrued).to.eq(0); // 1 second elapsed = .0000001 unit of rewards accrued; rounds down to 0
+    expect(userBasic2.principal).to.eq(2_000_000n);
+    expect(userBasic2.baseTrackingAccrued).to.eq(0n); // 1 second elapsed = .0000001 unit of rewards accrued; rounds down to 0
   });
 
   it('acrrues at a greater number of decimals, but preserves 6', async () => {
@@ -110,27 +116,29 @@ describe('baseTrackingAccrued', function() {
       baseTrackingSupplySpeed: 1e8, // supplySpeed=0.0000001 (1e-7) Comp/s
     });
     const { USDC } = tokens;
+    const cometAddress = await comet.getAddress();
+    const usdcAddress = await USDC.getAddress();
 
     // allocate and approve transfers
     await USDC.allocateTo(alice.address, 2e6);
-    await USDC.connect(alice).approve(comet.address, 2e6);
+    await USDC.connect(alice).approve(cometAddress, 2e6);
 
     // supply once
-    await comet.connect(alice).supply(USDC.address, 1e6);
+    await comet.connect(alice).supply(usdcAddress, 1e6);
 
     const userBasic1 = await comet.userBasic(alice.address);
-    expect(userBasic1.principal).to.eq(1_000_000);
-    expect(userBasic1.baseTrackingAccrued).to.eq(0);
+    expect(userBasic1.principal).to.eq(1_000_000n);
+    expect(userBasic1.baseTrackingAccrued).to.eq(0n);
 
     // allow 10 seconds to pass
     await fastForward(10);
 
     // supply again
-    await comet.connect(alice).supply(USDC.address, 1e6);
+    await comet.connect(alice).supply(usdcAddress, 1e6);
 
     const userBasic2 = await comet.userBasic(alice.address);
-    expect(userBasic2.principal).to.eq(2_000_000);
-    expect(userBasic2.baseTrackingAccrued).to.eq(1); // 10 seconds elapsed = .000001 unit of rewards accrued
+    expect(userBasic2.principal).to.eq(2_000_000n);
+    expect(userBasic2.baseTrackingAccrued).to.eq(1n); // 10 seconds elapsed = .000001 unit of rewards accrued
   });
 
 
@@ -143,26 +151,28 @@ describe('baseTrackingAccrued', function() {
       baseTrackingSupplySpeed: 1e15, // supplySpeed=1 COMP/s
     });
     const { WETH } = tokens;
+    const cometAddress = await comet.getAddress();
+    const wethAddress = await WETH.getAddress();
 
     // allocate and approve transfers
     await WETH.allocateTo(alice.address, exp(2, 18));
-    await WETH.connect(alice).approve(comet.address, exp(2, 18));
+    await WETH.connect(alice).approve(cometAddress, exp(2, 18));
 
     // supply once
-    await comet.connect(alice).supply(WETH.address, exp(1, 18));
+    await comet.connect(alice).supply(wethAddress, exp(1, 18));
 
     const userBasic1 = await comet.userBasic(alice.address);
     expect(userBasic1.principal).to.eq(exp(1,18));
-    expect(userBasic1.baseTrackingAccrued).to.eq(0);
+    expect(userBasic1.baseTrackingAccrued).to.eq(0n);
 
     // supply again
-    await comet.connect(alice).supply(WETH.address, exp(1, 18));
+    await comet.connect(alice).supply(wethAddress, exp(1, 18));
 
     const userBasic2 = await comet.userBasic(alice.address);
     expect(userBasic2.principal).to.eq(exp(2,18));
 
     // 1 second elapsed = 1 unit of rewards accrued (for 1 unit of base)
-    expect(userBasic2.baseTrackingAccrued).to.eq(1_000_000);
+    expect(userBasic2.baseTrackingAccrued).to.eq(1_000_000n);
   });
 
   it('increases baseTrackingAccrued on borrow', async () => {
@@ -178,40 +188,43 @@ describe('baseTrackingAccrued', function() {
       start
     });
     const { USDC, WETH } = tokens;
+    const cometAddress = await comet.getAddress();
+    const usdcAddress = await USDC.getAddress();
+    const wethAddress = await WETH.getAddress();
 
     // allocate and approve transfers
     await WETH.allocateTo(alice.address, exp(1,18));
-    await WETH.connect(alice).approve(comet.address, exp(1,18));
+    await WETH.connect(alice).approve(cometAddress, exp(1,18));
 
-    await USDC.allocateTo(comet.address, 2e6); // for two withdrawls of 1e6
+    await USDC.allocateTo(cometAddress, 2e6); // for two withdrawls of 1e6
 
     // supply WETH as collateral
-    await comet.connect(alice).supply(WETH.address, exp(1,18));
+    await comet.connect(alice).supply(wethAddress, exp(1,18));
 
     const userBasic1 = await comet.userBasic(alice.address);
-    expect(userBasic1.principal).to.eq(0);
-    expect(userBasic1.baseTrackingAccrued).to.eq(0);
+    expect(userBasic1.principal).to.eq(0n);
+    expect(userBasic1.baseTrackingAccrued).to.eq(0n);
 
     await ethers.provider.send('evm_setAutomine', [false]);
 
     // withdraw base token
-    await comet.connect(alice).withdraw(USDC.address, 1e6);
+    await comet.connect(alice).withdraw(usdcAddress, 1e6);
     const firstWithdrawTime = start + 100;
     await ethers.provider.send('evm_mine', [firstWithdrawTime]);
 
     const userBasic2 = await comet.userBasic(alice.address);
-    expect(userBasic2.principal).to.eq(-1e6);
-    expect(userBasic2.baseTrackingAccrued).to.eq(0);
+    expect(userBasic2.principal).to.eq(-1_000_000n);
+    expect(userBasic2.baseTrackingAccrued).to.eq(0n);
 
     // withdraw again
-    await comet.connect(alice).withdraw(USDC.address, 1e6);
+    await comet.connect(alice).withdraw(usdcAddress, 1e6);
     await ethers.provider.send('evm_mine', [firstWithdrawTime + 1]);
     await ethers.provider.send('evm_setAutomine', [true]);
 
     const userBasic3 = await comet.userBasic(alice.address);
-    expect(userBasic3.principal).to.eq(-2e6);
+    expect(userBasic3.principal).to.eq(-2_000_000n);
 
     // 1 second elapsed = 1 unit of rewards accrued
-    expect(userBasic3.baseTrackingAccrued).to.eq(1e6);
+    expect(userBasic3.baseTrackingAccrued).to.eq(1_000_000n);
   });
 });
