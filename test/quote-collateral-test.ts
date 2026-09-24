@@ -1,4 +1,4 @@
-import { expect, exp, makeProtocol } from './helpers';
+import { expect, exp, makeProtocol } from './helpers.js';
 
 describe('quoteCollateral', function () {
   it('quotes the collateral correctly for a positive base amount', async () => {
@@ -22,9 +22,10 @@ describe('quoteCollateral', function () {
     });
     const { cometWithExtendedAssetList: comet, tokens } = protocol;
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     const baseAmount = exp(200, 6);
-    const q0 = await comet.quoteCollateral(COMP.address, baseAmount);
+    const q0 = await comet.quoteCollateral(compAddress, baseAmount);
 
     // Store front discount is 0.5 * (1 - 0.6) = 0.2 = 20%
     // Discounted COMP price is 200 * 0.8 = 160
@@ -57,9 +58,10 @@ describe('quoteCollateral', function () {
     });
     const { cometWithExtendedAssetList: comet, tokens } = protocol;
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     const baseAmount = 0n;
-    const q0 = await comet.quoteCollateral(COMP.address, baseAmount);
+    const q0 = await comet.quoteCollateral(compAddress, baseAmount);
 
     expect(q0).to.be.equal(0n);
   });
@@ -85,9 +87,10 @@ describe('quoteCollateral', function () {
     });
     const { cometWithExtendedAssetList: comet, tokens } = protocol;
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     const baseAmount = exp(200, 6);
-    const q0 = await comet.quoteCollateral(COMP.address, baseAmount);
+    const q0 = await comet.quoteCollateral(compAddress, baseAmount);
 
     // Store front discount is 0 * (1 - 0.6) = 0 = 0%
     // Discounted COMP price is 200 * 1 = 200
@@ -123,9 +126,10 @@ describe('quoteCollateral', function () {
     });
     const { cometWithExtendedAssetList: comet, tokens } = protocol;
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     const baseAmount = exp(810, 6);
-    const q0 = await comet.quoteCollateral(COMP.address, baseAmount);
+    const q0 = await comet.quoteCollateral(compAddress, baseAmount);
 
     // Store front discount is 0.5 * (1 - 0.8) = 0.1 = 10%
     // Discounted COMP price is 9 * 0.9 = 8.1
@@ -154,9 +158,10 @@ describe('quoteCollateral', function () {
     });
     const { cometWithExtendedAssetList: comet, tokens } = protocol;
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     const baseAmount = exp(1e15, 6); // 1 quadrillion USDC
-    const q0 = await comet.quoteCollateral(COMP.address, baseAmount);
+    const q0 = await comet.quoteCollateral(compAddress, baseAmount);
 
     // Store front discount is 0.8 * (1 - 0.75) = 0.2 = 20%
     // Discounted COMP price is 200 * 0.8 = 160

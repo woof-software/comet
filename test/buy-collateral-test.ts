@@ -1,5 +1,6 @@
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, FaucetToken, NonStandardFaucetFeeToken } from '../build/types';
-import { ethers, event, expect, exp, getBlock, makeProtocol, portfolio, ReentryAttack, wait } from './helpers';
+import { EvilToken__factory, NonStandardFaucetFeeToken__factory } from '../build/types/index.js';
+import type { EvilToken, FaucetToken, NonStandardFaucetFeeToken } from '../build/types/index.js';
+import { ethers, event, expect, exp, getBlock, makeProtocol, portfolio, ReentryAttack, setTotalsBasic, wait } from './helpers.js';
 
 describe('buyCollateral', function () {
   it('allows buying collateral when reserves < target reserves', async () => {
@@ -25,18 +26,20 @@ describe('buyCollateral', function () {
     const { USDC, COMP } = tokens;
     const cometAsA = comet.connect(alice);
     const baseAsA = USDC.connect(alice);
+    const cometAddress = await comet.getAddress();
+    const compAddress = await COMP.getAddress();
 
     // Reserves are at 0 wei
 
     // Set up token balances and accounting
     await USDC.allocateTo(alice.address, 100e6);
-    await COMP.allocateTo(comet.address, exp(60, 18));
+    await COMP.allocateTo(cometAddress, exp(60, 18));
 
     const r0 = await comet.getReserves();
     const p0 = await portfolio(protocol, alice.address);
-    await wait(baseAsA.approve(comet.address, exp(50, 6)));
+    await wait(baseAsA.approve(cometAddress, exp(50, 6)));
     // Alice buys 50e6 wei USDC worth of COMP
-    const txn = await wait(cometAsA.buyCollateral(COMP.address, exp(50, 18), 50e6, alice.address));
+    const txn = await wait(cometAsA.buyCollateral(compAddress, exp(50, 18), 50e6, alice.address));
     const p1 = await portfolio(protocol, alice.address);
     const r1 = await comet.getReserves();
 
@@ -50,13 +53,13 @@ describe('buyCollateral', function () {
     expect(event(txn, 0)).to.be.deep.equal({
       Transfer: {
         from: alice.address,
-        to: comet.address,
+        to: cometAddress,
         amount: exp(50, 6),
       }
     });
     expect(event(txn, 1)).to.be.deep.equal({
       Transfer: {
-        from: comet.address,
+        from: cometAddress,
         to: alice.address,
         amount: 55555555555555555555n,
       }
@@ -64,7 +67,7 @@ describe('buyCollateral', function () {
     expect(event(txn, 2)).to.be.deep.equal({
       BuyCollateral: {
         buyer: alice.address,
-        asset: COMP.address,
+        asset: compAddress,
         baseAmount: exp(50, 6),
         collateralAmount: 55555555555555555555n,
       }
@@ -94,39 +97,39 @@ describe('buyCollateral', function () {
     const { USDC, COMP } = tokens;
     const cometAsA = comet.connect(alice);
     const baseAsA = USDC.connect(alice);
+    const cometAddress = await comet.getAddress();
+    const compAddress = await COMP.getAddress();
 
     // Set reserves to -100 wei
-    let t0 = await comet.totalsBasic();
-    t0 = Object.assign({}, t0, {
+    await setTotalsBasic(comet, {
       totalSupplyBase: 100e6,
       totalBorrowBase: 0n,
     });
-    await wait(comet.setTotalsBasic(t0));
 
     // Set up token balances and accounting
     await USDC.allocateTo(alice.address, 100e6);
-    await COMP.allocateTo(comet.address, exp(60, 18));
+    await COMP.allocateTo(cometAddress, exp(60, 18));
 
     const r0 = await comet.getReserves();
     const p0 = await portfolio(protocol, alice.address);
-    await wait(baseAsA.approve(comet.address, exp(50, 6)));
+    await wait(baseAsA.approve(cometAddress, exp(50, 6)));
     // Alice buys 50e6 wei USDC worth of COMP
-    const txn = await wait(cometAsA.buyCollateral(COMP.address, exp(50, 18), 50e6, alice.address));
+    const txn = await wait(cometAsA.buyCollateral(compAddress, exp(50, 18), 50e6, alice.address));
     const p1 = await portfolio(protocol, alice.address);
     const r1 = await comet.getReserves();
 
-    expect(r0).to.be.equal(-100e6);
+    expect(r0).to.be.equal(-100_000_000n);
     expect(r0).to.be.lt(await comet.targetReserves());
     expect(p0.internal).to.be.deep.equal({USDC: 0n, COMP: 0n});
     expect(p0.external).to.be.deep.equal({USDC: exp(100, 6), COMP: 0n});
     expect(p1.internal).to.be.deep.equal({USDC: 0n, COMP: 0n});
     expect(p1.external).to.be.deep.equal({USDC: exp(50, 6), COMP: 55555555555555555555n});
-    expect(r1).to.be.equal(-50e6);
+    expect(r1).to.be.equal(-50_000_000n);
     // Only checking the BuyCollateral event in this test case
     expect(event(txn, 2)).to.be.deep.equal({
       BuyCollateral: {
         buyer: alice.address,
-        asset: COMP.address,
+        asset: compAddress,
         baseAmount: exp(50, 6),
         collateralAmount: 55555555555555555555n,
       }
@@ -156,29 +159,31 @@ describe('buyCollateral', function () {
     const { USDC, COMP } = tokens;
     const cometAsA = comet.connect(alice);
     const baseAsA = USDC.connect(alice);
+    const cometAddress = await comet.getAddress();
+    const compAddress = await COMP.getAddress();
 
     // Set up token balances and accounting
     await USDC.allocateTo(alice.address, 100e6);
-    await COMP.allocateTo(comet.address, exp(60, 18));
+    await COMP.allocateTo(cometAddress, exp(60, 18));
 
     // Give 10 COMP to users, leaving 50 in reserves
-    await wait(comet.setTotalsCollateral(COMP.address, { totalSupplyAsset: exp(10, 18), _reserved: 0 }));
+    await wait(comet.setTotalsCollateral(compAddress, { totalSupplyAsset: exp(10, 18), _reserved: 0 }));
 
     const r0 = await comet.getReserves();
     const p0 = await portfolio(protocol, alice.address);
-    await wait(baseAsA.approve(comet.address, exp(50, 6)));
+    await wait(baseAsA.approve(cometAddress, exp(50, 6)));
     // Alice buys 50e6 wei USDC worth of COMP
-    await wait(cometAsA.buyCollateral(COMP.address, exp(50, 18), 50e6, alice.address));
+    await wait(cometAsA.buyCollateral(compAddress, exp(50, 18), 50e6, alice.address));
     const p1 = await portfolio(protocol, alice.address);
     const r1 = await comet.getReserves();
 
-    expect(r0).to.be.equal(0);
+    expect(r0).to.be.equal(0n);
     expect(r0).to.be.lt(await comet.targetReserves());
     expect(p0.internal).to.be.deep.equal({USDC: 0n, COMP: 0n});
     expect(p0.external).to.be.deep.equal({USDC: exp(100, 6), COMP: 0n});
     expect(p1.internal).to.be.deep.equal({USDC: 0n, COMP: 0n});
     expect(p1.external).to.be.deep.equal({USDC: exp(50, 6), COMP: exp(50, 18)});
-    expect(r1).to.be.equal(50e6);
+    expect(r1).to.be.equal(50_000_000n);
   });
 
   it('reverts if trying to buy collateral which belongs to users', async () => {
@@ -204,17 +209,20 @@ describe('buyCollateral', function () {
     const { USDC, COMP } = tokens;
     const cometAsA = comet.connect(alice);
     const baseAsA = USDC.connect(alice);
+    const cometAddress = await comet.getAddress();
+    const compAddress = await COMP.getAddress();
 
     // Set up token balances and accounting
     await USDC.allocateTo(alice.address, 100e6);
-    await COMP.allocateTo(comet.address, exp(60, 18));
+    await COMP.allocateTo(cometAddress, exp(60, 18));
 
     // Give 20 COMP to users, leaving 40 in reserves
-    await wait(comet.setTotalsCollateral(COMP.address, { totalSupplyAsset: exp(20, 18), _reserved: 0 }));
+    await wait(comet.setTotalsCollateral(compAddress, { totalSupplyAsset: exp(20, 18), _reserved: 0 }));
 
     // Alice attempts to buy 50e6 wei USDC worth of COMP
-    await wait(baseAsA.approve(comet.address, exp(50, 6)));
-    await expect(cometAsA.buyCollateral(COMP.address, exp(50, 18), 50e6, alice.address)).to.be.revertedWith("custom error 'InsufficientReserves()'");
+    await wait(baseAsA.approve(cometAddress, exp(50, 6)));
+    await expect(cometAsA.buyCollateral(compAddress, exp(50, 18), 50e6, alice.address))
+      .to.be.revertedWithCustomError(comet, 'InsufficientReserves');
   });
 
   it('reverts if reserves are above target reserves', async () => {
@@ -223,23 +231,26 @@ describe('buyCollateral', function () {
     const { USDC, COMP } = tokens;
     const cometAsA = comet.connect(alice);
     const baseAsA = USDC.connect(alice);
+    const cometAddress = await comet.getAddress();
+    const compAddress = await COMP.getAddress();
 
     // Set reserves to 100e6 wei
-    await USDC.allocateTo(comet.address, 100e6);
+    await USDC.allocateTo(cometAddress, 100e6);
 
     // Set up token balances and accounting
     await USDC.allocateTo(alice.address, 100e6);
-    await COMP.allocateTo(comet.address, exp(50, 18));
-    await wait(comet.setTotalsCollateral(COMP.address, { totalSupplyAsset: exp(50, 18), _reserved: 0 }));
-    await wait(comet.setCollateralBalance(comet.address, COMP.address, exp(50, 18)));
+    await COMP.allocateTo(cometAddress, exp(50, 18));
+    await wait(comet.setTotalsCollateral(compAddress, { totalSupplyAsset: exp(50, 18), _reserved: 0 }));
+    await wait(comet.setCollateralBalance(cometAddress, compAddress, exp(50, 18)));
 
     const r0 = await comet.getReserves();
-    expect(r0).to.be.equal(100e6);
+    expect(r0).to.be.equal(100_000_000n);
     expect(r0).to.be.gt(await comet.targetReserves());
 
     // Alice buys 50e18 wei COMP for 50e6 wei USDC
-    await wait(baseAsA.approve(comet.address, exp(50, 6)));
-    await expect(cometAsA.buyCollateral(COMP.address, exp(50, 18), 50e6, alice.address)).to.be.revertedWith("custom error 'NotForSale()'");
+    await wait(baseAsA.approve(cometAddress, exp(50, 6)));
+    await expect(cometAsA.buyCollateral(compAddress, exp(50, 18), 50e6, alice.address))
+      .to.be.revertedWithCustomError(comet, 'NotForSale');
   });
 
   it('reverts if slippage is too high', async () => {
@@ -261,18 +272,21 @@ describe('buyCollateral', function () {
     const { USDC, COMP } = tokens;
     const cometAsA = comet.connect(alice);
     const baseAsA = USDC.connect(alice);
+    const cometAddress = await comet.getAddress();
+    const compAddress = await COMP.getAddress();
 
     // Reserves are at 0 wei
 
     // Set up token balances and accounting
     await USDC.allocateTo(alice.address, 100e6);
-    await COMP.allocateTo(comet.address, exp(50, 18));
-    await wait(comet.setTotalsCollateral(COMP.address, { totalSupplyAsset: exp(50, 18), _reserved: 0 }));
-    await wait(comet.setCollateralBalance(comet.address, COMP.address, exp(50, 18)));
+    await COMP.allocateTo(cometAddress, exp(50, 18));
+    await wait(comet.setTotalsCollateral(compAddress, { totalSupplyAsset: exp(50, 18), _reserved: 0 }));
+    await wait(comet.setCollateralBalance(cometAddress, compAddress, exp(50, 18)));
 
     // Alice tries to buy 100e18 wei COMP for 50e6 wei USDC
-    await wait(baseAsA.approve(comet.address, exp(50, 6)));
-    await expect(cometAsA.buyCollateral(COMP.address, exp(100, 18), 50e6, alice.address)).to.be.revertedWith("custom error 'TooMuchSlippage()'");
+    await wait(baseAsA.approve(cometAddress, exp(50, 6)));
+    await expect(cometAsA.buyCollateral(compAddress, exp(100, 18), 50e6, alice.address))
+      .to.be.revertedWithCustomError(comet, 'TooMuchSlippage');
   });
 
   it('reverts if not enough collateral to buy', async () => {
@@ -296,18 +310,21 @@ describe('buyCollateral', function () {
     const { USDC, COMP } = tokens;
     const cometAsA = comet.connect(alice);
     const baseAsA = USDC.connect(alice);
+    const cometAddress = await comet.getAddress();
+    const compAddress = await COMP.getAddress();
 
     // Reserves are at 0 wei
 
     // Set up token balances and accounting
     await USDC.allocateTo(alice.address, 200e6);
-    await COMP.allocateTo(comet.address, exp(50, 18));
-    await wait(comet.setTotalsCollateral(COMP.address, { totalSupplyAsset: exp(50, 18), _reserved: 0 }));
-    await wait(comet.setCollateralBalance(comet.address, COMP.address, exp(50, 18)));
+    await COMP.allocateTo(cometAddress, exp(50, 18));
+    await wait(comet.setTotalsCollateral(compAddress, { totalSupplyAsset: exp(50, 18), _reserved: 0 }));
+    await wait(comet.setCollateralBalance(cometAddress, compAddress, exp(50, 18)));
 
     // Alice tries to buy 200e18 wei COMP for 200e6 wei USDC
-    await wait(baseAsA.approve(comet.address, exp(200, 6)));
-    await expect(cometAsA.buyCollateral(COMP.address, exp(200, 18), 200e6, alice.address)).to.be.revertedWith("custom error 'InsufficientReserves()'");
+    await wait(baseAsA.approve(cometAddress, exp(200, 6)));
+    await expect(cometAsA.buyCollateral(compAddress, exp(200, 18), 200e6, alice.address))
+      .to.be.revertedWithCustomError(comet, 'InsufficientReserves');
   });
 
   it('reverts if buy is paused', async () => {
@@ -315,15 +332,19 @@ describe('buyCollateral', function () {
     const { cometWithExtendedAssetList : comet, tokens, pauseGuardian, users: [alice] } = protocol;
     const { COMP } = tokens;
     const cometAsA = comet.connect(alice);
+    const compAddress = await COMP.getAddress();
 
     // Pause buy collateral
     await wait(comet.connect(pauseGuardian).pause(false, false, false, false, true));
     expect(await comet.isBuyPaused()).to.be.true;
 
-    await expect(cometAsA.buyCollateral(COMP.address, exp(50, 18), 50e6, alice.address)).to.be.revertedWith("custom error 'Paused()'");
+    await expect(cometAsA.buyCollateral(compAddress, exp(50, 18), 50e6, alice.address))
+      .to.be.revertedWithCustomError(comet, 'Paused');
   });
 
   it('buys the correct amount in a fee-like situation', async () => {
+    const [deployer] = await ethers.getSigners();
+    const feeTokenFactory = new NonStandardFaucetFeeToken__factory(deployer);
     const protocol = await makeProtocol({
       base: 'USDT',
       storeFrontPriceFactor: exp(0.5, 18),
@@ -333,20 +354,22 @@ describe('buyCollateral', function () {
           initial: 1e6,
           decimals: 6,
           initialPrice: 1,
-          factory: (await ethers.getContractFactory('NonStandardFaucetFeeToken')) as NonStandardFaucetFeeToken__factory,
+          factory: feeTokenFactory,
         },
         COMP: {
           initial: 1e7,
           decimals: 18,
           initialPrice: 1,
           liquidationFactor: exp(0.8, 18),
-          factory: (await ethers.getContractFactory('NonStandardFaucetFeeToken')) as NonStandardFaucetFeeToken__factory,
+          factory: feeTokenFactory,
         },
       }
     });
 
     const { cometWithExtendedAssetList : comet, tokens, users: [alice] } = protocol;
     const { USDT, COMP } = tokens;
+    const cometAddress = await comet.getAddress();
+    const compAddress = await COMP.getAddress();
     
     // Set both COMP and USDT with 1% fees
     // So we can test internal accounting works correctly in both ways: 1. correctly deducting fees from payment during buyCollateral 2. correctly deducting fees from collateral token to buyer
@@ -360,11 +383,11 @@ describe('buyCollateral', function () {
 
     // Set up token balances and accounting
     await USDT.allocateTo(alice.address, 100e6);
-    await COMP.allocateTo(comet.address, exp(60, 18));
+    await COMP.allocateTo(cometAddress, exp(60, 18));
 
     const r0 = await comet.getReserves();
     const p0 = await portfolio(protocol, alice.address);
-    await wait(baseAsA.approve(comet.address, exp(50, 6)));
+    await wait(baseAsA.approve(cometAddress, exp(50, 6)));
     // Alice buys 50e6 wei USDT worth of COMP
 
     // Some math writeup for better understanding in each expects number:
@@ -373,7 +396,7 @@ describe('buyCollateral', function () {
     // collateralAmount = basePrice * baseAmount / assetPriceDiscount
     // collateralAmount = 1 * 50 * (1 - Token Fee) / 0.9 = 1 * 50 * 0.99 / 0.9 = 55
     // actualReceiveCollateral = 55 * (1 - Token Fee) = 55 * 0.99 = 54.45
-    const txn = await wait(cometAsA.buyCollateral(COMP.address, exp(50, 18), 50e6, alice.address));
+    const txn = await wait(cometAsA.buyCollateral(compAddress, exp(50, 18), 50e6, alice.address));
     const p1 = await portfolio(protocol, alice.address);
     const r1 = await comet.getReserves();
 
@@ -387,13 +410,13 @@ describe('buyCollateral', function () {
     expect(event(txn, 0)).to.be.deep.equal({
       Transfer: {
         from: alice.address,
-        to: comet.address,
+        to: cometAddress,
         amount: exp(49.5, 6),
       }
     });
     expect(event(txn, 1)).to.be.deep.equal({
       Transfer: {
-        from: comet.address,
+        from: cometAddress,
         to: alice.address,
         amount: exp(54.45, 18),
       }
@@ -401,7 +424,7 @@ describe('buyCollateral', function () {
     expect(event(txn, 2)).to.be.deep.equal({
       BuyCollateral: {
         buyer: alice.address,
-        asset: COMP.address,
+        asset: compAddress,
         baseAmount: exp(49.5, 6),
         collateralAmount: exp(55, 18),
       }
@@ -409,6 +432,10 @@ describe('buyCollateral', function () {
   });
 
   describe('reentrancy', function() {
+    afterEach(async () => {
+      await ethers.provider.send('evm_setAutomine', [true]);
+    });
+
     it('is blocked during reentrant supply', async () => {
       const wethArgs = {
         initial: 1e4,
@@ -420,6 +447,7 @@ describe('buyCollateral', function () {
         initial: 1e6,
         initialPrice: 1,
       };
+      const [deployer] = await ethers.getSigners();
 
       // 1. normal scenario, USDC base
       const normalProtocol = await makeProtocol({
@@ -443,7 +471,7 @@ describe('buyCollateral', function () {
         assets: {
           EVIL: {
             ...baseTokenArgs,
-            factory: await ethers.getContractFactory('EvilToken') as EvilToken__factory,
+            factory: new EvilToken__factory(deployer),
           },
           WETH: wethArgs,
         },
@@ -454,43 +482,45 @@ describe('buyCollateral', function () {
         tokens: evilTokens,
       } = evilProtocol;
       const { WETH: evilWETH, EVIL } = <{WETH: FaucetToken, EVIL: EvilToken}>evilTokens;
+      const normalCometAddress = await normalComet.getAddress();
+      const evilCometAddress = await evilComet.getAddress();
+      const normalUsdcAddress = await normalUSDC.getAddress();
+      const normalWethAddress = await normalWETH.getAddress();
+      const evilAddress = await EVIL.getAddress();
+      const evilWethAddress = await evilWETH.getAddress();
       // add attack to EVIL token
-      const attack = Object.assign({}, await EVIL.getAttack(), {
+      const attack = {
         attackType: ReentryAttack.SupplyFrom,
         source: evilAlice.address,
         destination: evilBob.address,
-        asset: EVIL.address,
+        asset: evilAddress,
         amount: 3000e6,
         maxCalls: 1
-      });
+      };
       await EVIL.setAttack(attack);
 
       // allocate tokens
-      await normalWETH.allocateTo(normalComet.address, exp(100, 18));
+      await normalWETH.allocateTo(normalCometAddress, exp(100, 18));
       await normalUSDC.allocateTo(normalAlice.address, exp(5000, 6));
       // allocate tokens (evil)
-      await evilWETH.allocateTo(evilComet.address, exp(100, 18));
+      await evilWETH.allocateTo(evilCometAddress, exp(100, 18));
       await EVIL.allocateTo(evilAlice.address, exp(5000, 6));
 
       // ensure both Comets have the same lastAccrualTime
       const start = (await getBlock()).timestamp;
 
-      let tb0 = await normalComet.totalsBasic();
-      tb0 = Object.assign({}, tb0, {
+      await setTotalsBasic(normalComet, {
         lastAccrualTime: start
       });
-      await normalComet.setTotalsBasic(tb0);
 
-      let tb1 = await evilComet.totalsBasic();
-      tb1 = Object.assign({}, tb1, {
+      await setTotalsBasic(evilComet, {
         lastAccrualTime: start
       });
-      await evilComet.setTotalsBasic(tb1);
 
       // approve Comet to move funds
-      await normalUSDC.connect(normalAlice).approve(normalComet.address, exp(5000, 6));
-      await EVIL.connect(evilAlice).approve(EVIL.address, exp(5000, 6));
-      await EVIL.connect(evilAlice).approve(evilComet.address, exp(5000, 6));
+      await normalUSDC.connect(normalAlice).approve(normalCometAddress, exp(5000, 6));
+      await EVIL.connect(evilAlice).approve(evilAddress, exp(5000, 6));
+      await EVIL.connect(evilAlice).approve(evilCometAddress, exp(5000, 6));
       // perform the supplies for each protocol in the same block, so that the
       // same amount of time elapses for each when calculating interest
       await ethers.provider.send('evm_setAutomine', [false]);
@@ -501,7 +531,7 @@ describe('buyCollateral', function () {
         .supplyFrom(
           normalAlice.address,
           normalBob.address,
-          normalUSDC.address,
+          normalUsdcAddress,
           1e6
         );
 
@@ -509,22 +539,23 @@ describe('buyCollateral', function () {
       await normalComet
         .connect(normalAlice)
         .buyCollateral(
-          normalWETH.address,
+          normalWethAddress,
           exp(.5, 18),
           exp(3000, 6),
           normalAlice.address
         );
 
       // authorize EVIL, since callback will originate from EVIL token address
-      await evilComet.connect(evilAlice).allow(EVIL.address, true);
+      await evilComet.connect(evilAlice).allow(evilAddress, true);
       // call buyCollateral; supplyFrom is called in in callback
       await evilComet
         .connect(evilAlice)
         .buyCollateral(
-          evilWETH.address,
+          evilWethAddress,
           exp(0, 18),
           exp(3000, 6),
-          evilAlice.address
+          evilAlice.address,
+          { gasLimit: 10_000_000 }
         );
 
       await evilComet.accrueAccount(evilAlice.address);
@@ -534,17 +565,17 @@ describe('buyCollateral', function () {
       await ethers.provider.send('evm_setAutomine', [true]);
 
       const normalTotalsBasic = await normalComet.totalsBasic();
-      const normalTotalsCollateral = await normalComet.totalsCollateral(normalWETH.address);
+      const normalTotalsCollateral = await normalComet.totalsCollateral(normalWethAddress);
       const evilTotalsBasic = await evilComet.totalsBasic();
-      const evilTotalsCollateral = await evilComet.totalsCollateral(evilWETH.address);
+      const evilTotalsCollateral = await evilComet.totalsCollateral(evilWethAddress);
 
       expect(normalTotalsBasic.baseSupplyIndex).to.equal(evilTotalsBasic.baseSupplyIndex);
       expect(normalTotalsBasic.baseBorrowIndex).to.equal(evilTotalsBasic.baseBorrowIndex);
       expect(normalTotalsBasic.trackingSupplyIndex).to.equal(evilTotalsBasic.trackingSupplyIndex);
       expect(normalTotalsBasic.trackingBorrowIndex).to.equal(evilTotalsBasic.trackingBorrowIndex);
-      expect(normalTotalsBasic.totalSupplyBase).to.equal(1e6);
+      expect(normalTotalsBasic.totalSupplyBase).to.equal(1_000_000n);
       // EvilToken attack should be blocked
-      expect(evilTotalsBasic.totalSupplyBase).to.equal(0);
+      expect(evilTotalsBasic.totalSupplyBase).to.equal(0n);
       expect(normalTotalsBasic.totalBorrowBase).to.equal(evilTotalsBasic.totalBorrowBase);
 
       expect(normalTotalsCollateral.totalSupplyAsset).to.eq(evilTotalsCollateral.totalSupplyAsset);
@@ -558,9 +589,9 @@ describe('buyCollateral', function () {
       const normalBobPortfolio = await portfolio(normalProtocol, normalBob.address);
       const evilBobPortfolio = await portfolio(evilProtocol, evilBob.address);
 
-      expect(normalBobPortfolio.internal.USDC).to.equal(1e6);
+      expect(normalBobPortfolio.internal.USDC).to.equal(1_000_000n);
       // EvilToken attack should be blocked, so totalSupplyBase should be 0
-      expect(evilBobPortfolio.internal.EVIL).to.equal(0);
+      expect(evilBobPortfolio.internal.EVIL).to.equal(0n);
     });
 
     it('reentrant buyCollateral is reverted', async () => {
@@ -574,6 +605,7 @@ describe('buyCollateral', function () {
         initial: 1e6,
         initialPrice: 1,
       };
+      const [deployer] = await ethers.getSigners();
 
       // malicious scenario, EVIL token is base
       const evilProtocol = await makeProtocol({
@@ -581,7 +613,7 @@ describe('buyCollateral', function () {
         assets: {
           EVIL: {
             ...baseTokenArgs,
-            factory: await ethers.getContractFactory('EvilToken') as EvilToken__factory,
+            factory: new EvilToken__factory(deployer),
           },
           WETH: wethArgs,
         },
@@ -593,38 +625,41 @@ describe('buyCollateral', function () {
         users: [evilAlice, evilBob]
       } = evilProtocol;
       const { WETH: evilWETH, EVIL } = <{ WETH: FaucetToken, EVIL: EvilToken }>evilTokens;
+      const evilCometAddress = await evilComet.getAddress();
+      const evilAddress = await EVIL.getAddress();
+      const evilWethAddress = await evilWETH.getAddress();
      
       // add attack to EVIL token
-      const attack = Object.assign({}, await EVIL.getAttack(), {
+      const attack = {
         attackType: ReentryAttack.BuyCollateral,
         source: evilAlice.address,
         destination: evilBob.address,
-        asset: evilWETH.address,
+        asset: evilWethAddress,
         amount: 3000e6,
         maxCalls: 1
-      });
+      };
       await EVIL.setAttack(attack);
 
       // allocate tokens (evil)
-      await evilWETH.allocateTo(evilComet.address, exp(100, 18));
+      await evilWETH.allocateTo(evilCometAddress, exp(100, 18));
       await EVIL.allocateTo(evilAlice.address, exp(5000, 6));
 
       // approve Comet to move funds
-      await EVIL.connect(evilAlice).approve(EVIL.address, exp(5000, 6));
-      await EVIL.connect(evilAlice).approve(evilComet.address, exp(5000, 6));
+      await EVIL.connect(evilAlice).approve(evilAddress, exp(5000, 6));
+      await EVIL.connect(evilAlice).approve(evilCometAddress, exp(5000, 6));
 
       // authorize EVIL, since callback will originate from EVIL token address
-      await evilComet.connect(evilAlice).allow(EVIL.address, true);
+      await evilComet.connect(evilAlice).allow(evilAddress, true);
       
       // call buyCollateral; supplyFrom is called in callback
       await expect(evilComet
         .connect(evilAlice)
         .buyCollateral(
-          evilWETH.address,
+          evilWethAddress,
           exp(0, 18),
           exp(3000, 6),
           evilAlice.address
-        )).to.be.revertedWith("custom error 'ReentrantCallBlocked()'");
+        )).to.be.revertedWithCustomError(evilComet, 'ReentrantCallBlocked');
     });
   });
 });

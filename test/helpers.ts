@@ -722,17 +722,9 @@ export function event(tx, index) {
     throw new Error(`Log ${index} is not a parsed contract event`);
   }
   const args = {};
-  for (const k in ev.args) {
-    const v = ev.args[k];
-    if (isNaN(Number(k))) {
-      if (v._isBigNumber) {
-        args[k] = BigInt(v);
-      } else if (Array.isArray(v)) {
-        args[k] = convertToBigInt(v);
-      } else {
-        args[k] = v;
-      }
-    }
+  for (const [i, input] of ev.fragment.inputs.entries()) {
+    const v = ev.args[i];
+    args[input.name] = Array.isArray(v) ? convertToBigInt(v) : v;
   }
   return { [ev.eventName]: args };
 }
@@ -744,7 +736,7 @@ function convertToBigInt(arr) {
     if (Array.isArray(v)) {
       newArr.push(convertToBigInt(v));
     } else {
-      newArr.push(v._isBigNumber ? BigInt(v) : v);
+      newArr.push(v);
     }
   }
   return newArr;
