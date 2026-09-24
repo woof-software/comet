@@ -5,6 +5,7 @@ import "./CometFactory.sol";
 import "./CometConfiguration.sol";
 import "./ConfiguratorStorage.sol";
 import "./marketupdates/MarketAdminPermissionCheckerInterface.sol";
+import { IAccessGate } from "./interfaces/access-gate/IAccessGate.sol";
 
 contract Configurator is ConfiguratorStorage {
 
@@ -19,6 +20,7 @@ contract Configurator is ConfiguratorStorage {
     event SetMarketAdminPermissionChecker(address indexed oldMarketAdminPermissionChecker, address indexed newMarketAdminPermissionChecker);
     event SetBaseTokenPriceFeed(address indexed cometProxy, address indexed oldBaseTokenPriceFeed, address indexed newBaseTokenPriceFeed);
     event SetExtensionDelegate(address indexed cometProxy, address indexed oldExt, address indexed newExt);
+    event SetAccessGate(address indexed cometProxy, address indexed oldAccessGate, address indexed newAccessGate);
     event SetSupplyKink(address indexed cometProxy,uint64 oldKink, uint64 newKink);
     event SetSupplyPerYearInterestRateSlopeLow(address indexed cometProxy,uint64 oldIRSlopeLow, uint64 newIRSlopeLow);
     event SetSupplyPerYearInterestRateSlopeHigh(address indexed cometProxy,uint64 oldIRSlopeHigh, uint64 newIRSlopeHigh);
@@ -44,6 +46,7 @@ contract Configurator is ConfiguratorStorage {
     error AlreadyInitialized();
     error AssetDoesNotExist();
     error ConfigurationAlreadyExists();
+    error InvalidAccessGate();
     error InvalidAddress();
     error Unauthorized();
 
@@ -99,6 +102,8 @@ contract Configurator is ConfiguratorStorage {
             (oldConfiguration.baseToken != newConfiguration.baseToken ||
              oldConfiguration.trackingIndexScale != newConfiguration.trackingIndexScale))
             revert ConfigurationAlreadyExists();
+        // Legacy Comets do not use the access gate, so it may be unset
+        if (newConfiguration.accessGate != address(0)) checkAccessGate(cometProxy, newConfiguration.accessGate);
 
         configuratorParams[cometProxy] = newConfiguration;
         emit SetConfiguration(cometProxy, oldConfiguration, newConfiguration);
@@ -146,6 +151,16 @@ contract Configurator is ConfiguratorStorage {
         address oldExtensionDelegate = configuratorParams[cometProxy].extensionDelegate;
         configuratorParams[cometProxy].extensionDelegate = newExtensionDelegate;
         emit SetExtensionDelegate(cometProxy, oldExtensionDelegate, newExtensionDelegate);
+    }
+
+    function setAccessGate(address cometProxy, address newAccessGate) external {
+        if (msg.sender != governor) revert Unauthorized();
+        if (newAccessGate == address(0)) revert InvalidAddress();
+        checkAccessGate(cometProxy, newAccessGate);
+
+        address oldAccessGate = configuratorParams[cometProxy].accessGate;
+        configuratorParams[cometProxy].accessGate = newAccessGate;
+        emit SetAccessGate(cometProxy, oldAccessGate, newAccessGate);
     }
 
     function setSupplyKink(address cometProxy, uint64 newSupplyKink) external governorOrMarketAdmin {
@@ -313,6 +328,13 @@ contract Configurator is ConfiguratorStorage {
      **/
     function getConfiguration(address cometProxy) external view returns (Configuration memory) {
         return configuratorParams[cometProxy];
+    }
+
+    /**
+     * @dev Reverts if the access gate is not bound to the Comet proxy
+     */
+    function checkAccessGate(address cometProxy, address accessGate) internal view {
+        if (IAccessGate(accessGate).comet() != cometProxy) revert InvalidAccessGate();
     }
 
     /**

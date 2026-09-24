@@ -134,14 +134,14 @@ contract AssetList {
         }
 
         // Sanity check price feed and asset decimals
-        if (IPriceFeed(priceFeed).decimals() != PRICE_FEED_DECIMALS) revert CometMainInterface.BadDecimals();
-        if (IERC20NonStandard(asset).decimals() != decimals_) revert CometMainInterface.BadDecimals();
+        if (IPriceFeed(priceFeed).decimals() != PRICE_FEED_DECIMALS) revert CometMainInterfaceBase.BadDecimals();
+        if (IERC20NonStandard(asset).decimals() != decimals_) revert CometMainInterfaceBase.BadDecimals();
 
         // Sanity checks for factors ordering: BCF < LCF; LCF <= MAX; LF <= MAX
         if (assetConfig.borrowCollateralFactor >= assetConfig.liquidateCollateralFactor && assetConfig.borrowCollateralFactor != 0)
-            revert CometMainInterface.BorrowCFTooLarge();
-        if (assetConfig.liquidateCollateralFactor > MAX_COLLATERAL_FACTOR) revert CometMainInterface.LiquidateCFTooLarge();
-        if (assetConfig.liquidationFactor > MAX_COLLATERAL_FACTOR) revert CometMainInterface.LiqPenaltyTooHigh();
+            revert CometMainInterfaceBase.BorrowCFTooLarge();
+        if (assetConfig.liquidateCollateralFactor > MAX_COLLATERAL_FACTOR) revert CometMainInterfaceBase.LiquidateCFTooLarge();
+        if (assetConfig.liquidationFactor > MAX_COLLATERAL_FACTOR) revert CometMainInterfaceBase.LiqPenaltyTooHigh();
 
         // Valid collateral factor configurations:
         //  1. Both BCF and LCF are 0 => collateral is fully de-listed
@@ -157,7 +157,7 @@ contract AssetList {
             uint16 liquidationFactor = uint16(assetConfig.liquidationFactor / descale);
 
             // safety check duplicate sanity check on original values to ensure no values skewing after descaling and type conversion
-            if (borrowCollateralFactor >= liquidateCollateralFactor && borrowCollateralFactor != 0) revert CometMainInterface.BorrowCFTooLarge();
+            if (borrowCollateralFactor >= liquidateCollateralFactor && borrowCollateralFactor != 0) revert CometMainInterfaceBase.BorrowCFTooLarge();
 
             // Keep whole units of asset for supply cap
             uint64 supplyCap = uint64(assetConfig.supplyCap / (10 ** decimals_));
@@ -180,7 +180,7 @@ contract AssetList {
      * @return The asset info object
      */
     function getAssetInfo(uint8 i) public view returns (CometCore.AssetInfo memory) {
-        if (i >= numAssets) revert CometMainInterface.BadAsset();
+        if (i >= numAssets) revert CometMainInterfaceBase.BadAsset();
         uint256 word_a;
         uint256 word_b;
         if(i == 0){
