@@ -1,12 +1,11 @@
-import { ethers, expect, makeProtocol } from './helpers';
+import { expect, makeProtocol } from './helpers.js';
 
 describe('updateAssetsIn', function () {
   it("adds asset to user's asset list when initialUserBalance=0 and finalUserBalance>0", async () => {
-    const { cometWithExtendedAssetList: comet, tokens } = await makeProtocol();
-    const [_governor, _pauseGuardian, user] = await ethers.getSigners();
-    const compAddress = tokens['COMP'].address;
-    const wethAddress = tokens['WETH'].address;
-    const wbtcAddress = tokens['WBTC'].address;
+    const { cometWithExtendedAssetList: comet, tokens, users: [user] } = await makeProtocol();
+    const compAddress = await tokens['COMP'].getAddress();
+    const wethAddress = await tokens['WETH'].getAddress();
+    const wbtcAddress = await tokens['WBTC'].getAddress();
 
     expect(await comet.getAssetList(user.address)).to.be.empty;
 
@@ -43,16 +42,15 @@ describe('updateAssetsIn', function () {
       },
     });
     const [user] = users;
-    const asset12address = tokens['ASSET12'].address;
+    const asset12address = await tokens['ASSET12'].getAddress();
 
     await comet.updateAssetsInExternal(user.address, asset12address, 0, 1);
     expect(await comet.getAssetList(user.address)).to.deep.equal([asset12address]);
   });
 
   it('does not change state when both initialUserBalance and finalUserBalance are 0', async () => {
-    const { cometWithExtendedAssetList: comet, tokens } = await makeProtocol();
-    const [_governor, _pauseGuardian, user] = await ethers.getSigners();
-    const compAddress = tokens['COMP'].address;
+    const { cometWithExtendedAssetList: comet, tokens, users: [user] } = await makeProtocol();
+    const compAddress = await tokens['COMP'].getAddress();
 
     expect(await comet.getAssetList(user.address)).to.be.empty;
 
@@ -62,9 +60,8 @@ describe('updateAssetsIn', function () {
   });
 
   it('does not change state when both initialUserBalance and finalUserBalance > 0', async () => {
-    const { cometWithExtendedAssetList: comet, tokens } = await makeProtocol();
-    const [_governor, _pauseGuardian, user] = await ethers.getSigners();
-    const wethAddress = tokens['WETH'].address;
+    const { cometWithExtendedAssetList: comet, tokens, users: [user] } = await makeProtocol();
+    const wethAddress = await tokens['WETH'].getAddress();
 
     // enters asset
     await comet.updateAssetsInExternal(user.address, wethAddress, 0, 100_000);
@@ -76,9 +73,8 @@ describe('updateAssetsIn', function () {
   });
 
   it('removes asset from asset list when initialUserBalance > 0 and finalUserBalance=0', async () => {
-    const { cometWithExtendedAssetList: comet, tokens } = await makeProtocol();
-    const [_governor, _pauseGuardian, user] = await ethers.getSigners();
-    const compAddress = tokens['COMP'].address;
+    const { cometWithExtendedAssetList: comet, tokens, users: [user] } = await makeProtocol();
+    const compAddress = await tokens['COMP'].getAddress();
 
     // initially not in asset
     expect(await comet.getAssetList(user.address)).to.be.empty;
@@ -93,13 +89,12 @@ describe('updateAssetsIn', function () {
   });
 
   it('reverts for non-existent asset address', async () => {
-    const { cometWithExtendedAssetList: comet } = await makeProtocol();
-    const [_governor, pauseGuardian, user] = await ethers.getSigners();
+    const { cometWithExtendedAssetList: comet, pauseGuardian, users: [user] } = await makeProtocol();
 
     const erroneousAssetAddress = pauseGuardian.address;
 
     await expect(
       comet.updateAssetsInExternal(user.address, erroneousAssetAddress, 0, 100)
-    ).to.be.revertedWith("custom error 'BadAsset()'");
+    ).to.be.revertedWithCustomError(comet, 'BadAsset');
   });
 });

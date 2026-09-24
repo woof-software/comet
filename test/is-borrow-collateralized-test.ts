@@ -1,4 +1,4 @@
-import { expect, exp, makeProtocol } from './helpers';
+import { expect, exp, makeProtocol } from './helpers.js';
 
 describe('isBorrowCollateralized', function () {
   it('defaults to true', async () => {
@@ -49,10 +49,11 @@ describe('isBorrowCollateralized', function () {
       },
     });
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     // user owes 1 USDC, but has 1.2 COMP collateral
     await comet.setBasePrincipal(alice.address, -exp(1, 6));
-    await comet.setCollateralBalance(alice.address, COMP.address, exp(1.2, 18));
+    await comet.setCollateralBalance(alice.address, compAddress, exp(1.2, 18));
 
     expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
   });
@@ -74,12 +75,13 @@ describe('isBorrowCollateralized', function () {
       },
     });
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     // user owes 1 USDC
     await comet.setBasePrincipal(alice.address, -1_000_000);
     // user has 1 COMP collateral, but the borrow collateral factor puts it
     // below the required collateral amount
-    await comet.setCollateralBalance(alice.address, COMP.address, exp(1, 18));
+    await comet.setCollateralBalance(alice.address, compAddress, exp(1, 18));
 
     expect(await comet.isBorrowCollateralized(alice.address)).to.be.false;
   });
@@ -97,11 +99,12 @@ describe('isBorrowCollateralized', function () {
       },
     });
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     // user owes 1 USDC
     await comet.setBasePrincipal(alice.address, -exp(1, 6));
     // ...but has 5 COMP to cover their position
-    await comet.setCollateralBalance(alice.address, COMP.address, exp(5, 18));
+    await comet.setCollateralBalance(alice.address, compAddress, exp(5, 18));
 
     expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
 

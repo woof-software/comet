@@ -1,4 +1,4 @@
-import { expect, exp, makeProtocol } from './helpers';
+import { expect, exp, makeProtocol } from './helpers.js';
 
 /*
 Prices are set in terms of the base token (USDC with 6 decimals, by default):
@@ -57,11 +57,12 @@ describe('isLiquidatable', function () {
       },
     });
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     // user owes $100,000
     await comet.setBasePrincipal(alice.address, -100_000_000_000);
     // but has $100,000 in COMP to cover
-    await comet.setCollateralBalance(alice.address, COMP.address, exp(100_000, 18));
+    await comet.setCollateralBalance(alice.address, compAddress, exp(100_000, 18));
 
     expect(await comet.isLiquidatable(alice.address)).to.be.false;
   });
@@ -82,11 +83,12 @@ describe('isLiquidatable', function () {
       },
     });
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     // user owes $100,000 is
     await comet.setBasePrincipal(alice.address, -100_000_000_000);
     // and only has $95,000 in COMP
-    await comet.setCollateralBalance(alice.address, COMP.address, exp(95_000, 18));
+    await comet.setCollateralBalance(alice.address, compAddress, exp(95_000, 18));
 
     expect(await comet.isLiquidatable(alice.address)).to.be.true;
   });
@@ -109,11 +111,12 @@ describe('isLiquidatable', function () {
       },
     });
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     // user owes $100,000
     await comet.setBasePrincipal(alice.address, -100_000_000_000);
     // has $100,000 in COMP to cover, but at a .8 liquidateCollateralFactor
-    await comet.setCollateralBalance(alice.address, COMP.address, exp(100_000, 18));
+    await comet.setCollateralBalance(alice.address, compAddress, exp(100_000, 18));
 
     expect(await comet.isLiquidatable(alice.address)).to.be.true;
   });
@@ -135,11 +138,12 @@ describe('isLiquidatable', function () {
       },
     });
     const { COMP } = tokens;
+    const compAddress = await COMP.getAddress();
 
     // user owes $100,000
     await comet.setBasePrincipal(alice.address, -100_000_000_000);
     // has $100,000 in COMP to cover
-    await comet.setCollateralBalance(alice.address, COMP.address, exp(100_000, 18));
+    await comet.setCollateralBalance(alice.address, compAddress, exp(100_000, 18));
 
     expect(await comet.isLiquidatable(alice.address)).to.be.false;
 
