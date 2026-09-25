@@ -17,6 +17,9 @@ describe('buyCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 1,
+          // The liquidation factor sets the store front discount; the collateral factors sit below it
+          borrowCF: exp(0.7, 18),
+          liquidateCF: exp(0.75, 18),
           liquidationFactor: exp(0.8, 18),
         },
       }
@@ -86,6 +89,9 @@ describe('buyCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 1,
+          // The liquidation factor sets the store front discount; the collateral factors sit below it
+          borrowCF: exp(0.7, 18),
+          liquidateCF: exp(0.75, 18),
           liquidationFactor: exp(0.8, 18),
         },
       }
@@ -339,6 +345,9 @@ describe('buyCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 1,
+          // The liquidation factor sets the store front discount; the collateral factors sit below it
+          borrowCF: exp(0.7, 18),
+          liquidateCF: exp(0.75, 18),
           liquidationFactor: exp(0.8, 18),
           factory: (await ethers.getContractFactory('NonStandardFaucetFeeToken')) as NonStandardFaucetFeeToken__factory,
         },

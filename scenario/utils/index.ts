@@ -36,6 +36,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 
 export * from './hreUtils';
+export * from './versionControl';
 
 export const MAX_ASSETS = 24;
 export const UINT256_MAX = 2n ** 256n - 1n;
@@ -443,34 +444,6 @@ export async function usesAssetList(ctx: CometContext): Promise<boolean> {
 
 export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
-}
-
-export async function supportUtilizationLimit(ctx: CometContext): Promise<boolean> {
-  try {
-    const comet = await ctx.getComet();
-    const ethers = ctx.world.deploymentManager.hre.ethers;
-    
-    const iface = new ethers.utils.Interface([
-      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
-    ]);
-    const functionSelector = iface.getSighash('MAX_SUPPORTED_UTILIZATION');
-    
-    // Try to call the function using a low-level static call
-    // If the function doesn't exist, this will revert
-    const result = await ethers.provider.call({
-      to: comet.address,
-      data: functionSelector
-    });
-    
-    // If the call succeeds (doesn't revert), the function exists
-    // Decode the result to verify it's a valid bool response
-    if (result && result !== '0x') {
-      return true;
-    }
-    return false;
-  } catch (error) {
-    return false;
-  }
 }
 
 /**
@@ -1653,40 +1626,4 @@ export function applyL1ToL2Alias(address: string) {
 
 export function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
   return !!log?.raw?.topics && !!log?.raw?.data;
-}
-
-/**
- * Check if Comet supports extended pause functionality
- * @param ctx The Comet context
- * @returns true if Comet supports extended pause functions, false otherwise
- */
-export async function supportsExtendedPause(ctx: CometContext): Promise<boolean> {
-  try {
-    const comet = await ctx.getComet();
-    const ethers = ctx.world.deploymentManager.hre.ethers;
-    
-    // Get the function selector for isLendersWithdrawPaused()
-    // This function only exists in CometWithExtendedAssetList
-    const iface = new ethers.utils.Interface([
-      'function isLendersWithdrawPaused() external view returns (bool)'
-    ]);
-    const functionSelector = iface.getSighash('isLendersWithdrawPaused');
-    
-    // Try to call the function using a low-level static call
-    // If the function doesn't exist, this will revert
-    const result = await ethers.provider.call({
-      to: comet.address,
-      data: functionSelector
-    });
-    
-    // If the call succeeds (doesn't revert), the function exists
-    // Decode the result to verify it's a valid bool response
-    if (result && result !== '0x') {
-      return true;
-    }
-    return false;
-  } catch (e) {
-    // If the call reverts or fails, extended pause is not supported
-    return false;
-  }
 }

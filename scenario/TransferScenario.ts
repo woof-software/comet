@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectBase, expectRevertCustom, getInterest, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, fundAccount, usesAssetList, isAssetDelisted, supportsExtendedPause } from './utils';
+import { expectApproximately, expectBase, expectRevertCustom, getInterest, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, fundAccount, usesAssetList, isAssetDelisted, servicePatch } from './utils';
 import { ContractReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';
@@ -547,7 +547,7 @@ scenario(
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferCollateral) &&
       await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
-      await supportsExtendedPause(ctx);
+      await servicePatch(ctx);
     },
     cometBalances: async (ctx: CometContext) => (
       {
@@ -587,7 +587,7 @@ scenario(
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferCollateral) &&
       await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
-      await supportsExtendedPause(ctx);
+      await servicePatch(ctx);
     },
     cometBalances: async (ctx: CometContext) => (
       {
@@ -630,7 +630,7 @@ scenario(
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferBase) &&
       await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
-      await supportsExtendedPause(ctx);
+      await servicePatch(ctx);
     },
     tokenBalances: async (ctx: CometContext) => (
       {
@@ -677,7 +677,7 @@ scenario(
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferBase) &&
       await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
-      await supportsExtendedPause(ctx);
+      await servicePatch(ctx);
     },
     tokenBalances: async (ctx: CometContext) => (
       {
@@ -726,7 +726,7 @@ scenario(
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferBase) &&
       await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
-      await supportsExtendedPause(ctx);
+      await servicePatch(ctx);
     },
     cometBalances: async (ctx: CometContext) => (
       {
@@ -766,7 +766,7 @@ scenario(
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferBase) &&
       await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
-      await supportsExtendedPause(ctx);
+      await servicePatch(ctx);
     },
     cometBalances: async (ctx: CometContext) => (
       {
@@ -809,7 +809,7 @@ scenario(
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferCollateral) &&
       await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
-      await supportsExtendedPause(ctx);
+      await servicePatch(ctx);
     },
     cometBalances: async (ctx: CometContext) => (
       {
@@ -849,7 +849,7 @@ scenario(
   'Comet#transfer reverts when collateral asset transfer is paused and allows to transfer when unpaused',
   {
     filter: async (ctx: CometContext) => {
-      return await usesAssetList(ctx) && await supportsExtendedPause(ctx);
+      return await usesAssetList(ctx) && await servicePatch(ctx);
     },
   },
   async ({ comet, actors, cometExt }, context, world) => {
@@ -925,7 +925,7 @@ scenario(
   'Comet#transferFrom reverts when collateral asset transfer is paused and allows to transfer when unpaused',
   {
     filter: async (ctx: CometContext) => {
-      return await usesAssetList(ctx) && await supportsExtendedPause(ctx);
+      return await usesAssetList(ctx) && await servicePatch(ctx);
     },
   },
   async ({ comet, actors, cometExt }, context, world) => {
@@ -1010,7 +1010,7 @@ scenario(
   'Comet#transferFrom reverts when collateral asset is deactivated and allows to transfer when activated',
   {
     filter: async (ctx: CometContext) => {
-      return await usesAssetList(ctx) && await supportsExtendedPause(ctx);
+      return await usesAssetList(ctx) && await servicePatch(ctx);
     },
   },
   async ({ comet, actors, cometExt }, context, world) => {
@@ -1090,7 +1090,7 @@ scenario(
   'Comet#transfer reverts when collateral asset is deactivated and allows to transfer when activated',
   {
     filter: async (ctx: CometContext) => {
-      return await usesAssetList(ctx) && await supportsExtendedPause(ctx);
+      return await usesAssetList(ctx) && await servicePatch(ctx);
     },
   },
   async ({ comet, actors, cometExt }, context, world) => {
