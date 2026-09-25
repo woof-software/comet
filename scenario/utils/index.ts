@@ -24,7 +24,7 @@ import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
 import { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
-import { getOrCreateVirtualTestnet } from './tenderlyVnet';
+import { getOrCreateVirtualTestnet, getTenderlyCreds } from './tenderlyVnet';
 import { BaseBridgeReceiver, CometInterface, FaucetToken } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
@@ -1163,12 +1163,9 @@ async function simulateBundle(
 ): Promise<any> {
   const rollingStateChanges = {};
   const results = [];
+  const { account: username, project, accessKey } = getTenderlyCreds();
 
   for (const sim of simulations) {
-    const project = 'comet';
-    const username = process.env.TENDERLY_USERNAME || '';
-    const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
-
     // Merge rolling state changes with simulation's own state_objects
     const stateObjects = sim.state_objects
       ? { ...rollingStateChanges, ...sim.state_objects }
@@ -1224,9 +1221,7 @@ async function simulateBundle(
 }
 
 async function shareSimulation(dm: DeploymentManager, simulationId: string) {
-  const project = 'comet';
-  const username = process.env.TENDERLY_USERNAME || '';
-  const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
+  const { account: username, project, accessKey } = getTenderlyCreds();
 
   return axios.post(
     `https://api.tenderly.co/api/v1/account/${username}/project/${project}/simulations/${simulationId}/share`,
