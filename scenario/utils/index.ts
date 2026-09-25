@@ -22,15 +22,10 @@ import { ProposalState, OpenProposal } from '../context/Gov';
 import { debug } from '../../plugins/deployment_manager/Utils';
 import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
-import {
-  mineBlocks,
-  setEtherBalance,
-  setNextBaseFeeToZero,
-  setNextBlockTimestamp,
-} from './hreUtils';
+import { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
 import { getOrCreateVirtualTestnet } from './tenderlyVnet';
-import { BaseBridgeReceiver, CometInterface } from '../../build/types';
+import { BaseBridgeReceiver, CometInterface, FaucetToken } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
@@ -163,7 +158,7 @@ export function expectRevertCustom(
 }
 
 export function expectRevertMatches(
-  tx: Promise<ContractReceipt>,
+  tx: Promise<ContractReceipt | ContractTransaction>,
   patterns: RegExp[]
 ) {
   return tx
@@ -523,6 +518,17 @@ export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
   } catch (error) {
     return false;
   }
+}
+
+/**
+ * @notice Deploys an ERC20 token that is not listed in the market, for scenarios that expect Comet to reject it
+ */
+export async function deployUnsupportedAsset(ctx: CometContext): Promise<FaucetToken> {
+  return await ctx.world.deploymentManager.deploy(
+    'unsupportedAsset',
+    'test/FaucetToken.sol',
+    [0, 'Unsupported Asset', 18, 'UNSUPPORTED']
+  ) as FaucetToken;
 }
 
 export async function fetchLogs(

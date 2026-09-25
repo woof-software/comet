@@ -3,8 +3,9 @@ import { expect } from 'chai';
 import { annualize, defactor, exp, factorScale } from '../test/helpers';
 import { BigNumber } from 'ethers';
 import { FuzzType } from './constraints/Fuzzing';
-import { expectRevertCustom, supportUtilizationLimit, isFreshMarket } from './utils';
+import { supportUtilizationLimit, isFreshMarket } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
+import { setNextBlockTimestamp } from './utils/hreUtils';
 
 function calculateInterestRateSupply(
   utilization: BigNumber,
@@ -225,70 +226,43 @@ scenario(
     const { albert, betty } = context.actors;
     const { asset, scale, borrowCollateralFactor, priceFeed } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(asset);
-    const baseTokenAddress = await comet.baseToken();
-    const baseToken = context.getAssetByAddress(baseTokenAddress);
-    
-    // Get constants
-    const baseScale = (await comet.baseScale()).toBigInt();
-    const collateralScale = scale.toBigInt();
-    const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
-    const collateralPrice = (await comet.getPrice(priceFeed)).toBigInt();
-    
-    // Step 1: Set up a known supply state
-    // Supply a fixed amount of base tokens to establish a baseline
-    const baseSupplyAmount = 10n * baseScale; // 10 base tokens
-    await context.sourceTokens(baseSupplyAmount, baseToken.address, betty.address);
-    await baseToken.approve(betty, comet.address);
-    await betty.supplyAsset({ asset: baseToken.address, amount: baseSupplyAmount });
-    
-    // Get current state after supply
-    let currentTotalSupply = (await comet.totalSupply()).toBigInt();
-    
-    // Step 2: Calculate borrow amount to exceed 200% utilization
-    // We want to borrow enough so that: (currentTotalBorrow + borrowAmount) / currentTotalSupply > 2
-    // Simplest approach: borrow 3x the current supply (which gives 300% utilization if no existing borrow)
-    // This ensures we definitely exceed 200% even with existing borrows
-    let targetBorrowAmount = 3n * currentTotalSupply;
-    
-    // Ensure we have enough base tokens available to borrow
-    // We need: supply + reserves >= borrowAmount
-    // If not, we need to supply more. If we supply more, utilization goes down,
-    // so we need to borrow even more. Let's supply enough to cover the borrow.
-    const currentReserves = (await comet.getReserves()).toBigInt();
-    const availableToBorrow = currentTotalSupply + (currentReserves > 0n ? currentReserves : 0n);
-    
-    if (targetBorrowAmount > availableToBorrow) {
-      // Supply enough to cover the borrow
-      // We need: newSupply >= targetBorrowAmount
-      // So: additionalSupply = targetBorrowAmount - currentTotalSupply (assuming no reserves)
-      const additionalSupply = targetBorrowAmount - currentTotalSupply + baseScale;
-      await context.sourceTokens(additionalSupply, baseToken.address, betty.address);
-      await baseToken.approve(betty, comet.address);
-      await betty.supplyAsset({ asset: baseToken.address, amount: additionalSupply });
-      
-      // Recalculate: now we have more supply, so we need to borrow even more to exceed 200%
-      currentTotalSupply = (await comet.totalSupply()).toBigInt();
-      targetBorrowAmount = 3n * currentTotalSupply;
-    }
-    
-    // Step 4: Calculate collateral needed for the borrow
-    // We need enough collateral to support the borrow based on borrowCollateralFactor
-    const collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice;
-    let collateralNeeded = (collateralWeiPerUnitBase * targetBorrowAmount) / baseScale;
-    collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor.toBigInt(); // adjust for borrowCollateralFactor
-    collateralNeeded = (collateralNeeded * 11n) / 10n; // add 10% fudge factor for safety
-    
-    // Step 5: Source collateral tokens for albert and have him supply
-    await context.sourceTokens(collateralNeeded, collateralAsset.address, albert.address);
-    await collateralAsset.approve(albert, comet.address);
-    await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralNeeded });
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
 
-    // Step 6: Try to borrow base asset, which should revert with ExceedsSupportedUtilization
-    // The borrow should push utilization above 200%
-    await expectRevertCustom(
-      albert.withdrawAsset({ asset: baseTokenAddress, amount: targetBorrowAmount }),
-      'ExceedsSupportedUtilization()'
-    );
+    const baseScale = (await comet.baseScale()).toBigInt();
+    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
+    const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+    const collateralScale = scale.toBigInt();
+    const collateralPrice = (await comet.getPrice(priceFeed)).toBigInt();
+    const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+
+    expect(await comet.getUtilization()).to.equal(0n);
+
+    // Supplying at least the borrow minimum keeps the 3x borrow clear of BorrowTooSmall,
+    // which withdraw checks before utilization
+    const supplyAmount = baseBorrowMin > baseScale ? baseBorrowMin : baseScale;
+    await context.sourceTokens(supplyAmount, baseToken.address, betty.address);
+    await baseToken.approve(betty, comet.address);
+    await betty.supplyAsset({ asset: baseToken.address, amount: supplyAmount });
+
+    // A 3x borrow targets 300% utilization. The utilization check reverts before any base leaves Comet,
+    // so the protocol does not need liquidity for the borrow.
+    const borrowAmount = 3n * (await comet.totalSupply()).toBigInt();
+
+    // The borrow principal is rounded up, so the debt can exceed the borrowed amount by up to
+    // baseBorrowIndex / baseIndexScale wei. Every step rounds up so the collateral always covers the debt,
+    // which keeps the borrow clear of NotCollateralized as well.
+    const maxDebt = borrowAmount + (await comet.totalsBasic()).baseBorrowIndex.toBigInt() / baseIndexScale + 1n;
+    const debtValue = (maxDebt * basePrice + baseScale - 1n) / baseScale;
+    const collateralValue = (debtValue * factorScale + borrowCollateralFactor.toBigInt() - 1n) / borrowCollateralFactor.toBigInt();
+    const collateralAmount = (collateralValue * collateralScale + collateralPrice - 1n) / collateralPrice;
+
+    await context.sourceTokens(collateralAmount, collateralAsset.address, albert.address);
+    await collateralAsset.approve(albert, comet.address);
+    await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
+
+    await expect(
+      comet.connect(albert.signer).withdraw(baseToken.address, borrowAmount)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
   }
 );
 
@@ -533,57 +507,52 @@ scenario(
     const initialReserves = BigInt(getConfigForScenario(context).reservesBase) * baseScale;
     await context.sourceTokens(initialReserves, baseToken.address, comet.address);
 
-    // Get supply rate (base rate since utilization is 0)
-    const supplyPerSecondInterestRateBase = await comet.supplyPerSecondInterestRateBase();
+    // Lenders, no borrows and unspent reserves: the market pays the base supply rate
+    expect(await comet.getUtilization()).to.equal(0n);
+    const supplyRate = (await comet.getSupplyRate(0)).toBigInt();
+    expect(supplyRate).to.equal(await comet.supplyPerSecondInterestRateBase());
 
-    // Calculate time needed for reserves to be consumed by interest
-    // Interest accrued = principal * rate * time
-    // When totalSupply() reaches balance, interest stops accruing
-    // We need to find time such that: initialSupply * (1 + rate*time) >= balance
-    // Simplification: time = reserves / (supply * rate)
-    const totalSupplyBase = (await comet.totalsBasic()).totalSupplyBase.toBigInt();
-    const expectedTimeToExhaustReserves = (initialReserves * BigInt(exp(1, 18))) / 
-      (totalSupplyBase * supplyPerSecondInterestRateBase.toBigInt());
-
-    // Skip time significantly past when reserves should be exhausted
-    const timeToSkip = Number(expectedTimeToExhaustReserves) + 3600; // Add 1 hour buffer
-    await ethers.provider.send('evm_increaseTime', [timeToSkip]);
-    await ethers.provider.send('evm_mine', []);
-
-    // Trigger accrue
-    await comet.accrueAccount(ethers.constants.AddressZero);
-
-    // After reserves are exhausted, totalSupply() should approximately equal the base token balance
-    const totalSupply = await comet.totalSupply();
+    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
+    const totalsBefore = await comet.totalsBasic();
+    const indexBefore = totalsBefore.baseSupplyIndex.toBigInt();
+    const principal = totalsBefore.totalSupplyBase.toBigInt();
     const cometBalance = await baseToken.balanceOf(comet.address);
 
-    // totalSupply should be approximately equal to or less than balance (within rounding)
-    expect(totalSupply.toBigInt()).to.be.approximately(cometBalance, 10000000);
+    const accruedIndex = (elapsed: bigint) => indexBefore + indexBefore * supplyRate * elapsed / factorScale;
+    const presentSupply = (index: bigint) => principal * index / baseIndexScale;
 
-    // Get the supply index after reserves exhaustion
-    const totalsAfterExhaustion = await comet.totalsBasic();
-    const indexAfterExhaustion = totalsAfterExhaustion.baseSupplyIndex;
+    // The cut-off checks the index stored before an accrual, so a single accrual applies the base rate to the whole
+    // elapsed time. Solve for the first second at which that accrual lifts totalSupply() to the balance: the smallest
+    // index whose present value reaches the balance, then the smallest elapsed time that grows the index to it.
+    const exhaustionIndex = (cometBalance * baseIndexScale + principal - 1n) / principal;
+    const timeToExhaust = ((exhaustionIndex - indexBefore) * factorScale + indexBefore * supplyRate - 1n) / (indexBefore * supplyRate);
+    expect(presentSupply(accruedIndex(timeToExhaust - 1n))).to.be.lessThan(cometBalance);
 
-    const baseBalance = await baseToken.balanceOf(comet.address);
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    expect(indexAfterExhaustion).to.equal(baseBalance * baseIndexScale / totalSupplyBase);
-
-    // Skip more time
-    await ethers.provider.send('evm_increaseTime', [3600]); // 1 more hour
-    await ethers.provider.send('evm_mine', []);
-
-    // Trigger accrue again
+    await setNextBlockTimestamp(context.world.deploymentManager, totalsBefore.lastAccrualTime + Number(timeToExhaust));
     await comet.accrueAccount(ethers.constants.AddressZero);
 
-    // Get final state
+    const totalsAtExhaustion = await comet.totalsBasic();
+    const elapsed = BigInt(totalsAtExhaustion.lastAccrualTime - totalsBefore.lastAccrualTime);
+    expect(elapsed).to.equal(timeToExhaust);
+
+    const indexAtExhaustion = accruedIndex(elapsed);
+    const totalSupplyAtExhaustion = presentSupply(indexAtExhaustion);
+    expect(totalsAtExhaustion.baseSupplyIndex).to.equal(indexAtExhaustion);
+    expect(totalsAtExhaustion.totalSupplyBase).to.equal(principal);
+    expect(await comet.totalSupply()).to.equal(totalSupplyAtExhaustion);
+    expect(totalSupplyAtExhaustion).to.be.gte(cometBalance);
+    expect(await comet.getReserves()).to.equal(cometBalance - totalSupplyAtExhaustion);
+
+    // Supply now covers the whole balance, so the cut-off turns the supply rate off
+    expect(await comet.getSupplyRate(0)).to.equal(0n);
+
+    await ethers.provider.send('evm_increaseTime', [3600]); // 1 hour
+    await ethers.provider.send('evm_mine', []);
+    await comet.accrueAccount(ethers.constants.AddressZero);
+
     const finalTotals = await comet.totalsBasic();
-    const finalSupplyIndex = finalTotals.baseSupplyIndex;
-
-    // Supply index should NOT have grown further (reserves exhausted)
-    expect(finalSupplyIndex.toBigInt()).to.equal(indexAfterExhaustion.toBigInt());
-
-    // Supply rate should now be the base rate
-    const supplyRateNow = await comet.getSupplyRate(0);
-    expect(supplyRateNow.toBigInt()).to.equal((await comet.supplyPerSecondInterestRateBase()).toBigInt());
+    expect(finalTotals.lastAccrualTime).to.be.greaterThan(totalsAtExhaustion.lastAccrualTime);
+    expect(finalTotals.baseSupplyIndex).to.equal(indexAtExhaustion);
+    expect(await comet.totalSupply()).to.equal(totalSupplyAtExhaustion);
   }
 );
