@@ -143,23 +143,15 @@ export default async function relayBaseMessage(
     } else if (target === bridgeReceiver.address) {
       // Cross-chain message passing
       if (relayMessageTxn) {
-        try {
-          const proposalCreatedEvent = relayMessageTxn.events.find(
-            (event) => event.address === bridgeReceiver.address
-          );
-          const {
-            args: { id, eta },
-          } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+        const proposalCreatedEvent = relayMessageTxn.events.find(
+          (event) => event.address === bridgeReceiver.address
+        );
+        const {
+          args: { id, eta },
+        } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
 
-          // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
-          openBridgedProposals.push({ id, eta });
-        } catch (e) {
-          if (relayMessageTxn.events[0]?.event === 'FailedRelayedMessage') {
-            console.log(`[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Failed to relay message (FailedRelayedMessage) — bridgeReceiver did not emit ProposalCreated`);
-            continue;
-          }
-          throw e;
-        }
+        // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
+        openBridgedProposals.push({ id, eta });
       }
     } else {
       // throw error only on last relay message and no proposal created event found
