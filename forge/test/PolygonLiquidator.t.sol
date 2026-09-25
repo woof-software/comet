@@ -41,7 +41,7 @@ contract PolygonLiquidatorTest is Test {
     address public constant WMATIC_PRICE_FEED = 0xAB594600376Ec9fD91F8e885dADF0CE036862dE0;
 
     function setUp() public {
-        vm.createSelectFork(vm.envString("POLYGON_QUICKNODE_LINK"));
+        vm.createSelectFork("polygon");
 
         liquidator = new OnChainLiquidator(
             BALANCER_VAULT,

@@ -32,7 +32,7 @@ contract OnChainLiquidatorTest is Test {
     address public constant WST_ETH_WHALE = 0x10CD5fbe1b404B7E19Ef964B63939907bdaf42E2;
 
     function setUp() public {
-        vm.createSelectFork(vm.envString("MAINNET_QUICKNODE_LINK"));
+        vm.createSelectFork("mainnet");
 
         // XXX replace with deployed feeds after mainnet/WETH launch
         SimplePriceFeed wethPriceFeed = new SimplePriceFeed(1e8, 8);
