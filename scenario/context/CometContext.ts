@@ -29,6 +29,7 @@ import {
   BaseBulker,
   BaseBridgeReceiver,
   ERC20,
+  CometExtAssetList,
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
@@ -59,6 +60,7 @@ export interface CometProperties {
   rewards: CometRewards;
   bulker: BaseBulker;
   bridgeReceiver: BaseBridgeReceiver;
+  cometExt?: CometExtAssetList;
 }
 
 export class CometContext {
@@ -352,7 +354,11 @@ async function getActors(context: CometContext): Promise<{ [name: string]: Comet
     adminSigner = await world.impersonateAddress(adminAddress);
     // Fund the impersonated governor for gas (single setBalance RPC, no block mined),
     // so scenarios don't need to zero the base fee on every admin tx.
-    await setEtherBalance(world.deploymentManager, adminAddress, 10n ** 18n);
+    // only if admin already does not have sufficient balance
+    const currentBalance = await world.deploymentManager.hre.ethers.provider.getBalance(adminAddress);
+    if (currentBalance.lt(10n ** 18n)) {
+      await setEtherBalance(world.deploymentManager, adminAddress, 10n ** 18n);
+    }
   }
   const pauseGuardianSigner = useLocalPauseGuardianSigner ? localPauseGuardianSigner : await world.impersonateAddress(pauseGuardianAddress);
 
@@ -395,17 +401,21 @@ async function getInitialContext(world: World): Promise<CometContext> {
 }
 
 async function getContextProperties(context: CometContext): Promise<CometProperties> {
+  const comet = await context.getComet();
+  const cometExt = await context.world.deploymentManager.hre.ethers.getContractAt('CometExtAssetList', comet.address) as CometExtAssetList;
+  
   return {
     actors: context.actors,
     assets: context.assets,
-    comet: await context.getComet(),
+    comet,
     configurator: await context.getConfigurator(),
     proxyAdmin: await context.getCometAdmin(),
     timelock: await context.getTimelock(),
     governor: await context.getGovernor(),
     rewards: await context.getRewards(),
     bulker: await context.getBulker(),
-    bridgeReceiver: await context.getBridgeReceiver()
+    bridgeReceiver: await context.getBridgeReceiver(),
+    cometExt
   };
 }
 
