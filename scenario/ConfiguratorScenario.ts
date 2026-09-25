@@ -33,9 +33,9 @@ scenario('add assets', {}, async ({ comet, configurator, actors }, context) => {
     asset: newAsset.asset,
     priceFeed: newAsset.priceFeed,
     decimals: newAssetDecimals.toString(),
-    borrowCollateralFactor: (0.9e18).toString(),
-    liquidateCollateralFactor: (1e18).toString(),
-    liquidationFactor: (0.95e18).toString(),
+    borrowCollateralFactor: (0.75e18).toString(),
+    liquidateCollateralFactor: (0.8e18).toString(),
+    liquidationFactor: (0.9e18).toString(),
     supplyCap: (1000000e8).toString(),
   };
   await context.setNextBaseFeeToZero();
