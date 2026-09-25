@@ -1,36 +1,35 @@
 import { AssetList, AssetList__factory, AssetListFactory, AssetListFactory__factory, FaucetToken, FaucetToken__factory, SimplePriceFeed, SimplePriceFeed__factory } from 'build/types';
-import { expect, exp, makeConfigurator, ONE, makeProtocol, ethers } from './helpers';
+import { expect, exp, makeConfigurator, makeProtocol, ethers } from './helpers';
 import { AssetInfoStructOutput } from 'build/types/AssetList';
 
 describe('asset info', function () {
   it('initializes protocol', async () => {
-    const { cometWithExtendedAssetList: comet, tokens } = await makeConfigurator({
+    // Factors are set explicitly, because makeProtocol and the configurator fall back to different defaults
+    const factors = { borrowCF: exp(0.75, 18), liquidateCF: exp(0.8, 18), liquidationFactor: exp(0.9, 18) };
+    const { cometWithExtendedAssetList, cometProxyWithExtendedAssetList, configurator, configuratorProxy } = await makeConfigurator({
       assets: {
         USDC: {},
-        ASSET1: {},
-        ASSET2: {},
-        ASSET3: {},
+        ASSET1: factors,
+        ASSET2: factors,
+        ASSET3: factors,
       },
       reward: 'ASSET1',
     });
+    const comet = cometWithExtendedAssetList.attach(cometProxyWithExtendedAssetList.address);
+    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
 
-    const cometNumAssets = await comet.numAssets();
-    expect(cometNumAssets).to.be.equal(3);
+    // The configurator holds the asset configs this comet was built from, so every asset info must match them
+    const { assetConfigs } = await configuratorAsProxy.getConfiguration(comet.address);
+    expect(await comet.numAssets()).to.be.equal(assetConfigs.length);
 
-    const assetInfo00 = await comet.getAssetInfo(0);
-    expect(assetInfo00.asset).to.be.equal(tokens['ASSET1'].address);
-    expect(assetInfo00.borrowCollateralFactor).to.equal(ONE - exp(1, 14));
-    expect(assetInfo00.liquidateCollateralFactor).to.equal(ONE);
-
-    const assetInfo01 = await comet.getAssetInfo(1);
-    expect(assetInfo01.asset).to.be.equal(tokens['ASSET2'].address);
-    expect(assetInfo01.borrowCollateralFactor).to.equal(ONE - exp(1, 14));
-    expect(assetInfo01.liquidateCollateralFactor).to.equal(ONE);
-
-    const assetInfo02 = await comet.getAssetInfo(2);
-    expect(assetInfo02.asset).to.be.equal(tokens['ASSET3'].address);
-    expect(assetInfo02.borrowCollateralFactor).to.equal(ONE - exp(1, 14));
-    expect(assetInfo02.liquidateCollateralFactor).to.equal(ONE);
+    for (let i = 0; i < assetConfigs.length; i++) {
+      const assetInfo = await comet.getAssetInfo(i);
+      expect(assetInfo.asset).to.be.equal(assetConfigs[i].asset);
+      expect(assetInfo.priceFeed).to.be.equal(assetConfigs[i].priceFeed);
+      expect(assetInfo.borrowCollateralFactor).to.equal(assetConfigs[i].borrowCollateralFactor);
+      expect(assetInfo.liquidateCollateralFactor).to.equal(assetConfigs[i].liquidateCollateralFactor);
+      expect(assetInfo.liquidationFactor).to.equal(assetConfigs[i].liquidationFactor);
+    }
   });
 
   it('reverts if too many assets are passed', async () => {

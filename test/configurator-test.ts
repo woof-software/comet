@@ -577,6 +577,8 @@ describe('configurator', function () {
           USDC: { decimals: 6, },
           COMP: {
             decimals: 18,
+            borrowCF: exp(0.7, 18),
+            liquidateCF: exp(0.75, 18),
             // This needs to be < 1e18 (default) so the StoreFrontPriceFactor can be < 1e18
             liquidationFactor: exp(0.8, 18),
           },

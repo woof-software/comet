@@ -19,26 +19,24 @@ describe('quoteCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 200,
-          liquidationFactor: exp(0.6, 18),
         },
       },
     });
     const { comet, tokens } = protocol;
     const { COMP } = tokens;
 
-    const baseAmount = exp(200, 6);
+    const baseAmount = exp(190, 6);
     const q0 = await comet.quoteCollateral(COMP.address, baseAmount);
 
-    // Store front discount is 0.5 * (1 - 0.6) = 0.2 = 20%
-    // Discounted COMP price is 200 * 0.8 = 160
-    // 200 USDC should give 200 * (1/160) COMP
-    const assetPriceDiscounted = exp(160, 8);
+    // Store front discount is 0.5 * (1 - 0.9) = 0.05 = 5%, with the default 0.9 liquidation factor
+    // Discounted COMP price is 200 * 0.95 = 190
+    // 190 USDC should give 190 * (1/190) = 1 COMP
+    const assetPriceDiscounted = exp(190, 8);
     const basePrice = exp(1, 8);
     const assetScale = exp(1, 18);
-    const assetWeiPerUnitBase = (assetScale * basePrice) / assetPriceDiscounted;
     const baseScale = exp(1, 6);
-    expect(q0).to.be.equal((assetWeiPerUnitBase * baseAmount) / baseScale);
-    expect(q0).to.be.equal(exp(1.25, 18));
+    expect(q0).to.be.equal((baseAmount * basePrice * assetScale) / assetPriceDiscounted / baseScale);
+    expect(q0).to.be.equal(exp(1, 18));
   });
 
   it('quotes the collateral correctly for a zero base amount', async () => {
@@ -82,7 +80,6 @@ describe('quoteCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 200,
-          liquidationFactor: exp(0.6, 18),
         },
       },
     });
@@ -92,7 +89,7 @@ describe('quoteCollateral', function () {
     const baseAmount = exp(200, 6);
     const q0 = await comet.quoteCollateral(COMP.address, baseAmount);
 
-    // Store front discount is 0 * (1 - 0.6) = 0 = 0%
+    // Store front discount is 0 * (1 - 0.9) = 0 = 0%, with the default 0.9 liquidation factor
     // Discounted COMP price is 200 * 1 = 200
     // 200 USDC should give 200 * (1/200) COMP
     const assetPriceDiscounted = exp(200, 8);
@@ -120,19 +117,18 @@ describe('quoteCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 9,
-          liquidationFactor: exp(0.8, 18),
         },
       },
     });
     const { comet, tokens } = protocol;
     const { COMP } = tokens;
 
-    const baseAmount = exp(810, 6);
+    const baseAmount = exp(855, 6);
     const q0 = await comet.quoteCollateral(COMP.address, baseAmount);
 
-    // Store front discount is 0.5 * (1 - 0.8) = 0.1 = 10%
-    // Discounted COMP price is 9 * 0.9 = 8.1
-    // 810 USDC should give 810 / (0.9 * 9) = 100 COMP
+    // Store front discount is 0.5 * (1 - 0.9) = 0.05 = 5%, with the default 0.9 liquidation factor
+    // Discounted COMP price is 9 * 0.95 = 8.55
+    // 855 USDC should give 855 / (0.95 * 9) = 100 COMP
     expect(q0).to.be.equal(exp(100, 18));
   });
 
@@ -151,20 +147,19 @@ describe('quoteCollateral', function () {
           initial: 1e7,
           decimals: 18,
           initialPrice: 200,
-          liquidationFactor: exp(0.75, 18),
         },
       },
     });
     const { comet, tokens } = protocol;
     const { COMP } = tokens;
 
-    const baseAmount = exp(1e15, 6); // 1 quadrillion USDC
+    const baseAmount = exp(1.84e15, 6); // 1.84 quadrillion USDC
     const q0 = await comet.quoteCollateral(COMP.address, baseAmount);
 
-    // Store front discount is 0.8 * (1 - 0.75) = 0.2 = 20%
-    // Discounted COMP price is 200 * 0.8 = 160
-    // 1e18 USDC should give 1e15 / (0.8 * 200) = 6.25e12 COMP
-    expect(q0).to.be.equal(exp(6.25, 12 + 18));
+    // Store front discount is 0.8 * (1 - 0.9) = 0.08 = 8%, with the default 0.9 liquidation factor
+    // Discounted COMP price is 200 * 0.92 = 184
+    // 1.84e15 USDC should give 1.84e15 / (0.92 * 200) = 1e13 COMP
+    expect(q0).to.be.equal(exp(1, 13 + 18));
   });
 
   /*
@@ -221,7 +216,6 @@ describe('quoteCollateral', function () {
           {
             decimals: 18,
             initialPrice: 200,
-            liquidationFactor: exp(0.6, 18),
           },
         ])
       );
@@ -281,6 +275,9 @@ describe('quoteCollateral', function () {
     });
 
     it('update liquidationFactor to 0 to remove discount', async () => {
+      // A zero liquidation factor is only valid when both collateral factors are zero too
+      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, quoteCollateralToken.address, 0n);
+      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, quoteCollateralToken.address, 0n);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, quoteCollateralToken.address, exp(0, 18));
 
       await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
@@ -320,7 +317,10 @@ describe('quoteCollateral', function () {
 
         expect(quoteAmount).to.eq(expectedQuoteWithDiscount);
 
-        // Update liquidation factor to 0 to remove discount
+        // Update liquidation factor to 0 to remove discount; a zero liquidation factor is only valid
+        // when both collateral factors are zero too
+        await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, asset.address, 0n);
+        await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, asset.address, 0n);
         await configurator.updateAssetLiquidationFactor(cometProxyAddress, asset.address, exp(0, 18));
         await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
 
