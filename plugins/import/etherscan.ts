@@ -48,6 +48,7 @@ export function getEtherscanApiKey(network: string, i?: number): string {
     optimism: process.env.ETHERSCAN_KEY_FOR_OPTIMISM,
     mantle: process.env.ETHERSCAN_KEY,
     scroll: process.env.ETHERSCAN_KEY,
+    unichain: process.env.ETHERSCAN_KEY,
     linea: process.env.ETHERSCAN_KEY_FOR_LINEA,
   };
 
