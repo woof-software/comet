@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import { setupFork, impersonateAccount, setBalance, SnapshotRestorer, takeSnapshot} from '../helpers';
+import { setupFork, SnapshotRestorer, takeSnapshot, impersonateAccount, setBalance } from '../helpers';
 import {
   CometExtAssetList__factory,
   CometFactoryWithExtendedAssetList__factory,

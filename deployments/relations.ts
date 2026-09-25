@@ -106,7 +106,6 @@ const relationConfigMap: RelationConfigMap = {
             if (address === '0xcda86a272531e8640cd7f1a92c01839911b90bb0') {
               return 'mETH:priceFeed';
             }
-            
             throw new Error(`Failed to get symbol for token ${assets[i].address}: ${e.message}`);
           }
         },
@@ -119,10 +118,14 @@ const relationConfigMap: RelationConfigMap = {
     },
   },
   'comet:implementation': {
-    artifact: 'contracts/CometInterface.sol:CometInterface',
+    artifact: 'contracts/CometWithExtendedAssetList.sol:CometWithExtendedAssetList',
     delegates: {
       field: async (comet) => comet.extensionDelegate(),
     },
+  },
+  // Ext delegate — always use CometExt ABI so new interface is included, even if the implementation contract doesn't have it (e.g., old markets)
+  'comet:implementation:implementation': {
+    artifact: 'contracts/CometExt.sol:CometExt',
   },
   configurator: {
     delegates: {
@@ -157,7 +160,7 @@ const relationConfigMap: RelationConfigMap = {
   },
 
   governor: {
-    artifact: 'contracts/IProxy.sol:IProxy',
+    artifact: 'contracts/interfaces/IProxy.sol:IProxy',
     delegates: {
       field: {
         slot: '0x10d6a54a4754c8869d6886b5f5d7fbfa5b4522237ea5c60d11bc4e7a1ff9390b',
@@ -173,15 +176,15 @@ const relationConfigMap: RelationConfigMap = {
     }
   },
   'governor:implementation': {
-    artifact: 'contracts/IGovernorBravo.sol:IGovernorBravo',
+    artifact: 'contracts/interfaces/IGovernorBravo.sol:IGovernorBravo',
   },
 
   COMP: {
-    artifact: 'contracts/IComp.sol:IComp',
+    artifact: 'contracts/interfaces/IComp.sol:IComp',
   },
 
   FiatTokenProxy: {
-    artifact: 'contracts/ERC20.sol:ERC20',
+    artifact: 'contracts/interfaces/ERC20.sol:ERC20',
     relations: {
       fiatTokenAdmin: {
         field: {

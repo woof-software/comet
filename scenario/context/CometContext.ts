@@ -1,4 +1,4 @@
-import { BigNumber, BigNumberish, Contract } from 'ethers';
+import { BigNumber, BigNumberish } from 'ethers';
 import { Loader, World, debug } from '../../plugins/scenario';
 import { Migration } from '../../plugins/deployment_manager';
 import {
@@ -34,7 +34,7 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { ProtocolConfiguration, deployComet, COMP_WHALES, WHALES } from '../../src/deploy';
 import { AddressLike, getAddressFromNumber, resolveAddress } from './Address';
-import { fastGovernanceExecute, max, mineBlocks, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
+import { fastGovernanceExecute, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
 import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
 import { Requirements } from '../constraints/Requirements';
 
@@ -153,23 +153,9 @@ export class CometContext {
 
     const currentComet = await this.getComet();
     const admin = await world.impersonateAddress(await currentComet.governor(), { value: 20n ** 18n });
-    const oldComet = new Contract(currentComet.address,
-      [
-        'function governor() view returns (address)',
-        'function assetList() view returns (address)',
-        'function assetListFactory() view returns (address)'
-      ], admin);
 
     const deploySpec = { cometMain: true, cometExt: true };
-    let withAssetList = false;
-    try {
-      await oldComet.assetList();
-      withAssetList = true;
-    }
-    catch (e) {
-      withAssetList = false;
-    }
-    const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, withAssetList, admin);
+    const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, admin);
 
     await this.world.deploymentManager.spider(deployed);
     await this.setAssets();
@@ -359,7 +345,15 @@ async function getActors(context: CometContext): Promise<{ [name: string]: Comet
   const pauseGuardianAddress = await comet.pauseGuardian();
   const useLocalAdminSigner = adminAddress === await localAdminSigner.getAddress();
   const useLocalPauseGuardianSigner = pauseGuardianAddress === await localPauseGuardianSigner.getAddress();
-  const adminSigner = useLocalAdminSigner ? localAdminSigner : await world.impersonateAddress(adminAddress);
+  let adminSigner: SignerWithAddress;
+  if (useLocalAdminSigner) {
+    adminSigner = localAdminSigner;
+  } else {
+    adminSigner = await world.impersonateAddress(adminAddress);
+    // Fund the impersonated governor for gas (single setBalance RPC, no block mined),
+    // so scenarios don't need to zero the base fee on every admin tx.
+    await setEtherBalance(world.deploymentManager, adminAddress, 10n ** 18n);
+  }
   const pauseGuardianSigner = useLocalPauseGuardianSigner ? localPauseGuardianSigner : await world.impersonateAddress(pauseGuardianAddress);
 
   return {

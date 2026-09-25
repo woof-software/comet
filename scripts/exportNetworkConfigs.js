@@ -29,6 +29,7 @@ try {
 }
 
 function getUrl(network) {
+
   const config = configs.find(cfg => cfg.network === network);
   return config ? config.url : '';
 }
