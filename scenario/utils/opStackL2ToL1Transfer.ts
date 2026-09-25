@@ -4,11 +4,8 @@ import { impersonateAddress } from '../../plugins/scenario/utils';
 
 export const BRIDGE_ERC20_TO_SIGNATURE = 'bridgeERC20To(address,address,address,uint256,uint32,bytes)';
 
-// Simulates an OP-stack bridgeERC20To's L2->L1 finalization by overriding the L1 Portal's
-// l2Sender slot and the L1CrossDomainMessenger's xDomainMessageSender slot, then calling
-// finalizeBridgeERC20 as the (impersonated) messenger. Same mechanism for every OP-stack
-// chain — was duplicated between relayBaseMessage.ts and relayOptimismMessage.ts, differing
-// only in which contracts/portal address to use.
+// Finalizes a bridgeERC20To on L1: overrides the Portal's l2Sender and the messenger's
+// xDomainMessageSender slots, then calls finalizeBridgeERC20 as the impersonated messenger.
 export async function simulateOpStackBridgeERC20To(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,

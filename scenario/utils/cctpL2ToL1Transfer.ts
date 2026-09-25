@@ -4,9 +4,7 @@ import { impersonateAddress } from '../../plugins/scenario/utils';
 
 export const DEPOSIT_FOR_BURN_SIGNATURE = 'depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)';
 
-// Simulates a CCTP depositForBurn's L2->L1 mint by impersonating the L1 CCTPTokenMessenger
-// and minting directly via its TokenMinter. Identical for every network with CCTP support
-// (was duplicated verbatim between relayOptimismMessage.ts and relayArbitrumMessage.ts).
+// Mints a depositForBurn's amount on L1 via the TokenMinter, impersonating the L1 CCTPTokenMessenger.
 export async function simulateCCTPL2ToL1Transfer(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,

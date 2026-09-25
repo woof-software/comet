@@ -12,11 +12,7 @@ export interface DecodedProposalCreatedArgs {
   eta: any;
 }
 
-// Fetches and decodes recent ProposalCreated events from the L2 BridgeReceiver — the
-// shared starting point every relay*Message.ts's L2->L1 bridging simulation scans for
-// bridgeERC20To/outboundTransfer/depositForBurn actions to replay on L1. When proposalIds is
-// given, events for any other L2-local proposal id are dropped — needed so a stacked batch of
-// relayed proposals doesn't re-process an earlier proposal's already-simulated bridging.
+// Decoded L2 BridgeReceiver ProposalCreated events; proposalIds (L2-local) drops already-simulated proposals.
 export async function fetchBridgeReceiverProposals(
   bridgeDeploymentManager: DeploymentManager,
   l2StartingBlockNumber?: number,
