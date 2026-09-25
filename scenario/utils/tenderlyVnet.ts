@@ -5,7 +5,6 @@ export interface TenderlyVnetInfo {
   id: string;
   adminRpcUrl: string;
   publicRpcUrl: string;
-  dashboardUrl?: string;
 }
 
 // All Virtual TestNets created by this flow live in the same Tenderly project.
@@ -85,7 +84,6 @@ export async function createVirtualTestnet(
   if (!adminRpcUrl) {
     throw new Error(`Tenderly did not return an Admin RPC URL for the new Virtual TestNet: ${JSON.stringify(data)}`);
   }
-
 
   console.log(`Created Tenderly Virtual TestNet '${slug}' for ${dm.network} (id: ${data.id})`);
 

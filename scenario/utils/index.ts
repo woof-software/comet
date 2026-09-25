@@ -1286,9 +1286,6 @@ export async function tenderlyVnetExecute(
   const governanceVnet = await getOrCreateVirtualTestnet(governanceDm);
   console.log(`Virtual TestNet ready for ${governanceDm.network}`);
   console.log(`  Public RPC: ${governanceVnet.publicRpcUrl}`);
-  if (governanceVnet.dashboardUrl) {
-    console.log(`  Dashboard:  ${governanceVnet.dashboardUrl}`);
-  }
 
   const governanceVnetEnv = await vnetHreForBase(governanceDm.network, governanceVnet.adminRpcUrl);
   const governanceVnetDm = new DeploymentManager(governanceDm.network, governanceDm.deployment, governanceVnetEnv, {
@@ -1351,9 +1348,6 @@ export async function tenderlyVnetExecute(
 
   console.log(`\n >>> PROPOSAL EXECUTED ${proposalId.toString()} \n`);
   console.log(`Public RPC: ${governanceVnet.publicRpcUrl}`);
-  if (governanceVnet.dashboardUrl) {
-    console.log(`Dashboard:  ${governanceVnet.dashboardUrl}`);
-  }
 
   // Collect every L2 this proposal touches: marketDm plus whatever the migration registered via
   // addBridgedDeploymentManager() (multichain proposals)
@@ -1377,9 +1371,6 @@ export async function tenderlyVnetExecute(
       const l2Vnet = await getOrCreateVirtualTestnet(l2Dm);
       console.log(`\nVirtual TestNet ready for ${l2Dm.network}`);
       console.log(`  Public RPC: ${l2Vnet.publicRpcUrl}`);
-      if (l2Vnet.dashboardUrl) {
-        console.log(`  Dashboard:  ${l2Vnet.dashboardUrl}`);
-      }
 
       const l2VnetEnv = await vnetHreForBase(l2Dm.network, l2Vnet.adminRpcUrl);
       const l2VnetDm = new DeploymentManager(l2Dm.network, l2Dm.deployment, l2VnetEnv, {
@@ -1393,9 +1384,6 @@ export async function tenderlyVnetExecute(
 
       console.log(`\n >>> PROPOSAL RELAYED to ${l2Dm.network} \n`);
       console.log(`Public RPC: ${l2Vnet.publicRpcUrl}`);
-      if (l2Vnet.dashboardUrl) {
-        console.log(`Dashboard:  ${l2Vnet.dashboardUrl}`);
-      }
     } catch (e) {
       console.log(`\n >>> FAILED to relay to ${l2Dm.network}: ${e.message} \n`);
     }
