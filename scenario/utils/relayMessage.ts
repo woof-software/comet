@@ -34,7 +34,8 @@ export default async function relayMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         l2StartingBlockNumber,
-        tenderlyLogs
+        tenderlyLogs,
+        proposal?.map(p => p.id)
       );
       return proposal;
     }
@@ -50,7 +51,8 @@ export default async function relayMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         l2StartingBlockNumber,
-        tenderlyLogs
+        tenderlyLogs,
+        proposal?.map(p => p.id)
       );
       return proposal;
     }
@@ -100,7 +102,8 @@ export default async function relayMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         l2StartingBlockNumber,
-        tenderlyLogs
+        tenderlyLogs,
+        proposal?.map(p => p.id)
       );
       return proposal;
     }

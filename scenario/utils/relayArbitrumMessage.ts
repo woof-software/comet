@@ -6,6 +6,8 @@ import { Log } from '@ethersproject/abstract-provider';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog } from './index';
+import { fetchBridgeReceiverProposals } from './bridgeReceiverProposals';
+import { DEPOSIT_FOR_BURN_SIGNATURE, simulateCCTPL2ToL1Transfer } from './cctpL2ToL1Transfer';
 
 export async function relayArbitrumMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -261,44 +263,23 @@ export async function simulateL2ToL1TokenBridging(
   bridgeDeploymentManager: DeploymentManager,
   l2StartingBlockNumber?: number,
   tenderlyLogs?: any[],
-  proposalId?: BigNumber
+  proposalIds?: BigNumber[]
 ) {
   if(tenderlyLogs) {
     return;
   }
   console.log('Simulating L2→L1 token bridging for any executed Arbitrum proposals...');
 
-  // L2 contracts
-  const bridgeReceiver = await bridgeDeploymentManager.getContractOrThrow('bridgeReceiver');
-
-  // Parse recent ProposalCreated events to find actions that bridge tokens from L2 to L1
-  // ProposalCreated(address indexed rootMessageSender, uint256 id, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 eta)
-  console.log('Fetching recent ProposalCreated events from BridgeReceiver...');
-  const latestBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber();
-  const proposalCreatedEvents = await bridgeDeploymentManager.retry(() =>
-    bridgeDeploymentManager.hre.ethers.provider.getLogs({
-      fromBlock: l2StartingBlockNumber ?? latestBlockNumber - 1000,
-      toBlock: 'latest',
-      address: bridgeReceiver.address,
-      topics: [utils.id('ProposalCreated(address,uint256,address[],uint256[],string[],bytes[],uint256)')]
-    })
-  );
   const outboundTransferSignature = 'outboundTransfer(address,address,uint256,bytes)';
   const outboundTransfer2Signature = 'outboundTransfer(address,address,uint256,uint256,uint256,bytes)';
-  const depositForBurnSignature = 'depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)';
   const ARBITRUM_GATEWAY_ROUTER = '0x5288c571Fd7aD117beA99bF60FE0846C4E84F933';
   const ARBITRUM_BRIDGE = '0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a';
   const ARBITRUM_OUTBOX = '0x667e23ABd27E623c11d4CC00ca3EC4d0bD63337a';
   const MAINNET_WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 
-  for (const event of proposalCreatedEvents) {
-    const decodedEvent = bridgeReceiver.interface.parseLog(event);
-    const { id, targets, signatures, calldatas } = decodedEvent.args;
+  const { events } = await fetchBridgeReceiverProposals(bridgeDeploymentManager, l2StartingBlockNumber, proposalIds);
 
-    if (proposalId && id.toString() !== proposalId.toString()) {
-      continue;
-    }
-
+  for (const { targets, signatures, calldatas } of events) {
     for (let i = 0; i < signatures.length; i++) {
       let bridgedTokens = false;
 
@@ -398,48 +379,9 @@ export async function simulateL2ToL1TokenBridging(
       }
 
       // Look for L2→L1 CCTP depositForBurn calls (Circle CCTP bridge, e.g. native USDC)
-      if (signatures[i] === depositForBurnSignature) {
+      if (signatures[i] === DEPOSIT_FOR_BURN_SIGNATURE) {
         bridgedTokens = true;
-        const [amount, , mintRecipientBytes32, burnToken] = utils.defaultAbiCoder.decode(
-          ['uint256', 'uint32', 'bytes32', 'address', 'bytes32', 'uint256', 'uint32'],
-          calldatas[i]
-        );
-
-        const mintRecipient = utils.getAddress('0x' + utils.hexlify(mintRecipientBytes32).slice(-40));
-
-        try {
-          // L2
-          const l2CCTPTokenMessenger = await bridgeDeploymentManager.getContractOrThrow('CCTPMessageTransmitter');
-          // Resolve L1 token via CCTP TokenMinter: burnToken (L2) → localToken (L1)
-          const l1CCTPTokenMessenger = await governanceDeploymentManager.getContractOrThrow('CCTPTokenMessenger');
-          const tokenMinterAddress = await l1CCTPTokenMessenger.localMinter();
-          const L1TokenMinter = new Contract(
-            tokenMinterAddress,
-            ['function mint(uint32 sourceDomain, bytes32 burnToken, address recipientOne, address recipientTwo, uint256 amountOne, uint256 amountTwo) returns (address)'],
-            await governanceDeploymentManager.getSigner()
-          );
-          const l1CCTPTokenMessengerSigner = await impersonateAddress(
-            governanceDeploymentManager,
-            l1CCTPTokenMessenger.address
-          );
-          await governanceDeploymentManager.hre.network.provider.send('hardhat_setBalance', [
-            l1CCTPTokenMessengerSigner.address,
-            '0x1000000000000000000',
-          ]);
-          const sourceDomain = await l2CCTPTokenMessenger.localDomain();
-          const mintTx = await L1TokenMinter.connect(l1CCTPTokenMessengerSigner).mint(
-            sourceDomain,
-            utils.hexZeroPad(burnToken, 32),
-            mintRecipient,
-            L1TokenMinter.address, // mint to the token minter first, since some tokens (e.g. USDC) have a cap on max amount per mint, and the token minter can then transfer to the recipient
-            amount,
-            1
-          );
-          console.log('Simulated CCTP mint transaction:', mintTx.hash);
-          await mintTx.wait();
-        } catch (e) {
-          console.log(`Warning: Could not simulate CCTP L2→L1 bridging for depositForBurn: ${e.message}`);
-        }
+        await simulateCCTPL2ToL1Transfer(governanceDeploymentManager, bridgeDeploymentManager, calldatas[i]);
       }
       if (bridgedTokens) {
         await governanceDeploymentManager.retry(() =>

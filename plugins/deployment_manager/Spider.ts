@@ -70,8 +70,17 @@ async function discoverNodes(
   }));
 }
 
-async function isContract(hre: HRE, address: string) {
-  return await hre.ethers.provider.getCode(address) !== '0x';
+async function isContract(hre: HRE, address: string, retries: number = 3, retryDelay: number = 1000): Promise<boolean> {
+  try {
+    return await hre.ethers.provider.getCode(address) !== '0x';
+  } catch (e) {
+    if (retries === 0) {
+      throw e;
+    }
+    debug(`isContract(${address}) failed (${e.message}), retrying in ${retryDelay / 1000}s; ${retries} retries left`);
+    await new Promise(ok => setTimeout(ok, retryDelay));
+    return isContract(hre, address, retries - 1, retryDelay * 2);
+  }
 }
 
 async function localBuild(cache: Cache, hre: HRE, artifact: string, network: string, address: Address): Promise<Build> {
