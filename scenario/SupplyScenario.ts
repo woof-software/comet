@@ -60,10 +60,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       const userAssetBalanceBefore = await collateralAsset.balanceOf(albert.address);
       const userCollateralBalanceBefore = await comet.collateralBalanceOf(albert.address, collateralAsset.address);
 
-      const txn = await comet
-        .connect(albert.signer)
-        .supply(collateralAsset.address, amountToSupply)
-        .then((tx) => tx.wait());
+      await albert.safeSupplyAsset({asset: collateralAsset.address, amount: amountToSupply});
 
       // should change asset balance of user
       expect(await collateralAsset.balanceOf(albert.address)).to.not.equal(userAssetBalanceBefore);
@@ -71,8 +68,6 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       // should change collateral balance of user
       expect(collateralBalanceAfter).to.not.equal(userCollateralBalanceBefore);
       expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.equal(amountToSupply);
-
-      return txn; // return txn to measure gas
     }
   );
 }
@@ -101,10 +96,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       const dstUserAssetBalanceBefore = await collateralAsset.balanceOf(betty.address);
       const dstUserCollateralBalanceBefore = await comet.collateralBalanceOf(betty.address, collateralAsset.address);
 
-      const txn = await comet
-        .connect(albert.signer)
-        .supplyTo(betty.address, collateralAsset.address, amountToSupply)
-        .then((tx) => tx.wait());
+      await albert.safeSupplyAssetTo({dst: betty.address, asset: collateralAsset.address, amount: amountToSupply});
 
       // should change asset balance of from user
       expect(await collateralAsset.balanceOf(albert.address)).to.not.equal(fromUserAssetBalanceBefore);
@@ -118,8 +110,6 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       // should change collateral balance of dst user
       expect(dstCollateralBalanceAfter).to.not.equal(dstUserCollateralBalanceBefore);
       expect(dstCollateralBalanceAfter).to.equal(amountToSupply);
-
-      return txn; // return txn to measure gas
     }
   );
 }
@@ -149,10 +139,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       const dstUserAssetBalanceBefore = await collateralAsset.balanceOf(betty.address);
       const dstUserCollateralBalanceBefore = await comet.collateralBalanceOf(betty.address, collateralAsset.address);
 
-      const txn = await comet
-        .connect(betty.signer)
-        .supplyFrom(albert.address, betty.address, collateralAsset.address, amountToSupply)
-        .then((tx) => tx.wait());
+      await betty.safeSupplyAssetFrom({src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: amountToSupply});
 
       // should change asset balance of from user
       expect(await collateralAsset.balanceOf(albert.address)).to.not.equal(fromUserAssetBalanceBefore);
@@ -166,8 +153,6 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       // should change collateral balance of dst user
       expect(dstCollateralBalanceAfter).to.not.equal(dstUserCollateralBalanceBefore);
       expect(dstCollateralBalanceAfter).to.equal(amountToSupply);
-
-      return txn; // return txn to measure gas
     }
   );
 }
@@ -190,10 +175,7 @@ scenario(
     const userAssetBalanceBefore = await baseAsset.balanceOf(albert.address);
     const userBaseBalanceBefore = await comet.balanceOf(albert.address);
 
-    const txn = await comet
-      .connect(albert.signer)
-      .supply(baseAsset.address, amountToSupply)
-      .then((tx) => tx.wait());
+    const txn = await albert.safeSupplyAsset({ asset: baseAsset.address, amount: amountToSupply });
 
     const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
@@ -229,10 +211,7 @@ scenario(
     const dstUserAssetBalanceBefore = await baseAsset.balanceOf(betty.address);
     const dstUserBaseBalanceBefore = await comet.balanceOf(betty.address);
 
-    const txn = await comet
-      .connect(albert.signer)
-      .supplyTo(betty.address, baseAsset.address, amountToSupply)
-      .then((tx) => tx.wait());
+    const txn = await albert.safeSupplyAssetTo({ dst: betty.address, asset: baseAsset.address, amount: amountToSupply });
 
     const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
@@ -275,10 +254,7 @@ scenario(
     const dstUserBaseBalanceBefore = await comet.balanceOf(betty.address);
 
     // Betty supplies 100 units of base from Albert
-    const txn = await comet
-      .connect(betty.signer)
-      .supplyFrom(albert.address, betty.address, baseAsset.address, amountToSupply)
-      .then((tx) => tx.wait());
+    const txn = await betty.safeSupplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: amountToSupply });
 
     const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
@@ -333,10 +309,7 @@ scenario(
 
     // Albert supplies 1000 units of base to Comet
     await baseAsset.approve(albert, comet.address);
-    const txn = await comet
-      .connect(albert.signer)
-      .supply(baseAsset.address, 1000n * scale)
-      .then((tx) => tx.wait());
+    const txn = await albert.safeSupplyAsset({ asset: baseAsset.address, amount: 1000n * scale });
 
     const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
@@ -385,10 +358,7 @@ scenario(
     await albert.allow(betty, true);
 
     // Betty supplies 1000 units of base from Albert
-    const txn = await comet
-      .connect(betty.signer)
-      .supplyFrom(albert.address, betty.address, baseAsset.address, 1000n * scale)
-      .then((tx) => tx.wait());
+    const txn = await betty.safeSupplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: 1000n * scale });
 
     const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
@@ -429,10 +399,7 @@ scenario(
 
     // Albert repays 100 units of base borrow
     await baseAsset.approve(albert, comet.address);
-    const txn = await comet
-      .connect(albert.signer)
-      .supply(baseAsset.address, BigInt(getConfigForScenario(context).liquidationBase) * scale)
-      .then((tx) => tx.wait());
+    const txn = await albert.safeSupplyAsset({ asset: baseAsset.address, amount: BigInt(getConfigForScenario(context).liquidationBase) * scale });
 
     // XXX all these timings are crazy
     expectApproximately(
@@ -469,10 +436,7 @@ scenario(
     await albert.allow(betty, true);
 
     // Betty supplies max base from Albert to repay all borrows
-    const txn = await comet
-      .connect(betty.signer)
-      .supplyFrom(albert.address, betty.address, baseAsset.address, UINT256_MAX)
-      .then((tx) => tx.wait());
+    const txn = await betty.safeSupplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: UINT256_MAX });
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.lessThan(10n * scale);
     expectBase(await betty.getCometBaseBalance(), 0n);
@@ -524,10 +488,7 @@ scenario(
 
     // Albert repays 1000 units of base borrow
     await baseAsset.approve(albert, comet.address);
-    const txn = await comet
-      .connect(albert.signer)
-      .supply(baseAsset.address, 1000n * scale)
-      .then((tx) => tx.wait());
+    const txn = await albert.safeSupplyAsset({ asset: baseAsset.address, amount: 1000n * scale });
 
     // XXX all these timings are crazy
     // Expect to have -1000000, due to token fee, alber only repay 999 USDT instead of 1000 USDT, thus alber still owe 1 USDT which is 1000000
@@ -584,10 +545,7 @@ scenario(
 
     // Albert repays 1000 units of base borrow
     await baseAsset.approve(albert, comet.address);
-    const txn = await comet
-      .connect(albert.signer)
-      .supply(baseAsset.address, 1000n * scale)
-      .then((tx) => tx.wait());
+    const txn = await albert.safeSupplyAsset({ asset: baseAsset.address, amount: 1000n * scale });
 
     // XXX all these timings are crazy
     // albert supply 1000 USDT to repay, 1000USDT * (99.9%) = 999 USDT, thus albert should have just enough to repay his debt of 999 USDT.
@@ -1338,7 +1296,7 @@ scenario(
 
       await collateralAsset.approve(albert, comet.address);
       await expect(
-        comet.connect(albert.signer).supply(collateralAsset.address, amountToSupply)
+        albert.safeSupplyAsset({asset: collateralAsset.address, amount: amountToSupply})
       ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`Supplying is allowed when collateral asset ${i} supply is unpaused`);
@@ -1346,7 +1304,7 @@ scenario(
       // Unpause specific collateral asset supply at index i
       await comet.connect(pauseGuardian.signer).pauseCollateralAssetSupply(i, false);
 
-      await comet.connect(albert.signer).supply(collateralAsset.address, amountToSupply);
+      await albert.safeSupplyAsset({asset: collateralAsset.address, amount: amountToSupply});
 
       expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(amountToSupply);
     }
@@ -1385,7 +1343,7 @@ scenario(
 
       await collateralAsset.approve(albert, comet.address);
       await expect(
-        comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, amountToSupply)
+        albert.safeSupplyAssetTo({dst: betty.address, asset: collateralAsset.address, amount: amountToSupply})
       ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`Supplying is allowed when collateral asset ${i} supply is unpaused`);
@@ -1393,7 +1351,7 @@ scenario(
       // Unpause specific collateral asset supply at index i
       await comet.connect(pauseGuardian.signer).pauseCollateralAssetSupply(i, false);
 
-      await comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, amountToSupply);
+      await albert.safeSupplyAssetTo({dst: betty.address, asset: collateralAsset.address, amount: amountToSupply});
 
       expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(amountToSupply);
     }
@@ -1434,7 +1392,7 @@ scenario(
       await albert.allow(betty, true);
 
       await expect(
-        comet.connect(betty.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, amountToSupply)
+        betty.safeSupplyAssetFrom({src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: amountToSupply})
       ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`Supplying is allowed when collateral asset ${i} supply is unpaused`);
@@ -1442,9 +1400,7 @@ scenario(
       // Unpause specific collateral asset supply at index i
       await comet.connect(pauseGuardian.signer).pauseCollateralAssetSupply(i, false);
 
-      await comet
-        .connect(betty.signer)
-        .supplyFrom(albert.address, betty.address, collateralAsset.address, amountToSupply);
+      await betty.safeSupplyAssetFrom({src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: amountToSupply});
 
       expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(amountToSupply);
     }
@@ -1489,9 +1445,8 @@ scenario(
       // Deactivate collateral asset
       await comet.connect(pauseGuardian.signer).deactivateCollateral(i);
 
-      await context.bumpSupplyCaps({ [asset]: supplyAmount });
       await expect(
-        comet.connect(albert.signer).supply(asset, supplyAmount)
+        albert.safeSupplyAsset({asset: collateralAsset.address, amount: supplyAmount})
       ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`Supply is allowed when collateral asset ${i} is activated`);
@@ -1499,7 +1454,7 @@ scenario(
       // Activate collateral asset
       await comet.connect(admin.signer).activateCollateral(i);
 
-      await comet.connect(albert.signer).supply(collateralAsset.address, supplyAmount);
+      await albert.safeSupplyAsset({asset: collateralAsset.address, amount: supplyAmount});
 
       expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(supplyAmount);
     }
@@ -1541,9 +1496,8 @@ scenario(
       // Deactivate collateral asset
       await comet.connect(pauseGuardian.signer).deactivateCollateral(i);
 
-      await context.bumpSupplyCaps({ [collateralAsset.address]: supplyAmount });
       await expect(
-        comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, supplyAmount)
+        albert.safeSupplyAssetTo({dst: betty.address, asset: collateralAsset.address, amount: supplyAmount})
       ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`SupplyTo is allowed when collateral asset ${i} is activated`);
@@ -1551,7 +1505,7 @@ scenario(
       // Activate collateral asset
       await comet.connect(admin.signer).activateCollateral(i);
 
-      await comet.connect(albert.signer).supplyTo(betty.address, collateralAsset.address, supplyAmount);
+      await albert.safeSupplyAssetTo({dst: betty.address, asset: collateralAsset.address, amount: supplyAmount});
 
       expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(supplyAmount);
     }
@@ -1597,7 +1551,7 @@ scenario(
       await comet.connect(pauseGuardian.signer).deactivateCollateral(i);
 
       await expect(
-        comet.connect(betty.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, supplyAmount)
+        betty.safeSupplyAssetFrom({src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: supplyAmount})
       ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(i);
 
       log(`SupplyFrom is allowed when collateral asset ${i} is activated`);
@@ -1605,9 +1559,7 @@ scenario(
       // Activate collateral asset (only the governor is allowed to)
       await comet.connect(governor.signer).activateCollateral(i);
 
-      await comet
-        .connect(betty.signer)
-        .supplyFrom(albert.address, betty.address, collateralAsset.address, supplyAmount);
+      await betty.safeSupplyAssetFrom({src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: supplyAmount});
 
       expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(supplyAmount);
     }

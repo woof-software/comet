@@ -295,8 +295,7 @@ scenario(
     const collateralAmount = BigInt(getConfigForScenario(context).withdrawAsset) * collateralScale.toBigInt();
     await context.sourceTokens(collateralAmount, collateralAsset.address, albert.address);
     await collateralAsset.approve(albert, comet.address);
-    await context.bumpSupplyCaps({ [collateralAsset.address]: collateralAmount });
-    await comet.connect(albert.signer).supply(collateralAsset.address, collateralAmount);
+    await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
 
     // Give the protocol enough base liquidity to pay out the borrow
     await context.sourceTokens(amountToWithdraw, baseAsset.address, comet.address);
@@ -344,8 +343,7 @@ scenario(
     const collateralAmount = BigInt(getConfigForScenario(context).withdrawAsset) * collateralScale.toBigInt();
     await context.sourceTokens(collateralAmount, collateralAsset.address, albert.address);
     await collateralAsset.approve(albert, comet.address);
-    await context.bumpSupplyCaps({ [collateralAsset.address]: collateralAmount });
-    await comet.connect(albert.signer).supply(collateralAsset.address, collateralAmount);
+    await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
 
     // Give the protocol enough base liquidity to pay out the borrow
     await context.sourceTokens(amountToWithdraw, baseAsset.address, comet.address);
@@ -396,8 +394,7 @@ scenario(
     const collateralAmount = BigInt(getConfigForScenario(context).withdrawAsset) * collateralScale.toBigInt();
     await context.sourceTokens(collateralAmount, collateralAsset.address, albert.address);
     await collateralAsset.approve(albert, comet.address);
-    await context.bumpSupplyCaps({ [collateralAsset.address]: collateralAmount });
-    await comet.connect(albert.signer).supply(collateralAsset.address, collateralAmount);
+    await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
 
     // Give the protocol enough base liquidity to pay out the borrow
     await context.sourceTokens(amountToWithdraw, baseAsset.address, comet.address);
@@ -1128,8 +1125,7 @@ scenario('Comet#withdraw > _reverts if not enough base asset in protocol', {}, a
   await context.sourceTokens(collateralNeeded, collateralAsset, albert);
 
   await collateralAsset.approve(albert, comet.address);
-  await context.bumpSupplyCaps({ [collateralAsset.address]: collateralNeeded });
-  await comet.connect(albert.signer).supply(collateralAsset.address, collateralNeeded);
+  await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralNeeded });
 
   expect(comet.connect(albert.signer).withdraw(baseAsset.address, targetBorrowBase)).to.be.reverted;
 });
@@ -1174,7 +1170,7 @@ scenario('Comet#withdraw > reverts if not enough base asset in protocol', {}, as
 
     await context.sourceTokens(supplyAmount, collateralAsset, albert);
     await collateralAsset.approve(albert, comet.address);
-    await comet.connect(albert.signer).supply(collateralAsset.address, supplyAmount);
+    await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
     // Borrowing power actually gained, counted conservatively (inverse fudge):
     const valueInBase = (supplyAmount * collateralPrice * baseScale) / (collateralScale * basePrice);
@@ -1261,8 +1257,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
 
       // 2. Approve and supply collateral
       await collateralAsset.approve(albert, comet.address);
-      await context.bumpSupplyCaps({ [collateralAsset.address]: collateralNeeded });
-      await comet.connect(albert.signer).supply(collateralAsset.address, collateralNeeded);
+      await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralNeeded });
 
       // 3. Borrow base (this will make albert have negative base balance)
       const baseTokenAddress = await comet.baseToken();
@@ -1316,7 +1311,7 @@ scenario(
       // Approve collateral asset
       await collateralAsset.approve(albert, comet.address);
       // Supply collateral asset
-      await comet.connect(albert.signer).supply(collateralAsset.address, withdrawCollateral);
+      await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: withdrawCollateral });
       // Pause specific collateral withdraw by asset offset
       await comet.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
 
@@ -1371,8 +1366,7 @@ scenario(
       await collateralAsset.approve(albert, comet.address);
 
       // Supply collateral asset
-      await context.bumpSupplyCaps({ [collateralAsset.address]: withdrawCollateral });
-      await comet.connect(albert.signer).supply(collateralAsset.address, withdrawCollateral);
+      await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: withdrawCollateral });
 
       // Pause specific collateral asset withdraw at index offset
       await comet.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
@@ -1441,7 +1435,7 @@ scenario(
       // Approve collateral asset
       await collateralAsset.approve(albert, comet.address);
       // Supply collateral asset
-      await comet.connect(albert.signer).supply(collateralAsset.address, withdrawCollateral);
+      await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: withdrawCollateral });
       // Pause specific collateral withdraw by asset offset
       await comet.connect(pauseGuardian.signer).pauseCollateralAssetWithdraw(offset, true);
 
@@ -1567,7 +1561,7 @@ scenario(
       // Approve collateral asset
       await collateralAsset.approve(albert, comet.address);
       // Supply collateral
-      await comet.connect(albert.signer).supply(collateralAsset.address, amountToWithdraw);
+      await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: amountToWithdraw });
 
       const userCollateralBalanceBefore = await albert.getCometCollateralBalance(collateralAsset.address);
       const userAssetBalanceBefore = await collateralAsset.balanceOf(albert.address);
