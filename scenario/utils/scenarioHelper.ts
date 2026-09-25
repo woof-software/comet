@@ -256,7 +256,7 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     config.supplyBase = 100;
     config.transferBase = 10;
     config.transferAsset = 4000000;
-    config.transferAsset1 = 800000;
+    config.transferAsset1 = 4000000;
     config.rewardsAsset = 1000000;
     config.rewardsBase = 200;
     config.withdrawBase = 10;
