@@ -131,11 +131,6 @@ describe('allowBySig', function () {
 
   describe('positive cases', function () {
     describe('allow interactions', function () {
-
-      after(async function () {
-        snapshot = await takeSnapshot();
-      });
-
       it('authorizes with a valid signature', async () => {
         expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
 
@@ -169,6 +164,12 @@ describe('allowBySig', function () {
     });
 
     describe('interactions with comet', function () {
+      before(async function () {
+        await snapshotWithoutAllow.restore();
+        await wait(submitAuthorization(signatureArgs, signature));
+        snapshot = await takeSnapshot();
+      });
+
       this.afterEach(async function () {
         await snapshot.restore();
       });
