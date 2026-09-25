@@ -115,7 +115,12 @@ scenario(
 
 scenario(
   'Comet#assetsIn > correctly sets and clears _reserved bits for assets with offset >= 16',
-  {},
+  {
+    filter: async (ctx) => {
+      const comet = await ctx.getComet();
+      return (await comet.maxAssets()) >= REQUIRED_NUM_ASSETS;
+    },
+  },
   async ({ comet, configurator, actors }, context) => {
     const { albert, admin } = actors;
     const numAssets = await comet.numAssets();
