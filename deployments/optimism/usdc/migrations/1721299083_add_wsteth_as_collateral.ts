@@ -48,7 +48,7 @@ export default migration('1721299083_add_wsteth_as_collateral', {
       'wstETH',
       WSTETH_ADDRESS,
       'optimism',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const wstETHPricefeed = await deploymentManager.existing(
       'wstETH:priceFeed',

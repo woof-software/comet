@@ -70,7 +70,7 @@ describe('CometProxyAdmin', function() {
 
     const {
       configuratorProxy,
-      cometProxy,
+      cometProxyWithExtendedAssetList: cometProxy,
       proxyAdmin,
     } = await makeConfigurator({
       governor: governorTimelockSigner,
@@ -141,7 +141,7 @@ describe('CometProxyAdmin', function() {
 
     const {
       configuratorProxy,
-      cometProxy,
+      cometProxyWithExtendedAssetList: cometProxy,
       proxyAdmin,
     } = await makeConfigurator({
       governor: governorTimelockSigner,
@@ -219,7 +219,7 @@ describe('CometProxyAdmin', function() {
 
     const {
       configuratorProxy,
-      cometProxy,
+      cometProxyWithExtendedAssetList: cometProxy,
       proxyAdmin,
       users: [alice],
     } = await makeConfigurator({
@@ -241,7 +241,7 @@ describe('CometProxyAdmin', function() {
 
     const {
       configuratorProxy,
-      cometProxy,
+      cometProxyWithExtendedAssetList: cometProxy,
       proxyAdmin,
       users: [alice],
     } = await makeConfigurator({
@@ -270,7 +270,7 @@ describe('CometProxyAdmin', function() {
 
     const {
       configuratorProxy,
-      cometProxy,
+      cometProxyWithExtendedAssetList: cometProxy,
       proxyAdmin,
     } = await makeConfigurator({
       governor: governorTimelockSigner,
@@ -299,7 +299,7 @@ describe('CometProxyAdmin', function() {
 
     const {
       configuratorProxy,
-      cometProxy,
+      cometProxyWithExtendedAssetList: cometProxy,
       proxyAdmin,
     } = await makeConfigurator({
       governor: governorTimelockSigner,

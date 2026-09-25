@@ -12,7 +12,7 @@ import "../../../../contracts/bridges/polygon/PolygonBridgeReceiver.sol";
 import "../../../../contracts/bridges/scroll/ScrollBridgeReceiver.sol";
 import "../../../../contracts/bridges/scroll/IScrollMessenger.sol";
 import "../../../../contracts/bridges/arbitrum/AddressAliasHelper.sol";
-import "../../../../contracts/ITimelock.sol";
+import "../../../../contracts/interfaces/ITimelock.sol";
 
 library BridgeHelper {
 
@@ -48,7 +48,8 @@ library BridgeHelper {
             address crossDomainMessenger = 0x4200000000000000000000000000000000000007;
             vm.prank(crossDomainMessenger);
 
-            // Mock message sender
+            // Mock message sender directly on the proxy address so this doesn't break
+            // if the underlying L2CrossDomainMessenger implementation is upgraded on-chain
             vm.mockCall(
                 crossDomainMessenger,
                 abi.encodeWithSelector(IOvmL2CrossDomainMessengerInterface.xDomainMessageSender.selector),
