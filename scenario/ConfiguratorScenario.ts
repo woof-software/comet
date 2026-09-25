@@ -1,5 +1,5 @@
 import { scenario } from './context/CometContext';
-import { expectRevertCustom } from './utils';
+import { expectRevertCustom, servicePatch2 } from './utils';
 import { expect } from 'chai';
 
 scenario('upgrade governor', {}, async ({ comet, configurator, timelock, actors }, context) => {
@@ -17,7 +17,9 @@ scenario('upgrade governor', {}, async ({ comet, configurator, timelock, actors 
   expect((await configurator.getConfiguration(comet.address)).governor).to.be.equal(albert.address);
 });
 
-scenario('add assets', {}, async ({ comet, configurator, actors }, context) => {
+scenario('add assets', {
+  filter: async (ctx) => await servicePatch2(ctx),
+}, async ({ comet, configurator, actors }, context) => {
   const { admin } = actors;
   let numAssets = await comet.numAssets();
   const collateralAssets = await Promise.all(Array(numAssets).fill(0).map((_, i) => comet.getAssetInfo(i)));

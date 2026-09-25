@@ -3,7 +3,7 @@ import { CometContext } from './context/CometContext';
 import { AssetList, AssetListFactory } from '../build/types';
 import { AssetConfigStruct } from '../build/types/AssetList';
 import { expect } from 'chai';
-import { supportsExtendedPause } from './utils';
+import { servicePatch2 } from './utils';
 
 // The highest liquidation factor the asset list accepts: a factor of one
 const MAX_COLLATERAL_FACTOR = 10n ** 18n;
@@ -66,7 +66,7 @@ const toBigInt = (value): bigint => BigInt(value.toString());
 
 scenario(
   'Comet#assetList > accepts active collateral (0 < BCF < LCF < LF <= MAX) for each collateral',
-  { filter: async (ctx: CometContext) => await supportsExtendedPause(ctx) },
+  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
   async (_properties, context) => {
     // The market's own factors are an active setup
     const assetConfigs = await getAssetConfigs(context);
@@ -89,7 +89,7 @@ scenario(
 
 scenario(
   'Comet#assetList > accepts soft de-listed collateral (BCF = 0, 0 < LCF < LF <= MAX) for each collateral',
-  { filter: async (ctx: CometContext) => await supportsExtendedPause(ctx) },
+  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
   async (_properties, context) => {
     // Every collateral stops backing new borrows but keeps its liquidation factors
     const assetConfigs = (await getAssetConfigs(context)).map(assetConfig => ({
@@ -115,7 +115,7 @@ scenario(
 
 scenario(
   'Comet#assetList > accepts fully de-listed collateral (BCF = LCF = 0, 0 < LF <= MAX) for each collateral',
-  { filter: async (ctx: CometContext) => await supportsExtendedPause(ctx) },
+  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
   async (_properties, context) => {
     // Every collateral stops counting toward borrowing and liquidation limits but can still be seized
     const assetConfigs = (await getAssetConfigs(context)).map(assetConfig => ({
@@ -142,7 +142,7 @@ scenario(
 
 scenario(
   'Comet#assetList > accepts non-liquidatable collateral (BCF = LCF = LF = 0) for each collateral',
-  { filter: async (ctx: CometContext) => await supportsExtendedPause(ctx) },
+  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
   async (_properties, context) => {
     // Every collateral has all three factors at zero
     const assetConfigs = (await getAssetConfigs(context)).map(assetConfig => ({
@@ -169,7 +169,7 @@ scenario(
 
 scenario(
   'Comet#assetList > reverts on BCF above LCF for each collateral',
-  { filter: async (ctx: CometContext) => await supportsExtendedPause(ctx) },
+  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
   async (_properties, context) => {
     // The comet declares the factor errors the asset list reverts with
     const comet = await context.getComet();
@@ -194,7 +194,7 @@ scenario(
 
 scenario(
   'Comet#assetList > reverts on LCF above LF for each collateral',
-  { filter: async (ctx: CometContext) => await supportsExtendedPause(ctx) },
+  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
   async (_properties, context) => {
     // The comet declares the factor errors the asset list reverts with
     const comet = await context.getComet();
@@ -219,7 +219,7 @@ scenario(
 
 scenario(
   'Comet#assetList > reverts on LF above MAX for each collateral',
-  { filter: async (ctx: CometContext) => await supportsExtendedPause(ctx) },
+  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
   async (_properties, context) => {
     // The comet declares the factor errors the asset list reverts with
     const comet = await context.getComet();
