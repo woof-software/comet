@@ -17,6 +17,7 @@ const CCTP_DOMAIN_TO_NETWORK: Record<number, string> = {
 
 const ROOT_TO_NETWORK: Record<string, string> = {
   fxRoot: 'polygon',
+  RootChainManager: 'polygon',
   arbitrumInbox: 'arbitrum',
   arbitrumL1GatewayRouter: 'arbitrum',
   baseL1CrossDomainMessenger: 'base',
