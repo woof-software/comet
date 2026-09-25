@@ -259,8 +259,10 @@ describe('isLiquidatable', function () {
       // Calculate weighted collateral value
       const weightedCollateral = mulFactor(collateralUSD, (await comet.getAssetInfo(0)).liquidateCollateralFactor);
 
-      // Check if weighted collateral value exceeds debt value
-      expect(weightedCollateral).to.be.greaterThan(debtUSD);
+      // liquidity = debtUSD (negative) + weightedCollateral (positive)
+      // not liquidatable when liquidity >= 0, meaning weighted collateral covers the debt
+      const liquidity = debtUSD + weightedCollateral;
+      expect(liquidity).to.be.gte(0n);
     });
 
     it('user should not be liquidatable', async () => {
