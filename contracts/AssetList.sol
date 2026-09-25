@@ -107,10 +107,12 @@ contract AssetList {
      * - in first variable, the asset address is stored in the lower 160 bits (address can be interpreted as uint160),
      *      the borrow collateral factor in the next 16 bits,
      *      the liquidate collateral factor in the next 16 bits,
-     *      and the liquidation factor in the next 16 bits
+     *      the liquidation factor in the next 16 bits,
+     *      and the upper 40 bits of the supply cap in the remaining 48 bits
      * - in the second variable, the price feed address is stored in the lower 160 bits,
      *      the asset decimals in the next 8 bits,
-     *      and the supply cap in the next 64 bits
+     *      and the lower 88 bits of the supply cap in the remaining 88 bits
+     * The supply cap is kept exactly as configured, fractions of a unit included
      * @param assetConfigs The asset configurations
      * @param i The index of the asset info to get
      * @return The packed asset info
@@ -159,13 +161,13 @@ contract AssetList {
             // safety check duplicate sanity check on original values to ensure no values skewing after descaling and type conversion
             if (borrowCollateralFactor >= liquidateCollateralFactor && borrowCollateralFactor != 0) revert CometMainInterface.BorrowCFTooLarge();
 
-            // Keep whole units of asset for supply cap
-            uint64 supplyCap = uint64(assetConfig.supplyCap / (10 ** decimals_));
+            uint128 supplyCap = assetConfig.supplyCap;
 
             uint256 word_a = (uint160(asset) << 0 |
                               uint256(borrowCollateralFactor) << 160 |
                               uint256(liquidateCollateralFactor) << 176 |
-                              uint256(liquidationFactor) << 192);
+                              uint256(liquidationFactor) << 192 |
+                              uint256(supplyCap >> 88) << 208);
             uint256 word_b = (uint160(priceFeed) << 0 |
                               uint256(decimals_) << 160 |
                               uint256(supplyCap) << 168);
@@ -289,7 +291,7 @@ contract AssetList {
         address priceFeed = address(uint160(word_b & type(uint160).max));
         uint8 decimals_ = uint8(((word_b >> 160) & type(uint8).max));
         uint64 scale = uint64(10 ** decimals_);
-        uint128 supplyCap = uint128(((word_b >> 168) & type(uint64).max) * scale);
+        uint128 supplyCap = uint128((word_a >> 208) << 88 | (word_b >> 168));
 
         return CometCore.AssetInfo({
             offset: i,

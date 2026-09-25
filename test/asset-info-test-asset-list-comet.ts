@@ -1,6 +1,6 @@
 import { AssetList, AssetList__factory, AssetListFactory, AssetListFactory__factory, FaucetToken, FaucetToken__factory, SimplePriceFeed, SimplePriceFeed__factory } from 'build/types';
-import { expect, exp, makeConfigurator, ONE, makeProtocol, ethers } from './helpers';
-import { AssetInfoStructOutput } from 'build/types/AssetList';
+import { expect, exp, makeConfigurator, ONE, makeProtocol, ethers, SnapshotRestorer, takeSnapshot, MAX_ASSETS } from './helpers';
+import { AssetConfigStruct, AssetInfoStructOutput } from 'build/types/AssetList';
 
 describe('asset info', function () {
   it('initializes protocol', async () => {
@@ -399,5 +399,159 @@ describe('asset info', function () {
         });
       });
     });
+  });
+
+
+  /*
+   * The supply cap is stored exactly as configured, fractions of a token included.
+   * Every flow runs for each token decimals variant, because the cap must behave the same way
+   * whatever the decimals are. Each flow uses a full market of 24 collaterals and checks every one
+   * of them, so every storage slot of the asset list is covered. The tokens are deployed once per
+   * decimals variant, and each flow applies its own cap on top of that shared config.
+   */
+  describe('supply cap', function () {
+    // The largest value the uint128 supply cap field can hold
+    const MAX_UINT128 = 2n ** 128n - 1n;
+    // The asset list keeps the lower 88 bits of the cap in one word and the upper 40 bits in the other
+    const UPPER_BITS_ONLY = (2n ** 40n - 1n) << 88n;
+
+    let assetListFactory: AssetListFactory;
+    let priceFeed: SimplePriceFeed;
+    let FaucetTokenFactory: FaucetToken__factory;
+
+    let snapshot: SnapshotRestorer;
+
+    before(async () => {
+      assetListFactory = await (await ethers.getContractFactory('AssetListFactory') as AssetListFactory__factory).deploy();
+      priceFeed = await (await ethers.getContractFactory('SimplePriceFeed') as SimplePriceFeed__factory).deploy(exp(1, 8), 8);
+      FaucetTokenFactory = await ethers.getContractFactory('FaucetToken') as FaucetToken__factory;
+
+      snapshot = await takeSnapshot();
+    });
+
+    // Checks every field of the asset info against the config it was created from.
+    // The cap shares storage with the other fields, so all of them must come back intact, not only the cap.
+    function validateGetAssetInfo(assetInfo: AssetInfoStructOutput, index: number, assetConfig: AssetConfigStruct) {
+      expect(assetInfo.offset).to.equal(index);
+      expect(assetInfo.asset).to.equal(assetConfig.asset);
+      expect(assetInfo.priceFeed).to.equal(assetConfig.priceFeed);
+      expect(assetInfo.scale).to.equal(10n ** BigInt(assetConfig.decimals.toString()));
+      expect(assetInfo.borrowCollateralFactor).to.equal(assetConfig.borrowCollateralFactor);
+      expect(assetInfo.liquidateCollateralFactor).to.equal(assetConfig.liquidateCollateralFactor);
+      expect(assetInfo.liquidationFactor).to.equal(assetConfig.liquidationFactor);
+      expect(assetInfo.supplyCap).to.equal(assetConfig.supplyCap);
+    }
+
+    // The list of token decimals to test
+    const tokenDecimals = [6n, 8n, 12n, 18n];
+    tokenDecimals.forEach(decimals => describe(`token with ${decimals} decimals`, () => runSupplyCapTests(decimals)));
+
+    function runSupplyCapTests(decimals: bigint) {
+      const oneToken = 10n ** decimals;
+
+      // A regular cap every collateral starts with; each flow swaps in its own cap
+      const normalSupplyCap = oneToken * 1_000_000n;
+
+      let assetConfigs: AssetConfigStruct[] = [];
+
+      // Deploys one token per collateral, all with the same decimals and the normal supply cap
+      before(async () => {
+        for (let i = 0; i < MAX_ASSETS; i++) {
+          const token = await FaucetTokenFactory.deploy(1n, `Test Token ${i}`, decimals, `TEST${i}`);
+          assetConfigs.push({
+            asset: token.address,
+            priceFeed: priceFeed.address,
+            decimals,
+            borrowCollateralFactor: exp(0.75, 18),
+            liquidateCollateralFactor: exp(0.8, 18),
+            liquidationFactor: exp(0.9, 18),
+            supplyCap: normalSupplyCap,
+          });
+        }
+      });
+
+      // Creates an asset list where every collateral has the given cap, then checks each collateral reads back as configured
+      function runHappyCaseTests(supplyCap: bigint) {
+        let assetList: AssetList;
+
+        it('creates the asset list', async () => {
+          const configs = assetConfigs.map(assetConfig => ({ ...assetConfig, supplyCap }));
+          const address = await assetListFactory.callStatic.createAssetList(configs);
+          await expect(assetListFactory.createAssetList(configs)).to.not.be.reverted;
+          assetList = await ethers.getContractAt('AssetList', address) as AssetList;
+        });
+
+        it(`holds ${MAX_ASSETS} collaterals`, async () => {
+          expect(await assetList.numAssets()).to.equal(MAX_ASSETS);
+        });
+
+        it('returns the configured asset info for every collateral', async () => {
+          for (let i = 0; i < MAX_ASSETS; i++) {
+            validateGetAssetInfo(await assetList.getAssetInfo(i), i, { ...assetConfigs[i], supplyCap });
+          }
+        });
+      }
+
+      after(async () => await snapshot.restore());
+
+      context('1 wei supply cap', function () {
+        const supplyCap = 1n;
+        runHappyCaseTests(supplyCap);
+      });
+
+      context('cap one wei below a whole token unit', function () {
+        const supplyCap = oneToken - 1n;
+        runHappyCaseTests(supplyCap);
+      });
+
+      context('0.5 token cap', function () {
+        const supplyCap = oneToken / 2n;
+        runHappyCaseTests(supplyCap);
+      });
+
+      context('10.5 token cap', function () {
+        const supplyCap = oneToken * 21n / 2n;
+        runHappyCaseTests(supplyCap);
+      });
+
+      context('cap with only the upper stored bits set', function () {
+        const supplyCap = UPPER_BITS_ONLY;
+        runHappyCaseTests(supplyCap);
+      });
+
+      context('uint128 max cap', function () {
+        const supplyCap = MAX_UINT128;
+        runHappyCaseTests(supplyCap);
+      });
+
+      context('zero cap', function () {
+        const supplyCap = 0n;
+        runHappyCaseTests(supplyCap);
+      });
+
+      // A cap above uint128 max, set on one collateral at a time, must make the factory's ABI decoder revert with no reason.
+      // ethers won't encode it as uint128, so the call is sent raw with the cap encoded as uint256 (same 32-byte layout).
+      Array.from({ length: MAX_ASSETS }).forEach((_, i) => {
+        context(`uint128 max + 1 cap on collateral ${i}`, function () {
+          before(() => {
+            assetConfigs[i].supplyCap = MAX_UINT128 + 1n;
+          });
+
+          after(() => {
+            assetConfigs[i].supplyCap = normalSupplyCap;
+          });
+
+          it('reverts on create asset list', async () => {
+            const data = assetListFactory.interface.getSighash('createAssetList') + ethers.utils.defaultAbiCoder.encode(
+              ['tuple(address asset, address priceFeed, uint8 decimals, uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint256 supplyCap)[]'],
+              [assetConfigs]
+            ).slice(2);
+            const [signer] = await ethers.getSigners();
+
+            await expect(signer.sendTransaction({ to: assetListFactory.address, data, gasLimit: 30_000_000 })).to.be.revertedWithoutReason();
+          });
+        });
+      });
+    }
   });
 });
