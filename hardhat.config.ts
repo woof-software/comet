@@ -3,7 +3,6 @@ import 'dotenv/config';
 import { HardhatUserConfig, subtask, task } from 'hardhat/config';
 import '@compound-finance/hardhat-import';
 import '@nomiclabs/hardhat-etherscan';
-import '@tenderly/hardhat-tenderly';
 import '@nomiclabs/hardhat-ethers';
 import '@typechain/hardhat';
 import 'hardhat-chai-matchers';
@@ -19,8 +18,6 @@ import './tasks/scenario/task.ts';
 
 // Relation Config
 import relationConfigMap from './deployments/relations';
-import sepoliaUsdcRelationConfigMap from './deployments/sepolia/usdc/relations';
-import sepoliaWethRelationConfigMap from './deployments/sepolia/weth/relations';
 import mainnetRelationConfigMap from './deployments/mainnet/usdc/relations';
 import mainnetWethRelationConfigMap from './deployments/mainnet/weth/relations';
 import mainnetUsdtRelationConfigMap from './deployments/mainnet/usdt/relations';
@@ -64,19 +61,16 @@ const {
   ETHERSCAN_KEY_FOR_ARBITRUM,
   ETHERSCAN_KEY_FOR_POLYGON,
   ETHERSCAN_KEY_FOR_LINEA,
-  SNOWTRACE_KEY,
   MAINNET_QUICKNODE_LINK,
-  SEPOLIA_QUICKNODE_LINK,
   RONIN_QUICKNODE_LINK,
   POLYGON_QUICKNODE_LINK,
   OPTIMISM_QUICKNODE_LINK,
   MANTLE_QUICKNODE_LINK,
   BASE_QUICKNODE_LINK,
   ARBITRUM_QUICKNODE_LINK,
+  SCROLL_QUICKNODE_LINK,
   UNICHAIN_QUICKNODE_LINK = '',
   LINEA_QUICKNODE_LINK = '',
-  _TENDERLY_KEY_RONIN,
-  _TENDERLY_KEY_POLYGON,
   MNEMONIC = 'myth like woof scare over problem client lizard pioneer submit female collect',
   REPORT_GAS = 'false',
   NETWORK_PROVIDER = '',
@@ -85,7 +79,7 @@ const {
   REMOTE_ACCOUNTS = ''
 } = process.env;
 
-function* deriveAccounts(pk: string, n: number = 10) {
+function* deriveAccounts(pk: string, n: number = 20) {
   for (let i = 0; i < n; i++){
     if(!pk.startsWith('0x')) pk = '0x' + pk;
     yield (BigInt(pk) + BigInt(i)).toString(16);
@@ -103,7 +97,6 @@ export function requireEnv(varName, msg?: string): string {
 // required environment variables
 [
   'ETHERSCAN_KEY',
-  'SNOWTRACE_KEY',
   'MAINNET_QUICKNODE_LINK',
   'UNICHAIN_QUICKNODE_LINK',
   'LINEA_QUICKNODE_LINK'
@@ -118,10 +111,16 @@ interface NetworkConfig {
   gasPrice?: number | 'auto';
 }
 
+const EXTERNAL_CONTRACTS_COMPILE_LIST = [
+  'contracts/capo/contracts/test/MockERC20.sol'
+];
+
 subtask(TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS).setAction(async (_, __, runSuper) => {
   const paths = await runSuper();
-  
+
   return paths.filter((p: string) => {
+    if (EXTERNAL_CONTRACTS_COMPILE_LIST.some((allowed) => p.includes(allowed))) return true;
+
     return !(
       p.includes('contracts/capo/contracts/test/') ||
       p.includes('contracts/capo/test/') ||
@@ -136,11 +135,6 @@ export const networkConfigs: NetworkConfig[] = [
     network: 'mainnet',
     chainId: 1,
     url: `${MAINNET_QUICKNODE_LINK}`,
-  },
-  {
-    network: 'sepolia',
-    chainId: 11155111,
-    url: `${SEPOLIA_QUICKNODE_LINK}`,
   },
   {
     network: 'ronin',
@@ -186,19 +180,9 @@ export const networkConfigs: NetworkConfig[] = [
     url: `${ARBITRUM_QUICKNODE_LINK}`,
   },
   {
-    network: 'avalanche',
-    chainId: 43114,
-    url: 'https://api.avax.network/ext/bc/C/rpc',
-  },
-  {
-    network: 'fuji',
-    chainId: 43113,
-    url: 'https://api.avax-test.network/ext/bc/C/rpc',
-  },
-  {
     network: 'scroll',
     chainId: 534352,
-    url: 'https://scroll.drpc.org',
+    url: `${SCROLL_QUICKNODE_LINK}`,
   },
 ];
 
@@ -245,18 +229,6 @@ const config: HardhatUserConfig = {
   },
 
   networks: {
-    optimismSepolia: {
-      url: 'https://sepolia.optimism.io',
-      chainId: 11155420
-    },
-    arbitrumSepolia: {
-      url: 'https://arbitrum-sepolia.blockpi.network/v1/rpc/public',
-      chainId: 421614
-    },
-    mainnetSepolia: {
-      url: 'https://ethereum-sepolia.blockpi.network/v1/rpc/public',
-      chainId: 11155111
-    },
     hardhat: {
       chainId: 1337,
       loggingEnabled: !!process.env['LOGGING'],
@@ -365,10 +337,6 @@ const config: HardhatUserConfig = {
     apiKey: {
       // Ethereum
       mainnet: ETHERSCAN_KEY,
-      sepolia: ETHERSCAN_KEY,
-      // Avalanche
-      avalanche: SNOWTRACE_KEY,
-      avalancheFujiTestnet: SNOWTRACE_KEY,
       // Polygon
       polygon: ETHERSCAN_KEY_FOR_POLYGON,
       // Arbitrum
@@ -377,13 +345,12 @@ const config: HardhatUserConfig = {
       arbitrum: ETHERSCAN_KEY_FOR_ARBITRUM,
       // Base
       base: ETHERSCAN_KEY_FOR_BASE,
-      // optimism: OPTIMISMSCAN_KEY,
       optimisticEthereum: ETHERSCAN_KEY_FOR_OPTIMISM,
       // Mantle
       mantle: ETHERSCAN_KEY,
       unichain: ETHERSCAN_KEY,
       // Scroll
-      'scroll': ETHERSCAN_KEY,
+      scroll: ETHERSCAN_KEY,
       linea: ETHERSCAN_KEY_FOR_LINEA,
     },
     customChains: [
@@ -461,10 +428,6 @@ const config: HardhatUserConfig = {
   deploymentManager: {
     relationConfigMap,
     networks: {
-      sepolia: {
-        usdc: sepoliaUsdcRelationConfigMap,
-        weth: sepoliaWethRelationConfigMap
-      },
       mainnet: {
         usdc: mainnetRelationConfigMap,
         weth: mainnetWethRelationConfigMap,
@@ -553,21 +516,6 @@ const config: HardhatUserConfig = {
         name: 'development',
         network: 'hardhat',
         deployment: 'dai'
-      },
-      {
-        name: 'fuji',
-        network: 'fuji',
-        deployment: 'usdc'
-      },
-      {
-        name: 'sepolia-usdc',
-        network: 'sepolia',
-        deployment: 'usdc'
-      },
-      {
-        name: 'sepolia-weth',
-        network: 'sepolia',
-        deployment: 'weth'
       },
       {
         name: 'polygon',
@@ -702,13 +650,6 @@ const config: HardhatUserConfig = {
         auxiliaryBase: 'mainnet'
       },
     ],
-  },
-
-  tenderly: {
-    project: 'comet',
-    username: process.env.TENDERLY_USERNAME || '',
-    accessKey: process.env.TENDERLY_ACCESS_KEY || '',
-    privateVerification: false,
   },
 
   mocha: {

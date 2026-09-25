@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import "../IERC20NonStandard.sol";
+import "../interfaces/IERC20NonStandard.sol";
 import "./BaseBridgeReceiver.sol";
 
 contract SweepableBridgeReceiver is BaseBridgeReceiver {

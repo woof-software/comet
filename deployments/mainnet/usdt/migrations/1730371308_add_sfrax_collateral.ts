@@ -32,7 +32,7 @@ export default migration('1730371308_add_sfrax_collateral', {
       'sFRAX',
       SFRAX_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const sFRAXPriceFeed = await deploymentManager.existing(
       'sFRAX:priceFeed',

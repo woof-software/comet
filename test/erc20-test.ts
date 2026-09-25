@@ -2,25 +2,25 @@ import { baseBalanceOf, ethers, event, expect, makeProtocol, setTotalsBasic, wai
 
 describe('erc20', function () {
   it('has correct name', async () => {
-    const { comet } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet } = await makeProtocol();
 
     expect(await comet.name()).to.be.equal('Compound Comet');
   });
 
   it('has correct symbol', async () => {
-    const { comet } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet } = await makeProtocol();
 
     expect(await comet.symbol()).to.be.equal('📈BASE');
   });
 
   it('has correct decimals', async () => {
-    const { comet } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet } = await makeProtocol();
 
     expect(await comet.decimals()).to.be.equal(6);
   });
 
   it('has correct totalSupply', async () => {
-    const { comet } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet } = await makeProtocol();
 
     await setTotalsBasic(comet, {
       baseSupplyIndex: 2e15,
@@ -35,7 +35,7 @@ describe('erc20', function () {
   describe('balanceOf', function () {
     it('returns presentValue of principal (when principal is positive)', async () => {
       const {
-        comet,
+        cometWithExtendedAssetList: comet,
         users: [user],
       } = await makeProtocol();
 
@@ -52,7 +52,7 @@ describe('erc20', function () {
 
     it('returns 0 (when principal amount is negative)', async () => {
       const {
-        comet,
+        cometWithExtendedAssetList: comet,
         users: [user],
       } = await makeProtocol();
 
@@ -65,7 +65,7 @@ describe('erc20', function () {
 
   it('performs ERC20 transfer of base', async () => {
     const {
-      comet,
+      cometWithExtendedAssetList: comet,
       users: [alice, bob],
     } = await makeProtocol();
 
@@ -99,7 +99,7 @@ describe('erc20', function () {
   describe('transferFrom', function() {
     it('performs ERC20 transferFrom when user transfers their own funds', async () => {
       const {
-        comet,
+        cometWithExtendedAssetList: comet,
         users: [alice, bob],
       } = await makeProtocol();
 
@@ -116,7 +116,7 @@ describe('erc20', function () {
 
     it('reverts ERC20 transferFrom without approval', async () => {
       const {
-        comet,
+        cometWithExtendedAssetList: comet,
         users: [alice, bob],
       } = await makeProtocol();
 
@@ -129,7 +129,7 @@ describe('erc20', function () {
 
     it('performs ERC20 transferFrom of base with approval', async () => {
       const {
-        comet,
+        cometWithExtendedAssetList: comet,
         users: [alice, bob],
       } = await makeProtocol();
 
@@ -152,7 +152,7 @@ describe('erc20', function () {
 
     it('reverts ERC20 transferFrom with revoked approval', async () => {
       const {
-        comet,
+        cometWithExtendedAssetList: comet,
         users: [alice, bob],
       } = await makeProtocol();
 
@@ -181,7 +181,7 @@ describe('erc20', function () {
   describe('approve', function() {
     it('sets isAllowed=true when user approves address for uint256 max', async () => {
       const {
-        comet,
+        cometWithExtendedAssetList: comet,
         users: [user, spender]
       } = await makeProtocol();
 
@@ -201,7 +201,7 @@ describe('erc20', function () {
 
     it('sets isAllowed=false when user passes 0', async () => {
       const {
-        comet,
+        cometWithExtendedAssetList: comet,
         users: [user, spender]
       } = await makeProtocol();
 
@@ -220,7 +220,7 @@ describe('erc20', function () {
 
     it('reverts when user approves for value that is not 0 or uint256.max', async () => {
       const {
-        comet,
+        cometWithExtendedAssetList: comet,
         users: [user, spender]
       } = await makeProtocol();
 
@@ -233,7 +233,7 @@ describe('erc20', function () {
   describe('allowance', function() {
     it('returns unint256.max when spender has permission for user', async () => {
       const {
-        comet,
+        cometWithExtendedAssetList: comet,
         users: [user, spender]
       } = await makeProtocol();
 
@@ -246,7 +246,7 @@ describe('erc20', function () {
 
     it('returns 0 when spender does not have permission for user', async () => {
       const {
-        comet,
+        cometWithExtendedAssetList: comet,
         users: [user, spender]
       } = await makeProtocol();
 
