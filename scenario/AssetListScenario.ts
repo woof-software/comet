@@ -3,7 +3,7 @@ import { CometContext } from './context/CometContext';
 import { AssetList, AssetListFactory } from '../build/types';
 import { AssetConfigStruct } from '../build/types/AssetList';
 import { expect } from 'chai';
-import { expectRevertMatches, fundAccount, supportsExtendedPause } from './utils';
+import { expectRevertMatches, fundAccount, servicePatch2 } from './utils';
 
 // The largest value the uint128 supply cap field can hold
 const MAX_UINT128 = 2n ** 128n - 1n;
@@ -64,7 +64,7 @@ const supplyCaps: [string, (assetConfig: AssetConfigStruct) => bigint][] = [
 supplyCaps.forEach(([name, capFor]) => {
   scenario(
     `Comet#assetList > stores a ${name} supply cap`,
-    { filter: async (ctx: CometContext) => await supportsExtendedPause(ctx) },
+    { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
     async (_properties, context) => {
       const ethers = context.world.deploymentManager.hre.ethers;
       const comet = await context.getComet();
@@ -104,7 +104,7 @@ supplyCaps.forEach(([name, capFor]) => {
 
 scenario(
   'Comet#assetList > reverts on a supply cap above uint128 max for each asset index',
-  { filter: async (ctx: CometContext) => await supportsExtendedPause(ctx) },
+  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
   async (_properties, context) => {
     const ethers = context.world.deploymentManager.hre.ethers;
     const comet = await context.getComet();
