@@ -41,7 +41,13 @@ import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarnessExtendedAssetList';
 
-export { Comet, ethers, expect, hre };
+// Snapshot
+import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
+
+// Math helpers
+export * from './helpers/math';
+
+export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, SignerWithAddress, BigNumber };
 
 export type Numeric = number | bigint;
 
@@ -142,6 +148,12 @@ export type BulkerInfo = {
   bulker: BaseBulker;
 };
 
+export type UserBasic = { principal: BigNumber, baseTrackingIndex: BigNumber, baseTrackingAccrued: BigNumber, assetsIn: number, _reserved: number };
+
+
+export const oneDay = 24 * 60 * 60;
+export const oneMonth = 30 * oneDay;
+
 export function dfn<T>(x: T | undefined | null, dflt: T): T {
   return x == undefined ? dflt : x;
 }
@@ -167,10 +179,6 @@ export function defactor(f: bigint | BigNumber): number {
 export function truncateDecimals(factor: bigint | BigNumber, decimals = 4) {
   const descaleFactor = factorScale / exp(1, decimals);
   return toBigInt(factor) / descaleFactor * descaleFactor;
-}
-
-export function mulPrice(n: bigint, price: bigint | BigNumber, fromScale: bigint | BigNumber): bigint {
-  return n * toBigInt(price) / toBigInt(fromScale);
 }
 
 function toBigInt(f: bigint | BigNumber): bigint {
@@ -217,6 +225,9 @@ export const factorDecimals = 18;
 export const factorScale = factor(1);
 export const ONE = factorScale;
 export const ZERO = factor(0);
+export const MAX_ASSETS = 24;
+export const ZERO_ADDRESS = ethers.constants.AddressZero;
+export const BASE_INDEX_SCALE = BigInt(1e15);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;
