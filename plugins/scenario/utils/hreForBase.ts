@@ -84,8 +84,8 @@ function getBlockRollback(base: ForkSpec) {
     return 25;
 }
 
-// Scoped to one migrate/deploy_and_migrate run via try/finally at the call site.
-// True makes forkedHreForBase bypass a blanket NETWORK_PROVIDER override per L2 fork.
+// Set/cleared by migrationStarted()/migrationEnded() around each migrate run; while true,
+// forkedHreForBase bypasses a blanket NETWORK_PROVIDER override per L2 fork.
 let activeMigration = false;
 
 export function migrationStarted() {
