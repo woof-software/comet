@@ -1,4 +1,4 @@
-import { expect, exp, makeProtocol, mulPrice, mulFactor, divPrice, presentValue, principalValue, ZERO_ADDRESS, presentValueSupply, ethers } from './helpers';
+import { expect, exp, makeProtocol, mulPrice, mulFactor, divPrice, presentValue, principalValue, ZERO_ADDRESS, presentValueSupply, ethers, MAX_ASSETS } from './helpers';
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
@@ -1107,7 +1107,6 @@ describe('absorb', function () {
     });
 
     describe('absorb with 24 collaterals', function () {
-      const MAX_ASSETS = 24;
       const BASE_TOKEN_LEND_AMOUNT: bigint = exp(250, baseTokenDecimals);
       const SUPPLY_COLLATERAL_AMOUNT: bigint = exp(1, 18);
       const BORROW_AMOUNT: bigint = exp(190, baseTokenDecimals);
