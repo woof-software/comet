@@ -246,6 +246,12 @@ export function presentValueSupply(principal: bigint, baseSupplyIndex: bigint, b
   return (principal * baseSupplyIndex) / baseIndexScale;
 }
 
+// A borrower's debt at a given borrow index, computed from their stored (negative) principal.
+// Same idea as presentValueSupply: read the principal before a transaction, apply the index from after it.
+export function presentValueBorrow(principal: bigint, baseBorrowIndex: bigint, baseIndexScale: bigint): bigint {
+  return (-principal * baseBorrowIndex) / baseIndexScale;
+}
+
 export function getInterest(balance: bigint, rate: bigint, seconds: bigint) {
   return (balance * rate * seconds) / 10n ** 18n;
 }
@@ -2025,4 +2031,38 @@ export async function getUsableCollateralIndices(ctx: CometContext, amount?: num
     indices.push(i);
   }
   return indices;
+}
+
+// returns asset of collateral, supply amount, and borrow amount
+// borrow amount is 1.5 times the market's minimum borrow, or $100 of base when that minimum is worth less than $10.
+export async function getMinimumBorrowAmounts(context: CometContext, collateralIndex: number) {
+  const comet = await context.getComet();
+  const baseScale = (await comet.baseScale()).toBigInt();
+  const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+  const priceScale = (await comet.priceScale()).toBigInt();
+  const factorScale = (await comet.factorScale()).toBigInt();
+
+  // baseBorrowMin is an amount of the base token, not USD. Some markets set it to almost nothing (1 wei of USDC),
+  // which makes a meaningless borrow, so below $10 borrow $100 worth of base instead.
+  const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+  const baseBorrowMinUsd = (baseBorrowMin * basePrice) / baseScale;
+  const borrowAmount = baseBorrowMinUsd < 10n * priceScale
+    ? (100n * priceScale * baseScale) / basePrice
+    : (baseBorrowMin * 3n) / 2n;
+
+  const {
+    asset: collateralAddress,
+    priceFeed: collateralPriceFeed,
+    scale: collateralScaleBN,
+    borrowCollateralFactor
+  } = await comet.getAssetInfo(collateralIndex);
+  const collateralAsset = context.getAssetByAddress(collateralAddress);
+  const collateralScale = collateralScaleBN.toBigInt();
+  const collateralPrice = (await comet.getPrice(collateralPriceFeed)).toBigInt();
+
+  let supplyAmount = (borrowAmount * basePrice * collateralScale) / (baseScale * collateralPrice);
+  supplyAmount = (supplyAmount * factorScale) / borrowCollateralFactor.toBigInt();
+  supplyAmount = (supplyAmount * 11n) / 10n;
+
+  return { collateralAsset, supplyAmount, borrowAmount };
 }

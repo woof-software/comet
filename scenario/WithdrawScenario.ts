@@ -11,6 +11,7 @@ import {
   supportsExtendedPause,
   getExpectedBaseBalance,
   getUsableCollateralIndices,
+  getMinimumBorrowAmounts,
   presentValueSupply,
   expectBase,
   deployUnsupportedAsset
@@ -18,32 +19,6 @@ import {
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';
 import { exp } from '../test/helpers';
-
-// returns asset of collateral, supply amount, and borrow amount
-// borrow amount is locked to 1.5 times the market's minimum borrow.
-async function getMinimumBorrowAmounts(context: CometContext, collateralIndex: number) {
-  const comet = await context.getComet();
-  const baseScale = (await comet.baseScale()).toBigInt();
-  const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
-  const factorScale = (await comet.factorScale()).toBigInt();
-  const borrowAmount = ((await comet.baseBorrowMin()).toBigInt() * 3n) / 2n;
-
-  const {
-    asset: collateralAddress,
-    priceFeed: collateralPriceFeed,
-    scale: collateralScaleBN,
-    borrowCollateralFactor
-  } = await comet.getAssetInfo(collateralIndex);
-  const collateralAsset = context.getAssetByAddress(collateralAddress);
-  const collateralScale = collateralScaleBN.toBigInt();
-  const collateralPrice = (await comet.getPrice(collateralPriceFeed)).toBigInt();
-
-  let supplyAmount = (borrowAmount * basePrice * collateralScale) / (baseScale * collateralPrice);
-  supplyAmount = (supplyAmount * factorScale) / borrowCollateralFactor.toBigInt();
-  supplyAmount = (supplyAmount * 11n) / 10n;
-
-  return { collateralAsset, supplyAmount, borrowAmount };
-}
 
 for (let offset = 0; offset < MAX_ASSETS; offset++) {
   scenario(

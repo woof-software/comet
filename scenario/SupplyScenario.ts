@@ -14,7 +14,9 @@ import {
   usesAssetList,
   isAssetDelisted,
   supportsExtendedPause,
-  deployUnsupportedAsset
+  deployUnsupportedAsset,
+  getUsableCollateralIndices,
+  getMinimumBorrowAmounts
 } from './utils';
 import { matchesDeployment } from './utils';
 import { exp } from '../test/helpers';
@@ -377,79 +379,99 @@ scenario(
   }
 );
 
-scenario(
-  'Comet#supply > repay borrow',
-  {
-    tokenBalances: (ctx: CometContext) => ({
-      albert: {
-        $base: ` ==${getConfigForScenario(ctx).liquidationBase}`
-      }
-    }),
-    cometBalances: async (ctx: CometContext) => ({
-      albert: { $base: -getConfigForScenario(ctx).liquidationBase }
-    })
-  },
-  async ({ comet, actors }, context) => {
-    const { albert } = actors;
-    const baseAssetAddress = await comet.baseToken();
-    const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
-    const utilization = await comet.getUtilization();
-    const borrowRate = (await comet.getBorrowRate(utilization)).toBigInt();
+// One scenario per collateral slot; each runs only when that slot holds a usable collateral on the current market
+for (let offset = 0; offset < MAX_ASSETS; offset++) {
+  scenario(
+    `Comet#supply > repay borrow against collateral asset ${offset}`,
+    {
+      filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
+    },
+    async ({ comet, actors }, context) => {
+      const { albert } = actors;
+      const baseAsset = context.getAssetByAddress(await comet.baseToken());
+      const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
 
-    expectApproximately(
-      await albert.getCometBaseBalance(),
-      -BigInt(getConfigForScenario(context).liquidationBase) * scale,
-      getInterest(BigInt(getConfigForScenario(context).liquidationBase) * scale, borrowRate, 1n) + 1n
-    );
+      await context.sourceTokens(supplyAmount, collateralAsset.address, albert.address);
+      await collateralAsset.approve(albert, comet.address);
+      await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-    // Albert repays 100 units of base borrow
-    await baseAsset.approve(albert, comet.address);
-    const txn = await albert.safeSupplyAsset({ asset: baseAsset.address, amount: BigInt(getConfigForScenario(context).liquidationBase) * scale });
+      // Give the protocol enough base liquidity to pay out the borrow
+      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
 
-    // XXX all these timings are crazy
-    expectApproximately(
-      await albert.getCometBaseBalance(),
-      0n,
-      getInterest(BigInt(getConfigForScenario(context).liquidationBase) * scale, borrowRate, 4n) + 2n
-    );
+      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0n);
+      await albert.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
 
-    return txn; // return txn to measure gas
-  }
-);
+      // Albert had no debt, so his borrow balance is the amount borrowed. Comet stores the debt rounded up
+      // and reads it back rounded down, which can add 1 wei, so allow for that
+      expectBase((await comet.borrowBalanceOf(albert.address)).toBigInt(), borrowAmount);
 
-scenario(
-  'Comet#supplyFrom > repay borrow',
-  {
-    tokenBalances: (ctx: CometContext) => ({
-      albert: {
-        $base: getConfigForScenario(ctx).supplyBase + 0.01 * getConfigForScenario(ctx).supplyBase
-      }
-    }),
-    cometBalances: async (ctx: CometContext) => ({
-      betty: {
-        $base: `<= -${getConfigForScenario(ctx).supplyBase}`
-      }
-    })
-  },
-  async ({ comet, actors }, context) => {
-    const { albert, betty } = actors;
-    const baseAssetAddress = await comet.baseToken();
-    const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+      // The debt keeps earning interest until the repay lands, so give Albert 1% on top of what he borrowed
+      await context.sourceTokens(borrowAmount / 100n, baseAsset.address, albert.address);
+      const albertBaseBefore = await baseAsset.balanceOf(albert.address);
 
-    await baseAsset.approve(albert, comet.address);
-    await albert.allow(betty, true);
+      // Supplying the max amount repays exactly the debt as it stands when the repay runs
+      await baseAsset.approve(albert, comet.address);
+      const txn = await albert.safeSupplyAsset({ asset: baseAsset.address, amount: UINT256_MAX });
 
-    // Betty supplies max base from Albert to repay all borrows
-    const txn = await betty.safeSupplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: UINT256_MAX });
+      // The debt is fully repaid and nothing is left over as supply
+      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0n);
+      expect(await comet.balanceOf(albert.address)).to.equal(0n);
+      // Albert paid at least what he borrowed, plus the interest the debt earned
+      expect(albertBaseBefore - (await baseAsset.balanceOf(albert.address))).to.be.at.least(borrowAmount);
 
-    expect(await baseAsset.balanceOf(albert.address)).to.be.lessThan(10n * scale);
-    expectBase(await betty.getCometBaseBalance(), 0n);
+      return txn; // return txn to measure gas
+    }
+  );
+}
 
-    return txn; // return txn to measure gas
-  }
-);
+for (let offset = 0; offset < MAX_ASSETS; offset++) {
+  scenario(
+    `Comet#supplyFrom > repay borrow against collateral asset ${offset}`,
+    {
+      filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
+    },
+    async ({ comet, actors }, context) => {
+      const { albert, betty } = actors;
+      const baseAsset = context.getAssetByAddress(await comet.baseToken());
+      const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
+
+      await context.sourceTokens(supplyAmount, collateralAsset.address, betty.address);
+      await collateralAsset.approve(betty, comet.address);
+      await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
+
+      // Give the protocol enough base liquidity to pay out the borrow
+      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
+
+      expect(await comet.borrowBalanceOf(betty.address)).to.equal(0n);
+      await betty.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
+
+      // Betty had no debt, so her borrow balance is the amount borrowed. Comet stores the debt rounded up
+      // and reads it back rounded down, which can add 1 wei, so allow for that
+      expectBase((await comet.borrowBalanceOf(betty.address)).toBigInt(), borrowAmount);
+
+      // Albert pays Betty's debt. It keeps earning interest until the repay lands, so give him 1% on top
+      await context.sourceTokens(borrowAmount + borrowAmount / 100n, baseAsset.address, albert.address);
+      const albertBaseBefore = await baseAsset.balanceOf(albert.address);
+      const bettyBaseBefore = await baseAsset.balanceOf(betty.address);
+
+      await baseAsset.approve(albert, comet.address);
+      await albert.allow(betty, true);
+
+      // Betty supplies the max amount from Albert, which repays exactly her debt as it stands when the repay runs
+      const txn = await betty.safeSupplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: UINT256_MAX });
+
+      // Betty's debt is fully repaid and nothing is left over as supply
+      expect(await comet.borrowBalanceOf(betty.address)).to.equal(0n);
+      expect(await comet.balanceOf(betty.address)).to.equal(0n);
+      // Albert paid at least what Betty borrowed, plus the interest the debt earned
+      expect(albertBaseBefore - (await baseAsset.balanceOf(albert.address))).to.be.at.least(borrowAmount);
+      // Betty's own tokens are untouched
+      expect(await baseAsset.balanceOf(betty.address)).to.equal(bettyBaseBefore);
+
+      return txn; // return txn to measure gas
+    }
+  );
+}
 
 scenario(
   'Comet#supply > repay borrow with token fees',

@@ -2673,7 +2673,11 @@ scenario(
       assetIndex
     );
     const oldAssetLiquidationFactor = assetConfig.liquidationFactor;
-    const newAssetLiquidationFactor = oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
+    // The liquidation factor cannot go above 1e18, so step it down instead when it is already at the top
+    const newAssetLiquidationFactor =
+      oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT > FACTOR_SCALE
+        ? oldAssetLiquidationFactor - MIN_FACTOR_INCREMENT
+        : oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
 
     await configurator
       .connect(admin.signer)
@@ -2704,8 +2708,11 @@ scenario(
       assetIndex
     );
     const oldAssetLiquidationFactor = assetConfig.liquidationFactor;
-    const firstNewAssetLiquidationFactor = oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
-    const secondNewAssetLiquidationFactor = firstNewAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
+    // The liquidation factor cannot go above 1e18, so step it down instead when two steps up would pass the top
+    const step =
+      oldAssetLiquidationFactor + 2n * MIN_FACTOR_INCREMENT > FACTOR_SCALE ? -MIN_FACTOR_INCREMENT : MIN_FACTOR_INCREMENT;
+    const firstNewAssetLiquidationFactor = oldAssetLiquidationFactor + step;
+    const secondNewAssetLiquidationFactor = firstNewAssetLiquidationFactor + step;
 
     await configurator
       .connect(admin.signer)
@@ -2742,7 +2749,11 @@ scenario(
       assetIndex
     );
     const oldAssetLiquidationFactor = assetConfig.liquidationFactor;
-    const newAssetLiquidationFactor = oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
+    // The liquidation factor cannot go above 1e18, so step it down instead when it is already at the top
+    const newAssetLiquidationFactor =
+      oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT > FACTOR_SCALE
+        ? oldAssetLiquidationFactor - MIN_FACTOR_INCREMENT
+        : oldAssetLiquidationFactor + MIN_FACTOR_INCREMENT;
 
     await configurator
       .connect(marketAdminSigner)
