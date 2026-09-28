@@ -100,20 +100,20 @@ scenario(
     const { albert, betty } = actors;
     const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
 
-    const fromUserBaseBalance = await albert.getCometBaseBalance();
-    const dstUserBaseBalance = await betty.getCometBaseBalance();
+    const fromUserBaseBalance = (await comet.balanceOf(albert.address)).toBigInt();
+    const dstUserBaseBalance = (await comet.balanceOf(betty.address)).toBigInt();
     const amountToTransfer = fromUserBaseBalance / 2n;
 
-    await albert.transferAsset({dst: betty.address, asset: await comet.baseToken(), amount: amountToTransfer});
+    await comet.connect(albert.signer).transfer(betty.address, amountToTransfer);
 
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
 
     expectBase(
-      await albert.getCometBaseBalance(),
+      (await comet.balanceOf(albert.address)).toBigInt(),
       getExpectedBaseBalance(fromUserBaseBalance - amountToTransfer, baseIndexScale, baseSupplyIndex)
     );
     expectBase(
-      await betty.getCometBaseBalance(),
+      (await comet.balanceOf(betty.address)).toBigInt(),
       getExpectedBaseBalance(dstUserBaseBalance + amountToTransfer, baseIndexScale, baseSupplyIndex)
     );
   }
@@ -132,20 +132,20 @@ scenario(
 
     await albert.allow(charles, true);
 
-    const fromUserBaseBalance = await albert.getCometBaseBalance();
-    const dstUserBaseBalance = await betty.getCometBaseBalance();
+    const fromUserBaseBalance = (await comet.balanceOf(albert.address)).toBigInt();
+    const dstUserBaseBalance = (await comet.balanceOf(betty.address)).toBigInt();
     const amountToTransfer = fromUserBaseBalance / 2n;
 
-    await charles.transferAssetFrom({src: albert.address, dst: betty.address, asset: await comet.baseToken(), amount: amountToTransfer});
+    await comet.connect(charles.signer).transferFrom(albert.address, betty.address, amountToTransfer);
 
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
 
     expectBase(
-      await albert.getCometBaseBalance(),
+      (await comet.balanceOf(albert.address)).toBigInt(),
       getExpectedBaseBalance(fromUserBaseBalance - amountToTransfer, baseIndexScale, baseSupplyIndex)
     );
     expectBase(
-      await betty.getCometBaseBalance(),
+      (await comet.balanceOf(betty.address)).toBigInt(),
       getExpectedBaseBalance(dstUserBaseBalance + amountToTransfer, baseIndexScale, baseSupplyIndex)
     );
   }
@@ -163,20 +163,20 @@ scenario(
     const baseAssetAddress = await comet.baseToken();
     const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
 
-    const fromUserBaseBalance = await albert.getCometBaseBalance();
-    const dstUserBaseBalance = await betty.getCometBaseBalance();
+    const fromUserBaseBalance = (await comet.balanceOf(albert.address)).toBigInt();
+    const dstUserBaseBalance = (await comet.balanceOf(betty.address)).toBigInt();
     const amountToTransfer = fromUserBaseBalance / 2n;
 
-    await albert.transferAsset({dst: betty.address, asset: baseAssetAddress, amount: amountToTransfer});
+    await comet.connect(albert.signer).transferAsset(betty.address, baseAssetAddress, amountToTransfer);
 
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
 
     expectBase(
-      await albert.getCometBaseBalance(),
+      (await comet.balanceOf(albert.address)).toBigInt(),
       getExpectedBaseBalance(fromUserBaseBalance - amountToTransfer, baseIndexScale, baseSupplyIndex)
     );
     expectBase(
-      await betty.getCometBaseBalance(),
+      (await comet.balanceOf(betty.address)).toBigInt(),
       getExpectedBaseBalance(dstUserBaseBalance + amountToTransfer, baseIndexScale, baseSupplyIndex)
     );
   }
@@ -196,20 +196,20 @@ scenario(
 
     await albert.allow(charles, true);
 
-    const fromUserBaseBalance = await albert.getCometBaseBalance();
-    const dstUserBaseBalance = await betty.getCometBaseBalance();
+    const fromUserBaseBalance = (await comet.balanceOf(albert.address)).toBigInt();
+    const dstUserBaseBalance = (await comet.balanceOf(betty.address)).toBigInt();
     const amountToTransfer = fromUserBaseBalance / 2n;
 
-    await charles.transferAssetFrom({src: albert.address, dst: betty.address, asset: baseAssetAddress, amount: amountToTransfer});
+    await comet.connect(charles.signer).transferAssetFrom(albert.address, betty.address, baseAssetAddress, amountToTransfer);
 
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
 
     expectBase(
-      await albert.getCometBaseBalance(),
+      (await comet.balanceOf(albert.address)).toBigInt(),
       getExpectedBaseBalance(fromUserBaseBalance - amountToTransfer, baseIndexScale, baseSupplyIndex)
     );
     expectBase(
-      await betty.getCometBaseBalance(),
+      (await comet.balanceOf(betty.address)).toBigInt(),
       getExpectedBaseBalance(dstUserBaseBalance + amountToTransfer, baseIndexScale, baseSupplyIndex)
     );
   }

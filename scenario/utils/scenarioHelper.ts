@@ -351,3 +351,9 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
 
   return config;
 }
+
+/// Amount of collateral (in whole units) the bulker scenarios supply for the asset at the given index
+export function getBulkerCollateralAmount(ctx: CometContext, index: number) {
+  const config = getConfigForScenario(ctx, index);
+  return index === 1 ? config.bulkerAsset1 : config.bulkerAsset;
+}

@@ -203,10 +203,7 @@ scenario(
     const amountToWithdraw = fromUserBaseBalanceBefore / 2n;
 
     // Albert withdraws supplied units of base from Comet
-    const txn = await comet
-      .connect(albert.signer)
-      .withdrawTo(betty.address, baseAsset.address, amountToWithdraw)
-      .then((tx) => tx.wait());
+    await comet.connect(albert.signer).withdrawTo(betty.address, baseAsset.address, amountToWithdraw);
 
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
     // should change base balance of from user
@@ -222,8 +219,6 @@ scenario(
     expect(await betty.getCometBaseBalance()).to.equal(dstUserBaseBalanceBefore);
     // should change asset balance of dst user
     expect(await baseAsset.balanceOf(betty.address)).to.equal(dstUserAssetBalanceBefore + amountToWithdraw);
-
-    return txn; // return txn to measure gas
   }
 );
 
@@ -251,10 +246,7 @@ scenario(
     const amountToWithdraw = fromUserBaseBalanceBefore / 2n;
 
     // Betty withdraws supplied units of base from Albert
-    const txn = await comet
-      .connect(charles.signer)
-      .withdrawFrom(albert.address, betty.address, baseAsset.address, amountToWithdraw)
-      .then((tx) => tx.wait());
+    await comet.connect(charles.signer).withdrawFrom(albert.address, betty.address, baseAsset.address, amountToWithdraw);
 
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
     const precision = 3n;
@@ -274,8 +266,6 @@ scenario(
     expect(await charles.getCometBaseBalance()).to.equal(operatorBaseBalanceBefore);
     // shouldn't change asset balance of operator
     expect(await baseAsset.balanceOf(charles.address)).to.equal(operatorAssetBalanceBefore);
-
-    return txn; // return txn to measure gas
   }
 );
 
