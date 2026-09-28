@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import { BigNumber, ethers } from 'ethers';
 import { CometContext, scenario } from './context/CometContext';
 import { exp } from '../test/helpers';
-import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker } from './utils';
+import { expectRevertCustom, fundAccount, setEtherBalance, supportsMarketAdminPermissionChecker } from './utils';
 import { SECONDS_PER_YEAR } from './utils/constants';
 import { MarketAdminPermissionChecker } from '../build/types';
 
@@ -232,6 +232,7 @@ scenario(
   {},
   async ({ configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const newGovernor = await deployTimelock(context);
     await configurator.connect(admin.signer).transferGovernor(newGovernor);
@@ -245,6 +246,7 @@ scenario(
   {},
   async ({ configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const newGovernor = await deployTimelock(context);
     const newGovernorSigner = await context.world.impersonateAddress(newGovernor);
@@ -273,6 +275,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const newFactory = await deployCometFactory(context);
 
@@ -287,6 +290,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const firstNewFactory = await deployCometFactory(context);
     const secondNewFactory = await deployCometFactory(context, true);
@@ -320,6 +324,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
 
     const updatedConfiguration = {
@@ -340,6 +345,7 @@ scenario(
   {},
   async ({ configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     const newCometProxy = await deployComet(context);
     const configuration = normalizeStructOutput(await configurator.getConfiguration(newCometProxy));
 
@@ -373,6 +379,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
 
     const updatedConfiguration = {
@@ -392,6 +399,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
 
     const updatedConfiguration = {
@@ -411,6 +419,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const newGovernor = await deployTimelock(context);
     await configurator.connect(admin.signer).setGovernor(comet.address, newGovernor);
@@ -428,6 +437,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const firstNewGovernor = await deployTimelock(context);
     const secondNewGovernor = await deployTimelock(context, true);
@@ -461,6 +471,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const newPauseGuardian = await ethers.Wallet.createRandom().getAddress();
     await configurator.connect(admin.signer).setPauseGuardian(comet.address, newPauseGuardian);
@@ -478,6 +489,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const firstNewPauseGuardian = await ethers.Wallet.createRandom().getAddress();
     const secondNewPauseGuardian = await ethers.Wallet.createRandom().getAddress();
@@ -514,6 +526,7 @@ scenario(
   },
   async ({ configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const newMarketAdminPermissionChecker = await deployMarketAdminPermissionChecker(context);
     await configurator.connect(admin.signer).setMarketAdminPermissionChecker(newMarketAdminPermissionChecker);
@@ -529,6 +542,7 @@ scenario(
   },
   async ({ configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const firstNewMarketAdminPermissionChecker = await deployMarketAdminPermissionChecker(context);
     const secondNewMarketAdminPermissionChecker = await deployMarketAdminPermissionChecker(context, true);
@@ -565,6 +579,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     const newPriceFeed = await deployPriceFeed(context, 'baseToken');
 
     await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, newPriceFeed);
@@ -582,6 +597,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const firstNewPriceFeed = await deployPriceFeed(context, 'baseToken');
     const secondNewPriceFeed = await deployPriceFeed(context, 'baseToken', true);
@@ -616,6 +632,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const newExtensionDelegate = await deployCometExt(context);
 
@@ -630,6 +647,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const firstNewExtensionDelegate = await deployCometExt(context);
     const secondNewExtensionDelegate = await deployCometExt(context, true);
@@ -668,6 +686,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldStoreFrontPriceFactor = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -690,6 +709,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const initialStoreFrontPriceFactor = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -736,6 +756,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     const oldBaseMinForRewards = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
     ).baseMinForRewards;
@@ -758,6 +779,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const initialBaseMinForRewards = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -804,6 +826,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     const oldTargetReserves = normalizeStructOutput(await configurator.getConfiguration(comet.address)).targetReserves;
 
     const newTargetReserves = oldTargetReserves + 1n;
@@ -824,6 +847,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     const initialTargetReserves = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
     ).targetReserves;
@@ -866,6 +890,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const numAssetsBefore = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs
       .length;
@@ -890,6 +915,7 @@ scenario(
 
 scenario('Configurator#addAsset can add multiple assets', {}, async ({ comet, configurator, actors }, context) => {
   const { admin } = actors;
+  await fundAccount(admin.context.world, admin);
 
   const numAssetsBefore = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.length;
 
@@ -948,6 +974,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const assetIndex = -1;
     const assetConfigsBefore = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs;
@@ -979,6 +1006,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const assetIndex = -1;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
@@ -1027,6 +1055,7 @@ scenario('Configurator#updateAsset reverts if called by non-governor', {}, async
 
 scenario('Configurator#updateAsset reverts if asset does not exist', {}, async ({ comet, configurator, actors }) => {
   const { admin } = actors;
+  await fundAccount(admin.context.world, admin);
 
   const existingAssetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
     -1
@@ -1048,6 +1077,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     // use the last asset in the existing configuration to ensure the asset exists
     const assetIndex = -1;
     const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).asset;
@@ -1068,6 +1098,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     // use the last asset in the existing configuration to ensure the asset exists
     const assetIndex = -1;
     const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).asset;
@@ -1114,6 +1145,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
     const newPriceFeed = await deployPriceFeed(context, 'asset');
@@ -1136,6 +1168,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
     const newSupplyKink = oldSupplyKink + 1n;
@@ -1157,6 +1190,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
     const firstNewSupplyKink = oldSupplyKink + 1n;
@@ -1183,6 +1217,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     const marketAdminSigner = await getMarketAdminSigner(context);
 
     const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
@@ -1221,6 +1256,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldSupplyPerYearInterestRateSlopeLow = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1249,6 +1285,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldSupplyPerYearInterestRateSlopeLow = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1282,6 +1319,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     const marketAdminSigner = await getMarketAdminSigner(context);
 
     const oldSupplyPerYearInterestRateSlopeLow = normalizeStructOutput(
@@ -1332,6 +1370,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldSupplyPerYearInterestRateSlopeHigh = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1360,6 +1399,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldSupplyPerYearInterestRateSlopeHigh = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1393,6 +1433,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
@@ -1444,6 +1485,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldSupplyPerYearInterestRateBase = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1472,6 +1514,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldSupplyPerYearInterestRateBase = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1505,6 +1548,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
@@ -1556,6 +1600,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
     const newBorrowKink = oldBorrowKink + 1n;
@@ -1577,6 +1622,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
     const firstNewBorrowKink = oldBorrowKink + 1n;
@@ -1603,6 +1649,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
     const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
@@ -1641,6 +1688,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBorrowPerYearInterestRateSlopeLow = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1669,6 +1717,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBorrowPerYearInterestRateSlopeLow = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1702,6 +1751,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
@@ -1753,6 +1803,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBorrowPerYearInterestRateSlopeHigh = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1781,6 +1832,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBorrowPerYearInterestRateSlopeHigh = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1814,6 +1866,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
@@ -1865,6 +1918,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBorrowPerYearInterestRateBase = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1893,6 +1947,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBorrowPerYearInterestRateBase = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -1926,6 +1981,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
@@ -1977,6 +2033,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBaseTrackingSupplySpeed = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -2001,6 +2058,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBaseTrackingSupplySpeed = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -2034,6 +2092,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
@@ -2081,6 +2140,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBaseTrackingBorrowSpeed = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -2105,6 +2165,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBaseTrackingBorrowSpeed = normalizeStructOutput(
       await configurator.getConfiguration(comet.address)
@@ -2138,6 +2199,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
@@ -2185,6 +2247,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
     const newBaseBorrowMin = oldBaseBorrowMin + 1n;
@@ -2206,6 +2269,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
     const firstNewBaseBorrowMin = oldBaseBorrowMin + 1n;
@@ -2232,6 +2296,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
     const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
@@ -2272,6 +2337,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const { assetIndex, assetConfig } = await getActiveAsset(context);
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
@@ -2299,6 +2365,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const assetIndex = -1;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
@@ -2335,6 +2402,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const { assetIndex, assetConfig } = await getActiveAsset(context);
     const newAssetBorrowCollateralFactor = 0n;
@@ -2364,6 +2432,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
     const { assetIndex, assetConfig } = await getActiveAsset(context);
@@ -2395,6 +2464,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
     const { assetIndex, assetConfig } = await getActiveAsset(context);
@@ -2441,6 +2511,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     // use the existing config to get a valid factor value
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(-1);
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
@@ -2462,6 +2533,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const assetIndex = -1;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
@@ -2492,6 +2564,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const assetIndex = -1;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
@@ -2528,6 +2601,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
     const assetIndex = -1;
@@ -2576,6 +2650,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
 
@@ -2591,6 +2666,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const assetIndex = -1;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
@@ -2621,6 +2697,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const assetIndex = -1;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
@@ -2657,6 +2734,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
     const assetIndex = -1;
@@ -2703,6 +2781,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
 
@@ -2718,6 +2797,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const assetIndex = -1;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
@@ -2747,6 +2827,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const assetIndex = -1;
     const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
@@ -2781,6 +2862,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const { assetIndex, assetConfig } = await getActiveAsset(context);
     const newAssetSupplyCap = 0n;
@@ -2808,6 +2890,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
     const assetIndex = -1;
@@ -2841,6 +2924,7 @@ scenario(
   },
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
     const { assetIndex, assetConfig } = await getActiveAsset(context);
@@ -2881,6 +2965,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
     const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
 
     await expectRevertCustom(

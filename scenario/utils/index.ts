@@ -238,6 +238,14 @@ export function getExpectedBaseBalance(
   return baseBalanceOf;
 }
 
+// A supplier's balance at a given supply index, computed from their stored principal.
+// Read the principal before a transaction and apply the index from after it: the transaction
+// accrues interest before it moves any funds, so a balance read beforehand misses the interest
+// earned in the block the transaction lands in.
+export function presentValueSupply(principal: bigint, baseSupplyIndex: bigint, baseIndexScale: bigint): bigint {
+  return (principal * baseSupplyIndex) / baseIndexScale;
+}
+
 export function getInterest(balance: bigint, rate: bigint, seconds: bigint) {
   return (balance * rate * seconds) / 10n ** 18n;
 }
@@ -1994,4 +2002,27 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
     // If the call reverts or fails, extended pause is not supported
     return false;
   }
+}
+
+// returns indices of collaterals that have a supply cap and all collateral factors above zero.
+// pass `amount` to get only the first N of them, omit it to get all.
+export async function getUsableCollateralIndices(ctx: CometContext, amount?: number): Promise<number[]> {
+  const comet = await ctx.getComet();
+  const numAssets = await comet.numAssets();
+  const indices: number[] = [];
+
+  for (let i = 0; i < numAssets; i++) {
+    if (amount !== undefined && indices.length >= amount) break;
+
+    const info = await comet.getAssetInfo(i);
+
+    // We skip assets with a supply cap of 0
+    if (info.supplyCap.isZero()) continue;
+
+    // We skip assets with a borrow collateral factor, liquidate collateral factor, or liquidation factor of 0
+    if (info.borrowCollateralFactor.isZero() || info.liquidateCollateralFactor.isZero() || info.liquidationFactor.isZero()) continue;
+    
+    indices.push(i);
+  }
+  return indices;
 }

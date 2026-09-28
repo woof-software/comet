@@ -60,7 +60,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       const userAssetBalanceBefore = await collateralAsset.balanceOf(albert.address);
       const userCollateralBalanceBefore = await comet.collateralBalanceOf(albert.address, collateralAsset.address);
 
-      await albert.safeSupplyAsset({asset: collateralAsset.address, amount: amountToSupply});
+      const txn = await albert.safeSupplyAsset({asset: collateralAsset.address, amount: amountToSupply});
 
       // should change asset balance of user
       expect(await collateralAsset.balanceOf(albert.address)).to.not.equal(userAssetBalanceBefore);
@@ -68,6 +68,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       // should change collateral balance of user
       expect(collateralBalanceAfter).to.not.equal(userCollateralBalanceBefore);
       expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.equal(amountToSupply);
+
+      return txn; // return txn to measure gas
     }
   );
 }
@@ -96,7 +98,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       const dstUserAssetBalanceBefore = await collateralAsset.balanceOf(betty.address);
       const dstUserCollateralBalanceBefore = await comet.collateralBalanceOf(betty.address, collateralAsset.address);
 
-      await albert.safeSupplyAssetTo({dst: betty.address, asset: collateralAsset.address, amount: amountToSupply});
+      const txn = await albert.safeSupplyAssetTo({dst: betty.address, asset: collateralAsset.address, amount: amountToSupply});
 
       // should change asset balance of from user
       expect(await collateralAsset.balanceOf(albert.address)).to.not.equal(fromUserAssetBalanceBefore);
@@ -110,6 +112,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       // should change collateral balance of dst user
       expect(dstCollateralBalanceAfter).to.not.equal(dstUserCollateralBalanceBefore);
       expect(dstCollateralBalanceAfter).to.equal(amountToSupply);
+
+      return txn; // return txn to measure gas
     }
   );
 }
@@ -139,7 +143,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       const dstUserAssetBalanceBefore = await collateralAsset.balanceOf(betty.address);
       const dstUserCollateralBalanceBefore = await comet.collateralBalanceOf(betty.address, collateralAsset.address);
 
-      await betty.safeSupplyAssetFrom({src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: amountToSupply});
+      const txn = await betty.safeSupplyAssetFrom({src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: amountToSupply});
 
       // should change asset balance of from user
       expect(await collateralAsset.balanceOf(albert.address)).to.not.equal(fromUserAssetBalanceBefore);
@@ -153,6 +157,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       // should change collateral balance of dst user
       expect(dstCollateralBalanceAfter).to.not.equal(dstUserCollateralBalanceBefore);
       expect(dstCollateralBalanceAfter).to.equal(amountToSupply);
+
+      return txn; // return txn to measure gas
     }
   );
 }
