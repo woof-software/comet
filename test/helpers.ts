@@ -611,10 +611,13 @@ export async function bumpTotalsCollateral(cometWithExtendedAssetList: CometHarn
   const tokenAddress = await token.getAddress();
   const cometAddress = await cometWithExtendedAssetList.getAddress();
   const t0 = await cometWithExtendedAssetList.totalsCollateral(tokenAddress);
-  const t1 = Object.assign({}, t0, { totalSupplyAsset: t0.totalSupplyAsset + delta });
+  const t1: CometStorage.TotalsCollateralStruct = {
+    totalSupplyAsset: t0.totalSupplyAsset + delta,
+    _reserved: t0._reserved,
+  };
   await token.allocateTo(cometAddress, delta);
   await wait(cometWithExtendedAssetList.setTotalsCollateral(tokenAddress, t1));
-  return t1;
+  return cometWithExtendedAssetList.totalsCollateral(tokenAddress);
 }
 
 export async function setTotalsBasic(

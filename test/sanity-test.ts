@@ -1,11 +1,15 @@
-import { ethers, expect, makeProtocol } from './helpers';
+import { ethers, expect, makeProtocol } from './helpers.js';
 
 describe('getNow', function () {
   it('reverts if timestamp overflows', async () => {
     const { cometWithExtendedAssetList: comet } = await makeProtocol();
-    await ethers.provider.send('evm_mine', [2**40]);
-    await expect(comet.getNow()).to.be.revertedWith("custom error 'TimestampTooLarge()'");
-    await ethers.provider.send('hardhat_reset', []); // dont break downstream tests...
+    const snapshotId = await ethers.provider.send('evm_snapshot', []);
+    try {
+      await ethers.provider.send('evm_mine', [2**40]);
+      await expect(comet.getNow()).to.be.revertedWithCustomError(comet, 'TimestampTooLarge');
+    } finally {
+      await ethers.provider.send('evm_revert', [snapshotId]);
+    }
   });
 });
 
@@ -15,4 +19,3 @@ describe('updateBaseBalance', function () {
     // XXX
   });
 });
-
