@@ -1,5 +1,5 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken, NonStandardFaucetFeeToken__factory } from 'build/types';
-import { ethers, expect, exp, makeProtocol, presentValue, ZERO_ADDRESS, presentValueSupply, mulPrice, mulFactor, defaultAssets } from './helpers';
+import { ethers, expect, exp, makeProtocol, presentValue, ZERO_ADDRESS, presentValueSupply, mulPrice, mulFactor, defaultAssets, MAX_ASSETS } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from './helpers/snapshot';
@@ -1168,7 +1168,6 @@ describe('transfer', function () {
   });
 
   describe('absorb with 24 collaterals', function () {
-    const MAX_ASSETS = 24;
     const TRANSFER_AMOUNT: bigint = exp(1, 18);
 
     let comet: CometHarnessInterfaceExtendedAssetList;

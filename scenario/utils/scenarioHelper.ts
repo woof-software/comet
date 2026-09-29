@@ -72,6 +72,9 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
 
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'usds') {
     config.liquidationAsset = 100;
+    if(i == 2) {
+      config.bulkerAsset = 10;
+    }
   }
 
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'usdc') {
@@ -136,7 +139,6 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   }
 
   if (ctx.world.base.network === 'optimism' && ctx.world.base.deployment === 'usdt') {
-    config.withdrawAsset = 100000;
     config.transferAsset = 100000;
     config.transferAsset1 = 100000;
     config.rewardsAsset = 100000;
@@ -148,7 +150,6 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     config.bulkerBorrowBase = 5;
     config.bulkerBorrowAsset = 5;
     config.bulkerComet = 100000;
-    config.liquidationBase = 1000;
     config.withdrawBase = 20;
     config.rewardsBase = 20;
     config.liquidationBase = 20;
@@ -350,4 +351,10 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   }
 
   return config;
+}
+
+/// Amount of collateral (in whole units) the bulker scenarios supply for the asset at the given index
+export function getBulkerCollateralAmount(ctx: CometContext, index: number) {
+  const config = getConfigForScenario(ctx, index);
+  return index === 1 ? config.bulkerAsset1 : config.bulkerAsset;
 }

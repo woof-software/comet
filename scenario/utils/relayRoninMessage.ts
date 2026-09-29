@@ -12,6 +12,53 @@ const mainnetChainSelector = '5009297550715157269';
 const MAINNET_CCIP_ROUTER = '0x80226fc0Ee2b096224EeAc085Bb9a8cba1146f7D';
 const MAINNET_RONIN_OFF_RAMP = '0x9a3Ed7007809CfD666999e439076B4Ce4120528D';
 
+// CCIP 2.0 OnRamp event; the message itself is packed in encodedMessage (MessageV1Codec).
+const onRampV2 = new ethers.utils.Interface([
+  'event CCIPMessageSent(uint64 indexed destChainSelector, address indexed sender, bytes32 indexed messageId, address feeToken, uint256 tokenAmountBeforeTokenPoolFees, bytes encodedMessage, tuple(address issuer, uint32 destGasLimit, uint32 destBytesOverhead, uint256 feeTokenAmount, bytes extraArgs)[] receipts, bytes[] verifierBlobs)'
+]);
+const CCIP_MESSAGE_SENT_TOPIC = onRampV2.getEventTopic('CCIPMessageSent');
+
+interface CCIPMessage {
+  messageId: string;
+  sourceChainSelector: BigNumber;
+  sender: string;
+  receiver: string;
+  data: string;
+  tokenAmounts: { token: string, amount: BigNumber }[];
+}
+
+// Decodes a MessageV1Codec-encoded message into the fields the relay needs.
+function decodeCCIPMessageV1(messageId: string, encoded: string): CCIPMessage {
+  const b = ethers.utils.arrayify(encoded);
+  let o = 0;
+  const take = (n: number) => { const s = b.slice(o, o + n); o += n; return s; };
+  const uint = (n: number) => BigNumber.from(take(n));
+  const lenPrefixed = (lenBytes: number) => take(uint(lenBytes).toNumber());
+  const toAddress = (bytes: Uint8Array) => ethers.utils.getAddress(ethers.utils.hexlify(bytes.slice(-20)));
+
+  if (take(1)[0] !== 1) throw new Error('Unsupported CCIP message version');
+  const sourceChainSelector = uint(8);
+  take(8 + 8 + 4 + 4 + 4 + 32); // destChainSelector, messageNumber, gas limits, finality, ccvAndExecutorHash
+  lenPrefixed(1); // onRamp
+  lenPrefixed(1); // offRamp
+  const sender = toAddress(lenPrefixed(1));
+  const receiver = toAddress(lenPrefixed(1));
+  lenPrefixed(2); // destBlob
+  const tokenTransfer = lenPrefixed(2);
+  const data = ethers.utils.hexlify(lenPrefixed(2));
+
+  // TokenTransferV1: version, amount, sourcePool, sourceToken, ... (at most one per message)
+  const tokenAmounts = [];
+  if (tokenTransfer.length > 0) {
+    const amount = BigNumber.from(tokenTransfer.slice(1, 33));
+    const sourceTokenStart = 34 + tokenTransfer[33];
+    const sourceTokenLen = tokenTransfer[sourceTokenStart];
+    const token = toAddress(tokenTransfer.slice(sourceTokenStart + 1, sourceTokenStart + 1 + sourceTokenLen));
+    tokenAmounts.push({ token, amount });
+  }
+  return { messageId, sourceChainSelector, sender, receiver, data, tokenAmounts };
+}
+
 export default async function relayRoninMessage(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
@@ -41,52 +88,35 @@ export default async function relayRoninMessage(
 
   const openBridgedProposals: OpenBridgedProposal[] = [];
 
-  const filterCCIP = l1CCIPOnRamp.filters.CCIPSendRequested();
-  let logsCCIP: Log[] = [];
+  const toRoninTopics = [CCIP_MESSAGE_SENT_TOPIC, ethers.utils.hexZeroPad(BigNumber.from(roninChainSelector).toHexString(), 32)];
+  let logsCCIP: Log[] = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    fromBlock: startingBlockNumber,
+    toBlock: 'latest',
+    address: l1CCIPOnRamp.address,
+    topics: toRoninTopics
+  });
 
   if (tenderlyLogs) {
-    const topic = l1CCIPOnRamp.interface.getEventTopic('CCIPSendRequested');
     const tenderlyEvents = tenderlyLogs.filter(
-      log => log.raw?.topics?.[0] === topic && log.raw?.address?.toLowerCase() === l1CCIPOnRamp.address.toLowerCase()
+      log => log.raw?.topics?.[0] === toRoninTopics[0] &&
+        log.raw?.topics?.[1] === toRoninTopics[1] &&
+        log.raw?.address?.toLowerCase() === l1CCIPOnRamp.address.toLowerCase()
     );
-    const latestBlock = (await governanceDeploymentManager.hre.ethers.provider.getBlock('latest')).number;
-    const realEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
-      fromBlock: latestBlock - 500,
-      toBlock: 'latest',
-      address: l1CCIPOnRamp.address,
-      topics: filterCCIP.topics || []
-    });
-    logsCCIP = [...realEvents, ...tenderlyEvents];
-  } else {
-    const latestBlock = (await governanceDeploymentManager.hre.ethers.provider.getBlock('latest')).number;
-    logsCCIP = await governanceDeploymentManager.hre.ethers.provider.getLogs({
-      fromBlock: latestBlock - 500,
-      toBlock: 'latest',
-      address: l1CCIPOnRamp.address,
-      topics: filterCCIP.topics || []
-    });
+    logsCCIP = [...logsCCIP, ...tenderlyEvents];
   }
 
   let routeReceipt: { events: any[] };
-  
+  let relayedToReceiver = 0;
+
   for (const log of logsCCIP) {
-    let parsedLog;
-    if (isTenderlyLog(log)) {
-      parsedLog = l1CCIPOnRamp.interface.parseLog({
-        topics: log.raw.topics,
-        data: log.raw.data
-      });
-    } else {
-      parsedLog = l1CCIPOnRamp.interface.parseLog(log);
-    }
-    
-    const internalMsg = parsedLog.args.message;
+    const parsedLog = onRampV2.parseLog(isTenderlyLog(log) ? { topics: log.raw.topics, data: log.raw.data } : log);
+    const internalMsg = decodeCCIPMessageV1(parsedLog.args.messageId, parsedLog.args.encodedMessage);
     if (internalMsg.receiver.toLowerCase() !== bridgeReceiver.address.toLowerCase()) {
       console.log(`[CCIP L1->L2] Skipping message with receiver ${internalMsg.receiver} not matching bridgeReceiver ${bridgeReceiver.address}`);
       continue;
     }
 
-    console.log(`[CCIP L1->L2] Found CCIPSendRequested with messageId=${internalMsg.messageId}`);
+    console.log(`[CCIP L1->L2] Found CCIPMessageSent with messageId=${internalMsg.messageId}`);
 
     await bridgeDeploymentManager.hre.network.provider.request({
       method: 'hardhat_setBalance',
@@ -201,6 +231,7 @@ export default async function relayRoninMessage(
     }
 
     console.log(`[CCIP L1->L2] Routed message to ${internalMsg.receiver}`);
+    relayedToReceiver++;
   
     const proposalCreatedEvents = routeReceipt.events?.filter(
       (ev: ethers.Event) =>
@@ -216,6 +247,13 @@ export default async function relayRoninMessage(
       console.log(`[CCIP L2] Queued proposal: id=${id.toString()}, eta=${eta.toString()}`);
     }
   }
+
+  if (relayedToReceiver === 0) {
+    throw new Error(`[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] No CCIP message to bridgeReceiver found since block ${startingBlockNumber}`);
+  }
+
+  // L2 block before executing bridged proposals; bounds the L2->L1 scan below.
+  const l2StartingBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber();
 
   for (const proposal of openBridgedProposals) {
     const { id, eta } = proposal;
@@ -241,15 +279,11 @@ export default async function relayRoninMessage(
   if (tenderlyLogs) return openBridgedProposals;
 
   // Process L2→L1 (Ronin→Mainnet) messages
-  const filterCCIPL2ToL1 = l2CCIPOnRamp.filters.CCIPSendRequested();
-  let logsCCIPL2ToL1: Log[] = [];
-
-  const latestBlock = (await bridgeDeploymentManager.hre.ethers.provider.getBlock('latest')).number;
-  logsCCIPL2ToL1 = await bridgeDeploymentManager.hre.ethers.provider.getLogs({
-    fromBlock: latestBlock - 500,
+  const logsCCIPL2ToL1: Log[] = await bridgeDeploymentManager.hre.ethers.provider.getLogs({
+    fromBlock: l2StartingBlockNumber,
     toBlock: 'latest',
     address: l2CCIPOnRamp.address,
-    topics: filterCCIPL2ToL1.topics || []
+    topics: [CCIP_MESSAGE_SENT_TOPIC, ethers.utils.hexZeroPad(BigNumber.from(mainnetChainSelector).toHexString(), 32)]
   });
 
   const targetReceivers = [
@@ -257,11 +291,10 @@ export default async function relayRoninMessage(
   ];
 
   for (const log of logsCCIPL2ToL1) {
-    const parsedLog = l2CCIPOnRamp.interface.parseLog(log);
-
-    const internalMsg = parsedLog.args.message;
+    const parsedLog = onRampV2.parseLog(log);
+    const internalMsg = decodeCCIPMessageV1(parsedLog.args.messageId, parsedLog.args.encodedMessage);
     if (!targetReceivers.includes(internalMsg.receiver.toLowerCase())) continue;
-    console.log(`[CCIP L2->L1] Found CCIPSendRequested with messageId=${internalMsg.messageId}, receiver=${internalMsg.receiver}`);
+    console.log(`[CCIP L2->L1] Found CCIPMessageSent with messageId=${internalMsg.messageId}, receiver=${internalMsg.receiver}`);
 
     await governanceDeploymentManager.hre.network.provider.request({
       method: 'hardhat_setBalance',

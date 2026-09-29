@@ -161,11 +161,11 @@ describe('withdrawReserves', function () {
         });
 
         it('recipient base token balance increases by the withdrawn amount', async () => {
-          expect(withdrawReservesTx).to.changeTokenBalance(base, alice.address, PARTIAL_AMOUNT);
+          await expect(withdrawReservesTx).to.changeTokenBalance(base, alice.address, PARTIAL_AMOUNT);
         });
 
         it('comet base token balance decreases by the withdrawn amount', async () => {
-          expect(withdrawReservesTx).to.changeTokenBalance(base, comet.address, -PARTIAL_AMOUNT);
+          await expect(withdrawReservesTx).to.changeTokenBalance(base, comet.address, -PARTIAL_AMOUNT);
         });
 
         it('getReserves decreases by the withdrawn amount', async () => {
@@ -265,11 +265,11 @@ describe('withdrawReserves', function () {
           });
 
           it('recipient base token balance increases by the withdrawn amount', async () => {
-            expect(withdrawReservesTx).to.changeTokenBalance(base, alice.address, withdrawAmount);
+            await expect(withdrawReservesTx).to.changeTokenBalance(base, alice.address, withdrawAmount);
           });
 
           it('comet base token balance decreases by the withdrawn amount', async () => {
-            expect(withdrawReservesTx).to.changeTokenBalance(base, comet.address, -withdrawAmount);
+            await expect(withdrawReservesTx).to.changeTokenBalance(base, comet.address, -withdrawAmount);
           });
         });
 
@@ -543,11 +543,11 @@ describe('withdrawReserves', function () {
       });
 
       it('comet USDC balance decreases by the extracted amount', async () => {
-        expect(extractTx).to.changeTokenBalance(base, comet.address, -EXTRACT_AMOUNT);
+        await expect(extractTx).to.changeTokenBalance(base, comet.address, -EXTRACT_AMOUNT);
       });
 
       it('manager USDC balance equals extracted amount', async () => {
-        expect(extractTx).to.changeTokenBalance(base, manager.address, EXTRACT_AMOUNT);
+        await expect(extractTx).to.changeTokenBalance(base, manager.address, EXTRACT_AMOUNT);
       });
 
       describe('revert when', function () {
@@ -646,11 +646,11 @@ describe('withdrawReserves', function () {
         });
 
         it('comet collateral balance decreases by the extracted amount', async () => {
-          expect(extractTx).to.changeTokenBalance(collateral, comet.address, -EXTRACT_AMOUNT);
+          await expect(extractTx).to.changeTokenBalance(collateral, comet.address, -EXTRACT_AMOUNT);
         });
 
         it('manager collateral balance equals extracted amount', async () => {
-          expect(extractTx).to.changeTokenBalance(collateral, manager.address, EXTRACT_AMOUNT);
+          await expect(extractTx).to.changeTokenBalance(collateral, manager.address, EXTRACT_AMOUNT);
         });
       });
 
@@ -739,11 +739,11 @@ describe('withdrawReserves', function () {
       });
 
       it('comet arbitrary token balance is zero after rescue', async () => {
-        expect(extractTx).to.changeTokenBalance(unsupportedToken, comet.address, -RESCUE_AMOUNT);
+        await expect(extractTx).to.changeTokenBalance(unsupportedToken, comet.address, -RESCUE_AMOUNT);
       });
 
       it('manager holds the rescued tokens', async () => {
-        expect(extractTx).to.changeTokenBalance(unsupportedToken, manager.address, RESCUE_AMOUNT);
+        await expect(extractTx).to.changeTokenBalance(unsupportedToken, manager.address, RESCUE_AMOUNT);
       });
 
       describe('revert when', function () {

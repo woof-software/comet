@@ -89,8 +89,3 @@ export async function get(url, data) {
   const res = (await axios.get(url, { params: data }))['data'];
   return res;
 }
-
-export async function post(url, data) {
-  const res = (await axios.post(url, data))['data'];
-  return res;
-}
