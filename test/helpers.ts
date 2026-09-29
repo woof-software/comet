@@ -641,6 +641,9 @@ export async function setTotalsBasic(
 }
 
 export function objectify(arrayObject) {
+  if (typeof arrayObject.toObject === 'function') {
+    return arrayObject.toObject();
+  }
   const obj = {};
   for (const key in arrayObject) {
     if (isNaN(Number(key))) {
