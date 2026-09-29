@@ -1,5 +1,6 @@
-import { expect, makeConfigurator, event, wait } from './../helpers';
-import { makeMarketAdmin } from './market-updates-helper';
+import { Configurator__factory } from './../../build/types/index.js';
+import { expect, makeConfigurator, event, wait } from './../helpers.js';
+import { makeMarketAdmin } from './market-updates-helper.js';
 
 describe('Configurator', function() {
   it('already initialized and is not able to initialize again with main-governor-timelock as admin', async () => {
@@ -11,7 +12,10 @@ describe('Configurator', function() {
       governor: governorTimelockSigner,
     });
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+    const configuratorAsProxy = Configurator__factory.connect(
+      await configuratorProxy.getAddress(),
+      configurator.runner
+    );
 
     // check already initialized properly
     expect(await configuratorAsProxy.version()).to.be.equal(1);
@@ -25,7 +29,7 @@ describe('Configurator', function() {
     // check is not able to initialize again
     await expect(
       configuratorAsProxy.initialize(governorTimelockSigner.address)
-    ).to.be.revertedWith("custom error 'AlreadyInitialized()'");
+    ).to.be.revertedWithCustomError(configuratorAsProxy, 'AlreadyInitialized');
   });
 
 
@@ -47,28 +51,31 @@ describe('Configurator', function() {
       marketAdminPermissionCheckerContract: marketAdminPermissionCheckerContract
     });
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+    const configuratorAsProxy = Configurator__factory.connect(
+      await configuratorProxy.getAddress(),
+      configurator.runner
+    );
 
     const oldSupplyKink = (
-      await configuratorAsProxy.getConfiguration(cometProxy.address)
+      await configuratorAsProxy.getConfiguration(await cometProxy.getAddress())
     ).supplyKink;
     const newSupplyKink = 100n;
 
     const txnOfGovernorTimelock = await wait(
       configuratorAsProxy
         .connect(governorTimelockSigner)
-        .setSupplyKink(cometProxy.address, newSupplyKink)
+        .setSupplyKink(await cometProxy.getAddress(), newSupplyKink)
     );
 
     expect(event(txnOfGovernorTimelock, 0)).to.be.deep.equal({
       SetSupplyKink: {
-        cometProxy: cometProxy.address,
+        cometProxy: await cometProxy.getAddress(),
         oldKink: oldSupplyKink,
         newKink: newSupplyKink,
       },
     });
     expect(
-      (await configuratorAsProxy.getConfiguration(cometProxy.address))
+      (await configuratorAsProxy.getConfiguration(await cometProxy.getAddress()))
         .supplyKink
     ).to.be.equal(newSupplyKink);
 
@@ -81,7 +88,7 @@ describe('Configurator', function() {
     );
 
     const oldBorrowKink = (
-      await configuratorAsProxy.getConfiguration(cometProxy.address)
+      await configuratorAsProxy.getConfiguration(await cometProxy.getAddress())
     ).borrowKink;
 
     const newBorrowKink = 100n;
@@ -89,18 +96,18 @@ describe('Configurator', function() {
     const txnOfMarketAdmin = await wait(
       configuratorAsProxy
         .connect(marketUpdateTimelockSigner)
-        .setBorrowKink(cometProxy.address, newBorrowKink)
+        .setBorrowKink(await cometProxy.getAddress(), newBorrowKink)
     );
 
     expect(event(txnOfMarketAdmin, 0)).to.be.deep.equal({
       SetBorrowKink: {
-        cometProxy: cometProxy.address,
+        cometProxy: await cometProxy.getAddress(),
         oldKink: oldBorrowKink,
         newKink: newBorrowKink,
       },
     });
     expect(
-      (await configuratorAsProxy.getConfiguration(cometProxy.address))
+      (await configuratorAsProxy.getConfiguration(await cometProxy.getAddress()))
         .borrowKink
     ).to.be.equal(newBorrowKink);
   });
@@ -122,7 +129,10 @@ describe('Configurator', function() {
       marketAdminPermissionCheckerContract: marketAdminPermissionCheckerContract
     });
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+    const configuratorAsProxy = Configurator__factory.connect(
+      await configuratorProxy.getAddress(),
+      configurator.runner
+    );
 
     await marketAdminPermissionCheckerContract
       .connect(governorTimelockSigner)
@@ -131,7 +141,7 @@ describe('Configurator', function() {
     await expect(
       configuratorAsProxy
         .connect(marketUpdateTimelockSigner)
-        .setPauseGuardian(cometProxy.address, alice.address)
+        .setPauseGuardian(await cometProxy.getAddress(), alice.address)
     ).to.be.revertedWithCustomError(configuratorAsProxy, 'Unauthorized');
   });
 
@@ -152,7 +162,10 @@ describe('Configurator', function() {
       marketAdminPermissionCheckerContract: marketAdminPermissionCheckerContract
     });
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+    const configuratorAsProxy = Configurator__factory.connect(
+      await configuratorProxy.getAddress(),
+      configurator.runner
+    );
 
 
     await marketAdminPermissionCheckerContract
@@ -172,7 +185,7 @@ describe('Configurator', function() {
     await expect(
       configuratorAsProxy
         .connect(marketUpdateTimelockSigner)
-        .setBorrowKink(cometProxy.address, newBorrowKink)
+        .setBorrowKink(await cometProxy.getAddress(), newBorrowKink)
     ).to.be.revertedWithCustomError(marketAdminPermissionCheckerContract,'MarketAdminIsPaused');
   });
 
@@ -187,7 +200,10 @@ describe('Configurator', function() {
       governor: governorTimelockSigner,
     });
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+    const configuratorAsProxy = Configurator__factory.connect(
+      await configuratorProxy.getAddress(),
+      configurator.runner
+    );
 
 
     await marketAdminPermissionCheckerContract
@@ -196,25 +212,25 @@ describe('Configurator', function() {
     expect(await marketAdminPermissionCheckerContract.marketAdminPaused()).to.be.true;
 
     const oldSupplyKink = (
-      await configuratorAsProxy.getConfiguration(cometProxy.address)
+      await configuratorAsProxy.getConfiguration(await cometProxy.getAddress())
     ).supplyKink;
     const newSupplyKink = 100n;
 
     const txnOfGovernorTimelock = await wait(
       configuratorAsProxy
         .connect(governorTimelockSigner)
-        .setSupplyKink(cometProxy.address, newSupplyKink)
+        .setSupplyKink(await cometProxy.getAddress(), newSupplyKink)
     );
 
     expect(event(txnOfGovernorTimelock, 0)).to.be.deep.equal({
       SetSupplyKink: {
-        cometProxy: cometProxy.address,
+        cometProxy: await cometProxy.getAddress(),
         oldKink: oldSupplyKink,
         newKink: newSupplyKink,
       },
     });
     expect(
-      (await configuratorAsProxy.getConfiguration(cometProxy.address))
+      (await configuratorAsProxy.getConfiguration(await cometProxy.getAddress()))
         .supplyKink
     ).to.be.equal(newSupplyKink);
   });
@@ -236,7 +252,10 @@ describe('Configurator', function() {
       governor: governorTimelockSigner,
     });
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+    const configuratorAsProxy = Configurator__factory.connect(
+      await configuratorProxy.getAddress(),
+      configurator.runner
+    );
 
     await marketAdminPermissionCheckerContract
       .connect(governorTimelockSigner)
@@ -245,7 +264,7 @@ describe('Configurator', function() {
     await expect(
       configuratorAsProxy
         .connect(marketUpdateTimelockSigner)
-        .setGovernor(cometProxy.address, alice.address)
+        .setGovernor(await cometProxy.getAddress(), alice.address)
     ).to.be.revertedWithCustomError(configuratorAsProxy, 'Unauthorized');
   });
 
@@ -266,7 +285,10 @@ describe('Configurator', function() {
       marketAdminPermissionCheckerContract: marketAdminPermissionCheckerContract
     });
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+    const configuratorAsProxy = Configurator__factory.connect(
+      await configuratorProxy.getAddress(),
+      configurator.runner
+    );
 
 
     await marketAdminPermissionCheckerContract
@@ -286,7 +308,7 @@ describe('Configurator', function() {
     await expect(
       configuratorAsProxy
         .connect(marketUpdateTimelockSigner)
-        .setBorrowKink(cometProxy.address, newBorrowKink)
+        .setBorrowKink(await cometProxy.getAddress(), newBorrowKink)
     ).to.be.revertedWithCustomError(marketAdminPermissionCheckerContract,'MarketAdminIsPaused');
 
     await marketAdminPermissionCheckerContract
@@ -295,7 +317,7 @@ describe('Configurator', function() {
     expect(await marketAdminPermissionCheckerContract.marketAdminPaused()).to.be.false;
 
     const oldBorrowKink = (
-      await configuratorAsProxy.getConfiguration(cometProxy.address)
+      await configuratorAsProxy.getConfiguration(await cometProxy.getAddress())
     ).borrowKink;
 
     expect(oldBorrowKink).to.be.not.equal(newBorrowKink);
@@ -303,12 +325,12 @@ describe('Configurator', function() {
     const txnOfMarketAdmin = await wait(
       configuratorAsProxy
         .connect(marketUpdateTimelockSigner)
-        .setBorrowKink(cometProxy.address, newBorrowKink)
+        .setBorrowKink(await cometProxy.getAddress(), newBorrowKink)
     );
 
     expect(event(txnOfMarketAdmin, 0)).to.be.deep.equal({
       SetBorrowKink: {
-        cometProxy: cometProxy.address,
+        cometProxy: await cometProxy.getAddress(),
         oldKink: oldBorrowKink,
         newKink: newBorrowKink,
       },

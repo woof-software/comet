@@ -1,6 +1,5 @@
-import {event, expect, wait} from './../helpers';
-import {createRandomWallet, makeMarketAdmin} from './market-updates-helper';
-import { ethers } from 'hardhat';
+import { ethers, event, expect, wait } from './../helpers.js';
+import { createRandomWallet, makeMarketAdmin } from './market-updates-helper.js';
 
 describe('MarketUpdatePermissionChecker', () => {
   it('only the owner can update the market admin', async () => {
@@ -12,7 +11,7 @@ describe('MarketUpdatePermissionChecker', () => {
       marketUpdateMultiSig,
     } = await makeMarketAdmin();
 
-    expect(await marketAdminPermissionCheckerContract.connect(governorTimelockSigner.address).owner()).to.be.equal(governorTimelockSigner.address);
+    expect(await marketAdminPermissionCheckerContract.connect(governorTimelockSigner).owner()).to.be.equal(governorTimelockSigner.address);
     const oldMarketAdmin = await marketAdminPermissionCheckerContract.marketAdmin();
 
     // Add a check to make sure its set to marketUpdateTimelockSigner initially
@@ -208,7 +207,7 @@ describe('MarketUpdatePermissionChecker', () => {
     await expect(
       marketAdminPermissionCheckerContract
         .checkUpdatePermission(marketUpdateTimelockSigner.address)
-    ).to.be.not.reverted;
+    ).to.not.revert(ethers);
   });
 
 });
