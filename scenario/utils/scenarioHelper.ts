@@ -214,9 +214,9 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     config.transferAsset = 100000;
     config.transferAsset1 = 100000;
     if(i == 5) { // tBTC
-      config.supplyCollateral = 2;
-      config.transferCollateral = 2;
-      config.withdrawCollateral = 2;
+      config.supplyCollateral = 1;
+      config.transferCollateral = 1;
+      config.withdrawCollateral = 1;
     }
     if(i == 6) { // tETH
       config.supplyCollateral = 2;
@@ -240,8 +240,11 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   }
 
   if (ctx.world.base.network === 'arbitrum' && ctx.world.base.deployment === 'weth') {
-    config.liquidationBase = 1000;
+    config.liquidationBase = 2;
+    config.liquidationAsset = 10;
     config.bulkerBorrowBase = 100;
+    config.withdrawBase = 2;
+    config.rewardsAsset = 10;
     if(i == 7) { // ezETH
       config.withdrawBase = 10;
       config.supplyCollateral = 2;
