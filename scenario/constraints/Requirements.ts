@@ -2,7 +2,6 @@
 export interface Requirements {
     filter?: (context) => Promise<boolean>; // Filter constraint
     upgrade?: boolean | object; // Modern constraint
-    pause?: object; // Pause constraint
     supplyCaps?: object; // Supply cap constraint
     cometBalances?: object; // Comet balance constraint
     tokenBalances?: object; // Token balance constraint

@@ -1656,37 +1656,39 @@ export function isTenderlyLog(log: any): log is { raw: { topics: string[], data:
 }
 
 /**
- * Check if Comet supports extended pause functionality
+ * Check if Comet supports collateral deactivation (Comet with extended asset list since the service patch,
+ * including the Comet with access gate)
  * @param ctx The Comet context
- * @returns true if Comet supports extended pause functions, false otherwise
+ * @returns true if Comet exposes isCollateralDeactivated, false otherwise
  */
-export async function supportsExtendedPause(ctx: CometContext): Promise<boolean> {
+export async function supportsCollateralDeactivation(ctx: CometContext): Promise<boolean> {
+  return await cometResponds(ctx, 'function isCollateralDeactivated(uint24) external view returns (bool)', [0]);
+}
+
+/**
+ * Check if Comet delegates access control and pauses to an access gate
+ * @param ctx The Comet context
+ * @returns true if Comet exposes accessGate, false otherwise
+ */
+export async function usesAccessGate(ctx: CometContext): Promise<boolean> {
+  return await cometResponds(ctx, 'function accessGate() external view returns (address)', []);
+}
+
+/**
+ * Check if Comet answers a view function, using a low-level static call which reverts if the function
+ * doesn't exist
+ */
+async function cometResponds(ctx: CometContext, signature: string, args: unknown[]): Promise<boolean> {
   try {
     const comet = await ctx.getComet();
     const ethers = ctx.world.deploymentManager.hre.ethers;
-    
-    // Get the function selector for isLendersWithdrawPaused()
-    // This function only exists in CometWithExtendedAssetList
-    const iface = new ethers.utils.Interface([
-      'function isLendersWithdrawPaused() external view returns (bool)'
-    ]);
-    const functionSelector = iface.getSighash('isLendersWithdrawPaused');
-    
-    // Try to call the function using a low-level static call
-    // If the function doesn't exist, this will revert
+    const iface = new ethers.utils.Interface([signature]);
     const result = await ethers.provider.call({
       to: comet.address,
-      data: functionSelector
+      data: iface.encodeFunctionData(iface.fragments[0].name, args)
     });
-    
-    // If the call succeeds (doesn't revert), the function exists
-    // Decode the result to verify it's a valid bool response
-    if (result && result !== '0x') {
-      return true;
-    }
-    return false;
+    return !!result && result !== '0x';
   } catch (e) {
-    // If the call reverts or fails, extended pause is not supported
     return false;
   }
 }
