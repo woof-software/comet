@@ -1,6 +1,6 @@
-import { expect, exp } from '../helpers';
-import { arbitragePurchaseableCollateral, getAssets, hasPurchaseableCollateral, liquidateUnderwaterBorrowers } from '../../scripts/liquidation_bot/liquidateUnderwaterBorrowers';
-import { forkMainnet, makeProtocol, makeLiquidatableProtocol, resetHardhatNetwork } from './makeLiquidatableProtocol';
+import { expect, exp } from '../helpers.js';
+import { arbitragePurchaseableCollateral, getAssets, hasPurchaseableCollateral, liquidateUnderwaterBorrowers } from '../../scripts/liquidation_bot/liquidateUnderwaterBorrowers.js';
+import { forkMainnet, makeProtocol, makeLiquidatableProtocol, resetHardhatNetwork } from './makeLiquidatableProtocol.js';
 
 describe.skip('Liquidation Bot', function () {
   before(forkMainnet);
@@ -30,11 +30,11 @@ describe.skip('Liquidation Bot', function () {
         const supplyAmount = assetAmounts[k];
 
         // transfer USDC to comet, so it has money to pay out withdraw to underwater user
-        await usdc.connect(usdcWhale).transfer(comet.address, exp(300, 6));
-        await asset.connect(underwater).approve(comet.address, supplyAmount);
-        await comet.connect(underwater).supply(asset.address, supplyAmount);
+        await usdc.connect(usdcWhale).transfer(await comet.getAddress(), exp(300, 6));
+        await asset.connect(underwater).approve(await comet.getAddress(), supplyAmount);
+        await comet.connect(underwater).supply(await asset.getAddress(), supplyAmount);
         // withdraw to ensure that there is a Withdraw event for the user
-        await comet.connect(underwater).withdraw(usdc.address, 10e6);
+        await comet.connect(underwater).withdraw(await usdc.getAddress(), 10e6);
         // put the position underwater
         await comet.setBasePrincipal(underwater.address, -(exp(20000, 6)));
 
@@ -55,7 +55,7 @@ describe.skip('Liquidation Bot', function () {
         // make sure that hasPurchaseableCollateral is false not because the
         // protocol has exceeded target reserves
         expect(
-          (await comet.getReserves()).lt(await comet.targetReserves())
+          (await comet.getReserves()) < (await comet.targetReserves())
         ).to.be.true;
       });
     }
@@ -75,7 +75,7 @@ describe.skip('Liquidation Bot', function () {
       expect(await hasPurchaseableCollateral(comet, assetAddresses, 10e6)).to.be.false;
 
       // Transfer WETH to comet, so it has purchaseable collateral
-      await weth.connect(wethWhale).transfer(comet.address, 100000000000000000000n); // 100e18
+      await weth.connect(wethWhale).transfer(await comet.getAddress(), 100000000000000000000n); // 100e18
 
       expect(await hasPurchaseableCollateral(comet, assetAddresses, 0)).to.be.true;
 
@@ -93,7 +93,7 @@ describe.skip('Liquidation Bot', function () {
       // make sure that hasPurchaseableCollateral is false not because the
       // protocol has exceeded target reserves
       expect(
-        (await comet.getReserves()).lt(await comet.targetReserves())
+        (await comet.getReserves()) < (await comet.targetReserves())
       ).to.be.true;
     });
 
@@ -109,11 +109,11 @@ describe.skip('Liquidation Bot', function () {
 
       expect(await hasPurchaseableCollateral(comet, assetAddresses, 10e6)).to.be.false;
 
-      await weth.connect(wethWhale).transfer(comet.address, 100000000000000000000n); // 100e18
-      await wbtc.connect(wbtcWhale).transfer(comet.address, 100000000n); // 1e8
-      await comp.connect(compWhale).transfer(comet.address, 50000000000000000000n); // 50e18
-      await uni.connect(uniWhale).transfer(comet.address, 1000000000000000000000n); // 1000e18
-      await link.connect(linkWhale).transfer(comet.address, 5000000000000000000n); // 5e18
+      await weth.connect(wethWhale).transfer(await comet.getAddress(), 100000000000000000000n); // 100e18
+      await wbtc.connect(wbtcWhale).transfer(await comet.getAddress(), 100000000n); // 1e8
+      await comp.connect(compWhale).transfer(await comet.getAddress(), 50000000000000000000n); // 50e18
+      await uni.connect(uniWhale).transfer(await comet.getAddress(), 1000000000000000000000n); // 1000e18
+      await link.connect(linkWhale).transfer(await comet.getAddress(), 5000000000000000000n); // 5e18
 
       expect(await hasPurchaseableCollateral(comet, assetAddresses, 0)).to.be.true;
 
@@ -131,7 +131,7 @@ describe.skip('Liquidation Bot', function () {
       // make sure that hasPurchaseableCollateral is false not because the
       // protocol has exceeded target reserves
       expect(
-        (await comet.getReserves()).lt(await comet.targetReserves())
+        (await comet.getReserves()) < (await comet.targetReserves())
       ).to.be.true;
     });
 
@@ -146,7 +146,7 @@ describe.skip('Liquidation Bot', function () {
       expect(await hasPurchaseableCollateral(comet, assetAddresses, 10e6)).to.be.false;
 
       // Transfer dust amount of WETH to comet, so it has purchaseable collateral
-      await weth.connect(wethWhale).transfer(comet.address, 1000n);
+      await weth.connect(wethWhale).transfer(await comet.getAddress(), 1000n);
 
       // Expect non-zero collateral
       expect(await hasPurchaseableCollateral(comet, assetAddresses, 0)).to.be.true;
@@ -155,7 +155,7 @@ describe.skip('Liquidation Bot', function () {
       // make sure that hasPurchaseableCollateral is false not because the
       // protocol has exceeded target reserves
       expect(
-        (await comet.getReserves()).lt(await comet.targetReserves())
+        (await comet.getReserves()) < (await comet.targetReserves())
       ).to.be.true;
     });
 

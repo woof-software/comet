@@ -1,7 +1,8 @@
-import { event, expect, exp, wait } from '../helpers';
-import { ethers } from 'hardhat';
-import { Exchange, forkMainnet, makeLiquidatableProtocol, resetHardhatNetwork } from './makeLiquidatableProtocol';
-import { DAI, SUSHISWAP_ROUTER, UNISWAP_ROUTER } from './addresses';
+import { encodeBytes32String, MaxUint256, ZeroAddress } from 'ethers';
+
+import { event, expect, exp, wait } from '../helpers.js';
+import { Exchange, forkMainnet, makeLiquidatableProtocol, resetHardhatNetwork } from './makeLiquidatableProtocol.js';
+import { DAI, SUSHISWAP_ROUTER, UNISWAP_ROUTER } from './addresses.js';
 
 describe.skip('Liquidator', function () {
   before(forkMainnet);
@@ -15,26 +16,26 @@ describe.skip('Liquidator', function () {
 
   it('Should execute WETH flash swap with profit', async () => {
     const { comet, liquidator, users: [owner, underwater], assets: { usdc, weth } } = await makeLiquidatableProtocol();
-    await weth.connect(underwater).approve(comet.address, exp(120, 18));
-    await comet.connect(underwater).supply(weth.address, exp(120, 18));
+    await weth.connect(underwater).approve(await comet.getAddress(), exp(120, 18));
+    await comet.connect(underwater).supply(await weth.getAddress(), exp(120, 18));
     await comet.setBasePrincipal(underwater.address, -(exp(4000, 6)));
 
     const beforeUSDCBalance = await usdc.balanceOf(owner.address);
 
     const tx = await wait(liquidator.connect(owner).absorbAndArbitrage(
-      comet.address,
+      await comet.getAddress(),
       [underwater.address],
-      [weth.address],
+      [await weth.getAddress()],
       [
         {
           exchange: Exchange.Uniswap,
           uniswapPoolFee: 500,
           swapViaWeth: false,
-          balancerPoolId: ethers.utils.formatBytes32String(''),
-          curvePool: ethers.constants.AddressZero
+          balancerPoolId: encodeBytes32String(''),
+          curvePool: ZeroAddress
         }
       ],
-      [ethers.constants.MaxUint256],
+      [MaxUint256],
       DAI,
       100,
       10e6
@@ -55,25 +56,25 @@ describe.skip('Liquidator', function () {
 
   it('Should execute WBTC flash swap with profit', async () => {
     const { comet, liquidator, users: [owner, underwater], assets: { usdc, wbtc } } = await makeLiquidatableProtocol();
-    await wbtc.connect(underwater).approve(comet.address, exp(2, 8));
-    await comet.connect(underwater).supply(wbtc.address, exp(2, 8));
+    await wbtc.connect(underwater).approve(await comet.getAddress(), exp(2, 8));
+    await comet.connect(underwater).supply(await wbtc.getAddress(), exp(2, 8));
     await comet.setBasePrincipal(underwater.address, -(exp(40000, 6)));
 
     const beforeUSDCBalance = await usdc.balanceOf(owner.address);
     const tx = await wait(liquidator.connect(owner).absorbAndArbitrage(
-      comet.address,
+      await comet.getAddress(),
       [underwater.address],
-      [wbtc.address],
+      [await wbtc.getAddress()],
       [
         {
           exchange: Exchange.Uniswap,
           uniswapPoolFee: 3000,
           swapViaWeth: true,
-          balancerPoolId: ethers.utils.formatBytes32String(''),
-          curvePool: ethers.constants.AddressZero
+          balancerPoolId: encodeBytes32String(''),
+          curvePool: ZeroAddress
         }
       ],
-      [ethers.constants.MaxUint256],
+      [MaxUint256],
       DAI,
       100,
       10e6
@@ -93,25 +94,25 @@ describe.skip('Liquidator', function () {
 
   it('Should execute UNI flash swap with profit', async () => {
     const { comet, liquidator, users: [owner, underwater], assets: { usdc, uni } } = await makeLiquidatableProtocol();
-    await uni.connect(underwater).approve(comet.address, exp(120, 18));
-    await comet.connect(underwater).supply(uni.address, exp(120, 18));
+    await uni.connect(underwater).approve(await comet.getAddress(), exp(120, 18));
+    await comet.connect(underwater).supply(await uni.getAddress(), exp(120, 18));
     await comet.setBasePrincipal(underwater.address, -(exp(40000, 6)));
 
     const beforeUSDCBalance = await usdc.balanceOf(owner.address);
     const tx = await wait(liquidator.connect(owner).absorbAndArbitrage(
-      comet.address,
+      await comet.getAddress(),
       [underwater.address],
-      [uni.address],
+      [await uni.getAddress()],
       [
         {
           exchange: Exchange.Uniswap,
           uniswapPoolFee: 3000,
           swapViaWeth: true,
-          balancerPoolId: ethers.utils.formatBytes32String(''),
-          curvePool: ethers.constants.AddressZero
+          balancerPoolId: encodeBytes32String(''),
+          curvePool: ZeroAddress
         }
       ],
-      [ethers.constants.MaxUint256],
+      [MaxUint256],
       DAI,
       100,
       10e6
@@ -131,25 +132,25 @@ describe.skip('Liquidator', function () {
 
   it('Should execute COMP flash swap with profit', async () => {
     const { comet, liquidator, users: [owner, underwater], assets: { usdc, comp } } = await makeLiquidatableProtocol();
-    await comp.connect(underwater).approve(comet.address, exp(12, 18));
-    await comet.connect(underwater).supply(comp.address, exp(12, 18));
+    await comp.connect(underwater).approve(await comet.getAddress(), exp(12, 18));
+    await comet.connect(underwater).supply(await comp.getAddress(), exp(12, 18));
     await comet.setBasePrincipal(underwater.address, -(exp(40000, 6)));
 
     const beforeUSDCBalance = await usdc.balanceOf(owner.address);
     const tx = await wait(liquidator.connect(owner).absorbAndArbitrage(
-      comet.address,
+      await comet.getAddress(),
       [underwater.address],
-      [comp.address],
+      [await comp.getAddress()],
       [
         {
           exchange: Exchange.Uniswap,
           uniswapPoolFee: 3000,
           swapViaWeth: true,
-          balancerPoolId: ethers.utils.formatBytes32String(''),
-          curvePool: ethers.constants.AddressZero
+          balancerPoolId: encodeBytes32String(''),
+          curvePool: ZeroAddress
         }
       ],
-      [ethers.constants.MaxUint256],
+      [MaxUint256],
       DAI,
       100,
       10e6
@@ -169,25 +170,25 @@ describe.skip('Liquidator', function () {
 
   it('Should execute LINK flash swap with profit', async () => {
     const { comet, liquidator, users: [owner, underwater], assets: { usdc, link } } = await makeLiquidatableProtocol();
-    await link.connect(underwater).approve(comet.address, exp(12, 18));
-    await comet.connect(underwater).supply(link.address, exp(12, 18));
+    await link.connect(underwater).approve(await comet.getAddress(), exp(12, 18));
+    await comet.connect(underwater).supply(await link.getAddress(), exp(12, 18));
     await comet.setBasePrincipal(underwater.address, -(exp(4000, 6)));
 
     const beforeUSDCBalance = await usdc.balanceOf(owner.address);
     const tx = await wait(liquidator.connect(owner).absorbAndArbitrage(
-      comet.address,
+      await comet.getAddress(),
       [underwater.address],
-      [link.address],
+      [await link.getAddress()],
       [
         {
           exchange: Exchange.Uniswap,
           uniswapPoolFee: 3000,
           swapViaWeth: true,
-          balancerPoolId: ethers.utils.formatBytes32String(''),
-          curvePool: ethers.constants.AddressZero
+          balancerPoolId: encodeBytes32String(''),
+          curvePool: ZeroAddress
         }
       ],
-      [ethers.constants.MaxUint256],
+      [MaxUint256],
       DAI,
       100,
       10e6

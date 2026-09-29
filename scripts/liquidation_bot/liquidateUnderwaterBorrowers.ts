@@ -1,14 +1,16 @@
-import hre from 'hardhat';
-import {
+import type {
   CometInterface,
   OnChainLiquidator
-} from '../../build/types';
-import { PoolConfigStruct } from '../../build/types/OnChainLiquidator';
-import { ethers, exp } from '../../test/helpers';
-import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
-import { BigNumberish, Signer } from 'ethers';
-import googleCloudLog, { LogSeverity } from './googleCloudLog';
-import { sendTxn } from './sendTransaction';
+} from '../../build/types/index.js';
+import type { OnChainLiquidator as OnChainLiquidatorTypes } from '../../build/types/liquidator/OnChainLiquidator.js';
+import { exp } from '../../test/helpers.js';
+import type { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
+import { encodeBytes32String, MaxUint256, ZeroAddress } from 'ethers';
+import type { BigNumberish, Signer } from 'ethers';
+import googleCloudLog, { LogSeverity } from './googleCloudLog.js';
+import { sendTxn } from './sendTransaction.js';
+
+type PoolConfigStruct = OnChainLiquidatorTypes.PoolConfigStruct;
 
 export interface SignerWithFlashbots {
   signer: Signer;
@@ -140,8 +142,8 @@ export function getPoolConfig(tokenAddress: string) {
     exchange: 0,
     uniswapPoolFee: 0,
     swapViaWeth: false,
-    balancerPoolId: ethers.utils.formatBytes32String(''),
-    curvePool: ethers.constants.AddressZero
+    balancerPoolId: encodeBytes32String(''),
+    curvePool: ZeroAddress
   };
 
   const poolConfigs: { [tokenAddress: string]: PoolConfigStruct } = {
@@ -353,7 +355,7 @@ async function attemptLiquidation(
   const assets = await getAssets(comet);
   const assetAddresses = assets.map(a => a.address);
   const poolConfigs = assetAddresses.map(getPoolConfig);
-  const maxAmountsToPurchase = assetAddresses.map(_ => ethers.constants.MaxUint256.toBigInt());
+  const maxAmountsToPurchase = assetAddresses.map(() => MaxUint256);
 
   const flashLoanPool = flashLoanPools[network][deployment];
   const liquidationThreshold = liquidationThresholds[network][deployment];
@@ -415,11 +417,17 @@ async function attemptLiquidationViaOnChainLiquidator(
   liquidationThreshold: number,
   signerWithFlashbots: SignerWithFlashbots,
 ): Promise<boolean> {
-  const liquidatorAddress = liquidator.address;
+  const liquidatorAddress = await liquidator.getAddress();
+  const cometAddress = await comet.getAddress();
 
   googleCloudLog(LogSeverity.INFO, `Attempting to liquidate ${targetAddresses} via OnChainLiquidator @${liquidatorAddress}`);
 
   try {
+    const provider = liquidator.runner?.provider;
+    if (!provider) {
+      throw new Error('Liquidator provider is required');
+    }
+
     const args: [
       string,
       string[],
@@ -430,7 +438,7 @@ async function attemptLiquidationViaOnChainLiquidator(
       number,
       number
     ] = [
-      comet.address,
+      cometAddress,
       targetAddresses,
       assets,
       poolConfigs,
@@ -440,18 +448,20 @@ async function attemptLiquidationViaOnChainLiquidator(
       liquidationThreshold
     ];
 
-    const txn = await liquidator.populateTransaction.absorbAndArbitrage(
+    const estimatedGas = await liquidator.absorbAndArbitrage.estimateGas(...args);
+    const feeData = await provider.getFeeData();
+    const txn = await liquidator.absorbAndArbitrage.populateTransaction(
       ...args,
       {
-        gasLimit: Math.ceil(1.3 * (await liquidator.estimateGas.absorbAndArbitrage(...args)).toNumber()),
-        gasPrice: Math.ceil(1.3 * (await hre.ethers.provider.getGasPrice()).toNumber()),
+        gasLimit: estimatedGas * 13n / 10n,
+        gasPrice: feeData.gasPrice === null ? undefined : feeData.gasPrice * 13n / 10n,
       }
     );
 
     // ensure that .populateTransaction has not added a "from" key
     delete txn.from;
 
-    txn.chainId = hre.network.config.chainId;
+    txn.chainId = (await provider.getNetwork()).chainId;
 
     const success = await sendTxn(txn, signerWithFlashbots);
 
@@ -471,7 +481,11 @@ async function attemptLiquidationViaOnChainLiquidator(
 }
 
 async function getUniqueAddresses(comet: CometInterface): Promise<Set<string>> {
-  const endBlock = await hre.ethers.provider.getBlockNumber();
+  const provider = comet.runner?.provider;
+  if (!provider) {
+    throw new Error('Comet provider is required');
+  }
+  const endBlock = await provider.getBlockNumber();
   const maxBlockRange = 10000; // Adjust based on provider limits
   const startBlock = endBlock - maxBlockRange;
   const withdrawEvents = await comet.queryFilter(comet.filters.Withdraw(), startBlock, endBlock);
@@ -479,9 +493,9 @@ async function getUniqueAddresses(comet: CometInterface): Promise<Set<string>> {
 }
 
 export async function hasPurchaseableCollateral(comet: CometInterface, assets: Asset[], minBaseValue: number): Promise<boolean> {
-  const baseReserves = (await comet.getReserves()).toBigInt();
-  const targetReserves = (await comet.targetReserves()).toBigInt();
-  const baseScale = (await comet.baseScale()).toBigInt();
+  const baseReserves = await comet.getReserves();
+  const targetReserves = await comet.targetReserves();
+  const baseScale = await comet.baseScale();
 
   if (baseReserves >= targetReserves) {
     return false;
@@ -491,8 +505,8 @@ export async function hasPurchaseableCollateral(comet: CometInterface, assets: A
     const collateralReserves = await comet.getCollateralReserves(asset.address);
     const price = await comet.getPrice(asset.priceFeed);
     const priceScale = exp(1, 8);
-    const value = collateralReserves.toBigInt() * price.toBigInt() * baseScale / asset.scale / priceScale;
-    if (value >= minBaseValue) {
+    const value = collateralReserves * price * baseScale / asset.scale / priceScale;
+    if (value >= BigInt(minBaseValue)) {
       return true;
     }
   }
@@ -559,11 +573,11 @@ export async function arbitragePurchaseableCollateral(
 }
 
 export async function getAssets(comet: CometInterface): Promise<Asset[]> {
-  let numAssets = await comet.numAssets();
-  let assets = [
-    ...await Promise.all(Array(numAssets).fill(0).map(async (_, i) => {
+  const numAssets = await comet.numAssets();
+  const assets = [
+    ...await Promise.all(Array(Number(numAssets)).fill(0).map(async (_, i) => {
       const asset = await comet.getAssetInfo(i);
-      return { address: asset.asset, priceFeed: asset.priceFeed, scale: asset.scale.toBigInt() };
+      return { address: asset.asset, priceFeed: asset.priceFeed, scale: asset.scale };
     })),
   ];
   return assets;
