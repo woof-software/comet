@@ -3,6 +3,10 @@ import { DeploySpec, ProtocolConfiguration, wait, COMP_WHALES } from './index';
 import { getConfiguration } from './NetworkConfiguration';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 
+// A non-zero address without code: every gated action of a Comet built with it reverts,
+//  which is what we want from the temporary implementation deployed before the access gate exists
+const ACCESS_GATE_PLACEHOLDER = '0x000000000000000000000000000000000000dEaD';
+
 export function sameAddress(a: string, b: string) {
   return BigInt(a) === BigInt(b);
 }
@@ -197,6 +201,8 @@ export async function deployNetworkComet(
     baseBorrowMin,
     targetReserves,
     assetConfigs,
+    // The access gate is bound to the Comet proxy, so it is deployed after the proxy (legacy Comet does not use it)
+    accessGate: withAssetList ? ACCESS_GATE_PLACEHOLDER : ethers.constants.AddressZero,
   };
 
   let tmpCometImpl;
@@ -221,6 +227,16 @@ export async function deployNetworkComet(
     [tmpCometImpl.address, cometAdmin.address, []], // NB: temporary implementation contract
     maybeForce(),
   );
+
+  if (withAssetList) {
+    const accessGate = await deploymentManager.deploy(
+      'accessGate',
+      'access-gate/DefaultAccessGate.sol',
+      [cometProxy.address, governor, ethers.constants.AddressZero, [pauseGuardian]],
+      maybeForce()
+    );
+    configuration.accessGate = accessGate.address;
+  }
 
   const configuratorImpl = await deploymentManager.deploy(
     'configurator:implementation',

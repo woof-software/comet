@@ -1,6 +1,5 @@
 export { NativeTokenConstraint } from './NativeTokenConstraint';
 export { TokenBalanceConstraint } from './TokenBalanceConstraint';
-export { PauseConstraint } from './PauseConstraint';
 export { ModernConstraint } from './ModernConstraint';
 export { UtilizationConstraint } from './UtilizationConstraint';
 export { SupplyCapConstraint } from './SupplyCapConstraint';

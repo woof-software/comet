@@ -7,13 +7,15 @@ import "./IPriceFeed.sol";
 import "./IAssetListFactory.sol";
 import "./IAssetListFactoryHolder.sol";
 import "./IAssetList.sol";
+import { IAccessGate } from "./interfaces/access-gate/IAccessGate.sol";
+import { AccessGateAction, NO_ASSET } from "./interfaces/access-gate/AccessGateTypes.sol";
 
 /**
  * @title Compound's Comet Contract
  * @notice An efficient monolithic money market protocol
  * @author Compound
  */
-contract CometWithExtendedAssetList is CometMainInterface {
+contract CometWithExtendedAssetList is CometMainInterfaceBase {
     /** General configuration constants **/
 
     /// @notice The admin of the protocol
@@ -30,6 +32,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
     /// @notice The address of the extension contract delegate
     address public override immutable extensionDelegate;
+
+    /// @notice The address of the Access Gate, holding the access control policy and the pause state
+    address public immutable accessGate;
 
     /// @notice The point in the supply rates separating the low interest rate slope and the high interest rate slope (factor)
     /// @dev uint64
@@ -125,6 +130,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         if (config.assetConfigs.length > MAX_ASSETS_FOR_ASSET_LIST) revert TooManyAssets();
         if (config.baseMinForRewards == 0) revert BadMinimum();
         if (IPriceFeed(config.baseTokenPriceFeed).decimals() != PRICE_FEED_DECIMALS) revert BadDecimals();
+        if (config.accessGate == address(0)) revert BadAccessGate();
 
         // Copy configuration
         unchecked {
@@ -133,6 +139,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
             baseToken = config.baseToken;
             baseTokenPriceFeed = config.baseTokenPriceFeed;
             extensionDelegate = config.extensionDelegate;
+            accessGate = config.accessGate;
             storeFrontPriceFactor = config.storeFrontPriceFactor;
 
             decimals = decimals_;
@@ -566,149 +573,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /**
-     * @notice Pauses different actions within Comet
-     * @param supplyPaused Boolean for pausing supply actions
-     * @param transferPaused Boolean for pausing transfer actions
-     * @param withdrawPaused Boolean for pausing withdraw actions
-     * @param absorbPaused Boolean for pausing absorb actions
-     * @param buyPaused Boolean for pausing buy actions
-     */
-    function pause(
-        bool supplyPaused,
-        bool transferPaused,
-        bool withdrawPaused,
-        bool absorbPaused,
-        bool buyPaused
-    ) override external {
-        if (msg.sender != governor && msg.sender != pauseGuardian) revert Unauthorized();
-
-        pauseFlags =
-            uint8(0) |
-            (toUInt8(supplyPaused) << PAUSE_SUPPLY_OFFSET) |
-            (toUInt8(transferPaused) << PAUSE_TRANSFER_OFFSET) |
-            (toUInt8(withdrawPaused) << PAUSE_WITHDRAW_OFFSET) |
-            (toUInt8(absorbPaused) << PAUSE_ABSORB_OFFSET) |
-            (toUInt8(buyPaused) << PAUSE_BUY_OFFSET);
-
-        emit PauseAction(supplyPaused, transferPaused, withdrawPaused, absorbPaused, buyPaused);
-    }
-
-    /**
-     * @return Whether or not supply actions are paused
-     */
-    function isSupplyPaused() override public view returns (bool) {
-        return toBool(pauseFlags & (uint8(1) << PAUSE_SUPPLY_OFFSET));
-    }
-
-    /**
-     * @return Whether or not transfer actions are paused
-     */
-    function isTransferPaused() override public view returns (bool) {
-        return toBool(pauseFlags & (uint8(1) << PAUSE_TRANSFER_OFFSET));
-    }
-
-    /**
-     * @return Whether or not withdraw actions are paused
-     */
-    function isWithdrawPaused() override public view returns (bool) {
-        return toBool(pauseFlags & (uint8(1) << PAUSE_WITHDRAW_OFFSET));
-    }
-
-    /**
-     * @return Whether or not absorb actions are paused
-     */
-    function isAbsorbPaused() override public view returns (bool) {
-        return toBool(pauseFlags & (uint8(1) << PAUSE_ABSORB_OFFSET));
-    }
-
-    /**
-     * @return Whether or not buy actions are paused
-     */
-    function isBuyPaused() override public view returns (bool) {
-        return toBool(pauseFlags & (uint8(1) << PAUSE_BUY_OFFSET));
-    }
-
-    /**
-     * @return Whether or not lenders withdraw actions are paused
-     */
-    function isLendersWithdrawPaused() public view returns (bool) {
-        return (extendedPauseFlags & (uint24(1) << PAUSE_LENDERS_WITHDRAW_OFFSET)) != 0;
-    }
-
-    /**
-     * @return Whether or not borrowers withdraw actions are paused
-     */
-    function isBorrowersWithdrawPaused() public view returns (bool) {
-        return (extendedPauseFlags & (uint24(1) << PAUSE_BORROWERS_WITHDRAW_OFFSET)) != 0;
-    }
-
-    /**
-     * @param assetIndex The index of the asset (offset)
-     * @return Whether or not collateral asset withdraw actions are paused
-     */
-    function isCollateralAssetWithdrawPaused(uint24 assetIndex)  public view returns (bool) {
-        return (collateralsWithdrawPauseFlags & (uint24(1) << assetIndex)) != 0;
-    }
-
-    /**
-     * @return Whether or not collateral withdraw actions are paused
-     */
-    function isCollateralWithdrawPaused() public view returns (bool) {
-        return (extendedPauseFlags & (uint24(1) << PAUSE_COLLATERALS_WITHDRAW_OFFSET)) != 0;
-    }
-
-    /**
-     * @return Whether or not collateral supply actions are paused
-     */
-    function isCollateralSupplyPaused() public view returns (bool) {
-        return (extendedPauseFlags & (uint24(1) << PAUSE_COLLATERAL_SUPPLY_OFFSET)) != 0;
-    }
-
-    /**
-     * @return Whether or not base supply actions are paused
-     */
-    function isBaseSupplyPaused() public view returns (bool) {
-        return (extendedPauseFlags & (uint24(1) << PAUSE_BASE_SUPPLY_OFFSET)) != 0;
-    }
-
-    /**
-     * @param assetIndex The index of the asset (offset)
-     * @return Whether or not collateral asset supply actions are paused
-     */
-    function isCollateralAssetSupplyPaused(uint24 assetIndex) public view returns (bool) {
-        return (collateralsSupplyPauseFlags & (uint24(1) << assetIndex)) != 0;
-    }
-
-    /**
-     * @return Whether or not lenders transfer actions are paused
-     */
-    function isLendersTransferPaused() public view returns (bool) {
-        return (extendedPauseFlags & (uint24(1) << PAUSE_LENDERS_TRANSFER_OFFSET)) != 0;
-    }
-
-    /**
-     * @return Whether or not borrowers transfer actions are paused
-     */
-    function isBorrowersTransferPaused() public view returns (bool) {
-        return (extendedPauseFlags & (uint24(1) << PAUSE_BORROWERS_TRANSFER_OFFSET)) != 0;
-    }
-
-    /**
-     * @param assetIndex The index of the asset (offset)
-     * @return Whether or not collateral asset transfer actions are paused
-     */
-    function isCollateralAssetTransferPaused(uint24 assetIndex) public view returns (bool) {
-        return (collateralsTransferPauseFlags & (uint24(1) << assetIndex)) != 0;
-    }
-
-    /**
-     * @return Whether or not collateral transfer actions are paused
-     */
-    function isCollateralTransferPaused() public view returns (bool) {
-        return (extendedPauseFlags & (uint24(1) << PAUSE_COLLATERALS_TRANSFER_OFFSET)) != 0;
-    }
-
-    /**
      * @notice Check if a collateral asset is deactivated
      * @param assetIndex The index of the asset
      * @return Whether the collateral asset is deactivated
@@ -716,7 +580,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * Deactivation is an emergency action only. It can be called and executed
      * immediately by the pause guardian via `deactivateCollateral`.
      * When executed, the asset's bit is set in `deactivatedCollaterals`, and
-     * supply and transfer for that collateral are paused.
+     * supply and transfer of that collateral are blocked, regardless of the Access Gate.
      *
      * ─── Impact on borrowers holding deactivated collateral ─────────────────────
      *
@@ -738,6 +602,35 @@ contract CometWithExtendedAssetList is CometMainInterface {
      */
     function isCollateralDeactivated(uint24 assetIndex) public view returns (bool) {
         return (deactivatedCollaterals & (uint24(1) << assetIndex)) != 0;
+    }
+
+    /**
+     * @dev Check the action against the policy of the Access Gate, reverts if the action is not permitted
+     * @dev See `IAccessGate` for the parties passed for each action
+     */
+    function checkAccess(
+        AccessGateAction action,
+        address operator,
+        address account,
+        address counterparty,
+        uint8 assetIndex,
+        uint256 amount
+    ) internal {
+        IAccessGate(accessGate).checkAccess(action, operator, account, counterparty, assetIndex, amount);
+    }
+
+    /**
+     * @dev Notify the Access Gate that the action has been performed
+     */
+    function postAccessAction(
+        AccessGateAction action,
+        address operator,
+        address account,
+        address counterparty,
+        uint8 assetIndex,
+        uint256 amount
+    ) internal {
+        IAccessGate(accessGate).postAccessAction(action, operator, account, counterparty, assetIndex, amount);
     }
 
     /**
@@ -927,17 +820,14 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @dev Note: Specifying an `amount` of uint256.max will repay all of `dst`'s accrued base borrow balance
      */
     function supplyInternal(address from, address dst, address asset, uint amount) internal nonReentrant {
-        if (isSupplyPaused()) revert Paused();
         if (!hasPermission(from, msg.sender)) revert Unauthorized();
 
         if (asset == baseToken) {
-            if (isBaseSupplyPaused()) revert BaseSupplyPaused();
             if (amount == type(uint256).max) {
                 amount = borrowBalanceOf(dst);
             }
             return supplyBase(from, dst, amount);
         } else {
-            if (isCollateralSupplyPaused()) revert CollateralSupplyPaused();
             return supplyCollateral(from, dst, asset, safe128(amount));
         }
     }
@@ -954,6 +844,10 @@ contract CometWithExtendedAssetList is CometMainInterface {
         int256 dstBalance = presentValue(dstPrincipal) + signed256(amount);
         int104 dstPrincipalNew = principalValue(dstBalance);
 
+        // Supply leaving dst with no positive balance only repays the debt
+        AccessGateAction action = dstBalance > 0 ? AccessGateAction.SUPPLY_BASE : AccessGateAction.REPAY;
+        checkAccess(action, msg.sender, dst, from, NO_ASSET, amount);
+
         (uint104 repayAmount, uint104 supplyAmount) = repayAndSupplyAmount(dstPrincipal, dstPrincipalNew);
 
         totalSupplyBase += supplyAmount;
@@ -966,6 +860,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         if (supplyAmount > 0) {
             emit Transfer(address(0), dst, presentValueSupply(baseSupplyIndex, supplyAmount));
         }
+
+        postAccessAction(action, msg.sender, dst, from, NO_ASSET, amount);
     }
 
     /**
@@ -975,7 +871,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
         uint8 offset = assetInfo.offset;
 
-        if (isCollateralAssetSupplyPaused(offset)) revert CollateralAssetSupplyPaused(offset);
+        if (isCollateralDeactivated(offset)) revert TokenIsDeactivated(asset);
+        checkAccess(AccessGateAction.SUPPLY_COLLATERAL, msg.sender, dst, from, offset, amount);
         accrueAccountInternal(dst);
 
         amount = safe128(doTransferIn(asset, from, amount));
@@ -993,6 +890,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         updateAssetsIn(dst, assetInfo, dstCollateral, dstCollateralNew);
 
         emit SupplyCollateral(from, dst, asset, amount);
+
+        postAccessAction(AccessGateAction.SUPPLY_COLLATERAL, msg.sender, dst, from, offset, amount);
     }
 
     /**
@@ -1044,7 +943,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @dev Note: Specifying an `amount` of uint256.max will transfer all of `src`'s accrued base balance
      */
     function transferInternal(address operator, address src, address dst, address asset, uint amount) internal nonReentrant {
-        if (isTransferPaused()) revert Paused();
         if (!hasPermission(src, operator)) revert Unauthorized();
         if (src == dst) revert NoSelfTransfer();
 
@@ -1052,17 +950,16 @@ contract CometWithExtendedAssetList is CometMainInterface {
             if (amount == type(uint256).max) {
                 amount = balanceOf(src);
             }
-            return transferBase(src, dst, amount);
+            return transferBase(operator, src, dst, amount);
         } else {
-            if (isCollateralTransferPaused()) revert CollateralTransferPaused();
-            return transferCollateral(src, dst, asset, safe128(amount));
+            return transferCollateral(operator, src, dst, asset, safe128(amount));
         }
     }
 
     /**
      * @dev Transfer an amount of base asset from src to dst, borrowing if possible/necessary
      */
-    function transferBase(address src, address dst, uint256 amount) internal {
+    function transferBase(address operator, address src, address dst, uint256 amount) internal {
         accrueInternal();
 
         UserBasic memory srcUser = userBasic[src];
@@ -1075,6 +972,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
         int104 srcPrincipalNew = principalValue(srcBalance);
         int104 dstPrincipalNew = principalValue(dstBalance);
 
+        AccessGateAction action = srcBalance < 0 ? AccessGateAction.TRANSFER_BASE_BORROW : AccessGateAction.TRANSFER_BASE;
+        checkAccess(action, operator, src, dst, NO_ASSET, amount);
+
         (uint104 withdrawAmount, uint104 borrowAmount) = withdrawAndBorrowAmount(srcPrincipal, srcPrincipalNew);
         (uint104 repayAmount, uint104 supplyAmount) = repayAndSupplyAmount(dstPrincipal, dstPrincipalNew);
 
@@ -1086,7 +986,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
         updateBasePrincipal(dst, dstUser, dstPrincipalNew);
 
         if (srcBalance < 0) {
-            if (isBorrowersTransferPaused()) revert BorrowersTransferPaused();
             if (uint256(-srcBalance) < baseBorrowMin) revert BorrowTooSmall();
             if (!isBorrowCollateralized(src)) revert NotCollateralized();
 
@@ -1100,8 +999,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
             uint256 totalSupplyWithoutDst = presentValueSupply(baseSupplyIndex, totalSupplyBase - supplyAmount);
             uint256 presentTotalBorrow = presentValueBorrow(baseBorrowIndex, totalBorrowBase);
             if (totalSupplyWithoutDst > 0 && presentTotalBorrow * FACTOR_SCALE / totalSupplyWithoutDst > MAX_SUPPORTED_UTILIZATION) revert ExceedsSupportedUtilization();
-        } else {
-            if (isLendersTransferPaused()) revert LendersTransferPaused();
         }
 
         if (withdrawAmount > 0) {
@@ -1111,12 +1008,20 @@ contract CometWithExtendedAssetList is CometMainInterface {
         if (supplyAmount > 0) {
             emit Transfer(address(0), dst, presentValueSupply(baseSupplyIndex, supplyAmount));
         }
+
+        postAccessAction(action, operator, src, dst, NO_ASSET, amount);
     }
 
     /**
      * @dev Transfer an amount of collateral asset from src to dst
      */
-    function transferCollateral(address src, address dst, address asset, uint128 amount) internal {
+    function transferCollateral(address operator, address src, address dst, address asset, uint128 amount) internal {
+        AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
+        uint8 offset = assetInfo.offset;
+
+        if (isCollateralDeactivated(offset)) revert TokenIsDeactivated(asset);
+        checkAccess(AccessGateAction.TRANSFER_COLLATERAL, operator, src, dst, offset, amount);
+
         uint128 srcCollateral = userCollateral[src][asset].balance;
         uint128 dstCollateral = userCollateral[dst][asset].balance;
         uint128 srcCollateralNew = srcCollateral - amount;
@@ -1125,10 +1030,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
         userCollateral[src][asset].balance = srcCollateralNew;
         userCollateral[dst][asset].balance = dstCollateralNew;
 
-        AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
-        uint8 offset = assetInfo.offset;
-
-        if (isCollateralAssetTransferPaused(offset)) revert CollateralAssetTransferPaused(offset);
         accrueAccountInternal(src);
         accrueAccountInternal(dst);
         updateAssetsIn(src, assetInfo, srcCollateral, srcCollateralNew);
@@ -1137,6 +1038,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         if (!isBorrowCollateralized(src)) revert NotCollateralized();
 
         emit TransferCollateral(src, dst, asset, amount);
+
+        postAccessAction(AccessGateAction.TRANSFER_COLLATERAL, operator, src, dst, offset, amount);
     }
 
     /**
@@ -1174,30 +1077,31 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @dev Note: Specifying an `amount` of uint256.max will withdraw all of `src`'s accrued base balance
      */
     function withdrawInternal(address operator, address src, address to, address asset, uint amount) internal nonReentrant {
-        if (isWithdrawPaused()) revert Paused();
         if (!hasPermission(src, operator)) revert Unauthorized();
 
         if (asset == baseToken) {
             if (amount == type(uint256).max) {
                 amount = balanceOf(src);
             }
-            return withdrawBase(src, to, amount);
+            return withdrawBase(operator, src, to, amount);
         } else {
-            if (isCollateralWithdrawPaused()) revert CollateralWithdrawPaused();
-            return withdrawCollateral(src, to, asset, safe128(amount));
+            return withdrawCollateral(operator, src, to, asset, safe128(amount));
         }
     }
 
     /**
      * @dev Withdraw an amount of base asset from src to `to`, borrowing if possible/necessary
      */
-    function withdrawBase(address src, address to, uint256 amount) internal {
+    function withdrawBase(address operator, address src, address to, uint256 amount) internal {
         accrueInternal();
 
         UserBasic memory srcUser = userBasic[src];
         int104 srcPrincipal = srcUser.principal;
         int256 srcBalance = presentValue(srcPrincipal) - signed256(amount);
         int104 srcPrincipalNew = principalValue(srcBalance);
+
+        AccessGateAction action = srcBalance < 0 ? AccessGateAction.BORROW : AccessGateAction.WITHDRAW_BASE;
+        checkAccess(action, operator, src, to, NO_ASSET, amount);
 
         (uint104 withdrawAmount, uint104 borrowAmount) = withdrawAndBorrowAmount(srcPrincipal, srcPrincipalNew);
 
@@ -1207,14 +1111,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
         updateBasePrincipal(src, srcUser, srcPrincipalNew);
 
         if (srcBalance < 0) {
-            if (isBorrowersWithdrawPaused()) revert BorrowersWithdrawPaused();
             if (uint256(-srcBalance) < baseBorrowMin) revert BorrowTooSmall();
             if (!isBorrowCollateralized(src)) revert NotCollateralized();
             /// @dev safeguard against the over-utilization leading to illiquidity and reserves exhaustion
             /// At this point totals are updated and it is a borrow case, so we can check resulting utilization
             if (getUtilization() > MAX_SUPPORTED_UTILIZATION) revert ExceedsSupportedUtilization();
-        } else {
-            if (isLendersWithdrawPaused()) revert LendersWithdrawPaused();
         }
 
         doTransferOut(baseToken, to, amount);
@@ -1224,6 +1125,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         if (withdrawAmount > 0) {
             emit Transfer(src, address(0), presentValueSupply(baseSupplyIndex, withdrawAmount));
         }
+
+        postAccessAction(action, operator, src, to, NO_ASSET, amount);
     }
 
     /**
@@ -1242,7 +1145,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
      *   In this case the borrower has no choice but to wait for liquidation, which will
      *   seize all collateral (including deactivated) and absorb the debt.
      */
-    function withdrawCollateral(address src, address to, address asset, uint128 amount) internal {
+    function withdrawCollateral(address operator, address src, address to, address asset, uint128 amount) internal {
+        AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
+        uint8 offset = assetInfo.offset;
+        checkAccess(AccessGateAction.WITHDRAW_COLLATERAL, operator, src, to, offset, amount);
+
         accrueAccountInternal(src);
         
         uint128 srcCollateral = userCollateral[src][asset].balance;
@@ -1251,10 +1158,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
         totalsCollateral[asset].totalSupplyAsset -= amount;
         userCollateral[src][asset].balance = srcCollateralNew;
 
-        AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
-        uint8 offset = assetInfo.offset;
-        if (isCollateralAssetWithdrawPaused(offset)) revert CollateralAssetWithdrawPaused(offset);
-
         updateAssetsIn(src, assetInfo, srcCollateral, srcCollateralNew);
 
         if (!isBorrowCollateralized(src)) revert NotCollateralized();
@@ -1262,6 +1165,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         doTransferOut(asset, to, amount);
 
         emit WithdrawCollateral(src, to, asset, amount);
+
+        postAccessAction(AccessGateAction.WITHDRAW_COLLATERAL, operator, src, to, offset, amount);
     }
 
     /**
@@ -1270,7 +1175,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @param accounts The list of underwater accounts to absorb
      */
     function absorb(address absorber, address[] calldata accounts) override external {
-        if (isAbsorbPaused()) revert Paused();
+        // Absorbed accounts are intentionally not passed to the gate: no policy may prevent their liquidation
+        checkAccess(AccessGateAction.ABSORB, msg.sender, msg.sender, absorber, NO_ASSET, accounts.length);
 
         uint startGas = gasleft();
         accrueInternal();
@@ -1289,6 +1195,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         points.numAbsorbed += safe64(accounts.length);
         points.approxSpend += safe128(gasUsed * block.basefee);
         liquidatorPoints[absorber] = points;
+
+        postAccessAction(AccessGateAction.ABSORB, msg.sender, msg.sender, absorber, NO_ASSET, accounts.length);
     }
 
     /**
@@ -1392,7 +1300,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @param recipient The recipient address
      */
     function buyCollateral(address asset, uint minAmount, uint baseAmount, address recipient) override external nonReentrant {
-        if (isBuyPaused()) revert Paused();
+        AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
+        checkAccess(AccessGateAction.BUY_COLLATERAL, msg.sender, msg.sender, recipient, assetInfo.offset, baseAmount);
 
         int reserves = getReserves();
         if (reserves >= 0 && uint(reserves) >= targetReserves) revert NotForSale();
@@ -1400,7 +1309,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         // Note: Re-entrancy can skip the reserves check above on a second buyCollateral call.
         baseAmount = doTransferIn(baseToken, msg.sender, baseAmount);
 
-        uint collateralAmount = quoteCollateral(asset, baseAmount);
+        uint collateralAmount = quoteCollateralInternal(assetInfo, baseAmount);
         if (collateralAmount < minAmount) revert TooMuchSlippage();
         if (collateralAmount > getCollateralReserves(asset)) revert InsufficientReserves();
 
@@ -1410,6 +1319,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         doTransferOut(asset, recipient, safe128(collateralAmount));
 
         emit BuyCollateral(msg.sender, asset, baseAmount, collateralAmount);
+
+        postAccessAction(AccessGateAction.BUY_COLLATERAL, msg.sender, msg.sender, recipient, assetInfo.offset, baseAmount);
     }
 
     /**
@@ -1419,8 +1330,13 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @return The quote in terms of the collateral asset
      */
     function quoteCollateral(address asset, uint baseAmount) override public view returns (uint) {
-        AssetInfo memory assetInfo = getAssetInfoByAddress(asset);
+        return quoteCollateralInternal(getAssetInfoByAddress(asset), baseAmount);
+    }
 
+    /**
+     * @dev Gets the quote for a collateral asset in exchange for an amount of base asset
+     */
+    function quoteCollateralInternal(AssetInfo memory assetInfo, uint baseAmount) internal view returns (uint) {
         // NOTE: This getPrice() call is intentionally left unguarded. Unlike isBorrowCollateralized
         // and isLiquidatable — where we skip zero-factor assets to prevent a broken price feed
         // from paralyzing collateral checks — quoteCollateral is only called from buyCollateral,
@@ -1465,6 +1381,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
      */
     function withdrawReserves(address to, uint amount) override external {
         if (msg.sender != governor) revert Unauthorized();
+        checkAccess(AccessGateAction.WITHDRAW_RESERVES, msg.sender, address(this), to, NO_ASSET, amount);
 
         int reserves = getReserves();
         if (reserves < 0 || amount > unsigned256(reserves)) revert InsufficientReserves();
@@ -1472,6 +1389,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         doTransferOut(baseToken, to, amount);
 
         emit WithdrawReserves(to, amount);
+
+        postAccessAction(AccessGateAction.WITHDRAW_RESERVES, msg.sender, address(this), to, NO_ASSET, amount);
     }
 
     /**
@@ -1486,8 +1405,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
      */
     function approveThis(address manager, address asset, uint amount) override external {
         if (msg.sender != governor) revert Unauthorized();
+        checkAccess(AccessGateAction.APPROVE_THIS, msg.sender, address(this), manager, NO_ASSET, amount);
 
         IERC20NonStandard(asset).approve(manager, amount);
+
+        postAccessAction(AccessGateAction.APPROVE_THIS, msg.sender, address(this), manager, NO_ASSET, amount);
     }
 
     /**

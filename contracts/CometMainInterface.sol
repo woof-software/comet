@@ -8,9 +8,10 @@ import "./CometCore.sol";
  * @notice An efficient monolithic money market protocol
  * @author Compound
  */
-abstract contract CometMainInterface is CometCore {
+abstract contract CometMainInterfaceBase is CometCore {
     error Absurd();
     error AlreadyInitialized();
+    error BadAccessGate();
     error BadAsset();
     error BadDecimals();
     error BadDiscount();
@@ -25,7 +26,6 @@ abstract contract CometMainInterface is CometCore {
     error NotCollateralized();
     error NotForSale();
     error NotLiquidatable();
-    error Paused();
     error ReentrantCallBlocked();
     error SupplyCapExceeded();
     error TimestampTooLarge();
@@ -37,31 +37,6 @@ abstract contract CometMainInterface is CometCore {
 
     /// @dev Error emitted when the utilization exceeds the supported utilization
     error ExceedsSupportedUtilization();
-    /// @notice Error emitted when base supply is paused
-    error BaseSupplyPaused();
-    /// @notice Error emitted when collateral supply is paused
-    error CollateralSupplyPaused();
-    /// @notice Error emitted when a specific collateral asset supply is paused
-    /// @param assetIndex The index of the collateral asset
-    error CollateralAssetSupplyPaused(uint24 assetIndex);
-    /// @notice Error emitted when borrowers' transfers are paused
-    error BorrowersTransferPaused();
-    /// @notice Error emitted when lenders' transfers are paused
-    error LendersTransferPaused();
-    /// @notice Error emitted when collateral transfers are paused
-    error CollateralTransferPaused();
-    /// @notice Error emitted when a specific collateral asset transfer is paused
-    /// @param assetIndex The index of the collateral asset
-    error CollateralAssetTransferPaused(uint24 assetIndex);
-    /// @notice Error emitted when borrowers' withdrawals are paused
-    error BorrowersWithdrawPaused();
-    /// @notice Error emitted when lenders' withdrawals are paused
-    error LendersWithdrawPaused();
-    /// @notice Error emitted when collateral withdrawals are paused
-    error CollateralWithdrawPaused();
-    /// @notice Error emitted when a specific collateral asset withdrawal is paused
-    /// @param assetIndex The index of the collateral asset
-    error CollateralAssetWithdrawPaused(uint24 assetIndex);
     /// @notice Error emitted when a user with debt tries to transfer and their position uses deactivated collateral
     error DeactivatedCollateralTransferBlocked();
     /// @notice Error emitted when trying to borrow or increase debt using deactivated collateral
@@ -85,9 +60,6 @@ abstract contract CometMainInterface is CometCore {
 
     /// @notice Event emitted when a collateral asset is purchased from the protocol
     event BuyCollateral(address indexed buyer, address indexed asset, uint baseAmount, uint collateralAmount);
-
-    /// @notice Event emitted when an action is paused/unpaused
-    event PauseAction(bool supplyPaused, bool transferPaused, bool withdrawPaused, bool absorbPaused, bool buyPaused);
 
     /// @notice Event emitted when reserves are withdrawn by the governor
     event WithdrawReserves(address indexed to, uint amount);
@@ -126,13 +98,6 @@ abstract contract CometMainInterface is CometCore {
     function totalBorrow() virtual external view returns (uint256);
     function balanceOf(address owner) virtual public view returns (uint256);
     function borrowBalanceOf(address account) virtual public view returns (uint256);
-
-    function pause(bool supplyPaused, bool transferPaused, bool withdrawPaused, bool absorbPaused, bool buyPaused) virtual external;
-    function isSupplyPaused() virtual public view returns (bool);
-    function isTransferPaused() virtual public view returns (bool);
-    function isWithdrawPaused() virtual public view returns (bool);
-    function isAbsorbPaused() virtual public view returns (bool);
-    function isBuyPaused() virtual public view returns (bool);
 
     function accrueAccount(address account) virtual external;
     function getSupplyRate(uint utilization) virtual public view returns (uint64);
@@ -184,4 +149,24 @@ abstract contract CometMainInterface is CometCore {
     function decimals() virtual external view returns (uint8);
 
     function initializeStorage() virtual external;
+}
+
+/**
+ * @title Compound's Comet Main Interface with pause control kept in Comet (without Ext)
+ * @notice Used by the legacy Comet implementations. Comet with the Access Gate
+ *  inherits `CometMainInterfaceBase` instead, since pauses are held by the gate.
+ * @author Compound
+ */
+abstract contract CometMainInterface is CometMainInterfaceBase {
+    error Paused();
+
+    /// @notice Event emitted when an action is paused/unpaused
+    event PauseAction(bool supplyPaused, bool transferPaused, bool withdrawPaused, bool absorbPaused, bool buyPaused);
+
+    function pause(bool supplyPaused, bool transferPaused, bool withdrawPaused, bool absorbPaused, bool buyPaused) virtual external;
+    function isSupplyPaused() virtual public view returns (bool);
+    function isTransferPaused() virtual public view returns (bool);
+    function isWithdrawPaused() virtual public view returns (bool);
+    function isAbsorbPaused() virtual public view returns (bool);
+    function isBuyPaused() virtual public view returns (bool);
 }

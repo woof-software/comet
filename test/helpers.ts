@@ -32,9 +32,10 @@ import {
   CometFactoryWithExtendedAssetList__factory,
   Configurator,
   Configurator__factory,
+  DefaultAccessGate,
   CometHarnessInterface,
   CometInterface,
-  CometMainInterface,
+  CometMainInterfaceBase,
   NonStandardFaucetFeeToken,
   NonStandardFaucetFeeToken__factory,
   AssetListFactory,
@@ -104,6 +105,7 @@ export type ProtocolOpts = {
   targetReserves?: Numeric;
   baseTokenBalance?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
+  accessGateContract?: 'DefaultAccessGate' | 'BlocklistGate' | 'AllowlistGate';
 };
 
 export type Protocol = {
@@ -117,6 +119,7 @@ export type Protocol = {
   reward: string;
   comet: Comet;
   cometWithExtendedAssetList: CometWithExtendedAssetList;
+  accessGate: DefaultAccessGate; // bound to cometWithExtendedAssetList
   assetListFactory: AssetListFactory;
   tokens: {
     [symbol: string]: FaucetToken | NonStandardFaucetFeeToken;
@@ -135,6 +138,8 @@ export type ConfiguratorAndProtocol = {
   cometFactoryWithExtendedAssetList: CometFactoryWithExtendedAssetList;
   cometProxy: TransparentUpgradeableProxy;
   cometProxyWithExtendedAssetList: TransparentUpgradeableProxy;
+  cometProxyAccessGate: DefaultAccessGate; // bound to cometProxy
+  cometProxyWithExtendedAssetListAccessGate: DefaultAccessGate; // bound to cometProxyWithExtendedAssetList
 } & Protocol;
 
 export type RewardsOpts = {
@@ -433,6 +438,8 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
       }
       return acc;
     }, []),
+    // Legacy Comet does not use the access gate
+    accessGate: ethers.constants.AddressZero,
   };
   const comet = await CometFactory.deploy(config);
   await comet.deployed();
@@ -460,8 +467,11 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   config.extensionDelegate = extensionDelegateAssetList.address;
   const CometFactoryWithExtendedAssetList = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
 
+  const deployer = signers[0];
+  config.accessGate = ethers.utils.getContractAddress({ from: deployer.address, nonce: (await deployer.getTransactionCount()) + 1 });
   const cometWithExtendedAssetList = await CometFactoryWithExtendedAssetList.deploy(config);
   await cometWithExtendedAssetList.deployed();
+  const accessGate = await deployAccessGate(opts, cometWithExtendedAssetList.address, governor, pauseGuardian);
 
   if (opts.start) await ethers.provider.send('evm_setNextBlockTimestamp', [opts.start]);
   await comet.initializeStorage();
@@ -485,11 +495,31 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     reward,
     comet: (await ethers.getContractAt('CometHarnessInterface', comet.address)) as Comet,
     cometWithExtendedAssetList: (await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address)) as CometWithExtendedAssetList,
+    accessGate,
     assetListFactory: assetListFactory,
     tokens,
     unsupportedToken,
     priceFeeds,
   };
+}
+
+/**
+ * Deploys the access gate for a Comet with extended asset list, the pause guardian being its Pauser
+ */
+export async function deployAccessGate(
+  opts: ProtocolOpts,
+  comet: string,
+  governor: SignerWithAddress,
+  pauseGuardian: SignerWithAddress
+): Promise<DefaultAccessGate> {
+  const accessGateContract = opts.accessGateContract || 'DefaultAccessGate';
+  const AccessGateFactory = await ethers.getContractFactory(accessGateContract);
+  const args = [comet, governor.address, ethers.constants.AddressZero, [pauseGuardian.address]];
+  // The list gates take their Operators, the pause guardian being one
+  if (accessGateContract !== 'DefaultAccessGate') args.push([pauseGuardian.address]);
+  const accessGate = (await AccessGateFactory.deploy(...args)) as DefaultAccessGate;
+  await accessGate.deployed();
+  return accessGate;
 }
 
 export async function getConfigurationForConfigurator(
@@ -571,6 +601,7 @@ export async function getConfigurationForConfigurator(
       }
       return acc;
     }, []),
+    accessGate: ethers.constants.AddressZero,
   };
   return configuration;
 }
@@ -586,6 +617,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     reward,
     comet,
     cometWithExtendedAssetList,
+    accessGate,
     extensionDelegateAssetList,
     assetListFactory,
     tokens,
@@ -624,6 +656,9 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
   );
   await cometProxyWithExtendedAssetList.deployed();
 
+  const cometProxyAccessGate = await deployAccessGate(opts, cometProxy.address, governor, pauseGuardian);
+  const cometProxyWithExtendedAssetListAccessGate = await deployAccessGate(opts, cometProxyWithExtendedAssetList.address, governor, pauseGuardian);
+
   // Deploy CometFactory
   const CometFactoryFactory = (await ethers.getContractFactory('CometFactory')) as CometFactory__factory;
   const cometFactory = await CometFactoryFactory.deploy();
@@ -646,10 +681,12 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
 
   // Set the initial factory and configuration for Comet in Configurator
   const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+  configuration.accessGate = cometProxyAccessGate.address;
   await configuratorAsProxy.connect(governor).setConfiguration(cometProxy.address, configuration);
   await configuratorAsProxy.connect(governor).setFactory(cometProxy.address, cometFactory.address);
 
   configuration.extensionDelegate = extensionDelegateAssetList.address;
+  configuration.accessGate = cometProxyWithExtendedAssetListAccessGate.address;
   await configuratorAsProxy.connect(governor).setConfiguration(cometProxyWithExtendedAssetList.address, configuration);
   await configuratorAsProxy.connect(governor).setFactory(cometProxyWithExtendedAssetList.address, cometFactoryWithExtendedAssetList.address);
 
@@ -683,9 +720,12 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     proxyAdmin,
     comet,
     cometWithExtendedAssetList,
+    accessGate,
     assetListFactory,
     cometProxy,
     cometProxyWithExtendedAssetList,
+    cometProxyAccessGate,
+    cometProxyWithExtendedAssetListAccessGate,
     configurator,
     configuratorProxy,
     cometFactory,
@@ -766,7 +806,7 @@ export async function getLiquidity(comet: CometWithExtendedAssetList, token: Fau
   return BigNumber.from(priceUSD).mul(assetInfo.borrowCollateralFactor).div(factorScale);
 }
 
-export async function getLiquidityWithLiquidateCF(comet: CometMainInterface, token: FaucetToken | NonStandardFaucetFeeToken, amount: bigint): Promise<BigNumber> {
+export async function getLiquidityWithLiquidateCF(comet: CometMainInterfaceBase, token: FaucetToken | NonStandardFaucetFeeToken, amount: bigint): Promise<BigNumber> {
   const assetInfo = await comet.getAssetInfoByAddress(token.address);
   const priceUSD = mulPrice(amount, await comet.getPrice(assetInfo.priceFeed), assetInfo.scale);
   if (assetInfo.liquidateCollateralFactor.eq(0)) {

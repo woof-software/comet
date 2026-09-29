@@ -206,22 +206,6 @@ export default class CometActor {
     return await (await comet.connect(this.signer).withdrawReserves(to, amount, { ...overrides })).wait();
   }
 
-  async pause({
-    supplyPaused = false,
-    transferPaused = false,
-    withdrawPaused = false,
-    absorbPaused = false,
-    buyPaused = false,
-  }, overrides?: Overrides
-  ): Promise<ContractReceipt> {
-    const comet = await this.context.getComet();
-    return await (
-      await comet
-        .connect(this.signer)
-        .pause(supplyPaused, transferPaused, withdrawPaused, absorbPaused, buyPaused, { ...overrides })
-    ).wait();
-  }
-
   async approveThis(manager: string, asset: string, amount: BigNumberish, overrides?: Overrides): Promise<ContractReceipt> {
     const comet = await this.context.getComet();
     return await (await comet.connect(this.signer).approveThis(manager, asset, amount, { ...overrides })).wait();

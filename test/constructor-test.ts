@@ -2,6 +2,7 @@ import { ethers, exp, expect, makeProtocol, ONE } from './helpers';
 import {
   CometExt__factory,
   CometHarness__factory,
+  CometHarnessExtendedAssetList__factory,
   FaucetToken__factory,
   SimplePriceFeed__factory,
 } from '../build/types';
@@ -12,6 +13,41 @@ describe('constructor', function () {
       baseBorrowMin: exp(100, 6)
     });
     expect(await comet.baseBorrowMin()).to.eq(exp(100, 6));
+  });
+
+  it('sets the access gate', async function () {
+    const { cometWithExtendedAssetList, accessGate } = await makeProtocol();
+    expect(await cometWithExtendedAssetList.accessGate()).to.eq(accessGate.address);
+  });
+
+  it('reverts if the access gate is the zero address', async function () {
+    const { governor, pauseGuardian, extensionDelegateAssetList, tokens, priceFeeds } = await makeProtocol();
+
+    const CometFactory = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
+    await expect(CometFactory.deploy({
+      governor: governor.address,
+      pauseGuardian: pauseGuardian.address,
+      extensionDelegate: extensionDelegateAssetList.address,
+      baseToken: tokens['USDC'].address,
+      baseTokenPriceFeed: priceFeeds['USDC'].address,
+      supplyKink: exp(8, 17),
+      supplyPerYearInterestRateBase: exp(5, 15),
+      supplyPerYearInterestRateSlopeLow: exp(1, 17),
+      supplyPerYearInterestRateSlopeHigh: exp(3, 18),
+      borrowKink: exp(8, 17),
+      borrowPerYearInterestRateBase: exp(5, 15),
+      borrowPerYearInterestRateSlopeLow: exp(1, 17),
+      borrowPerYearInterestRateSlopeHigh: exp(3, 18),
+      storeFrontPriceFactor: exp(1, 18),
+      trackingIndexScale: exp(1, 15),
+      baseTrackingSupplySpeed: exp(1, 15),
+      baseTrackingBorrowSpeed: exp(1, 15),
+      baseMinForRewards: exp(1, 6),
+      baseBorrowMin: exp(1, 6),
+      targetReserves: 0,
+      assetConfigs: [],
+      accessGate: ethers.constants.AddressZero,
+    })).to.be.revertedWith("custom error 'BadAccessGate()'");
   });
 
   it('verifies asset scales', async function () {
@@ -82,6 +118,7 @@ describe('constructor', function () {
         liquidationFactor: ONE,
         supplyCap: exp(100, 18),
       }],
+      accessGate: ethers.constants.AddressZero,
     })).to.be.revertedWith("custom error 'BadDecimals()'");
   });
 

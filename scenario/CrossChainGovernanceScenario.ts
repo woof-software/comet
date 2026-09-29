@@ -6,6 +6,9 @@ import { calldata } from '../src/deploy';
 import { isBridgedDeployment, matchesDeployment, createCrossChainProposal } from './utils';
 import { ArbitrumBridgeReceiver } from '../build/types';
 
+// Allowance of the L2 Comet base token set by the governor actions of the cross-chain proposals
+const APPROVED_AMOUNT = 999_888n;
+
 // This is a generic scenario that runs for all L2s and sidechains
 scenario(
   'execute cross-chain governance proposal',
@@ -16,16 +19,19 @@ scenario(
     const currentTimelockDelay = await timelock.delay();
     const newTimelockDelay = currentTimelockDelay.mul(2);
 
-    // Cross-chain proposal to change L2 timelock's delay and pause L2 Comet actions
+    // Cross-chain proposal to change L2 timelock's delay and approve the base token of L2 Comet
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
-    const pauseCalldata = await calldata(comet.populateTransaction.pause(true, true, true, true, true));
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const approveThisCalldata = await calldata(
+      comet.populateTransaction.approveThis(timelock.address, baseToken.address, APPROVED_AMOUNT)
+    );
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [timelock.address, comet.address],
         [0, 0],
-        ['setDelay(uint256)', 'pause(bool,bool,bool,bool,bool)'],
-        [setDelayCalldata, pauseCalldata]
+        ['setDelay(uint256)', 'approveThis(address,address,uint256)'],
+        [setDelayCalldata, approveThisCalldata]
       ]
     );
 
@@ -35,11 +41,7 @@ scenario(
     await createCrossChainProposal(context, l2ProposalData, bridgeReceiver);
 
     expect(await timelock.delay()).to.eq(newTimelockDelay);
-    expect(await comet.isAbsorbPaused()).to.eq(true);
-    expect(await comet.isBuyPaused()).to.eq(true);
-    expect(await comet.isSupplyPaused()).to.eq(true);
-    expect(await comet.isTransferPaused()).to.eq(true);
-    expect(await comet.isWithdrawPaused()).to.eq(true);
+    expect(await baseToken.allowance(comet.address, timelock.address)).to.eq(APPROVED_AMOUNT);
   }
 );
 
@@ -127,14 +129,17 @@ scenario(
     const newTimelockDelay = currentTimelockDelay.mul(2);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
-    const pauseCalldata = await calldata(comet.populateTransaction.pause(true, true, true, true, true));
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const approveThisCalldata = await calldata(
+      comet.populateTransaction.approveThis(newLocalTimelock.address, baseToken.address, APPROVED_AMOUNT)
+    );
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [newLocalTimelock.address, comet.address],
         [0, 0],
-        ['setDelay(uint256)', 'pause(bool,bool,bool,bool,bool)'],
-        [setDelayCalldata, pauseCalldata]
+        ['setDelay(uint256)', 'approveThis(address,address,uint256)'],
+        [setDelayCalldata, approveThisCalldata]
       ]
     );
 
@@ -144,11 +149,7 @@ scenario(
     await createCrossChainProposal(context, l2ProposalData, newBridgeReceiver);
 
     expect(await newLocalTimelock.delay()).to.eq(newTimelockDelay);
-    expect(await comet.isAbsorbPaused()).to.eq(true);
-    expect(await comet.isBuyPaused()).to.eq(true);
-    expect(await comet.isSupplyPaused()).to.eq(true);
-    expect(await comet.isTransferPaused()).to.eq(true);
-    expect(await comet.isWithdrawPaused()).to.eq(true);
+    expect(await baseToken.allowance(comet.address, newLocalTimelock.address)).to.eq(APPROVED_AMOUNT);
   }
 );
 
@@ -237,14 +238,17 @@ scenario(
     const newTimelockDelay = currentTimelockDelay.mul(2);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
-    const pauseCalldata = await calldata(comet.populateTransaction.pause(true, true, true, true, true));
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const approveThisCalldata = await calldata(
+      comet.populateTransaction.approveThis(newLocalTimelock.address, baseToken.address, APPROVED_AMOUNT)
+    );
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [newLocalTimelock.address, comet.address],
         [0, 0],
-        ['setDelay(uint256)', 'pause(bool,bool,bool,bool,bool)'],
-        [setDelayCalldata, pauseCalldata]
+        ['setDelay(uint256)', 'approveThis(address,address,uint256)'],
+        [setDelayCalldata, approveThisCalldata]
       ]
     );
 
@@ -254,11 +258,7 @@ scenario(
     await createCrossChainProposal(context, l2ProposalData, newBridgeReceiver);
 
     expect(await newLocalTimelock.delay()).to.eq(newTimelockDelay);
-    expect(await comet.isAbsorbPaused()).to.eq(true);
-    expect(await comet.isBuyPaused()).to.eq(true);
-    expect(await comet.isSupplyPaused()).to.eq(true);
-    expect(await comet.isTransferPaused()).to.eq(true);
-    expect(await comet.isWithdrawPaused()).to.eq(true);
+    expect(await baseToken.allowance(comet.address, newLocalTimelock.address)).to.eq(APPROVED_AMOUNT);
   }
 );
 
@@ -356,16 +356,17 @@ scenario.skip(
     const newTimelockDelay = currentTimelockDelay.mul(2);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
-    const pauseCalldata = await calldata(
-      comet.populateTransaction.pause(true, true, true, true, true)
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const approveThisCalldata = await calldata(
+      comet.populateTransaction.approveThis(newLocalTimelock.address, baseToken.address, APPROVED_AMOUNT)
     );
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [newLocalTimelock.address, comet.address],
         [0, 0],
-        ['setDelay(uint256)', 'pause(bool,bool,bool,bool,bool)'],
-        [setDelayCalldata, pauseCalldata]
+        ['setDelay(uint256)', 'approveThis(address,address,uint256)'],
+        [setDelayCalldata, approveThisCalldata]
       ]
     );
 
@@ -375,11 +376,7 @@ scenario.skip(
     await createCrossChainProposal(context, l2ProposalData, newBridgeReceiver);
 
     expect(await newLocalTimelock.delay()).to.eq(newTimelockDelay);
-    expect(await comet.isAbsorbPaused()).to.eq(true);
-    expect(await comet.isBuyPaused()).to.eq(true);
-    expect(await comet.isSupplyPaused()).to.eq(true);
-    expect(await comet.isTransferPaused()).to.eq(true);
-    expect(await comet.isWithdrawPaused()).to.eq(true);
+    expect(await baseToken.allowance(comet.address, newLocalTimelock.address)).to.eq(APPROVED_AMOUNT);
   }
 );
 
@@ -477,16 +474,17 @@ scenario(
     const newTimelockDelay = currentTimelockDelay.mul(2);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
-    const pauseCalldata = await calldata(
-      comet.populateTransaction.pause(true, true, true, true, true)
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const approveThisCalldata = await calldata(
+      comet.populateTransaction.approveThis(newLocalTimelock.address, baseToken.address, APPROVED_AMOUNT)
     );
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
         [newLocalTimelock.address, comet.address],
         [0, 0],
-        ['setDelay(uint256)', 'pause(bool,bool,bool,bool,bool)'],
-        [setDelayCalldata, pauseCalldata]
+        ['setDelay(uint256)', 'approveThis(address,address,uint256)'],
+        [setDelayCalldata, approveThisCalldata]
       ]
     );
 
@@ -496,10 +494,6 @@ scenario(
     await createCrossChainProposal(context, l2ProposalData, newBridgeReceiver);
 
     expect(await newLocalTimelock.delay()).to.eq(newTimelockDelay);
-    expect(await comet.isAbsorbPaused()).to.eq(true);
-    expect(await comet.isBuyPaused()).to.eq(true);
-    expect(await comet.isSupplyPaused()).to.eq(true);
-    expect(await comet.isTransferPaused()).to.eq(true);
-    expect(await comet.isWithdrawPaused()).to.eq(true);
+    expect(await baseToken.allowance(comet.address, newLocalTimelock.address)).to.eq(APPROVED_AMOUNT);
   }
 );

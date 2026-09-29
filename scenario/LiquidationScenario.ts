@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { event, expect } from '../test/helpers';
-import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList, isAssetDelisted, supportsExtendedPause } from './utils';
+import { MAX_ASSETS, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList, isAssetDelisted, supportsCollateralDeactivation } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -106,45 +106,6 @@ scenario(
 
     // clears assetsIn
     expect((await comet.userBasic(albert.address)).assetsIn).to.eq(0);
-  }
-);
-
-scenario(
-  'Comet#liquidation > prevents liquidation when absorb is paused',
-  {
-    tokenBalances: async (ctx) => (
-      {
-        $comet: {
-          $base: getConfigForScenario(ctx).liquidationBase
-        }
-      }),
-    cometBalances: async (ctx) => ({
-      albert: { $base: -getConfigForScenario(ctx).liquidationBase },
-      betty: { $base: getConfigForScenario(ctx).liquidationBase }
-    }),
-    pause: {
-      absorbPaused: true,
-    },
-  },
-  async ({ comet, actors }, context, world) => {
-    const { albert, betty } = actors;
-    const baseToken = await comet.baseToken();
-    const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-
-    await world.increaseTime(
-      await timeUntilUnderwater({
-        comet,
-        actor: albert,
-        fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
-      })
-    );
-
-    await betty.withdrawAsset({ asset: baseToken, amount: baseBorrowMin }); // force accrue
-
-    await expectRevertCustom(
-      betty.absorb({ absorber: betty.address, accounts: [albert.address] }),
-      'Paused()'
-    );
   }
 );
 
@@ -329,7 +290,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#liquidation > skips liquidation value of asset ${i} with liquidateCF=0`,
     {
-      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsExtendedPause(ctx),
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsCollateralDeactivation(ctx),
       tokenBalances: async (ctx: CometContext) => (
         {
           albert: { $base: '== 0' },
@@ -423,7 +384,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
     `Comet#liquidation > skips absorption of asset ${i} with liquidation factor = 0`,
     {
       filter: async (ctx) => 
-        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsExtendedPause(ctx),
+        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsCollateralDeactivation(ctx),
       tokenBalances: async (ctx) => ({
         albert: { $base: '== 0' },
         $comet: {
@@ -546,7 +507,7 @@ scenario(
       await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       !(await isAssetDelisted(ctx, 1)) &&
-      await supportsExtendedPause(ctx),
+      await supportsCollateralDeactivation(ctx),
     tokenBalances: async (ctx) => ({
       albert: { $base: '== 0' },
       $comet: {

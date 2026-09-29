@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { CometContext, scenario } from './context/CometContext';
-import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, usesAssetList, supportsExtendedPause } from './utils';
+import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, usesAssetList, supportsCollateralDeactivation } from './utils';
 
 /**
  * @title Quote Collateral Scenario
@@ -28,7 +28,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#quoteCollateral > quotes with discount for asset ${i}`,
     {
-      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsExtendedPause(ctx)
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsCollateralDeactivation(ctx)
     },
     async ({ comet, configurator, proxyAdmin, actors }, context) => {
       const { admin } = actors;

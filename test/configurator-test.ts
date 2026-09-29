@@ -1,4 +1,4 @@
-import { annualize, defactor, defaultAssets, ethers, event, exp, expect, factor, makeConfigurator, Numeric, truncateDecimals, wait } from './helpers';
+import { annualize, defactor, defaultAssets, deployAccessGate, ethers, event, exp, expect, factor, makeConfigurator, Numeric, truncateDecimals, wait } from './helpers';
 import {
   CometModifiedFactory__factory,
   MarketAdminPermissionChecker__factory,
@@ -53,7 +53,8 @@ function convertToEventConfiguration(configuration: ConfigurationStructOutput) {
     configuration.baseMinForRewards.toBigInt(),
     configuration.baseBorrowMin.toBigInt(),
     configuration.targetReserves.toBigInt(),
-    [] // leave asset configs empty for simplicity
+    [], // leave asset configs empty for simplicity
+    configuration.accessGate,
   ];
 }
 
@@ -365,6 +366,76 @@ describe('configurator', function () {
       expect(oldExt).to.be.not.equal(newExt);
       expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).extensionDelegate).to.be.equal(newExt);
       expect(await cometAsProxy.extensionDelegate()).to.be.equal(newExt);
+    });
+
+    it('sets accessGate and deploys Comet with new configuration', async () => {
+      const {
+        configurator,
+        configuratorProxy,
+        proxyAdmin,
+        governor,
+        pauseGuardian,
+        cometWithExtendedAssetList: comet,
+        cometProxyWithExtendedAssetList: cometProxy,
+      } = await makeConfigurator();
+
+      const cometAsProxy = comet.attach(cometProxy.address);
+      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+
+      const oldAccessGate = (await configuratorAsProxy.getConfiguration(cometProxy.address)).accessGate;
+      const newAccessGate = (await deployAccessGate({}, cometProxy.address, governor, pauseGuardian)).address;
+      const txn = await wait(configuratorAsProxy.setAccessGate(cometProxy.address, newAccessGate));
+      await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
+
+      expect(event(txn, 0)).to.be.deep.equal({
+        SetAccessGate: {
+          cometProxy: cometProxy.address,
+          oldAccessGate,
+          newAccessGate,
+        }
+      });
+      expect(oldAccessGate).to.be.not.equal(newAccessGate);
+      expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).accessGate).to.be.equal(newAccessGate);
+      expect(await cometAsProxy.accessGate()).to.be.equal(newAccessGate);
+    });
+
+    it('reverts if setting accessGate from non-governor', async () => {
+      const { configurator, configuratorProxy, cometProxyWithExtendedAssetList: cometProxy, cometProxyWithExtendedAssetListAccessGate: accessGate, users: [alice] } = await makeConfigurator();
+
+      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+      await expect(
+        configuratorAsProxy.connect(alice).setAccessGate(cometProxy.address, accessGate.address)
+      ).to.be.revertedWith("custom error 'Unauthorized()'");
+    });
+
+    it('reverts if setting accessGate to the zero address', async () => {
+      const { configurator, configuratorProxy, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+
+      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+      await expect(
+        configuratorAsProxy.setAccessGate(cometProxy.address, ethers.constants.AddressZero)
+      ).to.be.revertedWith("custom error 'InvalidAddress()'");
+    });
+
+    it('reverts if setting accessGate bound to another Comet proxy', async () => {
+      const { configurator, configuratorProxy, cometProxyWithExtendedAssetList: cometProxy, cometProxyAccessGate } = await makeConfigurator();
+
+      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+      await expect(
+        configuratorAsProxy.setAccessGate(cometProxy.address, cometProxyAccessGate.address)
+      ).to.be.revertedWith("custom error 'InvalidAccessGate()'");
+    });
+
+    it('reverts when setting Configuration with accessGate bound to another Comet proxy', async () => {
+      const { configurator, configuratorProxy, cometProxyWithExtendedAssetList: cometProxy, cometProxyAccessGate } = await makeConfigurator();
+
+      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+      const oldConfiguration = await configuratorAsProxy.getConfiguration(cometProxy.address);
+      const newConfiguration = { ...oldConfiguration, accessGate: cometProxyAccessGate.address } as ConfigurationStructOutput;
+
+      await expect(
+        configuratorAsProxy.setConfiguration(cometProxy.address, newConfiguration)
+      ).to.be.revertedWith("custom error 'InvalidAccessGate()'");
     });
 
     it('sets supplyKink and deploys Comet with new configuration', async () => {

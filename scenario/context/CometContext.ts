@@ -5,7 +5,6 @@ import {
   NativeTokenConstraint,
   TokenBalanceConstraint,
   ModernConstraint,
-  PauseConstraint,
   UtilizationConstraint,
   SupplyCapConstraint,
   CometBalanceConstraint,
@@ -430,7 +429,6 @@ export const staticConstraints: StaticConstraint<CometContext>[] = [
 export const dynamicConstraints: DynamicConstraint<CometContext, Requirements>[] = [
   new FilterConstraint(),
   new ModernConstraint(),
-  new PauseConstraint(),
   new SupplyCapConstraint(),
   new CometBalanceConstraint(),
   new TokenBalanceConstraint(),
