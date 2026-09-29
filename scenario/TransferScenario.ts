@@ -607,70 +607,81 @@ scenario(
   }
 );
 
-scenario(
-  'Comet#transferAsset > collateral reverts if undercollateralized',
-  {
-    // XXX we should probably have a price constraint?
-    cometBalances: (ctx: CometContext) => ({
-      albert: {
-        $base: -getConfigForScenario(ctx).transferBase,
-        $asset0: `== ${getConfigForScenario(ctx).transferAsset}`
-      }, // in units of asset, not wei
-      betty: { $asset0: 0 }
-    })
-  },
-  async ({ comet, actors }, context) => {
-    const { albert, betty } = actors;
-    const { asset: asset0Address, scale: scaleBN } = await comet.getAssetInfo(0);
-    const collateralAsset = context.getAssetByAddress(asset0Address);
-    const scale = scaleBN.toBigInt();
+// One scenario per collateral slot; each runs only when that slot holds a usable collateral on the current market
+for (let offset = 0; offset < MAX_ASSETS; offset++) {
+  scenario(
+    `Comet#transferAsset > collateral asset ${offset} reverts if undercollateralized`,
+    {
+      filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
+    },
+    async ({ comet, actors }, context) => {
+      const { albert, betty } = actors;
+      const baseAsset = context.getAssetByAddress(await comet.baseToken());
+      const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
 
-    // Albert transfers all his collateral to Betty
-    await expect(
-      comet
-        .connect(albert.signer)
-        .transferAsset(
-          betty.address,
-          collateralAsset.address,
-          BigInt(getConfigForScenario(context).transferAsset) * scale
-        )
-    ).to.be.revertedWithCustomError(comet, 'NotCollateralized');
-  }
-);
+      // Albert borrows against the collateral in this scenario's slot
+      await context.sourceTokens(supplyAmount, collateralAsset.address, albert.address);
+      await collateralAsset.approve(albert, comet.address);
+      await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-scenario(
-  'Comet#transferAssetFrom > collateral reverts if undercollateralized',
-  {
-    // XXX we should probably have a price constraint?
-    cometBalances: (ctx: CometContext) => ({
-      albert: {
-        $base: -getConfigForScenario(ctx).transferBase,
-        $asset0: `== ${getConfigForScenario(ctx).transferAsset}`
-      }, // in units of asset, not wei
-      betty: { $asset0: 0 }
-    })
-  },
-  async ({ comet, actors }, context) => {
-    const { albert, betty } = actors;
-    const { asset: asset0Address, scale: scaleBN } = await comet.getAssetInfo(0);
-    const collateralAsset = context.getAssetByAddress(asset0Address);
-    const scale = scaleBN.toBigInt();
+      // Give the protocol enough base liquidity to pay out the borrow
+      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
 
-    await albert.allow(betty, true);
+      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0n);
+      await albert.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
 
-    // Betty transfers all of Albert's collateral to herself
-    await expect(
-      comet
-        .connect(betty.signer)
-        .transferAssetFrom(
-          albert.address,
-          betty.address,
-          collateralAsset.address,
-          BigInt(getConfigForScenario(context).transferAsset) * scale
-        )
-    ).to.be.revertedWithCustomError(comet, 'NotCollateralized');
-  }
-);
+      // Albert had no debt, so his borrow balance is the amount borrowed. Comet stores the debt rounded up
+      // and reads it back rounded down, which can add 1 wei, so allow for that
+      expectBase((await comet.borrowBalanceOf(albert.address)).toBigInt(), borrowAmount);
+
+      // Moving out all the collateral leaves the borrow with nothing backing it
+      const amountToTransfer = await albert.getCometCollateralBalance(collateralAsset.address);
+
+      await expect(
+        comet.connect(albert.signer).transferAsset(betty.address, collateralAsset.address, amountToTransfer)
+      ).to.be.revertedWithCustomError(comet, 'NotCollateralized');
+    }
+  );
+}
+
+for (let offset = 0; offset < MAX_ASSETS; offset++) {
+  scenario(
+    `Comet#transferAssetFrom > collateral asset ${offset} reverts if undercollateralized`,
+    {
+      filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
+    },
+    async ({ comet, actors }, context) => {
+      const { albert, betty } = actors;
+      const baseAsset = context.getAssetByAddress(await comet.baseToken());
+      const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
+
+      // Albert borrows against the collateral in this scenario's slot
+      await context.sourceTokens(supplyAmount, collateralAsset.address, albert.address);
+      await collateralAsset.approve(albert, comet.address);
+      await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
+
+      // Give the protocol enough base liquidity to pay out the borrow
+      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
+
+      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0n);
+      await albert.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
+
+      // Albert had no debt, so his borrow balance is the amount borrowed. Comet stores the debt rounded up
+      // and reads it back rounded down, which can add 1 wei, so allow for that
+      expectBase((await comet.borrowBalanceOf(albert.address)).toBigInt(), borrowAmount);
+
+      // Moving out all the collateral leaves the borrow with nothing backing it
+      const amountToTransfer = await albert.getCometCollateralBalance(collateralAsset.address);
+
+      await albert.allow(betty, true);
+
+      // Betty moves all of Albert's collateral to herself
+      await expect(
+        comet.connect(betty.signer).transferAssetFrom(albert.address, betty.address, collateralAsset.address, amountToTransfer)
+      ).to.be.revertedWithCustomError(comet, 'NotCollateralized');
+    }
+  );
+}
 
 scenario('Comet#transferAsset > disallows self-transfer of base', {}, async ({ comet, actors }) => {
   const { albert } = actors;

@@ -118,6 +118,10 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
       config.supplyCollateral = 2;
       config.transferCollateral = 2;
       config.withdrawCollateral = 2;
+    } 
+
+    if(i == 7) { // oETH
+      config.withdrawBase = 1;
     }
   }
 
