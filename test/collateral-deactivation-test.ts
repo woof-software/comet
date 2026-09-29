@@ -17,12 +17,10 @@ import { ContractTransaction } from 'ethers';
  *    `CometExt.deactivateCollateral(assetIndex)`.
  *  - Deactivation sets a bit in `deactivatedCollaterals` storage and, for the given asset:
  *      - marks the asset as deactivated in core `Comet` (`isCollateralDeactivated`),
- *      - pauses supply of that collateral (via `collateralsSupplyPauseFlags`),
- *      - pauses transfer of that collateral (via `collateralsTransferPauseFlags`).
+ *      - makes Comet block supply and transfer of that collateral (`TokenIsDeactivated`).
  *  - Once the risk is understood and resolved, the `governor` can later reactivate the
- *    asset via `CometExt.activateCollateral(assetIndex)`, which:
- *      - clears the deactivation bit in `deactivatedCollaterals`,
- *      - unpauses supply and transfer for that asset.
+ *    asset via `CometExt.activateCollateral(assetIndex)`, which clears the deactivation bit
+ *    in `deactivatedCollaterals`, allowing supply and transfer again.
  *
  *  This design allows:
  *  - **Fast, operational safety response** (pauseGuardian can respond without waiting for a
@@ -38,18 +36,11 @@ import { ContractTransaction } from 'ethers';
  *
  *  1. **Collateral deactivation happy path**
  *     - The `pauseGuardian` can successfully call `deactivateCollateral(assetIndex)`.
- *     - The transaction emits:
- *         - `CollateralDeactivated(assetIndex)` to signal that the asset has been marked
- *           as deactivated in protocol storage.
- *         - `CollateralAssetSupplyPauseAction(assetIndex, true)` to signal that new supply
- *           of the asset is paused.
- *         - `CollateralAssetTransferPauseAction(assetIndex, true)` to signal that transfers
- *           of that collateral are paused.
+ *     - The transaction emits `CollateralDeactivated(assetIndex)` to signal that the asset
+ *       has been marked as deactivated in protocol storage.
  *     - The core `Comet` contract reflects the updated state:
  *         - `isCollateralDeactivated(assetIndex)` returns `true`.
  *         - `deactivatedCollaterals()` has the corresponding bit set.
- *         - `isCollateralAssetSupplyPaused(assetIndex)` and
- *           `isCollateralAssetTransferPaused(assetIndex)` both return `true`.
  *
  *  2. **Collateral deactivation failure modes**
  *     - Only the `pauseGuardian` may deactivate collateral:
@@ -61,18 +52,11 @@ import { ContractTransaction } from 'ethers';
  *  3. **Collateral activation happy path**
  *     - The `governor` can successfully call `activateCollateral(assetIndex)` to re-enable
  *       a previously deactivated asset.
- *     - The transaction emits:
- *         - `CollateralActivated(assetIndex)` to signal that the deactivation flag for the
- *           asset has been cleared.
- *         - `CollateralAssetSupplyPauseAction(assetIndex, false)` to signal that new
- *           supply is allowed again.
- *         - `CollateralAssetTransferPauseAction(assetIndex, false)` to signal that
- *           transfers are allowed again.
+ *     - The transaction emits `CollateralActivated(assetIndex)` to signal that the
+ *       deactivation flag for the asset has been cleared.
  *     - Core `Comet` state is updated:
  *         - `isCollateralDeactivated(assetIndex)` returns `false`.
  *         - `deactivatedCollaterals()` is updated to clear the corresponding bit.
- *         - `isCollateralAssetSupplyPaused(assetIndex)` and
- *           `isCollateralAssetTransferPaused(assetIndex)` both return `false`.
  *
  *  4. **Collateral activation failure modes**
  *     - Only the `governor` may activate collateral:
@@ -137,14 +121,6 @@ describe('collateral deactivation functionality', function () {
         expect(deactivateCollateralTx).to.emit(cometExt, 'CollateralDeactivated').withArgs(ASSET_INDEX);
       });
 
-      it('emits CollateralAssetSupplyPauseAction event', async function () {
-        expect(deactivateCollateralTx).to.emit(cometExt, 'CollateralAssetSupplyPauseAction').withArgs(ASSET_INDEX, true);
-      });
-
-      it('emits CollateralAssetTransferPauseAction event', async function () {
-        expect(deactivateCollateralTx).to.emit(cometExt, 'CollateralAssetTransferPauseAction').withArgs(ASSET_INDEX, true);
-      });
-
       it('sets collateral as deactivated in comet', async function () {
         expect(await comet.isCollateralDeactivated(ASSET_INDEX)).to.be.true;
       });
@@ -153,10 +129,6 @@ describe('collateral deactivation functionality', function () {
         expect(await comet.deactivatedCollaterals()).to.equal(1);
       });
 
-      it('updates pause flags for deactivated collateral', async function () {
-        expect(await comet.isCollateralAssetSupplyPaused(ASSET_INDEX)).to.be.true;
-        expect(await comet.isCollateralAssetTransferPaused(ASSET_INDEX)).to.be.true;
-      });
     });
 
     describe('reverts when', function () {
@@ -190,14 +162,6 @@ describe('collateral deactivation functionality', function () {
         expect(activateCollateralTx).to.emit(cometExt, 'CollateralActivated').withArgs(ASSET_INDEX);
       });
 
-      it('emits CollateralAssetSupplyPauseAction event', async function () {
-        expect(activateCollateralTx).to.emit(cometExt, 'CollateralAssetSupplyPauseAction').withArgs(ASSET_INDEX, false);
-      });
-
-      it('emits CollateralAssetTransferPauseAction event', async function () {
-        expect(activateCollateralTx).to.emit(cometExt, 'CollateralAssetTransferPauseAction').withArgs(ASSET_INDEX, false);
-      });
-
       it('sets collateral as activated in comet', async function () {
         expect(await comet.isCollateralDeactivated(ASSET_INDEX)).to.be.false;
       });
@@ -206,10 +170,6 @@ describe('collateral deactivation functionality', function () {
         expect(await comet.deactivatedCollaterals()).to.equal(0);
       });
 
-      it('updates pause flags for activated collateral', async function () {
-        expect(await comet.isCollateralAssetSupplyPaused(ASSET_INDEX)).to.be.false;
-        expect(await comet.isCollateralAssetTransferPaused(ASSET_INDEX)).to.be.false;
-      });
     });
 
     describe('reverts when', function () {

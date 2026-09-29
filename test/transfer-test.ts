@@ -115,26 +115,6 @@ describe('transfer', function () {
         await expect(comet.connect(alice).transfer(alice.address, SUPPLY_AMOUNT)).to.be.revertedWithCustomError(comet, 'NoSelfTransfer');
       });
 
-      it('transfer is paused', async () => {
-        // Pause transfer
-        await comet.connect(pauseGuardian).pause(false, true, false, false, false);
-
-        await expect(comet.connect(alice).transfer(alice.address, SUPPLY_AMOUNT)).to.be.revertedWithCustomError(comet, 'Paused');
-        
-        // Unpause transfer
-        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
-      });
-
-      it('lenders transfer is paused', async () => {
-        // Pause lenders transfer
-        await comet.connect(pauseGuardian).pauseLendersTransfer(true);
-
-        await expect(comet.connect(alice).transfer(bob.address, SUPPLY_AMOUNT)).to.be.revertedWithCustomError(comet, 'LendersTransferPaused');
-
-        // Unpause lenders transfer
-        await comet.connect(pauseGuardian).pauseLendersTransfer(false);
-      });
-
       // In case when user has no collateral supplied and lend position
       // transfering will revert with BorrowTooSmall, as amount to transfer is greater than
       // user's balance, he'll become a borrower and his balance will be negative on 1 wei
@@ -163,18 +143,6 @@ describe('transfer', function () {
         await expect(comet.connect(alice).transfer(bob.address, amountToTransfer)).to.be.revertedWithCustomError(comet, 'NotCollateralized');
       });
 
-      it('borrowers transfer is paused', async () => {
-        // Pause borrowers transfer
-        await comet.connect(pauseGuardian).pauseBorrowersTransfer(true);
-
-        const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-        // Transfer will make Alice a borrower, so amount to transfer is greater than her balance
-        const transferAmount = SUPPLY_AMOUNT + baseBorrowMin;
-        await expect(comet.connect(alice).transfer(bob.address, transferAmount)).to.be.revertedWithCustomError(comet, 'BorrowersTransferPaused');
-
-        // Unpause borrowers transfer
-        await comet.connect(pauseGuardian).pauseBorrowersTransfer(false);
-      });
     });
 
     describe('happy path (without interest)', function () {
@@ -634,46 +602,8 @@ describe('transfer', function () {
         )).to.be.revertedWithCustomError(comet, 'NoSelfTransfer');
       });
 
-      it('global transfer pause', async () => {
-        await comet.connect(pauseGuardian).pause(false, true, false, false, false);
-
-        await expect(comet.connect(alice).transferAsset(
-          bob.address,
-          collateral.address,
-          TRANSFER_AMOUNT
-        )).to.be.revertedWithCustomError(comet, 'Paused');
-
-        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
-      });
-
-      it('collaterals transfers pause', async () => {
-        await comet.connect(pauseGuardian).pauseCollateralTransfer(true);
-
-        await expect(comet.connect(alice).transferAsset(
-          bob.address,
-          collateral.address,
-          TRANSFER_AMOUNT
-        )).to.be.revertedWithCustomError(comet, 'CollateralTransferPaused');
-
-        await comet.connect(pauseGuardian).pauseCollateralTransfer(false);
-      });
-
-      it('specific collateral asset transfer pause', async () => {
-        await comet.connect(pauseGuardian).pauseCollateralAssetTransfer(0, true);
-
-        await expect(comet.connect(alice).transferAsset(
-          bob.address,
-          collateral.address,
-          TRANSFER_AMOUNT
-        )).to.be.revertedWithCustomError(comet, 'CollateralAssetTransferPaused');
-
-        await comet.connect(pauseGuardian).pauseCollateralAssetTransfer(0, false);
-      });
-
       it('unsupported asset & amount > 0', async () => {
-        // Overflow/underflow panic error
-        // This happens because user can not have unsupported token balance > 0
-        await expect(comet.connect(alice).transferAsset(bob.address, unsupportedToken.address, TRANSFER_AMOUNT)).to.be.revertedWithPanic('0x11'); 
+        await expect(comet.connect(alice).transferAsset(bob.address, unsupportedToken.address, TRANSFER_AMOUNT)).to.be.revertedWithCustomError(comet, 'BadAsset');
       });
 
       it('unsupported asset & amount = 0', async () => {
@@ -1281,18 +1211,6 @@ describe('transfer', function () {
           baseBorrowIndex = totalsBasic.baseBorrowIndex.toBigInt();
         });
 
-        it('pause', async () => {
-          await comet.connect(pauseGuardian).pause(false, true, false, false, false);
-
-          await expect(comet.connect(operator).transferFrom(
-            holder.address,
-            receiver.address,
-            BASE_TRANSFER_AMOUNT
-          )).to.be.revertedWithCustomError(comet, 'Paused');
-
-          await comet.connect(pauseGuardian).pause(false, false, false, false, false);
-        });
-
         it('operator has no permission from holder', async () => {
           await comet.connect(holder).approve(operator.address, 0);
 
@@ -1436,18 +1354,6 @@ describe('transfer', function () {
       });
 
       describe('revert on', function () {
-        it('pause', async () => {
-          await comet.connect(pauseGuardian).pause(false, true, false, false, false);
-
-          await expect(comet.connect(operator).transferAssetFrom(
-            holder.address,
-            receiver.address,
-            collaterals['COMP'].address,
-            PARTIAL_COLLATERAL_AMOUNT
-          )).to.be.revertedWithCustomError(comet, 'Paused');
-
-          await comet.connect(pauseGuardian).pause(false, false, false, false, false);
-        });
 
         it('operator has no permission from holder', async () => {
           await comet.connect(holder).approve(operator.address, 0);
@@ -1486,7 +1392,7 @@ describe('transfer', function () {
             receiver.address,
             unsupportedToken.address,
             COLLATERAL_TRANSFER_AMOUNT
-          )).to.be.revertedWithPanic('0x11');
+          )).to.be.revertedWithCustomError(comet, 'BadAsset');
         });
 
         it('amount > balance', async () => {
@@ -1623,36 +1529,13 @@ describe('transfer', function () {
       }
 
       [alice, bob] = protocol.users;
-    });
 
-    describe('pause can be set for each collateral', function () {
-      it('setup: alice supply each of collaterals', async () => {
-        for (const asset in collaterals) {
-          await collaterals[asset].allocateTo(alice.address, TRANSFER_AMOUNT);
-          await collaterals[asset].connect(alice).approve(comet.address, TRANSFER_AMOUNT);
-          await comet.connect(alice).supply(collaterals[asset].address, TRANSFER_AMOUNT);
-        }
-      });
-
-      it('should allow to pause each collateral transfers', async () => {
-        for(let i = 0; i < MAX_ASSETS; i++) {
-          await comet.connect(pauseGuardian).pauseCollateralAssetTransfer(i, true);
-          expect(await comet.isCollateralAssetTransferPaused(i)).to.be.true;
-        }
-      });
-
-      it('should revert when transferring collateral asset that is paused', async () => {
-        for (const asset in collaterals) {
-          await expect(comet.connect(alice).transferAsset(bob.address, collaterals[asset].address, TRANSFER_AMOUNT)).to.be.revertedWithCustomError(comet, 'CollateralAssetTransferPaused');
-        }
-      });
-
-      it('should allow to unpause each collateral transfers', async () => {
-        for(let i = 0; i < MAX_ASSETS; i++) {
-          await comet.connect(pauseGuardian).pauseCollateralAssetTransfer(i, false);
-          expect(await comet.isCollateralAssetTransferPaused(i)).to.be.false;
-        }
-      });
+      // Alice supplies each of the collaterals
+      for (const asset in collaterals) {
+        await collaterals[asset].allocateTo(alice.address, TRANSFER_AMOUNT);
+        await collaterals[asset].connect(alice).approve(comet.address, TRANSFER_AMOUNT);
+        await comet.connect(alice).supply(collaterals[asset].address, TRANSFER_AMOUNT);
+      }
     });
 
     describe('transfer collateral works for each collateral', function () {
@@ -1878,7 +1761,7 @@ describe('transfer', function () {
      * @notice Transfer path behavior when collateral is deactivated and reactivated.
      * @dev
      *  While a collateral is deactivated, `transferAsset` of that collateral reverts
-     *  with `CollateralAssetTransferPaused(index)`, and a base `transfer` from a
+     *  with `TokenIsDeactivated(asset)`, and a base `transfer` from a
      *  borrower holding that collateral reverts with
      *  `TokenIsDeactivated(collateralToken)` because the collateral no longer counts
      *  in `isBorrowCollateralized`. After reactivation, both `transferAsset` and
@@ -1932,7 +1815,7 @@ describe('transfer', function () {
     it('asset transfer call reverts', async function () {
       await expect(
         comet.connect(dave).transferAsset(alice.address, collateralToken.address, collateralTokenSupplyAmount)
-      ).to.be.revertedWithCustomError(comet, 'CollateralAssetTransferPaused').withArgs(deactivatedCollateralIndex);
+      ).to.be.revertedWithCustomError(comet, 'TokenIsDeactivated').withArgs(collateralToken.address);
     });
 
     it('base token transfer reverts when user has deactivated collateral and borrow position', async function () {
@@ -1982,12 +1865,12 @@ describe('transfer', function () {
         await assetToken.connect(dave).approve(cometWith24Collaterals.address, collateralTokenSupplyAmount);
         await cometWith24Collaterals.connect(dave).supply(assetToken.address, collateralTokenSupplyAmount);
 
-        // Pause specific collateral asset transfer at index assetIndex
+        // Deactivate the collateral asset at index assetIndex
         await cometWith24Collaterals.connect(pauseGuardian).deactivateCollateral(assetIndex);
 
         await expect(
           cometWith24Collaterals.connect(dave).transferAsset(alice.address, assetToken.address, collateralTokenSupplyAmount)
-        ).to.be.revertedWithCustomError(cometWith24Collaterals, 'CollateralAssetTransferPaused').withArgs(assetIndex);
+        ).to.be.revertedWithCustomError(cometWith24Collaterals, 'TokenIsDeactivated').withArgs(assetToken.address);
       });
 
       it(`allows to transfer re-activated collateral with index ${i}`, async () => {
@@ -2015,7 +1898,7 @@ describe('transfer', function () {
     it('asset transferFrom call reverts', async function () {
       await expect(
         comet.connect(alice).transferAssetFrom(dave.address, alice.address, collateralToken.address, collateralTokenSupplyAmount)
-      ).to.be.revertedWithCustomError(comet, 'CollateralAssetTransferPaused').withArgs(deactivatedCollateralIndex);
+      ).to.be.revertedWithCustomError(comet, 'TokenIsDeactivated').withArgs(collateralToken.address);
     });
 
     it('base token transferFrom reverts when user has deactivated collateral and borrow position', async function () {
@@ -2067,12 +1950,12 @@ describe('transfer', function () {
 
         await cometWith24Collaterals.connect(dave).allow(alice.address, true);
 
-        // Pause specific collateral asset transfer at index assetIndex
+        // Deactivate the collateral asset at index assetIndex
         await cometWith24Collaterals.connect(pauseGuardian).deactivateCollateral(assetIndex);
 
         await expect(
           cometWith24Collaterals.connect(alice).transferAssetFrom(dave.address, alice.address, assetToken.address, collateralTokenSupplyAmount)
-        ).to.be.revertedWithCustomError(cometWith24Collaterals, 'CollateralAssetTransferPaused').withArgs(assetIndex);
+        ).to.be.revertedWithCustomError(cometWith24Collaterals, 'TokenIsDeactivated').withArgs(assetToken.address);
       });
 
       it(`allows to transferFrom re-activated collateral with index ${i}`, async () => {

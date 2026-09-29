@@ -91,13 +91,6 @@ describe('supply', function () {
 
   describe('supply base asset', function () {
     describe('default state (un-accrued)', function () {
-      it('supply is not paused by default', async () => {
-        expect(await comet.isSupplyPaused()).to.be.false;
-      });
-
-      it('base supply is not paused by default', async () => {
-        expect(await comet.isBaseSupplyPaused()).to.be.false;
-      });
 
       it('no base token on the comet', async () => {
         expect(await baseToken.balanceOf(comet.address)).to.equal(0);
@@ -131,22 +124,6 @@ describe('supply', function () {
     });
 
     describe('supply base asset: reverts', function () {
-      it('reverts if supply is paused', async () => {
-        await comet.connect(pauseGuardian).pause(true, false, false, false, false);
-        expect(await comet.isSupplyPaused()).to.be.true;
-
-        await baseToken.connect(alice).approve(comet.address, 1);
-        await expect(comet.connect(alice).supply(baseToken.address, 1)).to.be.revertedWithCustomError(comet, 'Paused');
-        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
-      });
-
-      it('reverts if base supply is paused', async () => {
-        await comet.connect(pauseGuardian).pauseBaseSupply(true);
-        expect(await comet.isBaseSupplyPaused()).to.be.true;
-
-        await expect(comet.connect(alice).supply(baseToken.address, 1)).to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
-        await comet.connect(pauseGuardian).pauseBaseSupply(false);
-      });
 
       it('reverts for not enough base asset balance', async () => {
         const balanceBefore = await baseToken.balanceOf(alice.address);
@@ -683,30 +660,6 @@ describe('supply', function () {
     });
     
     describe('reverts', function () {
-      it('reverts if supply is paused', async () => {
-        await comet.connect(pauseGuardian).pause(true, false, false, false, false);
-        expect(await comet.isSupplyPaused()).to.be.true;
-
-        await expect(comet.connect(alice).supply(collateral.address, 1)).to.be.revertedWithCustomError(comet, 'Paused');
-        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
-      });
-
-      it('reverts if collateral supply is paused', async () => {
-        await comet.connect(pauseGuardian).pauseCollateralSupply(true);
-        expect(await comet.isCollateralSupplyPaused()).to.be.true;
-
-        await expect(comet.connect(alice).supply(collateral.address, 1)).to.be.revertedWithCustomError(comet, 'CollateralSupplyPaused');
-        await comet.connect(pauseGuardian).pauseCollateralSupply(false);
-      });
-
-      it('reverts if specific collateral supply is paused', async () => {
-        await comet.connect(pauseGuardian).pauseCollateralAssetSupply(0, true);
-        expect(await comet.isCollateralAssetSupplyPaused(0)).to.be.true;
-
-        await collateral.connect(alice).approve(comet.address, 1);
-        await expect(comet.connect(alice).supply(collateral.address, 1)).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused');
-        await comet.connect(pauseGuardian).pauseCollateralAssetSupply(0, false);
-      });
 
       it('reverts for not enough collateral balance', async () => {
         const balanceBefore = await collateral.balanceOf(alice.address);
@@ -1225,23 +1178,6 @@ describe('supply', function () {
         await expect(comet.connect(alice).supplyTo(bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(comet, 'BadAsset');
       });
 
-      it('reverts when protocol paused', async () => {
-        await comet.connect(pauseGuardian).pause(true, false, false, false, false);
-        expect(await comet.isSupplyPaused()).to.be.true;
-
-        await baseToken.connect(alice).approve(comet.address, 1);
-        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, 1)).to.be.revertedWithCustomError(comet, 'Paused');
-        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
-      });
-
-      it('reverts if base supply is paused', async () => {
-        await comet.connect(pauseGuardian).pauseBaseSupply(true);
-        expect(await comet.isBaseSupplyPaused()).to.be.true;
-
-        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, 1)).to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
-        await comet.connect(pauseGuardian).pauseBaseSupply(false);
-      });
-
       it('should accrue state (same as supply())', async () => {
         const snapshot: SnapshotRestorer = await takeSnapshot();
 
@@ -1356,26 +1292,6 @@ describe('supply', function () {
         );
       });
 
-      it('reverts when protocol paused', async () => {
-        await comet.connect(pauseGuardian).pause(true, false, false, false, false);
-        expect(await comet.isSupplyPaused()).to.be.true;
-
-        await baseToken.connect(alice).approve(comet.address, 1);
-        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, baseToken.address, 1)).to.be.revertedWithCustomError(
-          comet,
-          'Paused'
-        );
-        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
-      });
-
-      it('reverts if base supply is paused', async () => {
-        await comet.connect(pauseGuardian).pauseBaseSupply(true);
-        expect(await comet.isBaseSupplyPaused()).to.be.true;
-
-        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, baseToken.address, 1)).to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
-        await comet.connect(pauseGuardian).pauseBaseSupply(false);
-      });
-
       it('should accrue state (same as supply())', async () => {
         const snapshot: SnapshotRestorer = await takeSnapshot();
 
@@ -1476,30 +1392,6 @@ describe('supply', function () {
     before(async () => {
       alicePrincipalBefore = (await cometWith24Collaterals.userBasic(alice.address)).principal;
       davePrincipalBefore = (await cometWith24Collaterals.userBasic(dave.address)).principal;
-    });
-
-    describe('pause can be set for each collateral', function () {
-      it('should allow to pause each collateral supply', async () => {
-        for (let i = 0; i < MAX_ASSETS; i++) {
-          await cometWith24Collaterals.connect(pauseGuardian).pauseCollateralAssetSupply(i, true);
-          expect(await cometWith24Collaterals.isCollateralAssetSupplyPaused(i)).to.be.true;
-        }
-      });
-
-      it('should revert if specific collateral supply is paused', async () => {
-        for (let i = 0; i < MAX_ASSETS; i++) {
-          await tokensWith24Collaterals[`ASSET${i}`].allocateTo(alice.address, SUPPLY_COLLATERAL_AMOUNT);
-          await tokensWith24Collaterals[`ASSET${i}`].connect(alice).approve(cometWith24Collaterals.address, SUPPLY_COLLATERAL_AMOUNT);
-          await expect(cometWith24Collaterals.connect(alice).supply(tokensWith24Collaterals[`ASSET${i}`].address, SUPPLY_COLLATERAL_AMOUNT)).to.be.revertedWithCustomError(cometWith24Collaterals, 'CollateralAssetSupplyPaused').withArgs(i);
-        }
-      });
-
-      it('should allow to unpause each collateral supply', async () => {
-        for (let i = 0; i < MAX_ASSETS; i++) {
-          await cometWith24Collaterals.connect(pauseGuardian).pauseCollateralAssetSupply(i, false);
-          expect(await cometWith24Collaterals.isCollateralAssetSupplyPaused(i)).to.be.false;
-        }
-      });
     });
 
     describe('supply', function () {
@@ -1858,7 +1750,7 @@ describe('supply', function () {
     * @notice Supply path behavior when collateral is deactivated and reactivated.
     * @dev
     *  While a collateral is deactivated by the `pauseGuardian`, `supply` of that
-    *  asset reverts with `CollateralAssetSupplyPaused(index)`. After the `governor`
+    *  asset reverts with `TokenIsDeactivated(asset)`. After the `governor`
     *  reactivates it, `supply` succeeds and updates `totalsCollateral` and
     *  `userCollateral` accordingly. The MAX_ASSETS loop asserts the same
     *  deactivate-revert / reactivate-succeed behavior for every asset index in a
@@ -1875,7 +1767,7 @@ describe('supply', function () {
     it('supply call reverts', async function () {
       await expect(
         comet.connect(bob).supply(collateralToken.address, collateralTokenSupplyAmount)
-      ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(deactivatedCollateralIndex);
+      ).to.be.revertedWithCustomError(comet, 'TokenIsDeactivated').withArgs(collateralToken.address);
     });
 
     it('allows governor to activate a token', async function () {
@@ -1910,7 +1802,7 @@ describe('supply', function () {
 
         await expect(
           cometWith24Collaterals.connect(bob).supply(supplyToken.address, collateralTokenSupplyAmount)
-        ).to.be.revertedWithCustomError(cometWith24Collaterals, 'CollateralAssetSupplyPaused').withArgs(assetIndex);
+        ).to.be.revertedWithCustomError(cometWith24Collaterals, 'TokenIsDeactivated').withArgs(supplyToken.address);
       });
 
       it(`allows to supplyTo re-activated collateral with index ${i}`, async function () {
@@ -1935,10 +1827,6 @@ describe('supply', function () {
       await expect(deactivateCollateralTx).to.not.be.reverted;
     });
 
-    it('emits CollateralAssetSupplyPauseAction event with true argument', async function () {
-      expect(deactivateCollateralTx).to.emit(comet, 'CollateralAssetSupplyPauseAction').withArgs(deactivatedCollateralIndex, true);
-    });
-
     it('emits CollateralDeactivated event', async function () {
       expect(deactivateCollateralTx).to.emit(comet, 'CollateralDeactivated').withArgs(deactivatedCollateralIndex);
     });
@@ -1947,23 +1835,15 @@ describe('supply', function () {
       expect(await comet.isCollateralDeactivated(deactivatedCollateralIndex)).to.be.true;
     });
 
-    it('updates collateral supply pause flag in comet storage', async function () {
-      expect(await comet.isCollateralAssetSupplyPaused(deactivatedCollateralIndex)).to.be.true;
-    });
-
     it('supplyTo call reverts', async function () {
       await expect(
         comet.connect(bob).supplyTo(alice.address, collateralToken.address, collateralTokenSupplyAmount)
-      ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(deactivatedCollateralIndex);
+      ).to.be.revertedWithCustomError(comet, 'TokenIsDeactivated').withArgs(collateralToken.address);
     });
 
     it('allows governor to activate a token', async function () {
       activateCollateralTx = await comet.connect(governor).activateCollateral(deactivatedCollateralIndex);
       await expect(activateCollateralTx).to.not.be.reverted;
-    });
-
-    it('emits CollateralAssetSupplyPauseAction event with false argument', async function () {
-      expect(activateCollateralTx).to.emit(comet, 'CollateralAssetSupplyPauseAction').withArgs(deactivatedCollateralIndex, false);
     });
 
     it('emits CollateralActivated event', async function () {
@@ -1972,10 +1852,6 @@ describe('supply', function () {
 
     it('sets collateral as activated in comet', async function () {
       expect(await comet.isCollateralDeactivated(deactivatedCollateralIndex)).to.be.false;
-    });
-
-    it('updates collateral supply pause flag in comet storage', async function () {
-      expect(await comet.isCollateralAssetSupplyPaused(deactivatedCollateralIndex)).to.be.false;
     });
 
     it('allows to supplyTo activated collateral', async function () {
@@ -2012,7 +1888,7 @@ describe('supply', function () {
 
         await expect(
           cometWith24Collaterals.connect(bob).supplyTo(alice.address, supplyToken.address, collateralTokenSupplyAmount)
-        ).to.be.revertedWithCustomError(cometWith24Collaterals, 'CollateralAssetSupplyPaused').withArgs(assetIndex);
+        ).to.be.revertedWithCustomError(cometWith24Collaterals, 'TokenIsDeactivated').withArgs(supplyToken.address);
       });
 
       it(`allows to supplyTo re-activated collateral with index ${i}`, async function () {
@@ -2040,7 +1916,7 @@ describe('supply', function () {
       await comet.connect(bob).allow(alice.address, true);
       await expect(
         comet.connect(alice).supplyFrom(bob.address, alice.address, collateralToken.address, collateralTokenSupplyAmount)
-      ).to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(deactivatedCollateralIndex);
+      ).to.be.revertedWithCustomError(comet, 'TokenIsDeactivated').withArgs(collateralToken.address);
     });
 
     it('allows governor to activate a token', async function () {
@@ -2082,7 +1958,7 @@ describe('supply', function () {
 
         await expect(
           cometWith24Collaterals.connect(alice).supplyFrom(bob.address, alice.address, supplyToken.address, collateralTokenSupplyAmount)
-        ).to.be.revertedWithCustomError(cometWith24Collaterals, 'CollateralAssetSupplyPaused').withArgs(assetIndex);
+        ).to.be.revertedWithCustomError(cometWith24Collaterals, 'TokenIsDeactivated').withArgs(supplyToken.address);
       });
 
       it(`allows to supplyFrom re-activated collateral with index ${i}`, async function () {

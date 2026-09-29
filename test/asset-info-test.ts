@@ -116,6 +116,7 @@ describe('asset info', function () {
         }
         return acc;
       }, []),
+      accessGate: ethers.constants.AddressZero,
     };
     const CometFactory = (await ethers.getContractFactory('CometHarness')) as CometHarness__factory;
     await expect(

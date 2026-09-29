@@ -5,7 +5,7 @@ import { takeSnapshot, SnapshotRestorer } from '../helpers/snapshot';
 import { ACTIONS, Action, NO_ASSET, deployListAccessGateFixture } from '../helpers/access-gate';
 
 // AllowlistGate blocks every account from every action unless it is listed for the action; BlocklistGate blocks
-// the accounts listed for the action. Both check the account and the counterparty of an action (a zero
+// the accounts listed for the action. Both check the operator, the account and the counterparty of an action (a zero
 // counterparty is skipped) on top of the pause state. REPAY, WITHDRAW_RESERVES and APPROVE_THIS are exempt from
 // the list policy, the pauses still apply to them. Below, a "permitted" party is one the gate's list lets through
 // (listed for AllowlistGate, unlisted for BlocklistGate), a "blocked" party is the opposite.
@@ -106,8 +106,9 @@ describe('allowlist and blocklist gates', function () {
             await expect(checkAccess(Action.BORROW, permitted[0].address, permitted[0].address, ZERO)).to.not.be.reverted;
           });
 
-          it('permits BORROW when the operator is blocked', async () => {
-            await expect(checkAccess(Action.BORROW, blocked[0].address, permitted[0].address, permitted[1].address)).to.not.be.reverted;
+          it('rejects BORROW when the operator is blocked', async () => {
+            await expect(checkAccess(Action.BORROW, blocked[0].address, permitted[0].address, permitted[1].address))
+              .to.be.revertedWithCustomError(gate, 'Blocked').withArgs(blocked[0].address, Action.BORROW);
           });
 
           it(`${listedIsBlocked ? 'rejects' : 'permits'} BORROW for an account listed for BORROW only`, async () => {

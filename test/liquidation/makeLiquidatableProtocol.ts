@@ -126,7 +126,8 @@ export async function makeProtocol() {
         liquidationFactor: exp(0.9, 18),
         supplyCap: exp(1000000, 18)
       },
-    ]
+    ],
+    accessGate: ethers.constants.AddressZero,
   };
 
   const comet = await CometFactory.deploy(config);
