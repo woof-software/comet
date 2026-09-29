@@ -33,7 +33,7 @@ export default migration('1724837643_add_wrseth_as_collateral', {
       'wrsETH',
       WRSETH_ADDRESS,
       'optimism',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const wrsETHPriceFeed = await deploymentManager.existing(
       'wrsETH:priceFeed',

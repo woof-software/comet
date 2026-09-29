@@ -1,4 +1,4 @@
-import { AssetConfigStruct } from '../../build/types/Comet';
+import { AssetConfigStruct } from '../../build/types/CometWithExtendedAssetList';
 import { BigNumberish, Contract, PopulatedTransaction, utils } from 'ethers';
 
 export { cloneGov, deployNetworkComet as deployComet, sameAddress } from './Network';
@@ -111,9 +111,16 @@ export const WHALES = {
     '0xdCa0A2341ed5438E06B9982243808A76B9ADD6d0', // woETH whale
     '0x34C0bD5877A5Ee7099D0f5688D65F4bB9158BDE2', // sFRAX whale
     '0x9152e9C04e8fE8373EDaa8f5841E25d4015658B7', // pumpBTC whale
+    '0xd4Cc9b31e9eF33E392FF2f81AD52BE8523e0993b', // pumpBTC whale
     '0x65906988ADEe75306021C417a1A3458040239602', // LBTC whale
     '0xF469fBD2abcd6B9de8E169d128226C0Fc90a012e', // wbtc whale
     '0x7667095Caa12b79fCa489ff6E2198Ca01fDAe057',
+    '0x91d14789071e5E195FFC9F745348736677De3292', // COMP whale
+    '0x1d48963DD8FAdA6aB5C2C7b92Eba81ECC5030270', // COMP whale
+    '0xF977814e90dA44bFA03b6295A0616a897441aceC', // COMP whale
+    '0x27944bC193AF572136b0f370Ca738514D52f7c80', // COMP whale
+    '0xce8c60fd8390eFCc3Fc66A3f0bd64BEb969e750E', // tETH whale
+    '0xA17581A9E3356d9A858b789D68B4d866e593aE94', // tETH whale
   ],
   polygon: [
     '0xF977814e90dA44bFA03b6295A0616a897441aceC', // USDT whale
@@ -152,7 +159,17 @@ export const WHALES = {
     '0x68863dDE14303BcED249cA8ec6AF85d4694dea6A', // tBTC whale
     '0xDBD974Eb5360d053ea0c56B4DaCF4A9D3E894Ee2', // tETH whale
     '0xbA1333333333a1BA1108E8412f11850A5C319bA9', // tETH whale
-    '0xEA1132120ddcDDA2F119e99Fa7A27a0d036F7Ac9', // ezETH whale
+    '0x0dE802e3D6Cc9145A150bBDc8da9F988a98c5202', // ezETH whale
+    '0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486', // ezETH whale
+    '0xfB0Ad0B3C2605A7CA33d6badd0C685E11b8F5585', // ezETH whale
+    '0x3405A1bd46B85c5C029483FbECf2F3E611026e45', // USDC.e whale,
+    '0x593c427d8C7bf5C555Ed41cd7CB7cCe8C9F15bB5', // tBTC v2 whale
+    '0x62fC96b27a510cF4977B59FF952Dc32378Cc221d', // tBTC v2 whale
+    '0x68863dDE14303BcED249cA8ec6AF85d4694dea6A', // tBTC v2 whale
+    '0x186cF879186986A20aADFb7eAD50e3C20cb26CeC', // tBTC v2 whale
+    '0xd62068697bCc92AF253225676D618B0C9f17C663', // tBTC v2 whale
+    '0xe9e6b9aAAfaf6816C3364345F6eF745CcFC8660a', // tBTC v2 whale
+    '0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07', // tBTC v2 whale
   ],
   base: [
     '0x6D3c5a4a7aC4B1428368310E4EC3bB1350d01455', // USDbC whale
@@ -166,20 +183,35 @@ export const WHALES = {
     '0xcf3D55c10DB69f28fD1A75Bd73f3D8A2d9c595ad', // cbETH whale
     '0xb125E6687d4313864e53df431d5425969c15Eb2F', // cbETH whale
     '0x1539A4611f16a139891c14365Cab86599F3A8AFC', // tBTC whale
+    '0x0a1d576f3eFeF75b330424287a95A366e8281D54', // USDbC whale
     '0x98c7A2338336d2d354663246F64676009c7bDa97', // USDbC whale
     '0x0E635F8EeED4F7279d56692D552F034ECE136019', // USDbC whale
     '0x58Ee32056D946a37f5b49582dE3dEE1dAc0Bb974', // USDbC whale
+    '0x80a94C36747CF51b2FbabDfF045f6D22c1930eD1', // wrsETH whale
+    '0x98c7A2338336d2d354663246F64676009c7bDa97', // USDbC whale
+    '0x0E635F8EeED4F7279d56692D552F034ECE136019', // USDbC whale
+    '0x58Ee32056D946a37f5b49582dE3dEE1dAc0Bb974', // USDbC whale
+    '0x46e6b214b524310239732D51387075E0e70970bf', // oETH whale
+    '0x6969343c4938b4ca79B1237C94f825df23A9905d', // oETH whale
+    '0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb', // oETH whale
+    '0x73Cbc02516f5F4945cE2F2fACf002b2c6aA359e7', // oETH whale
+    '0xc2D684807032f3766eEd01756e95B66EfbF89841', // oETH whale
   ],
   scroll: [
     '0xaaaaAAAACB71BF2C8CaE522EA5fa455571A74106', // USDC whale
     '0x5B1322eeb46240b02e20062b8F0F9908d525B09c', // wstETH whale
+    '0x7fA3dC8729b7D56dC36651D01aB4a27e882fDCF1', // wstETH whale
+    `0xf610A9dfB7C89644979b4A0f27063E9e7d7Cda32`, // wstETH whale
   ],
   optimism: [
     '0x2A82Ae142b2e62Cb7D10b55E323ACB1Cab663a26', // OP whale
     '0x966A8bcE7dc11f4Ec5a8885a7d31F0f170e3E00d', // USDM whale
+    '0x5F82C97e9b1755237692a946aE814998Bc0e2124', // USDM whale
     '0x8af3827a41c26c7f32c81e93bb66e837e0210d5c', // USDC whale
     '0xc45A479877e1e9Dfe9FcD4056c699575a1045dAA', // wstETH whale
-    '0x6e57181D6b4b7c138a6F956AD16DAF4f27FC5E04', // COMP whale
+    '0x45738e2859a49362DaB108C24aE7bA43CA6BA8fD', // COMP whale
+    '0x1356b0b269A990eFC859567f447D04069bb70393', // COMP whale
+    '0x59B4c274e3DB1370E020d82Ac58034380De8b0bC', // COMP whale
     '0xE36A30D249f7761327fd973001A32010b521b6Fd', // ezETH whale
     '0xb40DA71c49c745Dd3ab801882b1D410760541678', // ezETH whale
     '0x540B1E0D69244057cD0Da2AF4Bca87dA87A824bE', // ezETH whale
@@ -196,15 +228,18 @@ export const WHALES = {
   ],
   mantle: [
     '0x588846213A30fd36244e0ae0eBB2374516dA836C', // USDe whale
+    '0xd374a62AA68D01cdB420e17b9840706e86BC840B', // mETH whale
     '0x88a1493366D48225fc3cEFbdae9eBb23E323Ade3', // mETH whale
     '0xEe6281d94Fed46A90379F2033B6BbdcDa4EF462E', // mETH whale
-    '0x651C9D1F9da787688225f49d63ad1623ba89A8D5', // FBTC whale
     '0xC455fE28a76da80022d4C35A37eB08FF405Eb78f', // FBTC whale
     '0x524db930F0886CdE7B5FFFc920Aae85e98C2abfb', // FBTC whale
     '0x651C9D1F9da787688225f49d63ad1623ba89A8D5', // FBTC whale
     '0x72c7d27320e042417506e594697324dB5Fbf334C', // FBTC whale
     '0x3880233e78966eb13a9c2881d5f162d646633178', // FBTC whale
     '0x233493E9DC68e548AC27E4933A600A3A4682c0c3', // FBTC whale
+    '0xd8169F099ce16C87A99d2A8494023574B5eEA9c5', // mETH whale
+    '0x15Bb5D31048381c84a157526cEF9513531b8BE1e', // FBTC whale
+    '0xfa14c9DE267b59A586043372bd98Ed99e3Ee0533', // FBTC whale
     '0xCd83CbBFCE149d141A5171C3D6a0F0fCCeE225Ab', // COMP whale
   ],
   'unichain': [
@@ -212,6 +247,7 @@ export const WHALES = {
     '0x7Ae0911198AD568E1FE4af3cf81e36A29983778f', // wstETH whale
     '0x4B2cf5C94A88934870B523983B22e6d2dd1b6577', // wstETH whale
     '0x8f5ae9CddB9f68de460C77730b018Ae7E04a140A', // wstETH whale
+    '0xbaD024786995Fa29bc6311c9454d377D3B73F576', // wstETH whale
   ],
   linea: [
     '0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f', // ETH whale
@@ -302,7 +338,7 @@ export async function proposal(
       const { target, value, signature, calldata: cd } = action as TargetAction;
       targets.push(target);
       values.push(value ?? 0);
-      calldatas.push(utils.id(signature).slice(0, 10) + cd.slice(2));
+      calldatas.push(signature ? utils.id(signature).slice(0, 10) + cd.slice(2) : cd);
       signatures.push('');
     }
   }
