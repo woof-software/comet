@@ -22,15 +22,10 @@ import { ProposalState, OpenProposal } from '../context/Gov';
 import { debug } from '../../plugins/deployment_manager/Utils';
 import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
-import {
-  mineBlocks,
-  setEtherBalance,
-  setNextBaseFeeToZero,
-  setNextBlockTimestamp,
-} from './hreUtils';
+import { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
 import { getOrCreateVirtualTestnet } from './tenderlyVnet';
-import { BaseBridgeReceiver, CometInterface } from '../../build/types';
+import { BaseBridgeReceiver, CometInterface, FaucetToken } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
@@ -163,7 +158,7 @@ export function expectRevertCustom(
 }
 
 export function expectRevertMatches(
-  tx: Promise<ContractReceipt>,
+  tx: Promise<ContractReceipt | ContractTransaction>,
   patterns: RegExp[]
 ) {
   return tx
@@ -241,6 +236,20 @@ export function getExpectedBaseBalance(
   const principalValue = (balance * baseIndexScale) / borrowOrSupplyIndex;
   const baseBalanceOf = (principalValue * borrowOrSupplyIndex) / baseIndexScale;
   return baseBalanceOf;
+}
+
+// A supplier's balance at a given supply index, computed from their stored principal.
+// Read the principal before a transaction and apply the index from after it: the transaction
+// accrues interest before it moves any funds, so a balance read beforehand misses the interest
+// earned in the block the transaction lands in.
+export function presentValueSupply(principal: bigint, baseSupplyIndex: bigint, baseIndexScale: bigint): bigint {
+  return (principal * baseSupplyIndex) / baseIndexScale;
+}
+
+// A borrower's debt at a given borrow index, computed from their stored (negative) principal.
+// Same idea as presentValueSupply: read the principal before a transaction, apply the index from after it.
+export function presentValueBorrow(principal: bigint, baseBorrowIndex: bigint, baseIndexScale: bigint): bigint {
+  return (-principal * baseBorrowIndex) / baseIndexScale;
 }
 
 export function getInterest(balance: bigint, rate: bigint, seconds: bigint) {
@@ -403,6 +412,25 @@ export async function isAssetDelisted(
   return assetInfo.borrowCollateralFactor.toBigInt() === 0n;
 }
 
+/// Finds the index of the first collateral asset that can back a borrow in the bulker scenarios.
+/// The wrapped native token is skipped, since it is supplied and withdrawn through the native token actions,
+/// and so are delisted assets, which have a zero borrow collateral factor. Returns -1 if there is none.
+export async function getBulkerCollateralIndex(ctx: CometContext): Promise<number> {
+  const bulker = await ctx.getBulker();
+  if (bulker == null) return -1;
+
+  const comet = await ctx.getComet();
+  const wrappedNativeToken = (await bulker.wrappedNativeToken()).toLowerCase();
+  const numAssets = await comet.numAssets();
+  for (let i = 0; i < numAssets; i++) {
+    const { asset } = await comet.getAssetInfo(i);
+    if (asset.toLowerCase() === wrappedNativeToken) continue;
+    if (await isAssetDelisted(ctx, i)) continue;
+    return i;
+  }
+  return -1;
+}
+
 export async function isTriviallySourceable(
   ctx: CometContext,
   assetNum: number,
@@ -523,6 +551,17 @@ export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
   } catch (error) {
     return false;
   }
+}
+
+/**
+ * @notice Deploys an ERC20 token that is not listed in the market, for scenarios that expect Comet to reject it
+ */
+export async function deployUnsupportedAsset(ctx: CometContext): Promise<FaucetToken> {
+  return await ctx.world.deploymentManager.deploy(
+    'unsupportedAsset',
+    'test/FaucetToken.sol',
+    [0, 'Unsupported Asset', 18, 'UNSUPPORTED']
+  ) as FaucetToken;
 }
 
 export async function fetchLogs(
@@ -1969,4 +2008,61 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
     // If the call reverts or fails, extended pause is not supported
     return false;
   }
+}
+
+// returns indices of collaterals that have a supply cap and all collateral factors above zero.
+// pass `amount` to get only the first N of them, omit it to get all.
+export async function getUsableCollateralIndices(ctx: CometContext, amount?: number): Promise<number[]> {
+  const comet = await ctx.getComet();
+  const numAssets = await comet.numAssets();
+  const indices: number[] = [];
+
+  for (let i = 0; i < numAssets; i++) {
+    if (amount !== undefined && indices.length >= amount) break;
+
+    const info = await comet.getAssetInfo(i);
+
+    // We skip assets with a supply cap of 0
+    if (info.supplyCap.isZero()) continue;
+
+    // We skip assets with a borrow collateral factor, liquidate collateral factor, or liquidation factor of 0
+    if (info.borrowCollateralFactor.isZero() || info.liquidateCollateralFactor.isZero() || info.liquidationFactor.isZero()) continue;
+    
+    indices.push(i);
+  }
+  return indices;
+}
+
+// returns asset of collateral, supply amount, and borrow amount
+// borrow amount is 1.5 times the market's minimum borrow, or $100 of base when that minimum is worth less than $10.
+export async function getMinimumBorrowAmounts(context: CometContext, collateralIndex: number) {
+  const comet = await context.getComet();
+  const baseScale = (await comet.baseScale()).toBigInt();
+  const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+  const priceScale = (await comet.priceScale()).toBigInt();
+  const factorScale = (await comet.factorScale()).toBigInt();
+
+  // baseBorrowMin is an amount of the base token, not USD. Some markets set it to almost nothing (1 wei of USDC),
+  // which makes a meaningless borrow, so below $10 borrow $100 worth of base instead.
+  const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+  const baseBorrowMinUsd = (baseBorrowMin * basePrice) / baseScale;
+  const borrowAmount = baseBorrowMinUsd < 10n * priceScale
+    ? (100n * priceScale * baseScale) / basePrice
+    : (baseBorrowMin * 3n) / 2n;
+
+  const {
+    asset: collateralAddress,
+    priceFeed: collateralPriceFeed,
+    scale: collateralScaleBN,
+    borrowCollateralFactor
+  } = await comet.getAssetInfo(collateralIndex);
+  const collateralAsset = context.getAssetByAddress(collateralAddress);
+  const collateralScale = collateralScaleBN.toBigInt();
+  const collateralPrice = (await comet.getPrice(collateralPriceFeed)).toBigInt();
+
+  let supplyAmount = (borrowAmount * basePrice * collateralScale) / (baseScale * collateralPrice);
+  supplyAmount = (supplyAmount * factorScale) / borrowCollateralFactor.toBigInt();
+  supplyAmount = (supplyAmount * 11n) / 10n;
+
+  return { collateralAsset, supplyAmount, borrowAmount };
 }
