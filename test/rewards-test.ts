@@ -849,17 +849,17 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 18));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 18));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
-        const txn = await wait(rewards.claim(comet.address, alice.address, true));
+        const txn = await wait(rewards.claim(await comet.getAddress(), alice.address, true));
         expect(await COMP.balanceOf(alice.address)).to.be.equal(
           (exp(86400, 18) * MULTIPLIER_FACTOR) / factorScale
         );
@@ -869,7 +869,7 @@ for (const { multiplier } of TEST_CASES) {
           RewardClaimed: {
             src: alice.address,
             recipient: alice.address,
-            token: COMP.address,
+            token: await COMP.getAddress(),
             amount: (exp(86400, 18) * MULTIPLIER_FACTOR) / factorScale
           }
         });
@@ -895,17 +895,17 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 2));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 2));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
-        const txn = await wait(rewards.claim(comet.address, alice.address, true));
+        const txn = await wait(rewards.claim(await comet.getAddress(), alice.address, true));
         expect(await COMP.balanceOf(alice.address)).to.be.equal(
           (exp(86400, 2) * MULTIPLIER_FACTOR) / factorScale
         );
@@ -915,7 +915,7 @@ for (const { multiplier } of TEST_CASES) {
           RewardClaimed: {
             src: alice.address,
             recipient: alice.address,
-            token: COMP.address,
+            token: await COMP.getAddress(),
             amount: (exp(86400, 2) * MULTIPLIER_FACTOR) / factorScale
           }
         });
@@ -941,17 +941,17 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 7));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 7));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
-        const txn = await wait(rewards.claim(comet.address, alice.address, true));
+        const txn = await wait(rewards.claim(await comet.getAddress(), alice.address, true));
         expect(await COMP.balanceOf(alice.address)).to.be.equal(
           (exp(86400, 7) * MULTIPLIER_FACTOR) / factorScale
         );
@@ -961,7 +961,7 @@ for (const { multiplier } of TEST_CASES) {
           RewardClaimed: {
             src: alice.address,
             recipient: alice.address,
-            token: COMP.address,
+            token: await COMP.getAddress(),
             amount: (exp(86400, 7) * MULTIPLIER_FACTOR) / factorScale
           }
         });
@@ -987,17 +987,17 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 5));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 5));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
-        const txn = await wait(rewards.claim(comet.address, alice.address, true));
+        const txn = await wait(rewards.claim(await comet.getAddress(), alice.address, true));
         expect(await COMP.balanceOf(alice.address)).to.be.equal(
           (exp(86400, 5) * MULTIPLIER_FACTOR) / factorScale
         );
@@ -1007,7 +1007,7 @@ for (const { multiplier } of TEST_CASES) {
           RewardClaimed: {
             src: alice.address,
             recipient: alice.address,
-            token: COMP.address,
+            token: await COMP.getAddress(),
             amount: (exp(86400, 5) * MULTIPLIER_FACTOR) / factorScale
           }
         });
@@ -1033,17 +1033,17 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 6));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 6));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
-        const txn = await wait(rewards.claim(comet.address, alice.address, true));
+        const txn = await wait(rewards.claim(await comet.getAddress(), alice.address, true));
         expect(await COMP.balanceOf(alice.address)).to.be.equal(
           (exp(86400, 6) * MULTIPLIER_FACTOR) / factorScale
         );
@@ -1053,7 +1053,7 @@ for (const { multiplier } of TEST_CASES) {
           RewardClaimed: {
             src: alice.address,
             recipient: alice.address,
-            token: COMP.address,
+            token: await COMP.getAddress(),
             amount: (exp(86400, 6) * MULTIPLIER_FACTOR) / factorScale
           }
         });
@@ -1074,18 +1074,18 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 18));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 18));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
-        const _tx0 = await wait(rewards.claim(comet.address, alice.address, true));
-        const _tx1 = await wait(rewards.claim(comet.address, alice.address, false));
+        const _tx0 = await wait(rewards.claim(await comet.getAddress(), alice.address, true));
+        const _tx1 = await wait(rewards.claim(await comet.getAddress(), alice.address, false));
         expect(await COMP.balanceOf(alice.address)).to.be.equal(
           (exp(86400, 18) * MULTIPLIER_FACTOR) / factorScale
         );
@@ -1104,9 +1104,8 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
         await expect(
-          rewards.setRewardConfig(comet.address, COMP.address)
-          //).to.be.revertedWith(`custom error 'AlreadyConfigured("${comet.address}")`);
-        ).to.be.revertedWith(`custom error 'AlreadyConfigured(address)'`);
+          rewards.setRewardConfig(await comet.getAddress(), await COMP.getAddress())
+        ).to.be.revertedWithCustomError(rewards, 'AlreadyConfigured').withArgs(await comet.getAddress());
       });
 
       it('fails if comet instance is not configured', async () => {
@@ -1118,9 +1117,8 @@ for (const { multiplier } of TEST_CASES) {
         const { rewards } = await makeRewards({ governor, configs: [] });
 
         await expect(
-          rewards.claim(comet.address, alice.address, true)
-          //).to.be.revertedWith(`custom error 'NotSupported("${comet.address}")`);
-        ).to.be.revertedWith(`custom error 'NotSupported(address)'`);
+          rewards.claim(await comet.getAddress(), alice.address, true)
+        ).to.be.revertedWithCustomError(rewards, 'NotSupported').withArgs(await comet.getAddress());
       });
 
       it('fails if not enough rewards in the pool to transfer', async () => {
@@ -1139,12 +1137,12 @@ for (const { multiplier } of TEST_CASES) {
 
         // allocate and approve transfers
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
-        await expect(rewards.claim(comet.address, alice.address, true)).to.be.revertedWith(
+        await expect(rewards.claim(await comet.getAddress(), alice.address, true)).to.be.revertedWith(
           'ERC20: transfer amount exceeds balance'
         );
       });
@@ -1167,15 +1165,15 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * 2 * MULTIPLIER, 18));
-        await USDC.allocateTo(comet.address, exp(1e6, 6));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * 2 * MULTIPLIER, 18));
+        await USDC.allocateTo(await comet.getAddress(), exp(1e6, 6));
         await WBTC.allocateTo(alice.address, exp(1, 8));
-        await WBTC.connect(alice).approve(comet.address, exp(1, 8));
+        await WBTC.connect(alice).approve(await comet.getAddress(), exp(1, 8));
 
         // allow manager, supply collateral, borrow
         await comet.connect(alice).allow(bob.address, true);
-        await comet.connect(alice).supply(WBTC.address, exp(1, 8));
-        await comet.connect(alice).withdraw(USDC.address, exp(10, 6));
+        await comet.connect(alice).supply(await WBTC.getAddress(), exp(1, 8));
+        await comet.connect(alice).withdraw(await USDC.getAddress(), exp(10, 6));
 
         await fastForward(86400);
 
@@ -1183,7 +1181,7 @@ for (const { multiplier } of TEST_CASES) {
         expect(await USDC.balanceOf(alice.address)).to.be.equal(10e6);
         expect(await comet.borrowBalanceOf(alice.address)).to.be.equal(10e6);
         const tx = await wait(
-          rewards.connect(bob).claimTo(comet.address, alice.address, bob.address, true)
+          rewards.connect(bob).claimTo(await comet.getAddress(), alice.address, bob.address, true)
         );
         expect(await COMP.balanceOf(bob.address)).to.be.equal(
           (exp(86400 * 2, 18) * MULTIPLIER_FACTOR) / factorScale
@@ -1194,7 +1192,7 @@ for (const { multiplier } of TEST_CASES) {
           RewardClaimed: {
             src: alice.address,
             recipient: bob.address,
-            token: COMP.address,
+            token: await COMP.getAddress(),
             amount: (exp(86400 * 2, 18) * MULTIPLIER_FACTOR) / factorScale
           }
         });
@@ -1222,15 +1220,15 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * 2 * MULTIPLIER, 5));
-        await USDC.allocateTo(comet.address, exp(1e6, 6));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * 2 * MULTIPLIER, 5));
+        await USDC.allocateTo(await comet.getAddress(), exp(1e6, 6));
         await WBTC.allocateTo(alice.address, exp(1, 8));
-        await WBTC.connect(alice).approve(comet.address, exp(1, 8));
+        await WBTC.connect(alice).approve(await comet.getAddress(), exp(1, 8));
 
         // allow manager, supply collateral, borrow
         await comet.connect(alice).allow(bob.address, true);
-        await comet.connect(alice).supply(WBTC.address, exp(1, 8));
-        await comet.connect(alice).withdraw(USDC.address, exp(10, 6));
+        await comet.connect(alice).supply(await WBTC.getAddress(), exp(1, 8));
+        await comet.connect(alice).withdraw(await USDC.getAddress(), exp(10, 6));
 
         await fastForward(86400);
 
@@ -1238,7 +1236,7 @@ for (const { multiplier } of TEST_CASES) {
         expect(await USDC.balanceOf(alice.address)).to.be.equal(10e6);
         expect(await comet.borrowBalanceOf(alice.address)).to.be.equal(10e6);
         const _tx = await wait(
-          rewards.connect(bob).claimTo(comet.address, alice.address, bob.address, true)
+          rewards.connect(bob).claimTo(await comet.getAddress(), alice.address, bob.address, true)
         );
         expect(await COMP.balanceOf(bob.address)).to.be.equal(
           (exp(86400 * 2, 5) * MULTIPLIER_FACTOR) / factorScale
@@ -1267,15 +1265,15 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * 2 * MULTIPLIER, 6));
-        await USDC.allocateTo(comet.address, exp(1e6, 6));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * 2 * MULTIPLIER, 6));
+        await USDC.allocateTo(await comet.getAddress(), exp(1e6, 6));
         await WBTC.allocateTo(alice.address, exp(1, 8));
-        await WBTC.connect(alice).approve(comet.address, exp(1, 8));
+        await WBTC.connect(alice).approve(await comet.getAddress(), exp(1, 8));
 
         // allow manager, supply collateral, borrow
         await comet.connect(alice).allow(bob.address, true);
-        await comet.connect(alice).supply(WBTC.address, exp(1, 8));
-        await comet.connect(alice).withdraw(USDC.address, exp(10, 6));
+        await comet.connect(alice).supply(await WBTC.getAddress(), exp(1, 8));
+        await comet.connect(alice).withdraw(await USDC.getAddress(), exp(10, 6));
 
         await fastForward(86400);
 
@@ -1283,7 +1281,7 @@ for (const { multiplier } of TEST_CASES) {
         expect(await USDC.balanceOf(alice.address)).to.be.equal(10e6);
         expect(await comet.borrowBalanceOf(alice.address)).to.be.equal(10e6);
         const _tx = await wait(
-          rewards.connect(bob).claimTo(comet.address, alice.address, bob.address, true)
+          rewards.connect(bob).claimTo(await comet.getAddress(), alice.address, bob.address, true)
         );
         expect(await COMP.balanceOf(bob.address)).to.be.equal(
           (exp(86400 * 2, 6) * MULTIPLIER_FACTOR) / factorScale
@@ -1306,15 +1304,15 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * 2 * MULTIPLIER, 18));
-        await USDC.allocateTo(comet.address, exp(1e6, 6));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * 2 * MULTIPLIER, 18));
+        await USDC.allocateTo(await comet.getAddress(), exp(1e6, 6));
         await WBTC.allocateTo(alice.address, exp(1, 8));
-        await WBTC.connect(alice).approve(comet.address, exp(1, 8));
+        await WBTC.connect(alice).approve(await comet.getAddress(), exp(1, 8));
 
         // allow manager, supply collateral, borrow
         await comet.connect(alice).allow(bob.address, true);
-        await comet.connect(alice).supply(WBTC.address, exp(1, 8));
-        await comet.connect(alice).withdraw(USDC.address, exp(10, 6));
+        await comet.connect(alice).supply(await WBTC.getAddress(), exp(1, 8));
+        await comet.connect(alice).withdraw(await USDC.getAddress(), exp(10, 6));
 
         await fastForward(86400);
 
@@ -1322,10 +1320,10 @@ for (const { multiplier } of TEST_CASES) {
         expect(await USDC.balanceOf(alice.address)).to.be.equal(10e6);
         expect(await comet.borrowBalanceOf(alice.address)).to.be.equal(10e6);
         const _tx0 = await wait(
-          rewards.connect(bob).claimTo(comet.address, alice.address, bob.address, true)
+          rewards.connect(bob).claimTo(await comet.getAddress(), alice.address, bob.address, true)
         );
         const _tx1 = await wait(
-          rewards.connect(bob).claimTo(comet.address, alice.address, bob.address, false)
+          rewards.connect(bob).claimTo(await comet.getAddress(), alice.address, bob.address, false)
         );
         expect(await COMP.balanceOf(bob.address)).to.be.equal(
           (exp(86400 * 2, 18) * MULTIPLIER_FACTOR) / factorScale
@@ -1342,9 +1340,8 @@ for (const { multiplier } of TEST_CASES) {
 
         await comet.connect(alice).allow(bob.address, true);
         await expect(
-          rewards.connect(bob).claim(comet.address, alice.address, true)
-          //).to.be.revertedWith(`custom error 'NotSupported("${comet.address}")`);
-        ).to.be.revertedWith(`custom error 'NotSupported(address)'`);
+          rewards.connect(bob).claim(await comet.getAddress(), alice.address, true)
+        ).to.be.revertedWithCustomError(rewards, 'NotSupported').withArgs(await comet.getAddress());
       });
 
       it('fails if not enough rewards in the pool to transfer', async () => {
@@ -1362,17 +1359,17 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await USDC.allocateTo(comet.address, exp(1e6, 6));
+        await USDC.allocateTo(await comet.getAddress(), exp(1e6, 6));
         await WBTC.allocateTo(alice.address, exp(1, 8));
-        await WBTC.connect(alice).approve(comet.address, exp(1, 8));
+        await WBTC.connect(alice).approve(await comet.getAddress(), exp(1, 8));
 
         // allow manager, supply collateral, borrow
         await comet.connect(alice).allow(bob.address, true);
-        await comet.connect(alice).supply(WBTC.address, exp(1, 8));
-        await comet.connect(alice).withdraw(USDC.address, exp(10, 6));
+        await comet.connect(alice).supply(await WBTC.getAddress(), exp(1, 8));
+        await comet.connect(alice).withdraw(await USDC.getAddress(), exp(10, 6));
 
         await expect(
-          rewards.connect(bob).claimTo(comet.address, alice.address, bob.address, true)
+          rewards.connect(bob).claimTo(await comet.getAddress(), alice.address, bob.address, true)
         ).to.be.revertedWith('ERC20: transfer amount exceeds balance');
       });
 
@@ -1391,9 +1388,8 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
         await expect(
-          rewards.claimTo(comet.address, alice.address, governor.address, true)
-          //).to.be.revertedWith(`custom error 'NotPermitted("${governor.address}")'`);
-        ).to.be.revertedWith(`custom error 'NotPermitted(address)'`);
+          rewards.claimTo(await comet.getAddress(), alice.address, governor.address, true)
+        ).to.be.revertedWithCustomError(rewards, 'NotPermitted').withArgs(governor.address);
       });
     });
 
@@ -1419,25 +1415,25 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 18));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 18));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
         await ethers.provider.send('evm_mine', []);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
 
-        const { token, owed } = await rewards.callStatic.getRewardOwed(
-          comet.address,
+        const { token, owed } = await rewards.getRewardOwed.staticCall(
+          await comet.getAddress(),
           alice.address
         );
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
-        expect(token).to.be.equal(COMP.address);
+        expect(token).to.be.equal(await COMP.getAddress());
         expect(owed).to.be.equal((exp(86400, 18) * MULTIPLIER_FACTOR) / factorScale);
       });
 
@@ -1461,25 +1457,25 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 2));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 2));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
         await ethers.provider.send('evm_mine', []);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
 
-        const { token, owed } = await rewards.callStatic.getRewardOwed(
-          comet.address,
+        const { token, owed } = await rewards.getRewardOwed.staticCall(
+          await comet.getAddress(),
           alice.address
         );
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
-        expect(token).to.be.equal(COMP.address);
+        expect(token).to.be.equal(await COMP.getAddress());
         expect(owed).to.be.equal((exp(86400, 2) * MULTIPLIER_FACTOR) / factorScale);
       });
 
@@ -1503,25 +1499,25 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 7));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 7));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
         await ethers.provider.send('evm_mine', []);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
 
-        const { token, owed } = await rewards.callStatic.getRewardOwed(
-          comet.address,
+        const { token, owed } = await rewards.getRewardOwed.staticCall(
+          await comet.getAddress(),
           alice.address
         );
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
-        expect(token).to.be.equal(COMP.address);
+        expect(token).to.be.equal(await COMP.getAddress());
         expect(owed).to.be.equal((exp(86400, 7) * MULTIPLIER_FACTOR) / factorScale);
       });
 
@@ -1545,25 +1541,25 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 5));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 5));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
         await ethers.provider.send('evm_mine', []);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
 
-        const { token, owed } = await rewards.callStatic.getRewardOwed(
-          comet.address,
+        const { token, owed } = await rewards.getRewardOwed.staticCall(
+          await comet.getAddress(),
           alice.address
         );
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
-        expect(token).to.be.equal(COMP.address);
+        expect(token).to.be.equal(await COMP.getAddress());
         expect(owed).to.be.equal((exp(86400, 5) * MULTIPLIER_FACTOR) / factorScale);
       });
 
@@ -1587,25 +1583,25 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 6));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 6));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
         await ethers.provider.send('evm_mine', []);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
 
-        const { token, owed } = await rewards.callStatic.getRewardOwed(
-          comet.address,
+        const { token, owed } = await rewards.getRewardOwed.staticCall(
+          await comet.getAddress(),
           alice.address
         );
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
-        expect(token).to.be.equal(COMP.address);
+        expect(token).to.be.equal(await COMP.getAddress());
         expect(owed).to.be.equal((exp(86400, 6) * MULTIPLIER_FACTOR) / factorScale);
       });
 
@@ -1624,27 +1620,27 @@ for (const { multiplier } of TEST_CASES) {
         });
 
         // allocate and approve transfers
-        await COMP.allocateTo(rewards.address, exp(86400 * MULTIPLIER, 18));
+        await COMP.allocateTo(await rewards.getAddress(), exp(86400 * MULTIPLIER, 18));
         await USDC.allocateTo(alice.address, 10e6);
-        await USDC.connect(alice).approve(comet.address, 10e6);
+        await USDC.connect(alice).approve(await comet.getAddress(), 10e6);
 
         // supply once
-        await comet.connect(alice).supply(USDC.address, 10e6);
+        await comet.connect(alice).supply(await USDC.getAddress(), 10e6);
 
         await fastForward(86400);
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(0);
 
-        const _tx0 = await wait(rewards.claim(comet.address, alice.address, true));
-        const { token, owed } = await rewards.callStatic.getRewardOwed(
-          comet.address,
+        const _tx0 = await wait(rewards.claim(await comet.getAddress(), alice.address, true));
+        const { token, owed } = await rewards.getRewardOwed.staticCall(
+          await comet.getAddress(),
           alice.address
         );
 
         expect(await COMP.balanceOf(alice.address)).to.be.equal(
           (exp(86400, 18) * MULTIPLIER_FACTOR) / factorScale
         );
-        expect(token).to.be.equal(COMP.address);
+        expect(token).to.be.equal(await COMP.getAddress());
         expect(owed).to.be.equal(0);
       });
 
@@ -1657,9 +1653,8 @@ for (const { multiplier } of TEST_CASES) {
         const { rewards } = await makeRewards({ governor, configs: [] });
 
         await expect(
-          rewards.getRewardOwed(comet.address, alice.address)
-          //).to.be.revertedWith(`custom error 'NotSupported("${comet.address}")`);
-        ).to.be.revertedWith(`custom error 'NotSupported(address)'`);
+          rewards.getRewardOwed(await comet.getAddress(), alice.address)
+        ).to.be.revertedWithCustomError(rewards, 'NotSupported').withArgs(await comet.getAddress());
       });
     });
 
@@ -1682,8 +1677,8 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
 
-        expect(objectify(await rewards.rewardConfig(comet.address))).to.be.deep.equal({
-          token: COMP.address,
+        expect(objectify(await rewards.rewardConfig(await comet.getAddress()))).to.be.deep.equal({
+          token: await COMP.getAddress(),
           rescaleFactor: exp(1, 12),
           shouldUpscale: true,
           multiplier: MULTIPLIER_FACTOR
@@ -1708,8 +1703,8 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
 
-        expect(objectify(await rewards.rewardConfig(comet.address))).to.be.deep.equal({
-          token: COMP.address,
+        expect(objectify(await rewards.rewardConfig(await comet.getAddress()))).to.be.deep.equal({
+          token: await COMP.getAddress(),
           rescaleFactor: exp(1, 4),
           shouldUpscale: false,
           multiplier: MULTIPLIER_FACTOR
@@ -1734,8 +1729,8 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
 
-        expect(objectify(await rewards.rewardConfig(comet.address))).to.be.deep.equal({
-          token: COMP.address,
+        expect(objectify(await rewards.rewardConfig(await comet.getAddress()))).to.be.deep.equal({
+          token: await COMP.getAddress(),
           rescaleFactor: 10n,
           shouldUpscale: true,
           multiplier: MULTIPLIER_FACTOR
@@ -1760,8 +1755,8 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
 
-        expect(objectify(await rewards.rewardConfig(comet.address))).to.be.deep.equal({
-          token: COMP.address,
+        expect(objectify(await rewards.rewardConfig(await comet.getAddress()))).to.be.deep.equal({
+          token: await COMP.getAddress(),
           rescaleFactor: 10n,
           shouldUpscale: false,
           multiplier: MULTIPLIER_FACTOR
@@ -1786,8 +1781,8 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
 
-        expect(objectify(await rewards.rewardConfig(comet.address))).to.be.deep.equal({
-          token: COMP.address,
+        expect(objectify(await rewards.rewardConfig(await comet.getAddress()))).to.be.deep.equal({
+          token: await COMP.getAddress(),
           rescaleFactor: 1n,
           shouldUpscale: true,
           multiplier: MULTIPLIER_FACTOR
@@ -1807,9 +1802,8 @@ for (const { multiplier } of TEST_CASES) {
         await expect(
           rewards
             .connect(alice)
-            .setRewardConfigWithMultiplier(comet.address, COMP.address, MULTIPLIER_FACTOR)
-          //).to.be.revertedWith(`custom error 'NotPermitted("${alice.address}")'`);
-        ).to.be.revertedWith(`custom error 'NotPermitted(address)'`);
+            .setRewardConfigWithMultiplier(await comet.getAddress(), await COMP.getAddress(), MULTIPLIER_FACTOR)
+        ).to.be.revertedWithCustomError(rewards, 'NotPermitted').withArgs(alice.address);
       });
     });
   });
