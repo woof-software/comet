@@ -6,7 +6,7 @@ import relayLineaMessage from './relayLineaMessage';
 import relayOptimismMessage, { simulateL2ToL1TokenBridging as simulateOptimismL2ToL1TokenBridging } from './relayOptimismMessage';
 import relayMantleMessage from './relayMantleMessage';
 import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMessage';
-import relayScrollMessage from './relayScrollMessage';
+import relayScrollMessage, { simulateL2ToL1USDCBridging } from './relayScrollMessage';
 import relayRoninMessage from './relayRoninMessage';
 
 const L2_BLOCK_BUFFER = 5;
@@ -114,13 +114,22 @@ export default async function relayMessage(
         startingBlockNumber,
         tenderlyLogs
       );
-    case 'scroll':
-      return await relayScrollMessage(
+    case 'scroll': {
+      const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
+      proposal = await relayScrollMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         startingBlockNumber,
         tenderlyLogs
       );
+      await simulateL2ToL1USDCBridging(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
+        tenderlyLogs
+      );
+      return proposal;
+    }
     case 'ronin':
       return await relayRoninMessage(
         governanceDeploymentManager,
