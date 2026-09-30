@@ -1,10 +1,15 @@
 import hre from 'hardhat';
-import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager';
-import { exp } from '../test/helpers';
-import { impersonateAddress } from '../plugins/scenario/utils';
-import { setNextBaseFeeToZero } from '../scenario/utils/hreUtils';
-import { getConfigurationStruct } from '../src/deploy';
-import { requireEnv } from '../hardhat.config';
+import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager.js';
+import { impersonateAddress } from '../plugins/scenario/utils/index.js';
+import { setNextBaseFeeToZero } from '../scenario/utils/hreUtils.js';
+import { getConfigurationStruct } from '../src/deploy/index.js';
+import { exp } from '../test/helpers.js';
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
+}
 
 // Instructions before running:
 // 1. Set the `url` (RPC url) for your target network in `hardhat.config.ts` to your EthForks URL.
@@ -13,7 +18,7 @@ async function main() {
   const DEPLOYMENT = requireEnv('DEPLOYMENT');
   const ACCOUNT = requireEnv('ACCOUNT');
 
-  const network = hre.network.name;
+  const { networkName: network } = await hre.network.getOrCreate();
 
   const dm = new DeploymentManager(network, DEPLOYMENT, hre, {
     writeCacheToDisk: true
@@ -51,6 +56,8 @@ async function seedAccount(dm, address) {
 async function executeCrossChainProposalActions(dm) {
   const { comet, cometAdmin, configurator } = await dm.getContracts();
   const configuration = await getConfigurationStruct(dm);
+  const cometAddress = await comet.getAddress();
+  const configuratorAddress = await configurator.getAddress();
 
   // We can also fast forward time like this:
   // await fastForward(86_400, dm.hre.ethers);
@@ -63,13 +70,13 @@ async function executeCrossChainProposalActions(dm) {
   await setNextBaseFeeToZero(dm);
   await configurator
     .connect(timelock)
-    .setConfiguration(comet.address, configuration, { gasPrice: 0 });
+    .setConfiguration(cometAddress, configuration, { gasPrice: 0 });
 
   // Upgrade comet
   await setNextBaseFeeToZero(dm);
   await cometAdmin
     .connect(timelock)
-    .deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+    .deployAndUpgradeTo(configuratorAddress, cometAddress, { gasPrice: 0 });
 }
 
 main()
