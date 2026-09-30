@@ -5,12 +5,28 @@ import "./IPriceFeed.sol";
 import "./IERC20NonStandard.sol";
 import "./CometMainInterface.sol";
 import "./CometCore.sol";
+import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /**
  * @title Compound's Asset List
  * @author Compound
  */
 contract AssetList {
+    using EnumerableSet for EnumerableSet.AddressSet;
+
+    /// @dev Mutable part of an asset config; asset, price feed and decimals live in the immutables
+    struct AssetConfig {
+        uint128 supplyCap;
+        uint64 borrowCollateralFactor;
+        uint64 liquidateCollateralFactor;
+        uint64 liquidationFactor;
+    }
+
+    struct AssetConfigStorage {
+        EnumerableSet.AddressSet assets;
+        mapping(address => AssetConfig) configs;
+    }
+
     /// @dev The decimals required for a price feed
     uint8 internal constant PRICE_FEED_DECIMALS = 8;
 
@@ -21,108 +37,116 @@ contract AssetList {
     uint64 internal constant MAX_COLLATERAL_FACTOR = FACTOR_SCALE;
 
     uint256 internal immutable asset00_a;
-    uint256 internal immutable asset00_b;
+    address internal immutable priceFeedAddress00;
     uint256 internal immutable asset01_a;
-    uint256 internal immutable asset01_b;
+    address internal immutable priceFeedAddress01;
     uint256 internal immutable asset02_a;
-    uint256 internal immutable asset02_b;
+    address internal immutable priceFeedAddress02;
     uint256 internal immutable asset03_a;
-    uint256 internal immutable asset03_b;
+    address internal immutable priceFeedAddress03;
     uint256 internal immutable asset04_a;
-    uint256 internal immutable asset04_b;
+    address internal immutable priceFeedAddress04;
     uint256 internal immutable asset05_a;
-    uint256 internal immutable asset05_b;
+    address internal immutable priceFeedAddress05;
     uint256 internal immutable asset06_a;
-    uint256 internal immutable asset06_b;
+    address internal immutable priceFeedAddress06;
     uint256 internal immutable asset07_a;
-    uint256 internal immutable asset07_b;
+    address internal immutable priceFeedAddress07;
     uint256 internal immutable asset08_a;
-    uint256 internal immutable asset08_b;
+    address internal immutable priceFeedAddress08;
     uint256 internal immutable asset09_a;
-    uint256 internal immutable asset09_b;
+    address internal immutable priceFeedAddress09;
     uint256 internal immutable asset10_a;
-    uint256 internal immutable asset10_b;
+    address internal immutable priceFeedAddress10;
     uint256 internal immutable asset11_a;
-    uint256 internal immutable asset11_b;
+    address internal immutable priceFeedAddress11;
     uint256 internal immutable asset12_a;
-    uint256 internal immutable asset12_b;
+    address internal immutable priceFeedAddress12;
     uint256 internal immutable asset13_a;
-    uint256 internal immutable asset13_b;
+    address internal immutable priceFeedAddress13;
     uint256 internal immutable asset14_a;
-    uint256 internal immutable asset14_b;
+    address internal immutable priceFeedAddress14;
     uint256 internal immutable asset15_a;
-    uint256 internal immutable asset15_b;
+    address internal immutable priceFeedAddress15;
     uint256 internal immutable asset16_a;
-    uint256 internal immutable asset16_b;
+    address internal immutable priceFeedAddress16;
     uint256 internal immutable asset17_a;
-    uint256 internal immutable asset17_b;
+    address internal immutable priceFeedAddress17;
     uint256 internal immutable asset18_a;
-    uint256 internal immutable asset18_b;
+    address internal immutable priceFeedAddress18;
     uint256 internal immutable asset19_a;
-    uint256 internal immutable asset19_b;
+    address internal immutable priceFeedAddress19;
     uint256 internal immutable asset20_a;
-    uint256 internal immutable asset20_b;
+    address internal immutable priceFeedAddress20;
     uint256 internal immutable asset21_a;
-    uint256 internal immutable asset21_b;
+    address internal immutable priceFeedAddress21;
     uint256 internal immutable asset22_a;
-    uint256 internal immutable asset22_b;
+    address internal immutable priceFeedAddress22;
     uint256 internal immutable asset23_a;
-    uint256 internal immutable asset23_b;
+    address internal immutable priceFeedAddress23;
 
     /// @notice The number of assets this contract actually supports
     uint8 public immutable numAssets;
-    
+
+    bytes32 public immutable configHash;
+
+    address public configurator;
+
+    function setConfigurator(address _configurator) external {
+        configurator = _configurator;
+    }
+
+    AssetConfigStorage internal assetConfigStorage;
+
     constructor(CometConfiguration.AssetConfig[] memory assetConfigs) {
         uint8 _numAssets = uint8(assetConfigs.length);
         numAssets = _numAssets;
+        // ponytail: placeholders, solc 0.8.15 requires immutables to be assigned; wire real values later
+        configHash = bytes32(0);
         
-        (asset00_a, asset00_b) = getPackedAssetInternal(assetConfigs, 0);
-        (asset01_a, asset01_b) = getPackedAssetInternal(assetConfigs, 1);
-        (asset02_a, asset02_b) = getPackedAssetInternal(assetConfigs, 2);
-        (asset03_a, asset03_b) = getPackedAssetInternal(assetConfigs, 3);
-        (asset04_a, asset04_b) = getPackedAssetInternal(assetConfigs, 4);
-        (asset05_a, asset05_b) = getPackedAssetInternal(assetConfigs, 5);
-        (asset06_a, asset06_b) = getPackedAssetInternal(assetConfigs, 6);
-        (asset07_a, asset07_b) = getPackedAssetInternal(assetConfigs, 7);
-        (asset08_a, asset08_b) = getPackedAssetInternal(assetConfigs, 8);
-        (asset09_a, asset09_b) = getPackedAssetInternal(assetConfigs, 9);
-        (asset10_a, asset10_b) = getPackedAssetInternal(assetConfigs, 10);
-        (asset11_a, asset11_b) = getPackedAssetInternal(assetConfigs, 11);
-        (asset12_a, asset12_b) = getPackedAssetInternal(assetConfigs, 12);
-        (asset13_a, asset13_b) = getPackedAssetInternal(assetConfigs, 13);
-        (asset14_a, asset14_b) = getPackedAssetInternal(assetConfigs, 14);
-        (asset15_a, asset15_b) = getPackedAssetInternal(assetConfigs, 15);
-        (asset16_a, asset16_b) = getPackedAssetInternal(assetConfigs, 16);
-        (asset17_a, asset17_b) = getPackedAssetInternal(assetConfigs, 17);
-        (asset18_a, asset18_b) = getPackedAssetInternal(assetConfigs, 18);
-        (asset19_a, asset19_b) = getPackedAssetInternal(assetConfigs, 19);
-        (asset20_a, asset20_b) = getPackedAssetInternal(assetConfigs, 20);
-        (asset21_a, asset21_b) = getPackedAssetInternal(assetConfigs, 21);
-        (asset22_a, asset22_b) = getPackedAssetInternal(assetConfigs, 22);
-        (asset23_a, asset23_b) = getPackedAssetInternal(assetConfigs, 23);
+        (asset00_a, priceFeedAddress00) = getPackedAssetInternal(assetConfigs, 0);
+        (asset01_a, priceFeedAddress01) = getPackedAssetInternal(assetConfigs, 1);
+        (asset02_a, priceFeedAddress02) = getPackedAssetInternal(assetConfigs, 2);
+        (asset03_a, priceFeedAddress03) = getPackedAssetInternal(assetConfigs, 3);
+        (asset04_a, priceFeedAddress04) = getPackedAssetInternal(assetConfigs, 4);
+        (asset05_a, priceFeedAddress05) = getPackedAssetInternal(assetConfigs, 5);
+        (asset06_a, priceFeedAddress06) = getPackedAssetInternal(assetConfigs, 6);
+        (asset07_a, priceFeedAddress07) = getPackedAssetInternal(assetConfigs, 7);
+        (asset08_a, priceFeedAddress08) = getPackedAssetInternal(assetConfigs, 8);
+        (asset09_a, priceFeedAddress09) = getPackedAssetInternal(assetConfigs, 9);
+        (asset10_a, priceFeedAddress10) = getPackedAssetInternal(assetConfigs, 10);
+        (asset11_a, priceFeedAddress11) = getPackedAssetInternal(assetConfigs, 11);
+        (asset12_a, priceFeedAddress12) = getPackedAssetInternal(assetConfigs, 12);
+        (asset13_a, priceFeedAddress13) = getPackedAssetInternal(assetConfigs, 13);
+        (asset14_a, priceFeedAddress14) = getPackedAssetInternal(assetConfigs, 14);
+        (asset15_a, priceFeedAddress15) = getPackedAssetInternal(assetConfigs, 15);
+        (asset16_a, priceFeedAddress16) = getPackedAssetInternal(assetConfigs, 16);
+        (asset17_a, priceFeedAddress17) = getPackedAssetInternal(assetConfigs, 17);
+        (asset18_a, priceFeedAddress18) = getPackedAssetInternal(assetConfigs, 18);
+        (asset19_a, priceFeedAddress19) = getPackedAssetInternal(assetConfigs, 19);
+        (asset20_a, priceFeedAddress20) = getPackedAssetInternal(assetConfigs, 20);
+        (asset21_a, priceFeedAddress21) = getPackedAssetInternal(assetConfigs, 21);
+        (asset22_a, priceFeedAddress22) = getPackedAssetInternal(assetConfigs, 22);
+        (asset23_a, priceFeedAddress23) = getPackedAssetInternal(assetConfigs, 23);
     }
 
     /**
-     * @dev Checks and gets the packed asset info for storage in 2 variables
-     * - in first variable, the asset address is stored in the lower 160 bits (address can be interpreted as uint160),
-     *      the borrow collateral factor in the next 16 bits,
-     *      the liquidate collateral factor in the next 16 bits,
-     *      and the liquidation factor in the next 16 bits
-     * - in the second variable, the price feed address is stored in the lower 160 bits,
-     *      the asset decimals in the next 8 bits,
-     *      and the supply cap in the next 64 bits
+     * @dev Checks and gets the packed asset info and the price feed address,
+     *      and saves the full factors and supply cap of the asset in assetConfigStorage
+     * - in the packed word, the asset address is stored in the lower 160 bits (address can be interpreted as uint160),
+     *      and the asset decimals in the next 8 bits
      * @param assetConfigs The asset configurations
      * @param i The index of the asset info to get
-     * @return The packed asset info
+     * @return The packed asset info and the price feed address
      */
-    function getPackedAssetInternal(CometConfiguration.AssetConfig[] memory assetConfigs, uint i) internal view returns (uint256, uint256) {
+    function getPackedAssetInternal(CometConfiguration.AssetConfig[] memory assetConfigs, uint i) internal returns (uint256, address) {
         CometConfiguration.AssetConfig memory assetConfig;
         if (i < assetConfigs.length) {
             assembly {
                 assetConfig := mload(add(add(assetConfigs, 0x20), mul(i, 0x20)))
             }
         } else {
-            return (0, 0);
+            return (0, address(0));
         }
         address asset = assetConfig.asset;
         address priceFeed = assetConfig.priceFeed;
@@ -130,48 +154,50 @@ contract AssetList {
 
         // Short-circuit if asset is nil
         if (asset == address(0)) {
-            return (0, 0);
+            return (0, address(0));
         }
 
         // Sanity check price feed and asset decimals
         if (IPriceFeed(priceFeed).decimals() != PRICE_FEED_DECIMALS) revert CometMainInterface.BadDecimals();
         if (IERC20NonStandard(asset).decimals() != decimals_) revert CometMainInterface.BadDecimals();
 
-        // Sanity checks for factors ordering: BCF < LCF; LCF <= MAX; LF <= MAX
-        if (assetConfig.borrowCollateralFactor >= assetConfig.liquidateCollateralFactor && assetConfig.borrowCollateralFactor != 0)
+        _validateCollateralFactors(
+            assetConfig.borrowCollateralFactor,
+            assetConfig.liquidateCollateralFactor,
+            assetConfig.liquidationFactor
+        );
+
+        // Register the asset so the setters can change it later, and keep its factors and supply cap unscaled
+        assetConfigStorage.assets.add(asset);
+        assetConfigStorage.configs[asset] = AssetConfig({
+            borrowCollateralFactor: assetConfig.borrowCollateralFactor,
+            liquidateCollateralFactor: assetConfig.liquidateCollateralFactor,
+            liquidationFactor: assetConfig.liquidationFactor,
+            supplyCap: assetConfig.supplyCap
+        });
+
+        uint256 word_a = (uint160(asset) << 0 |
+                          uint256(decimals_) << 160);
+        return (word_a, priceFeed);
+    }
+
+    /**
+     * @dev Sanity checks for factors ordering: BCF < LCF; LCF <= MAX; LF <= MAX
+     * Valid collateral factor configurations:
+     *  1. Both BCF and LCF are 0 => collateral is fully de-listed
+     *  2. borrowCF=0, liquidateCF>0 => soft de-list (no new borrows, controlled liquidation wind-down)
+     *  3. Both non-zero, properly ordered => active collateral
+     * Invalid: borrowCF>0, liquidateCF=0 => reverts (borrow power without liquidation coverage)
+     */
+    function _validateCollateralFactors(
+        uint64 borrowCollateralFactor,
+        uint64 liquidateCollateralFactor,
+        uint64 liquidationFactor
+    ) internal pure {
+        if (borrowCollateralFactor >= liquidateCollateralFactor && borrowCollateralFactor != 0)
             revert CometMainInterface.BorrowCFTooLarge();
-        if (assetConfig.liquidateCollateralFactor > MAX_COLLATERAL_FACTOR) revert CometMainInterface.LiquidateCFTooLarge();
-        if (assetConfig.liquidationFactor > MAX_COLLATERAL_FACTOR) revert CometMainInterface.LiqPenaltyTooHigh();
-
-        // Valid collateral factor configurations:
-        //  1. Both BCF and LCF are 0 => collateral is fully de-listed
-        //  2. borrowCF=0, liquidateCF>0 => soft de-list (no new borrows, controlled liquidation wind-down)
-        //  3. Both non-zero, properly ordered => active collateral
-        // Invalid: borrowCF>0, liquidateCF=0 => reverts (borrow power without liquidation coverage)
-
-        unchecked {
-            // Keep 4 decimals for each factor
-            uint64 descale = FACTOR_SCALE / 1e4;
-            uint16 borrowCollateralFactor = uint16(assetConfig.borrowCollateralFactor / descale);
-            uint16 liquidateCollateralFactor = uint16(assetConfig.liquidateCollateralFactor / descale);
-            uint16 liquidationFactor = uint16(assetConfig.liquidationFactor / descale);
-
-            // safety check duplicate sanity check on original values to ensure no values skewing after descaling and type conversion
-            if (borrowCollateralFactor >= liquidateCollateralFactor && borrowCollateralFactor != 0) revert CometMainInterface.BorrowCFTooLarge();
-
-            // Keep whole units of asset for supply cap
-            uint64 supplyCap = uint64(assetConfig.supplyCap / (10 ** decimals_));
-
-            uint256 word_a = (uint160(asset) << 0 |
-                              uint256(borrowCollateralFactor) << 160 |
-                              uint256(liquidateCollateralFactor) << 176 |
-                              uint256(liquidationFactor) << 192);
-            uint256 word_b = (uint160(priceFeed) << 0 |
-                              uint256(decimals_) << 160 |
-                              uint256(supplyCap) << 168);
-
-            return (word_a, word_b);
-        }
+        if (liquidateCollateralFactor > MAX_COLLATERAL_FACTOR) revert CometMainInterface.LiquidateCFTooLarge();
+        if (liquidationFactor > MAX_COLLATERAL_FACTOR) revert CometMainInterface.LiqPenaltyTooHigh();
     }
 
     /**
@@ -182,124 +208,157 @@ contract AssetList {
     function getAssetInfo(uint8 i) public view returns (CometCore.AssetInfo memory) {
         if (i >= numAssets) revert CometMainInterface.BadAsset();
         uint256 word_a;
-        uint256 word_b;
+        address priceFeed;
         if(i == 0){
             word_a = asset00_a;
-            word_b = asset00_b;
+            priceFeed = priceFeedAddress00;
         }
         if(i == 1){
             word_a = asset01_a;
-            word_b = asset01_b;
+            priceFeed = priceFeedAddress01;
         }
         if(i == 2){
             word_a = asset02_a;
-            word_b = asset02_b;
+            priceFeed = priceFeedAddress02;
         }
         if(i == 3){
             word_a = asset03_a;
-            word_b = asset03_b;
+            priceFeed = priceFeedAddress03;
         }
         if(i == 4){
             word_a = asset04_a;
-            word_b = asset04_b;
+            priceFeed = priceFeedAddress04;
         }
         if(i == 5){
             word_a = asset05_a;
-            word_b = asset05_b;
+            priceFeed = priceFeedAddress05;
         }
         if(i == 6){
             word_a = asset06_a;
-            word_b = asset06_b;
+            priceFeed = priceFeedAddress06;
         }
         if(i == 7){
             word_a = asset07_a;
-            word_b = asset07_b;
+            priceFeed = priceFeedAddress07;
         }
         if(i == 8){
             word_a = asset08_a;
-            word_b = asset08_b;
+            priceFeed = priceFeedAddress08;
         }
         if(i == 9){
             word_a = asset09_a;
-            word_b = asset09_b;
+            priceFeed = priceFeedAddress09;
         }
         if(i == 10){
             word_a = asset10_a;
-            word_b = asset10_b;
+            priceFeed = priceFeedAddress10;
         }
         if(i == 11){
             word_a = asset11_a;
-            word_b = asset11_b;
+            priceFeed = priceFeedAddress11;
         }
         if(i == 12){
             word_a = asset12_a;
-            word_b = asset12_b;
+            priceFeed = priceFeedAddress12;
         }
         if(i == 13){
             word_a = asset13_a;
-            word_b = asset13_b;
+            priceFeed = priceFeedAddress13;
         }
         if(i == 14){
             word_a = asset14_a;
-            word_b = asset14_b;
+            priceFeed = priceFeedAddress14;
         }
         if(i == 15){
             word_a = asset15_a;
-            word_b = asset15_b;
+            priceFeed = priceFeedAddress15;
         }
         if(i == 16){
             word_a = asset16_a;
-            word_b = asset16_b;
+            priceFeed = priceFeedAddress16;
         }
         if(i == 17){
             word_a = asset17_a;
-            word_b = asset17_b;
+            priceFeed = priceFeedAddress17;
         }
         if(i == 18){
             word_a = asset18_a;
-            word_b = asset18_b;
+            priceFeed = priceFeedAddress18;
         }
         if(i == 19){
             word_a = asset19_a;
-            word_b = asset19_b;
+            priceFeed = priceFeedAddress19;
         }
         if(i == 20){
             word_a = asset20_a;
-            word_b = asset20_b;
+            priceFeed = priceFeedAddress20;
         }
         if(i == 21){
             word_a = asset21_a;
-            word_b = asset21_b;
+            priceFeed = priceFeedAddress21;
         }
         if(i == 22){
             word_a = asset22_a;
-            word_b = asset22_b;
+            priceFeed = priceFeedAddress22;
         }
         if(i == 23){
             word_a = asset23_a;
-            word_b = asset23_b;
+            priceFeed = priceFeedAddress23;
         }
 
-        address asset = address(uint160(word_a & type(uint160).max));
-        uint64 rescale = FACTOR_SCALE / 1e4;
-        uint64 borrowCollateralFactor = uint64(((word_a >> 160) & type(uint16).max) * rescale);
-        uint64 liquidateCollateralFactor = uint64(((word_a >> 176) & type(uint16).max) * rescale);
-        uint64 liquidationFactor = uint64(((word_a >> 192) & type(uint16).max) * rescale);
+        address asset = address(uint160(word_a));
+        uint8 decimals_ = uint8(word_a >> 160);
 
-        address priceFeed = address(uint160(word_b & type(uint160).max));
-        uint8 decimals_ = uint8(((word_b >> 160) & type(uint8).max));
-        uint64 scale = uint64(10 ** decimals_);
-        uint128 supplyCap = uint128(((word_b >> 168) & type(uint64).max) * scale);
+        // Factors and supply cap are kept unscaled in storage so the Configurator can change them
+        AssetConfig memory config = assetConfigStorage.configs[asset];
 
         return CometCore.AssetInfo({
             offset: i,
             asset: asset,
             priceFeed: priceFeed,
-            scale: scale,
-            borrowCollateralFactor: borrowCollateralFactor,
-            liquidateCollateralFactor: liquidateCollateralFactor,
-            liquidationFactor: liquidationFactor,
-            supplyCap: supplyCap
+            scale: uint64(10 ** decimals_),
+            borrowCollateralFactor: config.borrowCollateralFactor,
+            liquidateCollateralFactor: config.liquidateCollateralFactor,
+            liquidationFactor: config.liquidationFactor,
+            supplyCap: config.supplyCap
          });
+    }
+
+    error OnlyConfigurator();
+
+    modifier onlyConfigurator() {
+        if (msg.sender != configurator) revert OnlyConfigurator();
+        _;
+    }
+
+    /**
+     * @notice Set the collateral factors of an asset
+     * @param asset The asset, must be listed at construction
+     */
+    function setFactors(
+        address asset,
+        uint64 borrowCollateralFactor,
+        uint64 liquidateCollateralFactor,
+        uint64 liquidationFactor
+    ) external onlyConfigurator {
+        // Only an asset listed at construction can be changed
+        if (!assetConfigStorage.assets.contains(asset)) revert CometMainInterface.BadAsset();
+
+        _validateCollateralFactors(borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor);
+        AssetConfig storage config = assetConfigStorage.configs[asset];
+        config.borrowCollateralFactor = borrowCollateralFactor;
+        config.liquidateCollateralFactor = liquidateCollateralFactor;
+        config.liquidationFactor = liquidationFactor;
+    }
+
+    /**
+     * @notice Set the supply cap of an asset
+     * @param asset The asset, must be listed at construction
+     */
+    function setSupplyCap(address asset, uint128 supplyCap) external onlyConfigurator {
+        // Only an asset listed at construction can be changed
+        if (!assetConfigStorage.assets.contains(asset)) revert CometMainInterface.BadAsset();
+
+        assetConfigStorage.configs[asset].supplyCap = supplyCap;
     }
 }
