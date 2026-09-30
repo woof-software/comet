@@ -1,6 +1,15 @@
-import { makeMarketAdmin, advanceTimeAndMineBlock } from './market-updates-helper';
-import { expect, makeConfigurator, ethers, wait, event } from '../helpers';
-import { MarketAdminPermissionChecker__factory, MarketUpdateProposer__factory } from '../../build/types';
+import { AbiCoder, ZeroAddress } from 'ethers';
+
+import { makeMarketAdmin, advanceTimeAndMineBlock } from './market-updates-helper.js';
+import { expect, makeConfigurator, wait, event } from '../helpers.js';
+import {
+  Configurator__factory,
+  ITimelock__factory,
+  MarketAdminPermissionChecker__factory,
+  MarketUpdateProposer__factory,
+} from '../../build/types/index.js';
+
+const abiCoder = AbiCoder.defaultAbiCoder();
 
 describe('MarketUpdateProposer', function() {
   // We are not checking market updates here. we are just checking interaction
@@ -13,7 +22,7 @@ describe('MarketUpdateProposer', function() {
     } = await makeMarketAdmin();
 
     expect(await marketUpdateProposerContract.timelock()).to.equal(
-      marketUpdateTimelockContract.address
+      await marketUpdateTimelockContract.getAddress()
     );
   });
 
@@ -90,9 +99,9 @@ describe('MarketUpdateProposer', function() {
       users: [alice],
     } = await makeConfigurator();
 
-    let setSupplyKinkCalldata = ethers.utils.defaultAbiCoder.encode(
+    let setSupplyKinkCalldata = abiCoder.encode(
       ['address', 'uint64'],
-      [cometProxy.address, 100]
+      [await cometProxy.getAddress(), 100]
     );
 
     const proposalId = 1n;
@@ -103,7 +112,7 @@ describe('MarketUpdateProposer', function() {
       marketUpdateProposerContract
         .connect(marketUpdateMultiSig)
         .propose(
-          [configuratorProxy.address],
+          [await configuratorProxy.getAddress()],
           [0],
           ['setSupplyKink(address,uint64)'],
           [setSupplyKinkCalldata],
@@ -116,7 +125,8 @@ describe('MarketUpdateProposer', function() {
       MarketUpdateProposalCreated: {
         id: proposalId,
         proposer: marketUpdateMultiSig.address,
-        targets: [configuratorProxy.address],
+        targets: [await configuratorProxy.getAddress()],
+        values: [0n],
         signatures: ['setSupplyKink(address,uint64)'],
         calldatas: [setSupplyKinkCalldata],
         description: proposalDescription,
@@ -128,7 +138,7 @@ describe('MarketUpdateProposer', function() {
       marketUpdateProposerContract
         .connect(alice)
         .propose(
-          [configuratorProxy.address],
+          [await configuratorProxy.getAddress()],
           [0],
           ['setSupplyKink(address,uint64)'],
           [setSupplyKinkCalldata],
@@ -145,9 +155,9 @@ describe('MarketUpdateProposer', function() {
 
     const { configuratorProxy, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
 
-    let setSupplyKinkCalldata = ethers.utils.defaultAbiCoder.encode(
+    let setSupplyKinkCalldata = abiCoder.encode(
       ['address', 'uint64'],
-      [cometProxy.address, 100]
+      [await cometProxy.getAddress(), 100]
     );
 
     const proposalId = 1n;
@@ -157,7 +167,7 @@ describe('MarketUpdateProposer', function() {
     await marketUpdateProposerContract
       .connect(marketUpdateMultiSig)
       .propose(
-        [configuratorProxy.address],
+        [await configuratorProxy.getAddress()],
         [0],
         ['setSupplyKink(address,uint64)'],
         [setSupplyKinkCalldata],
@@ -169,7 +179,7 @@ describe('MarketUpdateProposer', function() {
 
     expect(proposal[0]).to.equal(proposalId);
     expect(proposal[1]).to.equal(marketUpdateMultiSig.address);
-    expect(proposal[3][0]).to.equal(configuratorProxy.address);
+    expect(proposal[3][0]).to.equal(await configuratorProxy.getAddress());
     expect(proposal[5][0]).to.equal('setSupplyKink(address,uint64)');
     expect(proposal[6][0]).to.equal(setSupplyKinkCalldata);
   });
@@ -185,9 +195,9 @@ describe('MarketUpdateProposer', function() {
 
     const { configuratorProxy, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
 
-    let setSupplyKinkCalldata = ethers.utils.defaultAbiCoder.encode(
+    let setSupplyKinkCalldata = abiCoder.encode(
       ['address', 'uint64'],
-      [cometProxy.address, 100]
+      [await cometProxy.getAddress(), 100]
     );
 
     const proposalId = 1n;
@@ -197,7 +207,7 @@ describe('MarketUpdateProposer', function() {
     await marketUpdateProposerContract
       .connect(marketUpdateMultiSig)
       .propose(
-        [configuratorProxy.address],
+        [await configuratorProxy.getAddress()],
         [0],
         ['setSupplyKink(address,uint64)'],
         [setSupplyKinkCalldata],
@@ -230,9 +240,9 @@ describe('MarketUpdateProposer', function() {
 
     const { configuratorProxy, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
 
-    let setSupplyKinkCalldata = ethers.utils.defaultAbiCoder.encode(
+    let setSupplyKinkCalldata = abiCoder.encode(
       ['address', 'uint64'],
-      [cometProxy.address, 100]
+      [await cometProxy.getAddress(), 100]
     );
 
     const proposalId = 1n;
@@ -242,7 +252,7 @@ describe('MarketUpdateProposer', function() {
     await marketUpdateProposerContract
       .connect(marketUpdateMultiSig)
       .propose(
-        [configuratorProxy.address],
+        [await configuratorProxy.getAddress()],
         [0],
         ['setSupplyKink(address,uint64)'],
         [setSupplyKinkCalldata],
@@ -253,13 +263,13 @@ describe('MarketUpdateProposer', function() {
     const timelockAddress = await marketUpdateProposerContract.timelock();
 
     // Create a contract instance for the timelock using its interface
-    const timelockContract = await ethers.getContractAt(
-      'ITimelock',
-      timelockAddress
+    const timelockContract = ITimelock__factory.connect(
+      timelockAddress,
+      marketUpdateProposerContract.runner
     );
 
     // Now call the delay function from the timelock contract
-    const delay = (await timelockContract.delay()).toNumber();
+    const delay = Number(await timelockContract.delay());
 
     // Fast forward time by more than the GRACE_PERIOD
     const GRACE_PERIOD = 14 * 24 * 60 * 60; // 14 days in seconds
@@ -283,17 +293,15 @@ describe('MarketUpdateProposer', function() {
         marketUpdateTimelockContract,
       } = await makeMarketAdmin();
       
-      const marketUpdaterProposerFactory = (await ethers.getContractFactory(
-        'MarketUpdateProposer'
-      )) as MarketUpdateProposer__factory;
+      const marketUpdaterProposerFactory = new MarketUpdateProposer__factory(governorTimelockSigner);
     
       // Governor as zero address
       await expect(
         marketUpdaterProposerFactory.deploy(
-          ethers.constants.AddressZero,
+          ZeroAddress,
           marketUpdateMultiSig.address,
           marketUpdateProposalGuardianSigner.address,
-          marketUpdateTimelockContract.address
+          await marketUpdateTimelockContract.getAddress()
         )
       ).to.be.revertedWithCustomError(
         marketUpdaterProposerFactory,
@@ -304,9 +312,9 @@ describe('MarketUpdateProposer', function() {
       await expect(
         marketUpdaterProposerFactory.deploy(
           governorTimelockSigner.address,
-          ethers.constants.AddressZero,
+          ZeroAddress,
           marketUpdateProposalGuardianSigner.address,
-          marketUpdateTimelockContract.address
+          await marketUpdateTimelockContract.getAddress()
         )
       ).to.be.revertedWithCustomError(
         marketUpdaterProposerFactory,
@@ -318,7 +326,7 @@ describe('MarketUpdateProposer', function() {
           governorTimelockSigner.address,
           marketUpdateMultiSig.address,
           marketUpdateProposalGuardianSigner.address,
-          ethers.constants.AddressZero
+          ZeroAddress
         )
       ).to.be.revertedWithCustomError(
         marketUpdaterProposerFactory,
@@ -329,7 +337,7 @@ describe('MarketUpdateProposer', function() {
         governorTimelockSigner.address,
         marketUpdateMultiSig.address,
         marketUpdateProposalGuardianSigner.address,
-        marketUpdateTimelockContract.address
+        await marketUpdateTimelockContract.getAddress()
       );
         
       expect(await marketUpdateProposer.governor()).to.be.equal(governorTimelockSigner.address);
@@ -337,7 +345,7 @@ describe('MarketUpdateProposer', function() {
       expect(await marketUpdateProposer.proposalGuardian()).to.be.equal(
         marketUpdateProposalGuardianSigner.address
       );
-      expect(await marketUpdateProposer.timelock()).to.be.equal(marketUpdateTimelockContract.address);
+      expect(await marketUpdateProposer.timelock()).to.be.equal(await marketUpdateTimelockContract.getAddress());
       
     });
 
@@ -474,9 +482,9 @@ describe('MarketUpdateProposer', function() {
         marketUpdateMultiSig.address
       );
   
-      let setSupplyKinkCalldata = ethers.utils.defaultAbiCoder.encode(
+      let setSupplyKinkCalldata = abiCoder.encode(
         ['address', 'uint64'],
-        [cometProxy.address, 100]
+        [await cometProxy.getAddress(), 100]
       );
   
       const proposalDescription = 'Test Proposal';
@@ -485,7 +493,7 @@ describe('MarketUpdateProposer', function() {
       await marketUpdateProposerContract
         .connect(marketUpdateMultiSig)
         .propose(
-          [configuratorProxy.address],
+          [await configuratorProxy.getAddress()],
           [0],
           ['setSupplyKink(address,uint64)'],
           [setSupplyKinkCalldata],
@@ -497,7 +505,7 @@ describe('MarketUpdateProposer', function() {
         marketUpdateProposerContract
           .connect(governorTimelockSigner)
           .propose(
-            [configuratorProxy.address],
+            [await configuratorProxy.getAddress()],
             [0],
             ['setSupplyKink(address,uint64)'],
             [setSupplyKinkCalldata],
@@ -510,7 +518,7 @@ describe('MarketUpdateProposer', function() {
         marketUpdateProposerContract
           .connect(marketUpdateProposalGuardianSigner)
           .propose(
-            [configuratorProxy.address],
+            [await configuratorProxy.getAddress()],
             [0],
             ['setSupplyKink(address,uint64)'],
             [setSupplyKinkCalldata],
@@ -523,7 +531,7 @@ describe('MarketUpdateProposer', function() {
         marketUpdateProposerContract
           .connect(alice)
           .propose(
-            [configuratorProxy.address],
+            [await configuratorProxy.getAddress()],
             [0],
             ['setSupplyKink(address,uint64)'],
             [setSupplyKinkCalldata],
@@ -556,9 +564,9 @@ describe('MarketUpdateProposer', function() {
         marketUpdateMultiSig.address
       );
   
-      let setSupplyKinkCalldata = ethers.utils.defaultAbiCoder.encode(
+      let setSupplyKinkCalldata = abiCoder.encode(
         ['address', 'uint64'],
-        [cometProxy.address, 100]
+        [await cometProxy.getAddress(), 100]
       );
   
       const proposalDescription = 'Test Proposal';
@@ -567,14 +575,14 @@ describe('MarketUpdateProposer', function() {
       await marketUpdateProposerContract
         .connect(marketUpdateMultiSig)
         .propose(
-          [configuratorProxy.address],
+          [await configuratorProxy.getAddress()],
           [0],
           ['setSupplyKink(address,uint64)'],
           [setSupplyKinkCalldata],
           proposalDescription
         );
         
-      const delay = (await marketUpdateTimelockContract.delay()).toNumber(); // Example: 172800 for 2 days
+      const delay = Number(await marketUpdateTimelockContract.delay()); // Example: 172800 for 2 days
       // Fast-forward time by delay + few seconds to surpass the eta
       await advanceTimeAndMineBlock(delay);
       
@@ -596,20 +604,21 @@ describe('MarketUpdateProposer', function() {
       ).to.be.revertedWithCustomError(marketUpdateProposerContract, 'Unauthorized');
       
       // Success case: only MarketAdmin can execute the proposal
-      const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+      const configuratorAsProxy = Configurator__factory.connect(
+        await configuratorProxy.getAddress(),
+        configurator.runner
+      );
       const marketAdminCheckerAddress = await configuratorAsProxy.marketAdminPermissionChecker();
-      const MarketAdminPermissionChecker = (await ethers.getContractFactory(
-        'MarketAdminPermissionChecker'
-      )) as MarketAdminPermissionChecker__factory;
-      const marketAdminCheckerInstance = MarketAdminPermissionChecker.attach(
-        marketAdminCheckerAddress
+      const marketAdminCheckerInstance = MarketAdminPermissionChecker__factory.connect(
+        marketAdminCheckerAddress,
+        governorTimelockSigner
       );
       await marketAdminCheckerInstance
         .connect(governorTimelockSigner)
-        .setMarketAdmin(marketUpdateTimelockContract.address);
+        .setMarketAdmin(await marketUpdateTimelockContract.getAddress());
 
       expect(await marketAdminCheckerInstance.marketAdmin()).to.be.equal(
-        marketUpdateTimelockContract.address
+        await marketUpdateTimelockContract.getAddress()
       );
       await marketUpdateProposerContract.connect(marketUpdateMultiSig).execute(proposalId);
     });
@@ -629,9 +638,9 @@ describe('MarketUpdateProposer', function() {
         marketUpdateMultiSig.address
       );
   
-      let setSupplyKinkCalldata = ethers.utils.defaultAbiCoder.encode(
+      let setSupplyKinkCalldata = abiCoder.encode(
         ['address', 'uint64'],
-        [cometProxy.address, 100]
+        [await cometProxy.getAddress(), 100]
       );
   
       const proposalDescription = 'Test Proposal';
@@ -640,7 +649,7 @@ describe('MarketUpdateProposer', function() {
       await marketUpdateProposerContract
         .connect(marketUpdateMultiSig)
         .propose(
-          [configuratorProxy.address],
+          [await configuratorProxy.getAddress()],
           [0],
           ['setSupplyKink(address,uint64)'],
           [setSupplyKinkCalldata],
