@@ -251,7 +251,7 @@ export async function simulateL2ToL1USDCBridging(
 
     await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
       l1Messenger.address,
-      ethers.utils.hexlify(L1_MESSENGER_X_DOMAIN_SENDER_SLOT),
+      ethers.utils.hexZeroPad(ethers.utils.hexlify(L1_MESSENGER_X_DOMAIN_SENDER_SLOT), 32),
       ethers.utils.hexZeroPad(L2_USDC_GATEWAY, 32)
     ]);
     const l1MessengerSigner = await impersonateAddress(governanceDeploymentManager, l1Messenger.address);
