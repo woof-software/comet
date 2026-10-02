@@ -1,87 +1,81 @@
 import hre from 'hardhat';
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
-import * as fs from 'fs';
-import * as path from 'path';
-import { verifyContract } from '../Verify';
-import { deployBuild } from '../Deploy';
-import { buildToken, faucetTokenBuildFile, tokenArgs } from './DeployHelpers';
-import { MockAgent, setGlobalDispatcher } from 'undici';
+import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 
-export function mockVerifySuccess(hre: HardhatRuntimeEnvironment) {
-  // We use undici's intercepter to mock the HTTP requests because the Hardhat Etherscan plugin now uses
-  // undici instead of node-fetch
-  const mockAgent = new MockAgent();
-  mockAgent.disableNetConnect();
-  setGlobalDispatcher(mockAgent);
+import { verifyContract } from '../Verify.js';
+import { deployBuild } from '../Deploy.js';
+import { buildToken, faucetTokenBuildFile, tokenArgs } from './DeployHelpers.js';
 
-  let solcList = JSON.parse(fs.readFileSync(path.join(__dirname, './SolcList.json'), 'utf8'));
+let verifyMockConfigured = false;
 
-  // Note: we need to convince the prober task that this is goerli, which it's not.
-  // So we'll fake the network name and the chain ID
-  hre.config.etherscan.apiKey = {
-    goerli: 'GOERLI_KEY',
-  };
-  hre.network.name = 'goerli';
-  let sendOld = hre.network.provider.send.bind(hre.network.provider);
-  hre.network.provider.send = function (...args) {
-    if (args.length === 1 && args[0] === 'eth_chainId') {
-      return Promise.resolve(5);
+export async function mockVerifySuccess(hre: HardhatRuntimeEnvironment) {
+  if (verifyMockConfigured) return;
+
+  const server = createServer((request, response) => {
+    request.resume();
+    const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
+    const action = url.searchParams.get('action');
+    let result: unknown;
+
+    if (action === 'getsourcecode') {
+      result = [{ SourceCode: '' }];
+    } else if (action === 'verifysourcecode') {
+      result = 'MYGUID';
+    } else if (action === 'checkverifystatus') {
+      result = 'Pass - Verified';
     } else {
-      return sendOld(...args);
+      response.writeHead(400);
+      response.end();
+      return;
     }
-  };
 
-  const solcMockPool = mockAgent.get('https://solc-bin.ethereum.org');
-  const etherscanMockPool = mockAgent.get('https://api-goerli.etherscan.io');
-
-  solcMockPool.intercept({
-    path: '/bin/list.json',
-    method: 'GET'
-  }).reply(200, solcList);
-
-  etherscanMockPool.intercept({
-    path: '/api',
-    method: 'POST',
-    body: /action=verifysourcecode/
-  }).reply(200, {
-    status: 1,
-    message: 'OK',
-    result: 'MYGUID',
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ status: '1', message: 'OK', result }));
   });
 
-  etherscanMockPool.intercept({
-    path: '/api',
-    method: 'GET',
-    query: {
-      apikey: 'GOERLI_KEY',
-      module: 'contract',
-      action: 'checkverifystatus',
-      guid: 'MYGUID',
-    }
-  }).reply(200, {
-    status: 1,
-    message: 'OK',
-    result: 'Pass - Verified',
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  server.unref();
+
+  const { port } = server.address() as AddressInfo;
+  const explorerUrl = `http://127.0.0.1:${port}`;
+  process.env.ETHERSCAN_KEY = 'GOERLI_KEY';
+  hre.config.chainDescriptors.set(5n, {
+    name: 'Goerli',
+    chainType: 'l1',
+    blockExplorers: {
+      etherscan: {
+        url: explorerUrl,
+        apiUrl: `${explorerUrl}/api`,
+      },
+    },
   });
 
-  // Hardhat Etherscan now checks to see if a contract is already verified before verifying it
-  etherscanMockPool.intercept({
-    path: /api\?action=getsourcecode.*/,
-    method: 'GET',
-  }).reply(200, {
-    status: 1,
-    message: 'OK',
-    result: 'Source code not found',
+  const connection = await hre.network.getOrCreate();
+  const request = connection.provider.request.bind(connection.provider);
+  connection.provider.request = async (requestArguments) =>
+    requestArguments.method === 'eth_chainId'
+      ? '0x5'
+      : request(requestArguments);
+
+  Object.defineProperty(hre.network, 'create', {
+    configurable: true,
+    value: async () => connection,
   });
+
+  verifyMockConfigured = true;
 }
 
 describe('Verify', () => {
   describe('via artifacts', () => {
     it('verify from artifacts [success]', async () => {
-      mockVerifySuccess(hre);
-      let token = await buildToken();
+      const token = await buildToken();
+      await mockVerifySuccess(hre);
       await verifyContract(
-        { via: 'artifacts', address: token.address, constructorArguments: tokenArgs },
+        { via: 'artifacts', address: await token.getAddress(), constructorArguments: tokenArgs },
         hre,
         true
       );
@@ -90,8 +84,8 @@ describe('Verify', () => {
 
   describe('via buildfile', () => {
     it('verify from build file', async () => {
-      mockVerifySuccess(hre);
-      let contract = await deployBuild(faucetTokenBuildFile, tokenArgs, hre, { network: 'test-network' });
+      const contract = await deployBuild(faucetTokenBuildFile, tokenArgs, hre, { network: 'test-network' });
+      await mockVerifySuccess(hre);
       await verifyContract(
         { via: 'buildfile', contract, buildFile: faucetTokenBuildFile, deployArgs: tokenArgs },
         hre,

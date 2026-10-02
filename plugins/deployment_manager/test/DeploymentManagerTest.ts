@@ -141,7 +141,7 @@ describe('DeploymentManager', () => {
         [tokenAddress]: verifyArgs
       });
 
-      mockVerifySuccess(hre);
+      await mockVerifySuccess(hre);
       await deploymentManager.verifyContracts();
 
       // VerifyArgs cache should be cleared upon successful verification
