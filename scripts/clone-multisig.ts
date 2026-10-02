@@ -1,6 +1,6 @@
 import SafeProtocolKit from '@safe-global/protocol-kit';
 import type { SafeConfig } from '@safe-global/protocol-kit';
-import { Contract, Wallet } from 'ethers';
+import { Contract } from 'ethers';
 
 import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager.js';
 import { nonForkedHreForBase, forkedHreForBase } from '../plugins/scenario/utils/hreForBase.js';
@@ -44,22 +44,20 @@ async function main() {
   console.log(safeAccountConfig);
   console.log(guardian);
 
-  const hreDST = await nonForkedHreForBase({ name: '', network: DST_NETWORK, deployment: '' });
+  const hreDST = DST_NETWORK === 'hardhat'
+    ? hreSRC
+    : await nonForkedHreForBase({ name: '', network: DST_NETWORK, deployment: '' });
   const destinationConnection = await hreDST.network.getOrCreate();
-  const privateKey = process.env.ETH_PK;
-  if (!privateKey) {
-    throw new Error('Missing required environment variable: ETH_PK');
-  }
-  const normalizedPrivateKey = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
-  const wallet = new Wallet(normalizedPrivateKey, destinationConnection.ethers.provider);
+  const [signer] = await destinationConnection.ethers.getSigners();
+  const signerAddress = await signer.getAddress();
 
   const protocolKit = await Safe.init({
     provider: destinationConnection.provider,
-    signer: normalizedPrivateKey,
+    signer: signerAddress,
     predictedSafe: { safeAccountConfig },
   });
   const deploymentTransaction = await protocolKit.createSafeDeploymentTransaction();
-  const transaction = await wallet.sendTransaction({
+  const transaction = await signer.sendTransaction({
     to: deploymentTransaction.to,
     value: BigInt(deploymentTransaction.value),
     data: deploymentTransaction.data,
