@@ -1,83 +1,83 @@
 import { expect } from 'chai';
+import type { Contract } from 'ethers';
 import hre from 'hardhat';
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
+import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
 import nock from 'nock';
 
-import {
-  Dog,
-  ProxyAdmin,
-  TransparentUpgradeableProxy,
-} from '../../../build/types';
-
-import { Cache } from '../Cache';
-import { spider } from '../Spider';
-import { RelationConfigMap } from '../RelationConfig';
-import { objectFromMap } from '../Utils';
-import { deploy } from '../Deploy';
+import { Cache } from '../Cache.js';
+import { spider } from '../Spider.js';
+import type { RelationConfigMap } from '../RelationConfig.js';
+import { objectFromMap } from '../Utils.js';
+import { deploy } from '../Deploy.js';
+import { getHardhatEthers } from '../hardhat3/runtime.js';
 
 interface TestContracts {
-  finn: Dog;
-  molly: Dog;
-  spot: Dog;
-  proxy: TransparentUpgradeableProxy;
-  finnImpl: Dog;
-  proxyAdmin: ProxyAdmin;
+  finn: Contract;
+  molly: Contract;
+  spot: Contract;
+  proxy: Contract;
+  finnImpl: Contract;
+  proxyAdmin: Contract;
 }
 
 async function setupContracts(
   cache: Cache,
   hre: HardhatRuntimeEnvironment
 ): Promise<TestContracts> {
-  const signers = await hre.ethers.getSigners();
-  let proxyAdmin: ProxyAdmin = await deploy(
+  const signers = await (await getHardhatEthers(hre)).getSigners();
+  const proxyAdmin: Contract = await deploy(
     'vendor/proxy/transparent/ProxyAdmin.sol',
-    [signers[0].address],
+    [await signers[0].getAddress()],
     hre,
     { cache, network: 'test-network' }
   );
 
-  let finnImpl: Dog = await deploy(
+  const finnImpl: Contract = await deploy(
     'test/Dog.sol',
     ['finn:implementation', '0x0000000000000000000000000000000000000000', []],
     hre,
     { cache, network: 'test-network' }
   );
 
-  let proxy: TransparentUpgradeableProxy = await deploy(
+  const finnImplAddress = await finnImpl.getAddress();
+  const proxyAdminAddress = await proxyAdmin.getAddress();
+  const initializeDogTransaction = await finnImpl.initializeDog.populateTransaction(
+    'finn',
+    finnImplAddress,
+    []
+  );
+
+  const proxy: Contract = await deploy(
     'vendor/proxy/transparent/TransparentUpgradeableProxy.sol',
     [
-      finnImpl.address,
-      proxyAdmin.address,
-      (
-        await finnImpl.populateTransaction.initializeDog(
-          'finn',
-          finnImpl.address,
-          []
-        )
-      ).data,
+      finnImplAddress,
+      proxyAdminAddress,
+      initializeDogTransaction.data,
     ],
     hre,
     { cache, network: 'test-network' }
   );
 
-  let molly: Dog = await deploy(
+  const proxyAddress = await proxy.getAddress();
+
+  const molly: Contract = await deploy(
     'test/Dog.sol',
-    ['molly', proxy.address, []],
+    ['molly', proxyAddress, []],
     hre,
     { cache, network: 'test-network' }
   );
 
-  let spot: Dog = await deploy(
+  const spot: Contract = await deploy(
     'test/Dog.sol',
-    ['spot', proxy.address, []],
+    ['spot', proxyAddress, []],
     hre,
     { cache, network: 'test-network' }
   );
 
-  let finn = finnImpl.attach(proxy.address);
+  const finn = finnImpl.attach(proxyAddress) as Contract;
 
-  await finn.addPup(molly.address);
-  await finn.addPup(spot.address);
+  await finn.addPup(await molly.getAddress());
+  await finn.addPup(await spot.getAddress());
 
   return {
     finn,
@@ -98,7 +98,11 @@ describe('Spider', () => {
     let cache = new Cache('test-network', 'test-deployment');
     let { finn, molly, spot, finnImpl } = await setupContracts(cache, hre);
 
-    let roots = new Map([['finn', finn.address]]);
+    const finnAddress = await finn.getAddress();
+    const finnImplAddress = await finnImpl.getAddress();
+    const mollyAddress = await molly.getAddress();
+    const spotAddress = await spot.getAddress();
+    let roots = new Map([['finn', finnAddress]]);
 
     let relationConfig: RelationConfigMap = {
       finn: {
@@ -112,7 +116,7 @@ describe('Spider', () => {
             alias: '.name',
           },
           pups: {
-            field: async (dog) => (await dog.callStatic.puppers()).map(({ pup }) => pup),
+            field: async (dog) => (await dog.puppers.staticCall()).map(({ pup }) => pup),
             alias: ['.name'],
           },
         },
@@ -122,10 +126,10 @@ describe('Spider', () => {
     let { aliases, contracts } = await spider(cache, 'test-network', hre, relationConfig, roots);
 
     expect(objectFromMap(aliases)).to.eql({
-      finn: finn.address,
-      'finn:implementation': finnImpl.address,
-      molly: molly.address,
-      spot: spot.address,
+      finn: finnAddress,
+      'finn:implementation': finnImplAddress,
+      molly: mollyAddress,
+      spot: spotAddress,
       // TODO: Dictionary?
       // pups: [
       //   '0x0000000000000000000000000000000000000003',
@@ -136,8 +140,8 @@ describe('Spider', () => {
     let check = {};
     for (let [alias, contract] of contracts) {
       // Just make sure these contracts are working, too.
-      let name = contract.hasOwnProperty('name') ? await contract.name() : null;
-      check[alias] = name ? name : contract.address;
+      const name = typeof contract.name === 'function' ? await contract.name() : null;
+      check[alias] = name ? name : await contract.getAddress();
     }
     expect(check).to.eql({
       finn: 'finn',

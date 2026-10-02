@@ -1,6 +1,6 @@
 import hre from 'hardhat';
-import { BuildFile } from '../Types';
-import { deploy, deployBuild } from '../Deploy';
+import type { BuildFile } from '../Types.js';
+import { deploy, deployBuild } from '../Deploy.js';
 export { deploy, deployBuild, hre };
 
 export const faucetTokenBuildFile: BuildFile = {

@@ -1,75 +1,75 @@
 import { expect } from 'chai';
+import type { Contract } from 'ethers';
 import hre from 'hardhat';
 import nock from 'nock';
 
-import {
-  Dog,
-  ProxyAdmin,
-  TransparentUpgradeableProxy,
-} from '../../../build/types';
-
-import { getBuildFile } from '../ContractMap';
-import { DeploymentManager } from '../DeploymentManager';
-import { Migration } from '../Migration';
-import { expectedTemplate } from './MigrationTemplateTest';
-import { buildToken, faucetTokenBuildFile, tokenArgs } from './DeployHelpers';
-import { tempDir } from './TestHelpers';
-import { VerifyArgs } from '../Verify';
-import { getVerifyArgs, putVerifyArgs } from '../VerifyArgs';
-import { mockVerifySuccess } from './VerifyTest';
-import { objectFromMap } from '../Utils';
+import { getBuildFile } from '../ContractMap.js';
+import { DeploymentManager } from '../DeploymentManager.js';
+import type { Migration } from '../Migration.js';
+import { expectedTemplate } from './MigrationTemplateTest.js';
+import { buildToken, faucetTokenBuildFile, tokenArgs } from './DeployHelpers.js';
+import { tempDir } from './TestHelpers.js';
+import type { VerifyArgs } from '../Verify.js';
+import { getVerifyArgs, putVerifyArgs } from '../VerifyArgs.js';
+import { mockVerifySuccess } from './VerifyTest.js';
+import { objectFromMap } from '../Utils.js';
 
 export interface TestContracts {
-  finn: Dog;
-  molly: Dog;
-  spot: Dog;
-  proxy: TransparentUpgradeableProxy;
-  finnImpl: Dog;
-  proxyAdmin: ProxyAdmin;
+  finn: Contract;
+  molly: Contract;
+  spot: Contract;
+  proxy: Contract;
+  finnImpl: Contract;
+  proxyAdmin: Contract;
 }
 
 export async function setupContracts(deploymentManager: DeploymentManager): Promise<TestContracts> {
   const signers = await deploymentManager.getSigners();
-  let proxyAdminArgs: string[] = [signers[0].address];
-  let proxyAdmin: ProxyAdmin = await deploymentManager.deploy(
+  const proxyAdminArgs: string[] = [await signers[0].getAddress()];
+  const proxyAdmin: Contract = await deploymentManager.deploy(
     'proxyAdmin',
     'vendor/proxy/transparent/ProxyAdmin.sol',
     proxyAdminArgs
   );
 
-  let finnImpl: Dog = await deploymentManager.deploy(
+  const finnImpl: Contract = await deploymentManager.deploy(
     'finnImpl',
     'test/Dog.sol',
     ['finn:implementation', '0x0000000000000000000000000000000000000000', []]
   );
 
-  let proxy: TransparentUpgradeableProxy = await deploymentManager.deploy(
+  const finnImplAddress = await finnImpl.getAddress();
+  const proxyAdminAddress = await proxyAdmin.getAddress();
+  const initializeDogTransaction = await finnImpl.initializeDog.populateTransaction(
+    'finn',
+    finnImplAddress,
+    []
+  );
+
+  const proxy: Contract = await deploymentManager.deploy(
     'proxy',
     'vendor/proxy/transparent/TransparentUpgradeableProxy.sol',
-    [finnImpl.address, proxyAdmin.address, (
-      await finnImpl.populateTransaction.initializeDog(
-        'finn',
-        finnImpl.address,
-        []
-      )
-    ).data]);
+    [finnImplAddress, proxyAdminAddress, initializeDogTransaction.data]
+  );
 
-  let molly: Dog = await deploymentManager.deploy(
+  const proxyAddress = await proxy.getAddress();
+
+  const molly: Contract = await deploymentManager.deploy(
     'molly',
     'test/Dog.sol',
-    ['molly', proxy.address, []]
+    ['molly', proxyAddress, []]
   );
 
-  let spot: Dog = await deploymentManager.deploy(
+  const spot: Contract = await deploymentManager.deploy(
     'spot',
     'test/Dog.sol',
-    ['spot', proxy.address, []]
+    ['spot', proxyAddress, []]
   );
 
-  let finn = finnImpl.attach(proxy.address);
+  const finn = finnImpl.attach(proxyAddress) as Contract;
 
-  await finn.addPup(molly.address);
-  await finn.addPup(spot.address);
+  await finn.addPup(await molly.getAddress());
+  await finn.addPup(await spot.getAddress());
 
   return {
     finn,
@@ -93,13 +93,13 @@ describe('DeploymentManager', () => {
         writeCacheToDisk: true,
         baseDir: tempDir(),
       });
-      let spot: Dog = await deploymentManager.deploy(
+      const spot: Contract = await deploymentManager.deploy(
         'spot',
         'test/Dog.sol',
         ['spot', '0x0000000000000000000000000000000000000000', []]
       );
       // Check that we've cached the build file
-      expect((await getBuildFile(deploymentManager.cache, 'test-network', spot.address)).contract).to.eql('Dog');
+      expect((await getBuildFile(deploymentManager.cache, 'test-network', await spot.getAddress())).contract).to.eql('Dog');
     });
   });
 
@@ -125,19 +125,20 @@ describe('DeploymentManager', () => {
       });
       // We have to deploy a contract because the Etherscan plugin checks the bytecode at the address
       let token = await buildToken();
+      const tokenAddress = await token.getAddress();
       let verifyArgs: VerifyArgs = {
         via: 'artifacts',
-        address: token.address,
+        address: tokenAddress,
         constructorArguments: tokenArgs,
         contract: 'contracts/test/FaucetToken.sol:FaucetToken',
       };
       await putVerifyArgs(
         deploymentManager.cache,
-        token.address,
+        tokenAddress,
         verifyArgs
       );
       expect(objectFromMap(await getVerifyArgs(deploymentManager.cache))).to.eql({
-        [token.address]: verifyArgs
+        [tokenAddress]: verifyArgs
       });
 
       mockVerifySuccess(hre);
@@ -155,12 +156,12 @@ describe('DeploymentManager', () => {
         writeCacheToDisk: true,
         baseDir: tempDir(),
       });
-      let spot: Dog = await deploymentManager.deploy(
+      const spot: Contract = await deploymentManager.deploy(
         'spot',
         'test/Dog.sol',
         ['spot', '0x0000000000000000000000000000000000000000', []]
       );
-      let molly: Dog = await deploymentManager.deploy(
+      const molly: Contract = await deploymentManager.deploy(
         'molly',
         'test/Dog.sol',
         ['molly', '0x0000000000000000000000000000000000000000', []]
@@ -202,7 +203,7 @@ describe('DeploymentManager', () => {
                   alias: '.name',
                 },
                 pups: {
-                  field: async (dog) => (await dog.callStatic.puppers()).map(({ pup }) => pup),
+                  field: async (dog) => (await dog.puppers.staticCall()).map(({ pup }) => pup),
                   alias: ['.name'],
                 },
               },
@@ -216,8 +217,8 @@ describe('DeploymentManager', () => {
       let check = {};
       for (let [alias, contract] of await deploymentManager.contracts()) {
         // Just make sure these contracts are working, too.
-        let name = contract.hasOwnProperty('name') ? await contract.name() : null;
-        check[alias] = name ? name : contract.address;
+        const name = typeof contract.name === 'function' ? await contract.name() : null;
+        check[alias] = name ? name : await contract.getAddress();
       }
       expect(check).to.eql({
         finn: 'finn',
