@@ -1,4 +1,8 @@
-import type { FlashbotsTransactionResponse, RelayResponseError } from '@flashbots/ethers-provider-bundle';
+import type {
+  FlashbotsBundleTransaction,
+  FlashbotsTransactionResponse,
+  RelayResponseError,
+} from '@flashbots/ethers-provider-bundle';
 import type { TransactionRequest } from 'ethers';
 
 import googleCloudLog, { LogSeverity } from './googleCloudLog.js';
@@ -21,12 +25,12 @@ async function sendFlashbotsBundle(
   if (!wallet.provider) {
     throw new Error('Signer provider is required');
   }
-  const bundle = [
+  const bundle: FlashbotsBundleTransaction[] = [
     {
-      signer: wallet,
+      signer: wallet as unknown as FlashbotsBundleTransaction['signer'],
       transaction: txn,
     }
-  ] as unknown as Parameters<typeof flashbotsProvider.signBundle>[0];
+  ];
   const signedBundle = await flashbotsProvider.signBundle(
     bundle
   );
@@ -34,7 +38,7 @@ async function sendFlashbotsBundle(
     signedBundle, // bundle we signed above
     await wallet.provider.getBlockNumber() + 1, // block number at which this bundle is valid
   );
-  let success: boolean = false;
+  let success = false;
   if (isFlashbotsTxnResponse(bundleReceipt)) {
     const resolution = await bundleReceipt.wait();
     if (resolution === FlashbotsBundleResolution.BundleIncluded) {
@@ -50,7 +54,10 @@ async function sendFlashbotsBundle(
     }
   } else {
     success = false;
-    googleCloudLog(LogSeverity.ALERT, `Error while sending Flashbots bundle: ${bundleReceipt.error}`);
+    googleCloudLog(
+      LogSeverity.ALERT,
+      `Error while sending Flashbots bundle: ${bundleReceipt.error.message}`
+    );
   }
 
   return success;

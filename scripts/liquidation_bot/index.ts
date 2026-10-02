@@ -1,18 +1,20 @@
 import hre from 'hardhat';
-import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
+import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
+import { BrowserProvider, Wallet } from 'ethers';
+import type { Signer } from 'ethers';
+
+import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager.js';
 import {
-  CometInterface,
-  OnChainLiquidator
-} from '../../build/types';
+  CometInterface__factory,
+  OnChainLiquidator__factory,
+} from '../../build/types/index.js';
 import {
   arbitragePurchaseableCollateral,
   liquidateUnderwaterBorrowers,
   getAssets,
-  Asset
-} from './liquidateUnderwaterBorrowers';
-import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
-import { Signer, Wallet } from 'ethers';
-import googleCloudLog, { LogSeverity } from './googleCloudLog';
+} from './liquidateUnderwaterBorrowers.js';
+import type { Asset } from './liquidateUnderwaterBorrowers.js';
+import googleCloudLog, { LogSeverity } from './googleCloudLog.js';
 
 const loopDelay = 5000;
 const loopsUntilUpdateAssets = 1000;
@@ -30,7 +32,9 @@ async function main() {
     throw new Error('missing required env variable: ETH_PK');
   }
 
-  const network = hre.network.name;
+  const connection = await hre.network.getOrCreate();
+  const { ethers, networkName: network } = connection;
+  const provider = new BrowserProvider(connection.provider);
 
   googleCloudLog(
     LogSeverity.INFO,
@@ -49,10 +53,17 @@ async function main() {
   await dm.spider();
 
   const contracts = await dm.contracts();
-  let comet = contracts.get('comet') as CometInterface;
+  const cometContract = contracts.get('comet');
+  if (!cometContract) {
+    throw new Error(`no deployed Comet found for ${network}/${deployment}`);
+  }
+  const comet = CometInterface__factory.connect(
+    await cometContract.getAddress(),
+    cometContract.runner
+  );
 
   // Flashbots provider requires passing in a standard provider
-  let flashbotsProvider: FlashbotsBundleProvider;
+  let flashbotsProvider: FlashbotsBundleProvider | undefined;
   let signer: Signer;
   if (useFlashbots && useFlashbots.toLowerCase() === 'true') {
     // XXX use a designated auth signer
@@ -62,9 +73,10 @@ async function main() {
     const authSigner = Wallet.createRandom();
 
     if (network === 'mainnet') {
+      // Flashbots publishes CommonJS ethers types, while this project uses ESM ethers types.
       flashbotsProvider = await FlashbotsBundleProvider.create(
-        hre.ethers.provider, // a normal ethers.js provider, to perform gas estimations and nonce lookups
-        authSigner, // ethers.js signer wallet, only for signing request payloads, not transactions
+        provider as unknown as Parameters<typeof FlashbotsBundleProvider.create>[0],
+        authSigner as unknown as Parameters<typeof FlashbotsBundleProvider.create>[1],
       );
     } else {
       throw new Error(`Unsupported network: ${network}`);
@@ -72,22 +84,18 @@ async function main() {
 
     // Note: A `Wallet` is used because it can sign a transaction for flashbots while a generic `Signer` cannot
     // See https://github.com/ethers-io/ethers.js/issues/1869
-    signer = new Wallet(ethPk);
+    const normalizedPrivateKey = ethPk.startsWith('0x') ? ethPk : `0x${ethPk}`;
+    signer = new Wallet(normalizedPrivateKey, provider);
   } else {
     signer = await dm.getSigner();
   }
 
   const signerWithFlashbots = { signer, flashbotsProvider };
 
-  if (!comet) {
-    throw new Error(`no deployed Comet found for ${network}/${deployment}`);
-  }
-
-  const liquidator = await hre.ethers.getContractAt(
-    'OnChainLiquidator',
+  const liquidator = OnChainLiquidator__factory.connect(
     liquidatorAddress,
     signer
-  ) as OnChainLiquidator;
+  );
 
   let lastBlockNumber: number;
   let loops = 0;
@@ -98,7 +106,7 @@ async function main() {
       loops = 0;
     }
 
-    const currentBlockNumber = await hre.ethers.provider.getBlockNumber();
+    const currentBlockNumber = await ethers.provider.getBlockNumber();
 
     googleCloudLog(LogSeverity.INFO, `currentBlockNumber: ${currentBlockNumber}`);
 

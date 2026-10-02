@@ -48,7 +48,7 @@
   "author": "Compound Finance",
   "license": "UNLICENSED",
   "dependencies": {
-    "@flashbots/ethers-provider-bundle": "^0.5.0",
+    "@flashbots/ethers-provider-bundle": "1.0.0",
     "@openzeppelin/contracts": "4.8.3",
     "@tenderly/api-client": "^1.1.0",
     "@tenderly/sdk": "^0.3.1",
