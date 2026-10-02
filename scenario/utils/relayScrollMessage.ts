@@ -13,6 +13,11 @@ applyL1ToL2Alias mimics the AddressAliasHelper.applyL1ToL2Alias fn that converts
 an L1 address to its offset, L2 equivalent.
 */
 
+// Dedicated USDC gateway pair, not the generic L2StandardERC20Gateway; the L2 side isn't in any deployment's roots.
+const L2_USDC_GATEWAY = '0x33B60d5Dd260d453cAC3782b0bDC01ce84672142';
+// L1ScrollMessenger.xDomainMessageSender storage slot; spoofed below since a real L2->L1 proof isn't producible on a fork.
+const L1_MESSENGER_X_DOMAIN_SENDER_SLOT = 201;
+
 export default async function relayScrollMessage(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
@@ -167,7 +172,9 @@ export default async function relayScrollMessage(
       // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
       openBridgedProposals.push({ id, eta });
     } else {
-      throw new Error(`[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Unrecognized target for cross-chain message`);
+      throw new Error(
+        `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Unrecognized target for cross-chain message`
+      );
     }
   }
 
@@ -196,4 +203,67 @@ export default async function relayScrollMessage(
   }
 
   return openBridgedProposals;
+}
+
+/**
+ * Simulates the L1 side of a Scroll L2->L1 USDC withdrawal: reads SentMessage events targeting the L1 USDC
+ * gateway, decodes the finalizeWithdrawERC20 call, and invokes it directly (real finalization needs a Merkle
+ * proof of L2 state, not producible on a fork), impersonating the L1 messenger with xDomainMessageSender
+ * spoofed to the L2 gateway.
+ */
+export async function simulateL2ToL1USDCBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber: number,
+  tenderlyLogs?: any[]
+) {
+  if (tenderlyLogs) {
+    return;
+  }
+  console.log('Simulating L2->L1 USDC withdrawals for any executed Scroll proposals...');
+
+  const l2Messenger = await bridgeDeploymentManager.getContractOrThrow('l2Messenger');
+  const l1Messenger = await governanceDeploymentManager.getContractOrThrow('scrollMessenger');
+  const l1USDCGateway = await governanceDeploymentManager.getContractOrThrow('scrollL1USDCGateway');
+
+  const latestBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber();
+  const messageSentEvents = await bridgeDeploymentManager.retry(() =>
+    bridgeDeploymentManager.hre.ethers.provider.getLogs({
+      fromBlock: l2StartingBlockNumber,
+      toBlock: latestBlockNumber,
+      address: l2Messenger.address,
+      topics: [l2Messenger.interface.getEventTopic('SentMessage')]
+    })
+  );
+
+  for (const event of messageSentEvents) {
+    const { target, message } = l2Messenger.interface.parseLog(event).args;
+    // target = L1 destination (L1 USDC gateway), not the L2 sender
+    if (target.toLowerCase() !== l1USDCGateway.address.toLowerCase()) continue;
+
+    // strip the 4-byte finalizeWithdrawERC20 selector
+    const [l1Token, l2Token, from, to, amount] = ethers.utils.defaultAbiCoder.decode(
+      ['address', 'address', 'address', 'address', 'uint256', 'bytes'],
+      '0x' + message.slice(10)
+    );
+
+    console.log(`[Scroll -> mainnet] Simulating L2->L1 withdrawal of ${amount} of ${l1Token} to ${to}`);
+
+    await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
+      l1Messenger.address,
+      ethers.utils.hexZeroPad(ethers.utils.hexlify(L1_MESSENGER_X_DOMAIN_SENDER_SLOT), 32),
+      ethers.utils.hexZeroPad(L2_USDC_GATEWAY, 32)
+    ]);
+    const l1MessengerSigner = await impersonateAddress(governanceDeploymentManager, l1Messenger.address);
+    await governanceDeploymentManager.hre.network.provider.send('hardhat_setBalance', [
+      l1MessengerSigner.address,
+      '0x1000000000000000000',
+    ]);
+
+    await (
+      await l1USDCGateway.connect(l1MessengerSigner).finalizeWithdrawERC20(
+        l1Token, l2Token, from, to, amount, '0x'
+      )
+    ).wait();
+  }
 }
