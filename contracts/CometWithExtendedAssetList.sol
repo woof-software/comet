@@ -164,7 +164,17 @@ contract CometWithExtendedAssetList is CometMainInterface {
         // Set asset info
         numAssets = uint8(config.assetConfigs.length);
 
-        assetList = IAssetListFactory(IAssetListFactoryHolder(extensionDelegate).assetListFactory()).createAssetList(config.assetConfigs);
+        // The asset list is built from the immutable part of each config only
+        IAssetListStructs.ImmutableConfig[] memory immutableConfigs = new IAssetListStructs.ImmutableConfig[](numAssets);
+        for (uint8 i = 0; i < numAssets; ) {
+            immutableConfigs[i] = IAssetListStructs.ImmutableConfig({
+                asset: config.assetConfigs[i].asset,
+                decimals: config.assetConfigs[i].decimals,
+                priceFeed: config.assetConfigs[i].priceFeed
+            });
+            unchecked { i++; }
+        }
+        assetList = IAssetListFactory(IAssetListFactoryHolder(extensionDelegate).assetListFactory()).createAssetList(immutableConfigs);
     }
 
     /**
