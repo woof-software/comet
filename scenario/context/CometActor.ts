@@ -1,7 +1,14 @@
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { BigNumberish, Signature, ethers, ContractReceipt, Overrides, PayableOverrides } from 'ethers';
-import { CometContext } from './CometContext.js';
-import { AddressLike, resolveAddress } from './Address.js';
+import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
+import { Signature } from 'ethers';
+import type {
+  BigNumberish,
+  ContractTransactionReceipt,
+  ContractTransactionResponse,
+  Overrides,
+} from 'ethers';
+import type { CometContext } from './CometContext.js';
+import { resolveAddress } from './Address.js';
+import type { AddressLike } from './Address.js';
 import { ERC20__factory } from '../../build/types/index.js';
 import { baseBalanceOf } from '../../test/helpers.js';
 
@@ -17,6 +24,18 @@ export const types = {
 
 function floor(n: number): bigint {
   return BigInt(Math.floor(n));
+}
+
+// In ethers v6, wait() may return null, so ensure callers always receive a mined receipt.
+async function waitForReceipt(
+  transaction: Promise<ContractTransactionResponse>
+): Promise<ContractTransactionReceipt> {
+  const response = await transaction;
+  const receipt = await response.wait();
+  if (receipt === null) {
+    throw new Error(`Transaction ${response.hash} was not mined`);
+  }
+  return receipt;
 }
 
 export default class CometActor {
@@ -42,12 +61,16 @@ export default class CometActor {
   }
 
   async getEthBalance() {
-    return this.signer.getBalance();
+    const provider = this.signer.provider;
+    if (!provider) {
+      throw new Error('Signer provider is required');
+    }
+    return provider.getBalance(this.address);
   }
 
   async getErc20Balance(tokenAddress: string): Promise<bigint> {
     const erc20 = ERC20__factory.connect(tokenAddress, this.signer);
-    return (await erc20.balanceOf(this.signer.address)).toBigInt();
+    return erc20.balanceOf(this.signer.address);
   }
 
   async getCometBaseBalance(): Promise<bigint> {
@@ -57,7 +80,7 @@ export default class CometActor {
 
   async getCometCollateralBalance(tokenAddress: string): Promise<bigint> {
     const comet = await this.context.getComet();
-    return (await comet.collateralBalanceOf(this.signer.address, tokenAddress)).toBigInt();
+    return comet.collateralBalanceOf(this.signer.address, tokenAddress);
   }
 
   async sendEth(recipient: AddressLike, amount: number) {
@@ -68,56 +91,56 @@ export default class CometActor {
     await tx.wait();
   }
 
-  async transferErc20(tokenAddress: string, dst: string, amount: bigint): Promise<ContractReceipt> {
+  async transferErc20(tokenAddress: string, dst: string, amount: bigint): Promise<ContractTransactionReceipt> {
     const erc20 = ERC20__factory.connect(tokenAddress, this.signer);
-    return await (await erc20.transfer(dst, amount)).wait();
+    return waitForReceipt(erc20.transfer(dst, amount));
   }
 
-  async allow(manager: CometActor | string, isAllowed: boolean): Promise<ContractReceipt> {
+  async allow(manager: CometActor | string, isAllowed: boolean): Promise<ContractTransactionReceipt> {
     if (typeof manager !== 'string') manager = manager.address;
     const comet = await this.context.getComet();
-    return await (await comet.connect(this.signer).allow(manager, isAllowed)).wait();
+    return waitForReceipt(comet.connect(this.signer).allow(manager, isAllowed));
   }
 
-  async safeSupplyAsset({ asset, amount }): Promise<ContractReceipt> {
+  async safeSupplyAsset({ asset, amount }): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
     await this.context.bumpSupplyCaps({ [asset]: amount });
-    return await (await comet.connect(this.signer).supply(asset, amount)).wait();
+    return waitForReceipt(comet.connect(this.signer).supply(asset, amount));
   }
 
-  async supplyAsset({ asset, amount }): Promise<ContractReceipt> {
+  async supplyAsset({ asset, amount }): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
-    return await (await comet.connect(this.signer).supply(asset, amount)).wait();
+    return waitForReceipt(comet.connect(this.signer).supply(asset, amount));
   }
 
-  async supplyAssetFrom({ src, dst, asset, amount }): Promise<ContractReceipt> {
+  async supplyAssetFrom({ src, dst, asset, amount }): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
-    return await (await comet.connect(this.signer).supplyFrom(src, dst, asset, amount)).wait();
+    return waitForReceipt(comet.connect(this.signer).supplyFrom(src, dst, asset, amount));
   }
 
-  async transferAsset({ dst, asset, amount }): Promise<ContractReceipt> {
+  async transferAsset({ dst, asset, amount }): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
-    return await (await comet.connect(this.signer).transferAsset(dst, asset, amount)).wait();
+    return waitForReceipt(comet.connect(this.signer).transferAsset(dst, asset, amount));
   }
 
-  async transferAssetFrom({ src, dst, asset, amount }): Promise<ContractReceipt> {
+  async transferAssetFrom({ src, dst, asset, amount }): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
-    return await (await comet.connect(this.signer).transferAssetFrom(src, dst, asset, amount)).wait();
+    return waitForReceipt(comet.connect(this.signer).transferAssetFrom(src, dst, asset, amount));
   }
 
-  async withdrawAsset({ asset, amount }): Promise<ContractReceipt> {
+  async withdrawAsset({ asset, amount }): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
-    return await (await comet.connect(this.signer).withdraw(asset, amount)).wait();
+    return waitForReceipt(comet.connect(this.signer).withdraw(asset, amount));
   }
 
-  async withdrawAssetFrom({ src, dst, asset, amount }): Promise<ContractReceipt> {
+  async withdrawAssetFrom({ src, dst, asset, amount }): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
-    return await (await comet.connect(this.signer).withdrawFrom(src, dst, asset, amount)).wait();
+    return waitForReceipt(comet.connect(this.signer).withdrawFrom(src, dst, asset, amount));
   }
 
-  async absorb({ absorber, accounts }): Promise<ContractReceipt> {
+  async absorb({ absorber, accounts }): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
-    return await (await comet.connect(this.signer).absorb(absorber, accounts)).wait();
+    return waitForReceipt(comet.connect(this.signer).absorb(absorber, accounts));
   }
 
   async signAuthorization({
@@ -138,7 +161,7 @@ export default class CometActor {
       name: await comet.name(),
       version: await comet.version(),
       chainId: chainId,
-      verifyingContract: comet.address,
+      verifyingContract: await comet.getAddress(),
     };
     const value = {
       owner: this.address,
@@ -147,8 +170,8 @@ export default class CometActor {
       nonce,
       expiry,
     };
-    const rawSignature = await this.signer._signTypedData(domain, types, value);
-    return ethers.utils.splitSignature(rawSignature);
+    const rawSignature = await this.signer.signTypedData(domain, types, value);
+    return Signature.from(rawSignature);
   }
 
   async allowBySig({
@@ -165,23 +188,25 @@ export default class CometActor {
     nonce: BigNumberish;
     expiry: number;
     signature: Signature;
-  }): Promise<ContractReceipt> {
+  }): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
-    return await (await comet
-      .connect(this.signer)
-      .allowBySig(owner, manager, isAllowed, nonce, expiry, signature.v, signature.r, signature.s)).wait();
+    return waitForReceipt(
+      comet
+        .connect(this.signer)
+        .allowBySig(owner, manager, isAllowed, nonce, expiry, signature.v, signature.r, signature.s)
+    );
   }
 
-  async invoke({ actions, calldata }, overrides?: PayableOverrides): Promise<ContractReceipt> {
+  async invoke({ actions, calldata }, overrides?: Overrides): Promise<ContractTransactionReceipt> {
     const bulker = await this.context.getBulker();
-    return await (await bulker.connect(this.signer).invoke(actions, calldata, { ...overrides })).wait();
+    return waitForReceipt(bulker.connect(this.signer).invoke(actions, calldata, { ...overrides }));
   }
 
   /* ===== Admin-only functions ===== */
 
-  async withdrawReserves(to: string, amount: BigNumberish, overrides?: Overrides): Promise<ContractReceipt> {
+  async withdrawReserves(to: string, amount: BigNumberish, overrides?: Overrides): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
-    return await (await comet.connect(this.signer).withdrawReserves(to, amount, { ...overrides })).wait();
+    return waitForReceipt(comet.connect(this.signer).withdrawReserves(to, amount, { ...overrides }));
   }
 
   async pause({
@@ -191,22 +216,24 @@ export default class CometActor {
     absorbPaused = false,
     buyPaused = false,
   }, overrides?: Overrides
-  ): Promise<ContractReceipt> {
+  ): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
-    return await (
-      await comet
+    return waitForReceipt(
+      comet
         .connect(this.signer)
         .pause(supplyPaused, transferPaused, withdrawPaused, absorbPaused, buyPaused, { ...overrides })
-    ).wait();
+    );
   }
 
-  async approveThis(manager: string, asset: string, amount: BigNumberish, overrides?: Overrides): Promise<ContractReceipt> {
+  async approveThis(manager: string, asset: string, amount: BigNumberish, overrides?: Overrides): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
-    return await (await comet.connect(this.signer).approveThis(manager, asset, amount, { ...overrides })).wait();
+    return waitForReceipt(comet.connect(this.signer).approveThis(manager, asset, amount, { ...overrides }));
   }
 
-  async deployAndUpgradeTo(configuratorProxy: string, cometProxy: string, overrides?: Overrides): Promise<ContractReceipt> {
+  async deployAndUpgradeTo(configuratorProxy: string, cometProxy: string, overrides?: Overrides): Promise<ContractTransactionReceipt> {
     const proxyAdmin = await this.context.getCometAdmin();
-    return await (await proxyAdmin.connect(this.signer).deployAndUpgradeTo(configuratorProxy, cometProxy, { ...overrides })).wait();
+    return waitForReceipt(
+      proxyAdmin.connect(this.signer).deployAndUpgradeTo(configuratorProxy, cometProxy, { ...overrides })
+    );
   }
 }
