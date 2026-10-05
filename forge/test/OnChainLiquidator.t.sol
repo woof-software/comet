@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 import "../../contracts/Comet.sol";
-import "../../contracts/CometConfiguration.sol";
+import "../../contracts/configuratorUpgrade/CometConfigurationV1.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
 
@@ -49,8 +49,8 @@ contract OnChainLiquidatorTest is Test {
             WETH9
         );
 
-        CometConfiguration.AssetConfig[] memory assetConfigs = new CometConfiguration.AssetConfig[](2);
-        assetConfigs[0] = CometConfiguration.AssetConfig({
+        CometConfigurationV1.AssetConfig[] memory assetConfigs = new CometConfigurationV1.AssetConfig[](2);
+        assetConfigs[0] = CometConfigurationV1.AssetConfig({
             asset: CB_ETH,
             priceFeed: address(cbEthPriceFeed),
             decimals: 18,
@@ -59,7 +59,7 @@ contract OnChainLiquidatorTest is Test {
             liquidationFactor: 95e16,
             supplyCap: 0
         });
-        assetConfigs[1] = CometConfiguration.AssetConfig({
+        assetConfigs[1] = CometConfigurationV1.AssetConfig({
             asset: WST_ETH,
             priceFeed: address(wstEthPriceFeed),
             decimals: 18,
@@ -69,7 +69,7 @@ contract OnChainLiquidatorTest is Test {
             supplyCap: 0
         });
 
-        comet = new Comet(CometConfiguration.Configuration(
+        comet = new Comet(CometConfigurationV1.Configuration(
             {
                 governor: TIMELOCK,
                 pauseGuardian: GNOSIS_SAFE,

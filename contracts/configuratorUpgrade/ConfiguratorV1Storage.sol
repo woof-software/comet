@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import "./CometConfiguration.sol";
-import "./marketupdates/MarketAdminPermissionCheckerInterface.sol";
-
-import { IAssetListStructs } from "./interfaces/assetList/IAssetListStructs.sol";
+import "./CometConfigurationV1.sol";
+import "../marketupdates/MarketAdminPermissionCheckerInterface.sol";
 
 /**
  * @title Compound's Comet Configuration Storage Interface
  * @dev Versions can enforce append-only storage slots via inheritance.
+ *      Temporary copy for testing the Configurator upgrade path (ConfiguratorV1 -> ConfiguratorIntermediate -> Configurator).
+ *      Delete this folder once the upgrade is deployed.
  * @author Compound
  */
-contract ConfiguratorStorage is CometConfiguration {
+contract ConfiguratorV1Storage is CometConfigurationV1 {
     /// @notice The current version of Configurator. This version should be
     /// checked in the initializer function.
     uint public version;
@@ -30,10 +30,4 @@ contract ConfiguratorStorage is CometConfiguration {
 
     /// @notice MarketAdminPermissionChecker contract which is used to check if the caller has permission to perform market updates
     MarketAdminPermissionCheckerInterface public marketAdminPermissionChecker;
-
-    /// @notice Mapping of Comet proxy addresses to their AssetList factory contracts
-    mapping(address => address) public cometAssetListFactories;
-
-    /// @notice Mapping of Comet proxy addresses to their AssetImmutableConfig settings
-    mapping(address => IAssetListStructs.AssetImmutableConfig[]) public assetConfigs;
 }

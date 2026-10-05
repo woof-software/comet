@@ -4,8 +4,6 @@ pragma solidity 0.8.15;
 import "./CometMainInterface.sol";
 import "./IERC20NonStandard.sol";
 import "./IPriceFeed.sol";
-import "./IAssetListFactory.sol";
-import "./IAssetListFactoryHolder.sol";
 import "./IAssetList.sol";
 
 /**
@@ -122,7 +120,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         uint8 decimals_ = IERC20NonStandard(config.baseToken).decimals();
         if (decimals_ > MAX_BASE_DECIMALS) revert BadDecimals();
         if (config.storeFrontPriceFactor > FACTOR_SCALE) revert BadDiscount();
-        if (config.assetConfigs.length > MAX_ASSETS_FOR_ASSET_LIST) revert TooManyAssets();
+        // if (config.assetConfigs.length > MAX_ASSETS_FOR_ASSET_LIST) revert TooManyAssets();
         if (config.baseMinForRewards == 0) revert BadMinimum();
         if (IPriceFeed(config.baseTokenPriceFeed).decimals() != PRICE_FEED_DECIMALS) revert BadDecimals();
 
@@ -161,20 +159,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
             borrowPerSecondInterestRateBase = config.borrowPerYearInterestRateBase / SECONDS_PER_YEAR;
         }
 
-        // Set asset info
-        numAssets = uint8(config.assetConfigs.length);
-
-        // The asset list is built from the immutable part of each config only
-        IAssetListStructs.ImmutableConfig[] memory immutableConfigs = new IAssetListStructs.ImmutableConfig[](numAssets);
-        for (uint8 i = 0; i < numAssets; ) {
-            immutableConfigs[i] = IAssetListStructs.ImmutableConfig({
-                asset: config.assetConfigs[i].asset,
-                decimals: config.assetConfigs[i].decimals,
-                priceFeed: config.assetConfigs[i].priceFeed
-            });
-            unchecked { i++; }
-        }
-        assetList = IAssetListFactory(IAssetListFactoryHolder(extensionDelegate).assetListFactory()).createAssetList(immutableConfigs);
+        // Set asset info from the already deployed asset list
+        assetList = config.assetList;
+        numAssets = IAssetList(config.assetList).numAssets();
     }
 
     /**

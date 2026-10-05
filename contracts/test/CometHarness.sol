@@ -6,7 +6,7 @@ import "../Comet.sol";
 contract CometHarness is Comet {
     uint public nowOverride;
 
-    constructor(Configuration memory config) Comet(config) {}
+    constructor(CometConfigurationV1.Configuration memory config) Comet(config) {}
 
     function getNowInternal() override internal view returns (uint40) {
         return nowOverride > 0 ? uint40(nowOverride) : super.getNowInternal();

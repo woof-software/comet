@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 import "../../contracts/Comet.sol";
-import "../../contracts/CometConfiguration.sol";
+import "../../contracts/configuratorUpgrade/CometConfigurationV1.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
 
@@ -53,8 +53,8 @@ contract PolygonLiquidatorTest is Test {
             WETH9
         );
 
-        CometConfiguration.AssetConfig[] memory assetConfigs = new CometConfiguration.AssetConfig[](3);
-        assetConfigs[0] = CometConfiguration.AssetConfig({
+        CometConfigurationV1.AssetConfig[] memory assetConfigs = new CometConfigurationV1.AssetConfig[](3);
+        assetConfigs[0] = CometConfigurationV1.AssetConfig({
             asset: WETH9,
             priceFeed: WETH9_PRICE_FEED,
             decimals: 18,
@@ -64,7 +64,7 @@ contract PolygonLiquidatorTest is Test {
             supplyCap: 0
         });
 
-        assetConfigs[1] = CometConfiguration.AssetConfig({
+        assetConfigs[1] = CometConfigurationV1.AssetConfig({
             asset: WBTC,
             priceFeed: WBTC_PRICE_FEED,
             decimals: 8,
@@ -74,7 +74,7 @@ contract PolygonLiquidatorTest is Test {
             supplyCap: 0
         });
 
-        assetConfigs[2] = CometConfiguration.AssetConfig({
+        assetConfigs[2] = CometConfigurationV1.AssetConfig({
             asset: WMATIC,
             priceFeed: WMATIC_PRICE_FEED,
             decimals: 18,
@@ -84,7 +84,7 @@ contract PolygonLiquidatorTest is Test {
             supplyCap: 0
         });
 
-        comet = new Comet(CometConfiguration.Configuration(
+        comet = new Comet(CometConfigurationV1.Configuration(
             {
                 governor: TIMELOCK,
                 pauseGuardian: GNOSIS_SAFE,

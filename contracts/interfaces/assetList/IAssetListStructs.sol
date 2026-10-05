@@ -14,7 +14,7 @@ interface IAssetListStructs {
      * @dev Passed to the asset list constructor and kept in immutables, so reading it costs no storage access.
      *      Changing any of these values means deploying a new asset list
      */
-    struct ImmutableConfig {
+    struct AssetImmutableConfig {
         address asset;                      // slot 0
         uint8 decimals;
         address priceFeed;                  // slot 1

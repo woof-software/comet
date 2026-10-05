@@ -7,6 +7,7 @@ import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableS
 import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import { IAssetList } from "./interfaces/assetList/IAssetList.sol";
 import { IConfigHash } from "./interfaces/IConfigHash.sol";
+import { IConfigHash } from "./interfaces/IConfigHash.sol";
 import { Hash } from "./libraries/Hash.sol";
 
 /**
@@ -14,16 +15,16 @@ import { Hash } from "./libraries/Hash.sol";
  * @author Woof
  * @custom:security-contact dmitriy@woof.software
  */
-contract AssetList is IAssetList, Initializable {
+contract AssetList is IAssetList, IConfigHash, Initializable {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     /*//////////////////////////////////////////////////////////////
                          CONSTANTS / IMMUTABLES
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Tags the config hash, so it never matches the hash of another config type with the same bytes
-    bytes32 internal constant TYPEHASH =
-        keccak256("ImmutableConfig[](address asset,address priceFeed,uint8 decimals)");
+    /// @inheritdoc IConfigHash
+    bytes32 public constant TYPEHASH =
+        keccak256("ImmutableConfig[](address asset,uint8 decimals,address priceFeed)");
 
     /// @dev The decimals required for a price feed
     uint8 internal constant PRICE_FEED_DECIMALS = 8;
@@ -104,7 +105,7 @@ contract AssetList is IAssetList, Initializable {
         _;
     }
 
-    constructor(ImmutableConfig[] memory assetConfigs) {
+    constructor(AssetImmutableConfig[] memory assetConfigs) {
         _disableInitializers();
 
         uint8 _numAssets = uint8(assetConfigs.length);
@@ -282,8 +283,8 @@ contract AssetList is IAssetList, Initializable {
      * @param i The index of the asset info to get
      * @return The packed asset info and the price feed address
      */
-    function _packAsset(ImmutableConfig[] memory assetConfigs, uint i) internal view returns (uint256, address) {
-        ImmutableConfig memory assetConfig;
+    function _packAsset(AssetImmutableConfig[] memory assetConfigs, uint i) internal view returns (uint256, address) {
+        AssetImmutableConfig memory assetConfig;
         if (i < assetConfigs.length) {
             assembly {
                 assetConfig := mload(add(add(assetConfigs, 0x20), mul(i, 0x20)))

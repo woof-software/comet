@@ -9,7 +9,7 @@ import { IAssetListStructs } from "./interfaces/assetList/IAssetListStructs.sol"
  * @author Compound
  */
 contract AssetListFactory {
-    event AssetListCreated(address indexed assetList, IAssetListStructs.ImmutableConfig[] assetConfigs);
+    event AssetListCreated(address indexed assetList, IAssetListStructs.AssetImmutableConfig[] assetConfigs);
 
     /**
      * @notice Create a new asset list
@@ -17,7 +17,7 @@ contract AssetListFactory {
      * @param assetConfigs The immutable part of the asset configurations
      * @return assetList The address of the new asset list
      */
-    function createAssetList(IAssetListStructs.ImmutableConfig[] memory assetConfigs) external returns (address assetList) {
+    function createAssetList(IAssetListStructs.AssetImmutableConfig[] memory assetConfigs) external returns (address assetList) {
         assetList = address(new AssetList(assetConfigs));
         emit AssetListCreated(assetList, assetConfigs);
     }

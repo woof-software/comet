@@ -12,4 +12,7 @@ pragma solidity 0.8.15;
 interface IConfigHash {
     /// @notice The hash of the config this contract was built from
     function configHash() external view returns (bytes32);
+
+    /// @notice The type hash the config hash was computed under; pass it to Hash.verify when comparing a new config
+    function TYPEHASH() external view returns (bytes32);
 }

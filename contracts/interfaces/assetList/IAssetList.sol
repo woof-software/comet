@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import "./IAssetListErrors.sol";
-import "./IAssetListEvents.sol";
-import "./IAssetListStructs.sol";
-import "../IConfigHash.sol";
+import { IAssetListErrors } from "./IAssetListErrors.sol";
+import { IAssetListEvents } from "./IAssetListEvents.sol";
+import { IAssetListStructs } from "./IAssetListStructs.sol";
 
 /**
  * @title Compound's Asset List
@@ -12,7 +11,7 @@ import "../IConfigHash.sol";
  * @author Woof
  * @custom:security-contact dmitriy@woof.software
  */
-interface IAssetList is IConfigHash, IAssetListErrors, IAssetListEvents, IAssetListStructs {
+interface IAssetList is IAssetListErrors, IAssetListEvents, IAssetListStructs {
     function numAssets() external view returns (uint8);
 
     function configurator() external view returns (address);

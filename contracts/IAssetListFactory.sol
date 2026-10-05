@@ -12,5 +12,5 @@ interface IAssetListFactory {
      * @param assetConfigs The immutable part of the asset configurations
      * @return assetList The address of the new asset list
      */
-    function createAssetList(IAssetListStructs.ImmutableConfig[] memory assetConfigs) external returns (address assetList);
+    function createAssetList(IAssetListStructs.AssetImmutableConfig[] memory assetConfigs) external returns (address assetList);
 }

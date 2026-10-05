@@ -2,10 +2,13 @@
 pragma solidity 0.8.15;
 
 /**
- * @title Compound's Comet Configuration Interface
+ * @title Compound's Comet Configuration Interface, V1 copy
+ * @dev The configuration before asset configs moved to the asset list, used by Comet and ConfiguratorV1.
+ *      Temporary copy for testing the Configurator upgrade path (ConfiguratorV1 -> ConfiguratorIntermediate -> Configurator).
+ *      Delete this folder once the upgrade is deployed.
  * @author Compound
  */
-contract CometConfiguration {
+contract CometConfigurationV1 {
     struct ExtConfiguration {
         bytes32 name32;
         bytes32 symbol32;
@@ -33,6 +36,17 @@ contract CometConfiguration {
         uint104 baseMinForRewards;
         uint104 baseBorrowMin;
         uint104 targetReserves;
-        address assetList;
+
+        AssetConfig[] assetConfigs;
+    }
+
+    struct AssetConfig {
+        address asset;
+        address priceFeed;
+        uint8 decimals;
+        uint64 borrowCollateralFactor;
+        uint64 liquidateCollateralFactor;
+        uint64 liquidationFactor;
+        uint128 supplyCap;
     }
 }

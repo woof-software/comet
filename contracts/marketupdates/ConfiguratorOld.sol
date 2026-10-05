@@ -2,15 +2,15 @@
 pragma solidity 0.8.15;
 
 import "./../CometFactory.sol";
-import "./../CometConfiguration.sol";
-import "./../ConfiguratorStorage.sol";
+import "./../configuratorUpgrade/CometConfigurationV1.sol";
+import "./../configuratorUpgrade/ConfiguratorV1Storage.sol";
 
 /**
  * @title Compound's Configurator Contract
  * @notice The contract that stores the configuration for Comet proxies
  * @dev This contract is just to simulate the full deployment process of market updates. Should be deleted after the market updates are deployed.
  */
-contract ConfiguratorOld is ConfiguratorStorage {
+contract ConfiguratorOld is ConfiguratorV1Storage {
 
     /** Custom events **/
 
