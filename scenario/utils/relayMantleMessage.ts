@@ -5,6 +5,13 @@ import { BigNumber, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import { simulateLayerZeroOFTDelivery } from './layerZeroOFTL2ToL1Transfer';
+
+// Same address on both Mantle and mainnet; USDe's cross-chain mechanism on Mantle is LayerZero's
+// OFT standard, not the OP-Stack standard bridge (USDe is a native mint/burn OFT on Mantle, and
+// an OFT Adapter locking the canonical ERC20 on mainnet).
+const LZ_ENDPOINT = '0x1a44076050125825900e736c501f859c50fE728c';
+const MAINNET_EID = 30101;
 
 export default async function relayMantleMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -162,4 +169,22 @@ export default async function relayMantleMessage(
   }
 
   return openBridgedProposals;
+}
+
+export async function simulateL2ToL1TokenBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber?: number,
+  tenderlyLogs?: any[],
+  _proposalIds?: BigNumber[]
+) {
+  await simulateLayerZeroOFTDelivery(
+    governanceDeploymentManager,
+    bridgeDeploymentManager,
+    l2StartingBlockNumber ?? 0,
+    LZ_ENDPOINT,
+    LZ_ENDPOINT,
+    MAINNET_EID,
+    tenderlyLogs
+  );
 }

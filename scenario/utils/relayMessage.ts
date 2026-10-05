@@ -4,7 +4,7 @@ import { relayArbitrumMessage, relayArbitrumCCTPMint, simulateL2ToL1TokenBridgin
 import relayBaseMessage,{ simulateL2ToL1TokenBridging as simulateBaseL2ToL1TokenBridging} from './relayBaseMessage';
 import relayLineaMessage from './relayLineaMessage';
 import relayOptimismMessage, { simulateL2ToL1TokenBridging as simulateOptimismL2ToL1TokenBridging } from './relayOptimismMessage';
-import relayMantleMessage from './relayMantleMessage';
+import relayMantleMessage, { simulateL2ToL1TokenBridging as simulateMantleL2ToL1TokenBridging } from './relayMantleMessage';
 import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMessage';
 import relayScrollMessage, { simulateL2ToL1USDCBridging } from './relayScrollMessage';
 import relayRoninMessage from './relayRoninMessage';
@@ -56,13 +56,23 @@ export default async function relayMessage(
       );
       return proposal;
     }
-    case 'mantle':
-      return await relayMantleMessage(
+    case 'mantle': {
+      const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
+      proposal = await relayMantleMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         startingBlockNumber,
         tenderlyLogs
       );
+      await simulateMantleL2ToL1TokenBridging(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
+        tenderlyLogs,
+        proposal?.map(p => p.id)
+      );
+      return proposal;
+    }
     case 'unichain':
       proposal = await relayUnichainMessage(
         governanceDeploymentManager,
