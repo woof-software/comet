@@ -5,6 +5,9 @@ import { BigNumber, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import { fetchBridgeReceiverProposals } from './bridgeReceiverProposals';
+import { DEPOSIT_FOR_BURN_SIGNATURE, simulateCCTPL2ToL1Transfer } from './cctpL2ToL1Transfer';
+import { BRIDGE_ERC20_TO_SIGNATURE, simulateOpStackBridgeERC20To } from './opStackL2ToL1Transfer';
 
 export default async function relayOptimismMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -144,35 +147,75 @@ export default async function relayOptimismMessage(
         throw e;
       }
     } else {
-      throw new Error(`[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Unrecognized target for cross-chain message`);
-    }
-
-    // Execute open bridged proposals now that all messages have been bridged
-    for (let proposal of openBridgedProposals) {
-      const { eta, id } = proposal;
-      // Fast forward l2 time
-      await setNextBlockTimestamp(bridgeDeploymentManager, eta.toNumber() + 1);
-
-      // Execute queued proposal
-      await setNextBaseFeeToZero(bridgeDeploymentManager);
-
-      if (tenderlyLogs) {
-        const callData = bridgeReceiver.interface.encodeFunctionData('executeProposal', [id]);
-        const signer = await bridgeDeploymentManager.getSigner();
-
-        bridgeDeploymentManager.stashRelayMessage(
-          bridgeReceiver.address,
-          callData,
-          signer.address
-        );
-      } else {
-        await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
-      }
-      console.log(
-        `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Executed bridged proposal ${id}`
+      throw new Error(
+        `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Unrecognized target for cross-chain message`
       );
     }
+  }
 
-    return openBridgedProposals;
+  // Execute open bridged proposals now that all messages have been bridged
+  for (let proposal of openBridgedProposals) {
+    const { eta, id } = proposal;
+    // Fast forward l2 time
+    await setNextBlockTimestamp(bridgeDeploymentManager, eta.toNumber() + 1);
+
+    // Execute queued proposal
+    await setNextBaseFeeToZero(bridgeDeploymentManager);
+
+    if (tenderlyLogs) {
+      const callData = bridgeReceiver.interface.encodeFunctionData('executeProposal', [id]);
+      const signer = await bridgeDeploymentManager.getSigner();
+
+      bridgeDeploymentManager.stashRelayMessage(
+        bridgeReceiver.address,
+        callData,
+        signer.address
+      );
+    } else {
+      await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
+    }
+    console.log(
+      `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Executed bridged proposal ${id}`
+    );
+  }
+
+  return openBridgedProposals;
+}
+
+export async function simulateL2ToL1TokenBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber?: number,
+  tenderlyLogs?: any[],
+  proposalIds?: BigNumber[]
+) {
+  if(tenderlyLogs) {
+    return;
+  }
+  console.log('Simulating L2→L1 token bridging for any executed Optimism proposals...');
+
+  // L1 contracts
+  const opL1CrossDomainMessenger = await governanceDeploymentManager.getContractOrThrow('opL1CrossDomainMessenger');
+  const optimismL1Bridge = await governanceDeploymentManager.getContractOrThrow('opL1StandardBridge');
+  const OPTIMISM_L1_PORTAL = '0xbEb5Fc579115071764c7423A4f12eDde41f106Ed';
+
+  const { events } = await fetchBridgeReceiverProposals(bridgeDeploymentManager, l2StartingBlockNumber, proposalIds);
+
+  for (const { signatures, calldatas } of events) {
+    for (let i = 0; i < signatures.length; i++) {
+      if (signatures[i] === BRIDGE_ERC20_TO_SIGNATURE) {
+        await simulateOpStackBridgeERC20To(governanceDeploymentManager, bridgeDeploymentManager, calldatas[i], {
+          networkLabel: 'Optimism',
+          l1Portal: OPTIMISM_L1_PORTAL,
+          l1CrossDomainMessenger: opL1CrossDomainMessenger,
+          l1StandardBridge: optimismL1Bridge,
+        });
+      }
+
+      // Look for L2→L1 CCTP depositForBurn calls (Circle CCTP bridge, e.g. native USDC)
+      if (signatures[i] === DEPOSIT_FOR_BURN_SIGNATURE) {
+        await simulateCCTPL2ToL1Transfer(governanceDeploymentManager, bridgeDeploymentManager, calldatas[i]);
+      }
+    }
   }
 }

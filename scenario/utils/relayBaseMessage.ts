@@ -5,6 +5,8 @@ import { BigNumber, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import { fetchBridgeReceiverProposals } from './bridgeReceiverProposals';
+import { BRIDGE_ERC20_TO_SIGNATURE, simulateOpStackBridgeERC20To } from './opStackL2ToL1Transfer';
 /*
 The Base relayer applies an offset to the message sender.
 
@@ -142,7 +144,7 @@ export default async function relayBaseMessage(
       }
     } else if (target === bridgeReceiver.address) {
       // Cross-chain message passing
-      if (!tenderlyLogs && relayMessageTxn) {
+      if (relayMessageTxn) {
         const proposalCreatedEvent = relayMessageTxn.events.find(
           (event) => event.address === bridgeReceiver.address
         );
@@ -157,25 +159,6 @@ export default async function relayBaseMessage(
       throw new Error(
         `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Unrecognized target for cross-chain message`
       );
-    }
-  }
-
-  // Handle proposal creation for tenderly
-  if (tenderlyLogs) {
-    // We need to check for ProposalCreated events since we don't get them in the loop above
-    const proposalFilter = bridgeReceiver.filters.ProposalCreated();
-    const proposalEvents = await bridgeDeploymentManager.hre.ethers.provider.getLogs({
-      fromBlock: 'latest',
-      toBlock: 'latest',
-      address: bridgeReceiver.address,
-      topics: proposalFilter.topics
-    });
-
-    for (let event of proposalEvents) {
-      const {
-        args: { id, eta },
-      } = bridgeReceiver.interface.parseLog(event);
-      openBridgedProposals.push({ id, eta });
     }
   }
 
@@ -207,4 +190,37 @@ export default async function relayBaseMessage(
   }
 
   return openBridgedProposals;
+}
+
+export async function simulateL2ToL1TokenBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber?: number,
+  tenderlyLogs?: any[],
+  proposalIds?: BigNumber[]
+) {
+  if(tenderlyLogs) {
+    return;
+  }
+  console.log('Simulating L2→L1 token bridging for any executed Base proposals...');
+
+  // L1 contracts
+  const baseL1CrossDomainMessenger = await governanceDeploymentManager.getContractOrThrow('baseL1CrossDomainMessenger');
+  const baseL1Bridge = await governanceDeploymentManager.getContractOrThrow('baseL1StandardBridge');
+  const BASE_L1_PORTAL = '0x49048044D57e1C92A77f79988d21Fa8fAF74E97e';
+
+  const { events } = await fetchBridgeReceiverProposals(bridgeDeploymentManager, l2StartingBlockNumber, proposalIds);
+
+  for (const { signatures, calldatas } of events) {
+    for (let i = 0; i < signatures.length; i++) {
+      if (signatures[i] === BRIDGE_ERC20_TO_SIGNATURE) {
+        await simulateOpStackBridgeERC20To(governanceDeploymentManager, bridgeDeploymentManager, calldatas[i], {
+          networkLabel: 'Base',
+          l1Portal: BASE_L1_PORTAL,
+          l1CrossDomainMessenger: baseL1CrossDomainMessenger,
+          l1StandardBridge: baseL1Bridge,
+        });
+      }
+    }
+  }
 }
