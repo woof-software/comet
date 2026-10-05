@@ -1,10 +1,10 @@
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 
-import { Cache } from '../Cache';
-import { generateMigration, migrationTemplate } from '../MigrationTemplate';
+import { Cache } from '../Cache.js';
+import { generateMigration, migrationTemplate } from '../MigrationTemplate.js';
 
-import { tempDir } from './TestHelpers';
+import { tempDir } from './TestHelpers.js';
 
 use(chaiAsPromised);
 

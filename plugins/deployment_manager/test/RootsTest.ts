@@ -1,8 +1,8 @@
 import { expect } from 'chai';
-import { Cache } from '../Cache';
-import { getRoots, putRoots } from '../Roots';
-import { objectFromMap } from '../Utils';
-import { tempDir } from './TestHelpers';
+import { Cache } from '../Cache.js';
+import { getRoots, putRoots } from '../Roots.js';
+import { objectFromMap } from '../Utils.js';
+import { tempDir } from './TestHelpers.js';
 
 describe('Roots', () => {
   it('gets and sets roots', async () => {

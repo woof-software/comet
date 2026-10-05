@@ -1,6 +1,6 @@
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
-import { addEnactedToMigration } from '../Enacted';
+import { addEnactedToMigration } from '../Enacted.js';
 import * as ts from 'typescript';
 
 use(chaiAsPromised);

@@ -1,11 +1,11 @@
 import { expect } from 'chai';
 import hre from 'hardhat';
 
-import { tempDir } from './TestHelpers';
-import { Cache } from '../Cache';
-import { getBuildFile, storeBuildFile } from '../ContractMap';
-import { deploy } from '../Deploy';
-import { faucetTokenBuildFile, tokenArgs } from './DeployHelpers';
+import { tempDir } from './TestHelpers.js';
+import { Cache } from '../Cache.js';
+import { getBuildFile, storeBuildFile } from '../ContractMap.js';
+import { deploy } from '../Deploy.js';
+import { faucetTokenBuildFile, tokenArgs } from './DeployHelpers.js';
 
 describe('ContractMap', () => {
   describe('storeBuildFile/getBuildFile', () => {
