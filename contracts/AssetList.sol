@@ -154,22 +154,26 @@ contract AssetList is IAssetList, Initializable {
             // A nil asset has nothing to configure
             if (asset == address(0)) continue;
 
-            StorageConfig calldata config = storageConfigs[i];
-            _validateCollateralFactors(
-                config.borrowCollateralFactor,
-                config.liquidateCollateralFactor,
-                config.liquidationFactor
-            );
-
-            // Register the asset so the setters can change it later, and keep its factors and supply cap unscaled
-            assetConfigStorage.assets.add(asset);
-            assetConfigStorage.configs[asset] = config;
+            _addAsset(asset, storageConfigs[i]);
         }
     }
 
     /*//////////////////////////////////////////////////////////////
                              CONFIGURATION
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Register an asset that is in the immutables but has no storage config yet, and set its storage config
+     * @dev Used after the list is upgraded to an implementation built with more assets: initialize ran only once,
+     *      so the new assets are not registered until this is called for each of them
+     * @param asset The asset, must be in the immutables of this implementation and not registered yet
+     * @param config The factors and supply cap of the asset
+     */
+    function addAsset(address asset, StorageConfig calldata config) external onlyConfigurator {
+        // Nil slots hold the zero address, so it would otherwise match an empty slot
+        if (asset == address(0) || !_isInImmutables(asset)) revert BadAsset();
+        _addAsset(asset, config);
+    }
 
     /**
      * @notice Set the borrow collateral factor of an asset
@@ -427,6 +431,34 @@ contract AssetList is IAssetList, Initializable {
         if (borrowCollateralFactor >= liquidateCollateralFactor && borrowCollateralFactor != 0) revert BorrowCFTooLarge();
         if (liquidateCollateralFactor > MAX_COLLATERAL_FACTOR) revert LiquidateCFTooLarge();
         if (liquidationFactor > MAX_COLLATERAL_FACTOR) revert LiqPenaltyTooHigh();
+    }
+
+    /**
+     * @dev Whether the asset is one of the assets packed into the immutables of this implementation
+     */
+    function _isInImmutables(address asset) internal view returns (bool) {
+        for (uint8 i; i < numAssets; ++i) {
+            (uint256 word_a, ) = _loadPackedAsset(i);
+            if (address(uint160(word_a)) == asset) return true;
+        }
+        return false;
+    }
+
+    /**
+     * @dev Validates the factors of an asset, registers it so the setters can change it later,
+     *      and stores its factors and supply cap unscaled. Reverts if the asset is already registered
+     */
+    function _addAsset(address asset, StorageConfig calldata config) internal {
+        _validateCollateralFactors(
+            config.borrowCollateralFactor,
+            config.liquidateCollateralFactor,
+            config.liquidationFactor
+        );
+
+        if (!assetConfigStorage.assets.add(asset)) revert AssetAlreadyAdded();
+        assetConfigStorage.configs[asset] = config;
+
+        emit AssetAdded(asset, config);
     }
 
     /**

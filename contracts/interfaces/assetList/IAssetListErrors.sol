@@ -30,4 +30,7 @@ interface IAssetListErrors {
 
     /// @dev The configurator is the zero address
     error ZeroConfigurator();
+
+    /// @dev The asset is already registered, so its storage config can only be changed through the setters
+    error AssetAlreadyAdded();
 }

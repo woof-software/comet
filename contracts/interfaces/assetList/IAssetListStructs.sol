@@ -37,14 +37,14 @@ interface IAssetListStructs {
      *      The offset is the asset's index in the list. The scale is 10 to the power of the asset decimals
      */
     struct AssetInfo {
-        address asset;                      // slot 0
-        uint64 scale;
-        uint8 offset;
+        uint8 offset;                       // slot 0
+        address asset;
         address priceFeed;                  // slot 1
-        uint64 borrowCollateralFactor;
-        uint128 supplyCap;                  // slot 2
+        uint64 scale;
+        uint64 borrowCollateralFactor;      // slot 2
         uint64 liquidateCollateralFactor;
         uint64 liquidationFactor;
+        uint128 supplyCap;                  // slot 3
     }
 
     /**

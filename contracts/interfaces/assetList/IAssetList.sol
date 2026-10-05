@@ -17,6 +17,8 @@ interface IAssetList is IConfigHash, IAssetListErrors, IAssetListEvents, IAssetL
 
     function configurator() external view returns (address);
 
+    function addAsset(address asset, StorageConfig calldata config) external;
+
     function setBorrowCollateralFactor(address asset, uint64 borrowCollateralFactor) external;
 
     function setLiquidateCollateralFactor(address asset, uint64 liquidateCollateralFactor) external;
