@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 import "../../contracts/Comet.sol";
-import "../../contracts/configuratorUpgrade/CometConfigurationV1.sol";
+import "../../contracts/configurator/CometConfigurationV1.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
 

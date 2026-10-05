@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import "./CometConfiguration.sol";
-import "./marketupdates/MarketAdminPermissionCheckerInterface.sol";
-
+import { CometConfiguration } from "./CometConfiguration.sol";
+import { MarketAdminPermissionCheckerInterface } from "./marketupdates/MarketAdminPermissionCheckerInterface.sol";
 import { IAssetListStructs } from "./interfaces/assetList/IAssetListStructs.sol";
 
 /**

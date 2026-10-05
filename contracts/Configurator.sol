@@ -2,11 +2,11 @@
 pragma solidity 0.8.15;
 
 import { CometFactoryWithExtendedAssetList } from "./CometFactoryWithExtendedAssetList.sol";
-import "./CometConfiguration.sol";
+import { CometConfiguration } from "./CometConfiguration.sol";
 import "./ConfiguratorStorage.sol";
 import "./marketupdates/MarketAdminPermissionCheckerInterface.sol";
 import "./IAssetListFactory.sol";
-import "./interfaces/IConfigHash.sol";
+import { IConfigHash } from "./interfaces/IConfigHash.sol";
 import { Hash } from "./libraries/Hash.sol";
 import { IAssetList } from "./interfaces/assetList/IAssetList.sol";
 
@@ -41,6 +41,8 @@ contract Configurator is ConfiguratorStorage {
     event SetBaseBorrowMin(address indexed cometProxy, uint104 oldBaseBorrowMin, uint104 newBaseBorrowMin);
     event SetTargetReserves(address indexed cometProxy, uint104 oldTargetReserves, uint104 newTargetReserves);
     event SetAssetConfigs(address indexed cometProxy, IAssetListStructs.AssetImmutableConfig[] oldAssetConfigs, IAssetListStructs.AssetImmutableConfig[] newAssetConfigs);
+    event UpdateAsset(address indexed cometProxy, IAssetListStructs.AssetImmutableConfig oldAssetConfig, IAssetListStructs.AssetImmutableConfig newAssetConfig);
+    event UpdateAssetPriceFeed(address indexed cometProxy, address indexed asset, address oldPriceFeed, address newPriceFeed);
     event UpdateAssetBorrowCollateralFactor(address indexed cometProxy, address indexed asset, uint64 oldBorrowCF, uint64 newBorrowCF);
     event UpdateAssetLiquidateCollateralFactor(address indexed cometProxy, address indexed asset, uint64 oldLiquidateCF, uint64 newLiquidateCF);
     event UpdateAssetLiquidationFactor(address indexed cometProxy, address indexed asset, uint64 oldLiquidationFactor, uint64 newLiquidationFactor);
@@ -53,12 +55,9 @@ contract Configurator is ConfiguratorStorage {
     error InvalidAddress();
     error Unauthorized();
 
-    /**
-     * @notice Constructs a new Configurator instance
-     **/
-    constructor() {
-        // Set a high version to prevent the implementation contract from being initialized
-        version = type(uint256).max;
+    modifier onlyGovernor {
+        if (msg.sender != governor) revert Unauthorized();
+        _;
     }
 
     /**
@@ -68,6 +67,14 @@ contract Configurator is ConfiguratorStorage {
     modifier governorOrMarketAdmin {
         if(msg.sender != governor) marketAdminPermissionChecker.checkUpdatePermission(msg.sender);
         _;
+    }
+
+    /**
+     * @notice Constructs a new Configurator instance
+     **/
+    constructor() {
+        // Set a high version to prevent the implementation contract from being initialized
+        version = type(uint256).max;
     }
 
     /**
@@ -86,9 +93,7 @@ contract Configurator is ConfiguratorStorage {
      * @notice Sets the factory for a Comet proxy
      * @dev Note: Only callable by governor
      **/
-    function setFactory(address cometProxy, address newFactory) external {
-        if (msg.sender != governor) revert Unauthorized();
-
+    function setFactory(address cometProxy, address newFactory) external onlyGovernor {
         address oldFactory = factory[cometProxy];
         factory[cometProxy] = newFactory;
         emit SetFactory(cometProxy, oldFactory, newFactory);
@@ -98,8 +103,7 @@ contract Configurator is ConfiguratorStorage {
      * @notice Sets the entire Configuration for a Comet proxy
      * @dev Note: All params can later be updated by the governor except for `baseToken` and `trackingIndexScale`
      **/
-    function setConfiguration(address cometProxy, Configuration calldata newConfiguration) external {
-        if (msg.sender != governor) revert Unauthorized();
+    function setConfiguration(address cometProxy, Configuration calldata newConfiguration) external onlyGovernor {
         Configuration memory oldConfiguration = configuratorParams[cometProxy];
         if (oldConfiguration.baseToken != address(0) &&
             (oldConfiguration.baseToken != newConfiguration.baseToken ||
@@ -112,16 +116,13 @@ contract Configurator is ConfiguratorStorage {
 
     /** Governance setters for Comet-related configuration **/
 
-    function setGovernor(address cometProxy, address newGovernor) external {
-        if (msg.sender != governor) revert Unauthorized();
-
+    function setGovernor(address cometProxy, address newGovernor) external onlyGovernor {
         address oldGovernor = configuratorParams[cometProxy].governor;
         configuratorParams[cometProxy].governor = newGovernor;
         emit SetGovernor(cometProxy, oldGovernor, newGovernor);
     }
 
-    function setPauseGuardian(address cometProxy, address newPauseGuardian) external {
-        if (msg.sender != governor) revert Unauthorized();
+    function setPauseGuardian(address cometProxy, address newPauseGuardian) external onlyGovernor {
         address oldPauseGuardian = configuratorParams[cometProxy].pauseGuardian;
         configuratorParams[cometProxy].pauseGuardian = newPauseGuardian;
         emit SetPauseGuardian(cometProxy, oldPauseGuardian, newPauseGuardian);
@@ -131,24 +132,19 @@ contract Configurator is ConfiguratorStorage {
     * @notice Sets the MarketAdminPermissionChecker contract
     * @dev Note: Only callable by governor
     **/
-    function setMarketAdminPermissionChecker(MarketAdminPermissionCheckerInterface newMarketAdminPermissionChecker) external {
-        if (msg.sender != governor) revert Unauthorized();
+    function setMarketAdminPermissionChecker(MarketAdminPermissionCheckerInterface newMarketAdminPermissionChecker) external onlyGovernor {
         address oldMarketAdminPermissionChecker = address(marketAdminPermissionChecker);
         marketAdminPermissionChecker = newMarketAdminPermissionChecker;
         emit SetMarketAdminPermissionChecker(oldMarketAdminPermissionChecker, address(newMarketAdminPermissionChecker));
     }
 
-    function setBaseTokenPriceFeed(address cometProxy, address newBaseTokenPriceFeed) external {
-        if (msg.sender != governor) revert Unauthorized();
-
+    function setBaseTokenPriceFeed(address cometProxy, address newBaseTokenPriceFeed) external onlyGovernor {
         address oldBaseTokenPriceFeed = configuratorParams[cometProxy].baseTokenPriceFeed;
         configuratorParams[cometProxy].baseTokenPriceFeed = newBaseTokenPriceFeed;
         emit SetBaseTokenPriceFeed(cometProxy, oldBaseTokenPriceFeed, newBaseTokenPriceFeed);
     }
 
-    function setExtensionDelegate(address cometProxy, address newExtensionDelegate) external {
-        if (msg.sender != governor) revert Unauthorized();
-
+    function setExtensionDelegate(address cometProxy, address newExtensionDelegate) external onlyGovernor {
         address oldExtensionDelegate = configuratorParams[cometProxy].extensionDelegate;
         configuratorParams[cometProxy].extensionDelegate = newExtensionDelegate;
         emit SetExtensionDelegate(cometProxy, oldExtensionDelegate, newExtensionDelegate);
@@ -202,9 +198,7 @@ contract Configurator is ConfiguratorStorage {
         emit SetBorrowPerYearInterestRateBase(cometProxy, oldBase, newBase);
     }
 
-    function setStoreFrontPriceFactor(address cometProxy, uint64 newStoreFrontPriceFactor) external {
-        if (msg.sender != governor) revert Unauthorized();
-
+    function setStoreFrontPriceFactor(address cometProxy, uint64 newStoreFrontPriceFactor) external onlyGovernor {
         uint64 oldStoreFrontPriceFactor = configuratorParams[cometProxy].storeFrontPriceFactor;
         configuratorParams[cometProxy].storeFrontPriceFactor = newStoreFrontPriceFactor;
         emit SetStoreFrontPriceFactor(cometProxy, oldStoreFrontPriceFactor, newStoreFrontPriceFactor);
@@ -222,9 +216,7 @@ contract Configurator is ConfiguratorStorage {
         emit SetBaseTrackingBorrowSpeed(cometProxy, oldBaseTrackingBorrowSpeed, newBaseTrackingBorrowSpeed);
     }
 
-    function setBaseMinForRewards(address cometProxy, uint104 newBaseMinForRewards) external {
-        if (msg.sender != governor) revert Unauthorized();
-
+    function setBaseMinForRewards(address cometProxy, uint104 newBaseMinForRewards) external onlyGovernor {
         uint104 oldBaseMinForRewards = configuratorParams[cometProxy].baseMinForRewards;
         configuratorParams[cometProxy].baseMinForRewards = newBaseMinForRewards;
         emit SetBaseMinForRewards(cometProxy, oldBaseMinForRewards, newBaseMinForRewards);
@@ -236,9 +228,7 @@ contract Configurator is ConfiguratorStorage {
         emit SetBaseBorrowMin(cometProxy, oldBaseBorrowMin, newBaseBorrowMin);
     }
 
-    function setTargetReserves(address cometProxy, uint104 newTargetReserves) external {
-        if (msg.sender != governor) revert Unauthorized();
-
+    function setTargetReserves(address cometProxy, uint104 newTargetReserves) external onlyGovernor {
         uint104 oldTargetReserves = configuratorParams[cometProxy].targetReserves;
         configuratorParams[cometProxy].targetReserves = newTargetReserves;
         emit SetTargetReserves(cometProxy, oldTargetReserves, newTargetReserves);
@@ -253,8 +243,7 @@ contract Configurator is ConfiguratorStorage {
      * @param cometProxy The Comet proxy whose asset list factory to set
      * @param newAssetListFactory The asset list factory to use
      */
-    function setAssetListFactory(address cometProxy, address newAssetListFactory) external {
-        if (msg.sender != governor) revert Unauthorized();
+    function setAssetListFactory(address cometProxy, address newAssetListFactory) external onlyGovernor {
         if (newAssetListFactory == address(0)) revert InvalidAddress();
 
         emit SetAssetListFactory(cometProxy, cometAssetListFactories[cometProxy], newAssetListFactory);
@@ -272,18 +261,7 @@ contract Configurator is ConfiguratorStorage {
      * @return newAssetList The address of the new AssetList implementation, or the zero address if no upgrade is needed
      */
     function deployAssetList(address cometProxy) external returns (address newAssetList) {
-        IAssetListStructs.AssetImmutableConfig[] storage cometAssetConfigs = assetConfigs[cometProxy];
-        uint256 numAssets = cometAssetConfigs.length;
-
-        IAssetListStructs.AssetImmutableConfig[] memory immutableConfigs = new IAssetListStructs.AssetImmutableConfig[](numAssets);
-        for (uint256 i; i < numAssets; ++i) {
-            IAssetListStructs.AssetImmutableConfig storage assetConfig = cometAssetConfigs[i];
-            immutableConfigs[i] = IAssetListStructs.AssetImmutableConfig({
-                asset: assetConfig.asset,
-                decimals: assetConfig.decimals,
-                priceFeed: assetConfig.priceFeed
-            });
-        }
+        IAssetListStructs.AssetImmutableConfig[] memory immutableConfigs = assetConfigs[cometProxy];
 
         // 1. New list, configs unchanged: hash matches, return zero address
         // 2. New list, configs changed: hash differs, deploy
@@ -309,8 +287,7 @@ contract Configurator is ConfiguratorStorage {
      * @param cometProxy The Comet proxy whose configuration to update
      * @param newAssetList The asset list to use
      */
-    function updateAssetList(address cometProxy, address newAssetList) external {
-        if (msg.sender != governor) revert Unauthorized();
+    function updateAssetList(address cometProxy, address newAssetList) external onlyGovernor {
         if (newAssetList == address(0)) revert InvalidAddress();
 
         emit UpdateAssetList(cometProxy, configuratorParams[cometProxy].assetList, newAssetList);
@@ -327,12 +304,37 @@ contract Configurator is ConfiguratorStorage {
      * @param cometProxy The Comet proxy whose asset configs to set
      * @param newAssetConfigs The new asset configs
      */
-    function setAssetConfigs(address cometProxy, IAssetListStructs.AssetImmutableConfig[] calldata newAssetConfigs) external {
-        if (msg.sender != governor) revert Unauthorized();
-
+    function setAssetConfigs(address cometProxy, IAssetListStructs.AssetImmutableConfig[] calldata newAssetConfigs) external onlyGovernor {
         IAssetListStructs.AssetImmutableConfig[] memory oldAssetConfigs = assetConfigs[cometProxy];
         assetConfigs[cometProxy] = newAssetConfigs;
         emit SetAssetConfigs(cometProxy, oldAssetConfigs, newAssetConfigs);
+    }
+
+    /**
+     * @notice Replaces the immutable config of one asset of a Comet proxy, found by its address
+     * @dev Takes effect on the asset list only after deployAssetList and the asset list proxy upgrade
+     * @param cometProxy The Comet proxy whose asset config to update
+     * @param newAssetConfig The new immutable config of the asset
+     */
+    function updateAsset(address cometProxy, IAssetListStructs.AssetImmutableConfig calldata newAssetConfig) external onlyGovernor {
+        uint256 assetIndex = getAssetIndex(cometProxy, newAssetConfig.asset);
+        IAssetListStructs.AssetImmutableConfig memory oldAssetConfig = assetConfigs[cometProxy][assetIndex];
+        assetConfigs[cometProxy][assetIndex] = newAssetConfig;
+        emit UpdateAsset(cometProxy, oldAssetConfig, newAssetConfig);
+    }
+
+    /**
+     * @notice Sets the price feed of one asset of a Comet proxy
+     * @dev Takes effect on the asset list only after deployAssetList and the asset list proxy upgrade
+     * @param cometProxy The Comet proxy whose asset config to update
+     * @param asset The asset whose price feed to set
+     * @param newPriceFeed The new price feed
+     */
+    function updateAssetPriceFeed(address cometProxy, address asset, address newPriceFeed) external onlyGovernor {
+        uint256 assetIndex = getAssetIndex(cometProxy, asset);
+        address oldPriceFeed = assetConfigs[cometProxy][assetIndex].priceFeed;
+        assetConfigs[cometProxy][assetIndex].priceFeed = newPriceFeed;
+        emit UpdateAssetPriceFeed(cometProxy, asset, oldPriceFeed, newPriceFeed);
     }
 
     /**
@@ -376,9 +378,7 @@ contract Configurator is ConfiguratorStorage {
         address cometProxy,
         address asset,
         IAssetListStructs.StorageConfig calldata storageConfig
-    ) external {
-        if (msg.sender != governor) revert Unauthorized();
-        
+    ) external onlyGovernor {
         IAssetList(configuratorParams[cometProxy].assetList).addAsset(asset, storageConfig);
         emit AddAsset(cometProxy, asset, storageConfig);
     }
@@ -445,8 +445,7 @@ contract Configurator is ConfiguratorStorage {
     /**
      * @notice Transfers the governor rights to a new address
      */
-    function transferGovernor(address newGovernor) external {
-        if (msg.sender != governor) revert Unauthorized();
+    function transferGovernor(address newGovernor) external onlyGovernor {
         address oldGovernor = governor;
         governor = newGovernor;
         emit GovernorTransferred(oldGovernor, newGovernor);
