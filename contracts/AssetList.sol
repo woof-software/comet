@@ -148,7 +148,7 @@ contract AssetList is IAssetList, Initializable {
         if (configurator_ == address(0)) revert ZeroConfigurator();
         configurator = configurator_;
 
-        for (uint8 i; i < numAssets; ) {
+        for (uint8 i; i < numAssets; ++i) {
             (uint256 word_a, ) = _loadPackedAsset(i);
             address asset = address(uint160(word_a));
             // A nil asset has nothing to configure
@@ -164,8 +164,6 @@ contract AssetList is IAssetList, Initializable {
             // Register the asset so the setters can change it later, and keep its factors and supply cap unscaled
             assetConfigStorage.assets.add(asset);
             assetConfigStorage.configs[asset] = config;
-
-            unchecked { ++i; }
         }
     }
 
