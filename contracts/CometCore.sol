@@ -4,19 +4,10 @@ pragma solidity 0.8.15;
 import "./CometConfiguration.sol";
 import "./CometStorage.sol";
 import "./CometMath.sol";
+import { IAssetListStructs } from "./interfaces/assetList/IAssetListStructs.sol";
 
-abstract contract CometCore is CometConfiguration, CometStorage, CometMath {
-    struct AssetInfo {
-        uint8 offset;
-        address asset;
-        address priceFeed;
-        uint64 scale;
-        uint64 borrowCollateralFactor;
-        uint64 liquidateCollateralFactor;
-        uint64 liquidationFactor;
-        uint128 supplyCap;
-    }
-
+/// @dev `AssetInfo` is declared in IAssetListStructs, so Comet and the asset list share one type
+abstract contract CometCore is CometConfiguration, CometStorage, CometMath, IAssetListStructs {
     /** Internal constants **/
 
     /// @dev The max number of assets this contract is hardcoded to support

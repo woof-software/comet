@@ -4,7 +4,7 @@ pragma solidity 0.8.15;
 import "./CometMainInterface.sol";
 import "./IERC20NonStandard.sol";
 import "./IPriceFeed.sol";
-import "./IAssetList.sol";
+import { IAssetList } from "./interfaces/assetList/IAssetList.sol";
 
 /**
  * @title Compound's Comet Contract
@@ -95,14 +95,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
     /// @notice The number of decimals for wrapped base token
     uint8 public override immutable decimals;
 
-    /// @notice The number of assets this contract actually supports
-    uint8 public override immutable numAssets;
-
     /// @notice Factor to divide by when accruing rewards in order to preserve 6 decimals (i.e. baseScale / 1e6)
     uint internal immutable accrualDescaleFactor;
     
-    /// @notice The address of the asset list
-    address immutable public assetList;
+    /// @notice The address of the asset list (an upgradeable proxy, so it stays the same across Comet upgrades)
+    IAssetList immutable public assetList;
 
     uint8 internal constant MAX_ASSETS_FOR_ASSET_LIST = 24;
 
@@ -120,7 +117,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         uint8 decimals_ = IERC20NonStandard(config.baseToken).decimals();
         if (decimals_ > MAX_BASE_DECIMALS) revert BadDecimals();
         if (config.storeFrontPriceFactor > FACTOR_SCALE) revert BadDiscount();
-        // if (config.assetConfigs.length > MAX_ASSETS_FOR_ASSET_LIST) revert TooManyAssets();
+        if (config.assetList == address(0)) revert BadAssetList();
+        if (IAssetList(config.assetList).numAssets() > MAX_ASSETS_FOR_ASSET_LIST) revert TooManyAssets();
         if (config.baseMinForRewards == 0) revert BadMinimum();
         if (IPriceFeed(config.baseTokenPriceFeed).decimals() != PRICE_FEED_DECIMALS) revert BadDecimals();
 
@@ -159,9 +157,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
             borrowPerSecondInterestRateBase = config.borrowPerYearInterestRateBase / SECONDS_PER_YEAR;
         }
 
-        // Set asset info from the already deployed asset list
-        assetList = config.assetList;
-        numAssets = IAssetList(config.assetList).numAssets();
+        // The asset list is deployed and upgraded through the Configurator, the Comet only reads it
+        assetList = IAssetList(config.assetList);
     }
 
     /**
@@ -220,26 +217,28 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /**
+     * @notice Get the number of assets this contract actually supports
+     * @dev Read from the asset list, so a newly listed asset needs no Comet upgrade
+     * @return The number of assets
+     */
+    function numAssets() override public view returns (uint8) {
+        return assetList.numAssets();
+    }
+
+    /**
      * @notice Get the i-th asset info, according to the order they were passed in originally
      * @param i The index of the asset info to get
      * @return The asset info object
      */
     function getAssetInfo(uint8 i) override public view returns (AssetInfo memory) {
-        return IAssetList(assetList).getAssetInfo(i);
+        return assetList.getAssetInfo(i);
     }
 
     /**
      * @dev Determine index of asset that matches given address
      */
     function getAssetInfoByAddress(address asset) override public view returns (AssetInfo memory) {
-        for (uint8 i = 0; i < numAssets; ) {
-            AssetInfo memory assetInfo = getAssetInfo(i);
-            if (assetInfo.asset == asset) {
-                return assetInfo;
-            }
-            unchecked { i++; }
-        }
-        revert BadAsset();
+        return assetList.getAssetInfoByAddress(asset);
     }
 
     /**
@@ -420,7 +419,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
         AssetInfo memory asset;
         uint256 newAmount;
-        for (uint8 i; i < numAssets; ++i) {
+        // Read once, since the number of assets is an external call to the asset list
+        uint8 numAssets_ = numAssets();
+        for (uint8 i; i < numAssets_; ++i) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 if (liquidity >= 0) {
                     return true;
@@ -491,7 +492,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
         if (principal >= 0) return (false, basePrice, assetPrices);
 
-        assetPrices = new uint256[](numAssets);
+        // Read once, since the number of assets is an external call to the asset list
+        uint8 numAssets_ = numAssets();
+        assetPrices = new uint256[](numAssets_);
         uint16 assetsIn = userBasic[account].assetsIn;
         uint8 _reserved = userBasic[account]._reserved;
         basePrice = getPrice(baseTokenPriceFeed);
@@ -503,7 +506,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
         AssetInfo memory asset;
         uint256 newAmount;
-        for (uint8 i; i < numAssets; ++i) {
+        for (uint8 i; i < numAssets_; ++i) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 if (liquidity >= 0) return (false, basePrice, assetPrices);
 
@@ -1320,7 +1323,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
         address asset;
         uint128 seizeAmount;
         uint256 value;
-        for (uint8 i; i < numAssets; ) {
+        // A liquidatable account gets one price slot per asset, so the length is the number of assets
+        uint8 numAssets_ = uint8(assetPrices.length);
+        for (uint8 i; i < numAssets_; ) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 assetInfo = getAssetInfo(i);
 
