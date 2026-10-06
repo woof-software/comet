@@ -2,7 +2,7 @@
 pragma solidity 0.8.15;
 
 import "../CometFactory.sol";
-import "./CometConfigurationV1.sol";
+import "./CometConfigurationIntermediate.sol";
 import "./ConfiguratorIntermediateStorage.sol";
 import "../marketupdates/MarketAdminPermissionCheckerInterface.sol";
 
@@ -15,6 +15,7 @@ contract ConfiguratorIntermediate is ConfiguratorIntermediateStorage {
 
     /** Custom events **/
     event AddAsset(address indexed cometProxy, AssetConfig assetConfig);
+    event AssetConfigsMigrated(address indexed cometProxy, uint256 numAssets);
     event CometDeployed(address indexed cometProxy, address indexed newComet);
     event GovernorTransferred(address indexed oldGovernor, address indexed newGovernor);
     event SetFactory(address indexed cometProxy, address indexed oldFactory, address indexed newFactory);
@@ -47,6 +48,7 @@ contract ConfiguratorIntermediate is ConfiguratorIntermediateStorage {
 
     /** Custom errors **/
     error AlreadyInitialized();
+    error AlreadyMigrated();
     error AssetDoesNotExist();
     error ConfigurationAlreadyExists();
     error InvalidAddress();
@@ -338,5 +340,36 @@ contract ConfiguratorIntermediate is ConfiguratorIntermediateStorage {
         address oldGovernor = governor;
         governor = newGovernor;
         emit GovernorTransferred(oldGovernor, newGovernor);
+    }
+
+    /**
+     * @notice Moves the asset configs of each market from Configuration.assetConfigs to the assetConfigs mapping
+     * @dev Note: Only callable by governor. Only the immutable part (asset, decimals, price feed) is copied:
+     *      factors and supply caps move to the asset list's storage instead.
+     *      Clearing Configuration.assetConfigs also zeroes the slot the final Configuration reads as assetList
+     * @param comets The Comet proxies to migrate
+     */
+    function migrateAssetConfig(address[] calldata comets) external {
+        if (msg.sender != governor) revert Unauthorized();
+
+        for (uint256 i; i < comets.length; ++i) {
+            address cometProxy = comets[i];
+            // A second run would copy the already cleared, empty array over the migrated configs
+            if (assetConfigs[cometProxy].length != 0) revert AlreadyMigrated();
+
+            AssetConfig[] storage oldConfigs = configuratorParams[cometProxy].assetConfigs;
+            uint256 numAssets = oldConfigs.length;
+            for (uint256 j; j < numAssets; ++j) {
+                AssetConfig storage oldConfig = oldConfigs[j];
+                assetConfigs[cometProxy].push(IAssetListStructs.AssetImmutableConfig({
+                    asset: oldConfig.asset,
+                    decimals: oldConfig.decimals,
+                    priceFeed: oldConfig.priceFeed
+                }));
+            }
+
+            delete configuratorParams[cometProxy].assetConfigs;
+            emit AssetConfigsMigrated(cometProxy, numAssets);
+        }
     }
 }

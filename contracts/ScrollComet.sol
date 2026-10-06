@@ -4,7 +4,7 @@ pragma solidity 0.8.15;
 import "./CometMainInterface.sol";
 import "./ERC20.sol";
 import "./IPriceFeed.sol";
-import "./configurator/CometConfigurationV1.sol";
+import "./configurator/CometConfigurationIntermediate.sol";
 
 /**
  * @title Compound's Comet Contract on Scroll
@@ -138,7 +138,7 @@ contract ScrollComet is CometMainInterface {
      * @notice Construct a new protocol instance
      * @param config The mapping of initial/constant parameters
      **/
-    constructor(CometConfigurationV1.Configuration memory config) {
+    constructor(CometConfigurationIntermediate.Configuration memory config) {
         // Sanity checks
         uint8 decimals_ = ERC20(config.baseToken).decimals();
         if (decimals_ > MAX_BASE_DECIMALS) revert BadDecimals();
@@ -222,8 +222,8 @@ contract ScrollComet is CometMainInterface {
     /**
      * @dev Checks and gets the packed asset info for storage
      */
-    function getPackedAssetInternal(CometConfigurationV1.AssetConfig[] memory assetConfigs, uint i) internal view returns (uint256, uint256) {
-        CometConfigurationV1.AssetConfig memory assetConfig;
+    function getPackedAssetInternal(CometConfigurationIntermediate.AssetConfig[] memory assetConfigs, uint i) internal view returns (uint256, uint256) {
+        CometConfigurationIntermediate.AssetConfig memory assetConfig;
         if (i < assetConfigs.length) {
             assembly {
                 assetConfig := mload(add(add(assetConfigs, 0x20), mul(i, 0x20)))

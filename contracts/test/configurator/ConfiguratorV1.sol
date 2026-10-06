@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import "../CometFactory.sol";
+import "../../CometFactory.sol";
 import "./CometConfigurationV1.sol";
 import "./ConfiguratorV1Storage.sol";
-import "../marketupdates/MarketAdminPermissionCheckerInterface.sol";
+import "../../marketupdates/MarketAdminPermissionCheckerInterface.sol";
 
 /**
  * @title Compound's Configurator Contract, V1 copy

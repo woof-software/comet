@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 import "../../contracts/Comet.sol";
-import "../../contracts/configurator/CometConfigurationV1.sol";
+import "../../contracts/configurator/CometConfigurationIntermediate.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
 
@@ -49,8 +49,8 @@ contract OnChainLiquidatorTest is Test {
             WETH9
         );
 
-        CometConfigurationV1.AssetConfig[] memory assetConfigs = new CometConfigurationV1.AssetConfig[](2);
-        assetConfigs[0] = CometConfigurationV1.AssetConfig({
+        CometConfigurationIntermediate.AssetConfig[] memory assetConfigs = new CometConfigurationIntermediate.AssetConfig[](2);
+        assetConfigs[0] = CometConfigurationIntermediate.AssetConfig({
             asset: CB_ETH,
             priceFeed: address(cbEthPriceFeed),
             decimals: 18,
@@ -59,7 +59,7 @@ contract OnChainLiquidatorTest is Test {
             liquidationFactor: 95e16,
             supplyCap: 0
         });
-        assetConfigs[1] = CometConfigurationV1.AssetConfig({
+        assetConfigs[1] = CometConfigurationIntermediate.AssetConfig({
             asset: WST_ETH,
             priceFeed: address(wstEthPriceFeed),
             decimals: 18,
@@ -69,7 +69,7 @@ contract OnChainLiquidatorTest is Test {
             supplyCap: 0
         });
 
-        comet = new Comet(CometConfigurationV1.Configuration(
+        comet = new Comet(CometConfigurationIntermediate.Configuration(
             {
                 governor: TIMELOCK,
                 pauseGuardian: GNOSIS_SAFE,

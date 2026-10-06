@@ -2,8 +2,8 @@
 pragma solidity 0.8.15;
 
 import "./../CometFactory.sol";
-import "./../configurator/CometConfigurationV1.sol";
-import "./../configurator/ConfiguratorV1Storage.sol";
+import "./../test/configurator/CometConfigurationV1.sol";
+import "./../test/configurator/ConfiguratorV1Storage.sol";
 
 /**
  * @title Compound's Configurator Contract

@@ -8,7 +8,7 @@ import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable
 import { IAssetList } from "./interfaces/assetList/IAssetList.sol";
 import { IConfigHash } from "./interfaces/IConfigHash.sol";
 import { IConfigHash } from "./interfaces/IConfigHash.sol";
-import { Hash } from "./libraries/Hash.sol";
+import { ConfigHash } from "./libraries/ConfigHash.sol";
 
 /**
  * @title Compound's Asset List
@@ -110,7 +110,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
 
         uint8 _numAssets = uint8(assetConfigs.length);
         numAssets = _numAssets;
-        configHash = Hash.hash(TYPEHASH, abi.encode(assetConfigs));
+        configHash = ConfigHash.hashConfig(TYPEHASH, abi.encode(assetConfigs));
 
         (asset00_a, priceFeedAddress00) = _packAsset(assetConfigs, 0);
         (asset01_a, priceFeedAddress01) = _packAsset(assetConfigs, 1);

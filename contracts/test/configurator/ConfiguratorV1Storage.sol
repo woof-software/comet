@@ -2,7 +2,7 @@
 pragma solidity 0.8.15;
 
 import "./CometConfigurationV1.sol";
-import "../marketupdates/MarketAdminPermissionCheckerInterface.sol";
+import "../../marketupdates/MarketAdminPermissionCheckerInterface.sol";
 
 /**
  * @title Compound's Comet Configuration Storage Interface

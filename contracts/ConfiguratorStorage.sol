@@ -30,9 +30,10 @@ contract ConfiguratorStorage is CometConfiguration {
     /// @notice MarketAdminPermissionChecker contract which is used to check if the caller has permission to perform market updates
     MarketAdminPermissionCheckerInterface public marketAdminPermissionChecker;
 
+    /// @notice Mapping of Comet proxy addresses to their AssetImmutableConfig settings
+    /// @dev Must stay right after marketAdminPermissionChecker: ConfiguratorIntermediate fills it at this slot
+    mapping(address => IAssetListStructs.AssetImmutableConfig[]) public assetConfigs;
+
     /// @notice Mapping of Comet proxy addresses to their AssetList factory contracts
     mapping(address => address) public cometAssetListFactories;
-
-    /// @notice Mapping of Comet proxy addresses to their AssetImmutableConfig settings
-    mapping(address => IAssetListStructs.AssetImmutableConfig[]) public assetConfigs;
 }

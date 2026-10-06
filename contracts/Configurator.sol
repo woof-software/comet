@@ -1,60 +1,15 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
+import { ConfiguratorStorage, CometConfiguration, MarketAdminPermissionCheckerInterface } from "./ConfiguratorStorage.sol";
 import { CometFactoryWithExtendedAssetList } from "./CometFactoryWithExtendedAssetList.sol";
-import { CometConfiguration } from "./CometConfiguration.sol";
-import "./ConfiguratorStorage.sol";
-import "./marketupdates/MarketAdminPermissionCheckerInterface.sol";
-import "./IAssetListFactory.sol";
-import { IConfigHash } from "./interfaces/IConfigHash.sol";
-import { Hash } from "./libraries/Hash.sol";
-import { IAssetList } from "./interfaces/assetList/IAssetList.sol";
+import { IAssetListFactory } from "./IAssetListFactory.sol";
+import { IAssetList, IAssetListStructs } from "./interfaces/assetList/IAssetList.sol";
+import { IConfiguratorEvents } from "./interfaces/configurator/IConfiguratorEvents.sol";
+import { IConfiguratorErrors } from "./interfaces/configurator/IConfiguratorErrors.sol";
+import { ConfigHash } from "./libraries/ConfigHash.sol";
 
-contract Configurator is ConfiguratorStorage {
-
-    /** Custom events **/
-    event AddAsset(address indexed cometProxy, address indexed asset, IAssetListStructs.StorageConfig storageConfig);
-    event CometDeployed(address indexed cometProxy, address indexed newComet);
-    event AssetListDeployed(address indexed cometProxy, address indexed newAssetList);
-    event UpdateAssetList(address indexed cometProxy, address indexed oldAssetList, address indexed newAssetList);
-    event GovernorTransferred(address indexed oldGovernor, address indexed newGovernor);
-    event SetFactory(address indexed cometProxy, address indexed oldFactory, address indexed newFactory);
-    event SetAssetListFactory(address indexed cometProxy, address indexed oldAssetListFactory, address indexed newAssetListFactory);
-    event SetGovernor(address indexed cometProxy, address indexed oldGovernor, address indexed newGovernor);
-    event SetConfiguration(address indexed cometProxy, Configuration oldConfiguration, Configuration newConfiguration);
-    event SetPauseGuardian(address indexed cometProxy, address indexed oldPauseGuardian, address indexed newPauseGuardian);
-    event SetMarketAdminPermissionChecker(address indexed oldMarketAdminPermissionChecker, address indexed newMarketAdminPermissionChecker);
-    event SetBaseTokenPriceFeed(address indexed cometProxy, address indexed oldBaseTokenPriceFeed, address indexed newBaseTokenPriceFeed);
-    event SetExtensionDelegate(address indexed cometProxy, address indexed oldExt, address indexed newExt);
-    event SetSupplyKink(address indexed cometProxy,uint64 oldKink, uint64 newKink);
-    event SetSupplyPerYearInterestRateSlopeLow(address indexed cometProxy,uint64 oldIRSlopeLow, uint64 newIRSlopeLow);
-    event SetSupplyPerYearInterestRateSlopeHigh(address indexed cometProxy,uint64 oldIRSlopeHigh, uint64 newIRSlopeHigh);
-    event SetSupplyPerYearInterestRateBase(address indexed cometProxy,uint64 oldIRBase, uint64 newIRBase);
-    event SetBorrowKink(address indexed cometProxy,uint64 oldKink, uint64 newKink);
-    event SetBorrowPerYearInterestRateSlopeLow(address indexed cometProxy,uint64 oldIRSlopeLow, uint64 newIRSlopeLow);
-    event SetBorrowPerYearInterestRateSlopeHigh(address indexed cometProxy,uint64 oldIRSlopeHigh, uint64 newIRSlopeHigh);
-    event SetBorrowPerYearInterestRateBase(address indexed cometProxy,uint64 oldIRBase, uint64 newIRBase);
-    event SetStoreFrontPriceFactor(address indexed cometProxy, uint64 oldStoreFrontPriceFactor, uint64 newStoreFrontPriceFactor);
-    event SetBaseTrackingSupplySpeed(address indexed cometProxy, uint64 oldBaseTrackingSupplySpeed, uint64 newBaseTrackingSupplySpeed);
-    event SetBaseTrackingBorrowSpeed(address indexed cometProxy, uint64 oldBaseTrackingBorrowSpeed, uint64 newBaseTrackingBorrowSpeed);
-    event SetBaseMinForRewards(address indexed cometProxy, uint104 oldBaseMinForRewards, uint104 newBaseMinForRewards);
-    event SetBaseBorrowMin(address indexed cometProxy, uint104 oldBaseBorrowMin, uint104 newBaseBorrowMin);
-    event SetTargetReserves(address indexed cometProxy, uint104 oldTargetReserves, uint104 newTargetReserves);
-    event SetAssetConfigs(address indexed cometProxy, IAssetListStructs.AssetImmutableConfig[] oldAssetConfigs, IAssetListStructs.AssetImmutableConfig[] newAssetConfigs);
-    event UpdateAsset(address indexed cometProxy, IAssetListStructs.AssetImmutableConfig oldAssetConfig, IAssetListStructs.AssetImmutableConfig newAssetConfig);
-    event UpdateAssetPriceFeed(address indexed cometProxy, address indexed asset, address oldPriceFeed, address newPriceFeed);
-    event UpdateAssetBorrowCollateralFactor(address indexed cometProxy, address indexed asset, uint64 oldBorrowCF, uint64 newBorrowCF);
-    event UpdateAssetLiquidateCollateralFactor(address indexed cometProxy, address indexed asset, uint64 oldLiquidateCF, uint64 newLiquidateCF);
-    event UpdateAssetLiquidationFactor(address indexed cometProxy, address indexed asset, uint64 oldLiquidationFactor, uint64 newLiquidationFactor);
-    event UpdateAssetSupplyCap(address indexed cometProxy, address indexed asset, uint128 oldSupplyCap, uint128 newSupplyCap);
-
-    /** Custom errors **/
-    error AlreadyInitialized();
-    error AssetDoesNotExist();
-    error ConfigurationAlreadyExists();
-    error InvalidAddress();
-    error Unauthorized();
-
+contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfiguratorErrors {
     modifier onlyGovernor {
         if (msg.sender != governor) revert Unauthorized();
         _;
@@ -267,13 +222,7 @@ contract Configurator is ConfiguratorStorage {
         // 2. New list, configs changed: hash differs, deploy
         // 3. Old list without configHash: nothing to compare, deploy
         // 4. No list yet (zero address): nothing to compare, deploy
-        // A list has both configHash and TYPEHASH or neither, so TYPEHASH is called directly once configHash is found
-        address currentAssetList = configuratorParams[cometProxy].assetList;
-        (bool hasHash, bytes32 currentHash) = _trySupportsConfigHash(currentAssetList, IConfigHash.configHash.selector);
-        if (
-            hasHash &&
-            Hash.verify(currentHash, IConfigHash(currentAssetList).TYPEHASH(), abi.encode(immutableConfigs))
-        ) return address(0);
+        if (ConfigHash.compareConfigHashes(configuratorParams[cometProxy].assetList, abi.encode(immutableConfigs))) return address(0);
 
         address assetListFactory = cometAssetListFactories[cometProxy];
         if (assetListFactory == address(0)) revert InvalidAddress();
@@ -348,22 +297,6 @@ contract Configurator is ConfiguratorStorage {
     }
 
     /**
-     * @notice Returns the index of an asset in the asset configs of a Comet proxy
-     * @dev Reverts with AssetDoesNotExist if the asset is not in the configs
-     * @param cometProxy The Comet proxy whose asset configs to search
-     * @param asset The asset to find
-     * @return The index of the asset, which is also its index in the asset list
-     */
-    function getAssetIndex(address cometProxy, address asset) public view returns (uint256) {
-        IAssetListStructs.AssetImmutableConfig[] storage cometAssetConfigs = assetConfigs[cometProxy];
-        uint256 numAssets = cometAssetConfigs.length;
-        for (uint256 i; i < numAssets; ++i) {
-            if (cometAssetConfigs[i].asset == asset) return i;
-        }
-        revert AssetDoesNotExist();
-    }
-
-    /**
      * @notice Registers an asset on the Comet proxy's asset list and sets its factors and supply cap.
      *         This is the last step of adding a new asset:
      *         1. Update the immutable asset configs
@@ -423,7 +356,25 @@ contract Configurator is ConfiguratorStorage {
         emit UpdateAssetSupplyCap(cometProxy, asset, oldSupplyCap, newSupplyCap);
     }
 
-    /** Other helpers **/
+    /*//////////////////////////////////////////////////////////////
+                             OTHER HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Returns the index of an asset in the asset configs of a Comet proxy
+     * @dev Reverts with AssetDoesNotExist if the asset is not in the configs
+     * @param cometProxy The Comet proxy whose asset configs to search
+     * @param asset The asset to find
+     * @return The index of the asset, which is also its index in the asset list
+     */
+    function getAssetIndex(address cometProxy, address asset) public view returns (uint256) {
+        IAssetListStructs.AssetImmutableConfig[] storage cometAssetConfigs = assetConfigs[cometProxy];
+        uint256 numAssets = cometAssetConfigs.length;
+        for (uint256 i; i < numAssets; ++i) {
+            if (cometAssetConfigs[i].asset == asset) return i;
+        }
+        revert AssetDoesNotExist();
+    }
 
     /**
      * @return The currently configured params for a Comet proxy
@@ -449,14 +400,5 @@ contract Configurator is ConfiguratorStorage {
         address oldGovernor = governor;
         governor = newGovernor;
         emit GovernorTransferred(oldGovernor, newGovernor);
-    }
-
-    /// @dev Calls a bytes32 getter via staticcall without reverting; returns found = false if the call reverts,
-    ///      the target has no code, or the return data is not exactly one word.
-    ///      Inspired by OpenZeppelin's ERC165Checker, which probes supportsInterface the same way
-    function _trySupportsConfigHash(address target, bytes4 interfaceId) private view returns (bool found, bytes32 value) {
-        (bool success, bytes memory data) = target.staticcall(abi.encodeWithSelector(interfaceId));
-        if (!success || data.length != 32) return (false, bytes32(0));
-        return (true, abi.decode(data, (bytes32)));
     }
 }
