@@ -1,10 +1,10 @@
-import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
 import { Signature } from 'ethers';
 import type {
   BigNumberish,
   ContractTransactionReceipt,
   ContractTransactionResponse,
   Overrides,
+  Signer,
 } from 'ethers';
 import type { CometContext } from './CometContext.js';
 import { resolveAddress } from './Address.js';
@@ -40,13 +40,13 @@ async function waitForReceipt(
 
 export default class CometActor {
   name: string;
-  signer: SignerWithAddress;
+  signer: Signer;
   address: string;
   context: CometContext;
 
   constructor(
     name: string,
-    signer: SignerWithAddress,
+    signer: Signer,
     address: string,
     context: CometContext,
   ) {
@@ -70,17 +70,17 @@ export default class CometActor {
 
   async getErc20Balance(tokenAddress: string): Promise<bigint> {
     const erc20 = ERC20__factory.connect(tokenAddress, this.signer);
-    return erc20.balanceOf(this.signer.address);
+    return erc20.balanceOf(this.address);
   }
 
   async getCometBaseBalance(): Promise<bigint> {
     const comet = await this.context.getComet();
-    return baseBalanceOf(comet, this.signer.address);
+    return baseBalanceOf(comet, this.address);
   }
 
   async getCometCollateralBalance(tokenAddress: string): Promise<bigint> {
     const comet = await this.context.getComet();
-    return comet.collateralBalanceOf(this.signer.address, tokenAddress);
+    return comet.collateralBalanceOf(this.address, tokenAddress);
   }
 
   async sendEth(recipient: AddressLike, amount: number) {

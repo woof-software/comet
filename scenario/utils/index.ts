@@ -1,5 +1,4 @@
 import { expect } from 'chai';
-import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
 import {
   AbiCoder,
   Contract,
@@ -22,6 +21,7 @@ import type {
   ContractTransactionReceipt,
   ContractTransactionResponse,
   Log,
+  Signer,
 } from 'ethers';
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -1208,7 +1208,7 @@ export async function executeOpenProposal(
 
 async function testnetPropose(
   dm: DeploymentManager,
-  proposer: SignerWithAddress,
+  proposer: Signer,
   targets: string[],
   values: BigNumberish[],
   signatures: string[],
@@ -1234,7 +1234,7 @@ async function testnetPropose(
 // Instantly executes some actions through the governance proposal process
 export async function fastGovernanceExecute(
   dm: DeploymentManager,
-  proposer: SignerWithAddress,
+  proposer: Signer,
   targets: string[],
   values: BigNumberish[],
   signatures: string[],
@@ -1304,7 +1304,7 @@ export async function fastGovernanceExecute(
 export async function fastL2GovernanceExecute(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
-  proposer: SignerWithAddress,
+  proposer: Signer,
   targets: string[],
   values: BigNumberish[],
   signatures: string[],
