@@ -152,16 +152,32 @@ export default migration('1790243379_withdraw_reserves', {
 
 This proposal withdraws all reserves from the Compound III WETH market on Ronin following the deprecation. The proposal also sweeps any WETH already sitting on the Ronin governance bridge receiver, and bridges everything back to the Compound Timelock on Ethereum Mainnet using Chainlink's CCIP.
 
+Withdrawing the reserves is the final step of the deprecation process and secures the market: once the reserves are moved to the Timelock on Mainnet, no protocol-owned funds remain in the deprecated market on Ronin.
+
+## Reserves withdrawal
+
+Reserves are the protocol-owned portion of the market's base asset: the Comet's WETH balance plus outstanding borrows, minus what is owed to suppliers, as reported by \`getReserves()\`. They do not belong to any user, so withdrawing them does not change supplier or borrower balances. Only the governor of the market (the Ronin Timelock) can call \`withdrawReserves\`.
+
+The amounts below were read on-chain at the moment the proposal was created and are fixed in the proposal calldata:
+
+| Source | Amount |
+| --- | --- |
+| cWETHv3 reserves (\`getReserves()\`) | ${utils.formatEther(reservesWithdrawn)} WETH |
+| WETH held by the Ronin bridge receiver | ${utils.formatEther(bridgeReceiverSwept)} WETH |
+| Total bridged to the Mainnet Timelock | ${utils.formatEther(totalToBridge)} WETH |
+
+Since the withdrawal amount is fixed, any reserves accrued by the market between proposal creation and execution stay in the market and can be withdrawn by a later proposal.
+
 ## Proposal actions
 
-The first proposal action approves the L1CCIPRouter to transfer GHO stable token from the Timelock to pay for the proposal execution fee on Ronin.
+The first proposal action approves the L1CCIPRouter to transfer GHO stable token from the Timelock to pay for the proposal execution fee on Ronin. The approved amount is the fee quoted by the router at proposal creation with a ${GHO_FEE_BUFFER_MULTIPLIER}x buffer, to cover fee changes before execution.
 
 The second proposal action sends a message through CCIP to the Ronin governance receiver, which queues the following calls on the Ronin Timelock:
 
-1. Call \`withdrawReserves(address,uint256)\` on the Ronin cWETHv3 to withdraw all reserves to the Ronin Timelock.
-2. Call \`sweepToken(address,address)\` on the bridge receiver to sweep any WETH held there to the Ronin Timelock.
-3. Approve the L2 CCIP router to spend the combined WETH amount from the Ronin Timelock.
-4. Call \`ccipSend\` on the L2 CCIP router to bridge the WETH back to the Mainnet Timelock, paying the CCIP fee in native RON from the Ronin Timelock's own balance.
+1. Call \`withdrawReserves(address,uint256)\` on the Ronin cWETHv3 to withdraw ${utils.formatEther(reservesWithdrawn)} WETH of reserves to the Ronin Timelock.
+2. Call \`sweepToken(address,address)\` on the bridge receiver to sweep the WETH held there to the Ronin Timelock.
+3. Approve the L2 CCIP router to spend the combined ${utils.formatEther(totalToBridge)} WETH from the Ronin Timelock.
+4. Call \`ccipSend\` on the L2 CCIP router to bridge the WETH back to the Mainnet Timelock, paying the CCIP fee in native RON from the Ronin Timelock's own balance. The RON sent with the call is the fee quoted by the router at proposal creation with a ${RON_FEE_BUFFER_MULTIPLIER}x buffer.
 `;
     const txn = await govDeploymentManager.retry(async () =>
       trace(
