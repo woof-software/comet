@@ -16,6 +16,7 @@ import {
   zeroPadValue,
 } from 'ethers';
 import type {
+  BaseContract,
   BigNumberish,
   ContractEventName,
   ContractTransactionReceipt,
@@ -445,7 +446,7 @@ export function isBridgedDeployment(ctx: CometContext): boolean {
 }
 
 export async function fetchLogs(
-  contract: Contract,
+  contract: BaseContract,
   filter: ContractEventName,
   fromBlock: number,
   toBlock: number,

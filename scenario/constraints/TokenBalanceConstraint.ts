@@ -1,8 +1,7 @@
-import { Constraint, Solution } from '../../plugins/scenario/index.js';
-import { CometContext } from '../context/CometContext.js';
+import type { Constraint, Solution } from '../../plugins/scenario/index.js';
+import type { CometContext } from '../context/CometContext.js';
 import { expect } from 'chai';
-import { Requirements } from './Requirements.js';
-import { BigNumber } from 'ethers';
+import type { Requirements } from './Requirements.js';
 import { exp } from '../../test/helpers.js';
 import { ComparativeAmount, ComparisonOp, getActorAddressFromName, getAssetFromName, parseAmount, getToTransferAmount } from '../utils/index.js';
 
@@ -38,7 +37,7 @@ export class TokenBalanceConstraint<T extends CometContext, R extends Requiremen
             const actor = await getActorAddressFromName(actorName, context);
             const amount: ComparativeAmount = actorsByAsset[assetName][actorName];
             const balance = await asset.balanceOf(actor);
-            const decimals = await asset.token.decimals();
+            const decimals = await asset.decimals();
             const toTransfer = getToTransferAmount(amount, balance, decimals);
             await context.sourceTokens(toTransfer, asset.address, actor);
           }
@@ -59,8 +58,8 @@ export class TokenBalanceConstraint<T extends CometContext, R extends Requiremen
           const actor = await getActorAddressFromName(actorName, context);
           const asset = await getAssetFromName(assetName, context);
           const amount = parseAmount(rawAmount);
-          const balance = BigNumber.from(await asset.balanceOf(actor));
-          const decimals = await asset.token.decimals();
+          const balance = await asset.balanceOf(actor);
+          const decimals = await asset.decimals();
           switch (amount.op) {
             case ComparisonOp.EQ:
               expect(balance).to.equal(exp(amount.val, decimals));

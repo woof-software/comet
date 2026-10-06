@@ -1,25 +1,31 @@
-import { StaticConstraint, debug } from '../../plugins/scenario/index.js';
-import { IGovernorBravo, ProposalState, OpenProposal } from '../context/Gov.js';
-import { CometContext } from '../context/CometContext.js';
+import type { StaticConstraint } from '../../plugins/scenario/index.js';
+import type { IGovernorBravo, OpenProposal } from '../context/Gov.js';
+import { IGovernorBravo__factory } from '../../build/types/index.js';
+import { toNumber } from 'ethers';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
+import { debug } from '../../plugins/scenario/index.js';
+import { ProposalState } from '../context/Gov.js';
+import type { CometContext } from '../context/CometContext.js';
 import { fetchLogs } from '../utils/index.js';
-import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
 import { isBridgedDeployment, executeOpenProposal, voteForOpenProposal, executeOpenProposalAndRelay } from '../utils/index.js';
 import { getOpenBridgedProposals, executeBridgedProposal } from '../utils/bridgeProposal.js';
 
 export async function getOpenProposals(deploymentManager: DeploymentManager, governor: IGovernorBravo): Promise<OpenProposal[]> {
   const timelockBuf = 30000; // XXX this should be timelock.delay + timelock.GRACE_PERIOD
-  const votingDelay = (await governor.votingDelay()).toNumber();
-  const votingPeriod = (await governor.votingPeriod()).toNumber();
+  const votingDelay = toNumber(await governor.votingDelay());
+  const votingPeriod = toNumber(await governor.votingPeriod());
   const searchBlocks = votingDelay + votingPeriod + timelockBuf;
-  const block = await deploymentManager.hre.ethers.provider.getBlockNumber();
+  const { provider } = await getHardhatEthers(deploymentManager.hre);
+  const block = await provider.getBlockNumber();
   const filter = governor.filters.ProposalCreated();
   const logs = await fetchLogs(governor, filter, block - searchBlocks, block);
   const proposals: OpenProposal[] = [];
   if (logs) {
     for (let log of logs) {
-      if (log.args === undefined) continue;
+      if (!('args' in log)) continue;
       const [id, proposer, targets, values, signatures, calldatas, startBlock, endBlock] = log.args;
-      const state = await governor.state(id);
+      const state = toNumber(await governor.state(id));
       if ([
         ProposalState.Pending,
         ProposalState.Active,
@@ -62,7 +68,8 @@ export class ProposalConstraint<T extends CometContext> implements StaticConstra
       }
 
       const governanceDeploymentManager = ctx.world.auxiliaryDeploymentManager || deploymentManager;
-      const governor = await governanceDeploymentManager.contract('governor') as IGovernorBravo;
+      const governorContract = await governanceDeploymentManager.getContractOrThrow('governor');
+      const governor = IGovernorBravo__factory.connect(await governorContract.getAddress(), governorContract.runner);
       const proposals = await getOpenProposals(governanceDeploymentManager, governor);
 
       for (const proposal of proposals) {
@@ -70,16 +77,17 @@ export class ProposalConstraint<T extends CometContext> implements StaticConstra
       }
 
       for (const proposal of proposals) {
-        const preExecutionBlockNumber = await ctx.world.deploymentManager.hre.ethers.provider.getBlockNumber();
+        const { provider } = await getHardhatEthers(ctx.world.deploymentManager.hre);
+        const preExecutionBlockNumber = await provider.getBlockNumber();
         let migrationData;
         if (ctx.migrations !== undefined) {
           migrationData = ctx.migrations.find(
-            migrationData => migrationData.lastProposal === proposal.id.toNumber()
+            migrationData => migrationData.lastProposal === toNumber(proposal.id)
           );
         }
 
         // temporary hack to skip proposal 519
-        if (proposal.id.eq(519)) {
+        if (proposal.id === 519n) {
           console.log('Skipping proposal 519');
           continue;
         }

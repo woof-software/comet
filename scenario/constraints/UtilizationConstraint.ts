@@ -1,9 +1,9 @@
-import { Constraint } from '../../plugins/scenario/index.js';
-import { CometContext } from '../context/CometContext.js';
+import type { Constraint } from '../../plugins/scenario/index.js';
+import type { CometContext } from '../context/CometContext.js';
 import { optionalNumber } from '../utils/index.js';
 import { defactor, factor, factorScale } from '../../test/helpers.js';
 import { expect } from 'chai';
-import { Requirements } from './Requirements.js';
+import type { Requirements } from './Requirements.js';
 
 /**
  # Utilization Constraint
@@ -58,13 +58,13 @@ export class UtilizationConstraint<T extends CometContext, R extends Requirement
       // utilization is target number
       return async (context: T): Promise<T> => {
         let comet = await context.getComet();
-        const baseScale = (await comet.baseScale()).toBigInt();
-        const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+        const baseScale = await comet.baseScale();
+        const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
 
         let baseToken = context.getAssetByAddress(await comet.baseToken());
         let utilizationFactor = factor(utilization!);
-        let totalSupplyBase = (await comet.totalSupply()).toBigInt();
-        let totalBorrowBase = (await comet.totalBorrow()).toBigInt();
+        let totalSupplyBase = await comet.totalSupply();
+        let totalBorrowBase = await comet.totalBorrow();
 
         // always have at least enough supply to cover current borrows
         let toBorrowBase = 0n;
@@ -77,7 +77,7 @@ export class UtilizationConstraint<T extends CometContext, R extends Requirement
         if (currentUtilizationFactor < utilizationFactor) {
           toBorrowBase = expectedBorrowBase - totalBorrowBase;
 
-          let baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+          let baseBorrowMin = await comet.baseBorrowMin();
           if (toBorrowBase < baseBorrowMin) {
             expectedBorrowBase = expectedBorrowBase + baseBorrowMin - toBorrowBase;
             expectedSupplyBase = expectedBorrowBase * factorScale / utilizationFactor;
@@ -97,7 +97,7 @@ export class UtilizationConstraint<T extends CometContext, R extends Requirement
           // Add some supply, any amount will do
           let supplyActor = await context.allocateActor('UtilizationConstraint{Supplier}');
 
-          await baseToken.approve(supplyActor, comet);
+          await baseToken.approve(supplyActor, await comet.getAddress());
           await context.sourceTokens(toSupplyBase, baseToken, supplyActor);
           await comet.connect(supplyActor.signer).supply(baseToken.address, toSupplyBase);
         }
@@ -113,23 +113,23 @@ export class UtilizationConstraint<T extends CometContext, R extends Requirement
             const { asset: collateralAsset, borrowCollateralFactor, priceFeed, scale } = await comet.getAssetInfo(i);
 
             const collateralToken = context.getAssetByAddress(collateralAsset);
-            const collateralPrice = (await comet.getPrice(priceFeed)).toBigInt();
-            const collateralScale = scale.toBigInt();
+            const collateralPrice = await comet.getPrice(priceFeed);
+            const collateralScale = scale;
 
             // we need this after wUSDM deprecation
-            if(borrowCollateralFactor.toBigInt() === 0n || collateralPrice === 0n){
+            if(borrowCollateralFactor === 0n || collateralPrice === 0n){
               console.log(`UtilizationConstraint: skipping $asset${i} due to zero collateral factor or price`);
               continue; // can't use this asset as collateral
             }
 
             const collateralWeiPerUnitBase = (collateralScale * basePrice) / collateralPrice;
             let collateralNeeded = (collateralWeiPerUnitBase * toBorrowBase) / baseScale;
-            collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor.toBigInt(); // adjust for borrowCollateralFactor
+            collateralNeeded = (collateralNeeded * factorScale) / borrowCollateralFactor; // adjust for borrowCollateralFactor
             collateralNeeded = (collateralNeeded * 11n) / 10n; // add fudge factor
 
             try {
               await context.sourceTokens(collateralNeeded, collateralToken, borrowActor);
-              await collateralToken.approve(borrowActor, comet);
+              await collateralToken.approve(borrowActor, await comet.getAddress());
               await borrowActor.safeSupplyAsset({ asset: collateralToken.address, amount: collateralNeeded });
               console.log(`UtilizationConstraint: successfully sourced ${collateralNeeded} from $asset${i}`);
             } catch (error) {

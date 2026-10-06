@@ -1,8 +1,9 @@
-import { Constraint } from '../../plugins/scenario/index.js';
-import { Solution } from '../../plugins/scenario/Scenario.js';
-import { CometContext } from '../context/CometContext.js';
+import type { Constraint } from '../../plugins/scenario/index.js';
+import type { Solution } from '../../plugins/scenario/Scenario.js';
+import type { CometContext } from '../context/CometContext.js';
 import { getFuzzedRequirements } from './Fuzzing.js';
-import { Requirements } from './Requirements.js';
+import { objectify } from '../../test/helpers.js';
+import type { Requirements } from './Requirements.js';
 
 export class ModernConstraint<T extends CometContext, R extends Requirements> implements Constraint<T, R> {
   async solve(requirements: R, _context: T) {
@@ -12,7 +13,7 @@ export class ModernConstraint<T extends CometContext, R extends Requirements> im
       if (req.upgrade) {
         solutions.push(async function solution(ctx: T): Promise<T> {
           const current = await ctx.getConfiguration();
-          const upgrade = Object.assign({}, current, req.upgrade);
+          const upgrade = Object.assign({}, objectify(current), req.upgrade);
           return await ctx.upgrade(upgrade) as T; // It's been modified
         });
       }
