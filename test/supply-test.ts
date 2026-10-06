@@ -1,5 +1,7 @@
-import { ethers, event, expect, exp, makeProtocol, portfolio, ReentryAttack, setTotalsBasic, wait, fastForward, defaultAssets } from './helpers';
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken } from '../build/types';
+import { ethers, event, expect, exp, makeProtocol, portfolio, ReentryAttack, setTotalsBasic, wait, fastForward, defaultAssets, TransactionResponseExt, bumpTotalsCollateral } from './helpers';
+import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types';
+import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { ContractTransaction } from 'ethers';
 
 describe('supplyTo', function () {
   it('supplies base from sender if the asset is base', async () => {
@@ -601,6 +603,7 @@ describe('supply', function () {
     await wait(baseAsB.approve(comet.address, 100e6));
     await expect(cometAsB.supply(USDC.address, 100e6)).to.be.revertedWith("custom error 'Paused()'");
   });
+
 });
 
 describe('supplyFrom', function () {
@@ -663,3 +666,1132 @@ describe('supplyFrom', function () {
     await expect(cometAsC.supplyFrom(bob.address, alice.address, COMP.address, 7)).to.be.revertedWith("custom error 'Paused()'");
   });
 });
+
+describe('Minimum collateral supply', function () {
+  [6, 8, 18].forEach(runMinimumCollateralSupplyTests);
+  [6, 8, 18].forEach(runCollateralOffsetSupplyTests);
+});
+
+function runMinimumCollateralSupplyTests(collateralDecimals: number) {
+  describe(`Minimum collateral price and amount (${collateralDecimals} decimals)`, function () {
+    const SUPPLY_AMOUNT = 1n;
+
+    type SupplyState = Record<string, bigint>;
+    type AccountPrefix = 'alice' | 'bob';
+
+    interface SupplyRun {
+      before: SupplyState;
+      after: SupplyState;
+      transaction: TransactionResponseExt;
+    }
+
+    interface SupplyCase {
+      minimumPrice: bigint;
+      control: SupplyRun;
+      minimumPriceRun: SupplyRun;
+    }
+
+    let comet: CometHarnessInterfaceExtendedAssetList;
+    let collateral: FaucetToken;
+    let base: FaucetToken;
+    let priceFeed: SimplePriceFeed;
+    let alice: SignerWithAddress;
+    let bob: SignerWithAddress;
+    let charlie: SignerWithAddress;
+    let assetMask: bigint;
+    let initialSnapshot: string;
+
+    const snapshot = (): Promise<string> => ethers.provider.send('evm_snapshot', []);
+    const revert = (id: string): Promise<boolean> => ethers.provider.send('evm_revert', [id]);
+    const toBigInt = (value: { toString(): string }): bigint => BigInt(value.toString());
+
+    async function readAccountState(account: SignerWithAddress): Promise<SupplyState> {
+      const userBasic = await comet.userBasic(account.address);
+      const userCollateral = await comet.userCollateral(account.address, collateral.address);
+      const liquidatorPoints = await comet.liquidatorPoints(account.address);
+
+      return {
+        principal: toBigInt(userBasic.principal),
+        baseTrackingIndex: toBigInt(userBasic.baseTrackingIndex),
+        baseTrackingAccrued: toBigInt(userBasic.baseTrackingAccrued),
+        assetsIn: toBigInt(userBasic.assetsIn),
+        userBasicReserved: toBigInt(userBasic._reserved),
+        collateralBalance: toBigInt(userCollateral.balance),
+        userCollateralReserved: toBigInt(userCollateral._reserved),
+        collateralTokenBalance: toBigInt(await collateral.balanceOf(account.address)),
+        baseTokenBalance: toBigInt(await base.balanceOf(account.address)),
+        liquidatorNumAbsorbs: toBigInt(liquidatorPoints.numAbsorbs),
+        liquidatorNumAbsorbed: toBigInt(liquidatorPoints.numAbsorbed),
+        liquidatorApproxSpend: toBigInt(liquidatorPoints.approxSpend),
+        liquidatorReserved: toBigInt(liquidatorPoints._reserved),
+      };
+    }
+
+    function prefixState(prefix: string, state: SupplyState): SupplyState {
+      return Object.fromEntries(
+        Object.entries(state).map(([key, value]) => [
+          `${prefix}${key[0].toUpperCase()}${key.slice(1)}`,
+          value,
+        ])
+      );
+    }
+
+    async function readSupplyState(): Promise<SupplyState> {
+      const [aliceState, bobState, charlieState, totalsBasic, totalsCollateral] = await Promise.all([
+        readAccountState(alice),
+        readAccountState(bob),
+        readAccountState(charlie),
+        comet.totalsBasic(),
+        comet.totalsCollateral(collateral.address),
+      ]);
+
+      return {
+        ...prefixState('alice', aliceState),
+        ...prefixState('bob', bobState),
+        ...prefixState('charlie', charlieState),
+        baseSupplyIndex: toBigInt(totalsBasic.baseSupplyIndex),
+        baseBorrowIndex: toBigInt(totalsBasic.baseBorrowIndex),
+        trackingSupplyIndex: toBigInt(totalsBasic.trackingSupplyIndex),
+        trackingBorrowIndex: toBigInt(totalsBasic.trackingBorrowIndex),
+        totalSupplyBase: toBigInt(totalsBasic.totalSupplyBase),
+        totalBorrowBase: toBigInt(totalsBasic.totalBorrowBase),
+        lastAccrualTime: toBigInt(totalsBasic.lastAccrualTime),
+        pauseFlags: toBigInt(totalsBasic.pauseFlags),
+        totalSupplyAsset: toBigInt(totalsCollateral.totalSupplyAsset),
+        totalsCollateralReserved: toBigInt(totalsCollateral._reserved),
+        cometCollateralTokenBalance: toBigInt(await collateral.balanceOf(comet.address)),
+        collateralTokenSupply: toBigInt(await collateral.totalSupply()),
+        cometBaseTokenBalance: toBigInt(await base.balanceOf(comet.address)),
+        baseTokenSupply: toBigInt(await base.totalSupply()),
+        baseReserves: toBigInt(await comet.getReserves()),
+        collateralReserves: toBigInt(await comet.getCollateralReserves(collateral.address)),
+      };
+    }
+
+    function stateDiff(run: SupplyRun): SupplyState {
+      return Object.fromEntries(
+        Object.keys(run.before).map((key) => [key, run.after[key] - run.before[key]])
+      );
+    }
+
+    async function runSupplyScenario(action: () => Promise<ContractTransaction>): Promise<SupplyCase> {
+      await collateral.allocateTo(alice.address, 2n * SUPPLY_AMOUNT);
+      await collateral.connect(alice).approve(comet.address, SUPPLY_AMOUNT);
+
+      const scenarioSnapshot = await snapshot();
+      const controlBefore = await readSupplyState();
+      const controlTransaction = await wait(action());
+      const controlAfter = await readSupplyState();
+
+      await revert(scenarioSnapshot);
+
+      await priceFeed.setRoundData(0, SUPPLY_AMOUNT, 0, 0, 0);
+      const minimumPrice = toBigInt((await priceFeed.latestRoundData())[1]);
+      const minimumPriceBefore = await readSupplyState();
+      const minimumPriceTransaction = await wait(action());
+      const minimumPriceAfter = await readSupplyState();
+
+      return {
+        minimumPrice,
+        control: {
+          before: controlBefore,
+          after: controlAfter,
+          transaction: controlTransaction,
+        },
+        minimumPriceRun: {
+          before: minimumPriceBefore,
+          after: minimumPriceAfter,
+          transaction: minimumPriceTransaction,
+        },
+      };
+    }
+
+    async function runNormalPriceSupplyScenario(action: () => Promise<ContractTransaction>): Promise<SupplyRun> {
+      await collateral.allocateTo(alice.address, SUPPLY_AMOUNT);
+      await collateral.connect(alice).approve(comet.address, SUPPLY_AMOUNT);
+
+      const before = await readSupplyState();
+      const transaction = await wait(action());
+      const after = await readSupplyState();
+
+      return { before, after, transaction };
+    }
+
+    async function resetFixture() {
+      await revert(initialSnapshot);
+      initialSnapshot = await snapshot();
+    }
+
+    function shouldSupplyMinimumCollateral(
+      destinationPrefix: AccountPrefix,
+      destination: () => SignerWithAddress,
+      action: () => Promise<ContractTransaction>,
+      prepare?: () => Promise<unknown>
+    ) {
+      context('when supplying 1 raw unit of collateral', function () {
+        let run: SupplyRun;
+
+        before(async () => {
+          if (prepare) await prepare();
+          run = await runNormalPriceSupplyScenario(action);
+        });
+
+        after(resetFixture);
+
+        it('increases userCollateral balance by 1', async () => {
+          const balanceKey = `${destinationPrefix}CollateralBalance`;
+          expect(run.after[balanceKey]).to.equal(run.before[balanceKey] + SUPPLY_AMOUNT);
+        });
+
+        it('increases totalSupplyAsset by 1', async () => {
+          expect(run.after.totalSupplyAsset).to.equal(run.before.totalSupplyAsset + SUPPLY_AMOUNT);
+        });
+
+        it('emits SupplyCollateral with amount 1', async () => {
+          expect(event(run.transaction, 1)).to.deep.equal({
+            SupplyCollateral: {
+              from: alice.address,
+              dst: destination().address,
+              asset: collateral.address,
+              amount: SUPPLY_AMOUNT,
+            },
+          });
+        });
+
+        it('sets the membership bit for the asset offset', async () => {
+          const assetsInKey = `${destinationPrefix}AssetsIn`;
+          expect(run.after[assetsInKey]).to.equal(run.before[assetsInKey] | assetMask);
+        });
+
+        it('debits the supplier by exactly 1 raw unit', async () => {
+          expect(run.after.aliceCollateralTokenBalance).to.equal(run.before.aliceCollateralTokenBalance - SUPPLY_AMOUNT);
+        });
+
+        it('credits Comet by exactly 1 raw unit', async () => {
+          expect(run.after.cometCollateralTokenBalance).to.equal(run.before.cometCollateralTokenBalance + SUPPLY_AMOUNT);
+        });
+
+        it('changes only collateral accounting, membership, and collateral token balances', async () => {
+          const expectedDiff = Object.fromEntries(
+            Object.keys(run.before).map((key) => [key, 0n])
+          ) as SupplyState;
+          expectedDiff[`${destinationPrefix}AssetsIn`] = assetMask;
+          expectedDiff[`${destinationPrefix}CollateralBalance`] = SUPPLY_AMOUNT;
+          expectedDiff.totalSupplyAsset = SUPPLY_AMOUNT;
+          expectedDiff.aliceCollateralTokenBalance = -SUPPLY_AMOUNT;
+          expectedDiff.cometCollateralTokenBalance = SUPPLY_AMOUNT;
+
+          expect(stateDiff(run)).to.deep.equal(expectedDiff);
+        });
+      });
+
+      context('when supplying 1 raw unit of collateral priced at 1', function () {
+        let supplyCase: SupplyCase;
+
+        before(async () => {
+          if (prepare) await prepare();
+          supplyCase = await runSupplyScenario(action);
+        });
+
+        after(resetFixture);
+
+        it('uses the minimum valid collateral price', async () => {
+          expect(supplyCase.minimumPrice).to.equal(1n);
+        });
+
+        it('credits 1 raw unit to the destination collateral balance', async () => {
+          const { before, after } = supplyCase.minimumPriceRun;
+          const balanceKey = `${destinationPrefix}CollateralBalance`;
+          expect(after[balanceKey]).to.equal(before[balanceKey] + SUPPLY_AMOUNT);
+        });
+
+        it('increases total supplied collateral by 1 raw unit', async () => {
+          const { before, after } = supplyCase.minimumPriceRun;
+          expect(after.totalSupplyAsset).to.equal(before.totalSupplyAsset + SUPPLY_AMOUNT);
+        });
+
+        it('emits SupplyCollateral with amount 1', async () => {
+          expect(event(supplyCase.minimumPriceRun.transaction, 1)).to.deep.equal({
+            SupplyCollateral: {
+              from: alice.address,
+              dst: destination().address,
+              asset: collateral.address,
+              amount: SUPPLY_AMOUNT,
+            },
+          });
+        });
+
+        it('sets the destination collateral membership bit', async () => {
+          const { before, after } = supplyCase.minimumPriceRun;
+          const assetsInKey = `${destinationPrefix}AssetsIn`;
+          expect(after[assetsInKey]).to.equal(before[assetsInKey] | assetMask);
+        });
+
+        it('debits the supplier by exactly 1 raw unit', async () => {
+          const { before, after } = supplyCase.minimumPriceRun;
+          expect(after.aliceCollateralTokenBalance).to.equal(before.aliceCollateralTokenBalance - SUPPLY_AMOUNT);
+        });
+
+        it('credits Comet by exactly 1 raw unit', async () => {
+          const { before, after } = supplyCase.minimumPriceRun;
+          expect(after.cometCollateralTokenBalance).to.equal(before.cometCollateralTokenBalance + SUPPLY_AMOUNT);
+        });
+
+        it('emits the collateral token Transfer', async () => {
+          expect(event(supplyCase.minimumPriceRun.transaction, 0)).to.deep.equal({
+            Transfer: {
+              from: alice.address,
+              to: comet.address,
+              amount: SUPPLY_AMOUNT,
+            },
+          });
+        });
+
+        it('produces the same complete state diff as the normal-price control run', async () => {
+          expect(stateDiff(supplyCase.minimumPriceRun)).to.deep.equal(stateDiff(supplyCase.control));
+        });
+
+        it('changes only collateral accounting, membership, and collateral token balances', async () => {
+          const expectedDiff = Object.fromEntries(
+            Object.keys(supplyCase.minimumPriceRun.before).map((key) => [key, 0n])
+          ) as SupplyState;
+          expectedDiff[`${destinationPrefix}AssetsIn`] = assetMask;
+          expectedDiff[`${destinationPrefix}CollateralBalance`] = SUPPLY_AMOUNT;
+          expectedDiff.totalSupplyAsset = SUPPLY_AMOUNT;
+          expectedDiff.aliceCollateralTokenBalance = -SUPPLY_AMOUNT;
+          expectedDiff.cometCollateralTokenBalance = SUPPLY_AMOUNT;
+
+          expect(stateDiff(supplyCase.minimumPriceRun)).to.deep.equal(expectedDiff);
+        });
+      });
+    }
+
+    before(async () => {
+      const protocol = await makeProtocol({
+        base: 'USDC',
+        baseBorrowMin: 0,
+        assets: {
+          USDC: { decimals: 6, initialPrice: 1 },
+          TOKEN: {
+            decimals: collateralDecimals,
+            initialPrice: 85_000,
+            borrowCF: exp(0.8, 18),
+            liquidateCF: exp(0.85, 18),
+            liquidationFactor: exp(0.9, 18),
+            supplyCap: exp(100, collateralDecimals),
+          },
+        },
+      });
+
+      comet = protocol.cometWithExtendedAssetList;
+      collateral = protocol.tokens.TOKEN as FaucetToken;
+      base = protocol.tokens.USDC as FaucetToken;
+      priceFeed = protocol.priceFeeds.TOKEN as SimplePriceFeed;
+      [alice, bob, charlie] = protocol.users;
+
+      const assetInfo = await comet.getAssetInfoByAddress(collateral.address);
+      assetMask = 1n << toBigInt(assetInfo.offset);
+      initialSnapshot = await snapshot();
+    });
+
+    after(async () => {
+      await revert(initialSnapshot);
+    });
+
+    describe('supply', function () {
+      shouldSupplyMinimumCollateral(
+        'alice',
+        () => alice,
+        () => comet.connect(alice).supply(collateral.address, SUPPLY_AMOUNT)
+      );
+    });
+
+    describe('supplyTo', function () {
+      shouldSupplyMinimumCollateral(
+        'bob',
+        () => bob,
+        () => comet.connect(alice).supplyTo(bob.address, collateral.address, SUPPLY_AMOUNT)
+      );
+    });
+
+    describe('supplyFrom', function () {
+      shouldSupplyMinimumCollateral(
+        'bob',
+        () => bob,
+        () => comet.connect(charlie).supplyFrom(alice.address, bob.address, collateral.address, SUPPLY_AMOUNT),
+        () => wait(comet.connect(alice).allow(charlie.address, true))
+      );
+    });
+
+    context('given totalSupplyAsset equals supplyCap minus 1', function () {
+      let supplyCap: bigint;
+      let run: SupplyRun;
+
+      before(async () => {
+        supplyCap = toBigInt((await comet.getAssetInfoByAddress(collateral.address)).supplyCap);
+        await bumpTotalsCollateral(comet, collateral, supplyCap - SUPPLY_AMOUNT);
+        run = await runNormalPriceSupplyScenario(
+          () => comet.connect(alice).supply(collateral.address, SUPPLY_AMOUNT)
+        );
+      });
+
+      after(resetFixture);
+
+      it('starts 1 raw unit below the supply cap', async () => {
+        expect(run.before.totalSupplyAsset).to.equal(supplyCap - SUPPLY_AMOUNT);
+      });
+
+      context('when supplying 1 raw unit', function () {
+        it('succeeds', async () => {
+          expect(run.transaction.receipt.status).to.equal(1);
+        });
+
+        it('makes totalSupplyAsset equal supplyCap', async () => {
+          expect(run.after.totalSupplyAsset).to.equal(supplyCap);
+        });
+      });
+    });
+
+    context('given totalSupplyAsset equals supplyCap', function () {
+      let supplyCap: bigint;
+      let stateBefore: SupplyState;
+      let stateAfter: SupplyState;
+
+      before(async () => {
+        supplyCap = toBigInt((await comet.getAssetInfoByAddress(collateral.address)).supplyCap);
+        await bumpTotalsCollateral(comet, collateral, supplyCap);
+        await collateral.allocateTo(alice.address, SUPPLY_AMOUNT);
+        await collateral.connect(alice).approve(comet.address, SUPPLY_AMOUNT);
+
+        stateBefore = await readSupplyState();
+        await expect(comet.connect(alice).supply(collateral.address, SUPPLY_AMOUNT)).to.be.reverted;
+        stateAfter = await readSupplyState();
+      });
+
+      after(resetFixture);
+
+      it('starts at the supply cap', async () => {
+        expect(stateBefore.totalSupplyAsset).to.equal(supplyCap);
+      });
+
+      context('when supplying 1 raw unit', function () {
+        it('reverts with SupplyCapExceeded', async () => {
+          await expect(
+            comet.connect(alice).callStatic.supply(collateral.address, SUPPLY_AMOUNT)
+          ).to.be.revertedWith("custom error 'SupplyCapExceeded()'");
+        });
+
+        it('leaves all state unchanged', async () => {
+          expect(stateAfter).to.deep.equal(stateBefore);
+        });
+      });
+    });
+  });
+}
+
+
+function runCollateralOffsetSupplyTests(collateralDecimals: number) {
+  describe(`Minimum collateral amount at boundary offsets (${collateralDecimals} decimals)`, function () {
+    const SUPPLY_AMOUNT = 1n;
+    const ASSET_COUNT = 24;
+
+    type OffsetState = Record<string, bigint>;
+
+    interface OffsetRun {
+      offset: bigint;
+      before: OffsetState;
+      after: OffsetState;
+    }
+
+    let comet: CometHarnessInterfaceExtendedAssetList;
+    let tokens: Record<string, FaucetToken>;
+    let alice: SignerWithAddress;
+    let initialSnapshot: string;
+
+    const snapshot = (): Promise<string> => ethers.provider.send('evm_snapshot', []);
+    const revert = (id: string): Promise<boolean> => ethers.provider.send('evm_revert', [id]);
+    const toBigInt = (value: { toString(): string }): bigint => BigInt(value.toString());
+
+    async function readOffsetState(asset: FaucetToken): Promise<OffsetState> {
+      const userBasic = await comet.userBasic(alice.address);
+      const userCollateral = await comet.userCollateral(alice.address, asset.address);
+      const totalsCollateral = await comet.totalsCollateral(asset.address);
+
+      return {
+        assetsIn: toBigInt(userBasic.assetsIn),
+        userBasicReserved: toBigInt(userBasic._reserved),
+        principal: toBigInt(userBasic.principal),
+        collateralBalance: toBigInt(userCollateral.balance),
+        totalSupplyAsset: toBigInt(totalsCollateral.totalSupplyAsset),
+        aliceTokenBalance: toBigInt(await asset.balanceOf(alice.address)),
+        cometTokenBalance: toBigInt(await asset.balanceOf(comet.address)),
+      };
+    }
+
+    function stateDiff(run: OffsetRun): OffsetState {
+      return Object.fromEntries(
+        Object.keys(run.before).map((key) => [key, run.after[key] - run.before[key]])
+      );
+    }
+
+    async function runOffsetSupply(asset: FaucetToken): Promise<OffsetRun> {
+      await asset.allocateTo(alice.address, SUPPLY_AMOUNT);
+      await asset.connect(alice).approve(comet.address, SUPPLY_AMOUNT);
+
+      const offset = toBigInt((await comet.getAssetInfoByAddress(asset.address)).offset);
+      const before = await readOffsetState(asset);
+      await wait(comet.connect(alice).supply(asset.address, SUPPLY_AMOUNT));
+      const after = await readOffsetState(asset);
+
+      return { offset, before, after };
+    }
+
+    async function resetFixture() {
+      await revert(initialSnapshot);
+      initialSnapshot = await snapshot();
+    }
+
+    before(async () => {
+      const assets = {};
+      for (let i = 0; i < ASSET_COUNT; i++) {
+        assets[`ASSET${i}`] = {
+          decimals: collateralDecimals,
+          initialPrice: 1,
+          supplyCap: exp(100, collateralDecimals),
+        };
+      }
+      assets['USDC'] = { decimals: 6, initialPrice: 1 };
+
+      const protocol = await makeProtocol({ base: 'USDC', baseBorrowMin: 0, assets });
+
+      comet = protocol.cometWithExtendedAssetList;
+      tokens = protocol.tokens as Record<string, FaucetToken>;
+      [alice] = protocol.users;
+      initialSnapshot = await snapshot();
+    });
+
+    after(async () => {
+      await revert(initialSnapshot);
+    });
+
+    context('given the asset has a boundary offset', function () {
+      context('when the offset is 15 and 1 raw unit is supplied', function () {
+        let run: OffsetRun;
+
+        before(async () => {
+          run = await runOffsetSupply(tokens.ASSET15);
+        });
+
+        after(resetFixture);
+
+        it('uses the asset at offset 15', async () => {
+          expect(run.offset).to.equal(15n);
+        });
+
+        it('sets bit 15 of assetsIn', async () => {
+          expect(run.after.assetsIn).to.equal(run.before.assetsIn | (1n << 15n));
+        });
+
+        it('leaves userBasic reserved unchanged', async () => {
+          expect(run.after.userBasicReserved).to.equal(run.before.userBasicReserved);
+        });
+
+        it('changes only membership, collateral accounting and token balances', async () => {
+          expect(stateDiff(run)).to.deep.equal({
+            assetsIn: 1n << 15n,
+            userBasicReserved: 0n,
+            principal: 0n,
+            collateralBalance: SUPPLY_AMOUNT,
+            totalSupplyAsset: SUPPLY_AMOUNT,
+            aliceTokenBalance: -SUPPLY_AMOUNT,
+            cometTokenBalance: SUPPLY_AMOUNT,
+          });
+        });
+      });
+
+      context('when the offset is 16 and 1 raw unit is supplied', function () {
+        let run: OffsetRun;
+
+        before(async () => {
+          run = await runOffsetSupply(tokens.ASSET16);
+        });
+
+        after(resetFixture);
+
+        it('uses the asset at offset 16', async () => {
+          expect(run.offset).to.equal(16n);
+        });
+
+        it('sets bit 0 of userBasic reserved', async () => {
+          expect(run.after.userBasicReserved).to.equal(run.before.userBasicReserved | 1n);
+        });
+
+        it('leaves assetsIn unchanged', async () => {
+          expect(run.after.assetsIn).to.equal(run.before.assetsIn);
+        });
+
+        it('changes only membership, collateral accounting and token balances', async () => {
+          expect(stateDiff(run)).to.deep.equal({
+            assetsIn: 0n,
+            userBasicReserved: 1n,
+            principal: 0n,
+            collateralBalance: SUPPLY_AMOUNT,
+            totalSupplyAsset: SUPPLY_AMOUNT,
+            aliceTokenBalance: -SUPPLY_AMOUNT,
+            cometTokenBalance: SUPPLY_AMOUNT,
+          });
+        });
+      });
+
+      context('when the offset is 23 and 1 raw unit is supplied', function () {
+        let run: OffsetRun;
+
+        before(async () => {
+          run = await runOffsetSupply(tokens.ASSET23);
+        });
+
+        after(resetFixture);
+
+        it('uses the asset at offset 23', async () => {
+          expect(run.offset).to.equal(23n);
+        });
+
+        it('sets bit 7 of userBasic reserved', async () => {
+          expect(run.after.userBasicReserved).to.equal(run.before.userBasicReserved | (1n << 7n));
+        });
+
+        it('leaves assetsIn unchanged', async () => {
+          expect(run.after.assetsIn).to.equal(run.before.assetsIn);
+        });
+
+        it('changes only membership, collateral accounting and token balances', async () => {
+          expect(stateDiff(run)).to.deep.equal({
+            assetsIn: 0n,
+            userBasicReserved: 1n << 7n,
+            principal: 0n,
+            collateralBalance: SUPPLY_AMOUNT,
+            totalSupplyAsset: SUPPLY_AMOUNT,
+            aliceTokenBalance: -SUPPLY_AMOUNT,
+            cometTokenBalance: SUPPLY_AMOUNT,
+          });
+        });
+      });
+    });
+  });
+}
+
+// MinValues_SupplyBase and MinValues_Repay share the fixture and helpers, so one function registers both trees
+[6, 8, 18].forEach(runMinimumBaseSupplyTests);
+
+function runMinimumBaseSupplyTests(baseDecimals: number) {
+  describe(`Minimum base amount supply and repay (${baseDecimals} decimals)`, function () {
+    const SUPPLY_AMOUNT = 1n;
+    const NORMAL_PRICE = exp(1, 8);
+    const MINIMUM_PRICE = 1n;
+    const BASE_INDEX_SCALE = exp(1, 15);
+
+    type BaseState = Record<string, bigint>;
+    type EventArgs = Record<string, bigint | string>;
+
+    interface BaseRun {
+      before: BaseState;
+      after: BaseState;
+      transaction: TransactionResponseExt;
+    }
+
+    interface Position {
+      baseSupplyIndex?: bigint;
+      baseBorrowIndex?: bigint;
+      principal?: bigint;
+    }
+
+    let comet: CometHarnessInterfaceExtendedAssetList;
+    let base: FaucetToken;
+    let basePriceFeed: SimplePriceFeed;
+    let alice: SignerWithAddress;
+    let now: bigint;
+    let initialSnapshot: string;
+
+    const snapshot = (): Promise<string> => ethers.provider.send('evm_snapshot', []);
+    const revert = (id: string): Promise<boolean> => ethers.provider.send('evm_revert', [id]);
+    const toBigInt = (value: { toString(): string }): bigint => BigInt(value.toString());
+    const eventCount = (transaction: TransactionResponseExt): number => transaction.receipt['events'].length;
+    const eventArgs = (transaction: TransactionResponseExt, index: number, name: string): EventArgs =>
+      (event(transaction, index) as Record<string, EventArgs>)[name];
+
+    // F1 and F3 for supply, F2 and F3 for borrow (README section 4)
+    const principalValueSupply = (presentValue: bigint, index: bigint): bigint => presentValue * BASE_INDEX_SCALE / index;
+    const presentValueSupply = (principal: bigint, index: bigint): bigint => principal * index / BASE_INDEX_SCALE;
+    const presentValueBorrow = (principal: bigint, index: bigint): bigint => principal * index / BASE_INDEX_SCALE;
+
+    async function readBaseState(): Promise<BaseState> {
+      const [userBasic, totalsBasic] = await Promise.all([
+        comet.userBasic(alice.address),
+        comet.totalsBasic(),
+      ]);
+
+      return {
+        alicePrincipal: toBigInt(userBasic.principal),
+        aliceBaseTrackingIndex: toBigInt(userBasic.baseTrackingIndex),
+        aliceBaseTrackingAccrued: toBigInt(userBasic.baseTrackingAccrued),
+        aliceAssetsIn: toBigInt(userBasic.assetsIn),
+        aliceUserBasicReserved: toBigInt(userBasic._reserved),
+        aliceBalanceOf: toBigInt(await comet.balanceOf(alice.address)),
+        aliceBorrowBalanceOf: toBigInt(await comet.borrowBalanceOf(alice.address)),
+        aliceBaseTokenBalance: toBigInt(await base.balanceOf(alice.address)),
+        baseSupplyIndex: toBigInt(totalsBasic.baseSupplyIndex),
+        baseBorrowIndex: toBigInt(totalsBasic.baseBorrowIndex),
+        trackingSupplyIndex: toBigInt(totalsBasic.trackingSupplyIndex),
+        trackingBorrowIndex: toBigInt(totalsBasic.trackingBorrowIndex),
+        totalSupplyBase: toBigInt(totalsBasic.totalSupplyBase),
+        totalBorrowBase: toBigInt(totalsBasic.totalBorrowBase),
+        lastAccrualTime: toBigInt(totalsBasic.lastAccrualTime),
+        cometBaseTokenBalance: toBigInt(await base.balanceOf(comet.address)),
+        baseTokenSupply: toBigInt(await base.totalSupply()),
+        baseReserves: toBigInt(await comet.getReserves()),
+      };
+    }
+
+    function stateDiff(run: { before: BaseState, after: BaseState }): BaseState {
+      return Object.fromEntries(
+        Object.keys(run.before).map((key) => [key, run.after[key] - run.before[key]])
+      );
+    }
+
+    function expectedDiff(run: BaseRun, changes: BaseState): BaseState {
+      const diff = Object.fromEntries(
+        Object.keys(run.before).map((key) => [key, 0n])
+      ) as BaseState;
+      diff.aliceBaseTokenBalance = -SUPPLY_AMOUNT;
+      diff.cometBaseTokenBalance = SUPPLY_AMOUNT;
+      return { ...diff, ...changes };
+    }
+
+    // Totals mirror the single position, time stays frozen, so supply does not accrue (README 3.6)
+    async function openPosition({ baseSupplyIndex = BASE_INDEX_SCALE, baseBorrowIndex = BASE_INDEX_SCALE, principal = 0n }: Position) {
+      await setTotalsBasic(comet, {
+        baseSupplyIndex,
+        baseBorrowIndex,
+        totalSupplyBase: principal > 0n ? principal : 0n,
+        totalBorrowBase: principal < 0n ? -principal : 0n,
+        lastAccrualTime: now,
+      });
+      await comet.setBasePrincipal(alice.address, principal);
+      await base.allocateTo(alice.address, SUPPLY_AMOUNT);
+      await base.connect(alice).approve(comet.address, SUPPLY_AMOUNT);
+    }
+
+    async function runSupply(): Promise<BaseRun> {
+      const before = await readBaseState();
+      const transaction = await wait(comet.connect(alice).supply(base.address, SUPPLY_AMOUNT));
+      const after = await readBaseState();
+      return { before, after, transaction };
+    }
+
+    async function resetFixture() {
+      await revert(initialSnapshot);
+      initialSnapshot = await snapshot();
+    }
+
+    before(async () => {
+      const protocol = await makeProtocol({
+        base: 'USDC',
+        baseBorrowMin: 0,
+        assets: {
+          USDC: { decimals: baseDecimals, initialPrice: 1 },
+          TOKEN: { decimals: 18, initialPrice: 1 },
+        },
+      });
+
+      comet = protocol.cometWithExtendedAssetList;
+      base = protocol.tokens.USDC as FaucetToken;
+      basePriceFeed = protocol.priceFeeds.USDC as SimplePriceFeed;
+      [alice] = protocol.users;
+
+      now = toBigInt(await comet.getNow());
+      await comet.setNow(now);
+      await setTotalsBasic(comet, { lastAccrualTime: now });
+
+      initialSnapshot = await snapshot();
+    });
+
+    after(async () => {
+      await revert(initialSnapshot);
+    });
+
+    describe('Minimum base supply', function () {
+      context('given baseSupplyIndex is above the initial index', function () {
+        const BASE_SUPPLY_INDEX = exp(1.1, 15);
+
+        context('when supplying 1 raw unit to an account with zero principal', function () {
+          let run: BaseRun;
+
+          before(async () => {
+            await openPosition({ baseSupplyIndex: BASE_SUPPLY_INDEX });
+            run = await runSupply();
+          });
+
+          after(resetFixture);
+
+          it('keeps principal at 0', async () => {
+            // Because floor of 1e15 over the index is 0 for any index from 1e15 plus 1.
+            expect(run.after.alicePrincipal).to.equal(0n);
+          });
+
+          it('keeps totalSupplyBase unchanged', async () => {
+            expect(run.after.totalSupplyBase).to.equal(run.before.totalSupplyBase);
+          });
+
+          it('emits Supply with amount 1', async () => {
+            expect(event(run.transaction, 1)).to.deep.equal({
+              Supply: {
+                from: alice.address,
+                dst: alice.address,
+                amount: SUPPLY_AMOUNT,
+              },
+            });
+          });
+
+          it('does not emit Transfer from the zero address', async () => {
+            expect(eventCount(run.transaction)).to.equal(2);
+          });
+
+          it('debits the user by exactly 1 raw unit', async () => {
+            expect(run.after.aliceBaseTokenBalance).to.equal(run.before.aliceBaseTokenBalance - SUPPLY_AMOUNT);
+          });
+
+          it('credits Comet by exactly 1 raw unit', async () => {
+            expect(run.after.cometBaseTokenBalance).to.equal(run.before.cometBaseTokenBalance + SUPPLY_AMOUNT);
+          });
+
+          it('reports balanceOf of the user as 0', async () => {
+            expect(run.after.aliceBalanceOf).to.equal(0n);
+          });
+
+          it('increases getReserves by 1', async () => {
+            expect(run.after.baseReserves).to.equal(run.before.baseReserves + SUPPLY_AMOUNT);
+          });
+
+          it('changes only token balances and reserves', async () => {
+            expect(stateDiff(run)).to.deep.equal(expectedDiff(run, { baseReserves: SUPPLY_AMOUNT }));
+          });
+        });
+
+        context('when the index is exactly 1e15 plus 1', function () {
+          let run: BaseRun;
+
+          before(async () => {
+            await openPosition({ baseSupplyIndex: BASE_INDEX_SCALE + 1n });
+            run = await runSupply();
+          });
+
+          after(resetFixture);
+
+          it('already rounds the 1 raw unit principal to 0', async () => {
+            // Boundary pair with SB-01, where the initial index 1e15 gives principal 1
+            expect(run.after.alicePrincipal).to.equal(0n);
+          });
+
+          it('keeps totalSupplyBase unchanged', async () => {
+            expect(run.after.totalSupplyBase).to.equal(run.before.totalSupplyBase);
+          });
+        });
+      });
+
+      context('when supplying 1 raw unit to an account with positive principal', function () {
+        const PRINCIPAL = 10n;
+
+        // The step cannot be crossed above the initial index: the principal step is worth more than 1 raw unit
+        // and the present value rounds down, so floor(p * Is / S) + 1 < (p + 1) * Is / S for every Is above S.
+        // The crossing branch therefore runs at the initial index, the only reachable state where it happens.
+        context('given the added unit crosses a principal step', function () {
+          let run: BaseRun;
+
+          before(async () => {
+            await openPosition({ principal: PRINCIPAL });
+            run = await runSupply();
+          });
+
+          after(resetFixture);
+
+          it('crosses a principal step', async () => {
+            const expected = principalValueSupply(presentValueSupply(PRINCIPAL, BASE_INDEX_SCALE) + SUPPLY_AMOUNT, BASE_INDEX_SCALE);
+            expect(expected).to.equal(PRINCIPAL + 1n);
+          });
+
+          it('increases principal by 1', async () => {
+            expect(run.after.alicePrincipal).to.equal(run.before.alicePrincipal + 1n);
+          });
+
+          it('emits Transfer from the zero address', async () => {
+            expect(eventArgs(run.transaction, 2, 'Transfer')).to.deep.equal({
+              from: ethers.constants.AddressZero,
+              to: alice.address,
+              amount: SUPPLY_AMOUNT,
+            });
+          });
+
+          it('changes only the principal, total supply and token balances', async () => {
+            expect(stateDiff(run)).to.deep.equal(expectedDiff(run, {
+              alicePrincipal: 1n,
+              aliceBalanceOf: SUPPLY_AMOUNT,
+              totalSupplyBase: 1n,
+            }));
+          });
+        });
+
+        context('given the added unit does not cross a principal step', function () {
+          const BASE_SUPPLY_INDEX = exp(1.1, 15);
+
+          let run: BaseRun;
+
+          before(async () => {
+            await openPosition({ baseSupplyIndex: BASE_SUPPLY_INDEX, principal: PRINCIPAL });
+            run = await runSupply();
+          });
+
+          after(resetFixture);
+
+          it('does not cross a principal step', async () => {
+            const expected = principalValueSupply(presentValueSupply(PRINCIPAL, BASE_SUPPLY_INDEX) + SUPPLY_AMOUNT, BASE_SUPPLY_INDEX);
+            expect(expected).to.equal(PRINCIPAL);
+          });
+
+          it('keeps principal unchanged', async () => {
+            expect(run.after.alicePrincipal).to.equal(run.before.alicePrincipal);
+          });
+
+          it('does not emit Transfer from the zero address', async () => {
+            expect(eventCount(run.transaction)).to.equal(2);
+          });
+
+          it('increases getReserves by 1', async () => {
+            expect(run.after.baseReserves).to.equal(run.before.baseReserves + SUPPLY_AMOUNT);
+          });
+
+          it('changes only token balances and reserves', async () => {
+            expect(stateDiff(run)).to.deep.equal(expectedDiff(run, { baseReserves: SUPPLY_AMOUNT }));
+          });
+        });
+      });
+
+      context('given the base price is 1', function () {
+        let controlPrice: bigint;
+        let minimumPrice: bigint;
+        let control: BaseRun;
+        let minimumPriceRun: BaseRun;
+        let sentinelRun: BaseRun;
+
+        before(async () => {
+          await openPosition({});
+
+          const scenarioSnapshot = await snapshot();
+          controlPrice = toBigInt(await comet.getPrice(basePriceFeed.address));
+          control = await runSupply();
+          await revert(scenarioSnapshot);
+
+          const minimumPriceSnapshot = await snapshot();
+          await basePriceFeed.setRoundData(0, MINIMUM_PRICE, 0, 0, 0);
+          minimumPrice = toBigInt(await comet.getPrice(basePriceFeed.address));
+          minimumPriceRun = await runSupply();
+          await revert(minimumPriceSnapshot);
+
+          // Sentinel from README 3.4: any read of a 0 answer reverts with BadPrice
+          await basePriceFeed.setRoundData(0, 0, 0, 0, 0);
+          sentinelRun = await runSupply();
+        });
+
+        after(resetFixture);
+
+        it('runs the control at the normal base price', async () => {
+          expect(controlPrice).to.equal(NORMAL_PRICE);
+        });
+
+        it('uses the minimum valid base price', async () => {
+          expect(minimumPrice).to.equal(MINIMUM_PRICE);
+        });
+
+        context('when supplying 1 raw unit', function () {
+          it('produces the same state diff as at the normal base price', async () => {
+            expect(stateDiff(minimumPriceRun)).to.deep.equal(stateDiff(control));
+          });
+
+          it('does not read the base price feed', async () => {
+            // Sentinel check from README section 3.4.
+            expect(sentinelRun.after.alicePrincipal).to.equal(SUPPLY_AMOUNT);
+          });
+        });
+      });
+    });
+
+    describe('Minimum repay', function () {
+      context('given the borrower has a debt above 1 raw unit', function () {
+        const BASE_BORROW_INDEX = exp(1.05, 15);
+
+        context('given the repay unit reduces the borrow principal', function () {
+          const PRINCIPAL = -10n;
+
+          let run: BaseRun;
+
+          before(async () => {
+            await openPosition({ baseBorrowIndex: BASE_BORROW_INDEX, principal: PRINCIPAL });
+            run = await runSupply();
+          });
+
+          after(resetFixture);
+
+          context('when repaying 1 raw unit', function () {
+            it('decreases the principal magnitude by 1', async () => {
+              expect(run.after.alicePrincipal).to.equal(PRINCIPAL + 1n);
+            });
+
+            it('decreases totalBorrowBase by 1', async () => {
+              expect(run.after.totalBorrowBase).to.equal(run.before.totalBorrowBase - 1n);
+            });
+
+            it('emits Supply with amount 1', async () => {
+              expect(eventArgs(run.transaction, 1, 'Supply').amount).to.equal(SUPPLY_AMOUNT);
+            });
+
+            it('debits the user by exactly 1 raw unit', async () => {
+              expect(run.after.aliceBaseTokenBalance).to.equal(run.before.aliceBaseTokenBalance - SUPPLY_AMOUNT);
+            });
+
+            it('credits Comet by exactly 1 raw unit', async () => {
+              expect(run.after.cometBaseTokenBalance).to.equal(run.before.cometBaseTokenBalance + SUPPLY_AMOUNT);
+            });
+
+            it('changes only the principal, total borrow and token balances', async () => {
+              const debtBefore = presentValueBorrow(-PRINCIPAL, BASE_BORROW_INDEX);
+              const debtAfter = presentValueBorrow(-PRINCIPAL - 1n, BASE_BORROW_INDEX);
+              expect(stateDiff(run)).to.deep.equal(expectedDiff(run, {
+                alicePrincipal: 1n,
+                aliceBorrowBalanceOf: debtAfter - debtBefore,
+                totalBorrowBase: -1n,
+                baseReserves: SUPPLY_AMOUNT + debtAfter - debtBefore,
+              }));
+            });
+          });
+        });
+
+        context('given the repay unit is absorbed by borrow rounding', function () {
+          // At Ib 1.05e15, p = 20 is absorbed: D = 21 and ceil(20 * 1e15 / 1.05e15) = 20
+          const PRINCIPAL = -20n;
+
+          let run: BaseRun;
+
+          before(async () => {
+            await openPosition({ baseBorrowIndex: BASE_BORROW_INDEX, principal: PRINCIPAL });
+            run = await runSupply();
+          });
+
+          after(resetFixture);
+
+          context('when repaying 1 raw unit', function () {
+            it('emits Supply with amount 1', async () => {
+              expect(eventArgs(run.transaction, 1, 'Supply').amount).to.equal(SUPPLY_AMOUNT);
+            });
+
+            it('leaves the principal unchanged', async () => {
+              expect(run.after.alicePrincipal).to.equal(run.before.alicePrincipal);
+            });
+
+            it('leaves totalBorrowBase unchanged', async () => {
+              expect(run.after.totalBorrowBase).to.equal(run.before.totalBorrowBase);
+            });
+
+            it('leaves borrowBalanceOf unchanged', async () => {
+              expect(run.after.aliceBorrowBalanceOf).to.equal(run.before.aliceBorrowBalanceOf);
+            });
+
+            it('debits the user by exactly 1 raw unit', async () => {
+              expect(run.after.aliceBaseTokenBalance).to.equal(run.before.aliceBaseTokenBalance - SUPPLY_AMOUNT);
+            });
+
+            it('credits Comet by exactly 1 raw unit', async () => {
+              expect(run.after.cometBaseTokenBalance).to.equal(run.before.cometBaseTokenBalance + SUPPLY_AMOUNT);
+            });
+
+            it('increases getReserves by 1', async () => {
+              expect(run.after.baseReserves).to.equal(run.before.baseReserves + SUPPLY_AMOUNT);
+            });
+
+            it('changes only token balances and reserves', async () => {
+              expect(stateDiff(run)).to.deep.equal(expectedDiff(run, { baseReserves: SUPPLY_AMOUNT }));
+            });
+          });
+        });
+      });
+
+      context('given the borrower principal is minus 1', function () {
+        context('given baseBorrowIndex is below twice the initial index', function () {
+          const BASE_BORROW_INDEX = exp(1.5, 15);
+
+          let run: BaseRun;
+
+          before(async () => {
+            await openPosition({ baseBorrowIndex: BASE_BORROW_INDEX, principal: -1n });
+            run = await runSupply();
+          });
+
+          after(resetFixture);
+
+          context('when repaying 1 raw unit', function () {
+            it('sets principal to 0', async () => {
+              expect(run.after.alicePrincipal).to.equal(0n);
+            });
+
+            it('decreases totalBorrowBase by 1', async () => {
+              expect(run.after.totalBorrowBase).to.equal(run.before.totalBorrowBase - 1n);
+            });
+
+            it('reports borrowBalanceOf as 0', async () => {
+              expect(run.after.aliceBorrowBalanceOf).to.equal(0n);
+            });
+
+            it('leaves no dust in the position', async () => {
+              expect(run.after.aliceBalanceOf).to.equal(0n);
+              expect(run.after.totalBorrowBase).to.equal(0n);
+            });
+
+            it('changes only the principal, total borrow and token balances', async () => {
+              expect(stateDiff(run)).to.deep.equal(expectedDiff(run, {
+                alicePrincipal: 1n,
+                aliceBorrowBalanceOf: -1n,
+                totalBorrowBase: -1n,
+              }));
+            });
+          });
+        });
+
+        context('given baseBorrowIndex is at least twice the initial index', function () {
+          const BASE_BORROW_INDEX = 2n * BASE_INDEX_SCALE;
+
+          let run: BaseRun;
+
+          before(async () => {
+            await openPosition({ baseBorrowIndex: BASE_BORROW_INDEX, principal: -1n });
+            run = await runSupply();
+          });
+
+          after(resetFixture);
+
+          context('when repaying 1 raw unit', function () {
+            it('leaves principal at minus 1', async () => {
+              // RP-02 falls into R1 absorption: D = 2 and ceil(1 * 1e15 / 2e15) = 1
+              expect(run.after.alicePrincipal).to.equal(-1n);
+            });
+
+            it('increases getReserves by 1', async () => {
+              expect(run.after.baseReserves).to.equal(run.before.baseReserves + SUPPLY_AMOUNT);
+            });
+
+            it('changes only token balances and reserves', async () => {
+              expect(stateDiff(run)).to.deep.equal(expectedDiff(run, { baseReserves: SUPPLY_AMOUNT }));
+            });
+          });
+        });
+      });
+    });
+  });
+}
