@@ -154,7 +154,7 @@ export default class CometActor {
     isAllowed: boolean;
     nonce: BigNumberish;
     expiry: number;
-    chainId: number;
+    chainId: BigNumberish;
   }): Promise<Signature> {
     const comet = await this.context.getComet();
     const domain = {
@@ -187,7 +187,7 @@ export default class CometActor {
     isAllowed: boolean;
     nonce: BigNumberish;
     expiry: number;
-    signature: Signature;
+    signature: { v: number; r: string; s: string };
   }): Promise<ContractTransactionReceipt> {
     const comet = await this.context.getComet();
     return waitForReceipt(

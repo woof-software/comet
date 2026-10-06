@@ -3,10 +3,12 @@
 // - Signature validation failures (tampered args, nonce, expiry, ECDSA, chain id)
 // - Operator actions on behalf of the owner (supplyFrom, withdrawFrom, transferAssetFrom)
 
-import { CometContext, scenario } from './context/CometContext.js';
+import type { CometContext } from './context/CometContext.js';
+import { scenario } from './context/CometContext.js';
 import { expectApproximately, expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils/index.js';
 import { expect } from 'chai';
-import { constants, ethers, Signature } from 'ethers';
+import { MaxUint256, Signature, ZeroAddress } from 'ethers';
+import { getHardhatEthers } from '../plugins/deployment_manager/hardhat3/runtime.js';
 import CometActor, { types as AUTHORIZATION_TYPES } from './context/CometActor.js';
 import { getConfigForScenario } from './utils/scenarioHelper.js';
 
@@ -24,12 +26,12 @@ async function signAuthorizationWithDomain(
     name: await comet.name(),
     version: await comet.version(),
     chainId,
-    verifyingContract: comet.address,
+    verifyingContract: await comet.getAddress(),
     ...domainOverride,
   };
   const value = { owner: owner.address, manager, isAllowed, nonce, expiry };
-  const rawSignature = await owner.signer._signTypedData(domain, AUTHORIZATION_TYPES, value);
-  return ethers.utils.splitSignature(rawSignature);
+  const rawSignature = await owner.signer.signTypedData(domain, AUTHORIZATION_TYPES, value);
+  return Signature.from(rawSignature);
 }
 
 
@@ -94,8 +96,8 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
     // allowBySig drives the ERC20-style allowance view: max when allowed.
-    expect(await comet.allowance(albert.address, betty.address)).to.equal(constants.MaxUint256);
-    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
+    expect(await comet.allowance(albert.address, betty.address)).to.equal(MaxUint256);
+    expect(await comet.userNonce(albert.address)).to.equal((nonce + 1n));
 
     return txn; // return txn to measure gas
   }
@@ -239,7 +241,7 @@ scenario(
         owner: albert.address,
         manager: betty.address,
         isAllowed: true,
-        nonce: nonce.add(1), // altered nonce
+        nonce: (nonce + 1n), // altered nonce
         expiry,
         signature,
       }),
@@ -296,7 +298,7 @@ scenario(
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
     const nonce = await comet.userNonce(albert.address);
-    const invalidNonce = nonce.add(1);
+    const invalidNonce = (nonce + 1n);
     const expiry = (await world.timestamp()) + 10;
 
     const signature = await albert.signAuthorization({
@@ -366,7 +368,7 @@ scenario(
       'BadNonce()'
     );
 
-    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
+    expect(await comet.userNonce(albert.address)).to.equal((nonce + 1n));
   }
 );
 
@@ -425,7 +427,7 @@ scenario(
       chainId: await world.chainId(),
     });
 
-    signature.v = 26;
+    const invalidSignature = { v: 26, r: signature.r, s: signature.s };
 
     await expectRevertCustom(
       betty.allowBySig({
@@ -434,7 +436,7 @@ scenario(
         isAllowed: true,
         nonce,
         expiry,
-        signature,
+        signature: invalidSignature,
       }),
       'InvalidValueV()'
     );
@@ -464,7 +466,11 @@ scenario(
     });
 
     // 1 greater than the max value of s
-    signature.s = '0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A1';
+    const invalidSignature = {
+      v: signature.v,
+      r: signature.r,
+      s: '0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A1',
+    };
 
     await expectRevertCustom(
       betty.allowBySig({
@@ -473,7 +479,7 @@ scenario(
         isAllowed: true,
         nonce,
         expiry,
-        signature,
+        signature: invalidSignature,
       }),
       'InvalidValueS()'
     );
@@ -513,7 +519,7 @@ scenario(
     });
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
-    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
+    expect(await comet.userNonce(albert.address)).to.equal((nonce + 1n));
 
     return txn; // return txn to measure gas
   }
@@ -549,7 +555,7 @@ scenario(
     });
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
-    expect(await comet.allowance(albert.address, betty.address)).to.equal(constants.MaxUint256);
+    expect(await comet.allowance(albert.address, betty.address)).to.equal(MaxUint256);
 
     const revokeNonce = await comet.userNonce(albert.address);
     const revokeExpiry = (await world.timestamp()) + 1_000;
@@ -573,8 +579,8 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
     // allowance view drops back to 0 once authorization is rescinded.
-    expect(await comet.allowance(albert.address, betty.address)).to.equal(0);
-    expect(await comet.userNonce(albert.address)).to.equal(revokeNonce.add(1));
+    expect(await comet.allowance(albert.address, betty.address)).to.equal(0n);
+    expect(await comet.userNonce(albert.address)).to.equal((revokeNonce + 1n));
 
     return txn; // return txn to measure gas
   }
@@ -586,27 +592,27 @@ scenario(
   async ({ comet, actors }, _, world) => {
     const { betty } = actors;
 
-    expect(await comet.isAllowed(constants.AddressZero, betty.address)).to.be.false;
+    expect(await comet.isAllowed(ZeroAddress, betty.address)).to.be.false;
 
     const invalidSignature = {
       v: 27,
       r: '0x0000000000000000000000000000000000000000000000000000000000000000',
       s: '0x36b99b3646118e24ca7c0c698792ebaf25a4bfa08c1cd6778c335a537b0eb43c',
-    } as any;
+    };
 
     await expectRevertCustom(
       betty.allowBySig({
-        owner: constants.AddressZero,
+        owner: ZeroAddress,
         manager: betty.address,
         isAllowed: true,
-        nonce: await comet.userNonce(constants.AddressZero),
+        nonce: await comet.userNonce(ZeroAddress),
         expiry: (await world.timestamp()) + 100,
         signature: invalidSignature,
       }),
       'BadSignatory()'
     );
 
-    expect(await comet.isAllowed(constants.AddressZero, betty.address)).to.be.false;
+    expect(await comet.isAllowed(ZeroAddress, betty.address)).to.be.false;
   }
 );
 
@@ -627,7 +633,7 @@ scenario(
       isAllowed: true,
       nonce,
       expiry,
-      chainId: chainId + 1,
+      chainId: chainId + 1n,
     });
 
     await expectRevertCustom(
@@ -767,13 +773,13 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
     const toSupply = 100n * scale;
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(toSupply);
     expect(await comet.balanceOf(betty.address)).to.be.equal(0n);
 
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     await authorizeManagerBySig(context, albert, betty, world);
 
     // Betty supplies Albert's base into Betty's own account
@@ -800,13 +806,13 @@ scenario(
     const { albert, betty } = actors;
     const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(1);
     const collateralAsset = context.getAssetByAddress(assetAddress);
-    const scale = scaleBN.toBigInt();
+    const scale = scaleBN;
     const toSupply = BigInt(getConfigForScenario(context, 1).supplyCollateral) * scale;
 
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupply);
     expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(0n);
 
-    await collateralAsset.approve(albert, comet.address);
+    await collateralAsset.approve(albert, await comet.getAddress());
     await authorizeManagerBySig(context, albert, betty, world);
 
     // Betty supplies Albert's collateral into Betty's own account
@@ -830,7 +836,7 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+    const baseSupplied = await comet.balanceOf(albert.address);
 
     expect(await baseAsset.balanceOf(betty.address)).to.be.equal(0n);
     expect(await comet.balanceOf(albert.address)).to.be.equal(baseSupplied);
@@ -861,7 +867,7 @@ scenario(
     const { albert, betty } = actors;
     const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(1);
     const collateralAsset = context.getAssetByAddress(assetAddress);
-    const scale = scaleBN.toBigInt();
+    const scale = scaleBN;
     const toWithdraw = BigInt(getConfigForScenario(context, 1).withdrawCollateral) * scale;
 
     expect(await collateralAsset.balanceOf(betty.address)).to.be.equal(0n);
@@ -893,7 +899,7 @@ scenario(
     const { albert, betty, charles } = actors;
     const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(1);
     const collateralAsset = context.getAssetByAddress(assetAddress);
-    const scale = scaleBN.toBigInt();
+    const scale = scaleBN;
     const supplied = BigInt(getConfigForScenario(context, 1).transferCollateral) * scale;
     const toTransfer = supplied / 2n;
 
@@ -923,7 +929,7 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+    const baseSupplied = await comet.balanceOf(albert.address);
 
     // 1. Authorize Betty by signature, then prove the grant works: she withdraws part
     //    of Albert's base on his behalf.
@@ -997,7 +1003,7 @@ scenario(
       signature: grantSignature,
     });
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
-    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
+    expect(await comet.userNonce(albert.address)).to.equal((nonce + 1n));
 
     // A brand-new message (a revoke) signed with the now-stale nonce `n` must be rejected.
     const staleSignature = await albert.signAuthorization({
@@ -1021,7 +1027,7 @@ scenario(
 
     // The revoke did not take effect and the nonce is unchanged.
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
-    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
+    expect(await comet.userNonce(albert.address)).to.equal((nonce + 1n));
   }
 );
 
@@ -1030,7 +1036,7 @@ scenario(
   {},
   async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
-    const provider = world.deploymentManager.hre.network.provider;
+    const { provider } = await getHardhatEthers(world.deploymentManager.hre);
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
@@ -1070,7 +1076,7 @@ scenario(
   {},
   async ({ comet, actors }, _, world) => {
     const { albert, betty } = actors;
-    const provider = world.deploymentManager.hre.network.provider;
+    const { provider } = await getHardhatEthers(world.deploymentManager.hre);
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
 
@@ -1129,7 +1135,7 @@ scenario(
     const secondSignature = await albert.signAuthorization({
       manager: charles.address,
       isAllowed: true,
-      nonce: nonce.add(1),
+      nonce: (nonce + 1n),
       expiry,
       chainId,
     });
@@ -1144,19 +1150,19 @@ scenario(
       signature: firstSignature,
     });
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
-    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(1));
+    expect(await comet.userNonce(albert.address)).to.equal((nonce + 1n));
 
     // ... then nonce n+1 authorizes charles.
     await charles.allowBySig({
       owner: albert.address,
       manager: charles.address,
       isAllowed: true,
-      nonce: nonce.add(1),
+      nonce: (nonce + 1n),
       expiry,
       signature: secondSignature,
     });
     expect(await comet.isAllowed(albert.address, charles.address)).to.be.true;
-    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(2));
+    expect(await comet.userNonce(albert.address)).to.equal((nonce + 2n));
   }
 );
 
@@ -1183,7 +1189,7 @@ scenario(
     const secondSignature = await albert.signAuthorization({
       manager: charles.address,
       isAllowed: true,
-      nonce: nonce.add(1),
+      nonce: (nonce + 1n),
       expiry,
       chainId,
     });
@@ -1194,7 +1200,7 @@ scenario(
         owner: albert.address,
         manager: charles.address,
         isAllowed: true,
-        nonce: nonce.add(1),
+        nonce: (nonce + 1n),
         expiry,
         signature: secondSignature,
       }),
@@ -1217,13 +1223,13 @@ scenario(
       owner: albert.address,
       manager: charles.address,
       isAllowed: true,
-      nonce: nonce.add(1),
+      nonce: (nonce + 1n),
       expiry,
       signature: secondSignature,
     });
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
     expect(await comet.isAllowed(albert.address, charles.address)).to.be.true;
-    expect(await comet.userNonce(albert.address)).to.equal(nonce.add(2));
+    expect(await comet.userNonce(albert.address)).to.equal((nonce + 2n));
   }
 );

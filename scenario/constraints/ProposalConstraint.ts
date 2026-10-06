@@ -19,7 +19,7 @@ export async function getOpenProposals(deploymentManager: DeploymentManager, gov
   const { provider } = await getHardhatEthers(deploymentManager.hre);
   const block = await provider.getBlockNumber();
   const filter = governor.filters.ProposalCreated();
-  const logs = await fetchLogs(governor, filter, block - searchBlocks, block);
+  const logs = await fetchLogs(governor, filter, Math.max(0, block - searchBlocks), block);
   const proposals: OpenProposal[] = [];
   if (logs) {
     for (let log of logs) {
