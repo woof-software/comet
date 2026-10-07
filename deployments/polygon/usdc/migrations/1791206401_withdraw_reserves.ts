@@ -15,7 +15,7 @@ const BURN_AMOUNT = USDCE_MIN_OUT + USDT_MIN_OUT;
 
 const NATIVE_USDC = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
 
-// https://developers.uniswap.org/docs/protocols/v3/deployments/v3-polygon-deployments
+// https://developers.uniswap.org/docs/protocols/v4/deployments#polygon-137
 const UNIVERSAL_ROUTER = '0x1095692A6237d83C6a72F3F5eFEdb9A670C49223';
 
 const MAINNET_CCTP_DOMAIN = 0;
@@ -53,24 +53,20 @@ export default migration('1791206401_withdraw_reserves', {
 
     mainnetTimelockUsdcBefore = await mainnetUSDC.balanceOf(mainnetTimelock.address);
 
-    // Universal Router swaps pay from its own balance (payerIsUser = false), funded by the transfers before it.
-    // USDT -> USDC: Uniswap V3 0.01% pool
-    const usdtSwap = utils.defaultAbiCoder.encode(
-      ['address', 'uint256', 'uint256', 'bytes', 'bool'],
-      [timelock.address, USDT_AMOUNT, USDT_MIN_OUT, utils.solidityPack(['address', 'uint24', 'address'], [USDT.address, 100, NATIVE_USDC]), false]
-    );
-    // USDC.e -> USDC: Uniswap V4 pool (0.0013% fee, no hooks)
-    const usdceSwap = utils.defaultAbiCoder.encode(
+    // Both swaps on Uniswap V4, paid from the router's own balance (payerIsUser = false), funded by the transfers before it.
+    // USDC.e -> USDC: pool 0xe3f907c3...052a4 (0.0013% fee, no hooks), USDC.e is currency0
+    // USDT -> USDC: pool 0xa37d3e6d...a399 (0.0008% fee, no hooks), USDC is currency0
+    const exactInputSingle = ['((address,address,uint24,int24,address),bool,uint128,uint128,bytes)'];
+    const v4Swap = utils.defaultAbiCoder.encode(
       ['bytes', 'bytes[]'],
       [
-        '0x060b0f', // V4 actions: 0x06 SWAP_EXACT_IN_SINGLE, 0x0b SETTLE (pay USDC.e from router balance), 0x0f TAKE_ALL (USDC to Timelock)
+        '0x060b060b0f', // V4 actions: SWAP_EXACT_IN_SINGLE + SETTLE (USDC.e), SWAP_EXACT_IN_SINGLE + SETTLE (USDT), TAKE_ALL (USDC to Timelock)
         [
-          utils.defaultAbiCoder.encode(
-            ['((address,address,uint24,int24,address),bool,uint128,uint128,bytes)'],
-            [[[USDCe.address, NATIVE_USDC, 13, 1, constants.AddressZero], true, USDCE_AMOUNT, USDCE_MIN_OUT, '0x']]
-          ),
+          utils.defaultAbiCoder.encode(exactInputSingle, [[[USDCe.address, NATIVE_USDC, 13, 1, constants.AddressZero], true, USDCE_AMOUNT, USDCE_MIN_OUT, '0x']]),
           utils.defaultAbiCoder.encode(['address', 'uint256', 'bool'], [USDCe.address, USDCE_AMOUNT, false]),
-          utils.defaultAbiCoder.encode(['address', 'uint256'], [NATIVE_USDC, USDCE_MIN_OUT]),
+          utils.defaultAbiCoder.encode(exactInputSingle, [[[NATIVE_USDC, USDT.address, 8, 1, constants.AddressZero], false, USDT_AMOUNT, USDT_MIN_OUT, '0x']]),
+          utils.defaultAbiCoder.encode(['address', 'uint256', 'bool'], [USDT.address, USDT_AMOUNT, false]),
+          utils.defaultAbiCoder.encode(['address', 'uint256'], [NATIVE_USDC, BURN_AMOUNT]),
         ],
       ]
     );
@@ -94,7 +90,7 @@ export default migration('1791206401_withdraw_reserves', {
           utils.defaultAbiCoder.encode(['address', 'uint256'], [timelock.address, USDT_AMOUNT]),
           utils.defaultAbiCoder.encode(['address', 'uint256'], [UNIVERSAL_ROUTER, USDCE_AMOUNT]),
           utils.defaultAbiCoder.encode(['address', 'uint256'], [UNIVERSAL_ROUTER, USDT_AMOUNT]),
-          utils.defaultAbiCoder.encode(['bytes', 'bytes[]'], ['0x0010', [usdtSwap, usdceSwap]]), // Universal Router commands: 0x00 V3_SWAP_EXACT_IN, 0x10 V4_SWAP
+          utils.defaultAbiCoder.encode(['bytes', 'bytes[]'], ['0x10', [v4Swap]]), // Universal Router command: 0x10 V4_SWAP
           utils.defaultAbiCoder.encode(['address', 'uint256'], [CCTPTokenMessenger.address, BURN_AMOUNT]),
           utils.defaultAbiCoder.encode(
             ['uint256', 'uint32', 'bytes32', 'address', 'bytes32', 'uint256', 'uint32'],
@@ -116,7 +112,7 @@ export default migration('1791206401_withdraw_reserves', {
 
 ## Proposal summary
 
-This proposal withdraws 470,000 USDC.e and 65,000 USDT from the reserves of the Compound III USDC and USDT markets on Polygon, swaps both into native USDC on Uniswap, and bridges it to the Compound Timelock on Ethereum Mainnet using Circle's CCTP. Each swap tolerates at most 0.03% loss.
+This proposal withdraws 470,000 USDC.e and 65,000 USDT from the reserves of the Compound III USDC and USDT markets on Polygon, swaps both into native USDC on Uniswap V4, and bridges it to the Compound Timelock on Ethereum Mainnet using Circle's CCTP. Each swap tolerates at most 0.03% loss.
 
 ## Proposal actions
 
@@ -125,7 +121,7 @@ The proposal action sends a message through Polygon's FxRoot to the Polygon Brid
 1. Withdraw 470,000 USDC.e from the Polygon cUSDCv3 reserves.
 2. Withdraw 65,000 USDT from the Polygon cUSDTv3 reserves.
 3. Transfer the USDC.e and USDT to the Uniswap Universal Router.
-4. Swap 65,000 USDT into at least 64,980.5 USDC (Uniswap V3) and 470,000 USDC.e into at least 469,859 USDC (Uniswap V4).
+4. Swap 470,000 USDC.e into at least 469,859 USDC and 65,000 USDT into at least 64,980.5 USDC on Uniswap V4.
 5. Approve and call \`depositForBurn\` on the CCTP TokenMessenger to bridge 534,839.5 USDC to the Mainnet Timelock.
 `;
     const txn = await govDeploymentManager.retry(async () =>
