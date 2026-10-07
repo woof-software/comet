@@ -1,9 +1,11 @@
 import { CometContext, scenario } from './context/CometContext.js';
 import { expect } from 'chai';
+import { MaxUint256, ZeroAddress } from 'ethers';
 import { isValidAssetIndex, matchesDeployment, MAX_ASSETS, timeUntilUnderwater } from './utils/index.js';
-import { ethers, event, exp, wait } from '../test/helpers.js';
+import { event, exp, wait } from '../test/helpers.js';
 import CometActor from './context/CometActor.js';
-import { CometInterface, OnChainLiquidator } from '../build/types/index.js';
+import type { CometInterface } from '../build/types/index.js';
+import { OnChainLiquidator__factory } from '../build/types/index.js';
 import { getPoolConfig, flashLoanPools } from '../scripts/liquidation_bot/liquidateUnderwaterBorrowers.js';
 import { getConfigForScenario } from './utils/scenarioHelper.js';
 
@@ -36,14 +38,14 @@ const addresses: { [chain: string]: LiquidationAddresses } = {
     sushiswapRouter: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506',
     stakedNativeToken: '0x3a58a54c066fdc0f2d55fc9c89f0415c92ebf3c4', // stMatic
     weth9: '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619',
-    wrappedStakedNativeToken: ethers.constants.AddressZero // wstMatic does not exist
+    wrappedStakedNativeToken: ZeroAddress // wstMatic does not exist
   },
   arbitrum: {
     ...sharedAddresses,
     sushiswapRouter: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506',
-    stakedNativeToken: ethers.constants.AddressZero,
+    stakedNativeToken: ZeroAddress,
     weth9: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
-    wrappedStakedNativeToken: ethers.constants.AddressZero
+    wrappedStakedNativeToken: ZeroAddress
   }
 };
 
@@ -65,8 +67,8 @@ async function borrowCapacityForAsset(comet: CometInterface, actor: CometActor, 
   const priceScale = await comet.priceScale();
   const baseScale = await comet.baseScale();
 
-  const collateralValue = (userCollateral.mul(price)).div(scale);
-  return collateralValue.mul(borrowCollateralFactor).mul(baseScale).div(factorScale).div(priceScale);
+  const collateralValue = userCollateral * price / scale;
+  return collateralValue * borrowCollateralFactor * baseScale / factorScale / priceScale;
 }
 
 // Filters out assets on networks that cannot be liquidated by the open-source liquidation bot
@@ -198,7 +200,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
         wrappedStakedNativeToken
       } = addresses[network];
 
-      const liquidator = await world.deploymentManager.deploy(
+      const liquidatorContract = await world.deploymentManager.deploy(
         'liquidator',
         'liquidator/OnChainLiquidator.sol',
         [
@@ -210,13 +212,17 @@ for (let i = 0; i < MAX_ASSETS; i++) {
           wrappedStakedNativeToken,
           weth9
         ]
-      ) as OnChainLiquidator;
+      );
+      const liquidator = OnChainLiquidator__factory.connect(
+        await liquidatorContract.getAddress(),
+        liquidatorContract.runner
+      );
 
       const baseToken = await comet.baseToken();
       const { asset: collateralAssetAddress, scale } = await comet.getAssetInfo(i);
 
       const borrowCapacity = await borrowCapacityForAsset(comet, albert, i);
-      const borrowAmount = (borrowCapacity.mul(90n)).div(100n);
+      const borrowAmount = borrowCapacity * 90n / 100n;
 
       const initialRecipientBalance = await betty.getErc20Balance(baseToken);
       const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
@@ -237,19 +243,19 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       );
 
       // define after increasing time, since increasing time alters reserves
-      const initialReserves = (await comet.getReserves()).toBigInt();
+      const initialReserves = await comet.getReserves();
 
       await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue
 
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
-      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0);
+      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0n);
 
       await liquidator.connect(betty.signer).absorbAndArbitrage(
-        comet.address,
+        await comet.getAddress(),
         [albert.address],
         [collateralAssetAddress],
         [getPoolConfig(collateralAssetAddress)],
-        [ethers.constants.MaxUint256],
+        [MaxUint256],
         flashLoanPool.tokenAddress,
         flashLoanPool.poolFee,
         10e6
@@ -257,7 +263,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 
       // confirm that Albert position has been abosrbed
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
-      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.eq(0);
+      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.eq(0n);
 
       // confirm that liquidator points increased by 1
       const [finalNumAbsorbs, finalNumAbsorbed] = await comet.liquidatorPoints(betty.address);
@@ -271,7 +277,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       expect(await comet.getCollateralReserves(collateralAssetAddress)).to.be.below(scale);
 
       // check that recipient balance increased
-      expect(await betty.getErc20Balance(baseToken)).to.be.greaterThan(Number(initialRecipientBalance));
+      expect(await betty.getErc20Balance(baseToken)).to.be.greaterThan(initialRecipientBalance);
     }
   );
 }
@@ -464,7 +470,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
         wrappedStakedNativeToken
       } = addresses[network];
 
-      const liquidator = await world.deploymentManager.deploy(
+      const liquidatorContract = await world.deploymentManager.deploy(
         'liquidator',
         'liquidator/OnChainLiquidator.sol',
         [
@@ -476,7 +482,11 @@ for (let i = 0; i < MAX_ASSETS; i++) {
           wrappedStakedNativeToken,
           weth9
         ]
-      ) as OnChainLiquidator;
+      );
+      const liquidator = OnChainLiquidator__factory.connect(
+        await liquidatorContract.getAddress(),
+        liquidatorContract.runner
+      );
 
       const baseToken = await comet.baseToken();
       const { asset: collateralAssetAddress, scale } = await comet.getAssetInfo(i);
@@ -485,7 +495,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
 
       const borrowCapacity = await borrowCapacityForAsset(comet, albert, i);
-      const borrowAmount = (borrowCapacity.mul(90n)).div(100n);
+      const borrowAmount = borrowCapacity * 90n / 100n;
 
       await albert.withdrawAsset({
         asset: baseToken,
@@ -503,10 +513,10 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue
 
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
-      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0);
+      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0n);
 
       await liquidator.connect(betty.signer).absorbAndArbitrage(
-        comet.address,
+        await comet.getAddress(),
         [albert.address],
         [collateralAssetAddress],
         [getPoolConfig(collateralAssetAddress)],
@@ -518,7 +528,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 
       // confirm that Albert position has been abosrbed
       expect(await comet.isLiquidatable(albert.address)).to.be.false;
-      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.eq(0);
+      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.eq(0n);
 
       // confirm that liquidator points increased by 1
       const [finalNumAbsorbs, finalNumAbsorbed] = await comet.liquidatorPoints(betty.address);
@@ -527,10 +537,10 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 
       // confirm that protocol was only partially liquidated; it should still
       // hold a significant amount of the asset
-      expect(await comet.getCollateralReserves(collateralAssetAddress)).to.be.above(scale.mul(10));
+      expect(await comet.getCollateralReserves(collateralAssetAddress)).to.be.above(scale * 10n);
 
       // check that recipient balance increased
-      expect(await betty.getErc20Balance(baseToken)).to.be.greaterThan(Number(initialRecipientBalance));
+      expect(await betty.getErc20Balance(baseToken)).to.be.greaterThan(initialRecipientBalance);
     }
   );
 }
@@ -567,7 +577,7 @@ scenario(
       wrappedStakedNativeToken
     } = addresses[network];
 
-    const liquidator = await world.deploymentManager.deploy(
+    const liquidatorContract = await world.deploymentManager.deploy(
       'liquidator',
       'liquidator/OnChainLiquidator.sol',
       [
@@ -579,7 +589,11 @@ scenario(
         wrappedStakedNativeToken,
         weth9
       ]
-    ) as OnChainLiquidator;
+    );
+    const liquidator = OnChainLiquidator__factory.connect(
+      await liquidatorContract.getAddress(),
+      liquidatorContract.runner
+    );
 
     const baseToken = await comet.baseToken();
     const { asset: collateralAssetAddress, scale } = await comet.getAssetInfo(0);
@@ -588,7 +602,7 @@ scenario(
     const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
 
     const borrowCapacity = await borrowCapacityForAsset(comet, albert, 0);
-    const borrowAmount = (borrowCapacity.mul(getConfigForScenario(_context).liquidationDenominator)).div(100n);
+    const borrowAmount = borrowCapacity * BigInt(getConfigForScenario(_context).liquidationDenominator) / 100n;
 
     await albert.withdrawAsset({
       asset: baseToken,
@@ -603,22 +617,22 @@ scenario(
       })
     );
 
-    const initialReserves = (await comet.getReserves()).toBigInt();
+    const initialReserves = await comet.getReserves();
 
     await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
-    expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0);
+    expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0n);
 
     const tx = await wait(liquidator.connect(betty.signer).absorbAndArbitrage(
-      comet.address,
+      await comet.getAddress(),
       [albert.address],
       [collateralAssetAddress],
       [getPoolConfig(collateralAssetAddress)],
-      [ethers.constants.MaxUint256],
+      [MaxUint256],
       flashLoanPool.tokenAddress,
       flashLoanPool.poolFee,
-      scale.mul(1_000_000) // liquidation threshold of 1M units of base asset
+      scale * 1_000_000n // liquidation threshold of 1M units of base asset
     ));
 
     expect(event(tx, 3)).to.deep.equal({
@@ -630,7 +644,7 @@ scenario(
 
     // confirm that Albert position has been abosrbed
     expect(await comet.isLiquidatable(albert.address)).to.be.false;
-    expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.eq(0);
+    expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.eq(0n);
 
     // confirm that collateral was not purchased
     expect(event(tx, 4)).to.deep.equal({
@@ -646,7 +660,7 @@ scenario(
     expect(await comet.getReserves()).to.be.below(initialReserves);
 
     // check that recipient balance has stayed the same
-    expect(await betty.getErc20Balance(baseToken)).to.be.eq(Number(initialRecipientBalance));
+    expect(await betty.getErc20Balance(baseToken)).to.be.eq(initialRecipientBalance);
   }
 );
 
@@ -662,7 +676,7 @@ scenario(
     cometBalances: async (ctx) => (
       {
         albert: {
-          $asset0: ` == ${getConfigForScenario(ctx).liquidationAsset}}`,
+          $asset0: ` == ${getConfigForScenario(ctx).liquidationAsset}`,
         },
         betty: { $base: getConfigForScenario(ctx).liquidationBase1 },
       }
@@ -682,7 +696,7 @@ scenario(
       wrappedStakedNativeToken
     } = addresses[network];
 
-    const liquidator = await world.deploymentManager.deploy(
+    const liquidatorContract = await world.deploymentManager.deploy(
       'liquidator',
       'liquidator/OnChainLiquidator.sol',
       [
@@ -694,7 +708,11 @@ scenario(
         wrappedStakedNativeToken,
         weth9
       ]
-    ) as OnChainLiquidator;
+    );
+    const liquidator = OnChainLiquidator__factory.connect(
+      await liquidatorContract.getAddress(),
+      liquidatorContract.runner
+    );
 
     const baseToken = await comet.baseToken();
     const { asset: collateralAssetAddress } = await comet.getAssetInfo(0);
@@ -703,7 +721,7 @@ scenario(
     const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
 
     const borrowCapacity = await borrowCapacityForAsset(comet, albert, 0);
-    const borrowAmount = (borrowCapacity.mul(getConfigForScenario(_context).liquidationDenominator)).div(100n);
+    const borrowAmount = borrowCapacity * BigInt(getConfigForScenario(_context).liquidationDenominator) / 100n;
 
     await albert.withdrawAsset({
       asset: baseToken,
@@ -718,15 +736,15 @@ scenario(
       })
     );
 
-    const initialReserves = (await comet.getReserves()).toBigInt();
+    const initialReserves = await comet.getReserves();
 
     await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
-    expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0);
+    expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0n);
 
     const tx = await wait(liquidator.connect(betty.signer).absorbAndArbitrage(
-      comet.address,
+      await comet.getAddress(),
       [albert.address],
       [collateralAssetAddress],
       [getPoolConfig(collateralAssetAddress)],
@@ -745,7 +763,7 @@ scenario(
 
     // confirm that Albert position has been abosrbed
     expect(await comet.isLiquidatable(albert.address)).to.be.false;
-    expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.eq(0);
+    expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.eq(0n);
 
     // confirm that collateral was not purchased
     expect(event(tx, 4)).to.deep.equal({
@@ -761,7 +779,7 @@ scenario(
     expect(await comet.getReserves()).to.be.below(initialReserves);
 
     // check that recipient balance has stayed the same
-    expect(await betty.getErc20Balance(baseToken)).to.be.eq(Number(initialRecipientBalance));
+    expect(await betty.getErc20Balance(baseToken)).to.be.eq(initialRecipientBalance);
   }
 );
 
@@ -819,7 +837,7 @@ scenario(
         wrappedStakedNativeToken
       } = addresses[network];
 
-      const liquidator = await world.deploymentManager.deploy(
+      const liquidatorContract = await world.deploymentManager.deploy(
         'liquidator',
         'liquidator/OnChainLiquidator.sol',
         [
@@ -831,7 +849,11 @@ scenario(
           wrappedStakedNativeToken,
           weth9
         ]
-      ) as OnChainLiquidator;
+      );
+      const liquidator = OnChainLiquidator__factory.connect(
+        await liquidatorContract.getAddress(),
+        liquidatorContract.runner
+      );
 
       const baseToken = await comet.baseToken();
       const { asset: collateralAssetAddress } = await comet.getAssetInfo(0);
@@ -840,7 +862,7 @@ scenario(
       const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
 
       const borrowCapacity = await borrowCapacityForAsset(comet, albert, 0);
-      const borrowAmount = (borrowCapacity.mul(getConfigForScenario(_context).liquidationNumerator)).div(100n);
+      const borrowAmount = borrowCapacity * BigInt(getConfigForScenario(_context).liquidationNumerator) / 100n;
 
       await albert.withdrawAsset({
         asset: baseToken,
@@ -858,15 +880,15 @@ scenario(
       await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue
 
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
-      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0);
+      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0n);
 
       await expect(
         liquidator.connect(betty.signer).absorbAndArbitrage(
-          comet.address,
+          await comet.getAddress(),
           [albert.address],
           [collateralAssetAddress],
           [getPoolConfig(collateralAssetAddress)],
-          [ethers.constants.MaxUint256],
+          [MaxUint256],
           flashLoanPool.tokenAddress,
           flashLoanPool.poolFee,
           10e6
@@ -875,7 +897,7 @@ scenario(
 
       // confirm that Albert position has not been abosrbed
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
-      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0);
+      expect(await comet.collateralBalanceOf(albert.address, collateralAssetAddress)).to.be.greaterThan(0n);
 
       // confirm that liquidator points have not increased
       const [finalNumAbsorbs, finalNumAbsorbed] = await comet.liquidatorPoints(betty.address);
@@ -883,7 +905,7 @@ scenario(
       expect(finalNumAbsorbed).to.eq(initialNumAbsorbed);
 
       // check that recipient balance has stayed the same
-      expect(await betty.getErc20Balance(baseToken)).to.be.eq(Number(initialRecipientBalance));
+      expect(await betty.getErc20Balance(baseToken)).to.be.eq(initialRecipientBalance);
     }
   );
 }
