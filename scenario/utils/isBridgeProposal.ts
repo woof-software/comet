@@ -1,5 +1,5 @@
-import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { OpenProposal } from '../context/Gov.js';
+import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import type { OpenProposal } from '../context/Gov.js';
 
 export async function isBridgeProposal(
   governanceDeploymentManager: DeploymentManager,
@@ -15,16 +15,17 @@ export async function isBridgeProposal(
         'arbitrumL1GatewayRouter'
       );
       const targets = openProposal.targets;
-      return targets.includes(inbox.address) || targets.includes(l1GatewayRouter.address);
+      return targets.includes(await inbox.getAddress()) || targets.includes(await l1GatewayRouter.getAddress());
     }
     case 'polygon': {
       const {
         fxRoot,
         RootChainManager
       } = await governanceDeploymentManager.getContracts();
-      const bridgeAddresses = [fxRoot, RootChainManager]
+      const bridgeAddresses = (await Promise.all([fxRoot, RootChainManager]
         .filter(x => x)
-        .map(x => x.address.toLowerCase());
+        .map(x => x.getAddress())))
+        .map(address => address.toLowerCase());
       const targets = openProposal.targets;
       return targets.some(t => bridgeAddresses.includes(t.toLowerCase()));
     }
@@ -39,7 +40,7 @@ export async function isBridgeProposal(
         'baseL1USDSBridge'
       );
       const targets = openProposal.targets;
-      const bridgeContracts = [baseL1CrossDomainMessenger.address, baseL1StandardBridge.address, baseL1USDSBridge.address];
+      const bridgeContracts = [await baseL1CrossDomainMessenger.getAddress(), await baseL1StandardBridge.getAddress(), await baseL1USDSBridge.getAddress()];
 
       return targets.some(t => bridgeContracts.includes(t));
     }
@@ -54,9 +55,9 @@ export async function isBridgeProposal(
         'lineaL1TokenBridge'
       );
       const bridgeContracts = [
-        lineaMessageService.address,
-        lineaL1USDCBridge.address,
-        lineaL1TokenBridge.address
+        await lineaMessageService.getAddress(),
+        await lineaL1USDCBridge.getAddress(),
+        await lineaL1TokenBridge.getAddress()
       ];
       const targets = openProposal.targets;
       return targets.some(t => bridgeContracts.includes(t));
@@ -67,7 +68,7 @@ export async function isBridgeProposal(
     //     'lineaMessageService'
     //   );
     //   const { targets } = await governor.getActions(openProposal.id);
-    //   return targets.includes(lineaMessageService.address);
+    //   return targets.includes(await lineaMessageService.getAddress());
     // }
     case 'optimism': {
       const opL1CrossDomainMessenger = await governanceDeploymentManager.getContractOrThrow(
@@ -77,7 +78,7 @@ export async function isBridgeProposal(
         'opL1StandardBridge'
       );
       const targets = openProposal.targets;
-      const bridgeContracts = [opL1CrossDomainMessenger.address, opL1StandardBridge.address];
+      const bridgeContracts = [await opL1CrossDomainMessenger.getAddress(), await opL1StandardBridge.getAddress()];
       return targets.some(t => bridgeContracts.includes(t));
     }
     case 'mantle': {
@@ -89,8 +90,8 @@ export async function isBridgeProposal(
       );
       const targets = openProposal.targets;
       const bridgeContracts = [
-        mantleL1CrossDomainMessenger.address,
-        mantleL1StandardBridge.address
+        await mantleL1CrossDomainMessenger.getAddress(),
+        await mantleL1StandardBridge.getAddress()
       ];
       return targets.some(t => bridgeContracts.includes(t));
     }
@@ -103,8 +104,8 @@ export async function isBridgeProposal(
       );
       const targets = openProposal.targets;
       const bridgeContracts = [
-        unichainL1CrossDomainMessenger.address,
-        unichainL1StandardBridge.address
+        await unichainL1CrossDomainMessenger.getAddress(),
+        await unichainL1StandardBridge.getAddress()
       ];
       return targets.some(t => bridgeContracts.includes(t));
     }
@@ -113,7 +114,7 @@ export async function isBridgeProposal(
         'scrollMessenger'
       );
       const targets = openProposal.targets;
-      return targets.includes(scrollMessenger.address);
+      return targets.includes(await scrollMessenger.getAddress());
     }
     case 'ronin': {
       const governor = await governanceDeploymentManager.getContractOrThrow('governor');
@@ -126,11 +127,11 @@ export async function isBridgeProposal(
       const roninL1OnRamp = await governanceDeploymentManager.getContractOrThrow(
         'roninl1CCIPOnRamp'
       );
-      const { targets } = await governor.proposalDetails(openProposal.id);
+      const { targets } = await governor.getFunction('proposalDetails')(openProposal.id);
       const bridgeContracts = [
-        roninl1NativeBridge.address,
-        l1CCIPRouter.address,
-        roninL1OnRamp.address
+        await roninl1NativeBridge.getAddress(),
+        await l1CCIPRouter.getAddress(),
+        await roninL1OnRamp.getAddress()
       ];
       return targets.some(t => bridgeContracts.includes(t));
     }
