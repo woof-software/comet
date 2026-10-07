@@ -1,19 +1,22 @@
-import { ethers, utils } from 'ethers';
+import { AbiCoder, MaxUint256, encodeBytes32String } from 'ethers';
 import { expect } from 'chai';
 import { scenario } from './context/CometContext.js';
+import type { CometContext } from './context/CometContext.js';
 import CometAsset from './context/CometAsset.js';
 import {
-  ERC20,
-  IWstETH,
-  MainnetBulker
+  ERC20__factory,
+  IWstETH__factory,
+  MainnetBulkerWithWstETHSupport__factory
 } from '../build/types/index.js';
 import { exp } from '../test/helpers.js';
-import { expectApproximately, isBulkerSupported, matchesDeployment } from './utils/index.js';
+import { expectApproximately, expectRevertCustom, isBulkerSupported, matchesDeployment } from './utils/index.js';
+
+const abiCoder = AbiCoder.defaultAbiCoder();
 
 const MAINNET_WSTETH_ADDRESS = '0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0';
 const MAINNET_STETH_ADDRESS = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84';
 
-async function getWstETHIndex(context: any): Promise<number> {
+async function getWstETHIndex(context: CometContext): Promise<number> {
   const comet = await context.getComet();
   const totalAssets = await comet.numAssets();
   for (let i = 0; i < totalAssets; i++) {
@@ -25,7 +28,7 @@ async function getWstETHIndex(context: any): Promise<number> {
   return -1;
 }
 
-async function hasWstETH(context: any): Promise<boolean> {
+async function hasWstETH(context: CometContext): Promise<boolean> {
   return (await getWstETHIndex(context) > -1);
 }
 
@@ -47,8 +50,9 @@ scenario(
   async ({ comet, actors, bulker }, context) => {
     const { albert } = actors;
 
-    const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const stETH = ERC20__factory.connect(MAINNET_STETH_ADDRESS, comet.runner);
+    const wstETH = IWstETH__factory.connect(MAINNET_WSTETH_ADDRESS, comet.runner);
+    const mainnetBulker = MainnetBulkerWithWstETHSupport__factory.connect(await bulker.getAddress(), bulker.runner);
 
     const toSupplyStEth = exp(.1, 18);
 
@@ -57,21 +61,21 @@ scenario(
     expect(await stETH.balanceOf(albert.address)).to.be.greaterThanOrEqual(toSupplyStEth);
 
     // approve bulker as albert
-    await stETH.connect(albert.signer).approve(bulker.address, toSupplyStEth);
+    await stETH.connect(albert.signer).approve(await bulker.getAddress(), toSupplyStEth);
 
-    const supplyStEthCalldata = utils.defaultAbiCoder.encode(
+    const supplyStEthCalldata = abiCoder.encode(
       ['address', 'address', 'uint'],
-      [comet.address, albert.address, toSupplyStEth]
+      [await comet.getAddress(), albert.address, toSupplyStEth]
     );
     const calldata = [supplyStEthCalldata];
-    const actions = [await (bulker as MainnetBulker).ACTION_SUPPLY_STETH()];
+    const actions = [await mainnetBulker.ACTION_SUPPLY_STETH()];
 
     await albert.invoke({ actions, calldata });
 
-    expectApproximately((await stETH.balanceOf(albert.address)).toBigInt(), 0n, 2n);
+    expectApproximately(await stETH.balanceOf(albert.address), 0n, 2n);
     expectApproximately(
-      (await comet.collateralBalanceOf(albert.address, wstETH.address)).toBigInt(),
-      (await wstETH.getWstETHByStETH(toSupplyStEth)).toBigInt(),
+      await comet.collateralBalanceOf(albert.address, await wstETH.getAddress()),
+      await wstETH.getWstETHByStETH(toSupplyStEth),
       1n
     );
   }
@@ -98,33 +102,34 @@ scenario(
       }
     )
   },
-  async ({ comet, actors, bulker }, context) => {
+  async ({ comet, actors, bulker }, _context) => {
     const { albert } = actors;
 
-    const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const stETH = ERC20__factory.connect(MAINNET_STETH_ADDRESS, comet.runner);
+    const wstETH = IWstETH__factory.connect(MAINNET_WSTETH_ADDRESS, comet.runner);
+    const mainnetBulker = MainnetBulkerWithWstETHSupport__factory.connect(await bulker.getAddress(), bulker.runner);
 
-    await albert.allow(bulker.address, true);
+    await albert.allow(await bulker.getAddress(), true);
 
     // withdraw stETH via bulker
-    const toWithdrawStEth = (await wstETH.getStETHByWstETH(exp(1, 18))).toBigInt();
-    const withdrawStEthCalldata = utils.defaultAbiCoder.encode(
+    const toWithdrawStEth = await wstETH.getStETHByWstETH(exp(1, 18));
+    const withdrawStEthCalldata = abiCoder.encode(
       ['address', 'address', 'uint'],
-      [comet.address, albert.address, toWithdrawStEth]
+      [await comet.getAddress(), albert.address, toWithdrawStEth]
     );
     const calldata = [withdrawStEthCalldata];
-    const actions = [await (bulker as MainnetBulker).ACTION_WITHDRAW_STETH()];
+    const actions = [await mainnetBulker.ACTION_WITHDRAW_STETH()];
 
     await albert.invoke({ actions, calldata });
 
     // Approximation because some precision will be lost from the stETH to wstETH conversions
     expectApproximately(
-      (await stETH.balanceOf(albert.address)).toBigInt(),
+      await stETH.balanceOf(albert.address),
       toWithdrawStEth,
       3n
     );
     expectApproximately(
-      (await comet.collateralBalanceOf(albert.address, wstETH.address)).toBigInt(),
+      await comet.collateralBalanceOf(albert.address, await wstETH.getAddress()),
       0n,
       1n
     );
@@ -152,30 +157,31 @@ scenario(
       }
     )
   },
-  async ({ comet, actors, bulker }, context) => {
+  async ({ comet, actors, bulker }, _context) => {
     const { albert } = actors;
 
-    const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const stETH = ERC20__factory.connect(MAINNET_STETH_ADDRESS, comet.runner);
+    const wstETH = IWstETH__factory.connect(MAINNET_WSTETH_ADDRESS, comet.runner);
+    const mainnetBulker = MainnetBulkerWithWstETHSupport__factory.connect(await bulker.getAddress(), bulker.runner);
 
-    await albert.allow(bulker.address, true);
+    await albert.allow(await bulker.getAddress(), true);
 
     // withdraw max stETH via bulker
-    const withdrawStEthCalldata = utils.defaultAbiCoder.encode(
+    const withdrawStEthCalldata = abiCoder.encode(
       ['address', 'address', 'uint'],
-      [comet.address, albert.address, ethers.constants.MaxUint256]
+      [await comet.getAddress(), albert.address, MaxUint256]
     );
     const calldata = [withdrawStEthCalldata];
-    const actions = [await (bulker as MainnetBulker).ACTION_WITHDRAW_STETH()];
+    const actions = [await mainnetBulker.ACTION_WITHDRAW_STETH()];
 
     await albert.invoke({ actions, calldata });
 
     expectApproximately(
-      (await stETH.balanceOf(albert.address)).toBigInt(),
-      (await wstETH.getStETHByWstETH(exp(1, 18))).toBigInt(),
+      await stETH.balanceOf(albert.address),
+      await wstETH.getStETHByWstETH(exp(1, 18)),
       2n
     );
-    expect(await comet.collateralBalanceOf(albert.address, wstETH.address)).to.be.equal(0n);
+    expect(await comet.collateralBalanceOf(albert.address, await wstETH.getAddress())).to.be.equal(0n);
   }
 );
 
@@ -187,17 +193,15 @@ scenario(
   async ({ comet, actors }) => {
     const { betty } = actors;
 
-    const supplyGalacticCreditsCalldata = utils.defaultAbiCoder.encode(
+    const supplyGalacticCreditsCalldata = abiCoder.encode(
       ['address', 'address', 'uint'],
-      [comet.address, betty.address, exp(1, 18)]
+      [await comet.getAddress(), betty.address, exp(1, 18)]
     );
     const calldata = [supplyGalacticCreditsCalldata];
     const actions = [
-      ethers.utils.formatBytes32String('ACTION_SUPPLY_GALACTIC_CREDITS')
+      encodeBytes32String('ACTION_SUPPLY_GALACTIC_CREDITS')
     ];
 
-    await expect(
-      betty.invoke({ actions, calldata })
-    ).to.be.revertedWith("custom error 'UnhandledAction()'");
+    await expectRevertCustom(betty.invoke({ actions, calldata }), 'UnhandledAction()');
   }
 );
