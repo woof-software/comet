@@ -285,6 +285,7 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   if (ctx.world.base.network === 'polygon' && ctx.world.base.deployment === 'usdc') {
     config.bulkerAsset = 200;
     config.bulkerAsset1 = 200;
+    config.liquidationBase = 300000;
   }
 
   if (ctx.world.base.network === 'polygon' && ctx.world.base.deployment === 'usdt') {
