@@ -1,10 +1,11 @@
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
-import { BigNumber, ethers } from 'ethers';
-import { CometContext, scenario } from './context/CometContext.js';
+import { ethers } from 'ethers';
+import type { Signer } from 'ethers';
+import type { CometContext } from './context/CometContext.js';
+import { scenario } from './context/CometContext.js';
 import { exp } from '../test/helpers.js';
 import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker } from './utils/index.js';
-import { MarketAdminPermissionChecker } from '../build/types/index.js';
+import { MarketAdminPermissionChecker__factory } from '../build/types/index.js';
 
 const SECONDS_PER_YEAR = 31_536_000n;
 // Based on contract's internal precision: FACTOR_SCALE=1e18 with 4 decimal places
@@ -17,9 +18,7 @@ type NamedKeys<T> = {
   [K in keyof T as K extends number | `${number}` | ArrayMethods ? never : K]: T[K];
 };
 
-type Normalize<T> = T extends BigNumber
-  ? bigint
-  : T extends string | number | boolean
+type Normalize<T> = T extends string | number | boolean | bigint
   ? T
   : [NamedKeys<T>] extends [Record<string, never>]
   ? T extends (infer U)[]
@@ -31,12 +30,20 @@ type NormalizedStruct<T> = Normalize<NamedKeys<T>>;
 
 /**
  * Hybrid array-objects with both numeric and named keys are stripped to plain
- * objects with native bigint values, safe to destructure, compare, and serialize.
+ * objects with native bigint values, safe to destructure and compare.
  */
 function normalizeStructOutput<T>(value: T): NormalizedStruct<T> {
   function normalize(val: any): any {
-    if (BigNumber.isBigNumber(val)) {
-      return val.toBigInt();
+    if (val && typeof val.toObject === 'function') {
+      if (val.length === 0) return [];
+      // Named struct fields are not enumerable on ethers v6 Results.
+      try {
+        return normalize(val.toObject());
+      } catch (error) {
+        // Unnamed Results represent arrays rather than structs.
+        if (!ethers.isError(error, 'UNSUPPORTED_OPERATION')) throw error;
+        return Array.from(val, normalize);
+      }
     }
     if (val && typeof val === 'object') {
       const namedKeys = Object.keys(val).filter((key) => isNaN(Number(key)));
@@ -44,7 +51,7 @@ function normalizeStructOutput<T>(value: T): NormalizedStruct<T> {
         return Object.fromEntries(namedKeys.map((key) => [key, normalize(val[key])]));
       }
       if (Array.isArray(val)) {
-        return val.map(normalize);
+        return Array.from(val, normalize);
       }
     }
     return val;
@@ -55,7 +62,7 @@ function normalizeStructOutput<T>(value: T): NormalizedStruct<T> {
 
 async function hasActiveAsset(ctx: CometContext): Promise<boolean> {
   const configurator = await ctx.getConfigurator();
-  const cometAddress = (await ctx.getComet()).address;
+  const cometAddress = await (await ctx.getComet()).getAddress();
   const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
 
   return assetConfigs.some((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
@@ -64,7 +71,7 @@ async function hasActiveAsset(ctx: CometContext): Promise<boolean> {
 /// Finds the first asset with non-zero configuration values
 async function getActiveAsset(context: CometContext) {
   const configurator = await context.getConfigurator();
-  const cometAddress = (await context.getComet()).address;
+  const cometAddress = await (await context.getComet()).getAddress();
   const assetConfigs = normalizeStructOutput(await configurator.getConfiguration(cometAddress)).assetConfigs;
 
   const assetIndex = assetConfigs.findIndex((asset) => asset.borrowCollateralFactor > 0n && asset.supplyCap > 0n);
@@ -75,18 +82,18 @@ async function getActiveAsset(context: CometContext) {
   };
 }
 
-function getMinSupplyCapIncrement(decimals: number): bigint {
-  return 10n ** BigInt(decimals);
+function getMinSupplyCapIncrement(decimals: bigint): bigint {
+  return 10n ** decimals;
 }
 
-async function getMarketAdminSigner(context: CometContext): Promise<SignerWithAddress> {
+async function getMarketAdminSigner(context: CometContext): Promise<Signer> {
   const dm = context.world.deploymentManager;
   const configurator = await context.getConfigurator();
 
-  const marketAdminPermissionChecker = (await dm.hre.ethers.getContractAt(
-    'MarketAdminPermissionChecker',
-    await configurator.marketAdminPermissionChecker()
-  )) as MarketAdminPermissionChecker;
+  const marketAdminPermissionChecker = MarketAdminPermissionChecker__factory.connect(
+    await configurator.marketAdminPermissionChecker(),
+    configurator.runner
+  );
 
   const marketAdmin = await marketAdminPermissionChecker.marketAdmin();
   const marketAdminSigner = await context.world.impersonateAddress(marketAdmin);
@@ -107,14 +114,14 @@ async function deployMarketAdminPermissionChecker(context: CometContext, force?:
     force
   );
 
-  return marketAdminPermissionChecker.address;
+  return await marketAdminPermissionChecker.getAddress();
 }
 
 async function deployCometFactory(context: CometContext, force?: boolean): Promise<string> {
   const dm = context.world.deploymentManager;
   const cometFactory = await dm.deploy('test:cometFactory', 'CometFactoryWithExtendedAssetList.sol', [], force);
 
-  return cometFactory.address;
+  return await cometFactory.getAddress();
 }
 
 async function deployPriceFeed(context: CometContext, alias: string, force?: boolean): Promise<string> {
@@ -129,7 +136,7 @@ async function deployPriceFeed(context: CometContext, alias: string, force?: boo
     force
   );
 
-  return priceFeed.address;
+  return await priceFeed.getAddress();
 }
 
 async function deployTimelock(context: CometContext, force?: boolean): Promise<string> {
@@ -137,7 +144,7 @@ async function deployTimelock(context: CometContext, force?: boolean): Promise<s
   const admin = context.actors.admin;
   const timelock = await dm.deploy('test:timelock', 'test/SimpleTimelock.sol', [admin.address], force);
 
-  return timelock.address;
+  return await timelock.getAddress();
 }
 
 async function deployMockERC20(context: CometContext, alias: string, force?: boolean): Promise<string> {
@@ -150,7 +157,7 @@ async function deployMockERC20(context: CometContext, alias: string, force?: boo
     force
   );
 
-  return mockERC20.address;
+  return await mockERC20.getAddress();
 }
 
 async function deployCometExt(context: CometContext, force?: boolean): Promise<string> {
@@ -158,18 +165,18 @@ async function deployCometExt(context: CometContext, force?: boolean): Promise<s
   const assetListFactory = await dm.deploy('test:assetListFactory', 'AssetListFactory.sol', []);
 
   const extConfiguration = {
-    name32: ethers.utils.formatBytes32String('MOCK'),
-    symbol32: ethers.utils.formatBytes32String('cMOCKv3')
+    name32: ethers.encodeBytes32String('MOCK'),
+    symbol32: ethers.encodeBytes32String('cMOCKv3')
   };
 
   const cometExt = await dm.deploy(
     'test:comet:implementation:implementation',
     'CometExtAssetList.sol',
-    [extConfiguration, assetListFactory.address],
+    [extConfiguration, await assetListFactory.getAddress()],
     force
   );
 
-  return cometExt.address;
+  return await cometExt.getAddress();
 }
 
 async function deployComet(context: CometContext): Promise<string> {
@@ -201,7 +208,7 @@ async function deployComet(context: CometContext): Promise<string> {
       {
         asset: await deployMockERC20(context, 'asset'),
         priceFeed: await deployPriceFeed(context, 'asset'),
-        decimals: 18,
+        decimals: 18n,
         borrowCollateralFactor: exp(0.65, 18), // 650000000000000000n
         liquidateCollateralFactor: exp(0.7, 18), // 700000000000000000n
         liquidationFactor: exp(0.8, 18), // 800000000000000000n
@@ -214,12 +221,12 @@ async function deployComet(context: CometContext): Promise<string> {
   const tmpCometImpl = await dm.deploy('test:comet:implementation', 'CometWithExtendedAssetList.sol', [configuration]);
 
   const cometProxy = await dm.deploy('test:comet', 'vendor/proxy/transparent/TransparentUpgradeableProxy.sol', [
-    tmpCometImpl.address,
-    cometAdmin.address,
-    []
+    await tmpCometImpl.getAddress(),
+    await cometAdmin.getAddress(),
+    '0x'
   ]);
 
-  return cometProxy.address;
+  return await cometProxy.getAddress();
 }
 
 /*
@@ -276,9 +283,9 @@ scenario(
 
     const newFactory = await deployCometFactory(context);
 
-    await configurator.connect(admin.signer).setFactory(comet.address, newFactory);
+    await configurator.connect(admin.signer).setFactory(await comet.getAddress(), newFactory);
 
-    expect(await configurator.factory(comet.address)).to.be.equal(newFactory);
+    expect(await configurator.factory(await comet.getAddress())).to.be.equal(newFactory);
   }
 );
 
@@ -291,13 +298,13 @@ scenario(
     const firstNewFactory = await deployCometFactory(context);
     const secondNewFactory = await deployCometFactory(context, true);
 
-    await configurator.connect(admin.signer).setFactory(comet.address, firstNewFactory);
+    await configurator.connect(admin.signer).setFactory(await comet.getAddress(), firstNewFactory);
 
-    expect(await configurator.factory(comet.address)).to.be.equal(firstNewFactory);
+    expect(await configurator.factory(await comet.getAddress())).to.be.equal(firstNewFactory);
 
-    await configurator.connect(admin.signer).setFactory(comet.address, secondNewFactory);
+    await configurator.connect(admin.signer).setFactory(await comet.getAddress(), secondNewFactory);
 
-    expect(await configurator.factory(comet.address)).to.be.equal(secondNewFactory);
+    expect(await configurator.factory(await comet.getAddress())).to.be.equal(secondNewFactory);
   }
 );
 
@@ -309,7 +316,7 @@ scenario(
     const newFactory = await deployCometFactory(context);
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setFactory(comet.address, newFactory),
+      configurator.connect(albert.signer).setFactory(await comet.getAddress(), newFactory),
       'Unauthorized()'
     );
   }
@@ -320,16 +327,16 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
-    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
+    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress()));
 
     const updatedConfiguration = {
       ...existingConfiguration,
       baseBorrowMin: existingConfiguration.baseBorrowMin + 1n
     };
 
-    await configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration);
+    await configurator.connect(admin.signer).setConfiguration(await comet.getAddress(), updatedConfiguration);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address))).to.be.deep.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress()))).to.be.deep.equal(
       updatedConfiguration
     );
   }
@@ -355,14 +362,14 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
-    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
+    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress()));
 
     const updatedConfiguration = {
       ...existingConfiguration,
       baseBorrowMin: existingConfiguration.baseBorrowMin + 1n
     };
     await expectRevertCustom(
-      configurator.connect(albert.signer).setConfiguration(comet.address, updatedConfiguration),
+      configurator.connect(albert.signer).setConfiguration(await comet.getAddress(), updatedConfiguration),
       'Unauthorized()'
     );
   }
@@ -373,7 +380,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
-    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
+    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress()));
 
     const updatedConfiguration = {
       ...existingConfiguration,
@@ -381,7 +388,7 @@ scenario(
     };
 
     await expectRevertCustom(
-      configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration),
+      configurator.connect(admin.signer).setConfiguration(await comet.getAddress(), updatedConfiguration),
       'ConfigurationAlreadyExists()'
     );
   }
@@ -392,7 +399,7 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
-    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
+    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress()));
 
     const updatedConfiguration = {
       ...existingConfiguration,
@@ -400,7 +407,7 @@ scenario(
     };
 
     await expectRevertCustom(
-      configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration),
+      configurator.connect(admin.signer).setConfiguration(await comet.getAddress(), updatedConfiguration),
       'ConfigurationAlreadyExists()'
     );
   }
@@ -413,11 +420,11 @@ scenario(
     const { admin } = actors;
 
     const newGovernor = await deployTimelock(context);
-    await configurator.connect(admin.signer).setGovernor(comet.address, newGovernor);
+    await configurator.connect(admin.signer).setGovernor(await comet.getAddress(), newGovernor);
 
-    expect((await configurator.getConfiguration(comet.address)).governor).to.be.equal(newGovernor);
+    expect((await configurator.getConfiguration(await comet.getAddress())).governor).to.be.equal(newGovernor);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     expect(await comet.governor()).to.be.equal(newGovernor);
   }
@@ -432,13 +439,13 @@ scenario(
     const firstNewGovernor = await deployTimelock(context);
     const secondNewGovernor = await deployTimelock(context, true);
 
-    await configurator.connect(admin.signer).setGovernor(comet.address, firstNewGovernor);
+    await configurator.connect(admin.signer).setGovernor(await comet.getAddress(), firstNewGovernor);
 
-    expect((await configurator.getConfiguration(comet.address)).governor).to.be.equal(firstNewGovernor);
+    expect((await configurator.getConfiguration(await comet.getAddress())).governor).to.be.equal(firstNewGovernor);
 
-    await configurator.connect(admin.signer).setGovernor(comet.address, secondNewGovernor);
+    await configurator.connect(admin.signer).setGovernor(await comet.getAddress(), secondNewGovernor);
 
-    expect((await configurator.getConfiguration(comet.address)).governor).to.be.equal(secondNewGovernor);
+    expect((await configurator.getConfiguration(await comet.getAddress())).governor).to.be.equal(secondNewGovernor);
   }
 );
 
@@ -450,7 +457,7 @@ scenario(
     const newGovernor = await deployTimelock(context);
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setGovernor(comet.address, newGovernor),
+      configurator.connect(albert.signer).setGovernor(await comet.getAddress(), newGovernor),
       'Unauthorized()'
     );
   }
@@ -463,11 +470,11 @@ scenario(
     const { admin } = actors;
 
     const newPauseGuardian = await ethers.Wallet.createRandom().getAddress();
-    await configurator.connect(admin.signer).setPauseGuardian(comet.address, newPauseGuardian);
+    await configurator.connect(admin.signer).setPauseGuardian(await comet.getAddress(), newPauseGuardian);
 
-    expect((await configurator.getConfiguration(comet.address)).pauseGuardian).to.be.equal(newPauseGuardian);
+    expect((await configurator.getConfiguration(await comet.getAddress())).pauseGuardian).to.be.equal(newPauseGuardian);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     expect(await comet.pauseGuardian()).to.be.equal(newPauseGuardian);
   }
@@ -482,13 +489,13 @@ scenario(
     const firstNewPauseGuardian = await ethers.Wallet.createRandom().getAddress();
     const secondNewPauseGuardian = await ethers.Wallet.createRandom().getAddress();
 
-    await configurator.connect(admin.signer).setPauseGuardian(comet.address, firstNewPauseGuardian);
+    await configurator.connect(admin.signer).setPauseGuardian(await comet.getAddress(), firstNewPauseGuardian);
 
-    expect((await configurator.getConfiguration(comet.address)).pauseGuardian).to.be.equal(firstNewPauseGuardian);
+    expect((await configurator.getConfiguration(await comet.getAddress())).pauseGuardian).to.be.equal(firstNewPauseGuardian);
 
-    await configurator.connect(admin.signer).setPauseGuardian(comet.address, secondNewPauseGuardian);
+    await configurator.connect(admin.signer).setPauseGuardian(await comet.getAddress(), secondNewPauseGuardian);
 
-    expect((await configurator.getConfiguration(comet.address)).pauseGuardian).to.be.equal(secondNewPauseGuardian);
+    expect((await configurator.getConfiguration(await comet.getAddress())).pauseGuardian).to.be.equal(secondNewPauseGuardian);
   }
 );
 
@@ -501,7 +508,7 @@ scenario(
     const newPauseGuardian = await ethers.Wallet.createRandom().getAddress();
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setPauseGuardian(comet.address, newPauseGuardian),
+      configurator.connect(albert.signer).setPauseGuardian(await comet.getAddress(), newPauseGuardian),
       'Unauthorized()'
     );
   }
@@ -567,11 +574,11 @@ scenario(
     const { admin } = actors;
     const newPriceFeed = await deployPriceFeed(context, 'baseToken');
 
-    await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, newPriceFeed);
+    await configurator.connect(admin.signer).setBaseTokenPriceFeed(await comet.getAddress(), newPriceFeed);
 
-    expect((await configurator.getConfiguration(comet.address)).baseTokenPriceFeed).to.be.equal(newPriceFeed);
+    expect((await configurator.getConfiguration(await comet.getAddress())).baseTokenPriceFeed).to.be.equal(newPriceFeed);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     expect(await comet.baseTokenPriceFeed()).to.be.equal(newPriceFeed);
   }
@@ -586,13 +593,13 @@ scenario(
     const firstNewPriceFeed = await deployPriceFeed(context, 'baseToken');
     const secondNewPriceFeed = await deployPriceFeed(context, 'baseToken', true);
 
-    await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, firstNewPriceFeed);
+    await configurator.connect(admin.signer).setBaseTokenPriceFeed(await comet.getAddress(), firstNewPriceFeed);
 
-    expect((await configurator.getConfiguration(comet.address)).baseTokenPriceFeed).to.be.equal(firstNewPriceFeed);
+    expect((await configurator.getConfiguration(await comet.getAddress())).baseTokenPriceFeed).to.be.equal(firstNewPriceFeed);
 
-    await configurator.connect(admin.signer).setBaseTokenPriceFeed(comet.address, secondNewPriceFeed);
+    await configurator.connect(admin.signer).setBaseTokenPriceFeed(await comet.getAddress(), secondNewPriceFeed);
 
-    expect((await configurator.getConfiguration(comet.address)).baseTokenPriceFeed).to.be.equal(secondNewPriceFeed);
+    expect((await configurator.getConfiguration(await comet.getAddress())).baseTokenPriceFeed).to.be.equal(secondNewPriceFeed);
   }
 );
 
@@ -605,7 +612,7 @@ scenario(
     const newPriceFeed = await deployPriceFeed(context, 'baseToken');
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setBaseTokenPriceFeed(comet.address, newPriceFeed),
+      configurator.connect(albert.signer).setBaseTokenPriceFeed(await comet.getAddress(), newPriceFeed),
       'Unauthorized()'
     );
   }
@@ -619,9 +626,9 @@ scenario(
 
     const newExtensionDelegate = await deployCometExt(context);
 
-    await configurator.connect(admin.signer).setExtensionDelegate(comet.address, newExtensionDelegate);
+    await configurator.connect(admin.signer).setExtensionDelegate(await comet.getAddress(), newExtensionDelegate);
 
-    expect((await configurator.getConfiguration(comet.address)).extensionDelegate).to.be.equal(newExtensionDelegate);
+    expect((await configurator.getConfiguration(await comet.getAddress())).extensionDelegate).to.be.equal(newExtensionDelegate);
   }
 );
 
@@ -634,15 +641,15 @@ scenario(
     const firstNewExtensionDelegate = await deployCometExt(context);
     const secondNewExtensionDelegate = await deployCometExt(context, true);
 
-    await configurator.connect(admin.signer).setExtensionDelegate(comet.address, firstNewExtensionDelegate);
+    await configurator.connect(admin.signer).setExtensionDelegate(await comet.getAddress(), firstNewExtensionDelegate);
 
-    expect((await configurator.getConfiguration(comet.address)).extensionDelegate).to.be.equal(
+    expect((await configurator.getConfiguration(await comet.getAddress())).extensionDelegate).to.be.equal(
       firstNewExtensionDelegate
     );
 
-    await configurator.connect(admin.signer).setExtensionDelegate(comet.address, secondNewExtensionDelegate);
+    await configurator.connect(admin.signer).setExtensionDelegate(await comet.getAddress(), secondNewExtensionDelegate);
 
-    expect((await configurator.getConfiguration(comet.address)).extensionDelegate).to.be.equal(
+    expect((await configurator.getConfiguration(await comet.getAddress())).extensionDelegate).to.be.equal(
       secondNewExtensionDelegate
     );
   }
@@ -657,7 +664,7 @@ scenario(
     const newExtensionDelegate = await deployCometExt(context);
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setExtensionDelegate(comet.address, newExtensionDelegate),
+      configurator.connect(albert.signer).setExtensionDelegate(await comet.getAddress(), newExtensionDelegate),
       'Unauthorized()'
     );
   }
@@ -670,17 +677,17 @@ scenario(
     const { admin } = actors;
 
     const oldStoreFrontPriceFactor = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).storeFrontPriceFactor;
 
     const newStoreFrontPriceFactor = oldStoreFrontPriceFactor + 1n;
-    await configurator.connect(admin.signer).setStoreFrontPriceFactor(comet.address, newStoreFrontPriceFactor);
+    await configurator.connect(admin.signer).setStoreFrontPriceFactor(await comet.getAddress(), newStoreFrontPriceFactor);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).storeFrontPriceFactor).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).storeFrontPriceFactor).to.be.equal(
       newStoreFrontPriceFactor
     );
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     expect(await comet.storeFrontPriceFactor()).to.be.equal(newStoreFrontPriceFactor);
   }
@@ -692,21 +699,21 @@ scenario(
     const { admin } = actors;
 
     const initialStoreFrontPriceFactor = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).storeFrontPriceFactor;
 
     const firstStoreFrontPriceFactor = initialStoreFrontPriceFactor + 1n;
     const secondStoreFrontPriceFactor = firstStoreFrontPriceFactor + 1n;
 
-    await configurator.connect(admin.signer).setStoreFrontPriceFactor(comet.address, firstStoreFrontPriceFactor);
+    await configurator.connect(admin.signer).setStoreFrontPriceFactor(await comet.getAddress(), firstStoreFrontPriceFactor);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).storeFrontPriceFactor).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).storeFrontPriceFactor).to.be.equal(
       firstStoreFrontPriceFactor
     );
 
-    await configurator.connect(admin.signer).setStoreFrontPriceFactor(comet.address, secondStoreFrontPriceFactor);
+    await configurator.connect(admin.signer).setStoreFrontPriceFactor(await comet.getAddress(), secondStoreFrontPriceFactor);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).storeFrontPriceFactor).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).storeFrontPriceFactor).to.be.equal(
       secondStoreFrontPriceFactor
     );
   }
@@ -719,13 +726,13 @@ scenario(
     const { albert } = actors;
 
     const oldStoreFrontPriceFactor = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).storeFrontPriceFactor;
 
     const newStoreFrontPriceFactor = oldStoreFrontPriceFactor + 1n;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setStoreFrontPriceFactor(comet.address, newStoreFrontPriceFactor),
+      configurator.connect(albert.signer).setStoreFrontPriceFactor(await comet.getAddress(), newStoreFrontPriceFactor),
       'Unauthorized()'
     );
   }
@@ -737,17 +744,17 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
     const oldBaseMinForRewards = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).baseMinForRewards;
 
     const newBaseMinForRewards = oldBaseMinForRewards + 1n;
-    await configurator.connect(admin.signer).setBaseMinForRewards(comet.address, newBaseMinForRewards);
+    await configurator.connect(admin.signer).setBaseMinForRewards(await comet.getAddress(), newBaseMinForRewards);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseMinForRewards).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseMinForRewards).to.be.equal(
       newBaseMinForRewards
     );
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     expect(await comet.baseMinForRewards()).to.be.equal(newBaseMinForRewards);
   }
@@ -760,21 +767,21 @@ scenario(
     const { admin } = actors;
 
     const initialBaseMinForRewards = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).baseMinForRewards;
 
     const firstBaseMinForRewards = initialBaseMinForRewards + 1n;
     const secondBaseMinForRewards = firstBaseMinForRewards + 1n;
 
-    await configurator.connect(admin.signer).setBaseMinForRewards(comet.address, firstBaseMinForRewards);
+    await configurator.connect(admin.signer).setBaseMinForRewards(await comet.getAddress(), firstBaseMinForRewards);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseMinForRewards).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseMinForRewards).to.be.equal(
       firstBaseMinForRewards
     );
 
-    await configurator.connect(admin.signer).setBaseMinForRewards(comet.address, secondBaseMinForRewards);
+    await configurator.connect(admin.signer).setBaseMinForRewards(await comet.getAddress(), secondBaseMinForRewards);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseMinForRewards).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseMinForRewards).to.be.equal(
       secondBaseMinForRewards
     );
   }
@@ -787,13 +794,13 @@ scenario(
     const { albert } = actors;
 
     const oldBaseMinForRewards = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).baseMinForRewards;
 
     const newBaseMinForRewards = oldBaseMinForRewards + 1n;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setBaseMinForRewards(comet.address, newBaseMinForRewards),
+      configurator.connect(albert.signer).setBaseMinForRewards(await comet.getAddress(), newBaseMinForRewards),
       'Unauthorized()'
     );
   }
@@ -804,16 +811,16 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
-    const oldTargetReserves = normalizeStructOutput(await configurator.getConfiguration(comet.address)).targetReserves;
+    const oldTargetReserves = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).targetReserves;
 
     const newTargetReserves = oldTargetReserves + 1n;
-    await configurator.connect(admin.signer).setTargetReserves(comet.address, newTargetReserves);
+    await configurator.connect(admin.signer).setTargetReserves(await comet.getAddress(), newTargetReserves);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).targetReserves).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).targetReserves).to.be.equal(
       newTargetReserves
     );
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     expect(await comet.targetReserves()).to.be.equal(newTargetReserves);
   }
@@ -825,21 +832,21 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
     const initialTargetReserves = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).targetReserves;
 
     const firstTargetReserves = initialTargetReserves + 1n;
     const secondTargetReserves = firstTargetReserves + 1n;
 
-    await configurator.connect(admin.signer).setTargetReserves(comet.address, firstTargetReserves);
+    await configurator.connect(admin.signer).setTargetReserves(await comet.getAddress(), firstTargetReserves);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).targetReserves).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).targetReserves).to.be.equal(
       firstTargetReserves
     );
 
-    await configurator.connect(admin.signer).setTargetReserves(comet.address, secondTargetReserves);
+    await configurator.connect(admin.signer).setTargetReserves(await comet.getAddress(), secondTargetReserves);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).targetReserves).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).targetReserves).to.be.equal(
       secondTargetReserves
     );
   }
@@ -851,11 +858,11 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
-    const oldTargetReserves = normalizeStructOutput(await configurator.getConfiguration(comet.address)).targetReserves;
+    const oldTargetReserves = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).targetReserves;
     const newTargetReserves = oldTargetReserves + 1n;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setTargetReserves(comet.address, newTargetReserves),
+      configurator.connect(albert.signer).setTargetReserves(await comet.getAddress(), newTargetReserves),
       'Unauthorized()'
     );
   }
@@ -867,21 +874,21 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
 
-    const numAssetsBefore = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs
+    const numAssetsBefore = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs
       .length;
 
     const newAssetConfig = {
       asset: await deployMockERC20(context, 'asset'),
       priceFeed: await deployPriceFeed(context, 'asset'),
-      decimals: 18,
+      decimals: 18n,
       borrowCollateralFactor: exp(0.8, 18),
       liquidateCollateralFactor: exp(0.85, 18),
       liquidationFactor: exp(0.9, 18),
       supplyCap: exp(5e6, 18)
     };
 
-    await configurator.connect(admin.signer).addAsset(comet.address, newAssetConfig);
-    const assetConfigsAfter = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs;
+    await configurator.connect(admin.signer).addAsset(await comet.getAddress(), newAssetConfig);
+    const assetConfigsAfter = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs;
 
     expect(assetConfigsAfter.length).to.be.equal(numAssetsBefore + 1);
     expect(assetConfigsAfter.at(-1)).to.be.deep.equal(newAssetConfig);
@@ -891,12 +898,12 @@ scenario(
 scenario('Configurator#addAsset can add multiple assets', {}, async ({ comet, configurator, actors }, context) => {
   const { admin } = actors;
 
-  const numAssetsBefore = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.length;
+  const numAssetsBefore = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.length;
 
   const firstNewAssetConfig = {
     asset: await deployMockERC20(context, 'asset'),
     priceFeed: await deployPriceFeed(context, 'asset'),
-    decimals: 18,
+    decimals: 18n,
     borrowCollateralFactor: exp(0.8, 18),
     liquidateCollateralFactor: exp(0.85, 18),
     liquidationFactor: exp(0.9, 18),
@@ -906,16 +913,16 @@ scenario('Configurator#addAsset can add multiple assets', {}, async ({ comet, co
   const secondNewAssetConfig = {
     asset: await deployMockERC20(context, 'asset', true),
     priceFeed: await deployPriceFeed(context, 'asset', true),
-    decimals: 6,
+    decimals: 6n,
     borrowCollateralFactor: exp(0.8, 18),
     liquidateCollateralFactor: exp(0.85, 18),
     liquidationFactor: exp(0.9, 18),
     supplyCap: exp(5e6, 6)
   };
 
-  await configurator.connect(admin.signer).addAsset(comet.address, firstNewAssetConfig);
-  await configurator.connect(admin.signer).addAsset(comet.address, secondNewAssetConfig);
-  const assetConfigsAfter = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs;
+  await configurator.connect(admin.signer).addAsset(await comet.getAddress(), firstNewAssetConfig);
+  await configurator.connect(admin.signer).addAsset(await comet.getAddress(), secondNewAssetConfig);
+  const assetConfigsAfter = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs;
 
   expect(assetConfigsAfter.length).to.be.equal(numAssetsBefore + 2);
   expect(assetConfigsAfter.at(-2)).to.be.deep.equal(firstNewAssetConfig);
@@ -929,10 +936,10 @@ scenario(
     const { albert } = actors;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).addAsset(comet.address, {
+      configurator.connect(albert.signer).addAsset(await comet.getAddress(), {
         asset: await deployMockERC20(context, 'asset'),
         priceFeed: await deployPriceFeed(context, 'asset'),
-        decimals: 18,
+        decimals: 18n,
         borrowCollateralFactor: exp(0.8, 18),
         liquidateCollateralFactor: exp(0.85, 18),
         liquidationFactor: exp(0.9, 18),
@@ -950,7 +957,7 @@ scenario(
     const { admin } = actors;
 
     const assetIndex = -1;
-    const assetConfigsBefore = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs;
+    const assetConfigsBefore = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs;
     const existingAssetConfig = assetConfigsBefore.at(assetIndex);
 
     const updatedAssetConfig = {
@@ -959,13 +966,13 @@ scenario(
       liquidateCollateralFactor: existingAssetConfig.liquidateCollateralFactor + MIN_FACTOR_INCREMENT
     };
 
-    await configurator.connect(admin.signer).updateAsset(comet.address, updatedAssetConfig);
-    const assetConfigsAfter = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs;
+    await configurator.connect(admin.signer).updateAsset(await comet.getAddress(), updatedAssetConfig);
+    const assetConfigsAfter = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs;
 
     expect(assetConfigsAfter.length).to.be.equal(assetConfigsBefore.length);
     expect(assetConfigsAfter.at(assetIndex)).to.be.deep.equal(updatedAssetConfig);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const updatedAssetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(existingAssetConfig.asset));
 
@@ -981,7 +988,7 @@ scenario(
     const { admin } = actors;
 
     const assetIndex = -1;
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
       assetIndex
     );
 
@@ -995,14 +1002,14 @@ scenario(
       borrowCollateralFactor: firstUpdatedAssetConfig.borrowCollateralFactor + MIN_FACTOR_INCREMENT
     };
 
-    await configurator.connect(admin.signer).updateAsset(comet.address, firstUpdatedAssetConfig);
+    await configurator.connect(admin.signer).updateAsset(await comet.getAddress(), firstUpdatedAssetConfig);
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
     ).to.be.deep.equal(firstUpdatedAssetConfig);
 
-    await configurator.connect(admin.signer).updateAsset(comet.address, secondUpdatedAssetConfig);
+    await configurator.connect(admin.signer).updateAsset(await comet.getAddress(), secondUpdatedAssetConfig);
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
     ).to.be.deep.equal(secondUpdatedAssetConfig);
   }
 );
@@ -1010,7 +1017,7 @@ scenario(
 scenario('Configurator#updateAsset reverts if called by non-governor', {}, async ({ comet, configurator, actors }) => {
   const { albert } = actors;
 
-  const existingAssetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+  const existingAssetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
     -1
   );
 
@@ -1020,7 +1027,7 @@ scenario('Configurator#updateAsset reverts if called by non-governor', {}, async
   };
 
   await expectRevertCustom(
-    configurator.connect(albert.signer).updateAsset(comet.address, updatedAssetConfig),
+    configurator.connect(albert.signer).updateAsset(await comet.getAddress(), updatedAssetConfig),
     'Unauthorized()'
   );
 });
@@ -1028,7 +1035,7 @@ scenario('Configurator#updateAsset reverts if called by non-governor', {}, async
 scenario('Configurator#updateAsset reverts if asset does not exist', {}, async ({ comet, configurator, actors }) => {
   const { admin } = actors;
 
-  const existingAssetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+  const existingAssetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
     -1
   );
 
@@ -1038,7 +1045,7 @@ scenario('Configurator#updateAsset reverts if asset does not exist', {}, async (
   };
 
   await expectRevertCustom(
-    configurator.connect(admin.signer).updateAsset(comet.address, updatedAssetConfig),
+    configurator.connect(admin.signer).updateAsset(await comet.getAddress(), updatedAssetConfig),
     'AssetDoesNotExist()'
   );
 });
@@ -1050,14 +1057,14 @@ scenario(
     const { admin } = actors;
     // use the last asset in the existing configuration to ensure the asset exists
     const assetIndex = -1;
-    const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).asset;
+    const existingAsset = (await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex).asset;
     const newPriceFeed = await deployPriceFeed(context, 'asset');
 
     await configurator
       .connect(admin.signer)
-      .updateAssetPriceFeed(comet.address, existingAsset, newPriceFeed);
+      .updateAssetPriceFeed(await comet.getAddress(), existingAsset, newPriceFeed);
 
-    expect((await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).priceFeed).to.be.equal(
+    expect((await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex).priceFeed).to.be.equal(
       newPriceFeed
     );
   }
@@ -1070,24 +1077,24 @@ scenario(
     const { admin } = actors;
     // use the last asset in the existing configuration to ensure the asset exists
     const assetIndex = -1;
-    const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).asset;
+    const existingAsset = (await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex).asset;
 
     const firstNewPriceFeed = await deployPriceFeed(context, 'asset');
     const secondNewPriceFeed = await deployPriceFeed(context, 'asset', true);
 
     await configurator
       .connect(admin.signer)
-      .updateAssetPriceFeed(comet.address, existingAsset, firstNewPriceFeed);
+      .updateAssetPriceFeed(await comet.getAddress(), existingAsset, firstNewPriceFeed);
 
-    expect((await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).priceFeed).to.be.equal(
+    expect((await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex).priceFeed).to.be.equal(
       firstNewPriceFeed
     );
 
     await configurator
       .connect(admin.signer)
-      .updateAssetPriceFeed(comet.address, existingAsset, secondNewPriceFeed);
+      .updateAssetPriceFeed(await comet.getAddress(), existingAsset, secondNewPriceFeed);
 
-    expect((await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).priceFeed).to.be.equal(
+    expect((await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex).priceFeed).to.be.equal(
       secondNewPriceFeed
     );
   }
@@ -1099,11 +1106,11 @@ scenario(
   async ({ comet, configurator, actors }, context) => {
     const { albert } = actors;
 
-    const existingAsset = (await configurator.getConfiguration(comet.address)).assetConfigs.at(-1).asset;
+    const existingAsset = (await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(-1).asset;
     const newPriceFeed = await deployPriceFeed(context, 'asset');
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).updateAssetPriceFeed(comet.address, existingAsset, newPriceFeed),
+      configurator.connect(albert.signer).updateAssetPriceFeed(await comet.getAddress(), existingAsset, newPriceFeed),
       'Unauthorized()'
     );
   }
@@ -1119,7 +1126,7 @@ scenario(
     const newPriceFeed = await deployPriceFeed(context, 'asset');
 
     await expectRevertCustom(
-      configurator.connect(admin.signer).updateAssetPriceFeed(comet.address, nonExistingAsset, newPriceFeed),
+      configurator.connect(admin.signer).updateAssetPriceFeed(await comet.getAddress(), nonExistingAsset, newPriceFeed),
       'AssetDoesNotExist()'
     );
   }
@@ -1137,18 +1144,18 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
+    const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyKink;
     const newSupplyKink = oldSupplyKink + 1n;
 
-    await configurator.connect(admin.signer).setSupplyKink(comet.address, newSupplyKink);
+    await configurator.connect(admin.signer).setSupplyKink(await comet.getAddress(), newSupplyKink);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyKink).to.be.equal(
       newSupplyKink
     );
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.supplyKink()).toBigInt()).to.be.equal(newSupplyKink);
+    expect(await comet.supplyKink()).to.be.equal(newSupplyKink);
   }
 );
 
@@ -1158,19 +1165,19 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
+    const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyKink;
     const firstNewSupplyKink = oldSupplyKink + 1n;
     const secondNewSupplyKink = firstNewSupplyKink + 1n;
 
-    await configurator.connect(admin.signer).setSupplyKink(comet.address, firstNewSupplyKink);
+    await configurator.connect(admin.signer).setSupplyKink(await comet.getAddress(), firstNewSupplyKink);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyKink).to.be.equal(
       firstNewSupplyKink
     );
 
-    await configurator.connect(admin.signer).setSupplyKink(comet.address, secondNewSupplyKink);
+    await configurator.connect(admin.signer).setSupplyKink(await comet.getAddress(), secondNewSupplyKink);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyKink).to.be.equal(
       secondNewSupplyKink
     );
   }
@@ -1185,18 +1192,18 @@ scenario(
     const { admin } = actors;
     const marketAdminSigner = await getMarketAdminSigner(context);
 
-    const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
+    const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyKink;
     const newSupplyKink = oldSupplyKink + 1n;
 
-    await configurator.connect(marketAdminSigner).setSupplyKink(comet.address, newSupplyKink);
+    await configurator.connect(marketAdminSigner).setSupplyKink(await comet.getAddress(), newSupplyKink);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyKink).to.be.equal(
       newSupplyKink
     );
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.supplyKink()).toBigInt()).to.be.equal(newSupplyKink);
+    expect(await comet.supplyKink()).to.be.equal(newSupplyKink);
   }
 );
 
@@ -1206,11 +1213,11 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
-    const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
+    const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyKink;
     const newSupplyKink = oldSupplyKink + 1n;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setSupplyKink(comet.address, newSupplyKink),
+      configurator.connect(albert.signer).setSupplyKink(await comet.getAddress(), newSupplyKink),
       'Unauthorized()'
     );
   }
@@ -1223,22 +1230,22 @@ scenario(
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateSlopeLow = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateSlopeLow;
 
     const newSupplyPerYearInterestRateSlopeLow = oldSupplyPerYearInterestRateSlopeLow + 1n;
 
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeLow(comet.address, newSupplyPerYearInterestRateSlopeLow);
+      .setSupplyPerYearInterestRateSlopeLow(await comet.getAddress(), newSupplyPerYearInterestRateSlopeLow);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeLow
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateSlopeLow
     ).to.be.equal(newSupplyPerYearInterestRateSlopeLow);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.supplyPerSecondInterestRateSlopeLow()).toBigInt()).to.be.equal(
+    expect(await comet.supplyPerSecondInterestRateSlopeLow()).to.be.equal(
       newSupplyPerYearInterestRateSlopeLow / SECONDS_PER_YEAR
     );
   }
@@ -1251,7 +1258,7 @@ scenario(
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateSlopeLow = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateSlopeLow;
 
     const firstNewSupplyPerYearInterestRateSlopeLow = oldSupplyPerYearInterestRateSlopeLow + 1n;
@@ -1259,18 +1266,18 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeLow(comet.address, firstNewSupplyPerYearInterestRateSlopeLow);
+      .setSupplyPerYearInterestRateSlopeLow(await comet.getAddress(), firstNewSupplyPerYearInterestRateSlopeLow);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeLow
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateSlopeLow
     ).to.be.equal(firstNewSupplyPerYearInterestRateSlopeLow);
 
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeLow(comet.address, secondNewSupplyPerYearInterestRateSlopeLow);
+      .setSupplyPerYearInterestRateSlopeLow(await comet.getAddress(), secondNewSupplyPerYearInterestRateSlopeLow);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeLow
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateSlopeLow
     ).to.be.equal(secondNewSupplyPerYearInterestRateSlopeLow);
   }
 );
@@ -1285,22 +1292,22 @@ scenario(
     const marketAdminSigner = await getMarketAdminSigner(context);
 
     const oldSupplyPerYearInterestRateSlopeLow = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateSlopeLow;
 
     const newSupplyPerYearInterestRateSlopeLow = oldSupplyPerYearInterestRateSlopeLow + 1n;
 
     await configurator
       .connect(marketAdminSigner)
-      .setSupplyPerYearInterestRateSlopeLow(comet.address, newSupplyPerYearInterestRateSlopeLow);
+      .setSupplyPerYearInterestRateSlopeLow(await comet.getAddress(), newSupplyPerYearInterestRateSlopeLow);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeLow
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateSlopeLow
     ).to.be.equal(newSupplyPerYearInterestRateSlopeLow);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.supplyPerSecondInterestRateSlopeLow()).toBigInt()).to.be.equal(
+    expect(await comet.supplyPerSecondInterestRateSlopeLow()).to.be.equal(
       newSupplyPerYearInterestRateSlopeLow / SECONDS_PER_YEAR
     );
   }
@@ -1313,7 +1320,7 @@ scenario(
     const { albert } = actors;
 
     const oldSupplyPerYearInterestRateSlopeLow = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateSlopeLow;
 
     const newSupplyPerYearInterestRateSlopeLow = oldSupplyPerYearInterestRateSlopeLow + 1n;
@@ -1321,7 +1328,7 @@ scenario(
     await expectRevertCustom(
       configurator
         .connect(albert.signer)
-        .setSupplyPerYearInterestRateSlopeLow(comet.address, newSupplyPerYearInterestRateSlopeLow),
+        .setSupplyPerYearInterestRateSlopeLow(await comet.getAddress(), newSupplyPerYearInterestRateSlopeLow),
       'Unauthorized()'
     );
   }
@@ -1334,22 +1341,22 @@ scenario(
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateSlopeHigh = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateSlopeHigh;
 
     const newSupplyPerYearInterestRateSlopeHigh = oldSupplyPerYearInterestRateSlopeHigh + 1n;
 
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeHigh(comet.address, newSupplyPerYearInterestRateSlopeHigh);
+      .setSupplyPerYearInterestRateSlopeHigh(await comet.getAddress(), newSupplyPerYearInterestRateSlopeHigh);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeHigh
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateSlopeHigh
     ).to.be.equal(newSupplyPerYearInterestRateSlopeHigh);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.supplyPerSecondInterestRateSlopeHigh()).toBigInt()).to.be.equal(
+    expect(await comet.supplyPerSecondInterestRateSlopeHigh()).to.be.equal(
       newSupplyPerYearInterestRateSlopeHigh / SECONDS_PER_YEAR
     );
   }
@@ -1362,7 +1369,7 @@ scenario(
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateSlopeHigh = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateSlopeHigh;
 
     const firstNewSupplyPerYearInterestRateSlopeHigh = oldSupplyPerYearInterestRateSlopeHigh + 1n;
@@ -1370,18 +1377,18 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeHigh(comet.address, firstNewSupplyPerYearInterestRateSlopeHigh);
+      .setSupplyPerYearInterestRateSlopeHigh(await comet.getAddress(), firstNewSupplyPerYearInterestRateSlopeHigh);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeHigh
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateSlopeHigh
     ).to.be.equal(firstNewSupplyPerYearInterestRateSlopeHigh);
 
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateSlopeHigh(comet.address, secondNewSupplyPerYearInterestRateSlopeHigh);
+      .setSupplyPerYearInterestRateSlopeHigh(await comet.getAddress(), secondNewSupplyPerYearInterestRateSlopeHigh);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeHigh
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateSlopeHigh
     ).to.be.equal(secondNewSupplyPerYearInterestRateSlopeHigh);
   }
 );
@@ -1397,22 +1404,22 @@ scenario(
     const marketAdminSigner = await getMarketAdminSigner(context);
 
     const oldSupplyPerYearInterestRateSlopeHigh = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateSlopeHigh;
 
     const newSupplyPerYearInterestRateSlopeHigh = oldSupplyPerYearInterestRateSlopeHigh + 1n;
 
     await configurator
       .connect(marketAdminSigner)
-      .setSupplyPerYearInterestRateSlopeHigh(comet.address, newSupplyPerYearInterestRateSlopeHigh);
+      .setSupplyPerYearInterestRateSlopeHigh(await comet.getAddress(), newSupplyPerYearInterestRateSlopeHigh);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeHigh
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateSlopeHigh
     ).to.be.equal(newSupplyPerYearInterestRateSlopeHigh);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.supplyPerSecondInterestRateSlopeHigh()).toBigInt()).to.be.equal(
+    expect(await comet.supplyPerSecondInterestRateSlopeHigh()).to.be.equal(
       newSupplyPerYearInterestRateSlopeHigh / SECONDS_PER_YEAR
     );
   }
@@ -1425,7 +1432,7 @@ scenario(
     const { albert } = actors;
 
     const oldSupplyPerYearInterestRateSlopeHigh = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateSlopeHigh;
 
     const newSupplyPerYearInterestRateSlopeHigh = oldSupplyPerYearInterestRateSlopeHigh + 1n;
@@ -1433,7 +1440,7 @@ scenario(
     await expectRevertCustom(
       configurator
         .connect(albert.signer)
-        .setSupplyPerYearInterestRateSlopeHigh(comet.address, newSupplyPerYearInterestRateSlopeHigh),
+        .setSupplyPerYearInterestRateSlopeHigh(await comet.getAddress(), newSupplyPerYearInterestRateSlopeHigh),
       'Unauthorized()'
     );
   }
@@ -1446,22 +1453,22 @@ scenario(
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateBase = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateBase;
 
     const newSupplyPerYearInterestRateBase = oldSupplyPerYearInterestRateBase + 1n;
 
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateBase(comet.address, newSupplyPerYearInterestRateBase);
+      .setSupplyPerYearInterestRateBase(await comet.getAddress(), newSupplyPerYearInterestRateBase);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateBase
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateBase
     ).to.be.equal(newSupplyPerYearInterestRateBase);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.supplyPerSecondInterestRateBase()).toBigInt()).to.be.equal(
+    expect(await comet.supplyPerSecondInterestRateBase()).to.be.equal(
       newSupplyPerYearInterestRateBase / SECONDS_PER_YEAR
     );
   }
@@ -1474,7 +1481,7 @@ scenario(
     const { admin } = actors;
 
     const oldSupplyPerYearInterestRateBase = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateBase;
 
     const firstNewSupplyPerYearInterestRateBase = oldSupplyPerYearInterestRateBase + 1n;
@@ -1482,18 +1489,18 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateBase(comet.address, firstNewSupplyPerYearInterestRateBase);
+      .setSupplyPerYearInterestRateBase(await comet.getAddress(), firstNewSupplyPerYearInterestRateBase);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateBase
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateBase
     ).to.be.equal(firstNewSupplyPerYearInterestRateBase);
 
     await configurator
       .connect(admin.signer)
-      .setSupplyPerYearInterestRateBase(comet.address, secondNewSupplyPerYearInterestRateBase);
+      .setSupplyPerYearInterestRateBase(await comet.getAddress(), secondNewSupplyPerYearInterestRateBase);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateBase
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateBase
     ).to.be.equal(secondNewSupplyPerYearInterestRateBase);
   }
 );
@@ -1509,22 +1516,22 @@ scenario(
     const marketAdminSigner = await getMarketAdminSigner(context);
 
     const oldSupplyPerYearInterestRateBase = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateBase;
 
     const newSupplyPerYearInterestRateBase = oldSupplyPerYearInterestRateBase + 1n;
 
     await configurator
       .connect(marketAdminSigner)
-      .setSupplyPerYearInterestRateBase(comet.address, newSupplyPerYearInterestRateBase);
+      .setSupplyPerYearInterestRateBase(await comet.getAddress(), newSupplyPerYearInterestRateBase);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateBase
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).supplyPerYearInterestRateBase
     ).to.be.equal(newSupplyPerYearInterestRateBase);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.supplyPerSecondInterestRateBase()).toBigInt()).to.be.equal(
+    expect(await comet.supplyPerSecondInterestRateBase()).to.be.equal(
       newSupplyPerYearInterestRateBase / SECONDS_PER_YEAR
     );
   }
@@ -1537,7 +1544,7 @@ scenario(
     const { albert } = actors;
 
     const oldSupplyPerYearInterestRateBase = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).supplyPerYearInterestRateBase;
 
     const newSupplyPerYearInterestRateBase = oldSupplyPerYearInterestRateBase + 1n;
@@ -1545,7 +1552,7 @@ scenario(
     await expectRevertCustom(
       configurator
         .connect(albert.signer)
-        .setSupplyPerYearInterestRateBase(comet.address, newSupplyPerYearInterestRateBase),
+        .setSupplyPerYearInterestRateBase(await comet.getAddress(), newSupplyPerYearInterestRateBase),
       'Unauthorized()'
     );
   }
@@ -1557,18 +1564,18 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
+    const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowKink;
     const newBorrowKink = oldBorrowKink + 1n;
 
-    await configurator.connect(admin.signer).setBorrowKink(comet.address, newBorrowKink);
+    await configurator.connect(admin.signer).setBorrowKink(await comet.getAddress(), newBorrowKink);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowKink).to.be.equal(
       newBorrowKink
     );
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.borrowKink()).toBigInt()).to.be.equal(newBorrowKink);
+    expect(await comet.borrowKink()).to.be.equal(newBorrowKink);
   }
 );
 
@@ -1578,19 +1585,19 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
+    const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowKink;
     const firstNewBorrowKink = oldBorrowKink + 1n;
     const secondNewBorrowKink = firstNewBorrowKink + 1n;
 
-    await configurator.connect(admin.signer).setBorrowKink(comet.address, firstNewBorrowKink);
+    await configurator.connect(admin.signer).setBorrowKink(await comet.getAddress(), firstNewBorrowKink);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowKink).to.be.equal(
       firstNewBorrowKink
     );
 
-    await configurator.connect(admin.signer).setBorrowKink(comet.address, secondNewBorrowKink);
+    await configurator.connect(admin.signer).setBorrowKink(await comet.getAddress(), secondNewBorrowKink);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowKink).to.be.equal(
       secondNewBorrowKink
     );
   }
@@ -1605,18 +1612,18 @@ scenario(
     const { admin } = actors;
 
     const marketAdminSigner = await getMarketAdminSigner(context);
-    const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
+    const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowKink;
     const newBorrowKink = oldBorrowKink + 1n;
 
-    await configurator.connect(marketAdminSigner).setBorrowKink(comet.address, newBorrowKink);
+    await configurator.connect(marketAdminSigner).setBorrowKink(await comet.getAddress(), newBorrowKink);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowKink).to.be.equal(
       newBorrowKink
     );
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.borrowKink()).toBigInt()).to.be.equal(newBorrowKink);
+    expect(await comet.borrowKink()).to.be.equal(newBorrowKink);
   }
 );
 
@@ -1626,11 +1633,11 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
-    const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
+    const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowKink;
     const newBorrowKink = oldBorrowKink + 1n;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setBorrowKink(comet.address, newBorrowKink),
+      configurator.connect(albert.signer).setBorrowKink(await comet.getAddress(), newBorrowKink),
       'Unauthorized()'
     );
   }
@@ -1643,22 +1650,22 @@ scenario(
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateSlopeLow = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateSlopeLow;
 
     const newBorrowPerYearInterestRateSlopeLow = oldBorrowPerYearInterestRateSlopeLow + 1n;
 
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeLow(comet.address, newBorrowPerYearInterestRateSlopeLow);
+      .setBorrowPerYearInterestRateSlopeLow(await comet.getAddress(), newBorrowPerYearInterestRateSlopeLow);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeLow
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateSlopeLow
     ).to.be.equal(newBorrowPerYearInterestRateSlopeLow);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.borrowPerSecondInterestRateSlopeLow()).toBigInt()).to.be.equal(
+    expect(await comet.borrowPerSecondInterestRateSlopeLow()).to.be.equal(
       newBorrowPerYearInterestRateSlopeLow / SECONDS_PER_YEAR
     );
   }
@@ -1671,7 +1678,7 @@ scenario(
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateSlopeLow = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateSlopeLow;
 
     const firstNewBorrowPerYearInterestRateSlopeLow = oldBorrowPerYearInterestRateSlopeLow + 1n;
@@ -1679,18 +1686,18 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeLow(comet.address, firstNewBorrowPerYearInterestRateSlopeLow);
+      .setBorrowPerYearInterestRateSlopeLow(await comet.getAddress(), firstNewBorrowPerYearInterestRateSlopeLow);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeLow
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateSlopeLow
     ).to.be.equal(firstNewBorrowPerYearInterestRateSlopeLow);
 
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeLow(comet.address, secondNewBorrowPerYearInterestRateSlopeLow);
+      .setBorrowPerYearInterestRateSlopeLow(await comet.getAddress(), secondNewBorrowPerYearInterestRateSlopeLow);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeLow
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateSlopeLow
     ).to.be.equal(secondNewBorrowPerYearInterestRateSlopeLow);
   }
 );
@@ -1706,22 +1713,22 @@ scenario(
     const marketAdminSigner = await getMarketAdminSigner(context);
 
     const oldBorrowPerYearInterestRateSlopeLow = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateSlopeLow;
 
     const newBorrowPerYearInterestRateSlopeLow = oldBorrowPerYearInterestRateSlopeLow + 1n;
 
     await configurator
       .connect(marketAdminSigner)
-      .setBorrowPerYearInterestRateSlopeLow(comet.address, newBorrowPerYearInterestRateSlopeLow);
+      .setBorrowPerYearInterestRateSlopeLow(await comet.getAddress(), newBorrowPerYearInterestRateSlopeLow);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeLow
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateSlopeLow
     ).to.be.equal(newBorrowPerYearInterestRateSlopeLow);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.borrowPerSecondInterestRateSlopeLow()).toBigInt()).to.be.equal(
+    expect(await comet.borrowPerSecondInterestRateSlopeLow()).to.be.equal(
       newBorrowPerYearInterestRateSlopeLow / SECONDS_PER_YEAR
     );
   }
@@ -1734,7 +1741,7 @@ scenario(
     const { albert } = actors;
 
     const oldBorrowPerYearInterestRateSlopeLow = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateSlopeLow;
 
     const newBorrowPerYearInterestRateSlopeLow = oldBorrowPerYearInterestRateSlopeLow + 1n;
@@ -1742,7 +1749,7 @@ scenario(
     await expectRevertCustom(
       configurator
         .connect(albert.signer)
-        .setBorrowPerYearInterestRateSlopeLow(comet.address, newBorrowPerYearInterestRateSlopeLow),
+        .setBorrowPerYearInterestRateSlopeLow(await comet.getAddress(), newBorrowPerYearInterestRateSlopeLow),
       'Unauthorized()'
     );
   }
@@ -1755,22 +1762,22 @@ scenario(
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateSlopeHigh = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateSlopeHigh;
 
     const newBorrowPerYearInterestRateSlopeHigh = oldBorrowPerYearInterestRateSlopeHigh + 1n;
 
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeHigh(comet.address, newBorrowPerYearInterestRateSlopeHigh);
+      .setBorrowPerYearInterestRateSlopeHigh(await comet.getAddress(), newBorrowPerYearInterestRateSlopeHigh);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeHigh
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateSlopeHigh
     ).to.be.equal(newBorrowPerYearInterestRateSlopeHigh);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.borrowPerSecondInterestRateSlopeHigh()).toBigInt()).to.be.equal(
+    expect(await comet.borrowPerSecondInterestRateSlopeHigh()).to.be.equal(
       newBorrowPerYearInterestRateSlopeHigh / SECONDS_PER_YEAR
     );
   }
@@ -1783,7 +1790,7 @@ scenario(
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateSlopeHigh = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateSlopeHigh;
 
     const firstNewBorrowPerYearInterestRateSlopeHigh = oldBorrowPerYearInterestRateSlopeHigh + 1n;
@@ -1791,18 +1798,18 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeHigh(comet.address, firstNewBorrowPerYearInterestRateSlopeHigh);
+      .setBorrowPerYearInterestRateSlopeHigh(await comet.getAddress(), firstNewBorrowPerYearInterestRateSlopeHigh);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeHigh
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateSlopeHigh
     ).to.be.equal(firstNewBorrowPerYearInterestRateSlopeHigh);
 
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateSlopeHigh(comet.address, secondNewBorrowPerYearInterestRateSlopeHigh);
+      .setBorrowPerYearInterestRateSlopeHigh(await comet.getAddress(), secondNewBorrowPerYearInterestRateSlopeHigh);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeHigh
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateSlopeHigh
     ).to.be.equal(secondNewBorrowPerYearInterestRateSlopeHigh);
   }
 );
@@ -1818,22 +1825,22 @@ scenario(
     const marketAdminSigner = await getMarketAdminSigner(context);
 
     const oldBorrowPerYearInterestRateSlopeHigh = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateSlopeHigh;
 
     const newBorrowPerYearInterestRateSlopeHigh = oldBorrowPerYearInterestRateSlopeHigh + 1n;
 
     await configurator
       .connect(marketAdminSigner)
-      .setBorrowPerYearInterestRateSlopeHigh(comet.address, newBorrowPerYearInterestRateSlopeHigh);
+      .setBorrowPerYearInterestRateSlopeHigh(await comet.getAddress(), newBorrowPerYearInterestRateSlopeHigh);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeHigh
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateSlopeHigh
     ).to.be.equal(newBorrowPerYearInterestRateSlopeHigh);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.borrowPerSecondInterestRateSlopeHigh()).toBigInt()).to.be.equal(
+    expect(await comet.borrowPerSecondInterestRateSlopeHigh()).to.be.equal(
       newBorrowPerYearInterestRateSlopeHigh / SECONDS_PER_YEAR
     );
   }
@@ -1846,7 +1853,7 @@ scenario(
     const { albert } = actors;
 
     const oldBorrowPerYearInterestRateSlopeHigh = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateSlopeHigh;
 
     const newBorrowPerYearInterestRateSlopeHigh = oldBorrowPerYearInterestRateSlopeHigh + 1n;
@@ -1854,7 +1861,7 @@ scenario(
     await expectRevertCustom(
       configurator
         .connect(albert.signer)
-        .setBorrowPerYearInterestRateSlopeHigh(comet.address, newBorrowPerYearInterestRateSlopeHigh),
+        .setBorrowPerYearInterestRateSlopeHigh(await comet.getAddress(), newBorrowPerYearInterestRateSlopeHigh),
       'Unauthorized()'
     );
   }
@@ -1867,22 +1874,22 @@ scenario(
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateBase = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateBase;
 
     const newBorrowPerYearInterestRateBase = oldBorrowPerYearInterestRateBase + 1n;
 
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateBase(comet.address, newBorrowPerYearInterestRateBase);
+      .setBorrowPerYearInterestRateBase(await comet.getAddress(), newBorrowPerYearInterestRateBase);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateBase
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateBase
     ).to.be.equal(newBorrowPerYearInterestRateBase);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.borrowPerSecondInterestRateBase()).toBigInt()).to.be.equal(
+    expect(await comet.borrowPerSecondInterestRateBase()).to.be.equal(
       newBorrowPerYearInterestRateBase / SECONDS_PER_YEAR
     );
   }
@@ -1895,7 +1902,7 @@ scenario(
     const { admin } = actors;
 
     const oldBorrowPerYearInterestRateBase = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateBase;
 
     const firstNewBorrowPerYearInterestRateBase = oldBorrowPerYearInterestRateBase + 1n;
@@ -1903,18 +1910,18 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateBase(comet.address, firstNewBorrowPerYearInterestRateBase);
+      .setBorrowPerYearInterestRateBase(await comet.getAddress(), firstNewBorrowPerYearInterestRateBase);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateBase
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateBase
     ).to.be.equal(firstNewBorrowPerYearInterestRateBase);
 
     await configurator
       .connect(admin.signer)
-      .setBorrowPerYearInterestRateBase(comet.address, secondNewBorrowPerYearInterestRateBase);
+      .setBorrowPerYearInterestRateBase(await comet.getAddress(), secondNewBorrowPerYearInterestRateBase);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateBase
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateBase
     ).to.be.equal(secondNewBorrowPerYearInterestRateBase);
   }
 );
@@ -1930,22 +1937,22 @@ scenario(
     const marketAdminSigner = await getMarketAdminSigner(context);
 
     const oldBorrowPerYearInterestRateBase = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateBase;
 
     const newBorrowPerYearInterestRateBase = oldBorrowPerYearInterestRateBase + 1n;
 
     await configurator
       .connect(marketAdminSigner)
-      .setBorrowPerYearInterestRateBase(comet.address, newBorrowPerYearInterestRateBase);
+      .setBorrowPerYearInterestRateBase(await comet.getAddress(), newBorrowPerYearInterestRateBase);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateBase
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).borrowPerYearInterestRateBase
     ).to.be.equal(newBorrowPerYearInterestRateBase);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.borrowPerSecondInterestRateBase()).toBigInt()).to.be.equal(
+    expect(await comet.borrowPerSecondInterestRateBase()).to.be.equal(
       newBorrowPerYearInterestRateBase / SECONDS_PER_YEAR
     );
   }
@@ -1958,7 +1965,7 @@ scenario(
     const { albert } = actors;
 
     const oldBorrowPerYearInterestRateBase = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).borrowPerYearInterestRateBase;
 
     const newBorrowPerYearInterestRateBase = oldBorrowPerYearInterestRateBase + 1n;
@@ -1966,7 +1973,7 @@ scenario(
     await expectRevertCustom(
       configurator
         .connect(albert.signer)
-        .setBorrowPerYearInterestRateBase(comet.address, newBorrowPerYearInterestRateBase),
+        .setBorrowPerYearInterestRateBase(await comet.getAddress(), newBorrowPerYearInterestRateBase),
       'Unauthorized()'
     );
   }
@@ -1979,20 +1986,20 @@ scenario(
     const { admin } = actors;
 
     const oldBaseTrackingSupplySpeed = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).baseTrackingSupplySpeed;
 
     const newBaseTrackingSupplySpeed = oldBaseTrackingSupplySpeed + 1n;
 
-    await configurator.connect(admin.signer).setBaseTrackingSupplySpeed(comet.address, newBaseTrackingSupplySpeed);
+    await configurator.connect(admin.signer).setBaseTrackingSupplySpeed(await comet.getAddress(), newBaseTrackingSupplySpeed);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingSupplySpeed
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseTrackingSupplySpeed
     ).to.be.equal(newBaseTrackingSupplySpeed);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.baseTrackingSupplySpeed()).toBigInt()).to.be.equal(newBaseTrackingSupplySpeed);
+    expect(await comet.baseTrackingSupplySpeed()).to.be.equal(newBaseTrackingSupplySpeed);
   }
 );
 
@@ -2003,7 +2010,7 @@ scenario(
     const { admin } = actors;
 
     const oldBaseTrackingSupplySpeed = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).baseTrackingSupplySpeed;
 
     const firstNewBaseTrackingSupplySpeed = oldBaseTrackingSupplySpeed + 1n;
@@ -2011,18 +2018,18 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .setBaseTrackingSupplySpeed(comet.address, firstNewBaseTrackingSupplySpeed);
+      .setBaseTrackingSupplySpeed(await comet.getAddress(), firstNewBaseTrackingSupplySpeed);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingSupplySpeed
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseTrackingSupplySpeed
     ).to.be.equal(firstNewBaseTrackingSupplySpeed);
 
     await configurator
       .connect(admin.signer)
-      .setBaseTrackingSupplySpeed(comet.address, secondNewBaseTrackingSupplySpeed);
+      .setBaseTrackingSupplySpeed(await comet.getAddress(), secondNewBaseTrackingSupplySpeed);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingSupplySpeed
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseTrackingSupplySpeed
     ).to.be.equal(secondNewBaseTrackingSupplySpeed);
   }
 );
@@ -2038,22 +2045,22 @@ scenario(
     const marketAdminSigner = await getMarketAdminSigner(context);
 
     const oldBaseTrackingSupplySpeed = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).baseTrackingSupplySpeed;
 
     const newBaseTrackingSupplySpeed = oldBaseTrackingSupplySpeed + 1n;
 
     await configurator
       .connect(marketAdminSigner)
-      .setBaseTrackingSupplySpeed(comet.address, newBaseTrackingSupplySpeed);
+      .setBaseTrackingSupplySpeed(await comet.getAddress(), newBaseTrackingSupplySpeed);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingSupplySpeed
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseTrackingSupplySpeed
     ).to.be.equal(newBaseTrackingSupplySpeed);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.baseTrackingSupplySpeed()).toBigInt()).to.be.equal(newBaseTrackingSupplySpeed);
+    expect(await comet.baseTrackingSupplySpeed()).to.be.equal(newBaseTrackingSupplySpeed);
   }
 );
 
@@ -2064,13 +2071,13 @@ scenario(
     const { albert } = actors;
 
     const oldBaseTrackingSupplySpeed = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).baseTrackingSupplySpeed;
 
     const newBaseTrackingSupplySpeed = oldBaseTrackingSupplySpeed + 1n;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setBaseTrackingSupplySpeed(comet.address, newBaseTrackingSupplySpeed),
+      configurator.connect(albert.signer).setBaseTrackingSupplySpeed(await comet.getAddress(), newBaseTrackingSupplySpeed),
       'Unauthorized()'
     );
   }
@@ -2083,20 +2090,20 @@ scenario(
     const { admin } = actors;
 
     const oldBaseTrackingBorrowSpeed = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).baseTrackingBorrowSpeed;
 
     const newBaseTrackingBorrowSpeed = oldBaseTrackingBorrowSpeed + 1n;
 
-    await configurator.connect(admin.signer).setBaseTrackingBorrowSpeed(comet.address, newBaseTrackingBorrowSpeed);
+    await configurator.connect(admin.signer).setBaseTrackingBorrowSpeed(await comet.getAddress(), newBaseTrackingBorrowSpeed);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingBorrowSpeed
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseTrackingBorrowSpeed
     ).to.be.equal(newBaseTrackingBorrowSpeed);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.baseTrackingBorrowSpeed()).toBigInt()).to.be.equal(newBaseTrackingBorrowSpeed);
+    expect(await comet.baseTrackingBorrowSpeed()).to.be.equal(newBaseTrackingBorrowSpeed);
   }
 );
 
@@ -2107,7 +2114,7 @@ scenario(
     const { admin } = actors;
 
     const oldBaseTrackingBorrowSpeed = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).baseTrackingBorrowSpeed;
 
     const firstNewBaseTrackingBorrowSpeed = oldBaseTrackingBorrowSpeed + 1n;
@@ -2115,18 +2122,18 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .setBaseTrackingBorrowSpeed(comet.address, firstNewBaseTrackingBorrowSpeed);
+      .setBaseTrackingBorrowSpeed(await comet.getAddress(), firstNewBaseTrackingBorrowSpeed);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingBorrowSpeed
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseTrackingBorrowSpeed
     ).to.be.equal(firstNewBaseTrackingBorrowSpeed);
 
     await configurator
       .connect(admin.signer)
-      .setBaseTrackingBorrowSpeed(comet.address, secondNewBaseTrackingBorrowSpeed);
+      .setBaseTrackingBorrowSpeed(await comet.getAddress(), secondNewBaseTrackingBorrowSpeed);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingBorrowSpeed
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseTrackingBorrowSpeed
     ).to.be.equal(secondNewBaseTrackingBorrowSpeed);
   }
 );
@@ -2142,22 +2149,22 @@ scenario(
     const marketAdminSigner = await getMarketAdminSigner(context);
 
     const oldBaseTrackingBorrowSpeed = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).baseTrackingBorrowSpeed;
 
     const newBaseTrackingBorrowSpeed = oldBaseTrackingBorrowSpeed + 1n;
 
     await configurator
       .connect(marketAdminSigner)
-      .setBaseTrackingBorrowSpeed(comet.address, newBaseTrackingBorrowSpeed);
+      .setBaseTrackingBorrowSpeed(await comet.getAddress(), newBaseTrackingBorrowSpeed);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingBorrowSpeed
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseTrackingBorrowSpeed
     ).to.be.equal(newBaseTrackingBorrowSpeed);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.baseTrackingBorrowSpeed()).toBigInt()).to.be.equal(newBaseTrackingBorrowSpeed);
+    expect(await comet.baseTrackingBorrowSpeed()).to.be.equal(newBaseTrackingBorrowSpeed);
   }
 );
 
@@ -2168,13 +2175,13 @@ scenario(
     const { albert } = actors;
 
     const oldBaseTrackingBorrowSpeed = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
+      await configurator.getConfiguration(await comet.getAddress())
     ).baseTrackingBorrowSpeed;
 
     const newBaseTrackingBorrowSpeed = oldBaseTrackingBorrowSpeed + 1n;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setBaseTrackingBorrowSpeed(comet.address, newBaseTrackingBorrowSpeed),
+      configurator.connect(albert.signer).setBaseTrackingBorrowSpeed(await comet.getAddress(), newBaseTrackingBorrowSpeed),
       'Unauthorized()'
     );
   }
@@ -2186,18 +2193,18 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
+    const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseBorrowMin;
     const newBaseBorrowMin = oldBaseBorrowMin + 1n;
 
-    await configurator.connect(admin.signer).setBaseBorrowMin(comet.address, newBaseBorrowMin);
+    await configurator.connect(admin.signer).setBaseBorrowMin(await comet.getAddress(), newBaseBorrowMin);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseBorrowMin).to.be.equal(
       newBaseBorrowMin
     );
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.baseBorrowMin()).toBigInt()).to.be.equal(newBaseBorrowMin);
+    expect(await comet.baseBorrowMin()).to.be.equal(newBaseBorrowMin);
   }
 );
 
@@ -2207,19 +2214,19 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
 
-    const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
+    const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseBorrowMin;
     const firstNewBaseBorrowMin = oldBaseBorrowMin + 1n;
     const secondNewBaseBorrowMin = firstNewBaseBorrowMin + 1n;
 
-    await configurator.connect(admin.signer).setBaseBorrowMin(comet.address, firstNewBaseBorrowMin);
+    await configurator.connect(admin.signer).setBaseBorrowMin(await comet.getAddress(), firstNewBaseBorrowMin);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseBorrowMin).to.be.equal(
       firstNewBaseBorrowMin
     );
 
-    await configurator.connect(admin.signer).setBaseBorrowMin(comet.address, secondNewBaseBorrowMin);
+    await configurator.connect(admin.signer).setBaseBorrowMin(await comet.getAddress(), secondNewBaseBorrowMin);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseBorrowMin).to.be.equal(
       secondNewBaseBorrowMin
     );
   }
@@ -2234,18 +2241,18 @@ scenario(
     const { admin } = actors;
 
     const marketAdminSigner = await getMarketAdminSigner(context);
-    const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
+    const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseBorrowMin;
     const newBaseBorrowMin = oldBaseBorrowMin + 1n;
 
-    await configurator.connect(marketAdminSigner).setBaseBorrowMin(comet.address, newBaseBorrowMin);
+    await configurator.connect(marketAdminSigner).setBaseBorrowMin(await comet.getAddress(), newBaseBorrowMin);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin).to.be.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseBorrowMin).to.be.equal(
       newBaseBorrowMin
     );
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
-    expect((await comet.baseBorrowMin()).toBigInt()).to.be.equal(newBaseBorrowMin);
+    expect(await comet.baseBorrowMin()).to.be.equal(newBaseBorrowMin);
   }
 );
 
@@ -2255,11 +2262,11 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
-    const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
+    const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).baseBorrowMin;
     const newBaseBorrowMin = oldBaseBorrowMin + 1n;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).setBaseBorrowMin(comet.address, newBaseBorrowMin),
+      configurator.connect(albert.signer).setBaseBorrowMin(await comet.getAddress(), newBaseBorrowMin),
       'Unauthorized()'
     );
   }
@@ -2279,14 +2286,14 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor);
+      .updateAssetBorrowCollateralFactor(await comet.getAddress(), assetConfig.asset, newAssetBorrowCollateralFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .borrowCollateralFactor
     ).to.be.equal(newAssetBorrowCollateralFactor);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2301,7 +2308,7 @@ scenario(
     const { admin } = actors;
 
     const assetIndex = -1;
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
       assetIndex
     );
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
@@ -2310,19 +2317,19 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, firstNewAssetBorrowCollateralFactor);
+      .updateAssetBorrowCollateralFactor(await comet.getAddress(), assetConfig.asset, firstNewAssetBorrowCollateralFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .borrowCollateralFactor
     ).to.be.equal(firstNewAssetBorrowCollateralFactor);
 
     await configurator
       .connect(admin.signer)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, secondNewAssetBorrowCollateralFactor);
+      .updateAssetBorrowCollateralFactor(await comet.getAddress(), assetConfig.asset, secondNewAssetBorrowCollateralFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .borrowCollateralFactor
     ).to.be.equal(secondNewAssetBorrowCollateralFactor);
   }
@@ -2341,14 +2348,14 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor);
+      .updateAssetBorrowCollateralFactor(await comet.getAddress(), assetConfig.asset, newAssetBorrowCollateralFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .borrowCollateralFactor
     ).to.be.equal(newAssetBorrowCollateralFactor);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2372,14 +2379,14 @@ scenario(
 
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor);
+      .updateAssetBorrowCollateralFactor(await comet.getAddress(), assetConfig.asset, newAssetBorrowCollateralFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .borrowCollateralFactor
     ).to.be.equal(newAssetBorrowCollateralFactor);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2402,14 +2409,14 @@ scenario(
 
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor);
+      .updateAssetBorrowCollateralFactor(await comet.getAddress(), assetConfig.asset, newAssetBorrowCollateralFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .borrowCollateralFactor
     ).to.be.equal(newAssetBorrowCollateralFactor);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2423,14 +2430,14 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(-1);
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(-1);
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
     const newAssetBorrowCollateralFactor = oldAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
 
     await expectRevertCustom(
       configurator
         .connect(albert.signer)
-        .updateAssetBorrowCollateralFactor(comet.address, assetConfig.asset, newAssetBorrowCollateralFactor),
+        .updateAssetBorrowCollateralFactor(await comet.getAddress(), assetConfig.asset, newAssetBorrowCollateralFactor),
       'Unauthorized()'
     );
   }
@@ -2442,7 +2449,7 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { admin } = actors;
     // use the existing config to get a valid factor value
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(-1);
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(-1);
     const oldAssetBorrowCollateralFactor = assetConfig.borrowCollateralFactor;
     const newAssetBorrowCollateralFactor = oldAssetBorrowCollateralFactor + MIN_FACTOR_INCREMENT;
 
@@ -2451,7 +2458,7 @@ scenario(
     await expectRevertCustom(
       configurator
         .connect(admin.signer)
-        .updateAssetBorrowCollateralFactor(comet.address, nonExistingAsset, newAssetBorrowCollateralFactor),
+        .updateAssetBorrowCollateralFactor(await comet.getAddress(), nonExistingAsset, newAssetBorrowCollateralFactor),
       'AssetDoesNotExist()'
     );
   }
@@ -2464,7 +2471,7 @@ scenario(
     const { admin } = actors;
 
     const assetIndex = -1;
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
       assetIndex
     );
     const oldAssetLiquidateCollateralFactor = assetConfig.liquidateCollateralFactor;
@@ -2472,14 +2479,14 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, newAssetLiquidateCollateralFactor);
+      .updateAssetLiquidateCollateralFactor(await comet.getAddress(), assetConfig.asset, newAssetLiquidateCollateralFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .liquidateCollateralFactor
     ).to.be.equal(newAssetLiquidateCollateralFactor);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2494,7 +2501,7 @@ scenario(
     const { admin } = actors;
 
     const assetIndex = -1;
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
       assetIndex
     );
     const oldAssetLiquidateCollateralFactor = assetConfig.liquidateCollateralFactor;
@@ -2503,19 +2510,19 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, firstNewAssetLiquidateCollateralFactor);
+      .updateAssetLiquidateCollateralFactor(await comet.getAddress(), assetConfig.asset, firstNewAssetLiquidateCollateralFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .liquidateCollateralFactor
     ).to.be.equal(firstNewAssetLiquidateCollateralFactor);
 
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, secondNewAssetLiquidateCollateralFactor);
+      .updateAssetLiquidateCollateralFactor(await comet.getAddress(), assetConfig.asset, secondNewAssetLiquidateCollateralFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .liquidateCollateralFactor
     ).to.be.equal(secondNewAssetLiquidateCollateralFactor);
   }
@@ -2531,7 +2538,7 @@ scenario(
 
     const marketAdminSigner = await getMarketAdminSigner(context);
     const assetIndex = -1;
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
       assetIndex
     );
     const oldAssetLiquidateCollateralFactor = assetConfig.liquidateCollateralFactor;
@@ -2539,14 +2546,14 @@ scenario(
 
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetLiquidateCollateralFactor(comet.address, assetConfig.asset, newAssetLiquidateCollateralFactor);
+      .updateAssetLiquidateCollateralFactor(await comet.getAddress(), assetConfig.asset, newAssetLiquidateCollateralFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .liquidateCollateralFactor
     ).to.be.equal(newAssetLiquidateCollateralFactor);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2560,12 +2567,12 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
-    const assetConfigs = (await configurator.getConfiguration(comet.address)).assetConfigs;
+    const assetConfigs = (await configurator.getConfiguration(await comet.getAddress())).assetConfigs;
 
     await expectRevertCustom(
       configurator
         .connect(albert.signer)
-        .updateAssetLiquidateCollateralFactor(comet.address, assetConfigs.at(-1).asset, 1n),
+        .updateAssetLiquidateCollateralFactor(await comet.getAddress(), assetConfigs.at(-1).asset, 1n),
       'Unauthorized()'
     );
   }
@@ -2580,7 +2587,7 @@ scenario(
     const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
 
     await expectRevertCustom(
-      configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, nonExistingAsset, 1n),
+      configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(await comet.getAddress(), nonExistingAsset, 1n),
       'AssetDoesNotExist()'
     );
   }
@@ -2593,7 +2600,7 @@ scenario(
     const { admin } = actors;
 
     const assetIndex = -1;
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
       assetIndex
     );
     const oldAssetLiquidationFactor = assetConfig.liquidationFactor;
@@ -2601,14 +2608,14 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, newAssetLiquidationFactor);
+      .updateAssetLiquidationFactor(await comet.getAddress(), assetConfig.asset, newAssetLiquidationFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .liquidationFactor
     ).to.be.equal(newAssetLiquidationFactor);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2623,7 +2630,7 @@ scenario(
     const { admin } = actors;
 
     const assetIndex = -1;
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
       assetIndex
     );
     const oldAssetLiquidationFactor = assetConfig.liquidationFactor;
@@ -2632,19 +2639,19 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, firstNewAssetLiquidationFactor);
+      .updateAssetLiquidationFactor(await comet.getAddress(), assetConfig.asset, firstNewAssetLiquidationFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .liquidationFactor
     ).to.be.equal(firstNewAssetLiquidationFactor);
 
     await configurator
       .connect(admin.signer)
-      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, secondNewAssetLiquidationFactor);
+      .updateAssetLiquidationFactor(await comet.getAddress(), assetConfig.asset, secondNewAssetLiquidationFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .liquidationFactor
     ).to.be.equal(secondNewAssetLiquidationFactor);
   }
@@ -2660,7 +2667,7 @@ scenario(
 
     const marketAdminSigner = await getMarketAdminSigner(context);
     const assetIndex = -1;
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
       assetIndex
     );
     const oldAssetLiquidationFactor = assetConfig.liquidationFactor;
@@ -2668,14 +2675,14 @@ scenario(
 
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetLiquidationFactor(comet.address, assetConfig.asset, newAssetLiquidationFactor);
+      .updateAssetLiquidationFactor(await comet.getAddress(), assetConfig.asset, newAssetLiquidationFactor);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex)
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex)
         .liquidationFactor
     ).to.be.equal(newAssetLiquidationFactor);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2689,10 +2696,10 @@ scenario(
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
 
-    const assetConfigs = (await configurator.getConfiguration(comet.address)).assetConfigs;
+    const assetConfigs = (await configurator.getConfiguration(await comet.getAddress())).assetConfigs;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).updateAssetLiquidationFactor(comet.address, assetConfigs.at(-1).asset, 1n),
+      configurator.connect(albert.signer).updateAssetLiquidationFactor(await comet.getAddress(), assetConfigs.at(-1).asset, 1n),
       'Unauthorized()'
     );
   }
@@ -2707,7 +2714,7 @@ scenario(
     const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
 
     await expectRevertCustom(
-      configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, nonExistingAsset, 1n),
+      configurator.connect(admin.signer).updateAssetLiquidationFactor(await comet.getAddress(), nonExistingAsset, 1n),
       'AssetDoesNotExist()'
     );
   }
@@ -2720,7 +2727,7 @@ scenario(
     const { admin } = actors;
 
     const assetIndex = -1;
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
       assetIndex
     );
     const oldAssetSupplyCap = assetConfig.supplyCap;
@@ -2728,13 +2735,13 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap);
+      .updateAssetSupplyCap(await comet.getAddress(), assetConfig.asset, newAssetSupplyCap);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(newAssetSupplyCap);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2749,7 +2756,7 @@ scenario(
     const { admin } = actors;
 
     const assetIndex = -1;
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
       assetIndex
     );
     const oldAssetSupplyCap = assetConfig.supplyCap;
@@ -2758,18 +2765,18 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, firstNewAssetSupplyCap);
+      .updateAssetSupplyCap(await comet.getAddress(), assetConfig.asset, firstNewAssetSupplyCap);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(firstNewAssetSupplyCap);
 
     await configurator
       .connect(admin.signer)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, secondNewAssetSupplyCap);
+      .updateAssetSupplyCap(await comet.getAddress(), assetConfig.asset, secondNewAssetSupplyCap);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(secondNewAssetSupplyCap);
   }
 );
@@ -2787,13 +2794,13 @@ scenario(
 
     await configurator
       .connect(admin.signer)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap);
+      .updateAssetSupplyCap(await comet.getAddress(), assetConfig.asset, newAssetSupplyCap);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(newAssetSupplyCap);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2811,7 +2818,7 @@ scenario(
 
     const marketAdminSigner = await getMarketAdminSigner(context);
     const assetIndex = -1;
-    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(
+    const assetConfig = normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(
       assetIndex
     );
     const oldAssetSupplyCap = assetConfig.supplyCap;
@@ -2819,13 +2826,13 @@ scenario(
 
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap);
+      .updateAssetSupplyCap(await comet.getAddress(), assetConfig.asset, newAssetSupplyCap);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(newAssetSupplyCap);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2848,13 +2855,13 @@ scenario(
 
     await configurator
       .connect(marketAdminSigner)
-      .updateAssetSupplyCap(comet.address, assetConfig.asset, newAssetSupplyCap);
+      .updateAssetSupplyCap(await comet.getAddress(), assetConfig.asset, newAssetSupplyCap);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).assetConfigs.at(assetIndex).supplyCap
+      normalizeStructOutput(await configurator.getConfiguration(await comet.getAddress())).assetConfigs.at(assetIndex).supplyCap
     ).to.be.equal(newAssetSupplyCap);
 
-    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+    await admin.deployAndUpgradeTo(await configurator.getAddress(), await comet.getAddress());
 
     const assetInfo = normalizeStructOutput(await comet.getAssetInfoByAddress(assetConfig.asset));
 
@@ -2867,10 +2874,10 @@ scenario(
   {},
   async ({ comet, configurator, actors }) => {
     const { albert } = actors;
-    const assetConfigs = (await configurator.getConfiguration(comet.address)).assetConfigs;
+    const assetConfigs = (await configurator.getConfiguration(await comet.getAddress())).assetConfigs;
 
     await expectRevertCustom(
-      configurator.connect(albert.signer).updateAssetSupplyCap(comet.address, assetConfigs.at(-1).asset, 1n),
+      configurator.connect(albert.signer).updateAssetSupplyCap(await comet.getAddress(), assetConfigs.at(-1).asset, 1n),
       'Unauthorized()'
     );
   }
@@ -2884,7 +2891,7 @@ scenario(
     const nonExistingAsset = await ethers.Wallet.createRandom().getAddress();
 
     await expectRevertCustom(
-      configurator.connect(admin.signer).updateAssetSupplyCap(comet.address, nonExistingAsset, 1n),
+      configurator.connect(admin.signer).updateAssetSupplyCap(await comet.getAddress(), nonExistingAsset, 1n),
       'AssetDoesNotExist()'
     );
   }
