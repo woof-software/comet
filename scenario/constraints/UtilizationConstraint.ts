@@ -152,7 +152,9 @@ export class UtilizationConstraint<T extends CometContext, R extends Requirement
 
     if (utilization) {
       let comet = await context.getComet();
-      expect(defactor(await comet.getUtilization())).to.approximately(utilization, 0.00001);
+      // Avoid Hardhat's integer-only approximately matcher for fractional utilization.
+      const actual = defactor(await comet.getUtilization());
+      expect(Math.abs(actual - utilization) <= 0.00001, `expected utilization ${actual} to be within 0.00001 of ${utilization}`).to.be.true;
     }
   }
 }

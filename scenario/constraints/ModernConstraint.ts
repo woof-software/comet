@@ -13,7 +13,10 @@ export class ModernConstraint<T extends CometContext, R extends Requirements> im
       if (req.upgrade) {
         solutions.push(async function solution(ctx: T): Promise<T> {
           const current = await ctx.getConfiguration();
-          const upgrade = Object.assign({}, objectify(current), req.upgrade);
+          // ethers v6 returns nested structs as immutable Results too.
+          const currentConfig = objectify(current);
+          currentConfig.assetConfigs = Array.from(current.assetConfigs, asset => objectify(asset));
+          const upgrade = Object.assign({}, currentConfig, req.upgrade);
           return await ctx.upgrade(upgrade) as T; // It's been modified
         });
       }
