@@ -163,11 +163,13 @@ The amounts below were read on-chain at the moment the proposal was created and 
 
 | Source | Amount |
 | --- | --- |
-| cWETHv3 reserves (\`getReserves()\`) | ${utils.formatEther(reservesWithdrawn)} WETH |
+| cWETHv3 reserves (\`getReserves()\` minus ${utils.formatEther(ethReserveBuffer)} WETH buffer) | ${utils.formatEther(reservesWithdrawn)} WETH |
 | WETH held by the Ronin bridge receiver | ${utils.formatEther(bridgeReceiverSwept)} WETH |
 | Total bridged to the Mainnet Timelock | ${utils.formatEther(totalToBridge)} WETH |
 
 Since the withdrawal amount is fixed, any reserves accrued by the market between proposal creation and execution stay in the market and can be withdrawn by a later proposal.
+
+A buffer of ${utils.formatEther(ethReserveBuffer)} WETH is left below the reserves read at proposal creation. Reserves can decrease before execution, and \`withdrawReserves\` reverts if the requested amount exceeds the reserves at that moment.
 
 ## Proposal actions
 
