@@ -3,6 +3,8 @@ import { event, expect } from '../test/helpers.js';
 import { expectRevertCustom, timeUntilUnderwater } from './utils/index.js';
 import { matchesDeployment } from './utils/index.js';
 import { getConfigForScenario } from './utils/scenarioHelper.js';
+import { parseEther, toQuantity } from 'ethers';
+import { getHardhatEthers } from '../plugins/deployment_manager/hardhat3/runtime.js';
 
 scenario(
   'Comet#liquidation > isLiquidatable=true for underwater position',
@@ -34,7 +36,7 @@ scenario(
       await world.increaseTime(timeBeforeLiquidation);
     }
 
-    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).liquidationBase) / 100n * baseScale.toBigInt() }); // force accrue
+    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).liquidationBase) / 100n * baseScale }); // force accrue
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
   }
@@ -58,19 +60,17 @@ scenario(
   async ({ comet, actors }, context, world) => {
     // Set fees for USDT for testing
     const USDT = await world.deploymentManager.existing('USDT', await comet.baseToken(), world.base.network);
-    const USDTAdminAddress = await USDT.owner();
-    await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
+    const USDTAdminAddress = await USDT.getFunction('owner')();
+    const ethers = await getHardhatEthers(world.deploymentManager.hre);
+    await ethers.provider.send('hardhat_setBalance', [
       USDTAdminAddress,
-      world.deploymentManager.hre.ethers.utils.hexStripZeros(world.deploymentManager.hre.ethers.utils.parseEther('100').toHexString()),
+      toQuantity(parseEther('100')),
     ]);
-    await world.deploymentManager.hre.network.provider.request({
-      method: 'hardhat_impersonateAccount',
-      params: [USDTAdminAddress],
-    });
+    await ethers.provider.send('hardhat_impersonateAccount', [USDTAdminAddress]);
     // mine a block to ensure the impersonation is effective
-    const USDTAdminSigner = await world.deploymentManager.hre.ethers.getSigner(USDTAdminAddress);
+    const USDTAdminSigner = await ethers.getSigner(USDTAdminAddress);
     // 10 basis points, and max 10 USDT
-    await USDT.connect(USDTAdminSigner).setParams(10, 10);
+    await USDT.connect(USDTAdminSigner).getFunction('setParams')(10, 10);
 
     const { albert, betty } = actors;
 
@@ -89,23 +89,23 @@ scenario(
     const lp1 = await comet.liquidatorPoints(betty.address);
 
     // increments absorber's numAbsorbs
-    expect(lp1.numAbsorbs).to.eq(lp0.numAbsorbs + 1);
+    expect(lp1.numAbsorbs).to.eq(lp0.numAbsorbs + 1n);
     // increases absorber's numAbsorbed
-    expect(lp1.numAbsorbed.toNumber()).to.eq(lp0.numAbsorbed.toNumber() + 1);
+    expect(lp1.numAbsorbed).to.eq(lp0.numAbsorbed + 1n);
     // XXX test approxSpend?
 
     const baseBalance = await albert.getCometBaseBalance();
-    expect(Number(baseBalance)).to.be.greaterThanOrEqual(0);
+    expect(baseBalance >= 0n).to.be.true;
 
     // clears out all of liquidated user's collateral
     const numAssets = await comet.numAssets();
     for (let i = 0; i < numAssets; i++) {
       const { asset } = await comet.getAssetInfo(i);
-      expect(await comet.collateralBalanceOf(albert.address, asset)).to.eq(0);
+      expect(await comet.collateralBalanceOf(albert.address, asset)).to.eq(0n);
     }
 
     // clears assetsIn
-    expect((await comet.userBasic(albert.address)).assetsIn).to.eq(0);
+    expect((await comet.userBasic(albert.address)).assetsIn).to.eq(0n);
   }
 );
 
@@ -129,7 +129,7 @@ scenario(
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
     const baseToken = await comet.baseToken();
-    const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+    const baseBorrowMin = await comet.baseBorrowMin();
 
     await world.increaseTime(
       await timeUntilUnderwater({
@@ -187,23 +187,23 @@ scenario(
     const lp1 = await comet.liquidatorPoints(betty.address);
 
     // increments absorber's numAbsorbs
-    expect(lp1.numAbsorbs).to.eq(lp0.numAbsorbs + 1);
+    expect(lp1.numAbsorbs).to.eq(lp0.numAbsorbs + 1n);
     // increases absorber's numAbsorbed
-    expect(lp1.numAbsorbed.toNumber()).to.eq(lp0.numAbsorbed.toNumber() + 1);
+    expect(lp1.numAbsorbed).to.eq(lp0.numAbsorbed + 1n);
     // XXX test approxSpend?
 
     const baseBalance = await albert.getCometBaseBalance();
-    expect(Number(baseBalance)).to.be.greaterThanOrEqual(0);
+    expect(baseBalance >= 0n).to.be.true;
 
     // clears out all of liquidated user's collateral
     const numAssets = await comet.numAssets();
     for (let i = 0; i < numAssets; i++) {
       const { asset } = await comet.getAssetInfo(i);
-      expect(await comet.collateralBalanceOf(albert.address, asset)).to.eq(0);
+      expect(await comet.collateralBalanceOf(albert.address, asset)).to.eq(0n);
     }
 
     // clears assetsIn
-    expect((await comet.userBasic(albert.address)).assetsIn).to.eq(0);
+    expect((await comet.userBasic(albert.address)).assetsIn).to.eq(0n);
   }
 );
 
@@ -238,10 +238,10 @@ scenario(
     );
 
     const ab0 = await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
-    expect(ab0.events?.[2]?.event).to.be.equal('Transfer');
+    expect(event({ receipt: ab0 }, 2)).to.have.property('Transfer');
 
     const baseBalance = await albert.getCometBaseBalance();
-    expect(Number(baseBalance)).to.be.greaterThan(0);
+    expect(baseBalance > 0n).to.be.true;
   }
 );
 
@@ -264,7 +264,8 @@ scenario.skip(
     const { albert, betty, charles } = actors;
     const { asset: asset0Address, scale } = await comet.getAssetInfo(0);
 
-    const collateralBalance = scale.toBigInt() / 1000n; // .001
+    const collateralBalance = scale / 1000n; // .001
+    const cometAddress = await comet.getAddress();
 
     await world.increaseTime(
       await timeUntilUnderwater({
@@ -277,7 +278,7 @@ scenario.skip(
     await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
 
     const txReceipt = await charles.withdrawAssetFrom({
-      src: comet.address,
+      src: cometAddress,
       dst: charles.address,
       asset: asset0Address,
       amount: collateralBalance
@@ -285,7 +286,7 @@ scenario.skip(
 
     expect(event({ receipt: txReceipt }, 0)).to.deep.equal({
       Transfer: {
-        from: comet.address,
+        from: cometAddress,
         to: charles.address,
         amount: collateralBalance
       }
@@ -293,7 +294,7 @@ scenario.skip(
 
     expect(event({ receipt: txReceipt }, 1)).to.deep.equal({
       WithdrawCollateral: {
-        src: comet.address,
+        src: cometAddress,
         to: charles.address,
         asset: asset0Address,
         amount: collateralBalance
