@@ -12,6 +12,15 @@ const GHO_STABLE_TOKEN = '0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f';
 const GHO_FEE_BUFFER_MULTIPLIER = 2;
 const RON_FEE_BUFFER_MULTIPLIER = 3;
 
+const ethReserveBuffer = utils.parseEther('0.01');
+
+// Destination gas limits: governance message executed on Ronin, WETH transfer delivered on Mainnet
+const MESSAGE_GAS_LIMIT = 1_600_000;
+const TRANSFER_GAS_LIMIT = 250_000;
+
+// CCIP EVMExtraArgsV1: tag || abi.encode(gasLimit)
+const ccipExtraArgs = (gasLimit: number) => '0x97a657c9' + utils.defaultAbiCoder.encode(['uint256'], [gasLimit]).slice(2);
+
 let reservesWithdrawn: BigNumber;
 let bridgeReceiverSwept: BigNumber;
 let mainnetTimelockWethBefore: BigNumber;
@@ -44,7 +53,7 @@ export default migration('1790243379_withdraw_reserves', {
     // Everything currently withdrawable from the Comet's reserves, and everything already sitting on the
     // bridge receiver (e.g. from historical fee overpayments). Both are read live so the proposal always
     // targets the full amount available at the moment it is created.
-    reservesWithdrawn = await comet.getReserves();
+    reservesWithdrawn = (await comet.getReserves()).sub(ethReserveBuffer);
     bridgeReceiverSwept = await WETH.balanceOf(bridgeReceiver.address);
     const totalToBridge = reservesWithdrawn.add(bridgeReceiverSwept);
 
@@ -72,7 +81,7 @@ export default migration('1790243379_withdraw_reserves', {
       '0x', // data
       [[WETH.address, totalToBridge]], // tokenAmounts
       constants.AddressZero, // feeToken (native RON)
-      '0x', // extraArgs
+      ccipExtraArgs(TRANSFER_GAS_LIMIT), // extraArgs
     ];
 
     const ronFee = await l2CCIPRouter.getFee(mainnetChainSelector, ccipMessage);
@@ -113,13 +122,15 @@ export default migration('1790243379_withdraw_reserves', {
       ]
     );
 
-    const ghoFee = await l1CCIPRouter.getFee(destinationChainSelector, [
-      utils.defaultAbiCoder.encode(['address'], [bridgeReceiver.address]),
-      l2ProposalData,
-      [],
-      GHO_STABLE_TOKEN,
-      '0x'
-    ]);
+    const l1CcipMessage = [
+      utils.defaultAbiCoder.encode(['address'], [bridgeReceiver.address]), // receiver
+      l2ProposalData, // data
+      [], // tokenAmounts
+      GHO_STABLE_TOKEN, // feeToken
+      ccipExtraArgs(MESSAGE_GAS_LIMIT), // extraArgs
+    ];
+
+    const ghoFee = await l1CCIPRouter.getFee(destinationChainSelector, l1CcipMessage);
     const ghoFeeWithBuffer = ghoFee.mul(GHO_FEE_BUFFER_MULTIPLIER);
     const mainnetActions = [
       // 1. Approve GHO stable token transfer to pay for the proposal execution fee on Ronin.
@@ -132,17 +143,7 @@ export default migration('1790243379_withdraw_reserves', {
       {
         contract: l1CCIPRouter,
         signature: 'ccipSend(uint64,(bytes,bytes,(address,uint256)[],address,bytes))',
-        args:
-          [
-            destinationChainSelector,
-            [
-              utils.defaultAbiCoder.encode(['address'], [bridgeReceiver.address]),
-              l2ProposalData,
-              [],
-              GHO_STABLE_TOKEN,
-              '0x'
-            ]
-          ],
+        args: [destinationChainSelector, l1CcipMessage],
       },
     ];
 
