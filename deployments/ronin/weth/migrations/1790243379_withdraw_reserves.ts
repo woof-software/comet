@@ -10,7 +10,11 @@ const mainnetChainSelector = '5009297550715157269'; // Ethereum Mainnet
 const GHO_STABLE_TOKEN = '0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f';
 
 const GHO_FEE_BUFFER_MULTIPLIER = 2;
-const RON_FEE_BUFFER_MULTIPLIER = 3;
+
+// Fixed native fee for the Ronin -> Mainnet transfer. The live CCIP FeeQuoter prices WRON at a stale $2000
+// (real ~$0.06), so its quote is ~30,000x too low and would revert if corrected before execution.
+// The router keeps the full msg.value, so any excess over the real fee is not refunded.
+const RON_FEE = utils.parseEther('400');
 
 // Destination gas limits: governance message executed on Ronin, WETH transfer delivered on Mainnet
 const MESSAGE_GAS_LIMIT = 1_600_000;
@@ -82,8 +86,6 @@ export default migration('1790243379_withdraw_reserves', {
       ccipExtraArgs(TRANSFER_GAS_LIMIT), // extraArgs
     ];
 
-    const ronFee = await l2CCIPRouter.getFee(mainnetChainSelector, ccipMessage);
-    const ronFeeWithBuffer = ronFee.mul(RON_FEE_BUFFER_MULTIPLIER);
 
     const ccipSendCalldata = utils.defaultAbiCoder.encode(
       ['uint64', '(bytes,bytes,(address,uint256)[],address,bytes)'],
@@ -103,7 +105,7 @@ export default migration('1790243379_withdraw_reserves', {
           0,
           0,
           0,
-          ronFeeWithBuffer,
+          RON_FEE,
         ],
         [
           'withdrawReserves(address,uint256)',
@@ -176,7 +178,7 @@ The second proposal action sends a message through CCIP to the Ronin governance 
 1. Call \`withdrawReserves(address,uint256)\` on the Ronin cWETHv3 to withdraw ${utils.formatEther(reservesWithdrawn)} WETH of reserves to the Ronin Timelock.
 2. Call \`sweepToken(address,address)\` on the bridge receiver to sweep the WETH held there to the Ronin Timelock.
 3. Approve the L2 CCIP router to spend the combined ${utils.formatEther(totalToBridge)} WETH from the Ronin Timelock.
-4. Call \`ccipSend\` on the L2 CCIP router to bridge the WETH back to the Mainnet Timelock, paying the CCIP fee in native RON from the Ronin Timelock's own balance. The RON sent with the call is the fee quoted by the router at proposal creation with a ${RON_FEE_BUFFER_MULTIPLIER}x buffer.
+4. Call \`ccipSend\` on the L2 CCIP router to bridge the WETH back to the Mainnet Timelock, paying the CCIP fee in native RON from the Ronin Timelock's own balance. A fixed ${utils.formatEther(RON_FEE)} RON (approximately $25) is sent with the call: CCIP's fee quoter on Ronin currently prices WRON at a stale value, so the quoted fee is far below the real one and would be insufficient if the price is corrected before execution. The CCIP router keeps the full amount sent, so any excess over the real fee is not refunded.
 `;
     const txn = await govDeploymentManager.retry(async () =>
       trace(
