@@ -1,15 +1,16 @@
-import { CometContext, scenario } from './context/CometContext.js';
+import type { CometContext } from './context/CometContext.js';
+import { scenario } from './context/CometContext.js';
 import { expect } from 'chai';
 import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils/index.js';
-import { ContractReceipt } from 'ethers';
+import type { ContractTransactionReceipt } from 'ethers';
 import { getConfigForScenario } from './utils/scenarioHelper.js';
 
-async function testWithdrawCollateral(context: CometContext, assetNum: number): Promise<void | ContractReceipt> {
+async function testWithdrawCollateral(context: CometContext, assetNum: number): Promise<void | ContractTransactionReceipt> {
   const comet = await context.getComet();
   const { albert } = context.actors;
   const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(assetNum);
   const collateralAsset = context.getAssetByAddress(assetAddress);
-  const scale = scaleBN.toBigInt();
+  const scale = scaleBN;
 
   expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(0n);
   expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(BigInt(getConfigForScenario(context, assetNum).withdrawCollateral) * scale);
@@ -23,12 +24,12 @@ async function testWithdrawCollateral(context: CometContext, assetNum: number): 
   return txn; // return txn to measure gas
 }
 
-async function testWithdrawFromCollateral(context: CometContext, assetNum: number): Promise<void | ContractReceipt> {
+async function testWithdrawFromCollateral(context: CometContext, assetNum: number): Promise<void | ContractTransactionReceipt> {
   const comet = await context.getComet();
   const { albert, betty } = context.actors;
   const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(assetNum);
   const collateralAsset = context.getAssetByAddress(assetAddress);
-  const scale = scaleBN.toBigInt();
+  const scale = scaleBN;
 
   expect(await collateralAsset.balanceOf(betty.address)).to.be.equal(0n);
   expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(BigInt(getConfigForScenario(context, assetNum).withdrawCollateral) * scale);
@@ -92,7 +93,7 @@ scenario(
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+    const baseSupplied = await comet.balanceOf(albert.address);
 
     // Albert withdraws supplied units of base from Comet
     const txn = await albert.withdrawAsset({ asset: baseAsset.address, amount: baseSupplied });
@@ -123,7 +124,7 @@ scenario(
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
     const precision = scale / 1_000_000n; // 1e-6 asset units of precision
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
@@ -150,7 +151,7 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+    const baseSupplied = await comet.balanceOf(albert.address);
 
     expect(await baseAsset.balanceOf(betty.address)).to.be.equal(0n);
     expect(await comet.balanceOf(albert.address)).to.be.equal(baseSupplied);
@@ -186,7 +187,7 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
     const precision = scale / 1_000_000n; // 1e-6 asset units of precision
 
     expect(await baseAsset.balanceOf(betty.address)).to.be.equal(0n);
@@ -218,7 +219,7 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
     // Betty borrowsRevertCustom 1 unit of base using Albert's account
     await expectRevertCustom(
@@ -292,7 +293,7 @@ scenario(
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
     await expectRevertCustom(
       albert.withdrawAsset({
@@ -320,7 +321,7 @@ scenario(
     const { albert } = actors;
     const { asset: asset0Address, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(asset0Address);
-    const scale = scaleBN.toBigInt();
+    const scale = scaleBN;
 
     await expectRevertCustom(
       albert.withdrawAsset({
@@ -344,7 +345,7 @@ scenario(
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const minBorrow = (await comet.baseBorrowMin()).toBigInt();
+    const minBorrow = await comet.baseBorrowMin();
 
     await expectRevertCustom(
       albert.withdrawAsset({
