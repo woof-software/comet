@@ -354,7 +354,11 @@ async function getActors(context: CometContext): Promise<{ [name: string]: Comet
     adminSigner = await world.impersonateAddress(adminAddress);
     // Fund the impersonated governor for gas (single setBalance RPC, no block mined),
     // so scenarios don't need to zero the base fee on every admin tx.
-    await setEtherBalance(world.deploymentManager, adminAddress, 10n ** 18n);
+    // only if admin already does not have sufficient balance
+    const currentBalance = await world.deploymentManager.hre.ethers.provider.getBalance(adminAddress);
+    if (currentBalance.lt(10n ** 18n)) {
+      await setEtherBalance(world.deploymentManager, adminAddress, 10n ** 18n);
+    }
   }
   const pauseGuardianSigner = useLocalPauseGuardianSigner ? localPauseGuardianSigner : await world.impersonateAddress(pauseGuardianAddress);
 
