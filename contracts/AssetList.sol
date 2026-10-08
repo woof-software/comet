@@ -35,6 +35,9 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     /// @dev The max value for a collateral factor (1)
     uint64 internal constant MAX_COLLATERAL_FACTOR = 1e18;
 
+    /// @dev The max number of assets, one per pair of immutables below
+    uint8 internal constant MAX_ASSETS = 24;
+
     uint256 internal immutable asset00_a;
     address internal immutable priceFeedAddress00;
     uint256 internal immutable asset01_a;
@@ -105,8 +108,11 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
         _;
     }
 
-    constructor(AssetImmutableConfig[] memory assetConfigs) {
+    constructor(ImmutableAssetConfig[] memory assetConfigs) {
         _disableInitializers();
+
+        if (assetConfigs.length == 0) revert NoAssets();
+        if (assetConfigs.length > MAX_ASSETS) revert TooManyAssets();
 
         uint8 _numAssets = uint8(assetConfigs.length);
         numAssets = _numAssets;
@@ -144,18 +150,14 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      * @param storageConfigs The mutable part of the asset configurations
      * @param configurator_ The configurator
      */
-    function initialize(StorageConfig[] calldata storageConfigs, address configurator_) external initializer {
+    function initialize(StorageAssetConfig[] calldata storageConfigs, address configurator_) external initializer {
         if (storageConfigs.length != numAssets) revert StorageConfigsLengthMismatch();
         if (configurator_ == address(0)) revert ZeroConfigurator();
         configurator = configurator_;
 
         for (uint8 i; i < numAssets; ++i) {
             (uint256 word_a, ) = _loadPackedAsset(i);
-            address asset = address(uint160(word_a));
-            // A nil asset has nothing to configure
-            if (asset == address(0)) continue;
-
-            _addAsset(asset, storageConfigs[i]);
+            _addAsset(address(uint160(word_a)), storageConfigs[i]);
         }
     }
 
@@ -170,9 +172,8 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      * @param asset The asset, must be in the immutables of this implementation and not registered yet
      * @param config The factors and supply cap of the asset
      */
-    function addAsset(address asset, StorageConfig calldata config) external onlyConfigurator {
-        // Nil slots hold the zero address, so it would otherwise match an empty slot
-        if (asset == address(0) || !_isInImmutables(asset)) revert BadAsset();
+    function addAsset(address asset, StorageAssetConfig calldata config) external onlyConfigurator {
+        if (!_isInImmutables(asset)) revert BadAsset();
         _addAsset(asset, config);
     }
 
@@ -183,7 +184,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      * @param asset The asset, must be listed at construction
      */
     function setBorrowCollateralFactor(address asset, uint64 borrowCollateralFactor) external onlyConfigurator {
-        StorageConfig storage config = _listedConfig(asset);
+        StorageAssetConfig storage config = _listedConfig(asset);
         _validateCollateralFactors(borrowCollateralFactor, config.liquidateCollateralFactor, config.liquidationFactor);
         emit UpdateAssetBorrowCollateralFactor(asset, config.borrowCollateralFactor, borrowCollateralFactor);
         config.borrowCollateralFactor = borrowCollateralFactor;
@@ -196,7 +197,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      * @param asset The asset, must be listed at construction
      */
     function setLiquidateCollateralFactor(address asset, uint64 liquidateCollateralFactor) external onlyConfigurator {
-        StorageConfig storage config = _listedConfig(asset);
+        StorageAssetConfig storage config = _listedConfig(asset);
         _validateCollateralFactors(config.borrowCollateralFactor, liquidateCollateralFactor, config.liquidationFactor);
         emit UpdateAssetLiquidateCollateralFactor(asset, config.liquidateCollateralFactor, liquidateCollateralFactor);
         config.liquidateCollateralFactor = liquidateCollateralFactor;
@@ -207,7 +208,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      * @param asset The asset, must be listed at construction
      */
     function setLiquidationFactor(address asset, uint64 liquidationFactor) external onlyConfigurator {
-        StorageConfig storage config = _listedConfig(asset);
+        StorageAssetConfig storage config = _listedConfig(asset);
         _validateCollateralFactors(config.borrowCollateralFactor, config.liquidateCollateralFactor, liquidationFactor);
         emit UpdateAssetLiquidationFactor(asset, config.liquidationFactor, liquidationFactor);
         config.liquidationFactor = liquidationFactor;
@@ -218,7 +219,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      * @param asset The asset, must be listed at construction
      */
     function setSupplyCap(address asset, uint128 supplyCap) external onlyConfigurator {
-        StorageConfig storage config = _listedConfig(asset);
+        StorageAssetConfig storage config = _listedConfig(asset);
         emit UpdateAssetSupplyCap(asset, config.supplyCap, supplyCap);
         config.supplyCap = supplyCap;
     }
@@ -239,7 +240,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
         address asset = address(uint160(word_a));
 
         // Factors and supply cap are kept unscaled in storage so the Configurator can change them
-        StorageConfig memory config = assetConfigStorage.configs[asset];
+        StorageAssetConfig memory config = assetConfigStorage.configs[asset];
 
         return AssetInfo({
             asset: asset,
@@ -259,14 +260,13 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      * @return The asset info object
      */
     function getAssetInfoByAddress(address asset) public view returns (AssetInfo memory) {
-        // Rejects unlisted assets, including the zero address that nil slots hold, without scanning
+        // Rejects unlisted assets without scanning
         if (!assetConfigStorage.assets.contains(asset)) revert BadAsset();
 
         // Only the packed words are compared, so storage is read just once for the matching asset
-        for (uint8 i; i < numAssets; ) {
+        for (uint8 i; i < numAssets; ++i) {
             (uint256 word_a, ) = _loadPackedAsset(i);
             if (address(uint160(word_a)) == asset) return getAssetInfo(i);
-            unchecked { ++i; }
         }
         revert BadAsset();
     }
@@ -283,8 +283,8 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      * @param i The index of the asset info to get
      * @return The packed asset info and the price feed address
      */
-    function _packAsset(AssetImmutableConfig[] memory assetConfigs, uint i) internal view returns (uint256, address) {
-        AssetImmutableConfig memory assetConfig;
+    function _packAsset(ImmutableAssetConfig[] memory assetConfigs, uint i) internal view returns (uint256, address) {
+        ImmutableAssetConfig memory assetConfig;
         if (i < assetConfigs.length) {
             assembly {
                 assetConfig := mload(add(add(assetConfigs, 0x20), mul(i, 0x20)))
@@ -296,10 +296,8 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
         address priceFeed = assetConfig.priceFeed;
         uint8 decimals_ = assetConfig.decimals;
 
-        // Short-circuit if asset is nil
-        if (asset == address(0)) {
-            return (0, address(0));
-        }
+        // A zero asset would still be counted in numAssets
+        if (asset == address(0)) revert BadAsset();
 
         // Sanity check price feed and asset decimals
         if (IPriceFeed(priceFeed).decimals() != PRICE_FEED_DECIMALS) revert BadDecimals();
@@ -312,6 +310,60 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
                           uint256(decimals_) << 160 |  // bits 160-167: asset decimals
                           uint256(scale) << 168);      // bits 168-231: asset scale (bits 232-255 unused)
         return (word_a, priceFeed);
+    }
+
+    /**
+     * @dev Sanity checks for factors ordering: BCF < LCF; LCF <= MAX; LF <= MAX
+     * Valid collateral factor configurations:
+     *  1. Both BCF and LCF are 0 => collateral is fully de-listed
+     *  2. borrowCF=0, liquidateCF>0 => soft de-list (no new borrows, controlled liquidation wind-down)
+     *  3. Both non-zero, properly ordered => active collateral
+     * Invalid: borrowCF>0, liquidateCF=0 => reverts (borrow power without liquidation coverage)
+     */
+    function _validateCollateralFactors(
+        uint64 borrowCollateralFactor,
+        uint64 liquidateCollateralFactor,
+        uint64 liquidationFactor
+    ) internal pure {
+        if (borrowCollateralFactor >= liquidateCollateralFactor && borrowCollateralFactor != 0) revert BorrowCFTooLarge();
+        if (liquidateCollateralFactor > MAX_COLLATERAL_FACTOR) revert LiquidateCFTooLarge();
+        if (liquidationFactor > MAX_COLLATERAL_FACTOR) revert LiqPenaltyTooHigh();
+    }
+
+    /**
+     * @dev Whether the asset is one of the assets packed into the immutables of this implementation
+     */
+    function _isInImmutables(address asset) internal view returns (bool) {
+        for (uint8 i; i < numAssets; ++i) {
+            (uint256 word_a, ) = _loadPackedAsset(i);
+            if (address(uint160(word_a)) == asset) return true;
+        }
+        return false;
+    }
+
+    /**
+     * @dev Validates the factors of an asset, registers it so the setters can change it later,
+     *      and stores its factors and supply cap unscaled. Reverts if the asset is already registered
+     */
+    function _addAsset(address asset, StorageAssetConfig calldata config) internal {
+        _validateCollateralFactors(
+            config.borrowCollateralFactor,
+            config.liquidateCollateralFactor,
+            config.liquidationFactor
+        );
+
+        if (!assetConfigStorage.assets.add(asset)) revert AssetAlreadyAdded();
+        assetConfigStorage.configs[asset] = config;
+
+        emit AssetAdded(asset, config);
+    }
+
+    /**
+     * @dev Returns the stored config of an asset, reverting if the asset was not listed at construction
+     */
+    function _listedConfig(address asset) internal view returns (StorageAssetConfig storage) {
+        if (!assetConfigStorage.assets.contains(asset)) revert BadAsset();
+        return assetConfigStorage.configs[asset];
     }
 
     /**
@@ -414,59 +466,5 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
             word_a = asset23_a;
             priceFeed = priceFeedAddress23;
         }
-    }
-
-    /**
-     * @dev Sanity checks for factors ordering: BCF < LCF; LCF <= MAX; LF <= MAX
-     * Valid collateral factor configurations:
-     *  1. Both BCF and LCF are 0 => collateral is fully de-listed
-     *  2. borrowCF=0, liquidateCF>0 => soft de-list (no new borrows, controlled liquidation wind-down)
-     *  3. Both non-zero, properly ordered => active collateral
-     * Invalid: borrowCF>0, liquidateCF=0 => reverts (borrow power without liquidation coverage)
-     */
-    function _validateCollateralFactors(
-        uint64 borrowCollateralFactor,
-        uint64 liquidateCollateralFactor,
-        uint64 liquidationFactor
-    ) internal pure {
-        if (borrowCollateralFactor >= liquidateCollateralFactor && borrowCollateralFactor != 0) revert BorrowCFTooLarge();
-        if (liquidateCollateralFactor > MAX_COLLATERAL_FACTOR) revert LiquidateCFTooLarge();
-        if (liquidationFactor > MAX_COLLATERAL_FACTOR) revert LiqPenaltyTooHigh();
-    }
-
-    /**
-     * @dev Whether the asset is one of the assets packed into the immutables of this implementation
-     */
-    function _isInImmutables(address asset) internal view returns (bool) {
-        for (uint8 i; i < numAssets; ++i) {
-            (uint256 word_a, ) = _loadPackedAsset(i);
-            if (address(uint160(word_a)) == asset) return true;
-        }
-        return false;
-    }
-
-    /**
-     * @dev Validates the factors of an asset, registers it so the setters can change it later,
-     *      and stores its factors and supply cap unscaled. Reverts if the asset is already registered
-     */
-    function _addAsset(address asset, StorageConfig calldata config) internal {
-        _validateCollateralFactors(
-            config.borrowCollateralFactor,
-            config.liquidateCollateralFactor,
-            config.liquidationFactor
-        );
-
-        if (!assetConfigStorage.assets.add(asset)) revert AssetAlreadyAdded();
-        assetConfigStorage.configs[asset] = config;
-
-        emit AssetAdded(asset, config);
-    }
-
-    /**
-     * @dev Returns the stored config of an asset, reverting if the asset was not listed at construction
-     */
-    function _listedConfig(address asset) internal view returns (StorageConfig storage) {
-        if (!assetConfigStorage.assets.contains(asset)) revert BadAsset();
-        return assetConfigStorage.configs[asset];
     }
 }

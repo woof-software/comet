@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
-import "./interfaces/assetList/IAssetListStructs.sol";
+
+import { IAssetListStructs } from "./interfaces/assetList/IAssetListStructs.sol";
 
 /**
  * @title Compound's Asset List Factory
@@ -12,5 +13,5 @@ interface IAssetListFactory {
      * @param assetConfigs The immutable part of the asset configurations
      * @return assetList The address of the new asset list
      */
-    function createAssetList(IAssetListStructs.AssetImmutableConfig[] memory assetConfigs) external returns (address assetList);
+    function createAssetList(IAssetListStructs.ImmutableAssetConfig[] memory assetConfigs) external returns (address assetList);
 }

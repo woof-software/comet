@@ -16,7 +16,7 @@ interface IAssetList is IAssetListErrors, IAssetListEvents, IAssetListStructs {
 
     function configurator() external view returns (address);
 
-    function addAsset(address asset, StorageConfig calldata config) external;
+    function addAsset(address asset, StorageAssetConfig calldata config) external;
 
     function setBorrowCollateralFactor(address asset, uint64 borrowCollateralFactor) external;
 

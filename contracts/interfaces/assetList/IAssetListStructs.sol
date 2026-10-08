@@ -14,7 +14,7 @@ interface IAssetListStructs {
      * @dev Passed to the asset list constructor and kept in immutables, so reading it costs no storage access.
      *      Changing any of these values means deploying a new asset list
      */
-    struct AssetImmutableConfig {
+    struct ImmutableAssetConfig {
         address asset;                      // slot 0
         uint8 decimals;
         address priceFeed;                  // slot 1
@@ -24,7 +24,7 @@ interface IAssetListStructs {
      * @notice The part of an asset config the configurator can change without redeploying the asset list
      * @dev Kept in storage so the setters can update it
      */
-    struct StorageConfig {
+    struct StorageAssetConfig {
         uint64 borrowCollateralFactor;      // slot 0
         uint64 liquidateCollateralFactor;
         uint64 liquidationFactor;
@@ -54,6 +54,6 @@ interface IAssetListStructs {
      */
     struct AssetConfigStorage {
         EnumerableSet.AddressSet assets;    // slots 0-1
-        mapping(address => StorageConfig) configs; // slot 2
+        mapping(address => StorageAssetConfig) configs; // slot 2
     }
 }

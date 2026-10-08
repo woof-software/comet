@@ -53,17 +53,18 @@ interface IConfiguratorEvents {
     //////////////////////////////////////////////////////////////*/
 
     event SetAssetListFactory(address indexed cometProxy, address indexed oldAssetListFactory, address indexed newAssetListFactory);
-    event AssetListDeployed(address indexed cometProxy, address indexed newAssetList);
+    event AssetListDeployed(address indexed cometProxy, address indexed assetListProxy, address indexed newAssetListImpl);
     event UpdateAssetList(address indexed cometProxy, address indexed oldAssetList, address indexed newAssetList);
 
     /*//////////////////////////////////////////////////////////////
                        ASSETS CONFIGS MANAGEMENT
     //////////////////////////////////////////////////////////////*/
 
-    event SetAssetConfigs(address indexed cometProxy, IAssetListStructs.AssetImmutableConfig[] oldAssetConfigs, IAssetListStructs.AssetImmutableConfig[] newAssetConfigs);
-    event UpdateAsset(address indexed cometProxy, IAssetListStructs.AssetImmutableConfig oldAssetConfig, IAssetListStructs.AssetImmutableConfig newAssetConfig);
+    event SetAssetConfigs(address indexed cometProxy, CometConfiguration.AssetConfig[] oldAssetConfigs, CometConfiguration.AssetConfig[] newAssetConfigs);
+    event UpdateAsset(address indexed cometProxy, CometConfiguration.AssetConfig oldAssetConfig, CometConfiguration.AssetConfig newAssetConfig);
     event UpdateAssetPriceFeed(address indexed cometProxy, address indexed asset, address oldPriceFeed, address newPriceFeed);
-    event AddAsset(address indexed cometProxy, address indexed asset, IAssetListStructs.StorageConfig storageConfig);
+    event AddAsset(address indexed cometProxy, CometConfiguration.AssetConfig assetConfig);
+    event AddAssetToAssetList(address indexed cometProxy, address indexed assetList, address indexed asset);
     event UpdateAssetBorrowCollateralFactor(address indexed cometProxy, address indexed asset, uint64 oldBorrowCF, uint64 newBorrowCF);
     event UpdateAssetLiquidateCollateralFactor(address indexed cometProxy, address indexed asset, uint64 oldLiquidateCF, uint64 newLiquidateCF);
     event UpdateAssetLiquidationFactor(address indexed cometProxy, address indexed asset, uint64 oldLiquidationFactor, uint64 newLiquidationFactor);

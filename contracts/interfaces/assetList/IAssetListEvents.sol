@@ -14,7 +14,7 @@ interface IAssetListEvents {
      * @param asset The asset
      * @param config The factors and supply cap the asset starts with
      */
-    event AssetAdded(address indexed asset, IAssetListStructs.StorageConfig config);
+    event AssetAdded(address indexed asset, IAssetListStructs.StorageAssetConfig config);
 
     /**
      * @notice Emitted when the configurator changes the borrow collateral factor of an asset

@@ -7,10 +7,16 @@ pragma solidity 0.8.15;
  * @custom:security-contact dmitriy@woof.software
  */
 interface IAssetListErrors {
+    /// @dev The asset list is built with no assets
+    error NoAssets();
+
+    /// @dev The asset list is built with more assets than it can hold
+    error TooManyAssets();
+
     /// @dev The number of storage configs differs from the number of assets
     error StorageConfigsLengthMismatch();
 
-    /// @dev The asset is not listed, or the index is out of range
+    /// @dev The asset is the zero address, is not listed, or the index is out of range
     error BadAsset();
 
     /// @dev The price feed or asset decimals differ from what is expected
