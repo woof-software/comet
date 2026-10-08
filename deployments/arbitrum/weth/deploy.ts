@@ -1,5 +1,6 @@
-import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet, exp } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager/index.js';
+import type { DeploySpec } from '../../../src/deploy/index.js';
+import { deployComet, exp } from '../../../src/deploy/index.js';
 
 export default async function deploy(deploymentManager: DeploymentManager, deploySpec: DeploySpec): Promise<Deployed> {
   const WETH = await deploymentManager.existing('WETH', '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', 'arbitrum');

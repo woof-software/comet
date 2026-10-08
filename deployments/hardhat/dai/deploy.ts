@@ -3,7 +3,7 @@ import type { Contract } from 'ethers';
 import { DeploymentManager } from '../../../plugins/deployment_manager/index.js';
 import type { Deployed } from '../../../plugins/deployment_manager/index.js';
 import { getHardhatEthers } from '../../../plugins/deployment_manager/hardhat3/runtime.js';
-import type { Configurator, FaucetToken, SimplePriceFeed } from '../../../build/types/index.js';
+import type { Configurator } from '../../../build/types/index.js';
 import { cloneGov, deployComet, exp, sameAddress, wait } from '../../../src/deploy/index.js';
 import type { DeploySpec } from '../../../src/deploy/index.js';
 
@@ -17,7 +17,7 @@ async function makeToken(
   name: string,
   decimals: number,
   symbol: string
-): Promise<FaucetToken> {
+): Promise<Contract> {
   const mint = (BigInt(amount) * 10n ** BigInt(decimals)).toString();
   return deploymentManager.deploy(symbol, 'test/FaucetToken.sol', [mint, name, decimals, symbol]);
 }
@@ -27,7 +27,7 @@ async function makePriceFeed(
   alias: string,
   initialPrice: number,
   decimals: number
-): Promise<SimplePriceFeed> {
+): Promise<Contract> {
   return deploymentManager.deploy(alias, 'test/SimplePriceFeed.sol', [initialPrice * 1e8, decimals]);
 }
 
@@ -128,7 +128,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
     async () => {
       trace(`Sending some GOLD to CometRewards`);
       const amount = exp(2_000_000, 8);
-      trace(await wait((GOLD.connect(signer) as Contract).transfer(rewardsAddress, amount)));
+      trace(await wait(GOLD.connect(signer).getFunction('transfer')(rewardsAddress, amount)));
       trace(`GOLD.balanceOf(${rewardsAddress}): ${await GOLD.balanceOf(rewardsAddress)}`);
     }
   );
@@ -149,7 +149,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
       async () => {
         trace(`Minting ${units} ${await asset.symbol()} to fauceteer`);
         const amount = exp(units, await asset.decimals());
-        trace(await wait((asset.connect(signer) as Contract).allocateTo(fauceteerAddress, amount)));
+        trace(await wait(asset.connect(signer).getFunction('allocateTo')(fauceteerAddress, amount)));
         trace(`asset.balanceOf(${signerAddress}): ${await asset.balanceOf(signerAddress)}`);
       }
     );

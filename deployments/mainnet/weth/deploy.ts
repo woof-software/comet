@@ -1,5 +1,6 @@
-import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet, exp } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager/index.js';
+import type { DeploySpec } from '../../../src/deploy/index.js';
+import { deployComet, exp } from '../../../src/deploy/index.js';
 
 export default async function deploy(deploymentManager: DeploymentManager, deploySpec: DeploySpec): Promise<Deployed> {
   const stETH = await deploymentManager.existing('stETH', '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84');
@@ -8,10 +9,10 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
   // Deploy WstETHPriceFeed
   const wstETHPriceFeed = await deploymentManager.deploy(
     'wstETH:priceFeed',
-    'WstETHPriceFeed.sol',
+    'pricefeeds/WstETHPriceFeed.sol',
     [
       '0x86392dC19c0b719886221c78AB11eb8Cf5c52812', // stETHtoETHPriceFeed
-      wstETH.address,                                // wstETH
+      await wstETH.getAddress(),                                // wstETH
       8                                             // decimals
     ]
   );
@@ -19,7 +20,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
   // Deploy constant price feed for WETH
   const wethConstantPriceFeed = await deploymentManager.deploy(
     'WETH:priceFeed',
-    'ConstantPriceFeed.sol',
+    'pricefeeds/ConstantPriceFeed.sol',
     [
       8,                                             // decimals
       exp(1, 8)                                      // constantPrice
@@ -29,7 +30,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
   // Deploy scaling price feed for cbETH
   const cbETHScalingPriceFeed = await deploymentManager.deploy(
     'cbETH:priceFeed',
-    'ScalingPriceFeed.sol',
+    'pricefeeds/ScalingPriceFeed.sol',
     [
       '0xF017fcB346A1885194689bA23Eff2fE6fA5C483b', // cbETH / ETH price feed
       8                                             // decimals
@@ -54,7 +55,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
     [
       await comet.governor(),  // admin_
       await comet.baseToken(), // weth_
-      wstETH.address           // wsteth_
+      await wstETH.getAddress()           // wsteth_
     ]
   );
 

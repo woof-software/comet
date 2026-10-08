@@ -1,5 +1,6 @@
-import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet, exp } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager/index.js';
+import type { DeploySpec } from '../../../src/deploy/index.js';
+import { deployComet, exp } from '../../../src/deploy/index.js';
 
 export default async function deploy(deploymentManager: DeploymentManager, deploySpec: DeploySpec): Promise<Deployed> {
   const wstETH = await deploymentManager.existing('wstETH', '0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0');
@@ -25,8 +26,8 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
     'rsETH:priceFeed',
     'pricefeeds/ReverseMultiplicativePriceFeed.sol',
     [
-      rsETHToETHPriceFeed.address,  // rsETH / ETH price feed
-      wstETHToETHPriceFeed.address, // wstETH / ETH price feed (reversed)
+      await rsETHToETHPriceFeed.getAddress(),  // rsETH / ETH price feed
+      await wstETHToETHPriceFeed.getAddress(), // wstETH / ETH price feed (reversed)
       8,                            // decimals
       'rsETH / wstETH price feed'   // description
     ],
@@ -38,8 +39,8 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
     'ezETH:priceFeed',
     'pricefeeds/ReverseMultiplicativePriceFeed.sol',
     [
-      ezETHToETHPriceFeed.address,  // ezETH / ETH price feed
-      wstETHToETHPriceFeed.address, // wstETH / ETH price feed (reversed)
+      await ezETHToETHPriceFeed.getAddress(),  // ezETH / ETH price feed
+      await wstETHToETHPriceFeed.getAddress(), // wstETH / ETH price feed (reversed)
       8,                            // decimals
       'ezETH / wstETH price feed'   // description
     ],
@@ -63,15 +64,15 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
     'bulkers/MainnetBulkerWithWstETHSupport.sol',
     [
       await comet.governor(),  // admin_
-      weth.address,            // weth_
-      wstETH.address           // wsteth_
+      await weth.getAddress(),            // weth_
+      await wstETH.getAddress()           // wsteth_
     ],
     true
   );
-  console.log('Bulker deployed at:', bulker.address);
+  console.log('Bulker deployed at:', await bulker.getAddress());
 
   const bulkerNow = await deploymentManager.contract('bulker');
-  console.log('Bulker now at:',  bulkerNow? bulkerNow.address: 'N/A');
+  console.log('Bulker now at:',  bulkerNow? await bulkerNow.getAddress(): 'N/A');
 
   return { ...deployed, bulker };
 }

@@ -1,8 +1,6 @@
-import {
-  Deployed,
-  DeploymentManager,
-} from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet, exp } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager/index.js';
+import type { DeploySpec } from '../../../src/deploy/index.js';
+import { deployComet, exp } from '../../../src/deploy/index.js';
 
 const HOUR = 60 * 60;
 const DAY = 24 * HOUR;
@@ -50,7 +48,7 @@ async function deployContracts(
   //   'bridgeReceiver',
   //   'bridges/ronin/RoninBridgeReceiver.sol',
   //   [
-  //     l2CCIPRouter.address, // l2CCIPRouter
+  //     await l2CCIPRouter.getAddress(), // l2CCIPRouter
   //   ]
   // );
 
@@ -84,7 +82,7 @@ async function deployContracts(
     'timelock',
     'vendor/Timelock.sol',
     [
-      bridgeReceiver.address, // admin
+      await bridgeReceiver.getAddress(), // admin
       1 * DAY,    // delay
       14 * DAY,   // grace period
       12 * HOUR,  // minimum delay
@@ -97,9 +95,9 @@ async function deployContracts(
     async () => !(await bridgeReceiver.initialized()),
     async () => {
       trace(`Initializing BridgeReceiver`);
-      await bridgeReceiver.connect(await deploymentManager.getSigner()).initialize(
+      await bridgeReceiver.connect(await deploymentManager.getSigner()).getFunction('initialize')(
         MAINNET_TIMELOCK,     // govTimelock
-        localTimelock.address // localTimelock
+        await localTimelock.getAddress() // localTimelock
       );
       trace(`BridgeReceiver initialized`);
     }
