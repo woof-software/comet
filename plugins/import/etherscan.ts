@@ -48,6 +48,7 @@ export function getEtherscanApiKey(network: string, i?: number): string {
     optimism: process.env.ETHERSCAN_KEY_FOR_OPTIMISM,
     mantle: process.env.ETHERSCAN_KEY,
     scroll: process.env.ETHERSCAN_KEY,
+    unichain: process.env.ETHERSCAN_KEY,
     linea: process.env.ETHERSCAN_KEY_FOR_LINEA,
   };
 
@@ -86,10 +87,5 @@ export function getEtherscanApiKey(network: string, i?: number): string {
 
 export async function get(url, data) {
   const res = (await axios.get(url, { params: data }))['data'];
-  return res;
-}
-
-export async function post(url, data) {
-  const res = (await axios.post(url, data))['data'];
   return res;
 }

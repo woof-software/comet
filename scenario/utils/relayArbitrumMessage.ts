@@ -1,11 +1,13 @@
 import { DeploymentManager } from '../../plugins/deployment_manager';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
-import { utils, BigNumber } from 'ethers';
+import { utils, BigNumber, Contract, constants } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog } from './index';
+import { fetchBridgeReceiverProposals } from './bridgeReceiverProposals';
+import { DEPOSIT_FOR_BURN_SIGNATURE, simulateCCTPL2ToL1Transfer } from './cctpL2ToL1Transfer';
 
 export async function relayArbitrumMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -84,18 +86,18 @@ export async function relayArbitrumMessage(
     const header = '0x';
     const headerLength = header.length;
     const wordLength = 2 * 32;
-    const innnerData = header + data.slice(headerLength + (11 * wordLength));
+    const innerData = header + data.slice(headerLength + (11 * wordLength));
     const toValue = data.slice(headerLength + (2 * wordLength), headerLength + (3 * wordLength));
     let toAddress = BigNumber.from(`0x${toValue}`).toHexString();
     
-    // if lenght of toAddress is less than 42, then it is padded with 0s and we need to add them after 0x
+    // if length of toAddress is less than 42, then it is padded with 0s and we need to add them after 0x
     if(toAddress.length < 42) {
       toAddress = `0x${toAddress.slice(2).padStart(40, '0')}`;
     }
 
     const messageNum = topics[1];
     return {
-      data: innnerData,
+      data: innerData,
       toAddress,
       messageNum
     };
@@ -232,6 +234,18 @@ export async function relayArbitrumMessage(
           await signer.getAddress()
         );
       } else {
+        // Mock ArbSys precompile (0x64) — Arbitrum precompiles don't exist in Hardhat's EVM,
+        // but the L2 gateways call ArbSys.sendTxToL1 internally during outboundTransfer.
+        // Bytecode 0x60206000f3 disassembles to: PUSH1 0x20 | PUSH1 0x00 | RETURN
+        // which returns 32 zero bytes from uninitialized memory for any call.
+        await bridgeDeploymentManager.hre.network.provider.request({
+          method: 'hardhat_setCode',
+          params: [
+            '0x0000000000000000000000000000000000000064',
+            '0x60206000f3',
+          ],
+        });
+
         await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
       }
       openBridgedProposals.push({
@@ -242,6 +256,140 @@ export async function relayArbitrumMessage(
   }
 
   return openBridgedProposals;
+}
+
+export async function simulateL2ToL1TokenBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber?: number,
+  tenderlyLogs?: any[],
+  proposalIds?: BigNumber[]
+) {
+  if(tenderlyLogs) {
+    return;
+  }
+  console.log('Simulating L2→L1 token bridging for any executed Arbitrum proposals...');
+
+  const outboundTransferSignature = 'outboundTransfer(address,address,uint256,bytes)';
+  const outboundTransfer2Signature = 'outboundTransfer(address,address,uint256,uint256,uint256,bytes)';
+  const ARBITRUM_GATEWAY_ROUTER = '0x5288c571Fd7aD117beA99bF60FE0846C4E84F933';
+  const ARBITRUM_BRIDGE = '0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a';
+  const ARBITRUM_OUTBOX = '0x667e23ABd27E623c11d4CC00ca3EC4d0bD63337a';
+  const MAINNET_WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+
+  const { events } = await fetchBridgeReceiverProposals(bridgeDeploymentManager, l2StartingBlockNumber, proposalIds);
+
+  for (const { targets, signatures, calldatas } of events) {
+    for (let i = 0; i < signatures.length; i++) {
+      let bridgedTokens = false;
+
+      // Look for L2→L1 outboundTransfer calls (standard Arbitrum gateway bridge)
+      if (signatures[i] === outboundTransferSignature || signatures[i] === outboundTransfer2Signature) {
+        bridgedTokens = true;
+        const [l1Token, to, amount] = (() => {
+          if (signatures[i] === outboundTransferSignature) {
+            return utils.defaultAbiCoder.decode(
+              ['address', 'address', 'uint256', 'bytes'],
+              calldatas[i]
+            );
+          } else if (signatures[i] === outboundTransfer2Signature) {
+            return utils.defaultAbiCoder.decode(
+              ['address', 'address', 'uint256', 'uint256', 'uint256', 'bytes'],
+              calldatas[i]
+            );
+          }
+        })();
+        console.log(`Simulating L2→L1 token bridging: ${amount.toString()} of ${l1Token} to ${to}`);
+
+        const gatewayAddress = await (async () => {
+          if(targets[i].toLowerCase() === ARBITRUM_GATEWAY_ROUTER.toLowerCase()) { // Arbitrum WETH gateway
+            const router = new Contract(
+              ARBITRUM_GATEWAY_ROUTER,
+              ['function l1TokenToGateway(address l1Token) view returns (address)'],
+              await bridgeDeploymentManager.getSigner()
+            );
+            return await router.l1TokenToGateway(l1Token);
+          }
+          return targets[i];
+        })();
+        const l2Gateway = new Contract(
+          gatewayAddress,
+          ['function counterpartGateway() view returns (address)'],
+          await bridgeDeploymentManager.getSigner()
+        );
+        const l1GatewayAddress = await l2Gateway.counterpartGateway();
+
+        const l1Gateway = new Contract(
+          l1GatewayAddress,
+          [
+            'function finalizeInboundTransfer(address _token, address _from, address _to, uint256 _amount, bytes calldata _data)',
+            'function inbox() view returns (address)'
+          ],
+          await governanceDeploymentManager.getSigner()
+        );
+        // override 0x4 slot in outbox to L2 gateway
+        await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
+          ARBITRUM_OUTBOX,
+          '0x4',
+          utils.hexZeroPad(gatewayAddress, 32)
+        ]);
+
+        // impersonate outbox to call finalizeInboundTransfer, as if the message came from L2 gateway
+        const outboxSigner = await impersonateAddress(
+          governanceDeploymentManager,
+          ARBITRUM_OUTBOX
+        );
+
+        await governanceDeploymentManager.hre.network.provider.send('hardhat_setBalance', [
+          outboxSigner.address,
+          '0x1000000000000000000',
+        ]);
+
+        const arbitrumBridge = new Contract(
+          ARBITRUM_BRIDGE,
+          ['function executeCall(address to, uint256 value, bytes calldata data)'],
+          outboxSigner
+        );
+
+        const data = l1Gateway.interface.encodeFunctionData(
+          'finalizeInboundTransfer',
+          [
+            l1Token,
+            ARBITRUM_GATEWAY_ROUTER,
+            to, amount,
+            utils.defaultAbiCoder.encode(['uint256', 'bytes'], [0, '0x'])
+          ]);
+        console.log(`Relaying message to L1 gateway at ${l1GatewayAddress} with data: ${data}`);
+        const bridgeTx = await arbitrumBridge.connect(outboxSigner).executeCall(
+          l1Gateway.address,
+          l1Token.toLowerCase() === MAINNET_WETH.toLowerCase() ? amount : 0,
+          data,
+        );
+        await (bridgeTx).wait();
+        // stop impersonation after the call
+        await governanceDeploymentManager.hre.network.provider.send('hardhat_stopImpersonatingAccount', [
+          outboxSigner.address
+        ]);
+        // override 0x4 slot in outbox to L2 gateway
+        await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
+          ARBITRUM_OUTBOX,
+          '0x4',
+          utils.hexZeroPad(constants.AddressZero, 32)
+        ]);
+      }
+
+      // Look for L2→L1 CCTP depositForBurn calls (Circle CCTP bridge, e.g. native USDC)
+      if (signatures[i] === DEPOSIT_FOR_BURN_SIGNATURE) {
+        bridgedTokens = true;
+        await simulateCCTPL2ToL1Transfer(governanceDeploymentManager, bridgeDeploymentManager, calldatas[i]);
+      }
+      if (bridgedTokens) {
+        await governanceDeploymentManager.retry(() =>
+          governanceDeploymentManager.hre.network.provider.send('evm_mine')
+        );
+      }
+    }
+  }
 }
 
 export async function relayArbitrumCCTPMint(
@@ -319,8 +467,8 @@ export async function relayArbitrumCCTPMint(
     // msgDestinationDomain, skip won't use
 
     start = end;
-    end = start + length.uint64;
-    // msgNonce, skip won't use
+    end = start + length.bytes32;
+    // msgNonce (bytes32 in MessageTransmitterV2 — was uint64 in CCTP V1), skip won't use
 
     start = end;
     end = start + length.bytes32;
@@ -333,6 +481,14 @@ export async function relayArbitrumCCTPMint(
     start = end;
     end = start + length.bytes32;
     // msgDestination, skip won't use
+
+    start = end;
+    end = start + length.uint32;
+    // minFinalityThreshold (CCTP V2 only), skip won't use
+
+    start = end;
+    end = start + length.uint32;
+    // finalityThresholdExecuted (CCTP V2 only), skip won't use
 
     start = end;
     end = start + length.uint32;
