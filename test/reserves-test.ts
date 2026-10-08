@@ -183,12 +183,9 @@ describe('reserves', function () {
       describe('interest accrual with utilization = 0', function () {
         let baseSupplyIndexBefore: BigNumber;
         let baseBorrowIndexBefore: BigNumber;
-
+        
         before(async function () {
-          ({ 
-            baseSupplyIndex: baseSupplyIndexBefore, 
-            baseBorrowIndex: baseBorrowIndexBefore 
-          } = await comet.totalsBasic());
+          ({ baseSupplyIndex: baseSupplyIndexBefore, baseBorrowIndex: baseBorrowIndexBefore } = await comet.totalsBasic());
         });
 
         it('base supply index should be > 0', async function () {

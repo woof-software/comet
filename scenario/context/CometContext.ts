@@ -29,6 +29,7 @@ import {
   BaseBulker,
   BaseBridgeReceiver,
   ERC20,
+  CometExtAssetList,
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
@@ -59,6 +60,7 @@ export interface CometProperties {
   rewards: CometRewards;
   bulker: BaseBulker;
   bridgeReceiver: BaseBridgeReceiver;
+  cometExt?: CometExtAssetList;
 }
 
 export class CometContext {

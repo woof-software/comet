@@ -223,6 +223,11 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
       config.transferCollateral = 2;
       config.withdrawCollateral = 2;
     }
+    if(i == 6) { // tETH
+      config.supplyCollateral = 2;
+      config.transferCollateral = 2;
+      config.withdrawCollateral = 2;
+    }
   }
 
   if (ctx.world.base.network === 'arbitrum' && ctx.world.base.deployment === 'usdc.e') {

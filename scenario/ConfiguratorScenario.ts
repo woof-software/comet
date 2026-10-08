@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import { BigNumber, ethers } from 'ethers';
 import { CometContext, scenario } from './context/CometContext';
 import { exp } from '../test/helpers';
-import { expectRevertCustom, fundAccount, setEtherBalance, supportsMarketAdminPermissionChecker } from './utils';
+import { expectRevertCustom, fundAccount, supportsMarketAdminPermissionChecker } from './utils';
 import { SECONDS_PER_YEAR } from './utils/constants';
 import { MarketAdminPermissionChecker } from '../build/types';
 
@@ -90,7 +90,7 @@ async function getMarketAdminSigner(context: CometContext): Promise<SignerWithAd
 
   const marketAdmin = await marketAdminPermissionChecker.marketAdmin();
   const marketAdminSigner = await context.world.impersonateAddress(marketAdmin);
-  await setEtherBalance(dm, marketAdmin, exp(1, 18));
+  await fundAccount(context.world, marketAdminSigner);
   return marketAdminSigner;
 }
 
@@ -250,7 +250,7 @@ scenario(
 
     const newGovernor = await deployTimelock(context);
     const newGovernorSigner = await context.world.impersonateAddress(newGovernor);
-    await setEtherBalance(context.world.deploymentManager, newGovernor, exp(1, 18));
+    await fundAccount(context.world, newGovernorSigner);
 
     await configurator.connect(admin.signer).transferGovernor(newGovernor);
     await configurator.connect(newGovernorSigner).transferGovernor(admin.address);

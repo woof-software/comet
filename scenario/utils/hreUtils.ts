@@ -1,3 +1,4 @@
+import { SignerWithAddress } from 'test/helpers';
 import { DeploymentManager } from '../../plugins/deployment_manager';
 import { World } from '../../plugins/scenario';
 import CometActor from '../context/CometActor';
@@ -22,7 +23,7 @@ export async function setNextBlockTimestamp(dm: DeploymentManager, timestamp: nu
   await dm.hre.ethers.provider.send('evm_setNextBlockTimestamp', [timestamp]);
 }
 
-export async function fundAccount(world: World, account: CometActor) {
+export async function fundAccount(world: World, account: CometActor | SignerWithAddress) {
   await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
     account.address,
     world.deploymentManager.hre.ethers.utils.hexStripZeros(world.deploymentManager.hre.ethers.utils.parseEther('100').toHexString()),
