@@ -1278,11 +1278,11 @@ export async function fastGovernanceExecute(
   if (proposeEvent === undefined) {
     throw new Error('ProposalCreated event not found');
   }
-  const [id, , , , , , startBlock, endBlock] = proposeEvent.args;
+  const [proposalId, , , , , , startBlock, endBlock] = proposeEvent.args;
   const proposerAddress = await proposer.getAddress();
 
   await voteForOpenProposal(dm, {
-    id,
+    id: proposalId,
     proposer: proposerAddress,
     targets,
     values,
@@ -1292,7 +1292,7 @@ export async function fastGovernanceExecute(
     endBlock,
   });
   await executeOpenProposal(dm, {
-    id,
+    id: proposalId,
     proposer: proposerAddress,
     targets,
     values,

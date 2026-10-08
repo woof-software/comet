@@ -1,4 +1,5 @@
-import type { BigNumberish, ContractRunner, Signer } from 'ethers';
+import type { AddressLike as EthersAddressLike, BigNumberish, ContractRunner, Signer } from 'ethers';
+import type { TypedContractMethod } from '../../build/types/common.js';
 import { Loader, World, debug } from '../../plugins/scenario/index.js';
 import type { Migration } from '../../plugins/deployment_manager/index.js';
 import {
@@ -34,7 +35,6 @@ import {
   BaseBulker__factory,
   CometInterface__factory,
   CometProxyAdmin__factory,
-  CometRewards__factory,
   Configurator__factory,
   ERC20__factory,
   Fauceteer__factory,
@@ -52,6 +52,18 @@ import type { Requirements } from '../constraints/Requirements.js';
 
 export type ActorMap = { [name: string]: CometActor };
 export type AssetMap = { [name: string]: CometAsset };
+type RewardConfig = [string, bigint, boolean, bigint?] & {
+  token: string;
+  rescaleFactor: bigint;
+  shouldUpscale: boolean;
+  multiplier?: bigint;
+};
+
+// Existing deployments may return three rewardConfig fields; newer ones add multiplier.
+type ScenarioRewards = Omit<CometRewards, 'rewardConfig' | 'connect'> & {
+  rewardConfig: TypedContractMethod<[comet: EthersAddressLike], [RewardConfig], 'view'>;
+  connect(runner?: ContractRunner | null): ScenarioRewards;
+};
 export type MigrationData = {
   migration: Migration<any>;
   lastProposal?: number;
@@ -68,7 +80,7 @@ export interface CometProperties {
   proxyAdmin: CometProxyAdmin;
   timelock: SimpleTimelock;
   governor: IGovernorBravo;
-  rewards: CometRewards;
+  rewards: ScenarioRewards;
   bulker: BaseBulker;
   bridgeReceiver: BaseBridgeReceiver;
 }
@@ -134,8 +146,9 @@ export class CometContext {
     return this.getContract('governor', IGovernorBravo__factory.connect);
   }
 
-  async getRewards(): Promise<CometRewards> {
-    return this.getContract('rewards', CometRewards__factory.connect);
+  async getRewards(): Promise<ScenarioRewards> {
+    // Keep the deployment ABI instead of replacing it with the latest factory ABI.
+    return await this.world.deploymentManager.contract('rewards') as unknown as ScenarioRewards;
   }
 
   async getRewardToken(): Promise<ERC20> {
