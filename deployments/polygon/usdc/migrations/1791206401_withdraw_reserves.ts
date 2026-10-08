@@ -7,10 +7,10 @@ import { exp, proposal } from '../../../../src/deploy';
 const USDCE_AMOUNT = exp(470_000, 6);
 const USDT_AMOUNT = exp(65_000, 6);
 
-// 0.03% max loss per swap
-const minOut = (amount: bigint) => amount * BigInt(9997) / BigInt(10000);
-const USDCE_MIN_OUT = minOut(USDCE_AMOUNT);
-const USDT_MIN_OUT = minOut(USDT_AMOUNT);
+// Max loss per swap: 0.03% for USDC.e -> USDC, 0.15% for USDT -> USDC
+const minOut = (amount: bigint, maxLossBps: number) => amount * BigInt(10000 - maxLossBps) / BigInt(10000);
+const USDCE_MIN_OUT = minOut(USDCE_AMOUNT, 3);
+const USDT_MIN_OUT = minOut(USDT_AMOUNT, 15);
 const BURN_AMOUNT = USDCE_MIN_OUT + USDT_MIN_OUT;
 
 const NATIVE_USDC = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
@@ -112,7 +112,7 @@ export default migration('1791206401_withdraw_reserves', {
 
 ## Proposal summary
 
-This proposal withdraws 470,000 USDC.e and 65,000 USDT from the reserves of the Compound III USDC and USDT markets on Polygon, swaps both into native USDC on Uniswap V4, and bridges it to the Compound Timelock on Ethereum Mainnet using Circle's CCTP. Each swap tolerates at most 0.03% loss.
+This proposal withdraws 470,000 USDC.e and 65,000 USDT from the reserves of the Compound III USDC and USDT markets on Polygon, swaps both into native USDC on Uniswap V4, and bridges it to the Compound Timelock on Ethereum Mainnet using Circle's CCTP. The USDC.e swap tolerates at most 0.03% loss and the USDT swap at most 0.15%.
 
 ## Proposal actions
 
@@ -121,8 +121,8 @@ The proposal action sends a message through Polygon's FxRoot to the Polygon Brid
 1. Withdraw 470,000 USDC.e from the Polygon cUSDCv3 reserves.
 2. Withdraw 65,000 USDT from the Polygon cUSDTv3 reserves.
 3. Transfer the USDC.e and USDT to the Uniswap Universal Router.
-4. Swap 470,000 USDC.e into at least 469,859 USDC and 65,000 USDT into at least 64,980.5 USDC on Uniswap V4.
-5. Approve and call \`depositForBurn\` on the CCTP TokenMessenger to bridge 534,839.5 USDC to the Mainnet Timelock.
+4. Swap 470,000 USDC.e into at least 469,859 USDC and 65,000 USDT into at least 64,902.5 USDC on Uniswap V4.
+5. Approve and call \`depositForBurn\` on the CCTP TokenMessenger to bridge 534,761.5 USDC to the Mainnet Timelock.
 `;
     const txn = await govDeploymentManager.retry(async () =>
       trace(await governor.propose(...(await proposal(mainnetActions, description)))), 0, 600_000
