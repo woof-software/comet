@@ -6,7 +6,7 @@ import CometAsset from './context/CometAsset.js';
 import {
   ERC20__factory,
   IWstETH__factory,
-  MainnetBulkerWithWstETHSupport__factory
+  MainnetBulker__factory
 } from '../build/types/index.js';
 import { exp } from '../test/helpers.js';
 import { expectApproximately, expectRevertCustom, isBulkerSupported, matchesDeployment } from './utils/index.js';
@@ -52,7 +52,7 @@ scenario(
 
     const stETH = ERC20__factory.connect(MAINNET_STETH_ADDRESS, comet.runner);
     const wstETH = IWstETH__factory.connect(MAINNET_WSTETH_ADDRESS, comet.runner);
-    const mainnetBulker = MainnetBulkerWithWstETHSupport__factory.connect(await bulker.getAddress(), bulker.runner);
+    const mainnetBulker = MainnetBulker__factory.connect(await bulker.getAddress(), bulker.runner);
 
     const toSupplyStEth = exp(.1, 18);
 
@@ -107,7 +107,7 @@ scenario(
 
     const stETH = ERC20__factory.connect(MAINNET_STETH_ADDRESS, comet.runner);
     const wstETH = IWstETH__factory.connect(MAINNET_WSTETH_ADDRESS, comet.runner);
-    const mainnetBulker = MainnetBulkerWithWstETHSupport__factory.connect(await bulker.getAddress(), bulker.runner);
+    const mainnetBulker = MainnetBulker__factory.connect(await bulker.getAddress(), bulker.runner);
 
     await albert.allow(await bulker.getAddress(), true);
 
@@ -162,7 +162,7 @@ scenario(
 
     const stETH = ERC20__factory.connect(MAINNET_STETH_ADDRESS, comet.runner);
     const wstETH = IWstETH__factory.connect(MAINNET_WSTETH_ADDRESS, comet.runner);
-    const mainnetBulker = MainnetBulkerWithWstETHSupport__factory.connect(await bulker.getAddress(), bulker.runner);
+    const mainnetBulker = MainnetBulker__factory.connect(await bulker.getAddress(), bulker.runner);
 
     await albert.allow(await bulker.getAddress(), true);
 
