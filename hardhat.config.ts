@@ -132,6 +132,19 @@ export default defineConfig({
     },
   },
 
+  test: {
+    mocha: {
+      reporter: 'mocha-multi-reporters',
+      reporterOptions: {
+        reporterEnabled: ['spec', 'json'],
+        jsonReporterOptions: {
+          output: 'test-results.json',
+        },
+      },
+      timeout: 150_000,
+    },
+  },
+
   coverage: {
     skipFiles: ['contracts/test/**', 'contracts/vendor/**', 'contracts/ERC20.sol'],
   },
