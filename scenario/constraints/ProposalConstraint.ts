@@ -8,7 +8,7 @@ import { ProposalState } from '../context/Gov.js';
 import type { CometContext } from '../context/CometContext.js';
 import { fetchLogs } from '../utils/index.js';
 import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { isBridgedDeployment, executeOpenProposal, voteForOpenProposal, executeOpenProposalAndRelay } from '../utils/index.js';
+import { isBridgedDeployment, voteForOpenProposal, executeOpenProposalAndRelay } from '../utils/index.js';
 import { getOpenBridgedProposals, executeBridgedProposal } from '../utils/bridgeProposal.js';
 
 export async function getOpenProposals(deploymentManager: DeploymentManager, governor: IGovernorBravo): Promise<OpenProposal[]> {
@@ -86,24 +86,20 @@ export class ProposalConstraint<T extends CometContext> implements StaticConstra
           );
         }
 
-        // temporary hack to skip proposal 519
-        if (proposal.id === 519n) {
-          console.log('Skipping proposal 519');
+        // temporary hack to skip proposal 580
+        if (proposal.id === 580n) {
+          console.log('Skipping proposal 580');
           continue;
         }
 
         try {
           // Execute the proposal
           debug(`${label} Processing pending proposal ${proposal.id}`);
-          if (isBridged) {
-            await executeOpenProposalAndRelay(
-              governanceDeploymentManager,
-              ctx.world.deploymentManager,
-              proposal
-            );
-          } else {
-            await executeOpenProposal(governanceDeploymentManager, proposal);
-          }
+          await executeOpenProposalAndRelay(
+            governanceDeploymentManager,
+            ctx.world.deploymentManager,
+            proposal
+          );
           debug(`${label} Open proposal ${proposal.id} was executed`);
         } catch (err) {
           debug(`${label} Failed to execute proposal ${proposal.id}`, err.message);

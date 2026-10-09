@@ -29,11 +29,13 @@ import type {
   BaseBulker,
   BaseBridgeReceiver,
   ERC20,
+  CometExtAssetList,
 } from '../../build/types/index.js';
 import {
   BaseBridgeReceiver__factory,
   BaseBulker__factory,
   CometInterface__factory,
+  CometExtAssetList__factory,
   CometProxyAdmin__factory,
   Configurator__factory,
   ERC20__factory,
@@ -83,6 +85,7 @@ export interface CometProperties {
   rewards: ScenarioRewards;
   bulker: BaseBulker;
   bridgeReceiver: BaseBridgeReceiver;
+  cometExt?: CometExtAssetList;
 }
 
 export class CometContext {
@@ -431,17 +434,24 @@ async function getInitialContext(world: World): Promise<CometContext> {
 }
 
 async function getContextProperties(context: CometContext): Promise<CometProperties> {
+  const comet = await context.getComet();
+  const cometExt = CometExtAssetList__factory.connect(
+    await comet.getAddress(),
+    comet.runner,
+  );
+
   return {
     actors: context.actors,
     assets: context.assets,
-    comet: await context.getComet(),
+    comet,
     configurator: await context.getConfigurator(),
     proxyAdmin: await context.getCometAdmin(),
     timelock: await context.getTimelock(),
     governor: await context.getGovernor(),
     rewards: await context.getRewards(),
     bulker: await context.getBulker(),
-    bridgeReceiver: await context.getBridgeReceiver()
+    bridgeReceiver: await context.getBridgeReceiver(),
+    cometExt
   };
 }
 

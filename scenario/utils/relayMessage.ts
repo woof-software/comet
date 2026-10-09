@@ -1,13 +1,16 @@
-import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
 import relayPolygonMessage from './relayPolygonMessage.js';
-import { relayArbitrumMessage, relayArbitrumCCTPMint } from './relayArbitrumMessage.js';
-import relayBaseMessage from './relayBaseMessage.js';
+import { relayArbitrumMessage, relayArbitrumCCTPMint, simulateL2ToL1TokenBridging } from './relayArbitrumMessage.js';
+import relayBaseMessage, { simulateL2ToL1TokenBridging as simulateBaseL2ToL1TokenBridging } from './relayBaseMessage.js';
 import relayLineaMessage from './relayLineaMessage.js';
-import relayOptimismMessage from './relayOptimismMessage.js';
+import relayOptimismMessage, { simulateL2ToL1TokenBridging as simulateOptimismL2ToL1TokenBridging } from './relayOptimismMessage.js';
 import relayMantleMessage from './relayMantleMessage.js';
 import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMessage.js';
 import relayScrollMessage from './relayScrollMessage.js';
 import relayRoninMessage from './relayRoninMessage.js';
+
+const L2_BLOCK_BUFFER = 5;
 
 export default async function relayMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -16,23 +19,44 @@ export default async function relayMessage(
   tenderlyLogs?: any[]
 ) {
   const bridgeNetwork = bridgeDeploymentManager.network;
+  if (bridgeNetwork === governanceDeploymentManager.network) return; // no need to relay if the proposal is on the same network
   console.log(`Relaying messages from ${governanceDeploymentManager.network} -> ${bridgeNetwork}`);
   let proposal;
   switch (bridgeNetwork) {
-    case 'base':
-      return await relayBaseMessage(
+    case 'base': {
+      const { provider } = await getHardhatEthers(bridgeDeploymentManager.hre);
+      const l2StartingBlockNumber = Math.max(0, await provider.getBlockNumber() - L2_BLOCK_BUFFER);
+      proposal = await relayBaseMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         startingBlockNumber,
         tenderlyLogs
       );
-    case 'optimism':
-      return await relayOptimismMessage(
+      await simulateBaseL2ToL1TokenBridging(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
+        tenderlyLogs
+      );
+      return proposal;
+    }
+    case 'optimism': {
+      const { provider } = await getHardhatEthers(bridgeDeploymentManager.hre);
+      const l2StartingBlockNumber = Math.max(0, await provider.getBlockNumber() - L2_BLOCK_BUFFER);
+      proposal = await relayOptimismMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         startingBlockNumber,
         tenderlyLogs
       );
+      await simulateOptimismL2ToL1TokenBridging(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
+        tenderlyLogs
+      );
+      return proposal;
+    }
     case 'mantle':
       return await relayMantleMessage(
         governanceDeploymentManager,
@@ -61,7 +85,9 @@ export default async function relayMessage(
         startingBlockNumber,
         tenderlyLogs
       );
-    case 'arbitrum':
+    case 'arbitrum': {
+      const { provider } = await getHardhatEthers(bridgeDeploymentManager.hre);
+      const l2StartingBlockNumber = Math.max(0, await provider.getBlockNumber() - L2_BLOCK_BUFFER);
       proposal = await relayArbitrumMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
@@ -74,7 +100,14 @@ export default async function relayMessage(
         startingBlockNumber,
         tenderlyLogs
       );
+      await simulateL2ToL1TokenBridging(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
+        tenderlyLogs
+      );
       return proposal;
+    }
     case 'linea':
       return await relayLineaMessage(
         governanceDeploymentManager,

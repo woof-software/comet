@@ -9,7 +9,7 @@ import { isTenderlyLog } from './index.js';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 
-const LINEA_SETTER_ROLE_ACCOUNT = '0xc1C6B09D1eB6fCA0fF3cA11027E5Bc4AeDb47F67';
+const LINEA_SETTER_ROLE_ACCOUNT = '0x2b0F9C76970975aec03784EFd763623757EF7652';
 
 export default async function relayLineaMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -305,6 +305,7 @@ export default async function relayLineaMessage(
       `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Executed bridged proposal ${id}`
     );
   }
+
   return openBridgedProposals;
 }
 

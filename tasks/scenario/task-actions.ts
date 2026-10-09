@@ -7,11 +7,17 @@ import type { ForkSpec } from "../../plugins/scenario/World.js";
 interface ScenarioTaskArguments {
   bases?: string;
   glob?: string;
+  output?: string;
   spider: boolean;
 }
 
 interface ScenarioSpiderTaskArguments {
   bases?: string;
+}
+
+interface ScenarioMultistreamTaskArguments {
+  bases?: string;
+  perBase: boolean;
 }
 
 async function hreForBase(
@@ -36,7 +42,7 @@ async function runScenarios(
   return run(...args);
 }
 
-function getBasesFromTaskArgs(
+export function getBasesFromTaskArgs(
   givenBases: string | undefined,
   env: HardhatRuntimeEnvironment
 ): ForkSpec[] {
@@ -63,22 +69,48 @@ export const scenarioAction: NewTaskActionFunction<
       .getTask("scenario:spider")
       .run({ bases: taskArguments.bases });
   }
-  await runScenarios(bases, taskArguments.glob);
+  await runScenarios(bases, taskArguments.glob, taskArguments.output);
+};
+
+export const scenarioMultistreamAction: NewTaskActionFunction<
+  ScenarioMultistreamTaskArguments
+> = async (taskArguments, env) => {
+  const bases = getBasesFromTaskArgs(taskArguments.bases, env);
+  const { runMultistream } = await import("../../scripts/multistream/run.js");
+  await runMultistream(bases, taskArguments.perBase);
 };
 
 export const scenarioSpiderAction: NewTaskActionFunction<
   ScenarioSpiderTaskArguments
 > = async (taskArguments, env) => {
   const bases = getBasesFromTaskArgs(taskArguments.bases, env);
-  await Promise.all(
+  // Let every base finish before reporting failures from individual providers.
+  const results = await Promise.allSettled(
     bases.map(async (base) => {
       if (base.network === "hardhat") return;
 
       const baseHre = await hreForBase(base);
-      const dm = new DeploymentManager(base.name, base.deployment, baseHre, {
+      const dm = new DeploymentManager(base.network, base.deployment, baseHre, {
         writeCacheToDisk: true,
       });
       await dm.spider();
     })
   );
+  const failures = results
+    .map((result, i) => ({ result, base: bases[i] }))
+    .filter(
+      (entry): entry is { result: PromiseRejectedResult; base: ForkSpec } =>
+        entry.result.status === "rejected"
+    );
+
+  for (const { result, base } of failures) {
+    console.error(`Spider failed for ${base.name}:`, result.reason);
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `Spider failed for ${failures.length}/${bases.length} base(s): ${failures
+        .map(({ base }) => base.name)
+        .join(", ")}`
+    );
+  }
 };

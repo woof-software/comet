@@ -99,6 +99,11 @@ const migrateTask = task("migrate", "Runs migration")
     description: "use tenderly to simulate the migration",
   })
   .addFlag({
+    name: "tenderlyVnet",
+    description:
+      "use a Tenderly Virtual TestNet to execute the migration as real transactions",
+  })
+  .addFlag({
     name: "overwrite",
     description: "overwrites artifact if exists, fails otherwise",
   })

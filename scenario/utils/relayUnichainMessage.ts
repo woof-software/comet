@@ -140,7 +140,7 @@ export async function relayUnichainMessage(
       }
     } else if (target === bridgeReceiverAddress) {
       // Cross-chain message passing
-      if (!tenderlyLogs && relayMessageTxn) {
+      if (relayMessageTxn) {
         const proposalCreatedEvent = relayMessageTxn.logs.find(event => event.address === bridgeReceiverAddress);
         if (!proposalCreatedEvent) {
           throw new Error('ProposalCreated log not found');
@@ -155,29 +155,9 @@ export async function relayUnichainMessage(
         openBridgedProposals.push({ id, eta });
       }
     } else {
-      throw new Error(`[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Unrecognized target for cross-chain message`);
-    }
-  }
-
-  // Handle proposal creation for tenderly
-  if (tenderlyLogs) {
-    // We need to check for ProposalCreated events since we don't get them in the loop above
-    const proposalFilter = bridgeReceiver.filters.ProposalCreated();
-    const proposalTopics = await proposalFilter.getTopicFilter();
-    const proposalEvents = await bridgeProvider.getLogs({
-      fromBlock: 'latest',
-      toBlock: 'latest',
-      address: bridgeReceiverAddress,
-      topics: proposalTopics
-    });
-
-    for (let event of proposalEvents) {
-      const parsedProposal = bridgeReceiver.interface.parseLog(event);
-      if (!parsedProposal) {
-        throw new Error('ProposalCreated log could not be parsed');
-      }
-      const { id, eta } = parsedProposal.args;
-      openBridgedProposals.push({ id, eta });
+      throw new Error(
+        `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Unrecognized target for cross-chain message`
+      );
     }
   }
 

@@ -2,7 +2,7 @@ import type { DeploymentManager } from '../../plugins/deployment_manager/index.j
 import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
 import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
 import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils.js';
-import { AbiCoder, getAddress, getBytes, hexlify, id, toBigInt, toBeHex, toNumber } from 'ethers';
+import { AbiCoder, Contract, ZeroAddress, getAddress, getBytes, hexlify, id, toBigInt, toBeHex, toNumber, zeroPadValue } from 'ethers';
 import type { Log } from 'ethers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer.js';
 import type { OpenBridgedProposal } from '../context/Gov.js';
@@ -79,7 +79,7 @@ export async function relayArbitrumMessage(
 
   const dataAndTargets = inboxMessageDeliveredEvents.map((event) => {
     let data, topics;
-    
+
     if (isTenderlyLog(event)) {
       data = event.raw.data;
       topics = event.raw.topics;
@@ -91,18 +91,18 @@ export async function relayArbitrumMessage(
     const header = '0x';
     const headerLength = header.length;
     const wordLength = 2 * 32;
-    const innnerData = header + data.slice(headerLength + (11 * wordLength));
+    const innerData = header + data.slice(headerLength + (11 * wordLength));
     const toValue = data.slice(headerLength + (2 * wordLength), headerLength + (3 * wordLength));
     let toAddress = toBeHex(BigInt(`0x${toValue}`));
-    
-    // if lenght of toAddress is less than 42, then it is padded with 0s and we need to add them after 0x
+
+    // if length of toAddress is less than 42, then it is padded with 0s and we need to add them after 0x
     if(toAddress.length < 42) {
       toAddress = `0x${toAddress.slice(2).padStart(40, '0')}`;
     }
 
     const messageNum = topics[1];
     return {
-      data: innnerData,
+      data: innerData,
       toAddress,
       messageNum
     };
@@ -110,7 +110,7 @@ export async function relayArbitrumMessage(
 
   const senders = messageDeliveredEvents.map((event) => {
     let data, topics;
-    
+
     if (isTenderlyLog(event)) {
       data = event.raw.data;
       topics = event.raw.topics;
@@ -244,6 +244,16 @@ export async function relayArbitrumMessage(
           await signer.getAddress()
         );
       } else {
+        // Mock ArbSys precompile (0x64) — Arbitrum precompiles don't exist in Hardhat's EVM,
+        // but the L2 gateways call ArbSys.sendTxToL1 internally during outboundTransfer.
+        // Bytecode 0x60206000f3 disassembles to: PUSH1 0x20 | PUSH1 0x00 | RETURN
+        // which returns 32 zero bytes from uninitialized memory for any call.
+        const { provider: bridgeProvider } = await getHardhatEthers(bridgeDeploymentManager.hre);
+        await bridgeProvider.send('hardhat_setCode', [
+          '0x0000000000000000000000000000000000000064',
+          '0x60206000f3',
+        ]);
+
         await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
       }
       openBridgedProposals.push({
@@ -254,6 +264,206 @@ export async function relayArbitrumMessage(
   }
 
   return openBridgedProposals;
+}
+
+export async function simulateL2ToL1TokenBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber?: number,
+  tenderlyLogs?: any[],
+  proposalId?: bigint
+) {
+  if(tenderlyLogs) {
+    return;
+  }
+  console.log('Simulating L2→L1 token bridging for any executed Arbitrum proposals...');
+
+  // L2 contracts
+  const bridgeReceiver = await bridgeDeploymentManager.getContractOrThrow('bridgeReceiver');
+
+  // Parse recent ProposalCreated events to find actions that bridge tokens from L2 to L1
+  // ProposalCreated(address indexed rootMessageSender, uint256 id, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 eta)
+  console.log('Fetching recent ProposalCreated events from BridgeReceiver...');
+  const { provider: bridgeProvider } = await getHardhatEthers(bridgeDeploymentManager.hre);
+  const { provider: governanceProvider } = await getHardhatEthers(governanceDeploymentManager.hre);
+  const bridgeReceiverAddress = await bridgeReceiver.getAddress();
+  const latestBlockNumber = await bridgeProvider.getBlockNumber();
+  const proposalCreatedEvents = await bridgeDeploymentManager.retry(() =>
+    bridgeProvider.getLogs({
+      fromBlock: l2StartingBlockNumber ?? Math.max(0, latestBlockNumber - 1000),
+      toBlock: 'latest',
+      address: bridgeReceiverAddress,
+      topics: [id('ProposalCreated(address,uint256,address[],uint256[],string[],bytes[],uint256)')]
+    })
+  );
+  const outboundTransferSignature = 'outboundTransfer(address,address,uint256,bytes)';
+  const outboundTransfer2Signature = 'outboundTransfer(address,address,uint256,uint256,uint256,bytes)';
+  const depositForBurnSignature = 'depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)';
+  const ARBITRUM_GATEWAY_ROUTER = '0x5288c571Fd7aD117beA99bF60FE0846C4E84F933';
+  const ARBITRUM_BRIDGE = '0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a';
+  const ARBITRUM_OUTBOX = '0x667e23ABd27E623c11d4CC00ca3EC4d0bD63337a';
+  const MAINNET_WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+
+  for (const event of proposalCreatedEvents) {
+    const decodedEvent = bridgeReceiver.interface.parseLog(event);
+    if (!decodedEvent) {
+      throw new Error('Arbitrum ProposalCreated log could not be parsed');
+    }
+    const { id, targets, signatures, calldatas } = decodedEvent.args;
+
+    if (proposalId !== undefined && id !== proposalId) {
+      continue;
+    }
+
+    for (let i = 0; i < signatures.length; i++) {
+      let bridgedTokens = false;
+
+      // Look for L2→L1 outboundTransfer calls (standard Arbitrum gateway bridge)
+      if (signatures[i] === outboundTransferSignature || signatures[i] === outboundTransfer2Signature) {
+        bridgedTokens = true;
+        const [l1Token, to, amount] = (() => {
+          if (signatures[i] === outboundTransferSignature) {
+            return abiCoder.decode(
+              ['address', 'address', 'uint256', 'bytes'],
+              calldatas[i]
+            );
+          } else if (signatures[i] === outboundTransfer2Signature) {
+            return abiCoder.decode(
+              ['address', 'address', 'uint256', 'uint256', 'uint256', 'bytes'],
+              calldatas[i]
+            );
+          }
+        })();
+        console.log(`Simulating L2→L1 token bridging: ${amount.toString()} of ${l1Token} to ${to}`);
+
+        const gatewayAddress = await (async () => {
+          if(targets[i].toLowerCase() === ARBITRUM_GATEWAY_ROUTER.toLowerCase()) { // Arbitrum WETH gateway
+            const router = new Contract(
+              ARBITRUM_GATEWAY_ROUTER,
+              ['function l1TokenToGateway(address l1Token) view returns (address)'],
+              await governanceDeploymentManager.getSigner()
+            );
+            return await router.l1TokenToGateway(l1Token);
+          }
+          return targets[i];
+        })();
+        const l2Gateway = new Contract(
+          gatewayAddress,
+          ['function counterpartGateway() view returns (address)'],
+          await bridgeDeploymentManager.getSigner()
+        );
+        const l1GatewayAddress = await l2Gateway.counterpartGateway();
+
+        const l1Gateway = new Contract(
+          l1GatewayAddress,
+          [
+            'function finalizeInboundTransfer(address _token, address _from, address _to, uint256 _amount, bytes calldata _data)',
+            'function inbox() view returns (address)'
+          ],
+          await governanceDeploymentManager.getSigner()
+        );
+        // override 0x4 slot in outbox to L2 gateway
+        await governanceProvider.send('hardhat_setStorageAt', [
+          ARBITRUM_OUTBOX,
+          '0x4',
+          zeroPadValue(gatewayAddress, 32)
+        ]);
+
+        // impersonate outbox to call finalizeInboundTransfer, as if the message came from L2 gateway
+        const outboxSigner = await impersonateAddress(
+          governanceDeploymentManager,
+          ARBITRUM_OUTBOX
+        );
+
+        await governanceProvider.send('hardhat_setBalance', [
+          await outboxSigner.getAddress(),
+          '0x1000000000000000000',
+        ]);
+
+        const arbitrumBridge = new Contract(
+          ARBITRUM_BRIDGE,
+          ['function executeCall(address to, uint256 value, bytes calldata data)'],
+          outboxSigner
+        );
+
+        const data = l1Gateway.interface.encodeFunctionData(
+          'finalizeInboundTransfer',
+          [
+            l1Token,
+            ARBITRUM_GATEWAY_ROUTER,
+            to, amount,
+            abiCoder.encode(['uint256', 'bytes'], [0, '0x'])
+          ]);
+        console.log(`Relaying message to L1 gateway at ${l1GatewayAddress} with data: ${data}`);
+        const bridgeTx = await arbitrumBridge.connect(outboxSigner).getFunction('executeCall')(
+          await l1Gateway.getAddress(),
+          l1Token.toLowerCase() === MAINNET_WETH.toLowerCase() ? amount : 0,
+          data,
+        );
+        await (bridgeTx).wait();
+        // stop impersonation after the call
+        await governanceProvider.send('hardhat_stopImpersonatingAccount', [
+          await outboxSigner.getAddress()
+        ]);
+        // override 0x4 slot in outbox to L2 gateway
+        await governanceProvider.send('hardhat_setStorageAt', [
+          ARBITRUM_OUTBOX,
+          '0x4',
+          zeroPadValue(ZeroAddress, 32)
+        ]);
+      }
+
+      // Look for L2→L1 CCTP depositForBurn calls (Circle CCTP bridge, e.g. native USDC)
+      if (signatures[i] === depositForBurnSignature) {
+        bridgedTokens = true;
+        const [amount, , mintRecipientBytes32, burnToken] = abiCoder.decode(
+          ['uint256', 'uint32', 'bytes32', 'address', 'bytes32', 'uint256', 'uint32'],
+          calldatas[i]
+        );
+
+        const mintRecipient = getAddress('0x' + hexlify(mintRecipientBytes32).slice(-40));
+
+        try {
+          // L2
+          const l2CCTPTokenMessenger = await bridgeDeploymentManager.getContractOrThrow('CCTPMessageTransmitter');
+          // Resolve L1 token via CCTP TokenMinter: burnToken (L2) → localToken (L1)
+          const l1CCTPTokenMessenger = await governanceDeploymentManager.getContractOrThrow('CCTPTokenMessenger');
+          const tokenMinterAddress = await l1CCTPTokenMessenger.localMinter();
+          const L1TokenMinter = new Contract(
+            tokenMinterAddress,
+            ['function mint(uint32 sourceDomain, bytes32 burnToken, address recipientOne, address recipientTwo, uint256 amountOne, uint256 amountTwo) returns (address)'],
+            await governanceDeploymentManager.getSigner()
+          );
+          const l1CCTPTokenMessengerSigner = await impersonateAddress(
+            governanceDeploymentManager,
+            await l1CCTPTokenMessenger.getAddress()
+          );
+          await governanceProvider.send('hardhat_setBalance', [
+            await l1CCTPTokenMessengerSigner.getAddress(),
+            '0x1000000000000000000',
+          ]);
+          const sourceDomain = await l2CCTPTokenMessenger.localDomain();
+          const mintTx = await L1TokenMinter.connect(l1CCTPTokenMessengerSigner).getFunction('mint')(
+            sourceDomain,
+            zeroPadValue(burnToken, 32),
+            mintRecipient,
+            await L1TokenMinter.getAddress(), // mint to the token minter first, since some tokens (e.g. USDC) have a cap on max amount per mint, and the token minter can then transfer to the recipient
+            amount,
+            1
+          );
+          console.log('Simulated CCTP mint transaction:', mintTx.hash);
+          await mintTx.wait();
+        } catch (e) {
+          console.log(`Warning: Could not simulate CCTP L2→L1 bridging for depositForBurn: ${e.message}`);
+        }
+      }
+      if (bridgedTokens) {
+        await governanceDeploymentManager.retry(() =>
+          governanceProvider.send('evm_mine', [])
+        );
+      }
+    }
+  }
 }
 
 export async function relayArbitrumCCTPMint(
@@ -305,7 +515,7 @@ export async function relayArbitrumCCTPMint(
   // Decode message body
   const burnEvents = depositForBurnEvents.map((event) => {
     let data;
-    
+
     if (isTenderlyLog(event)) {
       data = event.raw.data;
     } else {

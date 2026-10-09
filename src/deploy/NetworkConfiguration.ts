@@ -154,7 +154,7 @@ async function getOverridesOrConfig(
   const getTimelockAddress = async () =>
     (timelockAddress ??= await getContractAddress('timelock', contracts));
 
-  return {
+  const result = {
     name: overrides.name ?? config.name,
     symbol: overrides.symbol ?? config.symbol,
     governor:
@@ -230,6 +230,7 @@ async function getOverridesOrConfig(
         )
         : config.rewardTokenAddress),
   };
+  return result;
 }
 
 export async function getConfiguration(

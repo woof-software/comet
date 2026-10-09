@@ -4,7 +4,7 @@ import { World } from './World.js';
 import type { ForkSpec } from './World.js';
 import { Loader } from './Loader.js';
 import { showReport, pluralize } from './Report.js';
-import type { Result } from './Report.js';
+import type { Result, FormatConfig } from "./Report.js";
 import { AssertionError } from 'chai';
 
 export type Address = string;
@@ -187,7 +187,7 @@ async function asyncCallWithTimeout(asyncPromise: Promise<any>, timeLimit: numbe
   });
 }
 
-export async function runScenarios(bases: ForkSpec[], glob: string = 'scenario/**.ts') {
+export async function runScenarios(bases: ForkSpec[], glob: string = 'scenario/**.ts', output?: string) {
   const loader = await Loader.load(glob);
   const [runningScenarios, skippedScenarios] = loader.splitScenarios();
 
@@ -244,5 +244,6 @@ export async function runScenarios(bases: ForkSpec[], glob: string = 'scenario/*
     }
   }
 
-  await showReport(results, startTime, Date.now());
+  const formatConfig: FormatConfig | undefined = output ? { console: {}, json: { output } } : undefined;
+  await showReport(results, startTime, Date.now(), formatConfig);
 }

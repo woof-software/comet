@@ -40,15 +40,18 @@ import type {
   SimplePriceFeed,
   TransparentUpgradeableProxy,
 } from '../build/types/index.js';
-import type { CometStorage } from '../build/types/test/CometHarnessExtendedAssetList.js';
+import type { ICometData as CometStorage } from '../build/types/test/CometHarnessExtendedAssetList.js';
+import { takeSnapshot } from './helpers/snapshot.js';
+import type { SnapshotRestorer } from './helpers/snapshot.js';
 
-type TotalsBasicStructOutput = CometStorage.TotalsBasicStructOutput;
-type TotalsCollateralStructOutput = CometStorage.TotalsCollateralStructOutput;
+type TotalsBasicStructOutput = Awaited<ReturnType<CometHarnessInterfaceExtendedAssetList['totalsBasic']>>;
+type TotalsCollateralStructOutput = Awaited<ReturnType<CometHarnessInterfaceExtendedAssetList['totalsCollateral']>>;
 
 const { ethers } = await hre.network.getOrCreate();
 
-export type { Comet };
-export { ethers, expect, hre };
+export type { Comet, SnapshotRestorer, SignerWithAddress };
+export { ethers, expect, hre, takeSnapshot };
+export * from './helpers/math.js';
 
 export type Numeric = number | bigint;
 
@@ -149,6 +152,12 @@ export type BulkerInfo = {
   bulker: BaseBulker;
 };
 
+export type UserBasic = Awaited<ReturnType<CometHarnessInterfaceExtendedAssetList['userBasic']>>;
+
+
+export const oneDay = 24 * 60 * 60;
+export const oneMonth = 30 * oneDay;
+
 export function dfn<T>(x: T | undefined | null, dflt: T): T {
   return x == undefined ? dflt : x;
 }
@@ -174,10 +183,6 @@ export function defactor(f: bigint): number {
 export function truncateDecimals(factor: bigint, decimals = 4) {
   const descaleFactor = factorScale / exp(1, decimals);
   return factor / descaleFactor * descaleFactor;
-}
-
-export function mulPrice(n: bigint, price: bigint, fromScale: bigint): bigint {
-  return n * price / fromScale;
 }
 
 export function annualize(n: bigint, secondsPerYear = 31536000n): number {
@@ -216,6 +221,9 @@ export const factorDecimals = 18;
 export const factorScale = factor(1);
 export const ONE = factorScale;
 export const ZERO = factor(0);
+export const MAX_ASSETS = 24;
+export const ZERO_ADDRESS = ZeroAddress;
+export const BASE_INDEX_SCALE = BigInt(1e15);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;

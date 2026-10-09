@@ -13,6 +13,7 @@ import {
   parseUnits,
   toBeHex,
   toQuantity,
+  toNumber,
   zeroPadValue,
 } from 'ethers';
 import type {
@@ -25,7 +26,7 @@ import type {
   Signer,
 } from 'ethers';
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import axiosModule from 'axios';
@@ -54,8 +55,16 @@ const abiCoder = AbiCoder.defaultAbiCoder();
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const axios = axiosModule.default;
 
-export const MAX_ASSETS = 24;
-export const UINT256_MAX = 2n ** 256n - 1n;
+import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase.js';
+import { getOrCreateVirtualTestnet } from './tenderlyVnet.js';
+import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants.js';
+export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants.js';
+export * from './hreUtils.js';
+
+/** Convert a per-year interest factor to per-second (Comet constructor truncation). */
+export function perSecond(perYear: bigint): bigint {
+  return perYear / SECONDS_PER_YEAR;
+}
 
 export interface ComparativeAmount {
   val: number;
@@ -128,12 +137,28 @@ export function expectRevertCustom(
     })
     .catch((e) => {
       const selector = id(custom).slice(2, 2 + 8);
+      const errorName = custom.replace(/\(\)$/, '');
+      const escaped = custom.replace(/[()]/g, '\\$&');
+
+      // Recognize decoded errors as well as raw revert selectors.
+      if (
+        e.revert?.signature === custom ||
+        e.errorName === errorName ||
+        e.errorSignature === custom ||
+        e.data === `0x${selector}`
+      ) {
+        return;
+      }
+
       const patterns = [
-        new RegExp(`custom error '${custom.replace(/[()]/g, '\\$&')}'`),
+        new RegExp(`custom error '${escaped}'`),
         new RegExp(`unrecognized custom error with selector ${selector}`),
         new RegExp(
           `unrecognized custom error \\(return data: 0x${selector}\\)`
         ),
+        new RegExp(`errorSignature="${escaped}"`),
+        new RegExp(`errorName="${errorName}"`),
+        new RegExp(`data="0x${selector}"`),
       ];
       for (const pattern of patterns)
         if (pattern.test(e.message) || pattern.test(e.reason)) return;
@@ -802,7 +827,6 @@ export async function tenderlyExecute(
   timelock: Contract
 ): Promise<void> {
   const governanceEthers = await getHardhatEthers(gdm.hre);
-  const bridgeEthers = await getHardhatEthers(bdm.hre);
   const latest = await governanceEthers.provider.getBlock('latest');
   if (latest === null) {
     throw new Error(`Cannot load latest block for ${gdm.network}`);
@@ -823,7 +847,7 @@ export async function tenderlyExecute(
 
   const proposalArgs = loadCachedProposal();
   proposalArgs.pop();
-  const id = BigInt(await governor.proposalCount());
+  const proposalId = BigInt(await governor.proposalCount());
   const govIF = new Interface(governor.interface.fragments);
   const signer = await gdm.getSigner();
   const fromAddr = await signer.getAddress();
@@ -845,7 +869,7 @@ export async function tenderlyExecute(
   const slotExtDead = keccak256(
     abiCoder.encode(
       ['uint256', 'bytes32'],
-      [id, slotMapRoot]
+      [proposalId, slotMapRoot]
     )
   );
 
@@ -897,7 +921,7 @@ export async function tenderlyExecute(
       to: governorAddress,
       block_number: Number(blockCast),
       block_header: { timestamp: toBeHex(timestampCast) },
-      input: govIF.encodeFunctionData('castVote', [id, 1]),
+      input: govIF.encodeFunctionData('castVote', [proposalId, 1]),
       state_objects: statePatch,
       save: true,
       save_if_fails: true,
@@ -910,7 +934,7 @@ export async function tenderlyExecute(
       to: governorAddress,
       block_number: Number(blockQueue),
       block_header: { timestamp: toBeHex(timestampQueue) },
-      input: govIF.encodeFunctionData('queue', [id]),
+      input: govIF.encodeFunctionData('queue', [proposalId]),
       state_objects: statePatch,
       save: true,
       save_if_fails: true,
@@ -923,7 +947,7 @@ export async function tenderlyExecute(
       to: governorAddress,
       block_number: Number(blockExec),
       block_header: { timestamp: toBeHex(timestampExec) },
-      input: govIF.encodeFunctionData('execute', [id]),
+      input: govIF.encodeFunctionData('execute', [proposalId]),
       state_objects: statePatch,
       save: true,
       save_if_fails: true,
@@ -932,68 +956,108 @@ export async function tenderlyExecute(
     },
   ];
 
-  const chainId2 = (await bridgeEthers.provider.getNetwork()).chainId;
-
   console.log(`\n========================== TENDERLY ==========================\n`);
 
-  console.log(`\nExecuting Tenderly simulation for proposal ${id}...`);
+  console.log(`\nExecuting Tenderly simulation for proposal ${proposalId}...`);
   const bundle = await simulateBundle(gdm, simsL1, Number(B0));
   console.log(`Tenderly simulation bundle size: ${bundle.length}`);
   await shareSimulation(gdm, bundle[bundle.length - 1].simulation.id);
 
   const exec1 = bundle[bundle.length - 1].simulation;
 
-  console.log(` >>> PROPOSAL EXECUTED  ${id} \n`);
+  console.log(` >>> PROPOSAL EXECUTED  ${proposalId}`);
   console.log(`Simulation ${exec1.id} done, status: ${exec1.status}`);
-  console.log(`Link: https://www.tdly.co/shared/simulation/${exec1.id}`);
-  let proposals;
-  if (chainId1 !== chainId2) {
-    proposals = await relayMessage(gdm, bdm, parseFloat(B0.toString()),  bundle[bundle.length - 1].transaction.transaction_info.logs);
+  console.log(`Link: https://www.tdly.co/shared/simulation/${exec1.id} \n`);
 
-    debug(`Proposals relayed: ${proposals.length}`);
-    const timelockL2 = await bdm.getContractOrThrow('timelock');
-    const delay = await timelockL2.delay();
-    const relayMessages = loadCachedRelayMessages();
-    const latestL2 = await bridgeEthers.provider.getBlock('latest');
-    if (latestL2 === null) {
-      throw new Error(`Cannot load latest block for ${bdm.network}`);
+  const bdms = [bdm];
+  for (const dm of gdm.bridgedDeploymentManagers.values()) {
+    if (!bdms.includes(dm)) {
+      bdms.push(dm);
     }
-    const maxEta = Math.max(...proposals.map(p => Number(p.eta || 0))) + Number(delay);
-    const T0L2 = BigInt(Math.max(latestL2.timestamp, maxEta + 1));
-    const B0L2 = Number(latestL2.number) + 1;
-    const simsL2 = relayMessages.map((msg, i, arr) => {
-      const isLast = i === arr.length - 1;
+  }
 
-      const timestamp = isLast
-        ? Number(T0L2) 
-        : latestL2.timestamp; 
+  // make bdm contain only 1 dm per network
+  const uniqueBdms = new Map<bigint, DeploymentManager>();
+  for (const dm of bdms) {
+    const { provider } = await getHardhatEthers(dm.hre);
+    const chainId = (await provider.getNetwork()).chainId;
+    if (!uniqueBdms.has(chainId)) {
+      uniqueBdms.set(chainId, dm);
+    }
+  }
+  bdms.length = 0;
+  bdms.push(...uniqueBdms.values());
 
-      const block = isLast
-        ? B0L2 : latestL2.number;
 
-      return {
-        network_id: chainId2.toString(),
-        from: msg.signer,
-        to: msg.messenger,
-        block_number: Number(block),
-        block_header: {
-          timestamp: toBeHex(timestamp)
-        },
-        input: msg.callData,
-        save: true,
-        save_if_fails: true,
-        gas_price: 0,
-        gas_limit: 16_777_215,
-      };
-    });
+  for (const currentBdm of bdms) {
+    const { provider: bridgeProvider } = await getHardhatEthers(currentBdm.hre);
+    const chainId2 = (await bridgeProvider.getNetwork()).chainId;
+    let proposals;
+    if (chainId1 !== chainId2) {
+      const relayPath = path.resolve(moduleDirectory, '../../cache/relay.json');
+      if (existsSync(relayPath)) unlinkSync(relayPath);
 
-    if (simsL2.length > 0) {
-      const bundle2 = await simulateBundle(bdm, simsL2, Number(B0L2));
-      console.log(` >>> PROPOSAL RELAYED ${id} \n`);
-      const sim = bundle2[bundle2.length - 1];
-      await shareSimulation(bdm, sim.simulation.id);
-      console.log(`Simulation ${sim.simulation.id} done, status: ${sim.simulation.status}`);
-      console.log(`Link: https://www.tdly.co/shared/simulation/${sim.simulation.id}`);
+      proposals = await relayMessage(gdm, currentBdm, parseFloat(B0.toString()), bundle[bundle.length - 1].transaction.transaction_info.logs);
+
+      debug(`Proposals relayed to ${currentBdm.network}: ${proposals?.length ?? 0}`);
+
+      if (proposals && proposals.length > 0) {
+        const timelockL2 = await currentBdm.getContractOrThrow('timelock');
+        const delay = toNumber(await timelockL2.delay());
+        const relayMessages = loadCachedRelayMessages();
+        const executeProposalSig = id('executeProposal(uint256)').substring(0, 10);
+
+        const latestL2 = await bridgeProvider.getBlock('latest');
+        if (latestL2 === null) {
+          throw new Error(`Cannot load latest block for ${currentBdm.network}`);
+        }
+        const maxEta = Math.max(...proposals.map(p => Number(p.eta || 0))) + delay;
+        const T0L2 = Math.max(latestL2.timestamp, maxEta + 1);
+        const B0L2 = Number(latestL2.number) + 1;
+
+        let previousBlock = latestL2.number;
+        let previousTimestamp = T0L2;
+        const simsL2 = relayMessages.map((msg) => {
+          let block = previousBlock;
+          let timestamp = previousTimestamp;
+
+          if (msg.callData.startsWith(executeProposalSig) && !msg.eta) {
+            block = block + 1;
+            timestamp = timestamp + delay + 1;
+          }
+
+          previousBlock = block;
+          previousTimestamp = timestamp;
+
+          return {
+            network_id: chainId2.toString(),
+            from: msg.signer,
+            to: msg.messenger,
+            block_number: Number(block),
+            block_header: {
+              timestamp: toBeHex(timestamp)
+            },
+            input: msg.callData,
+            save: true,
+            save_if_fails: true,
+            gas_price: 0,
+            gas_limit: 16_777_215,
+          };
+        });
+
+        if (simsL2.length > 0) {
+          const bundle2 = await simulateBundle(currentBdm, simsL2, Number(B0L2));
+
+          // filter from bundle every entry with simulation.input that starts with 0x0d61b519 i.e. executeProposal(uint256)
+          const filteredBundle = bundle2.filter(entry => entry.simulation.input.startsWith(executeProposalSig));
+          for (const sim of filteredBundle) {
+            await shareSimulation(currentBdm, sim.simulation.id);
+            console.log(`\nRelayed to ${currentBdm.network}`);
+            console.log(`Simulation ${sim.simulation.id} done, status: ${sim.simulation.status}`);
+            console.log(`Link: https://www.tdly.co/shared/simulation/${sim.simulation.id} \n`);
+          }
+        }
+      }
     }
   }
 
@@ -1009,7 +1073,9 @@ async function simulateBundle(
   const results = [];
 
   for (const sim of simulations) {
-    const { username, project, accessKey } = (dm.hre.config as any).tenderly;
+    const project = 'comet';
+    const username = process.env.TENDERLY_USERNAME || '';
+    const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
 
     // Merge rolling state changes with simulation's own state_objects
     const stateObjects = sim.state_objects
@@ -1067,7 +1133,10 @@ async function simulateBundle(
 }
 
 async function shareSimulation(dm: DeploymentManager, simulationId: string) {
-  const { username, project, accessKey } = (dm.hre.config as any).tenderly;
+  const project = 'comet';
+  const username = process.env.TENDERLY_USERNAME || '';
+  const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
+
   return axios.post(
     `https://api.tenderly.co/api/v1/account/${username}/project/${project}/simulations/${simulationId}/share`,
     {},
@@ -1078,6 +1147,190 @@ async function shareSimulation(dm: DeploymentManager, simulationId: string) {
       },
     }
   );
+}
+
+// storage slot:
+//   keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.GovernorCountingFractional")) - 1))
+//   & ~bytes32(uint256(0xff))
+const GOV_COUNTING_FRACTIONAL_STORAGE_LOCATION =
+  '0xd073797d8f9d07d835a3fc13195afeafd2f137da609f97a44f7a3aa434170800';
+
+/*
+Directly sets a proposal's forVotes tally high enough to satisfy both _quorumReached() and _voteSucceeded(),
+without casting any real votes.
+*/
+async function forceProposalVotesSucceeded(
+  vnetProvider: any,
+  governorAddress: string,
+  proposalId: bigint
+): Promise<void> {
+  const entrySlot = BigInt(keccak256(
+    abiCoder.encode(
+      ['uint256', 'uint256'],
+      [proposalId, GOV_COUNTING_FRACTIONAL_STORAGE_LOCATION]
+    )
+  ));
+  const forVotesSlot = toBeHex(entrySlot + 1n, 32);
+  const forVotesValue = toBeHex(10_000_000n * 10n ** 18n, 32);
+  await vnetProvider.send('tenderly_setStorageAt', [governorAddress, forVotesSlot, forVotesValue]);
+}
+
+/*
+Alternative to tenderlyExecute() that runs the migration's cached proposal through the real
+governor on a Tenderly Virtual TestNet (a persistent, sharable fork), instead of chaining together
+stateless Tenderly simulate-bundle calls. propose(), queue() and execute() are all real
+transactions, exactly as governance requires; only the vote itself is skipped.
+
+governanceDm is the deployment manager for the network that hosts the governor (e.g. mainnet).
+marketDm is the deployment manager for the market actually being migrated - for a non-bridged
+market (e.g. mainnet USDC) this is the exact same deployment manager as governanceDm; for a
+bridged market (e.g. Base WETH) it's the L2 side, and its own Virtual TestNet is only created if
+the proposal needs relaying there.
+*/
+export async function tenderlyVnetExecute(
+  governanceDm: DeploymentManager,
+  marketDm: DeploymentManager,
+  governor: Contract,
+  _timelock: Contract
+): Promise<void> {
+  console.log(`\n========================== TENDERLY VNET ==========================\n`);
+
+  const governanceVnet = await getOrCreateVirtualTestnet(governanceDm);
+  console.log(`Virtual TestNet ready for ${governanceDm.network}`);
+  console.log(`  Public RPC: ${governanceVnet.publicRpcUrl}`);
+  if (governanceVnet.dashboardUrl) {
+    console.log(`  Dashboard:  ${governanceVnet.dashboardUrl}`);
+  }
+
+  const governanceVnetEnv = await vnetHreForBase(governanceDm.network, governanceVnet.adminRpcUrl);
+  const governanceVnetDm = new DeploymentManager(governanceDm.network, governanceDm.deployment, governanceVnetEnv, {
+    writeCacheToDisk: false,
+    verificationStrategy: 'lazy',
+  });
+
+  const { provider: governanceVnetProvider } = await getHardhatEthers(governanceVnetDm.hre);
+  const vnetGovernor = governor.connect(governanceVnetProvider);
+
+  const proposalArgs = loadCachedProposal();
+  proposalArgs.pop(); // drop signatures; governor.propose(targets, values, calldatas, description)
+
+  const deployBytecodes = loadCachedBytecodes();
+  const proposerAddress = await (await governanceDm.getSigner()).getAddress();
+
+  await setEtherBalance(governanceVnetDm, proposerAddress, 10n ** 20n);
+  const proposerSigner = await governanceVnetDm.getSigner(proposerAddress);
+
+  for (const code of deployBytecodes) {
+    const tx = await proposerSigner.sendTransaction({ data: hexlify(code) });
+    await tx.wait();
+  }
+
+  console.log('Submitting proposal to Virtual TestNet governor...');
+
+  const proposeTx = await vnetGovernor.connect(proposerSigner).getFunction('propose')(...proposalArgs);
+  const proposeReceipt = await proposeTx.wait();
+  if (proposeReceipt === null) {
+    throw new Error('Virtual TestNet proposal transaction has no receipt');
+  }
+  const governorAddress = await vnetGovernor.getAddress();
+  const proposalTopic = vnetGovernor.interface.getEvent('ProposalCreated')?.topicHash;
+  const proposeLog = proposeReceipt.logs.find(log =>
+    log.address.toLowerCase() === governorAddress.toLowerCase()
+    && log.topics[0] === proposalTopic
+  );
+  const parsedProposal = proposeLog && vnetGovernor.interface.parseLog(proposeLog);
+  if (!parsedProposal) {
+    throw new Error('ProposalCreated log not found or could not be parsed on Virtual TestNet');
+  }
+  const [proposalId] = parsedProposal.args;
+  console.log(`Proposal ${proposalId.toString()} submitted on Virtual TestNet`);
+
+  await forceProposalVotesSucceeded(governanceVnetProvider, governorAddress, proposalId);
+
+  const deadline = toNumber(await vnetGovernor.getFunction('proposalDeadline')(proposalId));
+  const currentBlock = await governanceVnetProvider.getBlockNumber();
+  if (currentBlock <= deadline) {
+    await governanceVnetProvider.send('evm_increaseBlocks', [toQuantity(deadline - currentBlock + 1)]);
+  }
+
+  const startingBlockNumber = await governanceVnetProvider.getBlockNumber();
+
+  console.log(`Queueing proposal ${proposalId.toString()} (vote skipped via state override)...`);
+  const queueTx = await vnetGovernor.connect(proposerSigner).getFunction('queue(uint256)')(proposalId);
+  await queueTx.wait();
+
+  const eta = toNumber(await vnetGovernor.getFunction('proposalEta')(proposalId));
+  const latestBlock = await governanceVnetProvider.getBlock('latest');
+  if (latestBlock === null) {
+    throw new Error(`Cannot load latest block for ${governanceVnetDm.network}`);
+  }
+  if (latestBlock.timestamp <= eta) {
+    await governanceVnetProvider.send('evm_setNextBlockTimestamp', [eta + 1]);
+    await governanceVnetProvider.send('evm_mine', []);
+  }
+
+  console.log('Updating CCIP prices...');
+  await updateCCIPStats(governanceVnetDm);
+
+  console.log(`Executing proposal ${proposalId.toString()}...`);
+  const executeTx = await vnetGovernor.connect(proposerSigner).getFunction('execute(uint256)')(proposalId, { gasLimit: 30_000_000 });
+  await executeTx.wait();
+
+  console.log(`\n >>> PROPOSAL EXECUTED ${proposalId.toString()} \n`);
+  console.log(`Public RPC: ${governanceVnet.publicRpcUrl}`);
+  if (governanceVnet.dashboardUrl) {
+    console.log(`Dashboard:  ${governanceVnet.dashboardUrl}`);
+  }
+
+  // Collect every L2 this proposal touches: marketDm plus whatever the migration registered via
+  // addBridgedDeploymentManager() (multichain proposals)
+  const { provider: governanceProvider } = await getHardhatEthers(governanceDm.hre);
+  const governanceChainId = (await governanceProvider.getNetwork()).chainId;
+  const candidateL2Dms = [marketDm, ...governanceDm.bridgedDeploymentManagers.values()];
+  const uniqueL2DmsByChainId = new Map<bigint, DeploymentManager>();
+  for (const dm of candidateL2Dms) {
+    const { provider } = await getHardhatEthers(dm.hre);
+    const chainId = (await provider.getNetwork()).chainId;
+    if (chainId !== governanceChainId && !uniqueL2DmsByChainId.has(chainId)) {
+      uniqueL2DmsByChainId.set(chainId, dm);
+    }
+  }
+  const l2Dms = [...uniqueL2DmsByChainId.values()];
+
+  if (l2Dms.length > 0) {
+    await governanceVnetDm.spider();
+  }
+
+  for (const l2Dm of l2Dms) {
+    try {
+      const l2Vnet = await getOrCreateVirtualTestnet(l2Dm);
+      console.log(`\nVirtual TestNet ready for ${l2Dm.network}`);
+      console.log(`  Public RPC: ${l2Vnet.publicRpcUrl}`);
+      if (l2Vnet.dashboardUrl) {
+        console.log(`  Dashboard:  ${l2Vnet.dashboardUrl}`);
+      }
+
+      const l2VnetEnv = await vnetHreForBase(l2Dm.network, l2Vnet.adminRpcUrl);
+      const l2VnetDm = new DeploymentManager(l2Dm.network, l2Dm.deployment, l2VnetEnv, {
+        writeCacheToDisk: false,
+        verificationStrategy: 'lazy',
+      });
+      await l2VnetDm.spider();
+      await l2VnetDm.getSigner(proposerAddress);
+
+      await relayMessage(governanceVnetDm, l2VnetDm, startingBlockNumber);
+
+      console.log(`\n >>> PROPOSAL RELAYED to ${l2Dm.network} \n`);
+      console.log(`Public RPC: ${l2Vnet.publicRpcUrl}`);
+      if (l2Vnet.dashboardUrl) {
+        console.log(`Dashboard:  ${l2Vnet.dashboardUrl}`);
+      }
+    } catch (e) {
+      console.log(`\n >>> FAILED to relay to ${l2Dm.network}: ${e.message} \n`);
+    }
+  }
+
+  console.log(`\n================================================================\n`);
 }
 
 export async function voteForOpenProposal(
@@ -1544,26 +1797,23 @@ export async function executeOpenProposalAndRelay(
   const startingBlockNumber =
     await provider.getBlockNumber();
   await executeOpenProposal(governanceDeploymentManager, openProposal);
+
   console.log(`Executed proposal ${openProposal.id} on ${governanceDeploymentManager.network}, checking if relay to ${bridgeDeploymentManager.network} is needed...`);
-  await mockAllRedstoneOracles(bridgeDeploymentManager);
-  console.log(`All Redstone oracles on ${bridgeDeploymentManager.network} are mocked`);
-  if (
-    await isBridgeProposal(
-      governanceDeploymentManager,
-      bridgeDeploymentManager,
-      openProposal
-    )
-  ) {
+
+  const bridgeManagers = await isBridgeProposal(
+    governanceDeploymentManager,
+    bridgeDeploymentManager,
+    openProposal
+  );
+
+  for (const bridgeManager of bridgeManagers) {
+    await mockAllRedstoneOracles(bridgeManager);
+    console.log(`All Redstone oracles on ${bridgeManager.network} are mocked`);
     await relayMessage(
       governanceDeploymentManager,
-      bridgeDeploymentManager,
+      bridgeManager,
       startingBlockNumber
     );
-  } else {
-    console.log(
-      `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Proposal ${openProposal.id} doesn't target bridge; not relaying`
-    );
-    return;
   }
 }
 

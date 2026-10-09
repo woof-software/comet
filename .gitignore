@@ -23,6 +23,8 @@ typechain/
 
 test-results.json
 scenario-results.json
+/results/
+/logs/
 .idea/
 *.iml
 

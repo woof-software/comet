@@ -40,6 +40,7 @@ interface MigrateTaskArguments {
   noEnacted: boolean;
   simulate: boolean;
   tenderly: boolean;
+  tenderlyVnet: boolean;
   overwrite: boolean;
 }
 
@@ -67,6 +68,13 @@ async function hreForBase(
     "../../plugins/scenario/utils/hreForBase.js"
   );
   return createHreForBase(...args);
+}
+
+async function migrationStarted() {
+  const { migrationStarted: markMigrationStarted } = await import(
+    "../../plugins/scenario/utils/hreForBase.js"
+  );
+  markMigrationStarted();
 }
 
 // TODO: Don't depend on scenario's hreForBase
@@ -99,7 +107,8 @@ async function runMigration<T>(
   enact: boolean,
   migration: Migration<T>,
   overwrite: boolean,
-  tenderly = false
+  tenderly = false,
+  tenderlyVnet = false
 ) {
   await deploymentManager.cleanCache();
   console.log(`Reading artifact for migration: ${migration.name}`);
@@ -145,6 +154,17 @@ async function runMigration<T>(
     if (tenderly) {
       const { tenderlyExecute } = await import("../../scenario/utils/index.js");
       await tenderlyExecute(
+        govDeploymentManager,
+        deploymentManager,
+        governor,
+        timelock
+      );
+    }
+    if (tenderlyVnet) {
+      const { tenderlyVnetExecute } = await import(
+        "../../scenario/utils/index.js"
+      );
+      await tenderlyVnetExecute(
         govDeploymentManager,
         deploymentManager,
         governor,
@@ -338,6 +358,7 @@ export const migrateAction: NewTaskActionFunction<
     noEnacted,
     simulate,
     tenderly,
+    tenderlyVnet,
     overwrite,
     impersonate,
   } = taskArguments;
@@ -347,7 +368,7 @@ export const migrateAction: NewTaskActionFunction<
   const dm = new DeploymentManager(network, deployment, maybeForkEnv, {
     writeCacheToDisk: !simulate || overwrite,
     verificationStrategy: "eager",
-    saveBytecode: tenderly,
+    saveBytecode: tenderly || tenderlyVnet,
   });
 
   await dm.spider();
@@ -358,8 +379,9 @@ export const migrateAction: NewTaskActionFunction<
     deployment,
     simulate,
     overwrite,
-    tenderly
+    tenderly || tenderlyVnet
   );
+  await migrationStarted();
   await maybeImpersonate(governanceDm, impersonate, simulate);
 
   if (simulate) {
@@ -385,7 +407,8 @@ export const migrateAction: NewTaskActionFunction<
     enact,
     migration,
     overwrite,
-    tenderly
+    tenderly,
+    tenderlyVnet
   );
   if (enact && !noEnacted) {
     await writeEnacted(migration, dm, true);
@@ -438,6 +461,7 @@ export const deployAndMigrateAction: NewTaskActionFunction<
     simulate,
     overwrite
   );
+  await migrationStarted();
   await maybeImpersonate(governanceDm, impersonate, simulate);
 
   const path = migrationPath(network, deployment, migrationName);
