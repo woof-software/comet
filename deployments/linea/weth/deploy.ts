@@ -134,12 +134,12 @@ async function deployContracts(
   );
   
   // Import shared contracts from cUSDCv3
-  const _cometAdmin = await deploymentManager.fromDep('cometAdmin', 'linea', 'usdc');
-  const _assetListFactory = await deploymentManager.fromDep('assetListFactory', 'linea', 'usdc');
-  const _cometFactory = await deploymentManager.fromDep('cometFactory', 'linea', 'usdc');
-  const _$configuratorImpl = await deploymentManager.fromDep('configurator:implementation', 'linea', 'usdc');
-  const _configurator = await deploymentManager.fromDep('configurator', 'linea', 'usdc');
-  const _rewards = await deploymentManager.fromDep('rewards', 'linea', 'usdc');
+  // const _cometAdmin = await deploymentManager.fromDep('cometAdmin', 'linea', 'usdc');
+  // const _assetListFactory = await deploymentManager.fromDep('assetListFactory', 'linea', 'usdc');
+  // const _cometFactory = await deploymentManager.fromDep('cometFactory', 'linea', 'usdc');
+  // const _$configuratorImpl = await deploymentManager.fromDep('configurator:implementation', 'linea', 'usdc');
+  // const _configurator = await deploymentManager.fromDep('configurator', 'linea', 'usdc');
+  // const _rewards = await deploymentManager.fromDep('rewards', 'linea', 'usdc');
   const bulker = await deploymentManager.fromDep('bulker', 'linea', 'usdc');
   const _localTimelock = await deploymentManager.fromDep('timelock', 'linea', 'usdc');
   const bridgeReceiver = await deploymentManager.fromDep('bridgeReceiver', 'linea', 'usdc');
