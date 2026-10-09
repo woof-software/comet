@@ -2,7 +2,6 @@
 pragma solidity 0.8.15;
 
 import { CometConfiguration } from "./CometConfiguration.sol";
-import { MarketAdminPermissionCheckerInterface } from "./marketupdates/MarketAdminPermissionCheckerInterface.sol";
 import { IAssetListStructs } from "./interfaces/assetList/IAssetListStructs.sol";
 
 /**
@@ -26,9 +25,6 @@ contract ConfiguratorStorage is CometConfiguration {
 
     /// @notice Mapping of Comet proxy addresses to their Comet factory contracts
     mapping(address => address) public factory;
-
-    /// @notice MarketAdminPermissionChecker contract which is used to check if the caller has permission to perform market updates
-    MarketAdminPermissionCheckerInterface public marketAdminPermissionChecker;
 
     /// @notice Mapping of Comet proxy addresses to their full asset configs, immutable and storage parts together
     mapping(address => AssetConfig[]) public assetConfigs;

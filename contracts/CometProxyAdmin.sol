@@ -2,25 +2,9 @@
 pragma solidity 0.8.15;
 
 import "./vendor/proxy/transparent/ProxyAdmin.sol";
-import "./marketupdates/MarketAdminPermissionCheckerInterface.sol";
 import { Deployable } from "./interfaces/Deployable.sol";
 
 contract CometProxyAdmin is ProxyAdmin {
-
-    /// @notice MarketAdminPermissionChecker contract which is used to check if the caller has permission to perform market updates(or deployment)
-    MarketAdminPermissionCheckerInterface public marketAdminPermissionChecker;
-
-    event SetMarketAdminPermissionChecker(address indexed oldMarketAdminPermissionChecker, address indexed newMarketAdminPermissionChecker);
-    error Unauthorized();
-
-    /**
-     * @dev Ensures that the caller is either the owner or the market admin.
-     * This delegates the permission check logic to the MarketAdminPermissionChecker contract.
-     */
-    modifier ownerOrMarketAdmin {
-        if(_msgSender() != owner()) marketAdminPermissionChecker.checkUpdatePermission(_msgSender());
-        _;
-    }
 
     /**
      * @dev Initializes the contract setting the specified address as the initial owner.
@@ -35,10 +19,10 @@ contract CometProxyAdmin is ProxyAdmin {
      *   - This contract must be the admin of `CometProxy`
      *   - This contract must be the admin of the AssetList proxy of the Comet
      */
-    function deployAndUpgradeTo(Deployable configuratorProxy, TransparentUpgradeableProxy cometProxy) public virtual ownerOrMarketAdmin {
+    function deployAndUpgradeTo(Deployable configuratorProxy, TransparentUpgradeableProxy cometProxy) public virtual onlyOwner {
         _deployAndUpgradeAssetList(configuratorProxy, cometProxy);
         address newCometImpl = configuratorProxy.deploy(address(cometProxy));
-        _upgrade(cometProxy, newCometImpl);
+        upgrade(cometProxy, newCometImpl);
     }
 
     /**
@@ -48,10 +32,10 @@ contract CometProxyAdmin is ProxyAdmin {
      *   - This contract must be the admin of `CometProxy`
      *   - This contract must be the admin of the AssetList proxy of the Comet
      */
-    function deployUpgradeToAndCall(Deployable configuratorProxy, TransparentUpgradeableProxy cometProxy, bytes memory data) public virtual ownerOrMarketAdmin {
+    function deployUpgradeToAndCall(Deployable configuratorProxy, TransparentUpgradeableProxy cometProxy, bytes memory data) public virtual onlyOwner {
         _deployAndUpgradeAssetList(configuratorProxy, cometProxy);
         address newCometImpl = configuratorProxy.deploy(address(cometProxy));
-        _upgradeAndCall(cometProxy, newCometImpl, data);
+        upgradeAndCall(cometProxy, newCometImpl, data);
     }
 
     /**
@@ -60,21 +44,9 @@ contract CometProxyAdmin is ProxyAdmin {
      *  Requirements:
      *   - This contract must be the admin of the AssetList proxy of the Comet
      */
-    function deployAndUpgradeAssetListTo(Deployable configuratorProxy, TransparentUpgradeableProxy cometProxy) public virtual ownerOrMarketAdmin {
+    function deployAndUpgradeAssetListTo(Deployable configuratorProxy, TransparentUpgradeableProxy cometProxy) public virtual onlyOwner {
         _deployAndUpgradeAssetList(configuratorProxy, cometProxy);
     }
-
-    /**
-    * @notice Sets the MarketAdminPermissionChecker contract
-    * @dev Note: Only callable by main-governor-timelock
-    **/
-    function setMarketAdminPermissionChecker(MarketAdminPermissionCheckerInterface newMarketAdminPermissionChecker) external {
-        if (_msgSender() != owner()) revert Unauthorized();
-        address oldMarketAdminPermissionChecker = address(marketAdminPermissionChecker);
-        marketAdminPermissionChecker = newMarketAdminPermissionChecker;
-        emit SetMarketAdminPermissionChecker(oldMarketAdminPermissionChecker, address(newMarketAdminPermissionChecker));
-    }
-
 
     /**
      * @dev Deploys a new AssetList through the Configurator and upgrades the AssetList proxy if Configurator
@@ -82,20 +54,6 @@ contract CometProxyAdmin is ProxyAdmin {
      */
     function _deployAndUpgradeAssetList(Deployable configuratorProxy, TransparentUpgradeableProxy cometProxy) private {
         (address assetListProxy, address newAssetListImpl) = configuratorProxy.deployAssetList(address(cometProxy));
-        if (newAssetListImpl != address(0)) _upgrade(TransparentUpgradeableProxy(payable(assetListProxy)), newAssetListImpl);
-    }
-
-    /**
-     * @dev Custom upgrade function that allows owner and marketAdmin to call it
-     */
-    function _upgrade(TransparentUpgradeableProxy proxy, address implementation) private {
-        proxy.upgradeTo(implementation);
-    }
-
-    /**
-     * @dev Custom upgradeAndCall function that allows owner and marketAdmin to call it
-     */
-    function _upgradeAndCall(TransparentUpgradeableProxy proxy, address implementation, bytes memory data) private {
-        proxy.upgradeToAndCall(implementation, data);
+        if (newAssetListImpl != address(0)) upgrade(TransparentUpgradeableProxy(payable(assetListProxy)), newAssetListImpl);
     }
 }

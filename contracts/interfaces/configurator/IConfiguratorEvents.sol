@@ -18,7 +18,6 @@ interface IConfiguratorEvents {
     event SetConfiguration(address indexed cometProxy, CometConfiguration.Configuration oldConfiguration, CometConfiguration.Configuration newConfiguration);
     event SetGovernor(address indexed cometProxy, address indexed oldGovernor, address indexed newGovernor);
     event SetPauseGuardian(address indexed cometProxy, address indexed oldPauseGuardian, address indexed newPauseGuardian);
-    event SetMarketAdminPermissionChecker(address indexed oldMarketAdminPermissionChecker, address indexed newMarketAdminPermissionChecker);
     event SetBaseTokenPriceFeed(address indexed cometProxy, address indexed oldBaseTokenPriceFeed, address indexed newBaseTokenPriceFeed);
     event SetExtensionDelegate(address indexed cometProxy, address indexed oldExt, address indexed newExt);
     event SetStoreFrontPriceFactor(address indexed cometProxy, uint64 oldStoreFrontPriceFactor, uint64 newStoreFrontPriceFactor);

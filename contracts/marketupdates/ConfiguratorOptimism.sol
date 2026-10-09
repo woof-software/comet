@@ -1,17 +1,28 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import { ConfiguratorStorage, CometConfiguration } from "./ConfiguratorStorage.sol";
-import { CometFactoryWithExtendedAssetList } from "./CometFactoryWithExtendedAssetList.sol";
-import { IAssetListFactory } from "./IAssetListFactory.sol";
-import { IAssetList, IAssetListStructs } from "./interfaces/assetList/IAssetList.sol";
-import { IConfiguratorEvents } from "./interfaces/configurator/IConfiguratorEvents.sol";
-import { IConfiguratorErrors } from "./interfaces/configurator/IConfiguratorErrors.sol";
-import { ConfigHash } from "./libraries/ConfigHash.sol";
+import { ConfiguratorStorageOptimism, CometConfiguration, MarketAdminPermissionCheckerInterface } from "./ConfiguratorStorageOptimism.sol";
+import { CometFactoryWithExtendedAssetList } from "../CometFactoryWithExtendedAssetList.sol";
+import { IAssetListFactory } from "../IAssetListFactory.sol";
+import { IAssetList, IAssetListStructs } from "../interfaces/assetList/IAssetList.sol";
+import { IConfiguratorEvents } from "../interfaces/configurator/IConfiguratorEvents.sol";
+import { IConfiguratorErrors } from "../interfaces/configurator/IConfiguratorErrors.sol";
+import { ConfigHash } from "../libraries/ConfigHash.sol";
 
-contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfiguratorErrors {
+contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvents, IConfiguratorErrors {
+    event SetMarketAdminPermissionChecker(address indexed oldMarketAdminPermissionChecker, address indexed newMarketAdminPermissionChecker);
+
     modifier onlyGovernor {
         if (msg.sender != governor) revert Unauthorized();
+        _;
+    }
+
+    /**
+     * @dev Ensures that the caller is either the governor or the market admin.
+     * This delegates the permission check logic to the MarketAdminPermissionChecker contract.
+     */
+    modifier governorOrMarketAdmin {
+        if(msg.sender != governor) marketAdminPermissionChecker.checkUpdatePermission(msg.sender);
         _;
     }
 
@@ -74,6 +85,16 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         emit SetPauseGuardian(cometProxy, oldPauseGuardian, newPauseGuardian);
     }
 
+    /**
+    * @notice Sets the MarketAdminPermissionChecker contract
+    * @dev Note: Only callable by governor
+    **/
+    function setMarketAdminPermissionChecker(MarketAdminPermissionCheckerInterface newMarketAdminPermissionChecker) external onlyGovernor {
+        address oldMarketAdminPermissionChecker = address(marketAdminPermissionChecker);
+        marketAdminPermissionChecker = newMarketAdminPermissionChecker;
+        emit SetMarketAdminPermissionChecker(oldMarketAdminPermissionChecker, address(newMarketAdminPermissionChecker));
+    }
+
     function setBaseTokenPriceFeed(address cometProxy, address newBaseTokenPriceFeed) external onlyGovernor {
         address oldBaseTokenPriceFeed = configuratorParams[cometProxy].baseTokenPriceFeed;
         configuratorParams[cometProxy].baseTokenPriceFeed = newBaseTokenPriceFeed;
@@ -86,49 +107,49 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         emit SetExtensionDelegate(cometProxy, oldExtensionDelegate, newExtensionDelegate);
     }
 
-    function setSupplyKink(address cometProxy, uint64 newSupplyKink) external onlyGovernor {
+    function setSupplyKink(address cometProxy, uint64 newSupplyKink) external governorOrMarketAdmin {
         uint64 oldSupplyKink = configuratorParams[cometProxy].supplyKink;
         configuratorParams[cometProxy].supplyKink = newSupplyKink;
         emit SetSupplyKink(cometProxy, oldSupplyKink, newSupplyKink);
     }
 
-    function setSupplyPerYearInterestRateSlopeLow(address cometProxy, uint64 newSlope) external onlyGovernor {
+    function setSupplyPerYearInterestRateSlopeLow(address cometProxy, uint64 newSlope) external governorOrMarketAdmin {
         uint64 oldSlope = configuratorParams[cometProxy].supplyPerYearInterestRateSlopeLow;
         configuratorParams[cometProxy].supplyPerYearInterestRateSlopeLow = newSlope;
         emit SetSupplyPerYearInterestRateSlopeLow(cometProxy, oldSlope, newSlope);
     }
 
-    function setSupplyPerYearInterestRateSlopeHigh(address cometProxy, uint64 newSlope) external onlyGovernor {
+    function setSupplyPerYearInterestRateSlopeHigh(address cometProxy, uint64 newSlope) external governorOrMarketAdmin {
         uint64 oldSlope = configuratorParams[cometProxy].supplyPerYearInterestRateSlopeHigh;
         configuratorParams[cometProxy].supplyPerYearInterestRateSlopeHigh = newSlope;
         emit SetSupplyPerYearInterestRateSlopeHigh(cometProxy, oldSlope, newSlope);
     }
 
-    function setSupplyPerYearInterestRateBase(address cometProxy, uint64 newBase) external onlyGovernor {
+    function setSupplyPerYearInterestRateBase(address cometProxy, uint64 newBase) external governorOrMarketAdmin {
         uint64 oldBase = configuratorParams[cometProxy].supplyPerYearInterestRateBase;
         configuratorParams[cometProxy].supplyPerYearInterestRateBase = newBase;
         emit SetSupplyPerYearInterestRateBase(cometProxy, oldBase, newBase);
     }
 
-    function setBorrowKink(address cometProxy, uint64 newBorrowKink) external onlyGovernor {
+    function setBorrowKink(address cometProxy, uint64 newBorrowKink) external governorOrMarketAdmin {
         uint64 oldBorrowKink = configuratorParams[cometProxy].borrowKink;
         configuratorParams[cometProxy].borrowKink = newBorrowKink;
         emit SetBorrowKink(cometProxy, oldBorrowKink, newBorrowKink);
     }
 
-    function setBorrowPerYearInterestRateSlopeLow(address cometProxy, uint64 newSlope) external onlyGovernor {
+    function setBorrowPerYearInterestRateSlopeLow(address cometProxy, uint64 newSlope) external governorOrMarketAdmin {
         uint64 oldSlope = configuratorParams[cometProxy].borrowPerYearInterestRateSlopeLow;
         configuratorParams[cometProxy].borrowPerYearInterestRateSlopeLow = newSlope;
         emit SetBorrowPerYearInterestRateSlopeLow(cometProxy, oldSlope, newSlope);
     }
 
-    function setBorrowPerYearInterestRateSlopeHigh(address cometProxy, uint64 newSlope) external onlyGovernor {
+    function setBorrowPerYearInterestRateSlopeHigh(address cometProxy, uint64 newSlope) external governorOrMarketAdmin {
         uint64 oldSlope = configuratorParams[cometProxy].borrowPerYearInterestRateSlopeHigh;
         configuratorParams[cometProxy].borrowPerYearInterestRateSlopeHigh = newSlope;
         emit SetBorrowPerYearInterestRateSlopeHigh(cometProxy, oldSlope, newSlope);
     }
 
-    function setBorrowPerYearInterestRateBase(address cometProxy, uint64 newBase) external onlyGovernor {
+    function setBorrowPerYearInterestRateBase(address cometProxy, uint64 newBase) external governorOrMarketAdmin {
         uint64 oldBase = configuratorParams[cometProxy].borrowPerYearInterestRateBase;
         configuratorParams[cometProxy].borrowPerYearInterestRateBase = newBase;
         emit SetBorrowPerYearInterestRateBase(cometProxy, oldBase, newBase);
@@ -140,13 +161,13 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         emit SetStoreFrontPriceFactor(cometProxy, oldStoreFrontPriceFactor, newStoreFrontPriceFactor);
     }
 
-    function setBaseTrackingSupplySpeed(address cometProxy, uint64 newBaseTrackingSupplySpeed) external onlyGovernor {
+    function setBaseTrackingSupplySpeed(address cometProxy, uint64 newBaseTrackingSupplySpeed) external governorOrMarketAdmin {
         uint64 oldBaseTrackingSupplySpeed = configuratorParams[cometProxy].baseTrackingSupplySpeed;
         configuratorParams[cometProxy].baseTrackingSupplySpeed = newBaseTrackingSupplySpeed;
         emit SetBaseTrackingSupplySpeed(cometProxy, oldBaseTrackingSupplySpeed, newBaseTrackingSupplySpeed);
     }
 
-    function setBaseTrackingBorrowSpeed(address cometProxy, uint64 newBaseTrackingBorrowSpeed) external onlyGovernor {
+    function setBaseTrackingBorrowSpeed(address cometProxy, uint64 newBaseTrackingBorrowSpeed) external governorOrMarketAdmin {
         uint64 oldBaseTrackingBorrowSpeed = configuratorParams[cometProxy].baseTrackingBorrowSpeed;
         configuratorParams[cometProxy].baseTrackingBorrowSpeed = newBaseTrackingBorrowSpeed;
         emit SetBaseTrackingBorrowSpeed(cometProxy, oldBaseTrackingBorrowSpeed, newBaseTrackingBorrowSpeed);
@@ -158,7 +179,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         emit SetBaseMinForRewards(cometProxy, oldBaseMinForRewards, newBaseMinForRewards);
     }
 
-    function setBaseBorrowMin(address cometProxy, uint104 newBaseBorrowMin) external onlyGovernor {
+    function setBaseBorrowMin(address cometProxy, uint104 newBaseBorrowMin) external governorOrMarketAdmin {
         uint104 oldBaseBorrowMin = configuratorParams[cometProxy].baseBorrowMin;
         configuratorParams[cometProxy].baseBorrowMin = newBaseBorrowMin;
         emit SetBaseBorrowMin(cometProxy, oldBaseBorrowMin, newBaseBorrowMin);
@@ -280,7 +301,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param asset The asset whose borrow collateral factor to set
      * @param newBorrowCF The new borrow collateral factor
      */
-    function updateAssetBorrowCollateralFactor(address cometProxy, address asset, uint64 newBorrowCF) external onlyGovernor {
+    function updateAssetBorrowCollateralFactor(address cometProxy, address asset, uint64 newBorrowCF) external governorOrMarketAdmin {
         AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
         uint64 oldBorrowCF = assetConfig.borrowCollateralFactor;
         assetConfig.borrowCollateralFactor = newBorrowCF;
@@ -292,7 +313,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param cometProxy The Comet proxy whose asset list to update
      * @param asset The asset whose borrow collateral factor to set
      */
-    function setBorrowCollateralFactorInAssetList(address cometProxy, address asset) external onlyGovernor {
+    function setBorrowCollateralFactorInAssetList(address cometProxy, address asset) external governorOrMarketAdmin {
         AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
         IAssetList(configuratorParams[cometProxy].assetList).setBorrowCollateralFactor(asset, assetConfig.borrowCollateralFactor);
     }
@@ -303,7 +324,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param asset The asset whose liquidate collateral factor to set
      * @param newLiquidateCF The new liquidate collateral factor
      */
-    function updateAssetLiquidateCollateralFactor(address cometProxy, address asset, uint64 newLiquidateCF) external onlyGovernor {
+    function updateAssetLiquidateCollateralFactor(address cometProxy, address asset, uint64 newLiquidateCF) external governorOrMarketAdmin {
         AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
         uint64 oldLiquidateCF = assetConfig.liquidateCollateralFactor;
         assetConfig.liquidateCollateralFactor = newLiquidateCF;
@@ -315,7 +336,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param cometProxy The Comet proxy whose asset list to update
      * @param asset The asset whose liquidate collateral factor to set
      */
-    function setLiquidateCollateralFactorInAssetList(address cometProxy, address asset) external onlyGovernor {
+    function setLiquidateCollateralFactorInAssetList(address cometProxy, address asset) external governorOrMarketAdmin {
         AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
         IAssetList(configuratorParams[cometProxy].assetList).setLiquidateCollateralFactor(asset, assetConfig.liquidateCollateralFactor);
     }
@@ -326,7 +347,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param asset The asset whose liquidation factor to set
      * @param newLiquidationFactor The new liquidation factor
      */
-    function updateAssetLiquidationFactor(address cometProxy, address asset, uint64 newLiquidationFactor) external onlyGovernor {
+    function updateAssetLiquidationFactor(address cometProxy, address asset, uint64 newLiquidationFactor) external governorOrMarketAdmin {
         AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
         uint64 oldLiquidationFactor = assetConfig.liquidationFactor;
         assetConfig.liquidationFactor = newLiquidationFactor;
@@ -338,7 +359,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param cometProxy The Comet proxy whose asset list to update
      * @param asset The asset whose liquidation factor to set
      */
-    function setLiquidationFactorInAssetList(address cometProxy, address asset) external onlyGovernor {
+    function setLiquidationFactorInAssetList(address cometProxy, address asset) external governorOrMarketAdmin {
         AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
         IAssetList(configuratorParams[cometProxy].assetList).setLiquidationFactor(asset, assetConfig.liquidationFactor);
     }
@@ -349,7 +370,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param asset The asset whose supply cap to set
      * @param newSupplyCap The new supply cap
      */
-    function updateAssetSupplyCap(address cometProxy, address asset, uint128 newSupplyCap) external onlyGovernor {
+    function updateAssetSupplyCap(address cometProxy, address asset, uint128 newSupplyCap) external governorOrMarketAdmin {
         AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
         uint128 oldSupplyCap = assetConfig.supplyCap;
         assetConfig.supplyCap = newSupplyCap;
@@ -361,7 +382,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param cometProxy The Comet proxy whose asset list to update
      * @param asset The asset whose supply cap to set
      */
-    function setSupplyCapInAssetList(address cometProxy, address asset) external onlyGovernor {
+    function setSupplyCapInAssetList(address cometProxy, address asset) external governorOrMarketAdmin {
         AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
         IAssetList(configuratorParams[cometProxy].assetList).setSupplyCap(asset, assetConfig.supplyCap);
     }
