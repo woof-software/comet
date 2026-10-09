@@ -1126,8 +1126,6 @@ describe('isLiquidatable', function () {
           {
             decimals: 18,
             initialPrice: 200,
-            borrowCF: exp(0.75, 18),
-            liquidateCF: exp(0.8, 18),
           },
         ])
       );
@@ -1291,7 +1289,7 @@ describe('isLiquidatable', function () {
         await targetToken.connect(alice).approve(comet.address, supplyAmount);
         await comet.connect(alice).supply(targetToken.address, supplyAmount);
 
-        // Borrow amount collateralized by the single supplied asset under liquidation values (~170 USDC)
+        // Borrow amount collateralized by the single supplied asset under liquidation values (160 USDC)
         const borrowAmount = exp(150, 6);
         await baseToken.allocateTo(comet.address, borrowAmount);
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount);

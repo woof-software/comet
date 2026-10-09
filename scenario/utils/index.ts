@@ -37,6 +37,7 @@ export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
 import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
 export * from './hreUtils';
+export * from './versionControl';
 
 /** Convert a per-year interest factor to per-second (Comet constructor truncation). */
 export function perSecond(perYear: BigNumber): BigNumber {
@@ -508,34 +509,6 @@ export async function usesAssetList(ctx: CometContext): Promise<boolean> {
 
 export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
-}
-
-export async function supportUtilizationLimit(ctx: CometContext): Promise<boolean> {
-  try {
-    const comet = await ctx.getComet();
-    const ethers = ctx.world.deploymentManager.hre.ethers;
-    
-    const iface = new ethers.utils.Interface([
-      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
-    ]);
-    const functionSelector = iface.getSighash('MAX_SUPPORTED_UTILIZATION');
-    
-    // Try to call the function using a low-level static call
-    // If the function doesn't exist, this will revert
-    const result = await ethers.provider.call({
-      to: comet.address,
-      data: functionSelector
-    });
-    
-    // If the call succeeds (doesn't revert), the function exists
-    // Decode the result to verify it's a valid bool response
-    if (result && result !== '0x') {
-      return true;
-    }
-    return false;
-  } catch (error) {
-    return false;
-  }
 }
 
 /**

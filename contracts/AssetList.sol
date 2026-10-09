@@ -313,12 +313,13 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     }
 
     /**
-     * @dev Sanity checks for factors ordering: BCF < LCF; LCF <= MAX; LF <= MAX
+     * @dev Sanity checks for factors ordering: BCF < LCF < LF <= MAX_COLLATERAL_FACTOR
      * Valid collateral factor configurations:
      *  1. Both BCF and LCF are 0 => collateral is fully de-listed
      *  2. borrowCF=0, liquidateCF>0 => soft de-list (no new borrows, controlled liquidation wind-down)
      *  3. Both non-zero, properly ordered => active collateral
-     * Invalid: borrowCF>0, liquidateCF=0 => reverts (borrow power without liquidation coverage)
+     *  4. Liquidation penalty (LF) can be set to 0 only with BCF and LCF set to 0, meaning non-liquidatable asset
+     *  Invalid: borrowCF>0, liquidateCF=0 => reverts (borrow power without liquidation coverage)
      */
     function _validateCollateralFactors(
         uint64 borrowCollateralFactor,
@@ -326,7 +327,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
         uint64 liquidationFactor
     ) internal pure {
         if (borrowCollateralFactor >= liquidateCollateralFactor && borrowCollateralFactor != 0) revert BorrowCFTooLarge();
-        if (liquidateCollateralFactor > MAX_COLLATERAL_FACTOR) revert LiquidateCFTooLarge();
+        if (liquidateCollateralFactor >= liquidationFactor && liquidateCollateralFactor != 0) revert LiquidateCFTooLarge();
         if (liquidationFactor > MAX_COLLATERAL_FACTOR) revert LiqPenaltyTooHigh();
     }
 
