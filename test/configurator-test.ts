@@ -205,7 +205,7 @@ describe('configurator', function () {
       });
 
       it('fresh proxy can be initialized with a valid governor', async () => {
-        await expect(configuratorImplementation.initialize(governor.address)).to.not.be.reverted;
+        await expect(configuratorImplementation.initialize(governor.address)).to.not.be.revert(ethers);
 
         expect(await configuratorImplementation.governor()).to.equal(governor.address);
         expect(await configuratorImplementation.version()).to.equal(1);
@@ -246,7 +246,7 @@ describe('configurator', function () {
 
       it('sets factory is successful', async () => {
         setFactoryTx = await configuratorProxy.setFactory((await cometProxy.getAddress()), (await newFactory.getAddress()));
-        await expect(setFactoryTx).to.not.be.reverted;
+        await expect(setFactoryTx).to.not.be.revert(ethers);
       });
 
       it('setting new factory emits SetFactory event', async () => {
@@ -337,7 +337,7 @@ describe('configurator', function () {
 
       it('sets configuration is successful', async () => {
         setConfigurationTx = await configuratorProxy.connect(governor).setConfiguration((await cometProxy.getAddress()), newConfiguration);
-        await expect(setConfigurationTx).to.not.be.reverted;
+        await expect(setConfigurationTx).to.not.be.revert(ethers);
       });
 
       it('setting new configuration emits SetConfiguration event (deep equal)', async () => {
@@ -377,7 +377,7 @@ describe('configurator', function () {
     describe('edge cases', function() {
       it('same configuration can be set multiple times', async () => {
         const currentConfiguration = await configuratorProxy.getConfiguration((await cometProxy.getAddress()));
-        await configuratorProxy.connect(governor).setConfiguration((await cometProxy.getAddress()), currentConfiguration);
+        await configuratorProxy.connect(governor).setConfiguration((await cometProxy.getAddress()), copyConfiguration(currentConfiguration));
 
         const updatedConfiguration = await configuratorProxy.getConfiguration((await cometProxy.getAddress()));
         expect(updatedConfiguration).to.deep.eq(currentConfiguration);
@@ -404,7 +404,7 @@ describe('configurator', function () {
       it('deploy new implementation is successful', async () => {
         newCometImplementation = await configuratorProxy.deploy.staticCall((await cometProxy.getAddress()));
         deployTx = await configuratorProxy.deploy((await cometProxy.getAddress()));
-        await expect(deployTx).to.not.be.reverted;
+        await expect(deployTx).to.not.be.revert(ethers);
       });
 
       it('deploy emits CometDeployed event', async () => {
@@ -421,13 +421,13 @@ describe('configurator', function () {
       describe('edge cases', function() {
         it('anyone can deploy new implementation', async () => {
           // From Alice
-          await expect(configuratorProxy.connect(alice).deploy((await cometProxy.getAddress()))).to.not.be.reverted;
+          await expect(configuratorProxy.connect(alice).deploy((await cometProxy.getAddress()))).to.not.be.revert(ethers);
 
           // From Governor
-          await expect(configuratorProxy.connect(governor).deploy((await cometProxy.getAddress()))).to.not.be.reverted;
+          await expect(configuratorProxy.connect(governor).deploy((await cometProxy.getAddress()))).to.not.be.revert(ethers);
 
           // From Pause Guardian
-          await expect(configuratorProxy.connect(pauseGuardian).deploy((await cometProxy.getAddress()))).to.not.be.reverted;
+          await expect(configuratorProxy.connect(pauseGuardian).deploy((await cometProxy.getAddress()))).to.not.be.revert(ethers);
         });
       });
     });
@@ -446,7 +446,7 @@ describe('configurator', function () {
 
       it('deploy comet from ProxyAdmin is successful', async () => {
         deployTx = await cometProxyAdmin.deployAndUpgradeTo((await configuratorProxy.getAddress()), (await cometProxy.getAddress()));
-        await expect(deployTx).to.not.be.reverted;
+        await expect(deployTx).to.not.be.revert(ethers);
       });
 
       it('deploy emits CometDeployed event', async () => {
@@ -464,7 +464,7 @@ describe('configurator', function () {
         await configuratorProxy.connect(governor).setFactory((await cometProxy.getAddress()), ZeroAddress);
 
         // Reverts with "Error: Transaction reverted without a reason string"
-        await expect(configuratorProxy.deploy((await cometProxy.getAddress()))).to.be.reverted;
+        await expect(configuratorProxy.deploy((await cometProxy.getAddress()))).to.be.revert(ethers);
 
         await snapshot.restore();
       });
@@ -473,7 +473,7 @@ describe('configurator', function () {
         const randomAddr = '0x0000000000000000000000000000000000000042';
 
         // Reverts with "Error: Transaction reverted without a reason string"
-        await expect(configuratorProxy.deploy(randomAddr)).to.be.reverted;
+        await expect(configuratorProxy.deploy(randomAddr)).to.be.revert(ethers);
       });
     });
   });
@@ -509,7 +509,7 @@ describe('configurator', function () {
 
         it('setGovernor is successful', async () => {
           setGovernorTx = await configuratorProxy.connect(governor).setGovernor((await cometProxy.getAddress()), (await newCometGovernor.getAddress()));
-          await expect(setGovernorTx).to.not.be.reverted;
+          await expect(setGovernorTx).to.not.be.revert(ethers);
         });
 
         it('setting new governor emits SetGovernor event', async () => {
@@ -525,7 +525,7 @@ describe('configurator', function () {
 
         it('deploy and upgrade from ProxyAdmin is successful', async () => {
           deployTx = await cometProxyAdmin.deployAndUpgradeTo((await configuratorProxy.getAddress()), (await cometProxy.getAddress()));
-          await expect(deployTx).to.not.be.reverted;
+          await expect(deployTx).to.not.be.revert(ethers);
         });
 
         it('deploy emits CometDeployed event', async () => {
@@ -594,7 +594,7 @@ describe('configurator', function () {
 
         it('setPauseGuardian is successful', async () => {
           setPauseGuardianTx = await configuratorProxy.connect(governor).setPauseGuardian((await cometProxy.getAddress()), (await newPauseGuardian.getAddress()));
-          await expect(setPauseGuardianTx).to.not.be.reverted;
+          await expect(setPauseGuardianTx).to.not.be.revert(ethers);
         });
 
         it('emits SetPauseGuardian event', async () => {
@@ -651,7 +651,7 @@ describe('configurator', function () {
 
         it('sets MarketAdminPermissionChecker successfully', async () => {
           setTx = await configuratorProxy.connect(governor).setMarketAdminPermissionChecker((await newChecker.getAddress()));
-          await expect(setTx).to.not.be.reverted;
+          await expect(setTx).to.not.be.revert(ethers);
         });
 
         it('emits SetMarketAdminPermissionChecker event', async () => {
@@ -698,7 +698,7 @@ describe('configurator', function () {
       describe('happy path', function() {
         it('sets baseTokenPriceFeed successfully', async () => {
           setTx = await configuratorProxy.connect(governor).setBaseTokenPriceFeed((await cometProxy.getAddress()), (await newPriceFeed.getAddress()));
-          await expect(setTx).to.not.be.reverted;
+          await expect(setTx).to.not.be.revert(ethers);
         });
 
         it('emits SetBaseTokenPriceFeed event', async () => {
@@ -757,7 +757,7 @@ describe('configurator', function () {
       describe('happy path', function() {
         it('sets extensionDelegate successfully', async () => {
           setTx = await configuratorProxy.connect(governor).setExtensionDelegate((await cometProxy.getAddress()), (await newExtensionDelegate.getAddress()));
-          await expect(setTx).to.not.be.reverted;
+          await expect(setTx).to.not.be.revert(ethers);
         });
 
         it('emits SetExtensionDelegate event', async () => {
@@ -811,7 +811,7 @@ describe('configurator', function () {
 
           it('sets supplyKink successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setSupplyKink((await cometProxy.getAddress()), NEW_SUPPLY_KINK);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetSupplyKink event', async () => {
@@ -862,7 +862,7 @@ describe('configurator', function () {
 
           it('sets supplyPerYearInterestRateSlopeLow successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setSupplyPerYearInterestRateSlopeLow((await cometProxy.getAddress()), NEW_SLOPE_LOW);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetSupplyPerYearInterestRateSlopeLow event', async () => {
@@ -914,7 +914,7 @@ describe('configurator', function () {
 
           it('sets supplyPerYearInterestRateSlopeHigh successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setSupplyPerYearInterestRateSlopeHigh((await cometProxy.getAddress()), NEW_SLOPE_HIGH);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetSupplyPerYearInterestRateSlopeHigh event', async () => {
@@ -966,7 +966,7 @@ describe('configurator', function () {
 
           it('sets supplyPerYearInterestRateBase successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setSupplyPerYearInterestRateBase((await cometProxy.getAddress()), NEW_BASE);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetSupplyPerYearInterestRateBase event', async () => {
@@ -1018,7 +1018,7 @@ describe('configurator', function () {
 
           it('sets borrowKink successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setBorrowKink((await cometProxy.getAddress()), NEW_BORROW_KINK);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetBorrowKink event', async () => {
@@ -1069,7 +1069,7 @@ describe('configurator', function () {
 
           it('sets borrowPerYearInterestRateSlopeLow successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setBorrowPerYearInterestRateSlopeLow((await cometProxy.getAddress()), NEW_SLOPE_LOW);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetBorrowPerYearInterestRateSlopeLow event', async () => {
@@ -1121,7 +1121,7 @@ describe('configurator', function () {
 
           it('sets borrowPerYearInterestRateSlopeHigh successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setBorrowPerYearInterestRateSlopeHigh((await cometProxy.getAddress()), NEW_SLOPE_HIGH);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetBorrowPerYearInterestRateSlopeHigh event', async () => {
@@ -1173,7 +1173,7 @@ describe('configurator', function () {
 
           it('sets borrowPerYearInterestRateBase successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setBorrowPerYearInterestRateBase((await cometProxy.getAddress()), NEW_BASE);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetBorrowPerYearInterestRateBase event', async () => {
@@ -1231,7 +1231,7 @@ describe('configurator', function () {
 
           it('sets storeFrontPriceFactor successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setStoreFrontPriceFactor((await cometProxy.getAddress()), NEW_STORE_FRONT_PRICE_FACTOR);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetStoreFrontPriceFactor event', async () => {
@@ -1263,7 +1263,7 @@ describe('configurator', function () {
         describe('revert cases', function() {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).setBaseTrackingSupplySpeed((await cometProxy.getAddress()), NEW_BASE_TRACKING_SUPPLY_SPEED))
-              .to.be.reverted;
+              .to.be.revert(ethers);
           });
         });
 
@@ -1284,7 +1284,7 @@ describe('configurator', function () {
 
           it('sets baseTrackingSupplySpeed successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setBaseTrackingSupplySpeed((await cometProxy.getAddress()), NEW_BASE_TRACKING_SUPPLY_SPEED);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetBaseTrackingSupplySpeed event', async () => {
@@ -1316,7 +1316,7 @@ describe('configurator', function () {
         describe('revert cases', function() {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).setBaseTrackingBorrowSpeed((await cometProxy.getAddress()), NEW_BASE_TRACKING_BORROW_SPEED))
-              .to.be.reverted;
+              .to.be.revert(ethers);
           });
         });
 
@@ -1337,7 +1337,7 @@ describe('configurator', function () {
 
           it('sets baseTrackingBorrowSpeed successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setBaseTrackingBorrowSpeed((await cometProxy.getAddress()), NEW_BASE_TRACKING_BORROW_SPEED);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetBaseTrackingBorrowSpeed event', async () => {
@@ -1389,7 +1389,7 @@ describe('configurator', function () {
 
           it('sets baseMinForRewards successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setBaseMinForRewards((await cometProxy.getAddress()), NEW_BASE_MIN_FOR_REWARDS);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetBaseMinForRewards event', async () => {
@@ -1421,7 +1421,7 @@ describe('configurator', function () {
         describe('revert cases', function() {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).setBaseBorrowMin((await cometProxy.getAddress()), NEW_BASE_BORROW_MIN))
-              .to.be.reverted;
+              .to.be.revert(ethers);
           });
         });
 
@@ -1442,7 +1442,7 @@ describe('configurator', function () {
 
           it('sets baseBorrowMin successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setBaseBorrowMin((await cometProxy.getAddress()), NEW_BASE_BORROW_MIN);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetBaseBorrowMin event', async () => {
@@ -1495,7 +1495,7 @@ describe('configurator', function () {
 
           it('sets targetReserves successfully', async () => {
             setTx = await configuratorProxy.connect(governor).setTargetReserves((await cometProxy.getAddress()), NEW_TARGET_RESERVES);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits SetTargetReserves event', async () => {
@@ -1568,7 +1568,7 @@ describe('configurator', function () {
 
           it('updates asset price feed successfully', async () => {
             setTx = await configuratorProxy.connect(governor).updateAssetPriceFeed((await cometProxy.getAddress()), firstAsset.asset, (await newPriceFeed.getAddress()));
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits UpdateAssetPriceFeed event', async () => {
@@ -1601,7 +1601,7 @@ describe('configurator', function () {
         describe('revert cases', function() {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).updateAssetBorrowCollateralFactor((await cometProxy.getAddress()), firstAsset.asset, NEW_BORROW_CF))
-              .to.be.reverted;
+              .to.be.revert(ethers);
           });
         });
 
@@ -1624,7 +1624,7 @@ describe('configurator', function () {
 
           it('updates asset borrow collateral factor successfully', async () => {
             setTx = await configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor((await cometProxy.getAddress()), firstAsset.asset, NEW_BORROW_CF);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits UpdateAssetBorrowCollateralFactor event', async () => {
@@ -1657,7 +1657,7 @@ describe('configurator', function () {
         describe('revert cases', function() {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).updateAssetLiquidateCollateralFactor((await cometProxy.getAddress()), firstAsset.asset, NEW_LIQUIDATE_CF))
-              .to.be.reverted;
+              .to.be.revert(ethers);
           });
         });
 
@@ -1680,7 +1680,7 @@ describe('configurator', function () {
 
           it('updates asset liquidate collateral factor successfully', async () => {
             setTx = await configuratorProxy.connect(governor).updateAssetLiquidateCollateralFactor((await cometProxy.getAddress()), firstAsset.asset, NEW_LIQUIDATE_CF);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits UpdateAssetLiquidateCollateralFactor event', async () => {
@@ -1713,7 +1713,7 @@ describe('configurator', function () {
         describe('revert cases', function() {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).updateAssetLiquidationFactor((await cometProxy.getAddress()), firstAsset.asset, NEW_LIQUIDATION_FACTOR))
-              .to.be.reverted;
+              .to.be.revert(ethers);
           });
         });
 
@@ -1734,7 +1734,7 @@ describe('configurator', function () {
 
           it('updates asset liquidation factor successfully', async () => {
             setTx = await configuratorProxy.connect(governor).updateAssetLiquidationFactor((await cometProxy.getAddress()), firstAsset.asset, NEW_LIQUIDATION_FACTOR);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits UpdateAssetLiquidationFactor event', async () => {
@@ -1767,7 +1767,7 @@ describe('configurator', function () {
         describe('revert cases', function() {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).updateAssetSupplyCap((await cometProxy.getAddress()), firstAsset.asset, NEW_SUPPLY_CAP))
-              .to.be.reverted;
+              .to.be.revert(ethers);
           });
         });
 
@@ -1786,7 +1786,7 @@ describe('configurator', function () {
 
           it('updates asset supply cap successfully', async () => {
             setTx = await configuratorProxy.connect(governor).updateAssetSupplyCap((await cometProxy.getAddress()), firstAsset.asset, NEW_SUPPLY_CAP);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits UpdateAssetSupplyCap event', async () => {
@@ -1841,12 +1841,12 @@ describe('configurator', function () {
 
         describe('happy path', function() {
           it('sanity check: asset does not exist in comet yet', async () => {
-            await expect(comet.getAssetInfoByAddress(unsupportedTokenAddr)).to.be.reverted;
+            await expect(comet.getAssetInfoByAddress(unsupportedTokenAddr)).to.be.revert(ethers);
           });
 
           it('adds asset successfully', async () => {
             setTx = await configuratorProxy.connect(governor).addAsset((await cometProxy.getAddress()), newAssetConfig);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits AddAsset event', async () => {
@@ -1901,7 +1901,7 @@ describe('configurator', function () {
               borrowCollateralFactor: NEW_BORROW_CF,
             };
             setTx = await configuratorProxy.connect(governor).updateAsset((await cometProxy.getAddress()), newAssetConfig);
-            await expect(setTx).to.not.be.reverted;
+            await expect(setTx).to.not.be.revert(ethers);
           });
 
           it('emits UpdateAsset event', async () => {
@@ -1994,7 +1994,7 @@ describe('configurator', function () {
           const existingAsset = config.assetConfigs[0];
           const numAssetsBefore = config.assetConfigs.length;
 
-          await configuratorProxy.connect(governor).addAsset((await cometProxy.getAddress()), existingAsset);
+          await configuratorProxy.connect(governor).addAsset((await cometProxy.getAddress()), copyAssetConfig(existingAsset));
 
           const updated = await configuratorProxy.getConfiguration((await cometProxy.getAddress()));
           expect(updated.assetConfigs.length).to.equal(numAssetsBefore + 1);
@@ -2051,7 +2051,7 @@ describe('configurator', function () {
 
         it('transfers governor successfully', async () => {
           transferTx = await configuratorProxy.connect(governor).transferGovernor(newGovernor.address);
-          await expect(transferTx).to.not.be.reverted;
+          await expect(transferTx).to.not.be.revert(ethers);
         });
 
         it('emits GovernorTransferred event', async () => {
@@ -2066,7 +2066,7 @@ describe('configurator', function () {
 
         it('new governor can call governor-only functions', async () => {
           await expect(configuratorProxy.connect(newGovernor).setGovernor((await cometProxy.getAddress()), newGovernor.address))
-            .to.not.be.reverted;
+            .to.not.be.revert(ethers);
         });
 
         it('old governor can no longer call governor-only functions', async () => {
@@ -2100,7 +2100,7 @@ describe('configurator', function () {
           const innerSnapshot = await takeSnapshot();
           const newKink = exp(0.85, 18);
           await expect(configuratorProxy.connect(marketAdmin).setSupplyKink((await cometProxy.getAddress()), newKink))
-            .to.not.be.reverted;
+            .to.not.be.revert(ethers);
           expect((await configuratorProxy.getConfiguration((await cometProxy.getAddress()))).supplyKink).to.equal(newKink);
           await innerSnapshot.restore();
         });
@@ -2109,7 +2109,7 @@ describe('configurator', function () {
           const innerSnapshot = await takeSnapshot();
           const newKink = exp(0.65, 18);
           await expect(configuratorProxy.connect(marketAdmin).setBorrowKink((await cometProxy.getAddress()), newKink))
-            .to.not.be.reverted;
+            .to.not.be.revert(ethers);
           expect((await configuratorProxy.getConfiguration((await cometProxy.getAddress()))).borrowKink).to.equal(newKink);
           await innerSnapshot.restore();
         });
@@ -2118,7 +2118,7 @@ describe('configurator', function () {
           const innerSnapshot = await takeSnapshot();
           const newVal = exp(0.05, 18);
           await expect(configuratorProxy.connect(marketAdmin).setSupplyPerYearInterestRateSlopeLow((await cometProxy.getAddress()), newVal))
-            .to.not.be.reverted;
+            .to.not.be.revert(ethers);
           expect((await configuratorProxy.getConfiguration((await cometProxy.getAddress()))).supplyPerYearInterestRateSlopeLow).to.equal(newVal);
           await innerSnapshot.restore();
         });
@@ -2129,7 +2129,7 @@ describe('configurator', function () {
           const assetAddr = config.assetConfigs[0].asset;
           const newVal = exp(0.8, 18);
           await expect(configuratorProxy.connect(marketAdmin).updateAssetBorrowCollateralFactor((await cometProxy.getAddress()), assetAddr, newVal))
-            .to.not.be.reverted;
+            .to.not.be.revert(ethers);
           expect((await configuratorProxy.getConfiguration((await cometProxy.getAddress()))).assetConfigs[0].borrowCollateralFactor).to.equal(newVal);
           await innerSnapshot.restore();
         });
@@ -2140,7 +2140,7 @@ describe('configurator', function () {
           const assetAddr = config.assetConfigs[0].asset;
           const newVal = exp(0.92, 18);
           await expect(configuratorProxy.connect(marketAdmin).updateAssetLiquidateCollateralFactor((await cometProxy.getAddress()), assetAddr, newVal))
-            .to.not.be.reverted;
+            .to.not.be.revert(ethers);
           expect((await configuratorProxy.getConfiguration((await cometProxy.getAddress()))).assetConfigs[0].liquidateCollateralFactor).to.equal(newVal);
           await innerSnapshot.restore();
         });
@@ -2151,7 +2151,7 @@ describe('configurator', function () {
           const assetAddr = config.assetConfigs[0].asset;
           const newVal = exp(0.93, 18);
           await expect(configuratorProxy.connect(marketAdmin).updateAssetLiquidationFactor((await cometProxy.getAddress()), assetAddr, newVal))
-            .to.not.be.reverted;
+            .to.not.be.revert(ethers);
           expect((await configuratorProxy.getConfiguration((await cometProxy.getAddress()))).assetConfigs[0].liquidationFactor).to.equal(newVal);
           await innerSnapshot.restore();
         });
@@ -2162,7 +2162,7 @@ describe('configurator', function () {
           const assetAddr = config.assetConfigs[0].asset;
           const newVal = exp(500, 18);
           await expect(configuratorProxy.connect(marketAdmin).updateAssetSupplyCap((await cometProxy.getAddress()), assetAddr, newVal))
-            .to.not.be.reverted;
+            .to.not.be.revert(ethers);
           expect((await configuratorProxy.getConfiguration((await cometProxy.getAddress()))).assetConfigs[0].supplyCap).to.equal(newVal);
           await innerSnapshot.restore();
         });
@@ -2171,7 +2171,7 @@ describe('configurator', function () {
           const innerSnapshot = await takeSnapshot();
           const newVal = exp(5, 6);
           await expect(configuratorProxy.connect(marketAdmin).setBaseBorrowMin((await cometProxy.getAddress()), newVal))
-            .to.not.be.reverted;
+            .to.not.be.revert(ethers);
           expect((await configuratorProxy.getConfiguration((await cometProxy.getAddress()))).baseBorrowMin).to.equal(newVal);
           await innerSnapshot.restore();
         });
@@ -2195,7 +2195,7 @@ describe('configurator', function () {
 
         it('market admin cannot call setConfiguration', async () => {
           const config = await configuratorProxy.getConfiguration((await cometProxy.getAddress()));
-          await expect(configuratorProxy.connect(marketAdmin).setConfiguration((await cometProxy.getAddress()), config))
+          await expect(configuratorProxy.connect(marketAdmin).setConfiguration((await cometProxy.getAddress()), copyConfiguration(config)))
             .to.be.revertedWithCustomError(configurator, 'Unauthorized');
         });
 
@@ -2229,7 +2229,7 @@ describe('configurator', function () {
 
         it('paused market admin cannot call setSupplyKink', async () => {
           await expect(configuratorProxy.connect(marketAdmin).setSupplyKink((await cometProxy.getAddress()), exp(0.5, 18)))
-            .to.be.reverted;
+            .to.be.revert(ethers);
         });
       });
     });

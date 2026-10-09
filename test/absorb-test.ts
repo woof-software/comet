@@ -2,7 +2,7 @@ import { MaxUint256, ZeroAddress } from 'ethers';
 import type { ContractTransactionResponse, EventLog } from 'ethers';
 import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
 import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types/index.js';
-import { event, expect, exp, factor, defaultAssets, makeProtocol, mulPrice, portfolio, totalsAndReserves, wait, bumpTotalsCollateral, setTotalsBasic } from './helpers.js';
+import { ethers, event, expect, exp, factor, defaultAssets, makeProtocol, mulPrice, portfolio, totalsAndReserves, wait, bumpTotalsCollateral, setTotalsBasic } from './helpers.js';
 import { mulFactor, divPrice, presentValue, principalValue, presentValueSupply } from './helpers/math.js';
 
 function expectApproximately(actual: bigint, expected: bigint, tolerance: bigint): void {
@@ -180,7 +180,7 @@ describe('absorb', function () {
     it('absorb is successful', async () => {
       // Perform absorb
       absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-      await expect(absorbTx).to.be.not.be.reverted;
+      await expect(absorbTx).to.be.not.be.revert(ethers);
     });
 
     it('AbsorbCollateral is emmited with correct values', async () => {
@@ -420,7 +420,7 @@ describe('absorb', function () {
     it('absorb is successful', async () => {
       // Perform absorb
       absorbTxMulti = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-      await expect(absorbTxMulti).to.not.be.reverted;
+      await expect(absorbTxMulti).to.not.be.revert(ethers);
     });
 
     it('AbsorbCollateral events are emitted for COMP, WETH, and WBTC', async () => {
@@ -638,7 +638,7 @@ describe('absorb', function () {
     it('absorb is successful for all three users', async () => {
       // Perform absorb for all three users
       absorbTxMultiple = await comet.connect(absorber).absorb(absorber.address, [user1.address, user2.address, user3.address]);
-      await expect(absorbTxMultiple).to.not.be.reverted;
+      await expect(absorbTxMultiple).to.not.be.revert(ethers);
     });
 
     it('AbsorbCollateral events are emitted for each user', async () => {
@@ -790,7 +790,7 @@ describe('absorb', function () {
     });
 
     it('absor is successful for the first user', async () => {
-      await expect(comet.connect(absorber).absorb(absorber.address, [testUser1.address])).to.not.be.reverted;
+      await expect(comet.connect(absorber).absorb(absorber.address, [testUser1.address])).to.not.be.revert(ethers);
     });
 
     it('numAbsorbs increased by 1', async () => {
@@ -810,7 +810,7 @@ describe('absorb', function () {
     });
 
     it('second absorb is successful for the second user', async () => {
-      await expect(comet.connect(absorber).absorb(absorber.address, [testUser2.address])).to.not.be.reverted;
+      await expect(comet.connect(absorber).absorb(absorber.address, [testUser2.address])).to.not.be.revert(ethers);
     });
 
     it('second absorb increments numAbsorbs by 1 again', async () => {
@@ -830,7 +830,7 @@ describe('absorb', function () {
 
     describe('edge cases', function () {
       it('numAbsorbs is increased by 1 when 0 accounts are provided', async () => {
-        await expect(comet.connect(absorber).absorb(absorber.address, [])).to.not.be.reverted;
+        await expect(comet.connect(absorber).absorb(absorber.address, [])).to.not.be.revert(ethers);
         newLiquidatorPoints = await comet.liquidatorPoints(absorber.address);
         expect(newLiquidatorPoints.numAbsorbs).to.be.equal(liquidatorPoints.numAbsorbs + 1n);
       });
@@ -994,7 +994,7 @@ describe('absorb', function () {
 
         it('absorb is successful', async () => {
           abosorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-          await expect(abosorbTx).to.not.be.reverted;
+          await expect(abosorbTx).to.not.be.revert(ethers);
         });
 
         it('new balance becomes > 0', async () => {
@@ -1088,7 +1088,7 @@ describe('absorb', function () {
 
         it('absorb is successful', async () => {
           abosorbTx = await comet.connect(absorber).absorb(absorber.address, [dave.address]);
-          await expect(abosorbTx).to.not.be.reverted;
+          await expect(abosorbTx).to.not.be.revert(ethers);
         });
 
         it('new balance becomes < 0', async () => {
@@ -1231,7 +1231,7 @@ describe('absorb', function () {
 
       it('absorb is successful', async () => {
         absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
-        await expect(absorbTx).to.not.be.reverted;
+        await expect(absorbTx).to.not.be.revert(ethers);
       });
 
       it('AbsorbCollateral event is emitted for each collateral', async () => {

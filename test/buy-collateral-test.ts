@@ -81,7 +81,7 @@ describe('buyCollateral', function () {
   describe('revert cases', function () {
     describe('Paused', function () {
       it('pause guardian pauses buying', async () => {
-        await expect(comet.connect(pauseGuardian).pause(false, false, false, false, true)).to.not.be.reverted;
+        await expect(comet.connect(pauseGuardian).pause(false, false, false, false, true)).to.not.be.revert(ethers);
       });
       it('sanity: isBuyPaused is true', async () => {
         expect(await comet.isBuyPaused()).to.be.true;
@@ -90,7 +90,7 @@ describe('buyCollateral', function () {
         await expect(comet.connect(alice).buyCollateral((await collateralToken.getAddress()), 0, 1, alice.address)).to.be.revertedWithCustomError(comet, 'Paused');
       });
       it('pause guardian resets buy pause', async () => {
-        await expect(comet.connect(pauseGuardian).pause(false, false, false, false, false)).to.not.be.reverted;
+        await expect(comet.connect(pauseGuardian).pause(false, false, false, false, false)).to.not.be.revert(ethers);
       });
     });
     describe('NotForSale — reserves equal targetReserves exactly', function () {
@@ -181,7 +181,7 @@ describe('buyCollateral', function () {
       });
       it('alice buys collateral — does not revert', async () => {
         firstBuyTx = await comet.connect(alice).buyCollateral((await collateralToken.getAddress()), 0, BUY_AMOUNT, alice.address);
-        await expect(firstBuyTx).to.not.be.reverted;
+        await expect(firstBuyTx).to.not.be.revert(ethers);
       });
       it('collateral reserves decrease by quoted amount after first buy', async () => {
         expect(await comet.getCollateralReserves((await collateralToken.getAddress()))).to.be.equal((collateralReservesBefore - BigInt(quoteAmount)));
@@ -224,11 +224,11 @@ describe('buyCollateral', function () {
       expect(collateralReservesBefore).to.be.equal(exp(100, 18));
     });
     it('alice approves comet to spend base token', async () => {
-      await expect(baseToken.connect(alice).approve((await comet.getAddress()), BUY_AMOUNT)).to.not.be.reverted;
+      await expect(baseToken.connect(alice).approve((await comet.getAddress()), BUY_AMOUNT)).to.not.be.revert(ethers);
     });
     it('alice buys collateral — does not revert', async () => {
       buyTx = await comet.connect(alice).buyCollateral((await collateralToken.getAddress()), 0, BUY_AMOUNT, alice.address);
-      await expect(buyTx).to.not.be.reverted;
+      await expect(buyTx).to.not.be.revert(ethers);
     });
     it('emits BuyCollateral with correct buyer, asset, baseAmount and collateralAmount', async () => {
       await expect(buyTx)
@@ -278,7 +278,7 @@ describe('buyCollateral', function () {
     it('alice approves and calls buyCollateral with bob as recipient — does not revert', async () => {
       await baseToken.connect(alice).approve((await comet.getAddress()), BUY_AMOUNT);
       buyTx = await comet.connect(alice).buyCollateral((await collateralToken.getAddress()), 0, BUY_AMOUNT, bob.address);
-      await expect(buyTx).to.not.be.reverted;
+      await expect(buyTx).to.not.be.revert(ethers);
     });
     it('emits BuyCollateral with correct buyer, asset, baseAmount and collateralAmount', async () => {
       await expect(buyTx)
@@ -359,11 +359,11 @@ describe('buyCollateral', function () {
       expect(collateralReservesBefore).to.be.equal(exp(1100, 18));
     });
     it('dave approves comet to spend base token', async () => {
-      await expect(baseToken.connect(dave).approve((await comet.getAddress()), BUY_AMOUNT)).to.not.be.reverted;
+      await expect(baseToken.connect(dave).approve((await comet.getAddress()), BUY_AMOUNT)).to.not.be.revert(ethers);
     });
     it('dave buys ASSET1 collateral when reserves are negative — does not revert', async () => {
       buyTx = await comet.connect(dave).buyCollateral((await collateralToken1.getAddress()), 0, BUY_AMOUNT, dave.address);
-      await expect(buyTx).to.not.be.reverted;
+      await expect(buyTx).to.not.be.revert(ethers);
     });
     it('dave base balance decreases by BUY_AMOUNT', async () => {
       await expect(buyTx).to.changeTokenBalance(ethers, baseToken, dave, -BUY_AMOUNT);
@@ -414,7 +414,7 @@ describe('buyCollateral', function () {
     it('bob buys from collateral reserves — does not revert', async () => {
       await baseToken.allocateTo(bob.address, exp(50, 6));
       await baseToken.connect(bob).approve((await comet.getAddress()), exp(50, 6));
-      await expect(comet.connect(bob).buyCollateral((await collateralToken.getAddress()), 0, exp(50, 6), bob.address)).to.not.be.reverted;
+      await expect(comet.connect(bob).buyCollateral((await collateralToken.getAddress()), 0, exp(50, 6), bob.address)).to.not.be.revert(ethers);
     });
     it("alice's on-protocol collateral position is unchanged after buy from reserves", async () => {
       const alicePositionAfter = (await comet.userCollateral(alice.address, (await collateralToken.getAddress()))).balance;
@@ -458,7 +458,7 @@ describe('buyCollateral', function () {
     it('ASSET0 through ASSET23: each buyCollateral with minAmount does not revert', async () => {
       for (let i = 0; i < MAX_ASSETS; i++) {
         const tx = await comet.connect(alice).buyCollateral((await collateralTokens[i].getAddress()), minAmounts[i], BUY_AMOUNT, alice.address);
-        await expect(tx).to.not.be.reverted;
+        await expect(tx).to.not.be.revert(ethers);
         buyTxs[i] = tx;
       }
     });
@@ -558,7 +558,7 @@ describe('buyCollateral', function () {
       it('alice approves and buys — does not revert', async () => {
         await baseToken.connect(aliceFee).approve((await feeComet.getAddress()), GROSS_AMOUNT);
         buyTx = await feeComet.connect(aliceFee).buyCollateral((await collateralToken.getAddress()), 0, GROSS_AMOUNT, aliceFee.address);
-        await expect(buyTx).to.not.be.reverted;
+        await expect(buyTx).to.not.be.revert(ethers);
       });
       it('BuyCollateral event records net baseAmount (after fee), not gross', async () => {
         await expect(buyTx)
@@ -627,7 +627,7 @@ describe('buyCollateral', function () {
       it('alice approves and buys — does not revert', async () => {
         await baseToken.connect(aliceFee).approve((await feeComet.getAddress()), BUY_AMOUNT);
         buyTx = await feeComet.connect(aliceFee).buyCollateral((await collateralToken.getAddress()), 0, BUY_AMOUNT, aliceFee.address);
-        await expect(buyTx).to.not.be.reverted;
+        await expect(buyTx).to.not.be.revert(ethers);
       });
       it('BuyCollateral event records gross collateral amount (pre-fee, what comet sent)', async () => {
         await expect(buyTx)
@@ -868,7 +868,7 @@ describe('buyCollateral', function () {
       });
       it('alice buys tBTC with WBTC — does not revert', async () => {
         buyTx = await comet.connect(alice).buyCollateral((await tbtc.getAddress()), 0, BUY_AMOUNT, alice.address);
-        await expect(buyTx).to.not.be.reverted;
+        await expect(buyTx).to.not.be.revert(ethers);
       });
       it('emits BuyCollateral with correct buyer, asset, baseAmount and collateralAmount', async () => {
         await expect(buyTx)
@@ -934,7 +934,7 @@ describe('buyCollateral', function () {
       });
       it('alice buys tBTC at lower price — does not revert', async () => {
         buyTx = await comet.connect(alice).buyCollateral((await tbtc.getAddress()), 0, BUY_AMOUNT, alice.address);
-        await expect(buyTx).to.not.be.reverted;
+        await expect(buyTx).to.not.be.revert(ethers);
       });
       it('emits BuyCollateral with collateralAmount equal to low-price quote', async () => {
         await expect(buyTx)
@@ -997,7 +997,7 @@ describe('buyCollateral', function () {
       });
       it('alice buys tBTC at higher price — does not revert', async () => {
         buyTx = await comet.connect(alice).buyCollateral((await tbtc.getAddress()), 0, BUY_AMOUNT, alice.address);
-        await expect(buyTx).to.not.be.reverted;
+        await expect(buyTx).to.not.be.revert(ethers);
       });
       it('emits BuyCollateral with collateralAmount equal to high-price quote', async () => {
         await expect(buyTx)
@@ -1052,7 +1052,7 @@ describe('buyCollateral', function () {
       });
       it('alice buys with dust WBTC amount — does not revert', async () => {
         buyTx = await comet.connect(alice).buyCollateral((await tbtc.getAddress()), 0, BUY_AMOUNT, alice.address);
-        await expect(buyTx).to.not.be.reverted;
+        await expect(buyTx).to.not.be.revert(ethers);
       });
       it('emits BuyCollateral with correct dust baseAmount and positive collateralAmount', async () => {
         await expect(buyTx)
@@ -1115,7 +1115,7 @@ describe('buyCollateral', function () {
       });
       it('alice buys tBTC with 1 full WBTC — does not revert', async () => {
         buyTx = await comet.connect(alice).buyCollateral((await tbtc.getAddress()), 0, BUY_AMOUNT, alice.address);
-        await expect(buyTx).to.not.be.reverted;
+        await expect(buyTx).to.not.be.revert(ethers);
       });
       it('emits BuyCollateral with correct buyer, asset, baseAmount and collateralAmount', async () => {
         await expect(buyTx)

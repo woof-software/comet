@@ -1,5 +1,9 @@
-import axios from 'axios';
-import { DeploymentManager } from '../../plugins/deployment_manager';
+import { createRequire } from 'node:module';
+import type { AxiosStatic } from 'axios';
+import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
+
+const axios: AxiosStatic = createRequire(import.meta.url)('axios');
 
 export interface TenderlyVnetInfo {
   id: string;
@@ -50,7 +54,8 @@ export async function createVirtualTestnet(
   opts: { slug?: string, blockNumber?: number | 'latest' } = {}
 ): Promise<TenderlyVnetInfo> {
   const { account, project, accessKey } = getTenderlyCreds();
-  const { chainId } = await dm.hre.ethers.provider.getNetwork();
+  const ethers = await getHardhatEthers(dm.hre);
+  const { chainId } = await ethers.provider.getNetwork();
   const slug = opts.slug ?? `comet-sim-${dm.network}-${Date.now()}`;
 
   const { data } = await axios.post(
