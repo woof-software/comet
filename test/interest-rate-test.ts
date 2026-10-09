@@ -1,8 +1,4 @@
-import {
-  CometHarnessInterfaceExtendedAssetList,
-  FaucetToken,
-  SimplePriceFeed,
-} from 'build/types';
+import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed} from 'build/types';
 import { expect, exp, makeProtocol, ethers, DEFAULT_PRICEFEED_DECIMALS, SnapshotRestorer, takeSnapshot, factorScale, MAX_SUPPORTED_UTILIZATION } from './helpers';
 import { BigNumber } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
@@ -15,14 +11,8 @@ describe('interest calculation', function () {
   let comet: CometHarnessInterfaceExtendedAssetList;
   let lastUpdatedTime: number;
 
-  let baseSupplyRate: BigNumber,
-    supplyLowSlope: BigNumber,
-    supplyHighSlope: BigNumber,
-    supplyKink: BigNumber;
-  let baseBorrowRate: BigNumber,
-    borrowLowSlope: BigNumber,
-    borrowHighSlope: BigNumber,
-    borrowKink: BigNumber;
+  let baseSupplyRate: BigNumber, supplyLowSlope: BigNumber, supplyHighSlope: BigNumber, supplyKink: BigNumber;
+  let baseBorrowRate: BigNumber, borrowLowSlope: BigNumber, borrowHighSlope: BigNumber, borrowKink: BigNumber;
 
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;

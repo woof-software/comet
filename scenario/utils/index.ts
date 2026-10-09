@@ -12,7 +12,7 @@ import {
   utils,
 } from 'ethers';
 import { execSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, unlinkSync } from 'fs';
 import { CometContext } from '../context/CometContext';
 import CometAsset from '../context/CometAsset';
 import { exp } from '../../test/helpers';
@@ -22,23 +22,26 @@ import { ProposalState, OpenProposal } from '../context/Gov';
 import { debug } from '../../plugins/deployment_manager/Utils';
 import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
-import {
-  mineBlocks,
-  setNextBaseFeeToZero,
-  setNextBlockTimestamp,
-} from './hreUtils';
-import { BaseBridgeReceiver, CometInterface } from '../../build/types';
+import { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
+import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
+import { getOrCreateVirtualTestnet } from './tenderlyVnet';
+import { BaseBridgeReceiver, CometInterface, FaucetToken } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
+export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 import { readFileSync } from 'fs';
 import path from 'path';
+export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
+import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
 export * from './hreUtils';
 
-export const MAX_ASSETS = 24;
-export const UINT256_MAX = 2n ** 256n - 1n;
+/** Convert a per-year interest factor to per-second (Comet constructor truncation). */
+export function perSecond(perYear: BigNumber): BigNumber {
+  return perYear.div(SECONDS_PER_YEAR);
+}
 
 export interface ComparativeAmount {
   val: number;
@@ -66,7 +69,7 @@ export async function getSignerForProposal(
     usedSigners.set(key, []);
   }
   const signers = usedSigners.get(key);
-  if(signers.length == 0){
+  if (signers.length == 0) {
     const signer = (await gm.getSigners())[0];
     signers.push(signer.address);
     return signer;
@@ -124,12 +127,27 @@ export function expectRevertCustom(
             .reduce((a, s) => a + s.charCodeAt(0).toString(16), '0x')
         )
         .slice(2, 2 + 8);
+      const errorName = custom.replace(/\(\)$/, '');
+      const escaped = custom.replace(/[()]/g, '\\$&');
+
+      // ethers sometimes decodes the error (CALL_EXCEPTION), sometimes only the selector
+      if (
+        e.errorName === errorName ||
+        e.errorSignature === custom ||
+        e.data === `0x${selector}`
+      ) {
+        return;
+      }
+
       const patterns = [
-        new RegExp(`custom error '${custom.replace(/[()]/g, '\\$&')}'`),
+        new RegExp(`custom error '${escaped}'`),
         new RegExp(`unrecognized custom error with selector ${selector}`),
         new RegExp(
           `unrecognized custom error \\(return data: 0x${selector}\\)`
         ),
+        new RegExp(`errorSignature="${escaped}"`),
+        new RegExp(`errorName="${errorName}"`),
+        new RegExp(`data="0x${selector}"`),
       ];
       for (const pattern of patterns)
         if (pattern.test(e.message) || pattern.test(e.reason)) return;
@@ -140,7 +158,7 @@ export function expectRevertCustom(
 }
 
 export function expectRevertMatches(
-  tx: Promise<ContractReceipt>,
+  tx: Promise<ContractReceipt | ContractTransaction>,
   patterns: RegExp[]
 ) {
   return tx
@@ -218,6 +236,20 @@ export function getExpectedBaseBalance(
   const principalValue = (balance * baseIndexScale) / borrowOrSupplyIndex;
   const baseBalanceOf = (principalValue * borrowOrSupplyIndex) / baseIndexScale;
   return baseBalanceOf;
+}
+
+// A supplier's balance at a given supply index, computed from their stored principal.
+// Read the principal before a transaction and apply the index from after it: the transaction
+// accrues interest before it moves any funds, so a balance read beforehand misses the interest
+// earned in the block the transaction lands in.
+export function presentValueSupply(principal: bigint, baseSupplyIndex: bigint, baseIndexScale: bigint): bigint {
+  return (principal * baseSupplyIndex) / baseIndexScale;
+}
+
+// A borrower's debt at a given borrow index, computed from their stored (negative) principal.
+// Same idea as presentValueSupply: read the principal before a transaction, apply the index from after it.
+export function presentValueBorrow(principal: bigint, baseBorrowIndex: bigint, baseIndexScale: bigint): bigint {
+  return (-principal * baseBorrowIndex) / baseIndexScale;
 }
 
 export function getInterest(balance: bigint, rate: bigint, seconds: bigint) {
@@ -353,8 +385,22 @@ export async function isValidAssetIndex(
   ctx: CometContext,
   assetNum: number
 ): Promise<boolean> {
+  // Sanity checks
+  if (assetNum < 0) return false;
+  if (assetNum >= MAX_ASSETS) return false;
+  // Asset info checks. If any of these are false, the asset is invalid. This means that the asset is deprecated.
   const comet = await ctx.getComet();
-  return assetNum < (await comet.numAssets());
+
+  const numAssets = await comet.numAssets();
+  if (assetNum >= numAssets) return false;
+
+  const assetInfo = await comet.getAssetInfo(assetNum);
+  if (assetInfo.borrowCollateralFactor.toBigInt() == 0n) return false;
+  if (assetInfo.supplyCap.toBigInt() == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor.toBigInt() == 0n) return false;
+  if (assetInfo.liquidationFactor.toBigInt() == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor.toBigInt() <= assetInfo.borrowCollateralFactor.toBigInt()) return false;
+  return true;
 }
 
 export async function isAssetDelisted(
@@ -364,6 +410,25 @@ export async function isAssetDelisted(
   const comet = await ctx.getComet();
   const assetInfo = await comet.getAssetInfo(assetNum);
   return assetInfo.borrowCollateralFactor.toBigInt() === 0n;
+}
+
+/// Finds the index of the first collateral asset that can back a borrow in the bulker scenarios.
+/// The wrapped native token is skipped, since it is supplied and withdrawn through the native token actions,
+/// and so are delisted assets, which have a zero borrow collateral factor. Returns -1 if there is none.
+export async function getBulkerCollateralIndex(ctx: CometContext): Promise<number> {
+  const bulker = await ctx.getBulker();
+  if (bulker == null) return -1;
+
+  const comet = await ctx.getComet();
+  const wrappedNativeToken = (await bulker.wrappedNativeToken()).toLowerCase();
+  const numAssets = await comet.numAssets();
+  for (let i = 0; i < numAssets; i++) {
+    const { asset } = await comet.getAssetInfo(i);
+    if (asset.toLowerCase() === wrappedNativeToken) continue;
+    if (await isAssetDelisted(ctx, i)) continue;
+    return i;
+  }
+  return -1;
 }
 
 export async function isTriviallySourceable(
@@ -488,12 +553,23 @@ export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
   }
 }
 
+/**
+ * @notice Deploys an ERC20 token that is not listed in the market, for scenarios that expect Comet to reject it
+ */
+export async function deployUnsupportedAsset(ctx: CometContext): Promise<FaucetToken> {
+  return await ctx.world.deploymentManager.deploy(
+    'unsupportedAsset',
+    'test/FaucetToken.sol',
+    [0, 'Unsupported Asset', 18, 'UNSUPPORTED']
+  ) as FaucetToken;
+}
+
 export async function fetchLogs(
   contract: Contract,
   filter: EventFilter,
   fromBlock: number,
   toBlock: number,
-  BLOCK_SPAN = 2047 // NB: sadly max for fuji is LESS than 2048
+  BLOCK_SPAN = 2047
 ): Promise<Event[]> {
   if (toBlock - fromBlock > BLOCK_SPAN) {
     const midBlock = fromBlock + BLOCK_SPAN;
@@ -714,8 +790,8 @@ export async function updateCCIPStats(
 
   const tokenPrices = [];
   const gasPrices = [];
-  for (const [network,, address] of tokens) {
-    if(network !== dm.network) continue;
+  for (const [network, , address] of tokens) {
+    if (network !== dm.network) continue;
     const price = await registryContract.getTokenPrice(address);
     tokenPrices.push([address, price.value]);
   }
@@ -729,7 +805,7 @@ export async function updateCCIPStats(
     }
   }
 
-  if(tenderlyLogs) {
+  if (tenderlyLogs) {
     dm.stashRelayMessage(
       priceRegistry,
       registryContract.interface.encodeFunctionData('updatePrices', [
@@ -920,6 +996,7 @@ export async function tenderlyExecute(
       state_objects: statePatch,
       save: true,
       gas_price: 0,
+      gas_limit: 16_777_215,
     })),
     {
       network_id: chainId1.toString(),
@@ -931,6 +1008,7 @@ export async function tenderlyExecute(
       state_objects: statePatch,
       save: true,
       gas_price: 0,
+      gas_limit: 16_777_215,
     },
     ...whales.map((w) => ({
       network_id: chainId1.toString(),
@@ -943,6 +1021,7 @@ export async function tenderlyExecute(
       save: true,
       save_if_fails: true,
       gas_price: 0,
+      gas_limit: 16_777_215,
     })),
     {
       network_id: chainId1.toString(),
@@ -955,6 +1034,7 @@ export async function tenderlyExecute(
       save: true,
       save_if_fails: true,
       gas_price: 0,
+      gas_limit: 16_777_215,
     },
     {
       network_id: chainId1.toString(),
@@ -967,10 +1047,9 @@ export async function tenderlyExecute(
       save: true,
       save_if_fails: true,
       gas_price: 0,
+      gas_limit: 16_777_215,
     },
   ];
-
-  const chainId2 = bdm.hre.ethers.provider.network.chainId;
 
   console.log(`\n========================== TENDERLY ==========================\n`);
 
@@ -981,53 +1060,93 @@ export async function tenderlyExecute(
 
   const exec1 = bundle[bundle.length - 1].simulation;
 
-  console.log(` >>> PROPOSAL EXECUTED  ${id} \n`);
+  console.log(` >>> PROPOSAL EXECUTED  ${id}`);
   console.log(`Simulation ${exec1.id} done, status: ${exec1.status}`);
-  console.log(`Link: https://www.tdly.co/shared/simulation/${exec1.id}`);
-  let proposals;
-  if (chainId1 !== chainId2) {
-    proposals = await relayMessage(gdm, bdm, parseFloat(B0.toString()),  bundle[bundle.length - 1].transaction.transaction_info.logs);
+  console.log(`Link: https://www.tdly.co/shared/simulation/${exec1.id} \n`);
+  
+  const bdms = [bdm];
+  for (const dm of gdm.bridgedDeploymentManagers.values()) {
+    if (!bdms.includes(dm)) {
+      bdms.push(dm);
+    }
+  }
 
-    debug(`Proposals relayed: ${proposals.length}`);
-    const timelockL2 = await bdm.getContractOrThrow('timelock');
-    const delay = await timelockL2.delay();
-    const relayMessages = loadCachedRelayMessages();
-    const latestL2 = await bdm.hre.ethers.provider.getBlock('latest');
-    const maxEta = Math.max(...proposals.map(p => Number(p.eta || 0))) + delay.toNumber();
-    const T0L2 = BigInt(Math.max(latestL2.timestamp, maxEta + 1));
-    const B0L2 = Number(latestL2.number) + 1;
-    const simsL2 = relayMessages.map((msg, i, arr) => {
-      const isLast = i === arr.length - 1;
+  // make bdm contain only 1 dm per network
+  const uniqueBdms = new Map();
+  for (const dm of bdms) {
+    const chainId = dm.hre.ethers.provider.network.chainId;
+    if (!uniqueBdms.has(chainId)) {
+      uniqueBdms.set(chainId, dm);
+    }
+  }
+  bdms.length = 0;
+  bdms.push(...uniqueBdms.values());
 
-      const timestamp = isLast
-        ? Number(T0L2) 
-        : latestL2.timestamp; 
 
-      const block = isLast
-        ? B0L2 : latestL2.number;
+  for (const currentBdm of bdms) {
+    const chainId2 = currentBdm.hre.ethers.provider.network.chainId;
+    let proposals;
+    if (chainId1 !== chainId2) {
+      const relayPath = path.resolve(__dirname, '../../cache/relay.json');
+      if (existsSync(relayPath)) unlinkSync(relayPath);
 
-      return {
-        network_id: chainId2.toString(),
-        from: msg.signer,
-        to: msg.messenger,
-        block_number: Number(block),
-        block_header: {
-          timestamp: bdm.hre.ethers.utils.hexlify(Number(timestamp))
-        },
-        input: msg.callData,
-        save: true,
-        save_if_fails: true,
-        gas_price: 0,
-      };
-    });
+      proposals = await relayMessage(gdm, currentBdm, parseFloat(B0.toString()), bundle[bundle.length - 1].transaction.transaction_info.logs);
 
-    if (simsL2.length > 0) {
-      const bundle2 = await simulateBundle(bdm, simsL2, Number(B0L2));
-      console.log(` >>> PROPOSAL RELAYED ${id} \n`);
-      const sim = bundle2[bundle2.length - 1];
-      await shareSimulation(bdm, sim.simulation.id);
-      console.log(`Simulation ${sim.simulation.id} done, status: ${sim.simulation.status}`);
-      console.log(`Link: https://www.tdly.co/shared/simulation/${sim.simulation.id}`);
+      debug(`Proposals relayed to ${currentBdm.network}: ${proposals?.length ?? 0}`);
+      
+      if (proposals && proposals.length > 0) {
+        const timelockL2 = await currentBdm.getContractOrThrow('timelock');
+        const delay = await timelockL2.delay();
+        const relayMessages = loadCachedRelayMessages();
+        const executeProposalSig = utils.id('executeProposal(uint256)').substring(0, 10);
+
+        const latestL2 = await currentBdm.hre.ethers.provider.getBlock('latest');
+        const maxEta = Math.max(...proposals.map(p => Number(p.eta || 0))) + delay.toNumber();
+        const T0L2 = Math.max(latestL2.timestamp, maxEta + 1);
+        const B0L2 = Number(latestL2.number) + 1;
+
+        let previousBlock = latestL2.number;
+        let previousTimestamp = T0L2;
+        const simsL2 = relayMessages.map((msg) => {
+          let block = previousBlock;
+          let timestamp = previousTimestamp;
+
+          if (msg.callData.startsWith(executeProposalSig) && !msg.eta) {
+            block = block + 1;
+            timestamp = timestamp + delay.toNumber() + 1;
+          }
+
+          previousBlock = block;
+          previousTimestamp = timestamp;
+
+          return {
+            network_id: chainId2.toString(),
+            from: msg.signer,
+            to: msg.messenger,
+            block_number: Number(block),
+            block_header: {
+              timestamp: currentBdm.hre.ethers.utils.hexlify(Number(timestamp))
+            },
+            input: msg.callData,
+            save: true,
+            save_if_fails: true,
+            gas_price: 0,
+          };
+        });
+
+        if (simsL2.length > 0) {
+          const bundle2 = await simulateBundle(currentBdm, simsL2, Number(B0L2));
+          
+          // filter from bundle every entry with simulation.input that starts with 0x0d61b519 i.e. executeProposal(uint256)
+          const filteredBundle = bundle2.filter(entry => entry.simulation.input.startsWith(executeProposalSig));
+          for (const sim of filteredBundle) {
+            await shareSimulation(currentBdm, sim.simulation.id);
+            console.log(`\nRelayed to ${currentBdm.network}`);
+            console.log(`Simulation ${sim.simulation.id} done, status: ${sim.simulation.status}`);
+            console.log(`Link: https://www.tdly.co/shared/simulation/${sim.simulation.id} \n`);
+          }
+        }
+      }
     }
   }
 
@@ -1043,10 +1162,12 @@ async function simulateBundle(
   const results = [];
 
   for (const sim of simulations) {
-    const { username, project, accessKey } = (dm.hre.config as any).tenderly;
+    const project = 'comet';
+    const username = process.env.TENDERLY_USERNAME || '';
+    const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
 
     // Merge rolling state changes with simulation's own state_objects
-    const stateObjects = sim.state_objects 
+    const stateObjects = sim.state_objects
       ? { ...rollingStateChanges, ...sim.state_objects }
       : rollingStateChanges;
 
@@ -1096,12 +1217,14 @@ async function simulateBundle(
 
     results.push(simResult);
   }
-  
   return results;
 }
 
 async function shareSimulation(dm: DeploymentManager, simulationId: string) {
-  const { username, project, accessKey } = (dm.hre.config as any).tenderly;
+  const project = 'comet';
+  const username = process.env.TENDERLY_USERNAME || '';
+  const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
+
   return axios.post(
     `https://api.tenderly.co/api/v1/account/${username}/project/${project}/simulations/${simulationId}/share`,
     {},
@@ -1112,6 +1235,175 @@ async function shareSimulation(dm: DeploymentManager, simulationId: string) {
       },
     }
   );
+}
+
+// storage slot:
+//   keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.GovernorCountingFractional")) - 1))
+//   & ~bytes32(uint256(0xff))
+const GOV_COUNTING_FRACTIONAL_STORAGE_LOCATION =
+  '0xd073797d8f9d07d835a3fc13195afeafd2f137da609f97a44f7a3aa434170800';
+
+/*
+Directly sets a proposal's forVotes tally high enough to satisfy both _quorumReached() and _voteSucceeded(),
+without casting any real votes.
+*/
+async function forceProposalVotesSucceeded(
+  vnetProvider: any,
+  governorAddress: string,
+  proposalId: BigNumber
+): Promise<void> {
+  const entrySlot = BigNumber.from(
+    utils.keccak256(
+      utils.defaultAbiCoder.encode(
+        ['uint256', 'uint256'],
+        [proposalId, GOV_COUNTING_FRACTIONAL_STORAGE_LOCATION]
+      )
+    )
+  );
+  const forVotesSlot = utils.hexZeroPad(entrySlot.add(1).toHexString(), 32);
+  const forVotesValue = utils.hexZeroPad(BigNumber.from(10_000_000).mul(BigNumber.from(10).pow(18)).toHexString(), 32);
+  await vnetProvider.send('tenderly_setStorageAt', [governorAddress, forVotesSlot, forVotesValue]);
+}
+
+/*
+Alternative to tenderlyExecute() that runs the migration's cached proposal through the real
+governor on a Tenderly Virtual TestNet (a persistent, sharable fork), instead of chaining together
+stateless Tenderly simulate-bundle calls. propose(), queue() and execute() are all real
+transactions, exactly as governance requires; only the vote itself is skipped.
+
+governanceDm is the deployment manager for the network that hosts the governor (e.g. mainnet).
+marketDm is the deployment manager for the market actually being migrated - for a non-bridged
+market (e.g. mainnet USDC) this is the exact same deployment manager as governanceDm; for a
+bridged market (e.g. Base WETH) it's the L2 side, and its own Virtual TestNet is only created if
+the proposal needs relaying there.
+*/
+export async function tenderlyVnetExecute(
+  governanceDm: DeploymentManager,
+  marketDm: DeploymentManager,
+  governor: Contract,
+  _timelock: Contract
+): Promise<void> {
+  console.log(`\n========================== TENDERLY VNET ==========================\n`);
+
+  const governanceVnet = await getOrCreateVirtualTestnet(governanceDm);
+  console.log(`Virtual TestNet ready for ${governanceDm.network}`);
+  console.log(`  Public RPC: ${governanceVnet.publicRpcUrl}`);
+  if (governanceVnet.dashboardUrl) {
+    console.log(`  Dashboard:  ${governanceVnet.dashboardUrl}`);
+  }
+
+  const governanceVnetEnv = await vnetHreForBase(governanceDm.network, governanceVnet.adminRpcUrl);
+  const governanceVnetDm = new DeploymentManager(governanceDm.network, governanceDm.deployment, governanceVnetEnv, {
+    writeCacheToDisk: false,
+    verificationStrategy: 'lazy',
+  });
+
+  const governanceVnetProvider = governanceVnetDm.hre.ethers.provider;
+  const vnetGovernor = governor.connect(governanceVnetProvider);
+
+  const proposalArgs = loadCachedProposal();
+  proposalArgs.pop(); // drop signatures; governor.propose(targets, values, calldatas, description)
+
+  const deployBytecodes = loadCachedBytecodes();
+  const proposerAddress = await (await governanceDm.getSigner()).getAddress();
+
+  await setEtherBalance(governanceVnetDm, proposerAddress, 10n ** 20n);
+  const proposerSigner = await governanceVnetDm.getSigner(proposerAddress);
+
+  for (const code of deployBytecodes) {
+    const tx = await proposerSigner.sendTransaction({ data: utils.hexlify(code) });
+    await tx.wait();
+  }
+
+  console.log('Submitting proposal to Virtual TestNet governor...');
+
+  const proposeTx = await vnetGovernor.connect(proposerSigner).propose(...proposalArgs);
+  const proposeReceipt: ContractReceipt = await proposeTx.wait();
+  const proposeEvent = proposeReceipt.events.find((event: Event) => event.event === 'ProposalCreated');
+  const [proposalId] = proposeEvent.args;
+  console.log(`Proposal ${proposalId.toString()} submitted on Virtual TestNet`);
+
+  await forceProposalVotesSucceeded(governanceVnetProvider, vnetGovernor.address, proposalId);
+
+  const deadline = (await vnetGovernor.proposalDeadline(proposalId)).toNumber();
+  const currentBlock = await governanceVnetProvider.getBlockNumber();
+  if (currentBlock <= deadline) {
+    await governanceVnetProvider.send('evm_increaseBlocks', [utils.hexlify(deadline - currentBlock + 1)]);
+  }
+
+  const startingBlockNumber = await governanceVnetProvider.getBlockNumber();
+
+  console.log(`Queueing proposal ${proposalId.toString()} (vote skipped via state override)...`);
+  const queueTx = await vnetGovernor.connect(proposerSigner)['queue(uint256)'](proposalId);
+  await queueTx.wait();
+
+  const eta = (await vnetGovernor.proposalEta(proposalId)).toNumber();
+  const latestBlock = await governanceVnetProvider.getBlock('latest');
+  if (latestBlock.timestamp <= eta) {
+    await governanceVnetProvider.send('evm_setNextBlockTimestamp', [eta + 1]);
+    await governanceVnetProvider.send('evm_mine', []);
+  }
+
+  console.log('Updating CCIP prices...');
+  await updateCCIPStats(governanceVnetDm);
+
+  console.log(`Executing proposal ${proposalId.toString()}...`);
+  const executeTx = await vnetGovernor.connect(proposerSigner)['execute(uint256)'](proposalId, { gasLimit: 30_000_000 });
+  await executeTx.wait();
+
+  console.log(`\n >>> PROPOSAL EXECUTED ${proposalId.toString()} \n`);
+  console.log(`Public RPC: ${governanceVnet.publicRpcUrl}`);
+  if (governanceVnet.dashboardUrl) {
+    console.log(`Dashboard:  ${governanceVnet.dashboardUrl}`);
+  }
+
+  // Collect every L2 this proposal touches: marketDm plus whatever the migration registered via
+  // addBridgedDeploymentManager() (multichain proposals)
+  const governanceChainId = governanceDm.hre.ethers.provider.network.chainId;
+  const candidateL2Dms = [marketDm, ...governanceDm.bridgedDeploymentManagers.values()];
+  const uniqueL2DmsByChainId = new Map<number, DeploymentManager>();
+  for (const dm of candidateL2Dms) {
+    const chainId = dm.hre.ethers.provider.network.chainId;
+    if (chainId !== governanceChainId && !uniqueL2DmsByChainId.has(chainId)) {
+      uniqueL2DmsByChainId.set(chainId, dm);
+    }
+  }
+  const l2Dms = [...uniqueL2DmsByChainId.values()];
+
+  if (l2Dms.length > 0) {
+    await governanceVnetDm.spider();
+  }
+
+  for (const l2Dm of l2Dms) {
+    try {
+      const l2Vnet = await getOrCreateVirtualTestnet(l2Dm);
+      console.log(`\nVirtual TestNet ready for ${l2Dm.network}`);
+      console.log(`  Public RPC: ${l2Vnet.publicRpcUrl}`);
+      if (l2Vnet.dashboardUrl) {
+        console.log(`  Dashboard:  ${l2Vnet.dashboardUrl}`);
+      }
+
+      const l2VnetEnv = await vnetHreForBase(l2Dm.network, l2Vnet.adminRpcUrl);
+      const l2VnetDm = new DeploymentManager(l2Dm.network, l2Dm.deployment, l2VnetEnv, {
+        writeCacheToDisk: false,
+        verificationStrategy: 'lazy',
+      });
+      await l2VnetDm.spider();
+      await l2VnetDm.getSigner(proposerAddress);
+
+      await relayMessage(governanceVnetDm, l2VnetDm, startingBlockNumber);
+
+      console.log(`\n >>> PROPOSAL RELAYED to ${l2Dm.network} \n`);
+      console.log(`Public RPC: ${l2Vnet.publicRpcUrl}`);
+      if (l2Vnet.dashboardUrl) {
+        console.log(`Dashboard:  ${l2Vnet.dashboardUrl}`);
+      }
+    } catch (e) {
+      console.log(`\n >>> FAILED to relay to ${l2Dm.network}: ${e.message} \n`);
+    }
+  }
+
+  console.log(`\n================================================================\n`);
 }
 
 export async function voteForOpenProposal(
@@ -1220,7 +1512,12 @@ export async function executeOpenProposal(
     console.log(`Updating CCIP prices...`);
     await updateCCIPStats(dm);
 
-    await governor.execute(id, { gasPrice: 0, gasLimit: 120000000 });
+    const tx = await governor.execute(id, { gasPrice: 0, gasLimit: 120000000 });
+    const receipt = await tx.wait();
+
+    if (receipt.gasUsed.toNumber() >= 16_777_215) {
+      throw new Error('Execution may have failed due to hitting gas limit');
+    }
   }
 
   await redeployRenzoOracle(dm);
@@ -1557,26 +1854,23 @@ export async function executeOpenProposalAndRelay(
   const startingBlockNumber =
     await governanceDeploymentManager.hre.ethers.provider.getBlockNumber();
   await executeOpenProposal(governanceDeploymentManager, openProposal);
+
   console.log(`Executed proposal ${openProposal.id} on ${governanceDeploymentManager.network}, checking if relay to ${bridgeDeploymentManager.network} is needed...`);
-  await mockAllRedstoneOracles(bridgeDeploymentManager);
-  console.log(`All Redstone oracles on ${bridgeDeploymentManager.network} are mocked`);
-  if (
-    await isBridgeProposal(
-      governanceDeploymentManager,
-      bridgeDeploymentManager,
-      openProposal
-    )
-  ) {
+
+  const bridgeManagers = await isBridgeProposal(
+    governanceDeploymentManager,
+    bridgeDeploymentManager,
+    openProposal
+  );
+
+  for (const bridgeManager of bridgeManagers) {
+    await mockAllRedstoneOracles(bridgeManager);
+    console.log(`All Redstone oracles on ${bridgeManager.network} are mocked`);
     await relayMessage(
       governanceDeploymentManager,
-      bridgeDeploymentManager,
+      bridgeManager,
       startingBlockNumber
     );
-  } else {
-    console.log(
-      `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Proposal ${openProposal.id} doesn't target bridge; not relaying`
-    );
-    return;
   }
 }
 
@@ -1642,7 +1936,7 @@ export async function timeUntilUnderwater({
   // XXX throw error if baseBalanceOf is positive and liquidationMargin is positive
   return Number(
     (-liquidationMargin * factorScale) / baseLiquidity / borrowRate +
-      fudgeFactor
+    fudgeFactor
   );
 }
 
@@ -1653,6 +1947,31 @@ export function applyL1ToL2Alias(address: string) {
 
 export function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
   return !!log?.raw?.topics && !!log?.raw?.data;
+}
+
+export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
+  try {
+    const configurator = await ctx.getConfigurator();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    // Use function selector to probe existence without reverting on unsupported networks
+    const iface = new ethers.utils.Interface([
+      'function marketAdminPermissionChecker() public view returns (address)'
+    ]);
+    const functionSelector = iface.getSighash('marketAdminPermissionChecker');
+    
+    const result = await ethers.provider.call({
+      to: configurator.address,
+      data: functionSelector
+    });
+    
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
 }
 
 /**
@@ -1689,4 +2008,61 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
     // If the call reverts or fails, extended pause is not supported
     return false;
   }
+}
+
+// returns indices of collaterals that have a supply cap and all collateral factors above zero.
+// pass `amount` to get only the first N of them, omit it to get all.
+export async function getUsableCollateralIndices(ctx: CometContext, amount?: number): Promise<number[]> {
+  const comet = await ctx.getComet();
+  const numAssets = await comet.numAssets();
+  const indices: number[] = [];
+
+  for (let i = 0; i < numAssets; i++) {
+    if (amount !== undefined && indices.length >= amount) break;
+
+    const info = await comet.getAssetInfo(i);
+
+    // We skip assets with a supply cap of 0
+    if (info.supplyCap.isZero()) continue;
+
+    // We skip assets with a borrow collateral factor, liquidate collateral factor, or liquidation factor of 0
+    if (info.borrowCollateralFactor.isZero() || info.liquidateCollateralFactor.isZero() || info.liquidationFactor.isZero()) continue;
+    
+    indices.push(i);
+  }
+  return indices;
+}
+
+// returns asset of collateral, supply amount, and borrow amount
+// borrow amount is 1.5 times the market's minimum borrow, or $100 of base when that minimum is worth less than $10.
+export async function getMinimumBorrowAmounts(context: CometContext, collateralIndex: number) {
+  const comet = await context.getComet();
+  const baseScale = (await comet.baseScale()).toBigInt();
+  const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+  const priceScale = (await comet.priceScale()).toBigInt();
+  const factorScale = (await comet.factorScale()).toBigInt();
+
+  // baseBorrowMin is an amount of the base token, not USD. Some markets set it to almost nothing (1 wei of USDC),
+  // which makes a meaningless borrow, so below $10 borrow $100 worth of base instead.
+  const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+  const baseBorrowMinUsd = (baseBorrowMin * basePrice) / baseScale;
+  const borrowAmount = baseBorrowMinUsd < 10n * priceScale
+    ? (100n * priceScale * baseScale) / basePrice
+    : (baseBorrowMin * 3n) / 2n;
+
+  const {
+    asset: collateralAddress,
+    priceFeed: collateralPriceFeed,
+    scale: collateralScaleBN,
+    borrowCollateralFactor
+  } = await comet.getAssetInfo(collateralIndex);
+  const collateralAsset = context.getAssetByAddress(collateralAddress);
+  const collateralScale = collateralScaleBN.toBigInt();
+  const collateralPrice = (await comet.getPrice(collateralPriceFeed)).toBigInt();
+
+  let supplyAmount = (borrowAmount * basePrice * collateralScale) / (baseScale * collateralPrice);
+  supplyAmount = (supplyAmount * factorScale) / borrowCollateralFactor.toBigInt();
+  supplyAmount = (supplyAmount * 11n) / 10n;
+
+  return { collateralAsset, supplyAmount, borrowAmount };
 }

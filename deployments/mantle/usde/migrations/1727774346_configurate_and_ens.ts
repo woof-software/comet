@@ -268,7 +268,7 @@ export default migration('1727774346_configurate_and_ens', {
       'COMP',
       mantleCOMP,
       'mantle',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     // 1.
