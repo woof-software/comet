@@ -3,6 +3,7 @@
   "symbol": "cDAIv3",
   "baseToken": "DAI",
   "borrowMin": "1000e6",
+  "pauseGuardian": "0xbbf3f1421D886E9b2c5D716B5192aC998af2012c",
   "storeFrontPriceFactor": 0.5,
   "targetReserves": "5000000e6",
   "rates": {
