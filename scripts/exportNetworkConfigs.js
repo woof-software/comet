@@ -1,11 +1,12 @@
-const fs = require('fs');
-const path = require('path');
-const dotenv  = require('dotenv');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-dotenv.config();
+import 'dotenv/config';
 
-const configPath = path.resolve(__dirname, '../hardhat.config.ts');
-const outputPath = path.resolve(__dirname, '../.env.forge-temp');
+const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
+const configPath = path.resolve(scriptDirectory, '../hardhat.config.ts');
+const outputPath = path.resolve(scriptDirectory, '../.env.forge-temp');
 
 const fileContent = fs.readFileSync(configPath, 'utf-8');
 

@@ -1,7 +1,12 @@
 import hre from 'hardhat';
 import { expect } from 'chai';
-import { getArtifactSpec, loadMigrations, migration } from '../Migration';
-import { DeploymentManager } from '../../deployment_manager/DeploymentManager';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { getArtifactSpec, loadMigrations, migration } from '../Migration.js';
+import { DeploymentManager } from '../../deployment_manager/DeploymentManager.js';
+
+const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 describe('Migration', () => {
   it('test a simple migration', async () => {
@@ -25,7 +30,7 @@ describe('Migration', () => {
   });
 
   it('loads a simple migration', async () => {
-    let [m] = await loadMigrations([`${__dirname}/migration.ts`]);
+    let [m] = await loadMigrations([path.join(testDirectory, 'migration.ts')]);
     let dm = new DeploymentManager('test-network', 'test-market', hre);
     expect(m.name).to.eql('test migration');
     expect(await m.actions.prepare(dm, dm)).to.eql(['step 1']);

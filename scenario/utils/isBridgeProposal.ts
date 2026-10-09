@@ -1,8 +1,10 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { getRoots } from '../../plugins/deployment_manager/Roots';
-import { OpenProposal } from '../context/Gov';
-import { utils } from 'ethers';
-import { forkedHreForBase } from '../../plugins/scenario/utils/hreForBase';
+import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { getRoots } from '../../plugins/deployment_manager/Roots.js';
+import type { OpenProposal } from '../context/Gov.js';
+import { AbiCoder, dataSlice, toNumber } from 'ethers';
+import { forkedHreForBase } from '../../plugins/scenario/utils/hreForBase.js';
+
+const abiCoder = AbiCoder.defaultAbiCoder();
 
 const EXCLUDED_ROOTS = ['comptrollerV2', 'comet', 'configurator', 'rewards', 'bulker', 'cometFactory'];
 
@@ -50,8 +52,8 @@ function parseCCTPNetworks(openProposal: OpenProposal, cctpAddress: string): str
 
     const calldata = openProposal.calldatas[i];
     // destinationDomain is the second parameter (uint32) in all depositForBurn variants
-    const decoded = utils.defaultAbiCoder.decode(['uint256', 'uint32'], utils.hexDataSlice(calldata, 0, 64));
-    const domain = decoded[1];
+    const decoded = abiCoder.decode(['uint256', 'uint32'], dataSlice(calldata, 0, 64));
+    const domain = toNumber(decoded[1]);
     const network = CCTP_DOMAIN_TO_NETWORK[domain];
     if (network) networks.push(network);
   }
@@ -90,7 +92,7 @@ export async function isBridgeProposal(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
   openProposal: OpenProposal
-) {
+): Promise<DeploymentManager[]> {
   const bridgeNetworks = await getProposalBridgeNetworks(governanceDeploymentManager, openProposal);
   const otherBridgeNetworks = bridgeNetworks.filter(n => n !== bridgeDeploymentManager.network);
   const bridgeManagers = [bridgeDeploymentManager];
@@ -105,7 +107,7 @@ export async function isBridgeProposal(
       bridgeManagers.push(existingBridgeManagers[bridgeNetwork]);
       continue;
     }
-    
+
     let deploymentToken: string;
 
     let dm: DeploymentManager;
@@ -146,10 +148,9 @@ export async function isBridgeProposal(
       const hre = await forkedHreForBase({ name: '', network: bridgeNetwork, deployment: '' });
       dm = await governanceDeploymentManager.addBridgedDeploymentManager(bridgeNetwork, deploymentToken, hre);
     }
-    
+
     existingBridgeManagers[bridgeNetwork] = dm;
     bridgeManagers.push(dm);
   }
   return bridgeManagers;
 }
-

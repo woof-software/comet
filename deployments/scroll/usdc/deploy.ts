@@ -1,5 +1,6 @@
-import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet, exp, wait } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager/index.js';
+import type { DeploySpec } from '../../../src/deploy/index.js';
+import { deployComet, exp, wait } from '../../../src/deploy/index.js';
 
 const HOUR = 60 * 60;
 const DAY = 24 * HOUR;
@@ -11,7 +12,6 @@ export default async function deploy(
   deploySpec: DeploySpec
 ): Promise<Deployed> {
   const trace = deploymentManager.tracer();
-  const ethers = deploymentManager.hre.ethers;
 
   // Pull in existing assets
   const WETH = await deploymentManager.existing('WETH','0x5300000000000000000000000000000000000004','scroll');
@@ -27,12 +27,12 @@ export default async function deploy(
   const bridgeReceiver = await deploymentManager.deploy(
     'bridgeReceiver',
     'bridges/scroll/ScrollBridgeReceiver.sol',
-    [l2Messenger.address]
+    [await l2Messenger.getAddress()]
   );
 
   // Deploy Local Timelock
   const localTimelock = await deploymentManager.deploy('timelock', 'vendor/Timelock.sol', [
-    bridgeReceiver.address, // admin
+    await bridgeReceiver.getAddress(), // admin
     1 * DAY,                // delay
     14 * DAY,               // grace period
     12 * HOUR,              // minimum delay
@@ -58,7 +58,7 @@ export default async function deploy(
       trace(`Initializing BridgeReceiver`);
       await bridgeReceiver.initialize(
         MAINNET_TIMELOCK, // govTimelock
-        localTimelock.address // localTimelock
+        await localTimelock.getAddress() // localTimelock
       );
       trace(`BridgeReceiver initialized`);
     }
@@ -71,7 +71,7 @@ export default async function deploy(
   // Deploy Bulker
   const bulker = await deploymentManager.deploy('bulker','bulkers/BaseBulker.sol', [
     await comet.governor(),        // admin_
-    WETH.address,                  // weth_
+    await WETH.getAddress(),                  // weth_
   ]);
 
   return {

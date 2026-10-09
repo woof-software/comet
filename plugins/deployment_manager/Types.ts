@@ -1,4 +1,4 @@
-import { TransactionResponse } from '@ethersproject/abstract-provider';
+import type { TransactionResponse } from 'ethers';
 
 export type ABI = string | any[];
 export type Address = string;

@@ -1,5 +1,5 @@
-import { Address, Alias } from './Types';
-import { Cache } from './Cache';
+import type { Address, Alias } from './Types.js';
+import { Cache } from './Cache.js';
 
 export type Aliases = Map<Alias, Address>;
 export type InvertedAliases = Map<Address, Alias[]>;

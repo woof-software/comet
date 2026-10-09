@@ -1,9 +1,12 @@
-import { CometContext, scenario } from './context/CometContext';
-import { constants, utils } from 'ethers';
+import type { CometContext } from './context/CometContext.js';
+import { scenario } from './context/CometContext.js';
+import { AbiCoder, MaxUint256, ZeroAddress } from 'ethers';
 import { expect } from 'chai';
-import { expectBase, isRewardSupported, isBulkerSupported, getExpectedBaseBalance, matchesDeployment } from './utils';
-import { exp } from '../test/helpers';
-import { getConfigForScenario } from './utils/scenarioHelper';
+import { expectBase, isRewardSupported, isBulkerSupported, getExpectedBaseBalance, matchesDeployment } from './utils/index.js';
+import { exp } from '../test/helpers.js';
+import { getConfigForScenario } from './utils/scenarioHelper.js';
+
+const abiCoder = AbiCoder.defaultAbiCoder();
 
 async function hasNativeAsCollateral(ctx: CometContext): Promise<boolean> {
   const comet = await ctx.getComet();
@@ -49,11 +52,11 @@ scenario(
     const wrappedNativeToken = await bulker.wrappedNativeToken();
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseScale = (await comet.baseScale()).toBigInt();
+    const baseScale = await comet.baseScale();
     // if asset 0 is native token we took asset 1
     const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
-    const collateralScale = scaleBN.toBigInt();
+    const collateralScale = scaleBN;
     const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
     const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
@@ -61,8 +64,8 @@ scenario(
     const toWithdrawWron = exp(0.005, 18);
 
     // Approvals
-    await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await collateralAsset.approve(albert, await comet.getAddress());
+    await albert.allow(await bulker.getAddress(), true);
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
@@ -75,11 +78,11 @@ scenario(
     // 3. Transfers 500 base to Betty
     // 4. Supplies 0.01 RON
     // 5. Withdraws 0.005 RON
-    const supplyAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, collateralAsset.address, toSupplyCollateral]);
-    const withdrawAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, baseAsset.address, toBorrowBase]);
-    const transferAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, betty.address, baseAsset.address, toTransferBase]);
-    const supplyEthCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toSupplyWron]);
-    const withdrawEthCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toWithdrawWron]);
+    const supplyAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, collateralAsset.address, toSupplyCollateral]);
+    const withdrawAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, baseAsset.address, toBorrowBase]);
+    const transferAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), betty.address, baseAsset.address, toTransferBase]);
+    const supplyEthCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toSupplyWron]);
+    const withdrawEthCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toWithdrawWron]);
     const calldata = [
       supplyAssetCalldata,
       withdrawAssetCalldata,
@@ -101,14 +104,14 @@ scenario(
     const txn = await albert.invoke({ actions, calldata }, { value: toSupplyWron });
 
     // Final expectations
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const baseIndexScale = await comet.baseIndexScale();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
     const baseTransferred = getExpectedBaseBalance(toTransferBase, baseIndexScale, baseSupplyIndex);
     expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(toSupplyCollateral);
     if (await hasNativeAsCollateral(context)) expect(await comet.collateralBalanceOf(albert.address, wrappedNativeToken)).to.be.equal(toSupplyWron - toWithdrawWron);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(toBorrowBase);
-    expectBase((await comet.balanceOf(betty.address)).toBigInt(), baseTransferred);
-    expectBase((await comet.borrowBalanceOf(albert.address)).toBigInt(), toBorrowBase + toTransferBase - toWithdrawWron);
+    expectBase(await comet.balanceOf(betty.address), baseTransferred);
+    expectBase(await comet.borrowBalanceOf(albert.address), toBorrowBase + toTransferBase - toWithdrawWron);
 
     return txn; // return txn to measure gas
   }
@@ -141,13 +144,13 @@ scenario(
     const wrappedNativeToken = await bulker.wrappedNativeToken();
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseScale = (await comet.baseScale()).toBigInt();
+    const baseScale = await comet.baseScale();
     // if asset 0 is native token we took asset 1
     const { asset: asset0, scale: scale0 } = await comet.getAssetInfo(0);
     const { asset: asset1, scale: scale1 } = await comet.getAssetInfo(1);
     const { asset: collateralAssetAddress, scale: scaleBN } = asset0 === wrappedNativeToken ? { asset: asset1, scale: scale1 } : { asset: asset0, scale: scale0 };
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
-    const collateralScale = scaleBN.toBigInt();
+    const collateralScale = scaleBN;
     const toSupplyCollateral = BigInt(asset0 === wrappedNativeToken ? getConfigForScenario(context).bulkerAsset1 : getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
     const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
@@ -155,8 +158,8 @@ scenario(
     const toWithdrawEth = exp(0.005, 18);
 
     // Approvals
-    await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await collateralAsset.approve(albert, await comet.getAddress());
+    await albert.allow(await bulker.getAddress(), true);
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
@@ -169,11 +172,11 @@ scenario(
     // 3. Transfers 500 base to Betty
     // 4. Supplies 0.01 ETH
     // 5. Withdraws 0.005 ETH
-    const supplyAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, collateralAsset.address, toSupplyCollateral]);
-    const withdrawAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, baseAsset.address, toBorrowBase]);
-    const transferAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, betty.address, baseAsset.address, toTransferBase]);
-    const supplyEthCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toSupplyEth]);
-    const withdrawEthCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toWithdrawEth]);
+    const supplyAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, collateralAsset.address, toSupplyCollateral]);
+    const withdrawAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, baseAsset.address, toBorrowBase]);
+    const transferAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), betty.address, baseAsset.address, toTransferBase]);
+    const supplyEthCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toSupplyEth]);
+    const withdrawEthCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toWithdrawEth]);
     const calldata = [
       supplyAssetCalldata,
       withdrawAssetCalldata,
@@ -195,14 +198,14 @@ scenario(
     const txn = await albert.invoke({ actions, calldata }, { value: toSupplyEth });
 
     // Final expectations
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const baseIndexScale = await comet.baseIndexScale();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
     const baseTransferred = getExpectedBaseBalance(toTransferBase, baseIndexScale, baseSupplyIndex);
     expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(toSupplyCollateral);
     if (await hasNativeAsCollateral(context)) expect(await comet.collateralBalanceOf(albert.address, wrappedNativeToken)).to.be.equal(toSupplyEth - toWithdrawEth);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(toBorrowBase);
-    expectBase((await comet.balanceOf(betty.address)).toBigInt(), baseTransferred);
-    expectBase((await comet.borrowBalanceOf(albert.address)).toBigInt(), toBorrowBase + toTransferBase);
+    expectBase(await comet.balanceOf(betty.address), baseTransferred);
+    expectBase(await comet.borrowBalanceOf(albert.address), toBorrowBase + toTransferBase);
 
     return txn; // return txn to measure gas
   }
@@ -233,10 +236,10 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseScale = (await comet.baseScale()).toBigInt();
+    const baseScale = await comet.baseScale();
     const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
-    const collateralScale = scaleBN.toBigInt();
+    const collateralScale = scaleBN;
     const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
     const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
@@ -244,8 +247,8 @@ scenario(
     const toWithdrawEth = exp(0.005, 18);
 
     // Approvals
-    await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await collateralAsset.approve(albert, await comet.getAddress());
+    await albert.allow(await bulker.getAddress(), true);
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
@@ -258,11 +261,11 @@ scenario(
     // 3. Transfers 500 base to Betty
     // 4. Supplies 0.01 ETH
     // 5. Withdraws 0.005 ETH
-    const supplyAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, collateralAsset.address, toSupplyCollateral]);
-    const withdrawAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, baseAsset.address, toBorrowBase]);
-    const transferAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, betty.address, baseAsset.address, toTransferBase]);
-    const supplyNativeTokenCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toSupplyEth]);
-    const withdrawNativeTokenCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toWithdrawEth]);
+    const supplyAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, collateralAsset.address, toSupplyCollateral]);
+    const withdrawAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, baseAsset.address, toBorrowBase]);
+    const transferAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), betty.address, baseAsset.address, toTransferBase]);
+    const supplyNativeTokenCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toSupplyEth]);
+    const withdrawNativeTokenCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toWithdrawEth]);
     const calldata = [
       supplyAssetCalldata,
       withdrawAssetCalldata,
@@ -280,13 +283,13 @@ scenario(
     const txn = await albert.invoke({ actions, calldata }, { value: toSupplyEth });
 
     // Final expectations
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const baseIndexScale = await comet.baseIndexScale();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
     const baseTransferred = getExpectedBaseBalance(toTransferBase, baseIndexScale, baseSupplyIndex);
     expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(toSupplyCollateral);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(toBorrowBase);
-    expectBase((await comet.balanceOf(betty.address)).toBigInt(), baseTransferred);
-    expectBase((await comet.borrowBalanceOf(albert.address)).toBigInt(), toBorrowBase + toTransferBase - (toSupplyEth - toWithdrawEth));
+    expectBase(await comet.balanceOf(betty.address), baseTransferred);
+    expectBase(await comet.borrowBalanceOf(albert.address), toBorrowBase + toTransferBase - (toSupplyEth - toWithdrawEth));
 
     return txn; // return txn to measure gas
   }
@@ -316,12 +319,12 @@ scenario(
     const wrappedNativeToken = await bulker.wrappedNativeToken();
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseScale = (await comet.baseScale()).toBigInt();
+    const baseScale = await comet.baseScale();
     // if asset 0 is native token we took asset 1
     const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
-    const collateralScale = scaleBN.toBigInt();
-    const [rewardTokenAddress] = await rewards.rewardConfig(comet.address);
+    const collateralScale = scaleBN;
+    const [rewardTokenAddress] = await rewards.rewardConfig(await comet.getAddress());
     const toSupplyBase = BigInt(getConfigForScenario(context).bulkerBase) * baseScale;
     const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
@@ -330,21 +333,21 @@ scenario(
     const toWithdrawEth = exp(0.005, 18);
 
     // Approvals
-    await baseAsset.approve(albert, comet.address);
-    await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await baseAsset.approve(albert, await comet.getAddress());
+    await collateralAsset.approve(albert, await comet.getAddress());
+    await albert.allow(await bulker.getAddress(), true);
 
     // Accrue some rewards to Albert, then transfer away Albert's supplied base
     await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: toSupplyBase });
     await world.increaseTime(86400); // fast forward a day
-    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 }); // transfer all base away
+    await albert.transferAsset({ dst: ZeroAddress, asset: baseAssetAddress, amount: MaxUint256 }); // transfer all base away
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
     expect(await comet.balanceOf(albert.address)).to.be.equal(0n);
     const startingRewardBalance = await albert.getErc20Balance(rewardTokenAddress);
-    const rewardOwed = ((await rewards.callStatic.getRewardOwed(comet.address, albert.address)).owed).toBigInt();
+    const rewardOwed = (await rewards.getRewardOwed.staticCall(await comet.getAddress(), albert.address)).owed;
     const expectedFinalRewardBalance = collateralAssetAddress === rewardTokenAddress ?
       startingRewardBalance + rewardOwed - toSupplyCollateral :
       startingRewardBalance + rewardOwed;
@@ -356,12 +359,12 @@ scenario(
     // 4. Supplies 0.01 ETH
     // 5. Withdraws 0.005 ETH
     // 6. Claim rewards
-    const supplyAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, collateralAsset.address, toSupplyCollateral]);
-    const withdrawAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, baseAsset.address, toBorrowBase]);
-    const transferAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, betty.address, baseAsset.address, toTransferBase]);
-    const supplyEthCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toSupplyEth]);
-    const withdrawEthCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toWithdrawEth]);
-    const claimRewardCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'bool'], [comet.address, rewards.address, albert.address, true]);
+    const supplyAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, collateralAsset.address, toSupplyCollateral]);
+    const withdrawAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, baseAsset.address, toBorrowBase]);
+    const transferAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), betty.address, baseAsset.address, toTransferBase]);
+    const supplyEthCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toSupplyEth]);
+    const withdrawEthCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toWithdrawEth]);
+    const claimRewardCalldata = abiCoder.encode(['address', 'address', 'address', 'bool'], [await comet.getAddress(), await rewards.getAddress(), albert.address, true]);
     const calldata = [
       supplyAssetCalldata,
       withdrawAssetCalldata,
@@ -385,15 +388,15 @@ scenario(
     const txn = await albert.invoke({ actions, calldata }, { value: toSupplyEth });
 
     // Final expectations
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const baseIndexScale = await comet.baseIndexScale();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
     const baseTransferred = getExpectedBaseBalance(toTransferBase, baseIndexScale, baseSupplyIndex);
     expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(toSupplyCollateral);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(toBorrowBase);
     if (await hasNativeAsCollateral(context)) expect(await comet.collateralBalanceOf(albert.address, wrappedNativeToken)).to.be.equal(toSupplyEth - toWithdrawEth);
     expect(await albert.getErc20Balance(rewardTokenAddress)).to.be.equal(expectedFinalRewardBalance);
-    expectBase((await comet.balanceOf(betty.address)).toBigInt(), baseTransferred);
-    expectBase((await comet.borrowBalanceOf(albert.address)).toBigInt(), toBorrowBase + toTransferBase);
+    expectBase(await comet.balanceOf(betty.address), baseTransferred);
+    expectBase(await comet.borrowBalanceOf(albert.address), toBorrowBase + toTransferBase);
 
     return txn; // return txn to measure gas
   }
@@ -426,14 +429,14 @@ scenario(
     const wrappedNativeToken = await bulker.wrappedNativeToken();
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseScale = (await comet.baseScale()).toBigInt();
+    const baseScale = await comet.baseScale();
     // if asset 0 is native token we took asset 1
     const { asset: asset0, scale: scale0 } = await comet.getAssetInfo(0);
     const { asset: asset1, scale: scale1 } = await comet.getAssetInfo(1);
     const { asset: collateralAssetAddress, scale: scaleBN } = asset0 === wrappedNativeToken ? { asset: asset1, scale: scale1 } : { asset: asset0, scale: scale0 };
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
-    const collateralScale = scaleBN.toBigInt();
-    const [rewardTokenAddress] = await rewards.rewardConfig(comet.address);
+    const collateralScale = scaleBN;
+    const [rewardTokenAddress] = await rewards.rewardConfig(await comet.getAddress());
     const toSupplyBase = BigInt(getConfigForScenario(context).bulkerBase) * baseScale;
     const toSupplyCollateral = BigInt(asset0 === wrappedNativeToken ? getConfigForScenario(context).bulkerAsset1 : getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
@@ -442,21 +445,21 @@ scenario(
     const toWithdrawEth = exp(0.005, 18);
 
     // Approvals
-    await baseAsset.approve(albert, comet.address);
-    await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await baseAsset.approve(albert, await comet.getAddress());
+    await collateralAsset.approve(albert, await comet.getAddress());
+    await albert.allow(await bulker.getAddress(), true);
 
     // Accrue some rewards to Albert, then transfer away Albert's supplied base
     await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: toSupplyBase });
     await world.increaseTime(86400); // fast forward a day
-    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 }); // transfer all base away
+    await albert.transferAsset({ dst: ZeroAddress, asset: baseAssetAddress, amount: MaxUint256 }); // transfer all base away
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
     expect(await comet.balanceOf(albert.address)).to.be.equal(0n);
     const startingRewardBalance = await albert.getErc20Balance(rewardTokenAddress);
-    const rewardOwed = ((await rewards.callStatic.getRewardOwed(comet.address, albert.address)).owed).toBigInt();
+    const rewardOwed = (await rewards.getRewardOwed.staticCall(await comet.getAddress(), albert.address)).owed;
     const expectedFinalRewardBalance = collateralAssetAddress === rewardTokenAddress ?
       startingRewardBalance + rewardOwed - toSupplyCollateral :
       startingRewardBalance + rewardOwed;
@@ -468,12 +471,12 @@ scenario(
     // 4. Supplies 0.01 ETH
     // 5. Withdraws 0.005 ETH
     // 6. Claim rewards
-    const supplyAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, collateralAsset.address, toSupplyCollateral]);
-    const withdrawAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, baseAsset.address, toBorrowBase]);
-    const transferAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, betty.address, baseAsset.address, toTransferBase]);
-    const supplyEthCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toSupplyEth]);
-    const withdrawEthCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toWithdrawEth]);
-    const claimRewardCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'bool'], [comet.address, rewards.address, albert.address, true]);
+    const supplyAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, collateralAsset.address, toSupplyCollateral]);
+    const withdrawAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, baseAsset.address, toBorrowBase]);
+    const transferAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), betty.address, baseAsset.address, toTransferBase]);
+    const supplyEthCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toSupplyEth]);
+    const withdrawEthCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toWithdrawEth]);
+    const claimRewardCalldata = abiCoder.encode(['address', 'address', 'address', 'bool'], [await comet.getAddress(), await rewards.getAddress(), albert.address, true]);
     const calldata = [
       supplyAssetCalldata,
       withdrawAssetCalldata,
@@ -497,15 +500,15 @@ scenario(
     const txn = await albert.invoke({ actions, calldata }, { value: toSupplyEth });
 
     // Final expectations
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const baseIndexScale = await comet.baseIndexScale();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
     const baseTransferred = getExpectedBaseBalance(toTransferBase, baseIndexScale, baseSupplyIndex);
     expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(toSupplyCollateral);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(toBorrowBase);
     if (await hasNativeAsCollateral(context)) expect(await comet.collateralBalanceOf(albert.address, wrappedNativeToken)).to.be.equal(toSupplyEth - toWithdrawEth);
     expect(await albert.getErc20Balance(rewardTokenAddress)).to.be.equal(expectedFinalRewardBalance);
-    expectBase((await comet.balanceOf(betty.address)).toBigInt(), baseTransferred);
-    expectBase((await comet.borrowBalanceOf(albert.address)).toBigInt(), toBorrowBase + toTransferBase);
+    expectBase(await comet.balanceOf(betty.address), baseTransferred);
+    expectBase(await comet.borrowBalanceOf(albert.address), toBorrowBase + toTransferBase);
 
     return txn; // return txn to measure gas
   }
@@ -538,14 +541,14 @@ scenario(
     const wrappedNativeToken = await bulker.wrappedNativeToken();
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseScale = (await comet.baseScale()).toBigInt();
+    const baseScale = await comet.baseScale();
     // if asset 0 is native token we took asset 1
     const { asset: asset0, scale: scale0 } = await comet.getAssetInfo(0);
     const { asset: asset1, scale: scale1 } = await comet.getAssetInfo(1);
     const { asset: collateralAssetAddress, scale: scaleBN } = asset0 === wrappedNativeToken ? { asset: asset1, scale: scale1 } : { asset: asset0, scale: scale0 };
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
-    const collateralScale = scaleBN.toBigInt();
-    const [rewardTokenAddress] = await rewards.rewardConfig(comet.address);
+    const collateralScale = scaleBN;
+    const [rewardTokenAddress] = await rewards.rewardConfig(await comet.getAddress());
     const toSupplyBase = BigInt(getConfigForScenario(context).bulkerBase) * baseScale;
     const toSupplyCollateral = BigInt(asset0 === wrappedNativeToken ? getConfigForScenario(context).bulkerAsset1 : getConfigForScenario(context).bulkerAsset) * collateralScale;
     const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
@@ -554,21 +557,21 @@ scenario(
     const toWithdrawEth = exp(0.005, 18);
 
     // Approvals
-    await baseAsset.approve(albert, comet.address);
-    await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await baseAsset.approve(albert, await comet.getAddress());
+    await collateralAsset.approve(albert, await comet.getAddress());
+    await albert.allow(await bulker.getAddress(), true);
 
     // Accrue some rewards to Albert, then transfer away Albert's supplied base
     await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: toSupplyBase });
     await world.increaseTime(86400); // fast forward a day
-    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 }); // transfer all base away
+    await albert.transferAsset({ dst: ZeroAddress, asset: baseAssetAddress, amount: MaxUint256 }); // transfer all base away
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
     expect(await comet.balanceOf(albert.address)).to.be.equal(0n);
     const startingRewardBalance = await albert.getErc20Balance(rewardTokenAddress);
-    const rewardOwed = ((await rewards.callStatic.getRewardOwed(comet.address, albert.address)).owed).toBigInt();
+    const rewardOwed = (await rewards.getRewardOwed.staticCall(await comet.getAddress(), albert.address)).owed;
     const expectedFinalRewardBalance = collateralAssetAddress === rewardTokenAddress ?
       startingRewardBalance + rewardOwed - toSupplyCollateral :
       startingRewardBalance + rewardOwed;
@@ -580,12 +583,12 @@ scenario(
     // 4. Supplies 0.01 ETH
     // 5. Withdraws 0.005 ETH
     // 6. Claim rewards
-    const supplyAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, collateralAsset.address, toSupplyCollateral]);
-    const withdrawAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, baseAsset.address, toBorrowBase]);
-    const transferAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, betty.address, baseAsset.address, toTransferBase]);
-    const supplyEthCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toSupplyEth]);
-    const withdrawEthCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toWithdrawEth]);
-    const claimRewardCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'bool'], [comet.address, rewards.address, albert.address, true]);
+    const supplyAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, collateralAsset.address, toSupplyCollateral]);
+    const withdrawAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, baseAsset.address, toBorrowBase]);
+    const transferAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), betty.address, baseAsset.address, toTransferBase]);
+    const supplyEthCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toSupplyEth]);
+    const withdrawEthCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toWithdrawEth]);
+    const claimRewardCalldata = abiCoder.encode(['address', 'address', 'address', 'bool'], [await comet.getAddress(), await rewards.getAddress(), albert.address, true]);
     const calldata = [
       supplyAssetCalldata,
       withdrawAssetCalldata,
@@ -609,15 +612,15 @@ scenario(
     const txn = await albert.invoke({ actions, calldata }, { value: toSupplyEth });
 
     // Final expectations
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const baseIndexScale = await comet.baseIndexScale();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
     const baseTransferred = getExpectedBaseBalance(toTransferBase, baseIndexScale, baseSupplyIndex);
     expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(toSupplyCollateral);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(toBorrowBase);
     if (await hasNativeAsCollateral(context)) expect(await comet.collateralBalanceOf(albert.address, wrappedNativeToken)).to.be.equal(toSupplyEth - toWithdrawEth);
     expect(await albert.getErc20Balance(rewardTokenAddress)).to.be.equal(expectedFinalRewardBalance);
-    expectBase((await comet.balanceOf(betty.address)).toBigInt(), baseTransferred);
-    expectBase((await comet.borrowBalanceOf(albert.address)).toBigInt(), toBorrowBase + toTransferBase);
+    expectBase(await comet.balanceOf(betty.address), baseTransferred);
+    expectBase(await comet.borrowBalanceOf(albert.address), toBorrowBase + toTransferBase);
 
     return txn; // return txn to measure gas
   }
@@ -646,11 +649,11 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseScale = (await comet.baseScale()).toBigInt();
+    const baseScale = await comet.baseScale();
     const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
-    const collateralScale = scaleBN.toBigInt();
-    const [rewardTokenAddress] = await rewards.rewardConfig(comet.address);
+    const collateralScale = scaleBN;
+    const [rewardTokenAddress] = await rewards.rewardConfig(await comet.getAddress());
     const toSupplyBase = BigInt(getConfigForScenario(context).bulkerBase1) * baseScale;
     const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset2) * collateralScale;
     const toBorrowBase = 5n * baseScale;
@@ -659,21 +662,21 @@ scenario(
     const toWithdrawEth = exp(0.005, 18);
 
     // Approvals
-    await baseAsset.approve(albert, comet.address);
-    await collateralAsset.approve(albert, comet.address);
-    await albert.allow(bulker.address, true);
+    await baseAsset.approve(albert, await comet.getAddress());
+    await collateralAsset.approve(albert, await comet.getAddress());
+    await albert.allow(await bulker.getAddress(), true);
 
     // Accrue some rewards to Albert, then transfer away Albert's supplied base
     await albert.safeSupplyAsset({ asset: baseAssetAddress, amount: toSupplyBase });
     await world.increaseTime(86400); // fast forward a day
-    await albert.transferAsset({ dst: constants.AddressZero, asset: baseAssetAddress, amount: constants.MaxUint256 }); // transfer all base away
+    await albert.transferAsset({ dst: ZeroAddress, asset: baseAssetAddress, amount: MaxUint256 }); // transfer all base away
 
     // Initial expectations
     expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupplyCollateral);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
     expect(await comet.balanceOf(albert.address)).to.be.equal(0n);
     const startingRewardBalance = await albert.getErc20Balance(rewardTokenAddress);
-    const rewardOwed = ((await rewards.callStatic.getRewardOwed(comet.address, albert.address)).owed).toBigInt();
+    const rewardOwed = (await rewards.getRewardOwed.staticCall(await comet.getAddress(), albert.address)).owed;
     const expectedFinalRewardBalance = collateralAssetAddress === rewardTokenAddress ?
       startingRewardBalance + rewardOwed - toSupplyCollateral :
       startingRewardBalance + rewardOwed;
@@ -685,12 +688,12 @@ scenario(
     // 4. Supplies 0.01 ETH
     // 5. Withdraws 0.005 ETH
     // 6. Claim rewards
-    const supplyAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, collateralAsset.address, toSupplyCollateral]);
-    const withdrawAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, albert.address, baseAsset.address, toBorrowBase]);
-    const transferAssetCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'uint'], [comet.address, betty.address, baseAsset.address, toTransferBase]);
-    const supplyNativeTokenCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toSupplyEth]);
-    const withdrawNativeTokenCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'uint'], [comet.address, albert.address, toWithdrawEth]);
-    const claimRewardCalldata = utils.defaultAbiCoder.encode(['address', 'address', 'address', 'bool'], [comet.address, rewards.address, albert.address, true]);
+    const supplyAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, collateralAsset.address, toSupplyCollateral]);
+    const withdrawAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), albert.address, baseAsset.address, toBorrowBase]);
+    const transferAssetCalldata = abiCoder.encode(['address', 'address', 'address', 'uint'], [await comet.getAddress(), betty.address, baseAsset.address, toTransferBase]);
+    const supplyNativeTokenCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toSupplyEth]);
+    const withdrawNativeTokenCalldata = abiCoder.encode(['address', 'address', 'uint'], [await comet.getAddress(), albert.address, toWithdrawEth]);
+    const claimRewardCalldata = abiCoder.encode(['address', 'address', 'address', 'bool'], [await comet.getAddress(), await rewards.getAddress(), albert.address, true]);
     const calldata = [
       supplyAssetCalldata,
       withdrawAssetCalldata,
@@ -710,15 +713,15 @@ scenario(
     const txn = await albert.invoke({ actions, calldata }, { value: toSupplyEth });
 
     // Final expectations
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const baseIndexScale = await comet.baseIndexScale();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
     const baseTransferred = getExpectedBaseBalance(toTransferBase, baseIndexScale, baseSupplyIndex);
     expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(toSupplyCollateral);
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(toBorrowBase);
     expect(await albert.getErc20Balance(rewardTokenAddress)).to.be.equal(expectedFinalRewardBalance);
-    expectBase((await comet.balanceOf(betty.address)).toBigInt(), baseTransferred);
+    expectBase(await comet.balanceOf(betty.address), baseTransferred);
     // NOTE: differs from the equivalent scenario for non-ETH markets
-    expectBase((await comet.borrowBalanceOf(albert.address)).toBigInt(), toBorrowBase + toTransferBase - (toSupplyEth - toWithdrawEth));
+    expectBase(await comet.borrowBalanceOf(albert.address), toBorrowBase + toTransferBase - (toSupplyEth - toWithdrawEth));
 
     return txn; // return txn to measure gas
   }

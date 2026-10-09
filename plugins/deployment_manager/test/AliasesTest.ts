@@ -1,7 +1,7 @@
 import { expect } from 'chai';
-import { Cache } from '../Cache';
-import { getAliases, getInvertedAliases, putAlias } from '../Aliases';
-import { objectFromMap } from '../Utils';
+import { Cache } from '../Cache.js';
+import { getAliases, getInvertedAliases, putAlias } from '../Aliases.js';
+import { objectFromMap } from '../Utils.js';
 import * as os from 'os';
 
 describe('Aliases', () => {

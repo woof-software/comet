@@ -1,4 +1,4 @@
-import { CometContext } from '../context/CometContext';
+import { CometContext } from '../context/CometContext.js';
 
 const defaultConfig = {
   bulkerBase: 1000000,

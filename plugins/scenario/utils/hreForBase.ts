@@ -1,87 +1,30 @@
-import { ethers } from 'ethers';
-import type { HardhatEthersHelpers } from '@nomiclabs/hardhat-ethers/types';
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
-import { HardhatContext } from 'hardhat/internal/context';
-import { loadConfigAndTasks } from 'hardhat/internal/core/config/config-loading';
-import { getEnvHardhatArguments } from 'hardhat/internal/core/params/env-variables';
-import { HARDHAT_PARAM_DEFINITIONS } from 'hardhat/internal/core/params/hardhat-params';
-import { Environment } from 'hardhat/internal/core/runtime-environment';
-import { ForkSpec } from '../World';
-import { HttpNetworkConfig, HttpNetworkUserConfig } from 'hardhat/types';
-import { EthereumProvider } from 'hardhat/types/provider';
-import { networkConfigs } from '../../../hardhat.config';
+import hre from 'hardhat';
+import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
+import type { NetworkConnection, NetworkManager } from 'hardhat/types/network';
+import type { EthereumProvider } from 'hardhat/types/providers';
+import { networkConfigs } from '../../../hardhat.config.js';
 
-/*
-mimics https://github.com/nomiclabs/hardhat/blob/master/packages/hardhat-core/src/internal/lib/hardhat-lib.ts
+import type { ForkSpec } from '../World.js';
 
-Hardhat's Environment class implements the HardhatRuntimeEnvironment interface.
-However, the ethers and waffle plugins later extend the
-HardhatRuntimeEnvironment interface. So if we want to interact with the
-Environment class after the plugins have been loaded, we need to replicate the
-alterations made to HardhatRuntimeEnvironment on the Environment interface.
-
-These alterations will almost certainly go out-of-date as the ethers and waffle
-packages are updated, and we'll need to do a similar alteration for any
-additional packages that alter the HardhatRuntimeEnvironment interface.
-
-ethers type extension: https://github.com/nomiclabs/hardhat/blob/master/packages/hardhat-ethers/src/internal/type-extensions.ts
-waffle type extension: https://github.com/nomiclabs/hardhat/blob/master/packages/hardhat-waffle/src/type-extensions.ts
-change network extension: https://github.com/dmihal/hardhat-change-network/blob/master/src/type-extensions.ts
-*/
-declare module 'hardhat/internal/core/runtime-environment' {
-  interface Environment {
-    waffle: any;
-    ethers: typeof ethers & HardhatEthersHelpers;
-    changeNetwork(newNetwork: string): void;
-    getProvider(newNetwork: string): EthereumProvider;
-  }
+function hreForConnection(connection: NetworkConnection): HardhatRuntimeEnvironment {
+  const network = Object.create(hre.network) as NetworkManager;
+  Object.defineProperty(network, 'getOrCreate', {
+    value: async () => connection,
+  });
+  return Object.assign(Object.create(hre), { network }) as HardhatRuntimeEnvironment;
 }
 
 export async function nonForkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEnvironment> {
-  const ctx: HardhatContext = HardhatContext.getHardhatContext();
-
-  const hardhatArguments = getEnvHardhatArguments(
-    HARDHAT_PARAM_DEFINITIONS,
-    process.env
-  );
-
-  const { resolvedConfig, userConfig } = loadConfigAndTasks(hardhatArguments);
-
-  return new Environment(
-    resolvedConfig,
-    {
-      ...hardhatArguments,
-      ...{
-        network: base.network
-      }
-    },
-    ctx.tasksDSL.getTaskDefinitions(),
-    ctx.environment.scopes,
-    ctx.environmentExtenders,
-    userConfig
-  );
+  return hreForConnection(await hre.network.create(base.network));
 }
 
-function getBlockRollback(base: ForkSpec) {
-  console.log(`Getting block rollback for network: ${base.network}`);
-  if (base.blockNumber)
-    return base.blockNumber;
-  else if (base.network === 'linea')
-    return 150;
-  else if (base.network === 'ronin')
-    return 0;
-  else if (base.network === 'arbitrum') 
-    return 10;
-  else if (base.network === 'unichain')
-    return 0;
-  else if (base.network === 'base') 
-    return 100;
-  else if (base.network === 'optimism') 
-    return 10;
-  else if (base.network === 'mainnet')
-    return 10;
-  else
-    return 25;
+function getBlockRollback(base: ForkSpec): number {
+  if (base.network === 'linea') return 150;
+  if (base.network === 'ronin' || base.network === 'unichain') return 1;
+  if (base.network === 'arbitrum' || base.network === 'optimism') return 10;
+  if (base.network === 'base') return 100;
+  if (base.network === 'mainnet') return 10;
+  return 25;
 }
 
 let activeMigration = false;
@@ -90,18 +33,19 @@ export function migrationStarted() {
   activeMigration = true;
 }
 
-async function getBlockNumberWithRetry(provider: ethers.providers.JsonRpcProvider): Promise<number> {
+async function getBlockNumberWithRetry(provider: { getBlockNumber(): Promise<number> }): Promise<number> {
   const maxAttempts = 5;
   const retryDelayMs = 5000;
   const requestTimeoutMs = 10000;
-  
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
         provider.getBlockNumber(),
-        new Promise<number>((_, reject) =>
-          setTimeout(() => reject(new Error(`Timed out fetching block number after ${requestTimeoutMs / 1000}s`)), requestTimeoutMs)
-        ),
+        new Promise<number>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error(`Timed out fetching block number after ${requestTimeoutMs / 1000}s`)), requestTimeoutMs);
+        }),
       ]);
     } catch (error) {
       if (attempt === maxAttempts) {
@@ -109,7 +53,10 @@ async function getBlockNumberWithRetry(provider: ethers.providers.JsonRpcProvide
       }
 
       console.warn(`Failed to fetch block number (attempt ${attempt}/${maxAttempts}). Retrying in ${retryDelayMs / 1000}s...`);
+      clearTimeout(timeout);
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -117,73 +64,51 @@ async function getBlockNumberWithRetry(provider: ethers.providers.JsonRpcProvide
 }
 
 export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEnvironment> {
-  const ctx: HardhatContext = HardhatContext.getHardhatContext();
+  const migrationUrl = activeMigration
+    ? networkConfigs.find(config => config.network === base.network)?.url
+    : undefined;
 
-  const hardhatArguments = getEnvHardhatArguments(HARDHAT_PARAM_DEFINITIONS, process.env);
-
-  const { resolvedConfig: config, userConfig } = loadConfigAndTasks(hardhatArguments);
-
-  const networks = config.networks;
-  const { hardhat: defaultNetwork, localhost } = networks;
-
-  const baseNetwork = networks[base.network] as HttpNetworkUserConfig;
-
-  const providerUrl = activeMigration ? networkConfigs.find(c => c.network === base.network)?.url : baseNetwork.url;
-  const provider = new ethers.providers.JsonRpcProvider(providerUrl);
-
-  if (providerUrl) {
-    console.log(`Forking from network: ${base.network}`);
-    console.log(`At block number: ${await getBlockNumberWithRetry(provider) - (getBlockRollback(base) || 0)}`);
+  if (activeMigration && !migrationUrl) {
+    throw new Error(`Missing migration RPC URL for network: ${base.network}`);
   }
 
-  // noNetwork otherwise
-  if (!base.blockNumber && providerUrl && getBlockRollback(base) !== undefined)
-    base.blockNumber = await getBlockNumberWithRetry(provider) - getBlockRollback(base); // arbitrary number of blocks to go back
+  const remoteConnection = await hre.network.create({
+    network: base.network,
+    ...(migrationUrl ? { override: { url: migrationUrl } } : {}),
+  });
 
-  if (getBlockRollback(base) === 0) 
-    base.blockNumber = (await getBlockNumberWithRetry(provider)) - 1;
+  try {
+    const remoteConfig = remoteConnection.networkConfig;
+    if (remoteConfig.type !== 'http') {
+      throw new Error(`Cannot fork non-HTTP network ${base.network}`);
+    }
+    const url = await remoteConfig.url.get();
+    const blockNumber = base.blockNumber ?? (
+      await getBlockNumberWithRetry(remoteConnection.ethers.provider) - getBlockRollback(base)
+    );
 
-  if (!baseNetwork) 
-    throw new Error(`cannot find network config for network: ${base.network}`);
-
-  const forkedNetwork = {
-    ...defaultNetwork,
-    ...{
-      forking: {
-        enabled: true,
-        url: providerUrl,
-        httpHeaders: {},
-        ...(base.blockNumber && { blockNumber: base.blockNumber }),
+    console.log(`Forking from network: ${base.network} at block number: ${blockNumber}`);
+    const forkConnection = await hre.network.create({
+      network: 'hardhat',
+      override: {
+        chainId: remoteConfig.chainId,
+        forking: {
+          enabled: true,
+          url,
+          blockNumber: BigInt(blockNumber),
+        },
       },
-    },
-    ...(baseNetwork.chainId ? { chainId: baseNetwork.chainId } : {}),
-  };
-
-  const forkedConfig = {
-    ...config,
-    ...{
-      defaultNetwork: 'hardhat',
-      networks: {
-        hardhat: forkedNetwork,
-        localhost: localhost
-      },
-    },
-  };
-  return new Environment(
-    forkedConfig,
-    hardhatArguments,
-    ctx.tasksDSL.getTaskDefinitions(),
-    ctx.environment.scopes,
-    ctx.environmentExtenders,
-    userConfig
-  );
+    });
+    return hreForConnection(forkConnection);
+  } finally {
+    await remoteConnection.close();
+  }
 }
 
 export default async function hreForBase(base: ForkSpec, fork = true): Promise<HardhatRuntimeEnvironment> {
-  if (fork) 
-    return forkedHreForBase(base);
-  else 
-    return nonForkedHreForBase(base);
+  return fork && base.network !== 'hardhat'
+    ? forkedHreForBase(base)
+    : nonForkedHreForBase(base);
 }
 
 /*
@@ -236,41 +161,20 @@ function patchProviderForVnet(provider: EthereumProvider): void {
 // Connects to a Tenderly Virtual TestNet's Admin RPC as a live network, rather than forking it
 // again locally, so migrations/proposals execute as real, persistent transactions on the vnet.
 export async function vnetHreForBase(network: string, rpcUrl: string): Promise<HardhatRuntimeEnvironment> {
-  const ctx: HardhatContext = HardhatContext.getHardhatContext();
-
-  const hardhatArguments = getEnvHardhatArguments(HARDHAT_PARAM_DEFINITIONS, process.env);
-
-  const { resolvedConfig: config, userConfig } = loadConfigAndTasks(hardhatArguments);
-
-  const networks = config.networks;
-  const baseNetwork = networks[network] as HttpNetworkConfig;
-  if (!baseNetwork) {
-    throw new Error(`cannot find network config for network: ${network}`);
+  const baseNetwork = hre.config.networks[network];
+  if (!baseNetwork || baseNetwork.type !== 'http') {
+    throw new Error(`Cannot connect Virtual TestNet for network: ${network}`);
   }
 
-  const vnetConfig = {
-    ...config,
-    defaultNetwork: network,
-    networks: {
-      ...networks,
-      // `accounts: 'remote'` disables Hardhat's local-accounts provider wrapper, which would
-      // otherwise reject `eth_sendTransaction` from any address besides the configured private
-      // key (e.g. an impersonated whale) with HH103. Virtual TestNets accept unsigned
-      // eth_sendTransaction from any address directly, so signing can be fully delegated to the node.
-      [network]: { ...baseNetwork, url: rpcUrl, accounts: 'remote' as const },
+  const connection = await hre.network.create({
+    network,
+    override: {
+      url: rpcUrl,
+      // Let the Virtual TestNet handle unsigned transactions from impersonated addresses.
+      accounts: 'remote',
     },
-  };
+  });
+  patchProviderForVnet(connection.provider);
 
-  const env = new Environment(
-    vnetConfig,
-    { ...hardhatArguments, network },
-    ctx.tasksDSL.getTaskDefinitions(),
-    ctx.environment.scopes,
-    ctx.environmentExtenders,
-    userConfig
-  );
-
-  patchProviderForVnet(env.network.provider);
-
-  return env;
+  return hreForConnection(connection);
 }

@@ -1,5 +1,5 @@
-import { RelationConfigMap } from '../../../plugins/deployment_manager/RelationConfig';
-import baseRelationConfig from '../../relations';
+import type { RelationConfigMap } from '../../../plugins/deployment_manager/RelationConfig.js';
+import baseRelationConfig from '../../relations.js';
 
 export default {
   ...baseRelationConfig,
@@ -39,4 +39,3 @@ export default {
     }
   },
 };
-

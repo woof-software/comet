@@ -1,31 +1,44 @@
-import hre from 'hardhat';
-import { FlashbotsBundleResolution, FlashbotsTransactionResponse, RelayResponseError } from '@flashbots/ethers-provider-bundle';
-import { PopulatedTransaction } from 'ethers';
-import googleCloudLog, { LogSeverity } from './googleCloudLog';
-import {SignerWithFlashbots} from './liquidateUnderwaterBorrowers';
+import type {
+  FlashbotsBundleTransaction,
+  FlashbotsTransactionResponse,
+  RelayResponseError,
+} from '@flashbots/ethers-provider-bundle';
+import type { TransactionRequest } from 'ethers';
+
+import googleCloudLog, { LogSeverity } from './googleCloudLog.js';
+import type { SignerWithFlashbots } from './liquidateUnderwaterBorrowers.js';
 
 function isFlashbotsTxnResponse(bundleReceipt: FlashbotsTransactionResponse | RelayResponseError): bundleReceipt is FlashbotsTransactionResponse {
   return (bundleReceipt as FlashbotsTransactionResponse).bundleTransactions !== undefined;
 }
 
 async function sendFlashbotsBundle(
-  txn: PopulatedTransaction,
+  txn: TransactionRequest,
   signerWithFlashbots: SignerWithFlashbots
 ): Promise<boolean> {
+  const { FlashbotsBundleResolution } = await import('@flashbots/ethers-provider-bundle');
   const wallet = signerWithFlashbots.signer;
   const flashbotsProvider = signerWithFlashbots.flashbotsProvider;
+  if (!flashbotsProvider) {
+    throw new Error('Flashbots provider is required');
+  }
+  if (!wallet.provider) {
+    throw new Error('Signer provider is required');
+  }
+  const bundle: FlashbotsBundleTransaction[] = [
+    {
+      signer: wallet as unknown as FlashbotsBundleTransaction['signer'],
+      transaction: txn,
+    }
+  ];
   const signedBundle = await flashbotsProvider.signBundle(
-    [
-      {
-        signer: wallet, // ethers signer
-        transaction: txn // ethers populated transaction object
-      }
-    ]);
+    bundle
+  );
   const bundleReceipt = await flashbotsProvider.sendRawBundle(
     signedBundle, // bundle we signed above
-    await hre.ethers.provider.getBlockNumber() + 1, // block number at which this bundle is valid
+    await wallet.provider.getBlockNumber() + 1, // block number at which this bundle is valid
   );
-  let success: boolean;
+  let success = false;
   if (isFlashbotsTxnResponse(bundleReceipt)) {
     const resolution = await bundleReceipt.wait();
     if (resolution === FlashbotsBundleResolution.BundleIncluded) {
@@ -41,7 +54,10 @@ async function sendFlashbotsBundle(
     }
   } else {
     success = false;
-    googleCloudLog(LogSeverity.ALERT, `Error while sending Flashbots bundle: ${bundleReceipt.error}`);
+    googleCloudLog(
+      LogSeverity.ALERT,
+      `Error while sending Flashbots bundle: ${bundleReceipt.error.message}`
+    );
   }
 
   return success;
@@ -49,7 +65,7 @@ async function sendFlashbotsBundle(
 
 // XXX Note: Blocking txn, so we probably want to run these methods in separate threads
 export async function sendTxn(
-  txn: PopulatedTransaction,
+  txn: TransactionRequest,
   signerWithFlashbots: SignerWithFlashbots
 ): Promise<boolean> {
   if (signerWithFlashbots.flashbotsProvider) {

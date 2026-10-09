@@ -1,7 +1,8 @@
 import hre from 'hardhat';
-import { ethers } from 'ethers';
-import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
-import { OnChainLiquidator } from '../../build/types';
+import { ZeroAddress } from 'ethers';
+
+import { OnChainLiquidator__factory } from '../../build/types/index.js';
+import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager.js';
 
 interface LiquidationAddresses {
   balancerVault: string;
@@ -33,19 +34,19 @@ const addresses: {[network: string]: LiquidationAddresses} = {
     sushiswapRouter: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506',
     stakedNativeToken: '0x3a58a54c066fdc0f2d55fc9c89f0415c92ebf3c4',
     weth9: '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619',
-    wrappedStakedNativeToken: ethers.constants.AddressZero // wstMatic does not exist
+    wrappedStakedNativeToken: ZeroAddress // wstMatic does not exist
   },
   arbitrum: {
     ...sharedAddresses,
     sushiswapRouter: '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506',
-    stakedNativeToken: ethers.constants.AddressZero,
+    stakedNativeToken: ZeroAddress,
     weth9: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
-    wrappedStakedNativeToken: ethers.constants.AddressZero
+    wrappedStakedNativeToken: ZeroAddress
   }
 };
 
 async function main() {
-  const network = hre.network.name;
+  const { networkName: network } = await hre.network.getOrCreate();
   const deployment = 'abc'; // doesn't matter; just need a value to instantiate DeploymentManager
 
   if (!['mainnet', 'polygon', 'arbitrum'].includes(network)) {
@@ -73,7 +74,7 @@ async function main() {
     wrappedStakedNativeToken
   } = addresses[network];
 
-  const liquidator = await dm.deploy(
+  const deployedLiquidator = await dm.deploy(
     'liquidator',
     'liquidator/OnChainLiquidator.sol',
     [
@@ -85,9 +86,13 @@ async function main() {
       wrappedStakedNativeToken,
       weth9
     ]
-  ) as OnChainLiquidator;
+  );
+  const liquidator = OnChainLiquidator__factory.connect(
+    await deployedLiquidator.getAddress(),
+    deployedLiquidator.runner
+  );
 
-  console.log(`Liquidator deployed on ${network} @ ${liquidator.address}`);
+  console.log(`Liquidator deployed on ${network} @ ${await liquidator.getAddress()}`);
 }
 
 main()

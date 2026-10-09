@@ -1,5 +1,5 @@
 import * as fs from 'fs/promises';
-import { JsonSuiteResult } from '../../plugins/scenario/Report';
+import type { JsonSuiteResult } from '../../plugins/scenario/Report.js';
 
 export async function mergeResults(resultFiles: string[], outputFile: string): Promise<JsonSuiteResult> {
   const suiteResults: JsonSuiteResult[] = [];

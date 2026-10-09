@@ -1,7 +1,13 @@
 import hre from 'hardhat';
-import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager';
-import { ProposalState } from '../scenario/context/Gov';
-import { default as config, requireEnv } from '../hardhat.config';
+import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager.js';
+import { ProposalState } from '../scenario/context/Gov.js';
+import config from '../hardhat.config.js';
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
+}
 
 async function until(fn: () => Promise<boolean>, interval = 6000) {
   while (!await fn()) {
@@ -11,8 +17,12 @@ async function until(fn: () => Promise<boolean>, interval = 6000) {
 
 async function main() {
   const PROPOSAL_ID = requireEnv('PROPOSAL_ID');
-  const network = hre.network.name;
+  const connection = await hre.network.getOrCreate();
+  const { ethers, networkName: network } = connection;
   const networkBase = config.scenario.bases.find(b => b.network === network);
+  if (!networkBase) {
+    throw new Error(`Scenario base not found for network: ${network}`);
+  }
   const deployment = networkBase.deployment; // just for gov
 
   const dm = new DeploymentManager(
@@ -27,14 +37,14 @@ async function main() {
 
   const trace = dm.tracer();
   const governor = await dm.contract('governor');
-  console.log(`Governor via ${network}/${deployment}: ${governor?.address ?? 'NO GOVERNOR FOUND!'}`);
+  console.log(`Governor via ${network}/${deployment}: ${await governor.getAddress()}`);
 
   const { startBlock, endBlock, eta } = await governor.proposals(PROPOSAL_ID);
 
   await until(async () => {
-    const blockNow = await hre.ethers.provider.getBlockNumber();
+    const blockNow = await ethers.provider.getBlockNumber();
     console.log(`Current block is: ${blockNow} (starts: ${startBlock})`);
-    return blockNow > startBlock;
+    return BigInt(blockNow) > startBlock;
   });
 
   console.log(`Attempting to vote in favor of proposal ${PROPOSAL_ID}`);
@@ -42,18 +52,21 @@ async function main() {
 
   await until(async () => {
     const state = await governor.state(PROPOSAL_ID);
-    const blockNum = await hre.ethers.provider.getBlockNumber();
-    console.log(`Current proposal state is: ${ProposalState[state]} at ${blockNum} (ends: ${endBlock})`);
-    return state == ProposalState.Succeeded;
+    const blockNum = await ethers.provider.getBlockNumber();
+    console.log(`Current proposal state is: ${ProposalState[Number(state)]} at ${blockNum} (ends: ${endBlock})`);
+    return Number(state) === ProposalState.Succeeded;
   });
 
   console.log(`Attempting to queue proposal ${PROPOSAL_ID}`);
   trace(await governor.queue(PROPOSAL_ID));
 
   await until(async () => {
-    const block = await hre.ethers.provider.getBlock('latest');
+    const block = await ethers.provider.getBlock('latest');
+    if (!block) {
+      throw new Error('Latest block not found');
+    }
     console.log(`Current block time is: ${block.timestamp} (eta: ${eta})`);
-    return block.timestamp > eta;
+    return BigInt(block.timestamp) > eta;
   });
 
   console.log(`Attempting to execute proposal ${PROPOSAL_ID}`);

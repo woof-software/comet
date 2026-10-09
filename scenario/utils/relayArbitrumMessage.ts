@@ -1,11 +1,14 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
-import { utils, BigNumber, Contract, constants } from 'ethers';
-import { Log } from '@ethersproject/abstract-provider';
-import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
-import { OpenBridgedProposal } from '../context/Gov';
-import { isTenderlyLog } from './index';
+import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils.js';
+import { AbiCoder, Contract, ZeroAddress, getAddress, getBytes, hexlify, id, toBigInt, toBeHex, toNumber, zeroPadValue } from 'ethers';
+import type { Log } from 'ethers';
+import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer.js';
+import type { OpenBridgedProposal } from '../context/Gov.js';
+import { isTenderlyLog } from './index.js';
+
+const abiCoder = AbiCoder.defaultAbiCoder();
 
 export async function relayArbitrumMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -19,60 +22,64 @@ export async function relayArbitrumMessage(
 
   // L2 contracts
   const bridgeReceiver = await bridgeDeploymentManager.getContractOrThrow('bridgeReceiver');
+  const inboxAddress = await inbox.getAddress();
+  const bridgeAddress = await bridge.getAddress();
+  const bridgeReceiverAddress = await bridgeReceiver.getAddress();
+  const { provider } = await getHardhatEthers(governanceDeploymentManager.hre);
 
   let inboxMessageDeliveredEvents: Log[] = [];
   let messageDeliveredEvents: Log[] = [];
   const openBridgedProposals: OpenBridgedProposal[] = [];
 
   if (tenderlyLogs) {
-    const inboxTopic = utils.id('InboxMessageDelivered(uint256,bytes)');
-    const bridgeTopic = utils.id('MessageDelivered(uint256,bytes32,address,uint8,address,bytes32,uint256,uint64)');
+    const inboxTopic = id('InboxMessageDelivered(uint256,bytes)');
+    const bridgeTopic = id('MessageDelivered(uint256,bytes32,address,uint8,address,bytes32,uint256,uint64)');
 
     const tenderlyInboxEvents = tenderlyLogs.filter(log =>
       log.raw?.topics?.[0] === inboxTopic &&
-      log.raw?.address?.toLowerCase() === inbox.address.toLowerCase()
+      log.raw?.address?.toLowerCase() === inboxAddress.toLowerCase()
     );
 
     const tenderlyBridgeEvents = tenderlyLogs.filter(log =>
       log.raw?.topics?.[0] === bridgeTopic &&
-      log.raw?.address?.toLowerCase() === bridge.address.toLowerCase()
+      log.raw?.address?.toLowerCase() === bridgeAddress.toLowerCase()
     );
 
-    const realInboxEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    const realInboxEvents = await provider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: inbox.address,
+      address: inboxAddress,
       topics: [inboxTopic]
     });
 
-    const realBridgeEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    const realBridgeEvents = await provider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: bridge.address,
+      address: bridgeAddress,
       topics: [bridgeTopic]
     });
 
     inboxMessageDeliveredEvents = [...realInboxEvents, ...tenderlyInboxEvents];
     messageDeliveredEvents = [...realBridgeEvents, ...tenderlyBridgeEvents];
   } else {
-    inboxMessageDeliveredEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    inboxMessageDeliveredEvents = await provider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: inbox.address,
-      topics: [utils.id('InboxMessageDelivered(uint256,bytes)')]
+      address: inboxAddress,
+      topics: [id('InboxMessageDelivered(uint256,bytes)')]
     });
 
-    messageDeliveredEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    messageDeliveredEvents = await provider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: bridge.address,
-      topics: [utils.id('MessageDelivered(uint256,bytes32,address,uint8,address,bytes32,uint256,uint64)')]
+      address: bridgeAddress,
+      topics: [id('MessageDelivered(uint256,bytes32,address,uint8,address,bytes32,uint256,uint64)')]
     });
   }
 
   const dataAndTargets = inboxMessageDeliveredEvents.map((event) => {
     let data, topics;
-    
+
     if (isTenderlyLog(event)) {
       data = event.raw.data;
       topics = event.raw.topics;
@@ -86,8 +93,8 @@ export async function relayArbitrumMessage(
     const wordLength = 2 * 32;
     const innerData = header + data.slice(headerLength + (11 * wordLength));
     const toValue = data.slice(headerLength + (2 * wordLength), headerLength + (3 * wordLength));
-    let toAddress = BigNumber.from(`0x${toValue}`).toHexString();
-    
+    let toAddress = toBeHex(BigInt(`0x${toValue}`));
+
     // if length of toAddress is less than 42, then it is padded with 0s and we need to add them after 0x
     if(toAddress.length < 42) {
       toAddress = `0x${toAddress.slice(2).padStart(40, '0')}`;
@@ -103,7 +110,7 @@ export async function relayArbitrumMessage(
 
   const senders = messageDeliveredEvents.map((event) => {
     let data, topics;
-    
+
     if (isTenderlyLog(event)) {
       data = event.raw.data;
       topics = event.raw.topics;
@@ -112,7 +119,7 @@ export async function relayArbitrumMessage(
       topics = event.topics;
     }
 
-    const decodedData = utils.defaultAbiCoder.decode(
+    const decodedData = abiCoder.decode(
       [
         'address inbox',
         'uint8 kind',
@@ -150,7 +157,7 @@ export async function relayArbitrumMessage(
     // if method name == finalizeInboundTransfer(address,address,address,uint256,bytes)
     if(data.slice(0, 10) == '0x2e567b36'){
       const _data = '0x' + data.slice(10, 266);
-      const [token,, to, amount] = utils.defaultAbiCoder.decode(
+      const [token,, to, amount] = abiCoder.decode(
         ['address', 'address', 'address', 'uint256'],
         _data
       );
@@ -171,9 +178,9 @@ export async function relayArbitrumMessage(
           );
 
           bridgeDeploymentManager.stashRelayMessage(
-            bridgeReceiver.address,
+            bridgeReceiverAddress,
             callData,
-            arbitrumSigner.address
+            await arbitrumSigner.getAddress()
           );
         }
 
@@ -201,6 +208,9 @@ export async function relayArbitrumMessage(
     const tx = await (
       await arbitrumSigner.sendTransaction(transactionRequest)
     ).wait();
+    if (tx === null) {
+      throw new Error('Arbitrum relay transaction was not mined');
+    }
     if(tenderlyLogs) {
       bridgeDeploymentManager.stashRelayMessage(
         toAddress,
@@ -210,15 +220,17 @@ export async function relayArbitrumMessage(
     }
 
     const proposalCreatedLog = tx.logs.find(
-      event => event.address === bridgeReceiver.address
+      event => event.address === bridgeReceiverAddress
     );
     if (proposalCreatedLog) {
-      const {
-        args: { id, eta }
-      } = bridgeReceiver.interface.parseLog(proposalCreatedLog);
+      const parsedLog = bridgeReceiver.interface.parseLog(proposalCreatedLog);
+      if (!parsedLog) {
+        throw new Error('Arbitrum proposal log could not be parsed');
+      }
+      const { id, eta } = parsedLog.args;
 
       // fast forward l2 time
-      await setNextBlockTimestamp(bridgeDeploymentManager, eta.toNumber() + 1);
+      await setNextBlockTimestamp(bridgeDeploymentManager, toNumber(eta) + 1);
 
       // execute queued proposal
       await setNextBaseFeeToZero(bridgeDeploymentManager);
@@ -227,7 +239,7 @@ export async function relayArbitrumMessage(
         const signer = await bridgeDeploymentManager.getSigner();
         const callData = bridgeReceiver.interface.encodeFunctionData('executeProposal', [id]);
         bridgeDeploymentManager.stashRelayMessage(
-          bridgeReceiver.address,
+          bridgeReceiverAddress,
           callData,
           await signer.getAddress()
         );
@@ -236,19 +248,17 @@ export async function relayArbitrumMessage(
         // but the L2 gateways call ArbSys.sendTxToL1 internally during outboundTransfer.
         // Bytecode 0x60206000f3 disassembles to: PUSH1 0x20 | PUSH1 0x00 | RETURN
         // which returns 32 zero bytes from uninitialized memory for any call.
-        await bridgeDeploymentManager.hre.network.provider.request({
-          method: 'hardhat_setCode',
-          params: [
-            '0x0000000000000000000000000000000000000064',
-            '0x60206000f3',
-          ],
-        });
+        const { provider: bridgeProvider } = await getHardhatEthers(bridgeDeploymentManager.hre);
+        await bridgeProvider.send('hardhat_setCode', [
+          '0x0000000000000000000000000000000000000064',
+          '0x60206000f3',
+        ]);
 
         await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
       }
       openBridgedProposals.push({
-        id: BigNumber.from(id),
-        eta: BigNumber.from(eta)
+        id: toBigInt(id),
+        eta: toBigInt(eta)
       });
     }
   }
@@ -261,7 +271,7 @@ export async function simulateL2ToL1TokenBridging(
   bridgeDeploymentManager: DeploymentManager,
   l2StartingBlockNumber?: number,
   tenderlyLogs?: any[],
-  proposalId?: BigNumber
+  proposalId?: bigint
 ) {
   if(tenderlyLogs) {
     return;
@@ -274,13 +284,16 @@ export async function simulateL2ToL1TokenBridging(
   // Parse recent ProposalCreated events to find actions that bridge tokens from L2 to L1
   // ProposalCreated(address indexed rootMessageSender, uint256 id, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 eta)
   console.log('Fetching recent ProposalCreated events from BridgeReceiver...');
-  const latestBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber();
+  const { provider: bridgeProvider } = await getHardhatEthers(bridgeDeploymentManager.hre);
+  const { provider: governanceProvider } = await getHardhatEthers(governanceDeploymentManager.hre);
+  const bridgeReceiverAddress = await bridgeReceiver.getAddress();
+  const latestBlockNumber = await bridgeProvider.getBlockNumber();
   const proposalCreatedEvents = await bridgeDeploymentManager.retry(() =>
-    bridgeDeploymentManager.hre.ethers.provider.getLogs({
-      fromBlock: l2StartingBlockNumber ?? latestBlockNumber - 1000,
+    bridgeProvider.getLogs({
+      fromBlock: l2StartingBlockNumber ?? Math.max(0, latestBlockNumber - 1000),
       toBlock: 'latest',
-      address: bridgeReceiver.address,
-      topics: [utils.id('ProposalCreated(address,uint256,address[],uint256[],string[],bytes[],uint256)')]
+      address: bridgeReceiverAddress,
+      topics: [id('ProposalCreated(address,uint256,address[],uint256[],string[],bytes[],uint256)')]
     })
   );
   const outboundTransferSignature = 'outboundTransfer(address,address,uint256,bytes)';
@@ -293,9 +306,12 @@ export async function simulateL2ToL1TokenBridging(
 
   for (const event of proposalCreatedEvents) {
     const decodedEvent = bridgeReceiver.interface.parseLog(event);
+    if (!decodedEvent) {
+      throw new Error('Arbitrum ProposalCreated log could not be parsed');
+    }
     const { id, targets, signatures, calldatas } = decodedEvent.args;
 
-    if (proposalId && id.toString() !== proposalId.toString()) {
+    if (proposalId !== undefined && id !== proposalId) {
       continue;
     }
 
@@ -307,12 +323,12 @@ export async function simulateL2ToL1TokenBridging(
         bridgedTokens = true;
         const [l1Token, to, amount] = (() => {
           if (signatures[i] === outboundTransferSignature) {
-            return utils.defaultAbiCoder.decode(
+            return abiCoder.decode(
               ['address', 'address', 'uint256', 'bytes'],
               calldatas[i]
             );
           } else if (signatures[i] === outboundTransfer2Signature) {
-            return utils.defaultAbiCoder.decode(
+            return abiCoder.decode(
               ['address', 'address', 'uint256', 'uint256', 'uint256', 'bytes'],
               calldatas[i]
             );
@@ -347,10 +363,10 @@ export async function simulateL2ToL1TokenBridging(
           await governanceDeploymentManager.getSigner()
         );
         // override 0x4 slot in outbox to L2 gateway
-        await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
+        await governanceProvider.send('hardhat_setStorageAt', [
           ARBITRUM_OUTBOX,
           '0x4',
-          utils.hexZeroPad(gatewayAddress, 32)
+          zeroPadValue(gatewayAddress, 32)
         ]);
 
         // impersonate outbox to call finalizeInboundTransfer, as if the message came from L2 gateway
@@ -359,8 +375,8 @@ export async function simulateL2ToL1TokenBridging(
           ARBITRUM_OUTBOX
         );
 
-        await governanceDeploymentManager.hre.network.provider.send('hardhat_setBalance', [
-          outboxSigner.address,
+        await governanceProvider.send('hardhat_setBalance', [
+          await outboxSigner.getAddress(),
           '0x1000000000000000000',
         ]);
 
@@ -376,36 +392,36 @@ export async function simulateL2ToL1TokenBridging(
             l1Token,
             ARBITRUM_GATEWAY_ROUTER,
             to, amount,
-            utils.defaultAbiCoder.encode(['uint256', 'bytes'], [0, '0x'])
+            abiCoder.encode(['uint256', 'bytes'], [0, '0x'])
           ]);
         console.log(`Relaying message to L1 gateway at ${l1GatewayAddress} with data: ${data}`);
-        const bridgeTx = await arbitrumBridge.connect(outboxSigner).executeCall(
-          l1Gateway.address,
+        const bridgeTx = await arbitrumBridge.connect(outboxSigner).getFunction('executeCall')(
+          await l1Gateway.getAddress(),
           l1Token.toLowerCase() === MAINNET_WETH.toLowerCase() ? amount : 0,
           data,
         );
         await (bridgeTx).wait();
         // stop impersonation after the call
-        await governanceDeploymentManager.hre.network.provider.send('hardhat_stopImpersonatingAccount', [
-          outboxSigner.address
+        await governanceProvider.send('hardhat_stopImpersonatingAccount', [
+          await outboxSigner.getAddress()
         ]);
         // override 0x4 slot in outbox to L2 gateway
-        await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
+        await governanceProvider.send('hardhat_setStorageAt', [
           ARBITRUM_OUTBOX,
           '0x4',
-          utils.hexZeroPad(constants.AddressZero, 32)
+          zeroPadValue(ZeroAddress, 32)
         ]);
       }
 
       // Look for L2→L1 CCTP depositForBurn calls (Circle CCTP bridge, e.g. native USDC)
       if (signatures[i] === depositForBurnSignature) {
         bridgedTokens = true;
-        const [amount, , mintRecipientBytes32, burnToken] = utils.defaultAbiCoder.decode(
+        const [amount, , mintRecipientBytes32, burnToken] = abiCoder.decode(
           ['uint256', 'uint32', 'bytes32', 'address', 'bytes32', 'uint256', 'uint32'],
           calldatas[i]
         );
 
-        const mintRecipient = utils.getAddress('0x' + utils.hexlify(mintRecipientBytes32).slice(-40));
+        const mintRecipient = getAddress('0x' + hexlify(mintRecipientBytes32).slice(-40));
 
         try {
           // L2
@@ -420,18 +436,18 @@ export async function simulateL2ToL1TokenBridging(
           );
           const l1CCTPTokenMessengerSigner = await impersonateAddress(
             governanceDeploymentManager,
-            l1CCTPTokenMessenger.address
+            await l1CCTPTokenMessenger.getAddress()
           );
-          await governanceDeploymentManager.hre.network.provider.send('hardhat_setBalance', [
-            l1CCTPTokenMessengerSigner.address,
+          await governanceProvider.send('hardhat_setBalance', [
+            await l1CCTPTokenMessengerSigner.getAddress(),
             '0x1000000000000000000',
           ]);
           const sourceDomain = await l2CCTPTokenMessenger.localDomain();
-          const mintTx = await L1TokenMinter.connect(l1CCTPTokenMessengerSigner).mint(
+          const mintTx = await L1TokenMinter.connect(l1CCTPTokenMessengerSigner).getFunction('mint')(
             sourceDomain,
-            utils.hexZeroPad(burnToken, 32),
+            zeroPadValue(burnToken, 32),
             mintRecipient,
-            L1TokenMinter.address, // mint to the token minter first, since some tokens (e.g. USDC) have a cap on max amount per mint, and the token minter can then transfer to the recipient
+            await L1TokenMinter.getAddress(), // mint to the token minter first, since some tokens (e.g. USDC) have a cap on max amount per mint, and the token minter can then transfer to the recipient
             amount,
             1
           );
@@ -443,7 +459,7 @@ export async function simulateL2ToL1TokenBridging(
       }
       if (bridgedTokens) {
         await governanceDeploymentManager.retry(() =>
-          governanceDeploymentManager.hre.network.provider.send('evm_mine')
+          governanceProvider.send('evm_mine', [])
         );
       }
     }
@@ -465,45 +481,48 @@ export async function relayArbitrumCCTPMint(
   const L1MessageTransmitter = await governanceDeploymentManager.getContractOrThrow('CCTPMessageTransmitter');
   // Arbitrum TokenMinter which is L2 contracts
   const TokenMinter = await bridgeDeploymentManager.existing('TokenMinter', '0xE7Ed1fa7f45D05C508232aa32649D89b73b8bA48', 'arbitrum');
+  const transmitterAddress = await L1MessageTransmitter.getAddress();
+  const tokenMinterAddress = await TokenMinter.getAddress();
+  const { provider } = await getHardhatEthers(governanceDeploymentManager.hre);
 
   let depositForBurnEvents: Log[] = [];
 
   if (tenderlyLogs) {
-    const messageSentTopic = utils.id('MessageSent(bytes)');
+    const messageSentTopic = id('MessageSent(bytes)');
 
     const tenderlyEvents = tenderlyLogs.filter(log =>
       log.raw?.topics?.[0] === messageSentTopic &&
-      log.raw?.address?.toLowerCase() === L1MessageTransmitter.address.toLowerCase()
+      log.raw?.address?.toLowerCase() === transmitterAddress.toLowerCase()
     );
 
-    const realEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    const realEvents = await provider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: L1MessageTransmitter.address,
+      address: transmitterAddress,
       topics: [messageSentTopic]
     });
 
     depositForBurnEvents = [...realEvents, ...tenderlyEvents];
   } else {
-    depositForBurnEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    depositForBurnEvents = await provider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: L1MessageTransmitter.address,
-      topics: [utils.id('MessageSent(bytes)')]
+      address: transmitterAddress,
+      topics: [id('MessageSent(bytes)')]
     });
   }
 
   // Decode message body
   const burnEvents = depositForBurnEvents.map((event) => {
     let data;
-    
+
     if (isTenderlyLog(event)) {
       data = event.raw.data;
     } else {
       data = event.data;
     }
 
-    const dataBytes = utils.arrayify(data);
+    const dataBytes = getBytes(data);
     // Since data is encodePacked, so can't simply decode via AbiCoder.decode
     const offset = 64;
     const length = {
@@ -518,7 +537,7 @@ export async function relayArbitrumCCTPMint(
     start = end;
     end = start + length.uint32;
     // msgSourceDomain
-    const msgSourceDomain = BigNumber.from(dataBytes.slice(start, end)).toNumber();
+    const msgSourceDomain = toNumber(dataBytes.slice(start, end));
 
     start = end;
     end = start + length.uint32;
@@ -547,18 +566,18 @@ export async function relayArbitrumCCTPMint(
     start = end;
     end = start + length.bytes32;
     // rawMsgBody burnToken
-    const burnToken = utils.hexlify(dataBytes.slice(start, end));
+    const burnToken = hexlify(dataBytes.slice(start, end));
 
     start = end;
     end = start + length.bytes32;
     // rawMsgBody mintRecipient
-    const mintRecipient = utils.getAddress(utils.hexlify(dataBytes.slice(start, end)).slice(-40));
+    const mintRecipient = getAddress(hexlify(dataBytes.slice(start, end)).slice(-40));
 
     start = end;
     end = start + length.uint256;
 
     // rawMsgBody amount
-    const amount = BigNumber.from(dataBytes.slice(start, end)).toNumber();
+    const amount = toBigInt(dataBytes.slice(start, end));
 
     start = end;
     end = start + length.bytes32;
@@ -583,19 +602,19 @@ export async function relayArbitrumCCTPMint(
     );
 
     const transactionRequest = await localTokenMessengerSigner.populateTransaction({
-      to: TokenMinter.address,
+      to: tokenMinterAddress,
       from: ImpersonateLocalTokenMessenger,
-      data: TokenMinter.interface.encodeFunctionData('mint', [sourceDomain, burnToken, utils.getAddress(recipient), amount]),
+      data: TokenMinter.interface.encodeFunctionData('mint', [sourceDomain, burnToken, getAddress(recipient), amount]),
       gasPrice: 0
     });
 
     await setNextBaseFeeToZero(bridgeDeploymentManager);
     if (tenderlyLogs) {
-      const callData = TokenMinter.interface.encodeFunctionData('mint', [sourceDomain, burnToken, utils.getAddress(recipient), amount]);
+      const callData = TokenMinter.interface.encodeFunctionData('mint', [sourceDomain, burnToken, getAddress(recipient), amount]);
       bridgeDeploymentManager.stashRelayMessage(
-        TokenMinter.address,
+        tokenMinterAddress,
         callData,
-        localTokenMessengerSigner.address
+        await localTokenMessengerSigner.getAddress()
       );
     } else {
       await (

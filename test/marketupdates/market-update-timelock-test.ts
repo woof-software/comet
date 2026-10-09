@@ -1,5 +1,10 @@
-import { makeMarketAdmin, advanceTimeAndMineBlock } from './market-updates-helper';
-import { expect, makeConfigurator, ethers } from '../helpers';
+import { AbiCoder, keccak256 } from 'ethers';
+
+import { makeMarketAdmin, advanceTimeAndMineBlock } from './market-updates-helper.js';
+import { expect, getBlock, makeConfigurator } from '../helpers.js';
+import { Configurator__factory } from '../../build/types/index.js';
+
+const abiCoder = AbiCoder.defaultAbiCoder();
 
 describe('MarketUpdateTimelock', function() {
   it('is created properly with main-governor-timelock as governor', async () => {
@@ -51,9 +56,9 @@ describe('MarketUpdateTimelock', function() {
     } = await makeConfigurator();
 
     // Get the delay from the contract
-    const delay = (await marketUpdateTimelockContract.delay()).toNumber(); // Example: 172800 for 2 days
+    const delay = Number(await marketUpdateTimelockContract.delay()); // Example: 172800 for 2 days
 
-    const latestBlock = await ethers.provider.getBlock('latest');
+    const latestBlock = await getBlock();
     const currentTimestamp = latestBlock.timestamp;
 
     // Ensure eta is sufficiently in the future
@@ -63,13 +68,13 @@ describe('MarketUpdateTimelock', function() {
     await marketUpdateProposerContract
       .connect(marketUpdateMultiSig)
       .propose(
-        [configuratorProxy.address],
+        [await configuratorProxy.getAddress()],
         [0],
         ['setSupplyKink(address, uint64)'],
         [
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100]
+            [await cometProxy.getAddress(), 100]
           ),
         ],
         'Setting supply kink to 100'
@@ -80,12 +85,12 @@ describe('MarketUpdateTimelock', function() {
       marketUpdateTimelockContract
         .connect(governorTimelockSigner)
         .queueTransaction(
-          configuratorProxy.address,
+          await configuratorProxy.getAddress(),
           0,
           'setSupplyKink(address, uint64)',
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100]
+            [await cometProxy.getAddress(), 100]
           ),
           eta
         )
@@ -98,12 +103,12 @@ describe('MarketUpdateTimelock', function() {
       marketUpdateTimelockContract
         .connect(bob)
         .queueTransaction(
-          configuratorProxy.address,
+          await configuratorProxy.getAddress(),
           0,
           'setSupplyKink(address, uint64)',
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100]
+            [await cometProxy.getAddress(), 100]
           ),
           eta
         )
@@ -127,14 +132,17 @@ describe('MarketUpdateTimelock', function() {
       users: [bob],
     } = await makeConfigurator();
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-    configuratorAsProxy.transferGovernor(marketUpdateTimelockContract.address);
+    const configuratorAsProxy = Configurator__factory.connect(
+      await configuratorProxy.getAddress(),
+      configurator.runner
+    );
+    configuratorAsProxy.transferGovernor(await marketUpdateTimelockContract.getAddress());
     const proposalId = 1n;
 
     // Get the delay from the contract
-    const delay = (await marketUpdateTimelockContract.delay()).toNumber(); // Example: 172800 for 2 days
+    const delay = Number(await marketUpdateTimelockContract.delay()); // Example: 172800 for 2 days
 
-    let latestBlock = await ethers.provider.getBlock('latest');
+    let latestBlock = await getBlock();
     let currentTimestamp = latestBlock.timestamp;
 
     let eta = currentTimestamp + delay + 5; // Ensure eta is in the future
@@ -143,13 +151,13 @@ describe('MarketUpdateTimelock', function() {
     await marketUpdateProposerContract
       .connect(marketUpdateMultiSig)
       .propose(
-        [configuratorProxy.address],
+        [await configuratorProxy.getAddress()],
         [0],
         ['setSupplyKink(address,uint64)'],
         [
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100]
+            [await cometProxy.getAddress(), 100]
           ),
         ],
         'Setting supply kink to 100'
@@ -164,7 +172,7 @@ describe('MarketUpdateTimelock', function() {
 
     // Failure case: Main Governor Timelock cannot execute transactions
 
-    latestBlock = await ethers.provider.getBlock('latest');
+    latestBlock = await getBlock();
     currentTimestamp = latestBlock.timestamp;
 
     eta = currentTimestamp + delay + 5; // Ensure eta is in the future
@@ -172,13 +180,13 @@ describe('MarketUpdateTimelock', function() {
     await marketUpdateProposerContract
       .connect(marketUpdateMultiSig)
       .propose(
-        [configuratorProxy.address],
+        [await configuratorProxy.getAddress()],
         [0],
         ['setSupplyKink(address,uint64)'],
         [
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100]
+            [await cometProxy.getAddress(), 100]
           ),
         ],
         'Setting supply kink to 100'
@@ -190,12 +198,12 @@ describe('MarketUpdateTimelock', function() {
     await expect(marketUpdateTimelockContract
       .connect(governorTimelockSigner)
       .executeTransaction(
-        configuratorProxy.address,
+        await configuratorProxy.getAddress(),
         0,
         'setSupplyKink(address,uint64)',
-        ethers.utils.defaultAbiCoder.encode(
+        abiCoder.encode(
           ['address', 'uint64'],
-          [cometProxy.address, 100000]
+          [await cometProxy.getAddress(), 100000]
         ),
         eta
       )).to.be.revertedWith('MarketUpdateTimelock::executeTransaction: Call must come from marketUpdateProposer.');
@@ -203,7 +211,7 @@ describe('MarketUpdateTimelock', function() {
     // Failure case: none other than MarketUpdateProposer can execute transactions
 
     // first queuing a transaction
-    latestBlock = await ethers.provider.getBlock('latest');
+    latestBlock = await getBlock();
     currentTimestamp = latestBlock.timestamp;
 
     eta = currentTimestamp + delay + 5; // Ensure eta is in the future
@@ -211,13 +219,13 @@ describe('MarketUpdateTimelock', function() {
     await marketUpdateProposerContract
       .connect(marketUpdateMultiSig)
       .propose(
-        [configuratorProxy.address],
+        [await configuratorProxy.getAddress()],
         [0],
         ['setSupplyKink(address,uint64)'],
         [
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100]
+            [await cometProxy.getAddress(), 100]
           ),
         ],
         'Setting supply kink to 100'
@@ -230,12 +238,12 @@ describe('MarketUpdateTimelock', function() {
       marketUpdateTimelockContract
         .connect(bob)
         .executeTransaction(
-          configuratorProxy.address,
+          await configuratorProxy.getAddress(),
           0,
           'setSupplyKink(address,uint64)',
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100000]
+            [await cometProxy.getAddress(), 100000]
           ),
           eta
         )
@@ -259,15 +267,18 @@ describe('MarketUpdateTimelock', function() {
       users: [bob],
     } = await makeConfigurator();
 
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-    await configuratorAsProxy.transferGovernor(marketUpdateTimelockContract.address);
+    const configuratorAsProxy = Configurator__factory.connect(
+      await configuratorProxy.getAddress(),
+      configurator.runner
+    );
+    await configuratorAsProxy.transferGovernor(await marketUpdateTimelockContract.getAddress());
 
     const proposalId = 1n;
 
     // Get the delay from the contract
-    const delay = (await marketUpdateTimelockContract.delay()).toNumber(); // Example: 172800 for 2 days
+    const delay = Number(await marketUpdateTimelockContract.delay()); // Example: 172800 for 2 days
 
-    let latestBlock = await ethers.provider.getBlock('latest');
+    let latestBlock = await getBlock();
     let currentTimestamp = latestBlock.timestamp;
 
     let eta = currentTimestamp + delay + 5; // Ensure eta is in the future
@@ -276,13 +287,13 @@ describe('MarketUpdateTimelock', function() {
     await marketUpdateProposerContract
       .connect(marketUpdateMultiSig)
       .propose(
-        [configuratorProxy.address],
+        [await configuratorProxy.getAddress()],
         [0],
         ['setSupplyKink(address,uint64)'],
         [
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100]
+            [await cometProxy.getAddress(), 100]
           ),
         ],
         'Setting supply kink to 100'
@@ -291,16 +302,16 @@ describe('MarketUpdateTimelock', function() {
     await marketUpdateProposerContract.connect(marketUpdateMultiSig).cancel(proposalId);
 
     // Checking the state of the transaction using the txHash
-    const txHash = ethers.utils.keccak256(
-      ethers.utils.defaultAbiCoder.encode(
+    const txHash = keccak256(
+      abiCoder.encode(
         ['address', 'uint', 'string', 'bytes', 'uint'],
         [
-          configuratorProxy.address,
+          await configuratorProxy.getAddress(),
           0,
           'setSupplyKink(address,uint64)',
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100000]
+            [await cometProxy.getAddress(), 100000]
           ),
           eta,
         ]
@@ -315,13 +326,13 @@ describe('MarketUpdateTimelock', function() {
     await marketUpdateProposerContract
       .connect(marketUpdateMultiSig)
       .propose(
-        [configuratorProxy.address],
+        [await configuratorProxy.getAddress()],
         [0],
         ['setSupplyKink(address,uint64)'],
         [
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100]
+            [await cometProxy.getAddress(), 100]
           ),
         ],
         'Setting supply kink to 100'
@@ -330,12 +341,12 @@ describe('MarketUpdateTimelock', function() {
     await expect(marketUpdateTimelockContract
       .connect(governorTimelockSigner)
       .cancelTransaction(
-        configuratorProxy.address,
+        await configuratorProxy.getAddress(),
         0,
         'setSupplyKink(address,uint64)',
-        ethers.utils.defaultAbiCoder.encode(
+        abiCoder.encode(
           ['address', 'uint64'],
-          [cometProxy.address, 100000]
+          [await cometProxy.getAddress(), 100000]
         ),
         eta
       )).to.be.revertedWith('MarketUpdateTimelock::cancelTransaction: Call must come from marketUpdateProposer.');
@@ -343,7 +354,7 @@ describe('MarketUpdateTimelock', function() {
     // Failure case: none other than MarketUpdateProposer can execute transactions
 
     // first queuing a transaction
-    latestBlock = await ethers.provider.getBlock('latest');
+    latestBlock = await getBlock();
     currentTimestamp = latestBlock.timestamp;
 
     eta = currentTimestamp + delay + 5; // Ensure eta is in the future
@@ -351,13 +362,13 @@ describe('MarketUpdateTimelock', function() {
     await marketUpdateProposerContract
       .connect(marketUpdateMultiSig)
       .propose(
-        [configuratorProxy.address],
+        [await configuratorProxy.getAddress()],
         [0],
         ['setSupplyKink(address,uint64)'],
         [
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100]
+            [await cometProxy.getAddress(), 100]
           ),
         ],
         'Setting supply kink to 100'
@@ -367,12 +378,12 @@ describe('MarketUpdateTimelock', function() {
       marketUpdateTimelockContract
         .connect(bob)
         .cancelTransaction(
-          configuratorProxy.address,
+          await configuratorProxy.getAddress(),
           0,
           'setSupplyKink(address,uint64)',
-          ethers.utils.defaultAbiCoder.encode(
+          abiCoder.encode(
             ['address', 'uint64'],
-            [cometProxy.address, 100000]
+            [await cometProxy.getAddress(), 100000]
           ),
           eta
         )

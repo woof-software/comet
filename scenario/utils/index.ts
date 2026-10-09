@@ -1,51 +1,69 @@
 import { expect } from 'chai';
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import {
-  BigNumber,
-  BigNumberish,
+  AbiCoder,
   Contract,
-  ContractReceipt,
-  ContractTransaction,
-  Event,
-  EventFilter,
-  constants,
-  utils,
+  EventLog,
+  Interface,
+  ZeroAddress,
+  getAddress,
+  hexlify,
+  id,
+  keccak256,
+  parseEther,
+  parseUnits,
+  toBeHex,
+  toQuantity,
+  toNumber,
+  zeroPadValue,
 } from 'ethers';
-import { execSync } from 'child_process';
-import { existsSync, unlinkSync } from 'fs';
-import { CometContext } from '../context/CometContext';
-import CometAsset from '../context/CometAsset';
-import { exp } from '../../test/helpers';
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { ProposalState, OpenProposal } from '../context/Gov';
-import { debug } from '../../plugins/deployment_manager/Utils';
-import { COMP_WHALES } from '../../src/deploy';
-import relayMessage from './relayMessage';
+import type {
+  BaseContract,
+  BigNumberish,
+  ContractEventName,
+  ContractTransactionReceipt,
+  ContractTransactionResponse,
+  Log,
+  Signer,
+} from 'ethers';
+import { execSync } from 'node:child_process';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import axiosModule from 'axios';
+import { CometContext } from '../context/CometContext.js';
+import CometAsset from '../context/CometAsset.js';
+import { exp } from '../../test/helpers.js';
+import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import { ProposalState, OpenProposal } from '../context/Gov.js';
+import { debug } from '../../plugins/deployment_manager/Utils.js';
+import { COMP_WHALES } from '../../src/deploy/index.js';
+import relayMessage from './relayMessage.js';
 import {
   mineBlocks,
   setEtherBalance,
   setNextBaseFeeToZero,
   setNextBlockTimestamp,
-} from './hreUtils';
-import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
-import { getOrCreateVirtualTestnet } from './tenderlyVnet';
-import { BaseBridgeReceiver, CometInterface } from '../../build/types';
-import CometActor from './../context/CometActor';
-import { isBridgeProposal } from './isBridgeProposal';
-import { Interface } from 'ethers/lib/utils';
-import axios from 'axios';
+} from './hreUtils.js';
+import { BaseBridgeReceiver, CometInterface } from '../../build/types/index.js';
+import CometActor from './../context/CometActor.js';
+import { isBridgeProposal } from './isBridgeProposal.js';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
 export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
-import { readFileSync } from 'fs';
-import path from 'path';
-export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
-import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
-export * from './hreUtils';
+const abiCoder = AbiCoder.defaultAbiCoder();
+const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+const axios = axiosModule.default;
+
+import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase.js';
+import { getOrCreateVirtualTestnet } from './tenderlyVnet.js';
+import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants.js';
+export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants.js';
+export * from './hreUtils.js';
 
 /** Convert a per-year interest factor to per-second (Comet constructor truncation). */
-export function perSecond(perYear: BigNumber): BigNumber {
-  return perYear.div(SECONDS_PER_YEAR);
+export function perSecond(perYear: bigint): bigint {
+  return perYear / SECONDS_PER_YEAR;
 }
 
 export interface ComparativeAmount {
@@ -76,21 +94,16 @@ export async function getSignerForProposal(
   const signers = usedSigners.get(key);
   if (signers.length == 0) {
     const signer = (await gm.getSigners())[0];
-    signers.push(signer.address);
+    signers.push(await signer.getAddress());
     return signer;
   } else {
     const signerAddress = COMP_WHALES[gm.network][signers.length];
     console.log(signerAddress);
     signers.push(signerAddress);
     // impersonate
-    await gm.hre.network.provider.request({
-      method: 'hardhat_impersonateAccount',
-      params: [signerAddress],
-    });
-    await gm.hre.network.provider.request({
-      method: 'hardhat_setBalance',
-      params: [signerAddress, (BigNumber.from(exp(1, 18))).toHexString()],
-    });
+    const { provider } = await getHardhatEthers(gm.hre);
+    await provider.send('hardhat_impersonateAccount', [signerAddress]);
+    await provider.send('hardhat_setBalance', [signerAddress, toQuantity(exp(1, 18))]);
     return await gm.getSigner(signerAddress);
   }
 }
@@ -107,9 +120,7 @@ export function expectApproximately(
   actual: bigint,
   precision = 0n
 ) {
-  expect(BigNumber.from(abs(expected - actual))).to.be.lte(
-    BigNumber.from(precision)
-  );
+  expect(abs(expected - actual)).to.be.lte(precision);
 }
 
 export function expectBase(expected: bigint, actual: bigint, precision = 2n) {
@@ -117,7 +128,7 @@ export function expectBase(expected: bigint, actual: bigint, precision = 2n) {
 }
 
 export function expectRevertCustom(
-  tx: Promise<ContractReceipt | ContractTransaction>,
+  tx: Promise<ContractTransactionReceipt | ContractTransactionResponse>,
   custom: string
 ) {
   return tx
@@ -125,18 +136,13 @@ export function expectRevertCustom(
       throw new Error('Expected transaction to be reverted');
     })
     .catch((e) => {
-      const selector = utils
-        .keccak256(
-          custom
-            .split('')
-            .reduce((a, s) => a + s.charCodeAt(0).toString(16), '0x')
-        )
-        .slice(2, 2 + 8);
+      const selector = id(custom).slice(2, 2 + 8);
       const errorName = custom.replace(/\(\)$/, '');
       const escaped = custom.replace(/[()]/g, '\\$&');
 
-      // ethers sometimes decodes the error (CALL_EXCEPTION), sometimes only the selector
+      // Recognize decoded errors as well as raw revert selectors.
       if (
+        e.revert?.signature === custom ||
         e.errorName === errorName ||
         e.errorSignature === custom ||
         e.data === `0x${selector}`
@@ -163,7 +169,7 @@ export function expectRevertCustom(
 }
 
 export function expectRevertMatches(
-  tx: Promise<ContractReceipt>,
+  tx: Promise<ContractTransactionReceipt | ContractTransactionResponse>,
   patterns: RegExp[]
 ) {
   return tx
@@ -256,7 +262,7 @@ export async function getActorAddressFromName(
     let actorAddress: string;
     if (cometRegex.test(name)) {
       // If name matches regex, e.g. '$comet'
-      actorAddress = (await context.getComet()).address;
+      actorAddress = await (await context.getComet()).getAddress();
     } else {
       throw new Error(`Invalid actor name: ${name}`);
     }
@@ -381,16 +387,13 @@ export async function isValidAssetIndex(
   if (assetNum >= MAX_ASSETS) return false;
   // Asset info checks. If any of these are false, the asset is invalid. This means that the asset is deprecated.
   const comet = await ctx.getComet();
-
-  const numAssets = await comet.numAssets();
-  if (assetNum >= numAssets) return false;
-
+  if (BigInt(assetNum) >= await comet.numAssets()) return false;
   const assetInfo = await comet.getAssetInfo(assetNum);
-  if (assetInfo.borrowCollateralFactor.toBigInt() == 0n) return false;
-  if (assetInfo.supplyCap.toBigInt() == 0n) return false;
-  if (assetInfo.liquidateCollateralFactor.toBigInt() == 0n) return false;
-  if (assetInfo.liquidationFactor.toBigInt() == 0n) return false;
-  if (assetInfo.liquidateCollateralFactor.toBigInt() <= assetInfo.borrowCollateralFactor.toBigInt()) return false;
+  if (assetInfo.borrowCollateralFactor == 0n) return false;
+  if (assetInfo.supplyCap == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor == 0n) return false;
+  if (assetInfo.liquidationFactor == 0n) return false;
+  if (assetInfo.liquidateCollateralFactor <= assetInfo.borrowCollateralFactor) return false;
   return true;
 }
 
@@ -406,9 +409,9 @@ export async function isTriviallySourceable(
   const comet = await ctx.getComet();
   const assetInfo = await comet.getAssetInfo(assetNum);
   const asset = ctx.getAssetByAddress(assetInfo.asset);
-  const amountInWei = BigInt(amount) * assetInfo.scale.toBigInt();
+  const amountInWei = BigInt(amount) * assetInfo.scale;
   // Fauceteer should have greater than the expected amount of the asset
-  return (await asset.balanceOf(fauceteer.address)) > amountInWei;
+  return (await asset.balanceOf(await fauceteer.getAddress())) > amountInWei;
 }
 
 export async function isBulkerSupported(ctx: CometContext): Promise<boolean> {
@@ -420,7 +423,7 @@ export async function hasMinBorrowGreaterThanOne(
   ctx: CometContext
 ): Promise<boolean> {
   const comet = await ctx.getComet();
-  const minBorrow = (await comet.baseBorrowMin()).toBigInt();
+  const minBorrow = await comet.baseBorrowMin();
   return minBorrow > 1n;
 }
 
@@ -455,11 +458,11 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
 
   if (rewards == null) return false;
 
-  const [rewardTokenAddress] = await rewards.rewardConfig(comet.address);
-  if (rewardTokenAddress === constants.AddressZero) return false;
+  const [rewardTokenAddress] = await rewards.rewardConfig(await comet.getAddress());
+  if (rewardTokenAddress === ZeroAddress) return false;
 
   const totalSupply = await COMP.totalSupply();
-  if (totalSupply.toBigInt() < exp(1, 18)) return false;
+  if (totalSupply < exp(1, 18)) return false;
 
   return true;
 }
@@ -469,12 +472,12 @@ export function isBridgedDeployment(ctx: CometContext): boolean {
 }
 
 export async function fetchLogs(
-  contract: Contract,
-  filter: EventFilter,
+  contract: BaseContract,
+  filter: ContractEventName,
   fromBlock: number,
   toBlock: number,
   BLOCK_SPAN = 2047
-): Promise<Event[]> {
+): Promise<(EventLog | Log)[]> {
   if (toBlock - fromBlock > BLOCK_SPAN) {
     const midBlock = fromBlock + BLOCK_SPAN;
     const logs = await contract.queryFilter(filter, fromBlock, midBlock);
@@ -488,13 +491,14 @@ export async function fetchLogs(
 
 async function redeployRenzoOracle(dm: DeploymentManager) {
   if (dm.network === 'mainnet') {
+    const { provider } = await getHardhatEthers(dm.hre);
     // renzo admin 	0xD1e6626310fD54Eceb5b9a51dA2eC329D6D4B68A
     const renzoOracle = new Contract(
       '0x5a12796f7e7EBbbc8a402667d266d2e65A814042',
       [
         'function setOracleAddress(address _token, address _oracleAddress) external',
       ],
-      dm.hre.ethers.provider
+      provider
     );
 
     const admin = await impersonateAddress(
@@ -502,11 +506,9 @@ async function redeployRenzoOracle(dm: DeploymentManager) {
       '0xD1e6626310fD54Eceb5b9a51dA2eC329D6D4B68A'
     );
     // set balance
-    await dm.hre.ethers.provider.send('hardhat_setBalance', [
-      admin.address,
-      dm.hre.ethers.utils.hexStripZeros(
-        dm.hre.ethers.utils.parseUnits('100', 'ether').toHexString()
-      ),
+    await provider.send('hardhat_setBalance', [
+      await admin.getAddress(),
+      toQuantity(parseUnits('100', 'ether')),
     ]);
 
     const newOracle = await dm.deploy(
@@ -519,9 +521,9 @@ async function redeployRenzoOracle(dm: DeploymentManager) {
 
     await renzoOracle
       .connect(admin)
-      .setOracleAddress(
+      .getFunction('setOracleAddress')(
         '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
-        newOracle.address
+        await newOracle.getAddress()
       );
   }
 }
@@ -675,21 +677,15 @@ export async function updateCCIPStats(
     },
   ];
 
-  await dm.hre.network.provider.request({
-    method: 'hardhat_impersonateAccount',
-    params: [commitStore],
-  });
-
-  await dm.hre.network.provider.request({
-    method: 'hardhat_setBalance',
-    params: [commitStore, '0x56bc75e2d63100000'],
-  });
-  const commitStoreSigner = await dm.hre.ethers.getSigner(commitStore);
+  const ethers = await getHardhatEthers(dm.hre);
+  await ethers.provider.send('hardhat_impersonateAccount', [commitStore]);
+  await ethers.provider.send('hardhat_setBalance', [commitStore, '0x56bc75e2d63100000']);
+  const commitStoreSigner = await ethers.getSigner(commitStore);
 
   const registryContract = new Contract(
     priceRegistry,
     abi,
-    dm.hre.ethers.provider
+    ethers.provider
   );
 
   const tokenPrices = [];
@@ -704,7 +700,7 @@ export async function updateCCIPStats(
     try {
       const price = await registryContract.getDestinationChainGasPrice(chainSelector);
       gasPrices.push([chainSelector, price.value]);
-    } catch (e) {
+    } catch {
       continue;
     }
   }
@@ -758,12 +754,13 @@ async function getProxyAdmin(
   proxyAddress: string
 ): Promise<string> {
   // Retrieve the proxy admin address
-  const admin = await dm.hre.ethers.provider.getStorageAt(
+  const { provider } = await getHardhatEthers(dm.hre);
+  const admin = await provider.getStorage(
     proxyAddress,
     '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103'
   );
   // Convert the admin address to a checksum address
-  const adminAddress = dm.hre.ethers.utils.getAddress(
+  const adminAddress = getAddress(
     '0x' + admin.substring(26)
   );
   return adminAddress;
@@ -779,13 +776,14 @@ async function mockAllRedstoneOracles(dm: DeploymentManager) {
     console.log(`Mocking Redstone oracle for feed: ${feed}`);
     try {
       await dm.getContractOrThrow(`MockRedstoneOracle:${feed}`);
-    } catch (_) {
+    } catch {
       await mockRedstoneOracle(dm, feed);
     }
   }
 }
 
 async function mockRedstoneOracle(dm: DeploymentManager, feed: string) {
+  const { provider } = await getHardhatEthers(dm.hre);
   const feedContract = new Contract(
     feed,
     [
@@ -805,11 +803,9 @@ async function mockRedstoneOracle(dm: DeploymentManager, feed: string) {
   const ownerAddress = await proxyAdmin.owner();
   const owner = await impersonateAddress(dm, ownerAddress);
   // set balance
-  await dm.hre.ethers.provider.send('hardhat_setBalance', [
-    owner.address,
-    dm.hre.ethers.utils.hexStripZeros(
-      dm.hre.ethers.utils.parseUnits('100', 'ether').toHexString()
-    ),
+  await provider.send('hardhat_setBalance', [
+    await owner.getAddress(),
+    toQuantity(parseUnits('100', 'ether')),
   ]);
   const price = (await feedContract.latestRoundData()).answer;
   console.log(`Current price for ${feed} is ${price}`);
@@ -819,7 +815,9 @@ async function mockRedstoneOracle(dm: DeploymentManager, feed: string) {
     [feed, price],
     true
   );
-  await proxyAdmin.connect(owner).upgrade(feed, newImplementation.address);
+  await proxyAdmin
+    .connect(owner)
+    .getFunction('upgrade')(feed, await newImplementation.getAddress());
 }
 
 export async function tenderlyExecute(
@@ -828,7 +826,11 @@ export async function tenderlyExecute(
   governor: Contract,
   timelock: Contract
 ): Promise<void> {
-  const latest = await gdm.hre.ethers.provider.getBlock('latest');
+  const governanceEthers = await getHardhatEthers(gdm.hre);
+  const latest = await governanceEthers.provider.getBlock('latest');
+  if (latest === null) {
+    throw new Error(`Cannot load latest block for ${gdm.network}`);
+  }
   const B0 = BigInt(latest.number);
   const T0 = BigInt(latest.timestamp);
 
@@ -845,18 +847,17 @@ export async function tenderlyExecute(
 
   const proposalArgs = loadCachedProposal();
   proposalArgs.pop();
-  const id = BigInt(await governor.proposalCount());
+  const proposalId = BigInt(await governor.proposalCount());
   const govIF = new Interface(governor.interface.fragments);
   const signer = await gdm.getSigner();
   const fromAddr = await signer.getAddress();
+  const governorAddress = await governor.getAddress();
+  const timelockAddress = await timelock.getAddress();
 
   const patchTL = { '0x2': '0x' + '00'.repeat(64) };
 
   const packed = (1n << 48n) | 1n;
-  const rawGS = gdm.hre.ethers.utils.hexZeroPad(
-    gdm.hre.ethers.BigNumber.from(packed).toHexString(),
-    32
-  );
+  const rawGS = zeroPadValue(toBeHex(packed), 32);
   const keyGS =
     '0x00d7616c8fe29c6c2fbe1d0c5bc8f2faa4c35b43746e70b24b4d532752affd01';
 
@@ -865,10 +866,10 @@ export async function tenderlyExecute(
   );
   const slotVoteExt = '0x' + basePLQ.toString(16).padStart(64, '0');
   const slotMapRoot = '0x' + (basePLQ + 1n).toString(16).padStart(64, '0');
-  const slotExtDead = gdm.hre.ethers.utils.keccak256(
-    gdm.hre.ethers.utils.defaultAbiCoder.encode(
+  const slotExtDead = keccak256(
+    abiCoder.encode(
       ['uint256', 'bytes32'],
-      [id, slotMapRoot]
+      [proposalId, slotMapRoot]
     )
   );
 
@@ -879,24 +880,24 @@ export async function tenderlyExecute(
   };
 
   const statePatch = {
-    [timelock.address]: { storage: patchTL },
-    [governor.address]: { storage: patchGov },
+    [timelockAddress]: { storage: patchTL },
+    [governorAddress]: { storage: patchGov },
   };
 
   const whales =
     gdm.network === 'mainnet' ? COMP_WHALES.mainnet : COMP_WHALES.testnet;
 
   const deployBytecodes = loadCachedBytecodes();
-  const chainId1 = gdm.hre.ethers.provider.network.chainId;
+  const chainId1 = (await governanceEthers.provider.getNetwork()).chainId;
 
   const simsL1 = [
     ...deployBytecodes.map((code) => ({
-      network_id: chainId1,
+      network_id: chainId1.toString(),
       from: fromAddr,
       to: '',
       block_number: Number(B0),
-      block_header: { timestamp: gdm.hre.ethers.utils.hexlify(T0) },
-      input: gdm.hre.ethers.utils.hexlify(code),
+      block_header: { timestamp: toBeHex(T0) },
+      input: hexlify(code),
       state_objects: statePatch,
       save: true,
       gas_price: 0,
@@ -905,9 +906,9 @@ export async function tenderlyExecute(
     {
       network_id: chainId1.toString(),
       from: fromAddr,
-      to: governor.address,
+      to: governorAddress,
       block_number: Number(B0),
-      block_header: { timestamp: gdm.hre.ethers.utils.hexlify(T0) },
+      block_header: { timestamp: toBeHex(T0) },
       input: govIF.encodeFunctionData('propose', proposalArgs),
       state_objects: statePatch,
       save: true,
@@ -917,10 +918,10 @@ export async function tenderlyExecute(
     ...whales.map((w) => ({
       network_id: chainId1.toString(),
       from: w,
-      to: governor.address,
+      to: governorAddress,
       block_number: Number(blockCast),
-      block_header: { timestamp: gdm.hre.ethers.utils.hexlify(timestampCast) },
-      input: govIF.encodeFunctionData('castVote', [id, 1]),
+      block_header: { timestamp: toBeHex(timestampCast) },
+      input: govIF.encodeFunctionData('castVote', [proposalId, 1]),
       state_objects: statePatch,
       save: true,
       save_if_fails: true,
@@ -930,10 +931,10 @@ export async function tenderlyExecute(
     {
       network_id: chainId1.toString(),
       from: fromAddr,
-      to: governor.address,
+      to: governorAddress,
       block_number: Number(blockQueue),
-      block_header: { timestamp: gdm.hre.ethers.utils.hexlify(timestampQueue) },
-      input: govIF.encodeFunctionData('queue', [id]),
+      block_header: { timestamp: toBeHex(timestampQueue) },
+      input: govIF.encodeFunctionData('queue', [proposalId]),
       state_objects: statePatch,
       save: true,
       save_if_fails: true,
@@ -943,10 +944,10 @@ export async function tenderlyExecute(
     {
       network_id: chainId1.toString(),
       from: fromAddr,
-      to: governor.address,
+      to: governorAddress,
       block_number: Number(blockExec),
-      block_header: { timestamp: gdm.hre.ethers.utils.hexlify(timestampExec) },
-      input: govIF.encodeFunctionData('execute', [id]),
+      block_header: { timestamp: toBeHex(timestampExec) },
+      input: govIF.encodeFunctionData('execute', [proposalId]),
       state_objects: statePatch,
       save: true,
       save_if_fails: true,
@@ -957,17 +958,17 @@ export async function tenderlyExecute(
 
   console.log(`\n========================== TENDERLY ==========================\n`);
 
-  console.log(`\nExecuting Tenderly simulation for proposal ${id}...`);
+  console.log(`\nExecuting Tenderly simulation for proposal ${proposalId}...`);
   const bundle = await simulateBundle(gdm, simsL1, Number(B0));
   console.log(`Tenderly simulation bundle size: ${bundle.length}`);
   await shareSimulation(gdm, bundle[bundle.length - 1].simulation.id);
 
   const exec1 = bundle[bundle.length - 1].simulation;
 
-  console.log(` >>> PROPOSAL EXECUTED  ${id}`);
+  console.log(` >>> PROPOSAL EXECUTED  ${proposalId}`);
   console.log(`Simulation ${exec1.id} done, status: ${exec1.status}`);
   console.log(`Link: https://www.tdly.co/shared/simulation/${exec1.id} \n`);
-  
+
   const bdms = [bdm];
   for (const dm of gdm.bridgedDeploymentManagers.values()) {
     if (!bdms.includes(dm)) {
@@ -976,9 +977,10 @@ export async function tenderlyExecute(
   }
 
   // make bdm contain only 1 dm per network
-  const uniqueBdms = new Map();
+  const uniqueBdms = new Map<bigint, DeploymentManager>();
   for (const dm of bdms) {
-    const chainId = dm.hre.ethers.provider.network.chainId;
+    const { provider } = await getHardhatEthers(dm.hre);
+    const chainId = (await provider.getNetwork()).chainId;
     if (!uniqueBdms.has(chainId)) {
       uniqueBdms.set(chainId, dm);
     }
@@ -988,24 +990,28 @@ export async function tenderlyExecute(
 
 
   for (const currentBdm of bdms) {
-    const chainId2 = currentBdm.hre.ethers.provider.network.chainId;
+    const { provider: bridgeProvider } = await getHardhatEthers(currentBdm.hre);
+    const chainId2 = (await bridgeProvider.getNetwork()).chainId;
     let proposals;
     if (chainId1 !== chainId2) {
-      const relayPath = path.resolve(__dirname, '../../cache/relay.json');
+      const relayPath = path.resolve(moduleDirectory, '../../cache/relay.json');
       if (existsSync(relayPath)) unlinkSync(relayPath);
 
       proposals = await relayMessage(gdm, currentBdm, parseFloat(B0.toString()), bundle[bundle.length - 1].transaction.transaction_info.logs);
 
       debug(`Proposals relayed to ${currentBdm.network}: ${proposals?.length ?? 0}`);
-      
+
       if (proposals && proposals.length > 0) {
         const timelockL2 = await currentBdm.getContractOrThrow('timelock');
-        const delay = await timelockL2.delay();
+        const delay = toNumber(await timelockL2.delay());
         const relayMessages = loadCachedRelayMessages();
-        const executeProposalSig = utils.id('executeProposal(uint256)').substring(0, 10);
+        const executeProposalSig = id('executeProposal(uint256)').substring(0, 10);
 
-        const latestL2 = await currentBdm.hre.ethers.provider.getBlock('latest');
-        const maxEta = Math.max(...proposals.map(p => Number(p.eta || 0))) + delay.toNumber();
+        const latestL2 = await bridgeProvider.getBlock('latest');
+        if (latestL2 === null) {
+          throw new Error(`Cannot load latest block for ${currentBdm.network}`);
+        }
+        const maxEta = Math.max(...proposals.map(p => Number(p.eta || 0))) + delay;
         const T0L2 = Math.max(latestL2.timestamp, maxEta + 1);
         const B0L2 = Number(latestL2.number) + 1;
 
@@ -1017,7 +1023,7 @@ export async function tenderlyExecute(
 
           if (msg.callData.startsWith(executeProposalSig) && !msg.eta) {
             block = block + 1;
-            timestamp = timestamp + delay.toNumber() + 1;
+            timestamp = timestamp + delay + 1;
           }
 
           previousBlock = block;
@@ -1029,18 +1035,19 @@ export async function tenderlyExecute(
             to: msg.messenger,
             block_number: Number(block),
             block_header: {
-              timestamp: currentBdm.hre.ethers.utils.hexlify(Number(timestamp))
+              timestamp: toBeHex(timestamp)
             },
             input: msg.callData,
             save: true,
             save_if_fails: true,
             gas_price: 0,
+            gas_limit: 16_777_215,
           };
         });
 
         if (simsL2.length > 0) {
           const bundle2 = await simulateBundle(currentBdm, simsL2, Number(B0L2));
-          
+
           // filter from bundle every entry with simulation.input that starts with 0x0d61b519 i.e. executeProposal(uint256)
           const filteredBundle = bundle2.filter(entry => entry.simulation.input.startsWith(executeProposalSig));
           for (const sim of filteredBundle) {
@@ -1155,18 +1162,16 @@ without casting any real votes.
 async function forceProposalVotesSucceeded(
   vnetProvider: any,
   governorAddress: string,
-  proposalId: BigNumber
+  proposalId: bigint
 ): Promise<void> {
-  const entrySlot = BigNumber.from(
-    utils.keccak256(
-      utils.defaultAbiCoder.encode(
-        ['uint256', 'uint256'],
-        [proposalId, GOV_COUNTING_FRACTIONAL_STORAGE_LOCATION]
-      )
+  const entrySlot = BigInt(keccak256(
+    abiCoder.encode(
+      ['uint256', 'uint256'],
+      [proposalId, GOV_COUNTING_FRACTIONAL_STORAGE_LOCATION]
     )
-  );
-  const forVotesSlot = utils.hexZeroPad(entrySlot.add(1).toHexString(), 32);
-  const forVotesValue = utils.hexZeroPad(BigNumber.from(10_000_000).mul(BigNumber.from(10).pow(18)).toHexString(), 32);
+  ));
+  const forVotesSlot = toBeHex(entrySlot + 1n, 32);
+  const forVotesValue = toBeHex(10_000_000n * 10n ** 18n, 32);
   await vnetProvider.send('tenderly_setStorageAt', [governorAddress, forVotesSlot, forVotesValue]);
 }
 
@@ -1203,7 +1208,7 @@ export async function tenderlyVnetExecute(
     verificationStrategy: 'lazy',
   });
 
-  const governanceVnetProvider = governanceVnetDm.hre.ethers.provider;
+  const { provider: governanceVnetProvider } = await getHardhatEthers(governanceVnetDm.hre);
   const vnetGovernor = governor.connect(governanceVnetProvider);
 
   const proposalArgs = loadCachedProposal();
@@ -1216,34 +1221,49 @@ export async function tenderlyVnetExecute(
   const proposerSigner = await governanceVnetDm.getSigner(proposerAddress);
 
   for (const code of deployBytecodes) {
-    const tx = await proposerSigner.sendTransaction({ data: utils.hexlify(code) });
+    const tx = await proposerSigner.sendTransaction({ data: hexlify(code) });
     await tx.wait();
   }
 
   console.log('Submitting proposal to Virtual TestNet governor...');
 
-  const proposeTx = await vnetGovernor.connect(proposerSigner).propose(...proposalArgs);
-  const proposeReceipt: ContractReceipt = await proposeTx.wait();
-  const proposeEvent = proposeReceipt.events.find((event: Event) => event.event === 'ProposalCreated');
-  const [proposalId] = proposeEvent.args;
+  const proposeTx = await vnetGovernor.connect(proposerSigner).getFunction('propose')(...proposalArgs);
+  const proposeReceipt = await proposeTx.wait();
+  if (proposeReceipt === null) {
+    throw new Error('Virtual TestNet proposal transaction has no receipt');
+  }
+  const governorAddress = await vnetGovernor.getAddress();
+  const proposalTopic = vnetGovernor.interface.getEvent('ProposalCreated')?.topicHash;
+  const proposeLog = proposeReceipt.logs.find(log =>
+    log.address.toLowerCase() === governorAddress.toLowerCase()
+    && log.topics[0] === proposalTopic
+  );
+  const parsedProposal = proposeLog && vnetGovernor.interface.parseLog(proposeLog);
+  if (!parsedProposal) {
+    throw new Error('ProposalCreated log not found or could not be parsed on Virtual TestNet');
+  }
+  const [proposalId] = parsedProposal.args;
   console.log(`Proposal ${proposalId.toString()} submitted on Virtual TestNet`);
 
-  await forceProposalVotesSucceeded(governanceVnetProvider, vnetGovernor.address, proposalId);
+  await forceProposalVotesSucceeded(governanceVnetProvider, governorAddress, proposalId);
 
-  const deadline = (await vnetGovernor.proposalDeadline(proposalId)).toNumber();
+  const deadline = toNumber(await vnetGovernor.getFunction('proposalDeadline')(proposalId));
   const currentBlock = await governanceVnetProvider.getBlockNumber();
   if (currentBlock <= deadline) {
-    await governanceVnetProvider.send('evm_increaseBlocks', [utils.hexlify(deadline - currentBlock + 1)]);
+    await governanceVnetProvider.send('evm_increaseBlocks', [toQuantity(deadline - currentBlock + 1)]);
   }
 
   const startingBlockNumber = await governanceVnetProvider.getBlockNumber();
 
   console.log(`Queueing proposal ${proposalId.toString()} (vote skipped via state override)...`);
-  const queueTx = await vnetGovernor.connect(proposerSigner)['queue(uint256)'](proposalId);
+  const queueTx = await vnetGovernor.connect(proposerSigner).getFunction('queue(uint256)')(proposalId);
   await queueTx.wait();
 
-  const eta = (await vnetGovernor.proposalEta(proposalId)).toNumber();
+  const eta = toNumber(await vnetGovernor.getFunction('proposalEta')(proposalId));
   const latestBlock = await governanceVnetProvider.getBlock('latest');
+  if (latestBlock === null) {
+    throw new Error(`Cannot load latest block for ${governanceVnetDm.network}`);
+  }
   if (latestBlock.timestamp <= eta) {
     await governanceVnetProvider.send('evm_setNextBlockTimestamp', [eta + 1]);
     await governanceVnetProvider.send('evm_mine', []);
@@ -1253,7 +1273,7 @@ export async function tenderlyVnetExecute(
   await updateCCIPStats(governanceVnetDm);
 
   console.log(`Executing proposal ${proposalId.toString()}...`);
-  const executeTx = await vnetGovernor.connect(proposerSigner)['execute(uint256)'](proposalId, { gasLimit: 30_000_000 });
+  const executeTx = await vnetGovernor.connect(proposerSigner).getFunction('execute(uint256)')(proposalId, { gasLimit: 30_000_000 });
   await executeTx.wait();
 
   console.log(`\n >>> PROPOSAL EXECUTED ${proposalId.toString()} \n`);
@@ -1264,11 +1284,13 @@ export async function tenderlyVnetExecute(
 
   // Collect every L2 this proposal touches: marketDm plus whatever the migration registered via
   // addBridgedDeploymentManager() (multichain proposals)
-  const governanceChainId = governanceDm.hre.ethers.provider.network.chainId;
+  const { provider: governanceProvider } = await getHardhatEthers(governanceDm.hre);
+  const governanceChainId = (await governanceProvider.getNetwork()).chainId;
   const candidateL2Dms = [marketDm, ...governanceDm.bridgedDeploymentManagers.values()];
-  const uniqueL2DmsByChainId = new Map<number, DeploymentManager>();
+  const uniqueL2DmsByChainId = new Map<bigint, DeploymentManager>();
   for (const dm of candidateL2Dms) {
-    const chainId = dm.hre.ethers.provider.network.chainId;
+    const { provider } = await getHardhatEthers(dm.hre);
+    const chainId = (await provider.getNetwork()).chainId;
     if (chainId !== governanceChainId && !uniqueL2DmsByChainId.has(chainId)) {
       uniqueL2DmsByChainId.set(chainId, dm);
     }
@@ -1316,10 +1338,11 @@ export async function voteForOpenProposal(
   { id, startBlock, endBlock }: OpenProposal
 ) {
   const governor = await dm.getContractOrThrow('governor');
-  const blockNow = await dm.hre.ethers.provider.getBlockNumber();
-  const blocksUntilStart = startBlock.toNumber() - blockNow;
+  const { provider } = await getHardhatEthers(dm.hre);
+  const blockNow = await provider.getBlockNumber();
+  const blocksUntilStart = Number(startBlock) - blockNow;
   const blocksUntilEnd =
-    endBlock.toNumber() - Math.max(startBlock.toNumber(), blockNow);
+    Number(endBlock) - Math.max(Number(startBlock), blockNow);
 
   if (blocksUntilStart > 0) {
     await mineBlocks(dm, blocksUntilStart + 1);
@@ -1333,9 +1356,9 @@ export async function voteForOpenProposal(
       try {
         const voter = await impersonateAddress(dm, whale);
         await setNextBaseFeeToZero(dm);
-        await governor.connect(voter).castVote(id, 1, { gasPrice: 0 });
+        await governor.connect(voter).getFunction('castVote')(id, 1, { gasPrice: 0 });
       } catch (err) {
-        debug(`Error while voting for ${whale}`, err.message);
+        debug(`Error while voting for ${whale}`, (err as Error).message);
       }
     }
   }
@@ -1343,7 +1366,7 @@ export async function voteForOpenProposal(
 
 function loadCachedProposal() {
   const file = path.resolve(
-    __dirname,
+    moduleDirectory,
     '../..',
     'cache',
     'currentProposal.json'
@@ -1354,7 +1377,7 @@ function loadCachedProposal() {
 }
 
 function loadCachedRelayMessages() {
-  const file = path.resolve(__dirname, '../../cache/relay.json');
+  const file = path.resolve(moduleDirectory, '../../cache/relay.json');
   if (!existsSync(file)) {
     return [];
   }
@@ -1367,7 +1390,7 @@ function loadCachedRelayMessages() {
 }
 
 function loadCachedBytecodes() {
-  const file = path.resolve(__dirname, '../../cache/bytecodes.json');
+  const file = path.resolve(moduleDirectory, '../../cache/bytecodes.json');
   if (!existsSync(file)) {
     return [];
   }
@@ -1383,9 +1406,10 @@ export async function executeOpenProposal(
   { id, startBlock, endBlock }: OpenProposal
 ) {
   const governor = await dm.getContractOrThrow('governor');
-  const blockNow = await dm.hre.ethers.provider.getBlockNumber();
+  const { provider } = await getHardhatEthers(dm.hre);
+  const blockNow = await provider.getBlockNumber();
   const blocksUntilEnd =
-    endBlock.toNumber() - Math.max(startBlock.toNumber(), blockNow) + 1;
+    Number(endBlock) - Math.max(Number(startBlock), blockNow) + 1;
 
   if (blocksUntilEnd > 0) {
     await mineBlocks(dm, blocksUntilEnd);
@@ -1398,19 +1422,22 @@ export async function executeOpenProposal(
 
   // Execute proposal (maybe, w/ gas limit so we see if exec reverts, not a gas estimation error)
   if ((await governor.state(id)) == ProposalState.Queued) {
-    const block = await dm.hre.ethers.provider.getBlock('latest');
+    const block = await provider.getBlock('latest');
+    if (block === null) {
+      throw new Error(`Cannot load latest block for ${dm.network}`);
+    }
     const eta = await (async () => {
       try {
         return await governor.proposalEta(id);
       }
-      catch (err) {
+      catch {
         const proposal = await governor.proposals(id);
         return proposal.eta;
       }
     })();
     await setNextBlockTimestamp(
       dm,
-      Math.max(block.timestamp, eta.toNumber()) + 1
+      Math.max(block.timestamp, Number(eta)) + 1
     );
 
     await setNextBaseFeeToZero(dm);
@@ -1420,7 +1447,10 @@ export async function executeOpenProposal(
     const tx = await governor.execute(id, { gasPrice: 0, gasLimit: 120000000 });
     const receipt = await tx.wait();
 
-    if (receipt.gasUsed.toNumber() >= 16_777_215) {
+    if (receipt === null) {
+      throw new Error('Proposal execution transaction was not mined');
+    }
+    if (receipt.gasUsed >= 16_777_215n) {
       throw new Error('Execution may have failed due to hitting gas limit');
     }
   }
@@ -1428,12 +1458,12 @@ export async function executeOpenProposal(
   await redeployRenzoOracle(dm);
 
   // mine a block
-  await dm.hre.ethers.provider.send('evm_mine', []);
+  await provider.send('evm_mine', []);
 }
 
 async function testnetPropose(
   dm: DeploymentManager,
-  proposer: SignerWithAddress,
+  proposer: Signer,
   targets: string[],
   values: BigNumberish[],
   signatures: string[],
@@ -1443,23 +1473,23 @@ async function testnetPropose(
 ) {
   const governor = await dm.getContractOrThrow('governor');
   const testnetGovernor = new Contract(
-    governor.address,
+    await governor.getAddress(),
     [
       'function propose(address[] memory targets, uint256[] memory values, string[] memory signatures, bytes[] memory calldatas, string memory description) external returns (uint256 proposalId)',
       'event ProposalCreated(uint256 proposalId, address proposer, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 startBlock, uint256 endBlock, string description)',
     ],
-    governor.signer
+    governor.runner
   );
 
   return testnetGovernor
     .connect(proposer)
-    .propose(targets, values, signatures, calldatas, description, { gasPrice });
+    .getFunction('propose')(targets, values, signatures, calldatas, description, { gasPrice });
 }
 
 // Instantly executes some actions through the governance proposal process
 export async function fastGovernanceExecute(
   dm: DeploymentManager,
-  proposer: SignerWithAddress,
+  proposer: Signer,
   targets: string[],
   values: BigNumberish[],
   signatures: string[],
@@ -1472,11 +1502,11 @@ export async function fastGovernanceExecute(
   const proposeTxn =
     dm.network === 'mainnet'
       ? await (
-        await governor.connect(proposer).propose(
+        await governor.connect(proposer).getFunction('propose')(
           targets,
           values,
           calldatas.map((calldata, i) => {
-            return utils.id(signatures[i]).slice(0, 10) + calldata.slice(2);
+            return id(signatures[i]).slice(0, 10) + calldata.slice(2);
           }),
           'FastExecuteProposal',
           { gasPrice: 0 }
@@ -1494,14 +1524,19 @@ export async function fastGovernanceExecute(
           0
         )
       ).wait();
-  const proposeEvent = proposeTxn.events.find(
-    (event) => event.event === 'ProposalCreated'
+  const proposeEvent = proposeTxn.logs.find(
+    (event): event is EventLog =>
+      event instanceof EventLog && event.eventName === 'ProposalCreated'
   );
-  const [id, , , , , , startBlock, endBlock] = proposeEvent.args;
+  if (proposeEvent === undefined) {
+    throw new Error('ProposalCreated event not found');
+  }
+  const [proposalId, , , , , , startBlock, endBlock] = proposeEvent.args;
+  const proposerAddress = await proposer.getAddress();
 
   await voteForOpenProposal(dm, {
-    id,
-    proposer: proposer.address,
+    id: proposalId,
+    proposer: proposerAddress,
     targets,
     values,
     signatures,
@@ -1510,8 +1545,8 @@ export async function fastGovernanceExecute(
     endBlock,
   });
   await executeOpenProposal(dm, {
-    id,
-    proposer: proposer.address,
+    id: proposalId,
+    proposer: proposerAddress,
     targets,
     values,
     signatures,
@@ -1524,14 +1559,15 @@ export async function fastGovernanceExecute(
 export async function fastL2GovernanceExecute(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
-  proposer: SignerWithAddress,
+  proposer: Signer,
   targets: string[],
   values: BigNumberish[],
   signatures: string[],
   calldatas: string[]
 ) {
+  const { provider } = await getHardhatEthers(governanceDeploymentManager.hre);
   const startingBlockNumber =
-    await governanceDeploymentManager.hre.ethers.provider.getBlockNumber();
+    await provider.getBlockNumber();
   await fastGovernanceExecute(
     governanceDeploymentManager,
     proposer,
@@ -1557,6 +1593,7 @@ export async function createCrossChainProposal(
   const bridgeDeploymentManager = context.world.deploymentManager!;
   const proposer = await context.getProposer();
   const bridgeNetwork = bridgeDeploymentManager.network;
+  const bridgeReceiverAddress = await bridgeReceiver.getAddress();
   const targets: string[] = [];
   const values: BigNumberish[] = [];
   const signatures: string[] = [];
@@ -1568,8 +1605,8 @@ export async function createCrossChainProposal(
       const inbox = await govDeploymentManager.getContractOrThrow(
         'arbitrumInbox'
       );
-      const refundAddress = constants.AddressZero;
-      const createRetryableTicketCalldata = utils.defaultAbiCoder.encode(
+      const refundAddress = ZeroAddress;
+      const createRetryableTicketCalldata = abiCoder.encode(
         [
           'address',
           'uint256',
@@ -1581,7 +1618,7 @@ export async function createCrossChainProposal(
           'bytes',
         ],
         [
-          bridgeReceiver.address, // address to,
+          bridgeReceiverAddress, // address to,
           0, // uint256 l2CallValue,
           0, // uint256 maxSubmissionCost,
           refundAddress, // address excessFeeRefundAddress,
@@ -1591,7 +1628,7 @@ export async function createCrossChainProposal(
           l2ProposalData, // bytes calldata data
         ]
       );
-      targets.push(inbox.address);
+      targets.push(await inbox.getAddress());
       values.push(0);
       signatures.push(
         'createRetryableTicket(address,uint256,uint256,address,address,uint256,uint256,bytes)'
@@ -1600,103 +1637,103 @@ export async function createCrossChainProposal(
       break;
     }
     case 'base': {
-      const sendMessageCalldata = utils.defaultAbiCoder.encode(
+      const sendMessageCalldata = abiCoder.encode(
         ['address', 'bytes', 'uint32'],
-        [bridgeReceiver.address, l2ProposalData, 1_000_000] // XXX find a reliable way to estimate the gasLimit
+        [bridgeReceiverAddress, l2ProposalData, 1_000_000] // XXX find a reliable way to estimate the gasLimit
       );
       const baseL1CrossDomainMessenger =
         await govDeploymentManager.getContractOrThrow(
           'baseL1CrossDomainMessenger'
         );
 
-      targets.push(baseL1CrossDomainMessenger.address);
+      targets.push(await baseL1CrossDomainMessenger.getAddress());
       values.push(0);
       signatures.push('sendMessage(address,bytes,uint32)');
       calldata.push(sendMessageCalldata);
       break;
     }
     case 'polygon': {
-      const sendMessageToChildCalldata = utils.defaultAbiCoder.encode(
+      const sendMessageToChildCalldata = abiCoder.encode(
         ['address', 'bytes'],
-        [bridgeReceiver.address, l2ProposalData]
+        [bridgeReceiverAddress, l2ProposalData]
       );
       const fxRoot = await govDeploymentManager.getContractOrThrow('fxRoot');
 
-      targets.push(fxRoot.address);
+      targets.push(await fxRoot.getAddress());
       values.push(0);
       signatures.push('sendMessageToChild(address,bytes)');
       calldata.push(sendMessageToChildCalldata);
       break;
     }
     case 'linea': {
-      const sendMessageCalldata = utils.defaultAbiCoder.encode(
+      const sendMessageCalldata = abiCoder.encode(
         ['address', 'uint256', 'bytes'],
-        [bridgeReceiver.address, 0, l2ProposalData]
+        [bridgeReceiverAddress, 0, l2ProposalData]
       );
       const lineaMessageService = await govDeploymentManager.getContractOrThrow(
         'lineaMessageService'
       );
-      targets.push(lineaMessageService.address);
+      targets.push(await lineaMessageService.getAddress());
       values.push(0);
       signatures.push('sendMessage(address,uint256,bytes)');
       calldata.push(sendMessageCalldata);
       break;
     }
     case 'optimism': {
-      const sendMessageCalldata = utils.defaultAbiCoder.encode(
+      const sendMessageCalldata = abiCoder.encode(
         ['address', 'bytes', 'uint32'],
-        [bridgeReceiver.address, l2ProposalData, 2_500_000]
+        [bridgeReceiverAddress, l2ProposalData, 2_500_000]
       );
       const opL1CrossDomainMessenger =
         await govDeploymentManager.getContractOrThrow(
           'opL1CrossDomainMessenger'
         );
 
-      targets.push(opL1CrossDomainMessenger.address);
+      targets.push(await opL1CrossDomainMessenger.getAddress());
       values.push(0);
       signatures.push('sendMessage(address,bytes,uint32)');
       calldata.push(sendMessageCalldata);
       break;
     }
     case 'mantle': {
-      const sendMessageCalldata = utils.defaultAbiCoder.encode(
+      const sendMessageCalldata = abiCoder.encode(
         ['address', 'bytes', 'uint256'],
-        [bridgeReceiver.address, l2ProposalData, 2_500_000]
+        [bridgeReceiverAddress, l2ProposalData, 2_500_000]
       );
       const mantleL1CrossDomainMessenger =
         await govDeploymentManager.getContractOrThrow(
           'mantleL1CrossDomainMessenger'
         );
-      targets.push(mantleL1CrossDomainMessenger.address);
+      targets.push(await mantleL1CrossDomainMessenger.getAddress());
       values.push(0);
       signatures.push('sendMessage(address,bytes,uint32)');
       calldata.push(sendMessageCalldata);
       break;
     }
     case 'unichain': {
-      const sendMessageCalldata = utils.defaultAbiCoder.encode(
+      const sendMessageCalldata = abiCoder.encode(
         ['address', 'bytes', 'uint256'],
-        [bridgeReceiver.address, l2ProposalData, 2_500_000]
+        [bridgeReceiverAddress, l2ProposalData, 2_500_000]
       );
       const unichainL1CrossDomainMessenger =
         await govDeploymentManager.getContractOrThrow(
           'unichainL1CrossDomainMessenger'
         );
-      targets.push(unichainL1CrossDomainMessenger.address);
+      targets.push(await unichainL1CrossDomainMessenger.getAddress());
       values.push(0);
       signatures.push('sendMessage(address,bytes,uint32)');
       calldata.push(sendMessageCalldata);
       break;
     }
     case 'scroll': {
-      const sendMessageCalldata = utils.defaultAbiCoder.encode(
+      const sendMessageCalldata = abiCoder.encode(
         ['address', 'uint256', 'bytes', 'uint256'],
-        [bridgeReceiver.address, 0, l2ProposalData, 1_000_000] // XXX find a reliable way to estimate the gasLimit
+        [bridgeReceiverAddress, 0, l2ProposalData, 1_000_000] // XXX find a reliable way to estimate the gasLimit
       );
       const scrollMessenger = await govDeploymentManager.getContractOrThrow(
         'scrollMessenger'
       );
-      targets.push(scrollMessenger.address);
+      targets.push(await scrollMessenger.getAddress());
       values.push(exp(1, 18)); // XXX fees are paid via msg.value
       signatures.push('sendMessage(address,uint256,bytes,uint256)');
       calldata.push(sendMessageCalldata);
@@ -1707,23 +1744,23 @@ export async function createCrossChainProposal(
         'l1CCIPRouter'
       );
 
-      targets.push(l1CCIPRouter.address);
-      values.push(utils.parseEther('0.5'));
+      targets.push(await l1CCIPRouter.getAddress());
+      values.push(parseEther('0.5'));
 
       const destinationChainSelector = '6916147374840168594';
 
       const args = [
         destinationChainSelector,
         [
-          utils.defaultAbiCoder.encode(['address'], [bridgeReceiver.address]),
+          abiCoder.encode(['address'], [bridgeReceiverAddress]),
           l2ProposalData,
           [],
-          constants.AddressZero,
+          ZeroAddress,
           '0x',
         ],
       ];
 
-      const data = utils.defaultAbiCoder.encode(
+      const data = abiCoder.encode(
         ['uint64', '(bytes,bytes,(address,uint256)[],address,bytes)'],
         args
       );
@@ -1756,8 +1793,9 @@ export async function executeOpenProposalAndRelay(
   bridgeDeploymentManager: DeploymentManager,
   openProposal: OpenProposal
 ) {
+  const { provider } = await getHardhatEthers(governanceDeploymentManager.hre);
   const startingBlockNumber =
-    await governanceDeploymentManager.hre.ethers.provider.getBlockNumber();
+    await provider.getBlockNumber();
   await executeOpenProposal(governanceDeploymentManager, openProposal);
 
   console.log(`Executed proposal ${openProposal.id} on ${governanceDeploymentManager.network}, checking if relay to ${bridgeDeploymentManager.network} is needed...`);
@@ -1790,13 +1828,11 @@ async function getLiquidationMargin({
   for (let i = 0; i < numAssets; i++) {
     const { asset, priceFeed, scale, liquidateCollateralFactor } =
       await comet.getAssetInfo(i);
-    const collatBalance = (
-      await comet.collateralBalanceOf(actor.address, asset)
-    ).toBigInt();
-    const collatPrice = (await comet.getPrice(priceFeed)).toBigInt();
-    const collatValue = (collatBalance * collatPrice) / scale.toBigInt();
+    const collatBalance = await comet.collateralBalanceOf(actor.address, asset);
+    const collatPrice = await comet.getPrice(priceFeed);
+    const collatValue = (collatBalance * collatPrice) / scale;
     liquidity +=
-      (collatValue * liquidateCollateralFactor.toBigInt()) / factorScale;
+      (collatValue * liquidateCollateralFactor) / factorScale;
   }
 
   return liquidity;
@@ -1819,14 +1855,12 @@ export async function timeUntilUnderwater({
   fudgeFactor?: bigint;
 }): Promise<number> {
   const baseBalance = await actor.getCometBaseBalance();
-  const baseScale = (await comet.baseScale()).toBigInt();
-  const basePrice = (
-    await comet.getPrice(await comet.baseTokenPriceFeed())
-  ).toBigInt();
+  const baseScale = await comet.baseScale();
+  const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
   const baseLiquidity = (baseBalance * basePrice) / baseScale;
   const utilization = await comet.getUtilization();
-  const borrowRate = (await comet.getBorrowRate(utilization)).toBigInt();
-  const factorScale = (await comet.factorScale()).toBigInt();
+  const borrowRate = await comet.getBorrowRate(utilization);
+  const factorScale = await comet.factorScale();
   const liquidationMargin = await getLiquidationMargin({
     comet,
     actor,
@@ -1857,16 +1891,16 @@ export function isTenderlyLog(log: any): log is { raw: { topics: string[], data:
 export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
   try {
     const configurator = await ctx.getConfigurator();
-    const ethers = ctx.world.deploymentManager.hre.ethers;
+    const ethers = await getHardhatEthers(ctx.world.deploymentManager.hre);
     
     // Use function selector to probe existence without reverting on unsupported networks
-    const iface = new ethers.utils.Interface([
+    const iface = new Interface([
       'function marketAdminPermissionChecker() public view returns (address)'
     ]);
-    const functionSelector = iface.getSighash('marketAdminPermissionChecker');
+    const functionSelector = iface.getFunction('marketAdminPermissionChecker')!.selector;
     
     const result = await ethers.provider.call({
-      to: configurator.address,
+      to: await configurator.getAddress(),
       data: functionSelector
     });
     
@@ -1874,7 +1908,7 @@ export async function supportsMarketAdminPermissionChecker(ctx: CometContext): P
       return true;
     }
     return false;
-  } catch (e) {
+  } catch {
     return false;
   }
 }

@@ -1,10 +1,13 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
-import { constants, ethers } from 'ethers';
-import { Log } from '@ethersproject/abstract-provider';
-import { OpenBridgedProposal } from '../context/Gov';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { isTenderlyLog } from './index';
+import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils.js';
+import { AbiCoder, toNumber, ZeroAddress } from 'ethers';
+import type { Log, TransactionReceipt } from 'ethers';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
+import type { OpenBridgedProposal } from '../context/Gov.js';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import { isTenderlyLog } from './index.js';
+
+const abiCoder = AbiCoder.defaultAbiCoder();
 
 const LINEA_SETTER_ROLE_ACCOUNT = '0x2b0F9C76970975aec03784EFd763623757EF7652';
 
@@ -32,74 +35,89 @@ export default async function relayLineaMessage(
   const l2USDCBridge = await bridgeDeploymentManager.getContractOrThrow('l2USDCBridge');
   const l2MessageService = await bridgeDeploymentManager.getContractOrThrow('l2MessageService');
   const l2StandardBridge = await bridgeDeploymentManager.getContractOrThrow('l2StandardBridge');
+  const lineaMessageServiceAddress = await lineaMessageService.getAddress();
+  const lineaL1USDCBridgeAddress = await lineaL1USDCBridge.getAddress();
+  const timelockAddress = await timelock.getAddress();
+  const lineaL1TokenBridgeAddress = await lineaL1TokenBridge.getAddress();
+  const bridgeReceiverAddress = await bridgeReceiver.getAddress();
+  const l2USDCBridgeAddress = await l2USDCBridge.getAddress();
+  const l2MessageServiceAddress = await l2MessageService.getAddress();
+  const l2StandardBridgeAddress = await l2StandardBridge.getAddress();
+  const { provider: governanceProvider } = await getHardhatEthers(governanceDeploymentManager.hre);
+
   const openBridgedProposals: OpenBridgedProposal[] = [];
   // Grab all events on the L1CrossDomainMessenger contract since the `startingBlockNumber`
   const filter = lineaMessageService.filters.MessageSent();
   const filterRollingHash = lineaMessageService.filters.RollingHashUpdated();
+  const messageTopics = await filter.getTopicFilter();
+  const rollingHashTopics = await filterRollingHash.getTopicFilter();
   let messageSentEvents: Log[] = [];
   let rollingHashUpdatedEvents: Log[] = [];
   
   if (tenderlyLogs) {
   
-    const msgTopic = lineaMessageService.interface.getEventTopic('MessageSent');
-    const hashTopic = lineaMessageService.interface.getEventTopic('RollingHashUpdated');
+    const msgTopic = messageTopics[0];
+    const hashTopic = rollingHashTopics[0];
   
     const tenderlyMsgEvents = tenderlyLogs.filter(log =>
       log.raw?.topics?.[0] === msgTopic &&
-      log.raw?.address?.toLowerCase() === lineaMessageService.address.toLowerCase()
+      log.raw?.address?.toLowerCase() === lineaMessageServiceAddress.toLowerCase()
     );
   
     const tenderlyHashEvents = tenderlyLogs.filter(log =>
       log.raw?.topics?.[0] === hashTopic &&
-      log.raw?.address?.toLowerCase() === lineaMessageService.address.toLowerCase()
+      log.raw?.address?.toLowerCase() === lineaMessageServiceAddress.toLowerCase()
     );
   
     // getLogs version:
     const fromBlock = Math.max(0, startingBlockNumber - 50000);
-    const toBlock = await governanceDeploymentManager.hre.ethers.provider.getBlockNumber();
+    const toBlock = await governanceProvider.getBlockNumber();
 
     const realMsgEvents = await fetchLogsInChunks(
-      governanceDeploymentManager.hre.ethers.provider,
-      filter,
+      governanceProvider,
+      messageTopics,
       fromBlock,
       toBlock,
-      lineaMessageService.address
+      lineaMessageServiceAddress
     );
 
     const realHashEvents = await fetchLogsInChunks(
-      governanceDeploymentManager.hre.ethers.provider,
-      filterRollingHash,
+      governanceProvider,
+      rollingHashTopics,
       fromBlock,
       toBlock,
-      lineaMessageService.address
+      lineaMessageServiceAddress
     );
 
     messageSentEvents = [...realMsgEvents, ...tenderlyMsgEvents];
     rollingHashUpdatedEvents = [...realHashEvents, ...tenderlyHashEvents];
   } else {
     const fromBlock = Math.max(0, startingBlockNumber - 50000);
-    const toBlock = await governanceDeploymentManager.hre.ethers.provider.getBlockNumber();
+    const toBlock = await governanceProvider.getBlockNumber();
 
     messageSentEvents = await fetchLogsInChunks(
-      governanceDeploymentManager.hre.ethers.provider,
-      filter,
+      governanceProvider,
+      messageTopics,
       fromBlock,
       toBlock,
-      lineaMessageService.address
+      lineaMessageServiceAddress
     );
 
     rollingHashUpdatedEvents = await fetchLogsInChunks(
-      governanceDeploymentManager.hre.ethers.provider,
-      filterRollingHash,
+      governanceProvider,
+      rollingHashTopics,
       fromBlock,
       toBlock,
-      lineaMessageService.address
+      lineaMessageServiceAddress
     );
   }
 
   for (let i = 0; i < messageSentEvents.length; i++) {
     const messageSentEvent = messageSentEvents[i];
     const rollingHashUpdatedEvent = rollingHashUpdatedEvents[i];
+    if (!rollingHashUpdatedEvent) {
+      throw new Error('RollingHashUpdated log not found');
+    }
 
     let parsedMessage, parsedRolling;
 
@@ -121,10 +139,13 @@ export default async function relayLineaMessage(
       parsedRolling = lineaMessageService.interface.parseLog(rollingHashUpdatedEvent);
     }
 
+    if (!parsedMessage || !parsedRolling) {
+      throw new Error('Linea message logs could not be parsed');
+    }
     const { _from, _to, _fee, _value, _nonce, _calldata, _messageHash } = parsedMessage.args;
     const { messageNumber, rollingHash, messageHash } = parsedRolling.args;
 
-    if((await l2MessageService.lastAnchoredL1MessageNumber()).gte(messageNumber)) continue;
+    if(await l2MessageService.lastAnchoredL1MessageNumber() >= messageNumber) continue;
 
     await setNextBaseFeeToZero(bridgeDeploymentManager);
 
@@ -135,7 +156,7 @@ export default async function relayLineaMessage(
 
     let callData;
     // First the message's hash has to be added by a specific account in the "contract's queue"
-    if((await l2MessageService.lastAnchoredL1MessageNumber()).lt(messageNumber)){
+    if(await l2MessageService.lastAnchoredL1MessageNumber() < messageNumber){
       if(tenderlyLogs) {
         callData = l2MessageService.interface.encodeFunctionData('anchorL1L2MessageHashes', [
           [messageHash],
@@ -144,12 +165,12 @@ export default async function relayLineaMessage(
           rollingHash
         ]);
         bridgeDeploymentManager.stashRelayMessage(
-          l2MessageService.address,
+          l2MessageServiceAddress,
           callData,
-          aliasSetterRoleAccount.address
+          await aliasSetterRoleAccount.getAddress()
         );
       }
-      await l2MessageService.connect(aliasSetterRoleAccount).anchorL1L2MessageHashes(
+      await l2MessageService.connect(aliasSetterRoleAccount).getFunction('anchorL1L2MessageHashes')(
         [messageHash],
         messageNumber,
         messageNumber,
@@ -157,14 +178,14 @@ export default async function relayLineaMessage(
       );
     }
 
-    if(await l2MessageService.inboxL1L2MessageStatus(_messageHash) == 2) continue;
+    if(await l2MessageService.inboxL1L2MessageStatus(_messageHash) == 2n) continue;
 
-    let relayMessageTxn: { events: any[] };
+    let relayMessageTxn: TransactionReceipt | null;
 
     if(
-      _from.toLowerCase() === timelock.address.toLowerCase()
-      || _from.toLowerCase() === lineaL1TokenBridge.address.toLowerCase()
-      || _from.toLowerCase() === lineaL1USDCBridge.address.toLowerCase()
+      _from.toLowerCase() === timelockAddress.toLowerCase()
+      || _from.toLowerCase() === lineaL1TokenBridgeAddress.toLowerCase()
+      || _from.toLowerCase() === lineaL1USDCBridgeAddress.toLowerCase()
     ){
       if(tenderlyLogs) {
         callData = l2MessageService.interface.encodeFunctionData('claimMessage', [
@@ -172,13 +193,13 @@ export default async function relayLineaMessage(
           _to,
           _fee,
           _value,
-          constants.AddressZero,
+          ZeroAddress,
           _calldata,
           _nonce
         ]);
         const signer = await bridgeDeploymentManager.getSigner();
         bridgeDeploymentManager.stashRelayMessage(
-          l2MessageService.address,
+          l2MessageServiceAddress,
           callData,
           await signer.getAddress()
         );
@@ -186,12 +207,12 @@ export default async function relayLineaMessage(
    
 
       relayMessageTxn = await (
-        await l2MessageService.connect(signer).claimMessage(
+        await l2MessageService.connect(signer).getFunction('claimMessage')(
           _from,
           _to,
           _fee,
           _value,
-          constants.AddressZero,
+          ZeroAddress,
           _calldata,
           _nonce,
           {
@@ -200,6 +221,9 @@ export default async function relayLineaMessage(
           }
         )
       ).wait();
+      if (relayMessageTxn === null) {
+        throw new Error('Linea relay transaction was not mined');
+      }
       
     } else continue;
 
@@ -207,13 +231,13 @@ export default async function relayLineaMessage(
     // there are two types:
     // 1. Bridging ERC20 token
     // 2. Cross-chain message passing
-    if (_to.toLowerCase() === l2StandardBridge.address.toLowerCase()) {
+    if (_to.toLowerCase() === l2StandardBridgeAddress.toLowerCase()) {
       // Bridging ERC20 token
       const messageWithoutPrefix = _calldata.slice(2); // strip out the 0x prefix
       const messageWithoutSigHash = '0x' + messageWithoutPrefix.slice(8);
 
       // Bridging ERC20 token
-      const [ l1Token, amount, to ] = ethers.utils.defaultAbiCoder.decode(
+      const [ l1Token, amount, to ] = abiCoder.decode(
         ['address nativeToken', 'uint256 amount', 'address recipient'],
         messageWithoutSigHash
       );
@@ -222,10 +246,10 @@ export default async function relayLineaMessage(
         `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Bridged over ${amount} of ${l1Token} to user ${to}`
       );
     }
-    else if (_to.toLowerCase() === l2USDCBridge.address.toLowerCase()){
+    else if (_to.toLowerCase() === l2USDCBridgeAddress.toLowerCase()){
       const messageWithoutPrefix = _calldata.slice(2); // strip out the 0x prefix
       const messageWithoutSigHash = '0x' + messageWithoutPrefix.slice(8);
-      const [ to, amount ] = ethers.utils.defaultAbiCoder.decode(
+      const [ to, amount ] = abiCoder.decode(
         ['address _recipient', 'uint256 _amount'],
         messageWithoutSigHash
       );
@@ -233,14 +257,19 @@ export default async function relayLineaMessage(
         `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Bridged over ${amount} of USDC.e to user ${to}`
       );
     }
-    else if (_to.toLowerCase() === bridgeReceiver.address.toLowerCase()) {
+    else if (_to.toLowerCase() === bridgeReceiverAddress.toLowerCase()) {
       // Cross-chain message passing
-      const proposalCreatedEvent = relayMessageTxn.events.find(
-        event => event.address === bridgeReceiver.address
+      const proposalCreatedEvent = relayMessageTxn.logs.find(
+        event => event.address === bridgeReceiverAddress
       );
-      const {
-        args: { id, eta }
-      } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+      if (!proposalCreatedEvent) {
+        throw new Error('ProposalCreated log not found');
+      }
+      const parsedProposal = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+      if (!parsedProposal) {
+        throw new Error('ProposalCreated log could not be parsed');
+      }
+      const { id, eta } = parsedProposal.args;
 
       // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
       openBridgedProposals.push({ id, eta });
@@ -255,7 +284,7 @@ export default async function relayLineaMessage(
   for (let proposal of openBridgedProposals) {
     const { eta, id } = proposal;
     // Fast forward l2 time
-    await setNextBlockTimestamp(bridgeDeploymentManager, eta.toNumber() + 1);
+    await setNextBlockTimestamp(bridgeDeploymentManager, toNumber(eta) + 1);
 
     // Execute queued proposal
     await setNextBaseFeeToZero(bridgeDeploymentManager);
@@ -264,7 +293,7 @@ export default async function relayLineaMessage(
       const signer = await bridgeDeploymentManager.getSigner();
 
       bridgeDeploymentManager.stashRelayMessage(
-        bridgeReceiver.address,
+        bridgeReceiverAddress,
         callData,
         await signer.getAddress()
       );
@@ -281,7 +310,7 @@ export default async function relayLineaMessage(
 }
 
 // Helper to fetch logs in chunks of 10,000 blocks
-async function fetchLogsInChunks(provider: any, filter: any, fromBlock: number, toBlock: number, address: string) {
+async function fetchLogsInChunks(provider: any, topics: (string | string[] | null)[], fromBlock: number, toBlock: number, address: string) {
   const chunkSize = 10000;
   let logs: Log[] = [];
   for (let start = fromBlock; start <= toBlock; start += chunkSize) {
@@ -290,7 +319,7 @@ async function fetchLogsInChunks(provider: any, filter: any, fromBlock: number, 
       fromBlock: start,
       toBlock: end,
       address,
-      topics: filter.topics!
+      topics
     });
     logs = logs.concat(chunkLogs);
   }

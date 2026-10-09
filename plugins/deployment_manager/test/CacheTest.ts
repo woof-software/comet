@@ -1,7 +1,7 @@
 import { expect } from 'chai';
-import { tempDir } from './TestHelpers';
-import { Cache } from '../Cache';
-import { objectFromMap } from '../Utils';
+import { tempDir } from './TestHelpers.js';
+import { Cache } from '../Cache.js';
+import { objectFromMap } from '../Utils.js';
 
 describe('Cache', () => {
   it('read and store values in-memory', async () => {
@@ -60,11 +60,13 @@ describe('Cache', () => {
 
       expect(cache.cache).to.eql(new Map([['test-network', new Map([['test-deployment', new Map([['abc', new Map([['a', 5]])]])]])]]));
 
-      expect(objectFromMap(await cache.readCache<Map<string, number>>({ rel: 'abc' }))).to.eql({a: 5});
+      const firstMap = await cache.readCache({ rel: 'abc' }) as Map<string, number>;
+      expect(objectFromMap(firstMap)).to.eql({a: 5});
 
       await cache.storeMap({ rel: 'abc' }, new Map([['a', 6]]));
 
-      expect(objectFromMap(await cache.readCache<Map<string, number>>({ rel: 'abc' }))).to.eql({a: 6});
+      const updatedMap = await cache.readCache({ rel: 'abc' }) as Map<string, number>;
+      expect(objectFromMap(updatedMap)).to.eql({a: 6});
     });
   });
 

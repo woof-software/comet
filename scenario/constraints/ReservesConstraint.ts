@@ -1,9 +1,9 @@
-import { Constraint, Solution } from '../../plugins/scenario';
-import { CometContext } from '../context/CometContext';
+import type { Constraint, Solution } from '../../plugins/scenario/index.js';
+import type { CometContext } from '../context/CometContext.js';
 import { expect } from 'chai';
-import { Requirements } from './Requirements';
-import { exp } from '../../test/helpers';
-import { ComparisonOp, parseAmount, getToTransferAmount } from '../utils';
+import type { Requirements } from './Requirements.js';
+import { exp } from '../../test/helpers.js';
+import { ComparisonOp, parseAmount, getToTransferAmount } from '../utils/index.js';
 
 export class ReservesConstraint<T extends CometContext, R extends Requirements> implements Constraint<T, R> {
   async solve(requirements: R, _initialContext: T) {
@@ -13,15 +13,15 @@ export class ReservesConstraint<T extends CometContext, R extends Requirements> 
       solutions.push(async function barelyMeet(context: T) {
         const comet = await context.getComet();
         const baseToken = await comet.baseToken();
-        const currentReserves = (await comet.getReserves()).toBigInt();
+        const currentReserves = await comet.getReserves();
         const amount = parseAmount(reservesRequirement);
-        const decimals = await comet.decimals();
+        const decimals = Number(await comet.decimals());
 
         expect(amount.op).to.equal(ComparisonOp.GTE, `Operation ${amount.op} not supported (yet) by reserve cap constraint`);
 
         const amountToSource = getToTransferAmount(amount, currentReserves, decimals);
         // add buffer to adjust for interest accrual
-        await context.sourceTokens(amountToSource * 105n / 100n, baseToken, comet.address);
+        await context.sourceTokens(amountToSource * 105n / 100n, baseToken, await comet.getAddress());
 
         return context;
       });
@@ -36,8 +36,8 @@ export class ReservesConstraint<T extends CometContext, R extends Requirements> 
     if (reservesRequirement !== undefined) {
       const comet = await context.getComet();
       const amount = parseAmount(reservesRequirement);
-      const decimals = await comet.decimals();
-      const currentReserves = (await comet.getReserves()).toBigInt();
+      const decimals = Number(await comet.decimals());
+      const currentReserves = await comet.getReserves();
       const expectedReserves = exp(amount.val, decimals);
 
       switch (amount.op) {

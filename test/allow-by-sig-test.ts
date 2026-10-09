@@ -1,7 +1,14 @@
-import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
-import { ethers, expect, exp, makeProtocol, wait, event, defaultAssets, SnapshotRestorer, takeSnapshot } from './helpers';
-import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-import { BigNumber, Signature } from 'ethers';
+import { MaxUint256, Signature, ZeroAddress } from 'ethers';
+import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
+import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types/index.js';
+import { ethers, expect, exp, makeProtocol, wait, event, defaultAssets } from './helpers.js';
+import { takeSnapshot } from './helpers/snapshot.js';
+import type { SnapshotRestorer } from './helpers/snapshot.js';
+
+function expectApproximately(actual: bigint, expected: bigint, tolerance: bigint): void {
+  const difference = actual >= expected ? actual - expected : expected - actual;
+  expect(difference <= tolerance).to.equal(true, `difference ${difference} exceeds tolerance ${tolerance}`);
+}
 
 const types = {
   Authorization: [
@@ -15,8 +22,8 @@ const types = {
 
 describe('allowBySig', function () {
   const baseTokenDecimals = 6;
-  const seedAmount = BigNumber.from(exp(10_000, baseTokenDecimals));
-  const supplyAmount = BigNumber.from(exp(100, baseTokenDecimals));
+  const seedAmount = exp(10_000, baseTokenDecimals);
+  const supplyAmount = exp(100, baseTokenDecimals);
 
   let comet: CometHarnessInterfaceExtendedAssetList;
   let baseToken: FaucetToken;
@@ -34,7 +41,7 @@ describe('allowBySig', function () {
   let domain: {
     name: string;
     version: string;
-    chainId: number;
+    chainId: bigint;
     verifyingContract: string;
   };
   let signature: Signature;
@@ -42,7 +49,7 @@ describe('allowBySig', function () {
     owner: string;
     manager: string;
     isAllowed: boolean;
-    nonce: BigNumber;
+    nonce: bigint;
     expiry: number;
   };
   before(async () => {
@@ -70,21 +77,23 @@ describe('allowBySig', function () {
     pauseGuardian = protocol.pauseGuardian;
 
     // Seed reserves so borrowing is possible
-    await baseToken.allocateTo(comet.address, seedAmount);
+    await baseToken.allocateTo((await comet.getAddress()), seedAmount);
 
     // Alice supplies some USDC in the initial snapshot
     await baseToken.allocateTo(alice.address, supplyAmount);
-    await baseToken.connect(alice).approve(comet.address, supplyAmount);
-    await comet.connect(alice).supply(baseToken.address, supplyAmount);
+    await baseToken.connect(alice).approve((await comet.getAddress()), supplyAmount);
+    await comet.connect(alice).supply((await baseToken.getAddress()), supplyAmount);
 
     domain = {
       name: await comet.name(),
       version: await comet.version(),
-      chainId: 1337,
-      verifyingContract: comet.address,
+      chainId: (await ethers.provider.getNetwork()).chainId,
+      verifyingContract: (await comet.getAddress()),
     };
     const blockNumber = await ethers.provider.getBlockNumber();
-    const timestamp = (await ethers.provider.getBlock(blockNumber)).timestamp;
+    const block = await ethers.provider.getBlock(blockNumber);
+    if (!block) throw new Error('Block not found');
+    const timestamp = block.timestamp;
 
     signatureArgs = {
       owner: alice.address,
@@ -94,9 +103,9 @@ describe('allowBySig', function () {
       expiry: timestamp + 10,
     };
 
-    const rawSignature = await alice._signTypedData(domain, types, signatureArgs);
-    signature = ethers.utils.splitSignature(rawSignature);
-    
+    const rawSignature = await alice.signTypedData(domain, types, signatureArgs);
+    signature = Signature.from(rawSignature);
+
     snapshotWithoutAllow = await takeSnapshot();
   });
 
@@ -104,12 +113,12 @@ describe('allowBySig', function () {
     args: typeof signatureArgs,
     domainOverride: Partial<typeof domain> = {}
   ): Promise<Signature> {
-    const rawSignature = await alice._signTypedData(
+    const rawSignature = await alice.signTypedData(
       { ...domain, ...domainOverride },
       types,
       args
     );
-    return ethers.utils.splitSignature(rawSignature);
+    return Signature.from(rawSignature);
   }
 
   async function submitAuthorization(
@@ -151,13 +160,13 @@ describe('allowBySig', function () {
         expect(await comet.isAllowed(alice.address, bob.address)).to.be.true;
 
         // increments nonce
-        expect(await comet.userNonce(alice.address)).to.equal(signatureArgs.nonce.add(1));
+        expect(await comet.userNonce(alice.address)).to.equal((signatureArgs.nonce + 1n));
 
         expect(event(tx, 0)).to.be.deep.equal({
           Approval: {
             owner: alice.address,
             spender: bob.address,
-            amount: ethers.constants.MaxUint256.toBigInt(),
+            amount: MaxUint256,
           }
         });
       });
@@ -176,31 +185,31 @@ describe('allowBySig', function () {
 
       it('can supply base token after being authorized', async () => {
         await baseToken.allocateTo(alice.address, supplyAmount);
-        await baseToken.connect(alice).approve(comet.address, supplyAmount);        
+        await baseToken.connect(alice).approve((await comet.getAddress()), supplyAmount);
 
         expect(await comet.balanceOf(bob.address)).to.equal(0);
         await wait(comet.connect(bob).supplyFrom(
           alice.address,
           bob.address,
-          baseToken.address,
+          (await baseToken.getAddress()),
           supplyAmount
         ));
-        expect(await comet.balanceOf(bob.address)).to.be.closeTo(supplyAmount, 1);
+        expectApproximately(await comet.balanceOf(bob.address), supplyAmount, 1n);
       });
 
       it('can supply collateral after being authorized', async () => {
         const collateralAmount = exp(1, 18);
         await collaterals.WETH.allocateTo(alice.address, collateralAmount);
-        await collaterals.WETH.connect(alice).approve(comet.address, collateralAmount);
+        await collaterals.WETH.connect(alice).approve((await comet.getAddress()), collateralAmount);
 
-        expect(await comet.collateralBalanceOf(bob.address, collaterals.WETH.address)).to.equal(0);
+        expect(await comet.collateralBalanceOf(bob.address, (await collaterals.WETH.getAddress()))).to.equal(0);
         await wait(comet.connect(bob).supplyFrom(
           alice.address,
           bob.address,
-          collaterals.WETH.address,
+          (await collaterals.WETH.getAddress()),
           collateralAmount
         ));
-        expect(await comet.collateralBalanceOf(bob.address, collaterals.WETH.address)).to.equal(collateralAmount);
+        expect(await comet.collateralBalanceOf(bob.address, (await collaterals.WETH.getAddress()))).to.equal(collateralAmount);
       });
 
       it('can transfer base token after being authorized', async () => {
@@ -213,23 +222,23 @@ describe('allowBySig', function () {
           bob.address,
           balance
         ));
-        expect(await comet.balanceOf(bob.address)).to.be.closeTo(balance, 1);
+        expectApproximately(await comet.balanceOf(bob.address), balance, 1n);
       });
 
       it('can transfer collateral after being authorized', async () => {
         const collateralAmount = exp(1, 18);
         await collaterals.WETH.allocateTo(alice.address, collateralAmount);
-        await collaterals.WETH.connect(alice).approve(comet.address, collateralAmount);
-        await comet.connect(alice).supply(collaterals.WETH.address, collateralAmount);
+        await collaterals.WETH.connect(alice).approve((await comet.getAddress()), collateralAmount);
+        await comet.connect(alice).supply((await collaterals.WETH.getAddress()), collateralAmount);
 
-        expect(await comet.collateralBalanceOf(bob.address, collaterals.WETH.address)).to.equal(0);
+        expect(await comet.collateralBalanceOf(bob.address, (await collaterals.WETH.getAddress()))).to.equal(0);
         await wait(comet.connect(bob).transferAssetFrom(
           alice.address,
           bob.address,
-          collaterals.WETH.address,
+          (await collaterals.WETH.getAddress()),
           collateralAmount
         ));
-        expect(await comet.collateralBalanceOf(bob.address, collaterals.WETH.address)).to.equal(collateralAmount);
+        expect(await comet.collateralBalanceOf(bob.address, (await collaterals.WETH.getAddress()))).to.equal(collateralAmount);
       });
 
       it('can withdraw base token after being authorized', async () => {
@@ -240,7 +249,7 @@ describe('allowBySig', function () {
         await wait(comet.connect(bob).withdrawFrom(
           alice.address,
           bob.address,
-          baseToken.address,
+          (await baseToken.getAddress()),
           balance
         ));
         expect(await baseToken.balanceOf(bob.address)).to.equal(balance);
@@ -249,34 +258,34 @@ describe('allowBySig', function () {
       it('can withdraw collateral after being authorized', async () => {
         const collateralAmount = exp(1, 18);
         await collaterals.WETH.allocateTo(alice.address, collateralAmount);
-        await collaterals.WETH.connect(alice).approve(comet.address, collateralAmount);
-        await comet.connect(alice).supply(collaterals.WETH.address, collateralAmount);
+        await collaterals.WETH.connect(alice).approve((await comet.getAddress()), collateralAmount);
+        await comet.connect(alice).supply((await collaterals.WETH.getAddress()), collateralAmount);
 
         expect(await collaterals.WETH.balanceOf(bob.address)).to.equal(0);
         await wait(comet.connect(bob).withdrawFrom(
           alice.address,
           bob.address,
-          collaterals.WETH.address,
+          (await collaterals.WETH.getAddress()),
           collateralAmount
         ));
         expect(await collaterals.WETH.balanceOf(bob.address)).to.equal(collateralAmount);
       });
 
       it('can borrow after being authorized', async () => {
-        await comet.connect(alice).withdraw(baseToken.address, supplyAmount);
+        await comet.connect(alice).withdraw((await baseToken.getAddress()), supplyAmount);
         expect(await comet.balanceOf(alice.address)).to.equal(0);
 
         const borrowAmount = exp(1000, baseTokenDecimals);
         const collateralAmount = exp(1, 18);
         await collaterals.WETH.allocateTo(alice.address, collateralAmount);
-        await collaterals.WETH.connect(alice).approve(comet.address, collateralAmount);
-        await comet.connect(alice).supply(collaterals.WETH.address, collateralAmount);
-        
+        await collaterals.WETH.connect(alice).approve((await comet.getAddress()), collateralAmount);
+        await comet.connect(alice).supply((await collaterals.WETH.getAddress()), collateralAmount);
+
         expect(await baseToken.balanceOf(bob.address)).to.equal(0);
         await wait(comet.connect(bob).withdrawFrom(
           alice.address,
           bob.address,
-          baseToken.address,
+          (await baseToken.getAddress()),
           borrowAmount
         ));
         expect(await baseToken.balanceOf(bob.address)).to.equal(borrowAmount);
@@ -291,7 +300,9 @@ describe('allowBySig', function () {
 
     it('allows authorization to be rescinded and blocks further manager actions', async () => {
       const blockNumber = await ethers.provider.getBlockNumber();
-      const timestamp = (await ethers.provider.getBlock(blockNumber)).timestamp;
+      const block = await ethers.provider.getBlock(blockNumber);
+      if (!block) throw new Error('Block not found');
+      const timestamp = block.timestamp;
       const initialNonce = await comet.userNonce(alice.address);
 
       const allowArgs = {
@@ -303,28 +314,28 @@ describe('allowBySig', function () {
       await submitAuthorization(allowArgs, allowSignature);
 
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.true;
-      expect(await comet.allowance(alice.address, bob.address)).to.equal(ethers.constants.MaxUint256);
+      expect(await comet.allowance(alice.address, bob.address)).to.equal(MaxUint256);
 
       const revokeArgs = {
         ...allowArgs,
         isAllowed: false,
-        nonce: initialNonce.add(1),
+        nonce: (initialNonce + 1n),
       };
       const revokeSignature = await signAuthorization(revokeArgs);
       await submitAuthorization(revokeArgs, revokeSignature);
 
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
       expect(await comet.allowance(alice.address, bob.address)).to.equal(0);
-      expect(await comet.userNonce(alice.address)).to.equal(initialNonce.add(2));
+      expect(await comet.userNonce(alice.address)).to.equal((initialNonce + 2n));
 
       await expect(
         comet.connect(bob).withdrawFrom(
           alice.address,
           bob.address,
-          baseToken.address,
+          (await baseToken.getAddress()),
           1
         )
-      ).to.be.revertedWith("custom error 'Unauthorized()'");
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
     });
   });
 
@@ -336,7 +347,9 @@ describe('allowBySig', function () {
     async function expectInvalidDomain(domainOverride: Partial<typeof domain>) {
       const nonce = await comet.userNonce(alice.address);
       const blockNumber = await ethers.provider.getBlockNumber();
-      const timestamp = (await ethers.provider.getBlock(blockNumber)).timestamp;
+      const block = await ethers.provider.getBlock(blockNumber);
+      if (!block) throw new Error('Block not found');
+      const timestamp = block.timestamp;
       const args = {
         ...signatureArgs,
         nonce,
@@ -346,14 +359,14 @@ describe('allowBySig', function () {
 
       await expect(
         submitAuthorization(args, invalidDomainSignature)
-      ).to.be.revertedWith("custom error 'BadSignatory()'");
+      ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
       expect(await comet.userNonce(alice.address)).to.equal(nonce);
     }
 
     it('fails if signature was signed for a different chain id', async () => {
-      await expectInvalidDomain({ chainId: domain.chainId + 1 });
+      await expectInvalidDomain({ chainId: domain.chainId + 1n });
     });
 
     it('fails if signature was signed with the wrong domain name', async () => {
@@ -377,7 +390,9 @@ describe('allowBySig', function () {
     it('fails when block timestamp equals expiry', async () => {
       const nonce = await comet.userNonce(alice.address);
       const blockNumber = await ethers.provider.getBlockNumber();
-      const timestamp = (await ethers.provider.getBlock(blockNumber)).timestamp;
+      const block = await ethers.provider.getBlock(blockNumber);
+      if (!block) throw new Error('Block not found');
+      const timestamp = block.timestamp;
       const args = {
         ...signatureArgs,
         nonce,
@@ -389,7 +404,7 @@ describe('allowBySig', function () {
 
       await expect(
         submitAuthorization(args, boundarySignature)
-      ).to.be.revertedWith("custom error 'SignatureExpired()'");
+      ).to.be.revertedWithCustomError(comet, 'SignatureExpired');
 
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
       expect(await comet.userNonce(alice.address)).to.equal(nonce);
@@ -398,7 +413,9 @@ describe('allowBySig', function () {
     it('applies two pre-signed authorizations submitted in nonce order', async () => {
       const nonce = await comet.userNonce(alice.address);
       const blockNumber = await ethers.provider.getBlockNumber();
-      const timestamp = (await ethers.provider.getBlock(blockNumber)).timestamp;
+      const block = await ethers.provider.getBlock(blockNumber);
+      if (!block) throw new Error('Block not found');
+      const timestamp = block.timestamp;
       const firstArgs = {
         ...signatureArgs,
         nonce,
@@ -407,7 +424,7 @@ describe('allowBySig', function () {
       const secondArgs = {
         ...firstArgs,
         manager: charles.address,
-        nonce: nonce.add(1),
+        nonce: (nonce + 1n),
       };
       const firstSignature = await signAuthorization(firstArgs);
       const secondSignature = await signAuthorization(secondArgs);
@@ -417,13 +434,15 @@ describe('allowBySig', function () {
 
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.true;
       expect(await comet.isAllowed(alice.address, charles.address)).to.be.true;
-      expect(await comet.userNonce(alice.address)).to.equal(nonce.add(2));
+      expect(await comet.userNonce(alice.address)).to.equal((nonce + 2n));
     });
 
     it('rejects a pre-signed authorization submitted out of nonce order', async () => {
       const nonce = await comet.userNonce(alice.address);
       const blockNumber = await ethers.provider.getBlockNumber();
-      const timestamp = (await ethers.provider.getBlock(blockNumber)).timestamp;
+      const block = await ethers.provider.getBlock(blockNumber);
+      if (!block) throw new Error('Block not found');
+      const timestamp = block.timestamp;
       const firstArgs = {
         ...signatureArgs,
         nonce,
@@ -432,14 +451,14 @@ describe('allowBySig', function () {
       const secondArgs = {
         ...firstArgs,
         manager: charles.address,
-        nonce: nonce.add(1),
+        nonce: (nonce + 1n),
       };
       const firstSignature = await signAuthorization(firstArgs);
       const secondSignature = await signAuthorization(secondArgs);
 
       await expect(
         submitAuthorization(secondArgs, secondSignature, charles)
-      ).to.be.revertedWith("custom error 'BadNonce()'");
+      ).to.be.revertedWithCustomError(comet, 'BadNonce');
 
       expect(await comet.isAllowed(alice.address, charles.address)).to.be.false;
       expect(await comet.userNonce(alice.address)).to.equal(nonce);
@@ -449,7 +468,7 @@ describe('allowBySig', function () {
 
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.true;
       expect(await comet.isAllowed(alice.address, charles.address)).to.be.true;
-      expect(await comet.userNonce(alice.address)).to.equal(nonce.add(2));
+      expect(await comet.userNonce(alice.address)).to.equal((nonce + 2n));
     });
   });
 
@@ -474,7 +493,7 @@ describe('allowBySig', function () {
           signature.r,
           signature.s
         )
-      ).to.be.revertedWith("custom error 'BadSignatory()'");
+      ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
       // does not authorize
       expect(await comet.isAllowed(invalidOwnerAddress, bob.address)).to.be.false;
@@ -499,7 +518,7 @@ describe('allowBySig', function () {
           signature.r,
           signature.s
         )
-      ).to.be.revertedWith("custom error 'BadSignatory()'");
+      ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
       // does not authorize
       expect(await comet.isAllowed(alice.address, invalidManagerAddress)).to.be.false;
@@ -522,7 +541,7 @@ describe('allowBySig', function () {
           signature.r,
           signature.s
         )
-      ).to.be.revertedWith("custom error 'BadSignatory()'");
+      ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
       // does not authorize
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
@@ -539,13 +558,13 @@ describe('allowBySig', function () {
           signatureArgs.owner,
           signatureArgs.manager,
           signatureArgs.isAllowed,
-          signatureArgs.nonce.add(1), // altered nonce
+          (signatureArgs.nonce + 1n), // altered nonce
           signatureArgs.expiry,
           signature.v,
           signature.r,
           signature.s
         )
-      ).to.be.revertedWith("custom error 'BadSignatory()'");
+      ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
       // does not authorize
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
@@ -568,7 +587,7 @@ describe('allowBySig', function () {
           signature.r,
           signature.s
         )
-      ).to.be.revertedWith("custom error 'BadSignatory()'");
+      ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
       // does not authorize
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
@@ -578,12 +597,12 @@ describe('allowBySig', function () {
     });
 
     it('fails if signature contains invalid nonce', async () => {
-      const invalidNonce = signatureArgs.nonce.add(1);
-      const rawSignature = await alice._signTypedData(domain, types, {
+      const invalidNonce = (signatureArgs.nonce + 1n);
+      const rawSignature = await alice.signTypedData(domain, types, {
         ...signatureArgs,
         nonce: invalidNonce,
       });
-      const signatureWithInvalidNonce = ethers.utils.splitSignature(rawSignature);
+      const signatureWithInvalidNonce = Signature.from(rawSignature);
 
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
 
@@ -600,7 +619,7 @@ describe('allowBySig', function () {
             signatureWithInvalidNonce.r,
             signatureWithInvalidNonce.s
           )
-      ).to.be.revertedWith("custom error 'BadNonce()'");
+      ).to.be.revertedWithCustomError(comet, 'BadNonce');
 
       // does not authorize
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
@@ -637,20 +656,22 @@ describe('allowBySig', function () {
             signature.r,
             signature.s
           )
-      ).to.be.revertedWith("custom error 'BadNonce()'");
+      ).to.be.revertedWithCustomError(comet, 'BadNonce');
     });
 
     it('fails if signature expiry has passed', async () => {
       const blockNumber = await ethers.provider.getBlockNumber();
-      const timestamp = (await ethers.provider.getBlock(blockNumber)).timestamp;
+      const block = await ethers.provider.getBlock(blockNumber);
+      if (!block) throw new Error('Block not found');
+      const timestamp = block.timestamp;
       const invalidExpiry = timestamp - 1;
 
       const expiredSignatureArgs = {
         ...signatureArgs,
         expiry: invalidExpiry,
       };
-      const rawSignature = await alice._signTypedData(domain, types, expiredSignatureArgs);
-      const expiredSignature = ethers.utils.splitSignature(rawSignature);
+      const rawSignature = await alice.signTypedData(domain, types, expiredSignatureArgs);
+      const expiredSignature = Signature.from(rawSignature);
 
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
 
@@ -667,7 +688,7 @@ describe('allowBySig', function () {
             expiredSignature.r,
             expiredSignature.s
           )
-      ).to.be.revertedWith("custom error 'SignatureExpired()'");
+      ).to.be.revertedWithCustomError(comet, 'SignatureExpired');
 
       // does not authorize
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
@@ -692,7 +713,7 @@ describe('allowBySig', function () {
             signature.r,
             signature.s
           )
-      ).to.be.revertedWith("custom error 'InvalidValueV()'");
+      ).to.be.revertedWithCustomError(comet, 'InvalidValueV');
 
       // does not authorize
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
@@ -720,7 +741,7 @@ describe('allowBySig', function () {
             signature.r,
             invalidS
           )
-      ).to.be.revertedWith("custom error 'InvalidValueS()'");
+      ).to.be.revertedWithCustomError(comet, 'InvalidValueS');
 
       // does not authorize
       expect(await comet.isAllowed(alice.address, bob.address)).to.be.false;
@@ -730,10 +751,12 @@ describe('allowBySig', function () {
     });
 
     it('fails if owner is zero address', async () => {
-      expect(await comet.isAllowed(ethers.constants.AddressZero, bob.address)).to.be.false;
+      expect(await comet.isAllowed(ZeroAddress, bob.address)).to.be.false;
 
       const blockNumber = await ethers.provider.getBlockNumber();
-      const timestamp = (await ethers.provider.getBlock(blockNumber)).timestamp;
+      const block = await ethers.provider.getBlock(blockNumber);
+      if (!block) throw new Error('Block not found');
+      const timestamp = block.timestamp;
 
       const invalidSignature = {
         v: 27, // valid v
@@ -746,19 +769,19 @@ describe('allowBySig', function () {
         comet
           .connect(bob)
           .allowBySig(
-            ethers.constants.AddressZero,
+            ZeroAddress,
             bob.address,
             true,
-            await comet.userNonce(ethers.constants.AddressZero),
+            await comet.userNonce(ZeroAddress),
             timestamp + 100,
             invalidSignature.v,
             invalidSignature.r,
             invalidSignature.s,
           )
-      ).to.be.revertedWith("custom error 'BadSignatory()'");
+      ).to.be.revertedWithCustomError(comet, 'BadSignatory');
 
       // does not authorize manager for address(0)
-      expect(await comet.isAllowed(ethers.constants.AddressZero, bob.address)).to.be.false;
+      expect(await comet.isAllowed(ZeroAddress, bob.address)).to.be.false;
     });
 
   });

@@ -1,5 +1,6 @@
-import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager/index.js';
+import type { DeploySpec } from '../../../src/deploy/index.js';
+import { deployComet } from '../../../src/deploy/index.js';
 
 const HOUR = 60 * 60;
 const DAY = 24 * HOUR;
@@ -8,7 +9,6 @@ const MAINNET_TIMELOCK = '0x6d903f6003cca6255d85cca4d3b5e5146dc33925';
 
 export default async function deploy(deploymentManager: DeploymentManager, deploySpec: DeploySpec): Promise<Deployed> {
   const trace = deploymentManager.tracer()
-  const ethers = deploymentManager.hre.ethers;
 
   // pull in existing assets
   const USDC = await deploymentManager.existing('USDC', '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', 'polygon');
@@ -22,7 +22,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
   const bridgeReceiver = await deploymentManager.deploy(
     'bridgeReceiver',
     'bridges/polygon/PolygonBridgeReceiver.sol',
-    [fxChild?.address]  // fxChild
+    [await fxChild.getAddress()]  // fxChild
   );
 
   // Deploy Local Timelock
@@ -30,7 +30,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
     'timelock',
     'vendor/Timelock.sol',
     [
-      bridgeReceiver.address, // admin
+      await bridgeReceiver.getAddress(), // admin
       1 * DAY,                // delay
       14 * DAY,               // grace period
       12 * HOUR,              // minimum delay
@@ -45,7 +45,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
       trace(`Initializing BridgeReceiver`);
       await bridgeReceiver.initialize(
         MAINNET_TIMELOCK,     // govTimelock
-        localTimelock.address // localTimelock
+        await localTimelock.getAddress() // localTimelock
       );
       trace(`BridgeReceiver initialized`);
     }
@@ -61,7 +61,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
     'bulkers/BaseBulker.sol',
     [
       await comet.governor(), // admin
-      WMATIC.address          // wrappedNativeToken
+      await WMATIC.getAddress()          // wrappedNativeToken
     ]
   );
 

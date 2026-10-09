@@ -1,29 +1,21 @@
-import { ethers, exp, expect } from '../helpers';
-import {
-  SimplePriceFeed__factory,
-  MultiplicativePriceFeed__factory
-} from '../../build/types';
+import { ethers, exp, expect } from '../helpers.js';
 
 export async function makeMultiplicativePriceFeed({ priceA, priceB, decimalsA = 8, decimalsB = 8 }) {
-  const SimplePriceFeedFactory = (await ethers.getContractFactory(
-    'SimplePriceFeed'
-  )) as SimplePriceFeed__factory;
+  const SimplePriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');
   const PriceFeedA = await SimplePriceFeedFactory.deploy(priceA, decimalsA);
-  await PriceFeedA.deployed();
+  await PriceFeedA.waitForDeployment();
 
   const PriceFeedB = await SimplePriceFeedFactory.deploy(priceB, decimalsB);
-  await PriceFeedB.deployed();
+  await PriceFeedB.waitForDeployment();
 
-  const MultiplicativePriceFeedFactory = (await ethers.getContractFactory(
-    'MultiplicativePriceFeed'
-  )) as MultiplicativePriceFeed__factory;
+  const MultiplicativePriceFeedFactory = await ethers.getContractFactory('MultiplicativePriceFeed');
   const MultiplicativePriceFeed = await MultiplicativePriceFeedFactory.deploy(
-    PriceFeedA.address,
-    PriceFeedB.address,
+    await PriceFeedA.getAddress(),
+    await PriceFeedB.getAddress(),
     8,
     'Multiplicative Price Feed'
   );
-  await MultiplicativePriceFeed.deployed();
+  await MultiplicativePriceFeed.waitForDeployment();
 
   return {
     PriceFeedA,
@@ -110,26 +102,22 @@ const testCases = [
 
 describe('Multiplicative price feed', function() {
   it('reverts if constructed with bad decimals', async () => {
-    const SimplePriceFeedFactory = (await ethers.getContractFactory(
-      'SimplePriceFeed'
-    )) as SimplePriceFeed__factory;
+    const SimplePriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');
     const PriceFeedA = await SimplePriceFeedFactory.deploy(exp(1, 8), 8);
-    await PriceFeedA.deployed();
+    await PriceFeedA.waitForDeployment();
 
     const PriceFeedB = await SimplePriceFeedFactory.deploy(exp(30_000), 8);
-    await PriceFeedB.deployed();
+    await PriceFeedB.waitForDeployment();
 
-    const MultiplicativePriceFeed = (await ethers.getContractFactory(
-      'MultiplicativePriceFeed'
-    )) as MultiplicativePriceFeed__factory;
+    const MultiplicativePriceFeed = await ethers.getContractFactory('MultiplicativePriceFeed');
     await expect(
       MultiplicativePriceFeed.deploy(
-        PriceFeedA.address,
-        PriceFeedB.address,
+        await PriceFeedA.getAddress(),
+        await PriceFeedB.getAddress(),
         20, // decimals_ is too high
         'Multiplicative Price Feed'
       )
-    ).to.be.revertedWith("custom error 'BadDecimals()'");
+    ).to.be.revertedWithCustomError(MultiplicativePriceFeed, 'BadDecimals');
   });
 
   describe('latestRoundData', function() {
@@ -137,7 +125,7 @@ describe('Multiplicative price feed', function() {
       it(`priceA (${priceA}) with ${decimalsA ?? 8} decimals, priceB (${priceB}) with ${decimalsB ?? 8} decimals -> ${result}`, async () => {
         const { MultiplicativePriceFeed } = await makeMultiplicativePriceFeed({ priceA, priceB, decimalsA, decimalsB });
         const latestRoundData = await MultiplicativePriceFeed.latestRoundData();
-        const price = latestRoundData[1].toBigInt();
+        const price = latestRoundData[1];
 
         expect(price).to.eq(result);
       });
@@ -159,10 +147,10 @@ describe('Multiplicative price feed', function() {
 
       const roundData = await MultiplicativePriceFeed.latestRoundData();
 
-      expect(roundData[0].toBigInt()).to.eq(exp(15, 18));
-      expect(roundData[2].toBigInt()).to.eq(exp(16, 8));
-      expect(roundData[3].toBigInt()).to.eq(exp(17, 8));
-      expect(roundData[4].toBigInt()).to.eq(exp(18, 18));
+      expect(roundData[0]).to.eq(exp(15, 18));
+      expect(roundData[2]).to.eq(exp(16, 8));
+      expect(roundData[3]).to.eq(exp(17, 8));
+      expect(roundData[4]).to.eq(exp(18, 18));
     });
   });
 
@@ -172,8 +160,8 @@ describe('Multiplicative price feed', function() {
       priceB: exp(30_000, 18)
     });
 
-    expect(await MultiplicativePriceFeed.version()).to.eq(1);
+    expect(await MultiplicativePriceFeed.version()).to.eq(1n);
     expect(await MultiplicativePriceFeed.description()).to.eq('Multiplicative Price Feed');
-    expect(await MultiplicativePriceFeed.decimals()).to.eq(8);
+    expect(await MultiplicativePriceFeed.decimals()).to.eq(8n);
   });
 });

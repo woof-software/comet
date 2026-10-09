@@ -1,4 +1,6 @@
-import { baseBalanceOf, ethers, event, expect, makeProtocol, setTotalsBasic, wait } from './helpers';
+import { MaxUint256, ZeroAddress } from 'ethers';
+
+import { baseBalanceOf, expect, makeProtocol, setTotalsBasic } from './helpers.js';
 
 describe('erc20', function () {
   it('has correct name', async () => {
@@ -16,7 +18,7 @@ describe('erc20', function () {
   it('has correct decimals', async () => {
     const { cometWithExtendedAssetList: comet } = await makeProtocol();
 
-    expect(await comet.decimals()).to.be.equal(6);
+    expect(await comet.decimals()).to.be.equal(6n);
   });
 
   it('has correct totalSupply', async () => {
@@ -29,7 +31,7 @@ describe('erc20', function () {
 
     const totalSupply = await comet.totalSupply();
 
-    expect(totalSupply).to.eq(100e6);
+    expect(totalSupply).to.eq(100_000_000n);
   });
 
   describe('balanceOf', function () {
@@ -43,11 +45,11 @@ describe('erc20', function () {
 
       let totalsBasic = await comet.totalsBasic();
       await setTotalsBasic(comet, {
-        baseSupplyIndex: totalsBasic.baseSupplyIndex.mul(2),
+        baseSupplyIndex: totalsBasic.baseSupplyIndex * 2n,
       });
 
       const balanceOf = await comet.balanceOf(user.address);
-      expect(balanceOf).to.eq(200e6);
+      expect(balanceOf).to.eq(200_000_000n);
     });
 
     it('returns 0 (when principal amount is negative)', async () => {
@@ -59,7 +61,7 @@ describe('erc20', function () {
       await comet.setBasePrincipal(user.address, -100e6);
 
       const balanceOf = await comet.balanceOf(user.address);
-      expect(balanceOf).to.eq(0);
+      expect(balanceOf).to.eq(0n);
     });
   });
 
@@ -76,24 +78,26 @@ describe('erc20', function () {
       baseSupplyIndex: 2e15,
     });
 
-    const tx = await wait(comet.connect(alice).transfer(bob.address, 100e6));
+    const tx = await comet.connect(alice).transfer(bob.address, 100e6);
+    const receipt = await tx.wait();
+    if (receipt === null) {
+      throw new Error(`Transaction ${tx.hash} was not mined`);
+    }
+
+    const burn = comet.interface.parseLog(receipt.logs[0]);
+    expect(burn?.name).to.equal('Transfer');
+    expect(burn?.args.from).to.equal(alice.address);
+    expect(burn?.args.to).to.equal(ZeroAddress);
+    expect(burn?.args.amount).to.equal(100_000_000n);
+
+    const mint = comet.interface.parseLog(receipt.logs[1]);
+    expect(mint?.name).to.equal('Transfer');
+    expect(mint?.args.from).to.equal(ZeroAddress);
+    expect(mint?.args.to).to.equal(bob.address);
+    expect(mint?.args.amount).to.equal(100_000_000n);
 
     expect(await baseBalanceOf(comet, alice.address)).to.eq(0n);
-    expect(await baseBalanceOf(comet, bob.address)).to.eq(BigInt(100e6));
-    expect(event(tx, 0)).to.be.deep.equal({
-      Transfer: {
-        from: alice.address,
-        to: ethers.constants.AddressZero,
-        amount: BigInt(100e6),
-      }
-    });
-    expect(event(tx, 1)).to.be.deep.equal({
-      Transfer: {
-        from: ethers.constants.AddressZero,
-        to: bob.address,
-        amount: BigInt(100e6),
-      }
-    });
+    expect(await baseBalanceOf(comet, bob.address)).to.eq(100_000_000n);
   });
 
   describe('transferFrom', function() {
@@ -111,7 +115,7 @@ describe('erc20', function () {
       await comet.connect(alice).transferFrom(alice.address, bob.address, 100e6);
 
       expect(await baseBalanceOf(comet, alice.address)).to.eq(0n);
-      expect(await baseBalanceOf(comet, bob.address)).to.eq(BigInt(100e6));
+      expect(await baseBalanceOf(comet, bob.address)).to.eq(100_000_000n);
     });
 
     it('reverts ERC20 transferFrom without approval', async () => {
@@ -124,7 +128,7 @@ describe('erc20', function () {
 
       await expect(
         comet.connect(bob).transferFrom(alice.address, bob.address, 100e6)
-      ).to.be.revertedWith("custom error 'Unauthorized()'");
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
     });
 
     it('performs ERC20 transferFrom of base with approval', async () => {
@@ -138,16 +142,16 @@ describe('erc20', function () {
       // approving for uint256 = isAllowed[user][spender]=true
       await comet.connect(alice).approve(
         bob.address,
-        ethers.constants.MaxUint256
+        MaxUint256
       );
 
-      expect(await comet.allowance(alice.address, bob.address)).to.eq(ethers.constants.MaxUint256);
+      expect(await comet.allowance(alice.address, bob.address)).to.eq(MaxUint256);
 
       // bob can now transfer funds from alice
       await comet.connect(bob).transferFrom(alice.address, bob.address, 100e6);
 
       expect(await baseBalanceOf(comet, alice.address)).to.eq(0n);
-      expect(await baseBalanceOf(comet, bob.address)).to.eq(BigInt(100e6));
+      expect(await baseBalanceOf(comet, bob.address)).to.eq(100_000_000n);
     });
 
     it('reverts ERC20 transferFrom with revoked approval', async () => {
@@ -161,20 +165,20 @@ describe('erc20', function () {
       // bob is approved
       await comet.connect(alice).approve(
         bob.address,
-        ethers.constants.MaxUint256
+        MaxUint256
       );
 
-      expect(await comet.allowance(alice.address, bob.address)).to.eq(ethers.constants.MaxUint256);
+      expect(await comet.allowance(alice.address, bob.address)).to.eq(MaxUint256);
 
       // approval is revoked
       await comet.connect(alice).approve(bob.address, 0);
 
-      expect(await comet.allowance(alice.address, bob.address)).to.eq(0);
+      expect(await comet.allowance(alice.address, bob.address)).to.eq(0n);
 
       // bob cannot transfer funds from alice
       await expect(
         comet.connect(bob).transferFrom(alice.address, bob.address, 100e6)
-      ).to.be.revertedWith("custom error 'Unauthorized()'");
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
     });
   });
 
@@ -185,15 +189,10 @@ describe('erc20', function () {
         users: [user, spender]
       } = await makeProtocol();
 
-      const MaxU256 = BigInt(ethers.constants.MaxUint256.toString());
-      const tx = await wait(comet.connect(user).approve(spender.address, MaxU256));
-      expect(event(tx, 0)).to.be.deep.equal({
-        Approval: {
-          owner: user.address,
-          spender: spender.address,
-          amount: MaxU256,
-        }
-      });
+      const tx = await comet.connect(user).approve(spender.address, MaxUint256);
+      await expect(tx)
+        .to.emit(comet, 'Approval')
+        .withArgs(user.address, spender.address, MaxUint256);
 
       const isAllowed = await comet.isAllowed(user.address, spender.address);
       expect(isAllowed).to.be.true;
@@ -205,14 +204,10 @@ describe('erc20', function () {
         users: [user, spender]
       } = await makeProtocol();
 
-      const tx = await wait(comet.connect(user).approve(spender.address, 0));
-      expect(event(tx, 0)).to.be.deep.equal({
-        Approval: {
-          owner: user.address,
-          spender: spender.address,
-          amount: BigInt(0),
-        }
-      });
+      const tx = await comet.connect(user).approve(spender.address, 0);
+      await expect(tx)
+        .to.emit(comet, 'Approval')
+        .withArgs(user.address, spender.address, 0n);
 
       const isAllowed = await comet.isAllowed(user.address, spender.address);
       expect(isAllowed).to.be.false;
@@ -226,7 +221,7 @@ describe('erc20', function () {
 
       await expect(
         comet.connect(user).approve(spender.address, 300)
-      ).to.be.revertedWith("custom error 'BadAmount()'");
+      ).to.be.revertedWithCustomError(comet, 'BadAmount');
     });
   });
 
@@ -241,7 +236,7 @@ describe('erc20', function () {
       await comet.connect(user).allow(spender.address, true);
 
       const allowance = await comet.allowance(user.address, spender.address);
-      expect(allowance).to.eq(ethers.constants.MaxUint256);
+      expect(allowance).to.eq(MaxUint256);
     });
 
     it('returns 0 when spender does not have permission for user', async () => {
@@ -254,7 +249,7 @@ describe('erc20', function () {
       await comet.connect(user).allow(spender.address, false);
 
       const allowance = await comet.allowance(user.address, spender.address);
-      expect(allowance).to.eq(0);
+      expect(allowance).to.eq(0n);
     });
   });
 });

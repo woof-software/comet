@@ -1,6 +1,6 @@
-import { Contract, utils } from 'ethers';
-import { DeploymentManagerConfig } from './type-extensions';
-import { Address, Alias } from './Types';
+import { Contract, getAddress } from 'ethers';
+import type { DeploymentManagerConfig } from './type-extensions.js';
+import type { Address, Alias } from './Types.js';
 
 export type Ctx = { [aliasTemplate: string]: Contract[] };
 
@@ -76,18 +76,15 @@ function asAddressArray(val: any, msg: string): string[] {
 }
 
 async function readKey(contract: Contract, fnName: string): Promise<any> {
-  let fn = contract.callStatic[fnName];
-  if (!fn) {
-    throw new Error(`Cannot find contract function ${await contract.address}.${fnName}()`);
-  }
+  const fn = contract.getFunction(fnName);
   
   try {
-    const result = await fn();
+    const result = await fn.staticCall();
     return result;
   } catch (e) {
     // Handle contracts that fail in Hardhat fork but work on real network
     // This is a workaround for proxy contracts with incompatible bytecode
-    const address = contract.address.toLowerCase();
+    const address = (await contract.getAddress()).toLowerCase();
     
     if (e.code === 'CALL_EXCEPTION' && fnName === 'symbol') {
       // invalid opcode when calling symbol()
@@ -103,8 +100,12 @@ async function readKey(contract: Contract, fnName: string): Promise<any> {
 export async function readField(contract: Contract, fieldKey: FieldKey, context: Ctx): Promise<Address[]> {
   if (fieldKey.slot) {
     // Read from slot
-    let addressRaw = await contract.provider.getStorageAt(contract.address, fieldKey.slot);
-    let address = utils.getAddress('0x' + addressRaw.substring(26));
+    const provider = contract.runner?.provider;
+    if (!provider) {
+      throw new Error(`Contract ${await contract.getAddress()} is not connected to a provider`);
+    }
+    let addressRaw = await provider.getStorage(await contract.getAddress(), fieldKey.slot);
+    let address = getAddress('0x' + addressRaw.substring(26));
     return [address];
   } else if (fieldKey.key) {
     let val = await readKey(contract, fieldKey.key);

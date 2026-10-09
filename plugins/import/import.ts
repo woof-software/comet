@@ -1,6 +1,6 @@
-import { get, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan';
-import { getBlockscoutApiUrl, getBlockscoutRPCUrl } from './blockscout';
-import { providers } from 'ethers';
+import { get, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan.js';
+import { getBlockscoutApiUrl, getBlockscoutRPCUrl } from './blockscout.js';
+import { JsonRpcProvider } from 'ethers';
 
 export function debug(...args: any[]) {
   if (process.env['DEBUG']) {
@@ -194,9 +194,14 @@ async function getBlockscoutApiData(
 async function scrapeContractCreationCodeFromBlockscoutRPC(network: string, address: string) {
   // get code from JSON rpc
   const rpcUrl = await getBlockscoutRPCUrl(network);
-  const provider = new providers.JsonRpcProvider(rpcUrl);
-  const code = await provider.send('eth_getCode', [address, 'latest']);
-  return code.slice(2);
+  const provider = new JsonRpcProvider(rpcUrl);
+  try {
+    const code = await provider.send('eth_getCode', [address, 'latest']);
+    return code.slice(2);
+  } finally {
+    // ethers v6 keeps background retries alive; release this one-shot provider.
+    provider.destroy();
+  }
 }
 
 async function getContractCreationCodeFromBlockscout(network: string, address: string) {

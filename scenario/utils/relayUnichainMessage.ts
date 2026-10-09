@@ -1,10 +1,13 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
-import { BigNumber, ethers, utils } from 'ethers';
-import { Log } from '@ethersproject/abstract-provider';
-import { OpenBridgedProposal } from '../context/Gov';
-import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils.js';
+import { AbiCoder, toNumber, toQuantity, getBytes, hexlify, getAddress, id, toBigInt } from 'ethers';
+import type { Log, TransactionReceipt } from 'ethers';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
+import type { OpenBridgedProposal } from '../context/Gov.js';
+import { applyL1ToL2Alias, isTenderlyLog } from './index.js';
+
+const abiCoder = AbiCoder.defaultAbiCoder();
 
 export async function relayUnichainMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -16,31 +19,38 @@ export async function relayUnichainMessage(
   const bridgeReceiver = await bridgeDeploymentManager.getContractOrThrow('bridgeReceiver');
   const l2CrossDomainMessenger = await bridgeDeploymentManager.getContractOrThrow('l2CrossDomainMessenger');
   const l2StandardBridge = await bridgeDeploymentManager.getContractOrThrow('l2StandardBridge');
+  const l1MessengerAddress = await unichainL1CrossDomainMessenger.getAddress();
+  const bridgeReceiverAddress = await bridgeReceiver.getAddress();
+  const l2MessengerAddress = await l2CrossDomainMessenger.getAddress();
+  const l2StandardBridgeAddress = await l2StandardBridge.getAddress();
+  const { provider: governanceProvider } = await getHardhatEthers(governanceDeploymentManager.hre);
+  const { provider: bridgeProvider } = await getHardhatEthers(bridgeDeploymentManager.hre);
 
   const openBridgedProposals: OpenBridgedProposal[] = [];
 
   // Grab all events on the L1CrossDomainMessenger contract since the `startingBlockNumber`
   const filter = unichainL1CrossDomainMessenger.filters.SentMessage();
+  const sentMessageTopics = await filter.getTopicFilter();
   let sentMessageEvents: Log[] = [];
 
   if (tenderlyLogs) {
-    const topic = unichainL1CrossDomainMessenger.interface.getEventTopic('SentMessage');
+    const topic = sentMessageTopics[0];
     const tenderlyEvents = tenderlyLogs.filter(
-      log => log.raw?.topics?.[0] === topic && log.raw?.address?.toLowerCase() === unichainL1CrossDomainMessenger.address.toLowerCase()
+      log => log.raw?.topics?.[0] === topic && log.raw?.address?.toLowerCase() === l1MessengerAddress.toLowerCase()
     );
-    const realEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    const realEvents = await governanceProvider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: unichainL1CrossDomainMessenger.address,
-      topics: filter.topics!
+      address: l1MessengerAddress,
+      topics: sentMessageTopics
     });
     sentMessageEvents = [...realEvents, ...tenderlyEvents];
   } else {
-    sentMessageEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    sentMessageEvents = await governanceProvider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: unichainL1CrossDomainMessenger.address,
-      topics: filter.topics!
+      address: l1MessengerAddress,
+      topics: sentMessageTopics
     });
   }
 
@@ -55,25 +65,28 @@ export async function relayUnichainMessage(
       parsed = unichainL1CrossDomainMessenger.interface.parseLog(sentMessageEvent);
     }
 
+    if (!parsed) {
+      throw new Error('SentMessage log could not be parsed');
+    }
     const { sender, target, message, messageNonce, gasLimit } = parsed.args;
     const aliasedSigner = await impersonateAddress(
       bridgeDeploymentManager,
-      applyL1ToL2Alias(unichainL1CrossDomainMessenger.address)
+      applyL1ToL2Alias(l1MessengerAddress)
     );
 
     await setNextBaseFeeToZero(bridgeDeploymentManager);
 
-    let relayMessageTxn: { events: any[] };
+    let relayMessageTxn: TransactionReceipt | null;
     if (tenderlyLogs) {
       const callData = l2CrossDomainMessenger.interface.encodeFunctionData('relayMessage', [messageNonce, sender, target, 0, 0, message]);
       bridgeDeploymentManager.stashRelayMessage(
-        l2CrossDomainMessenger.address,
+        l2MessengerAddress,
         callData,
-        aliasedSigner.address
+        await aliasedSigner.getAddress()
       );
     }
     relayMessageTxn = await (
-      await l2CrossDomainMessenger.connect(aliasedSigner).relayMessage(
+      await l2CrossDomainMessenger.connect(aliasedSigner).getFunction('relayMessage')(
         messageNonce,
         sender,
         target,
@@ -83,19 +96,22 @@ export async function relayUnichainMessage(
         { gasPrice: 0, gasLimit: 7_500_000 }
       )
     ).wait();
+    if (relayMessageTxn === null) {
+      throw new Error('Relay transaction was not mined');
+    }
     
 
     // Try to decode the SentMessage data to determine what type of cross-chain activity this is. So far,
     // there are two types:
     // 1. Bridging ERC20 token or ETH
     // 2. Cross-chain message passing
-    if (target === l2StandardBridge.address) {
+    if (target === l2StandardBridgeAddress) {
       // Bridging ERC20 token
       const messageWithoutPrefix = message.slice(2); // strip out the 0x prefix
       const messageWithoutSigHash = '0x' + messageWithoutPrefix.slice(8);
       try {
         // 1a. Bridging ERC20 token
-        const { l1Token, _l2Token, _from, to, amount, _data } = ethers.utils.defaultAbiCoder.decode(
+        const { l1Token, _l2Token, _from, to, amount, _data } = abiCoder.decode(
           ['address l1Token', 'address l2Token', 'address from', 'address to', 'uint256 amount', 'bytes data'],
           messageWithoutSigHash
         );
@@ -103,30 +119,37 @@ export async function relayUnichainMessage(
         console.log(
           `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Bridged over ${amount} of ${l1Token} to user ${to}`
         );
-      } catch (e) {
+      } catch {
         // 1a. Bridging ETH
-        const { _from, to, amount, _data } = ethers.utils.defaultAbiCoder.decode(
+        const { _from, to, amount, _data } = abiCoder.decode(
           ['address from', 'address to', 'uint256 amount', 'bytes data'],
           messageWithoutSigHash
         );
 
-        const oldBalance = await bridgeDeploymentManager.hre.ethers.provider.getBalance(to);
-        const newBalance = oldBalance.add(BigNumber.from(amount));
+        const oldBalance = await bridgeProvider.getBalance(to);
+        const newBalance = oldBalance + amount;
         // This is our best attempt to mimic the deposit transaction type (not supported in Hardhat) that Unichain uses to deposit ETH to an L2 address
-        await bridgeDeploymentManager.hre.ethers.provider.send('hardhat_setBalance', [
+        await bridgeProvider.send('hardhat_setBalance', [
           to,
-          ethers.utils.hexStripZeros(newBalance.toHexString()),
+          toQuantity(newBalance),
         ]);
 
         console.log(
           `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Bridged over ${amount} of ETH to user ${to}`
         );
       }
-    } else if (target === bridgeReceiver.address) {
+    } else if (target === bridgeReceiverAddress) {
       // Cross-chain message passing
       if (relayMessageTxn) {
-        const proposalCreatedEvent = relayMessageTxn.events.find(event => event.address === bridgeReceiver.address);
-        const { args: { id, eta } } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+        const proposalCreatedEvent = relayMessageTxn.logs.find(event => event.address === bridgeReceiverAddress);
+        if (!proposalCreatedEvent) {
+          throw new Error('ProposalCreated log not found');
+        }
+        const parsedProposal = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+        if (!parsedProposal) {
+          throw new Error('ProposalCreated log could not be parsed');
+        }
+        const { id, eta } = parsedProposal.args;
 
         // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
         openBridgedProposals.push({ id, eta });
@@ -142,7 +165,7 @@ export async function relayUnichainMessage(
   for (let proposal of openBridgedProposals) {
     const { eta, id } = proposal;
     // Fast forward l2 time
-    await setNextBlockTimestamp(bridgeDeploymentManager, eta.toNumber() + 1);
+    await setNextBlockTimestamp(bridgeDeploymentManager, toNumber(eta) + 1);
 
     // Execute queued proposal
     await setNextBaseFeeToZero(bridgeDeploymentManager);
@@ -150,7 +173,7 @@ export async function relayUnichainMessage(
       const signer = await bridgeDeploymentManager.getSigner();
       const callData = bridgeReceiver.interface.encodeFunctionData('executeProposal', [id]);
       bridgeDeploymentManager.stashRelayMessage(
-        bridgeReceiver.address,
+        bridgeReceiverAddress,
         callData,
         await signer.getAddress()
       );
@@ -177,31 +200,34 @@ export async function relayUnichainCCTPMint(
   const L1MessageTransmitter = await governanceDeploymentManager.getContractOrThrow('CCTPMessageTransmitter');
   // L2 TokenMinter
   const TokenMinter = await bridgeDeploymentManager.getContractOrThrow('TokenMinter');
+  const transmitterAddress = await L1MessageTransmitter.getAddress();
+  const tokenMinterAddress = await TokenMinter.getAddress();
+  const { provider: governanceProvider } = await getHardhatEthers(governanceDeploymentManager.hre);
 
   let depositForBurnEvents: Log[] = [];
 
   if (tenderlyLogs) {
-    const messageSentTopic = utils.id('MessageSent(bytes)');
+    const messageSentTopic = id('MessageSent(bytes)');
 
     const tenderlyEvents = tenderlyLogs.filter(log =>
       log.raw?.topics?.[0] === messageSentTopic &&
-      log.raw?.address?.toLowerCase() === L1MessageTransmitter.address.toLowerCase()
+      log.raw?.address?.toLowerCase() === transmitterAddress.toLowerCase()
     );
 
-    const realEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    const realEvents = await governanceProvider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: L1MessageTransmitter.address,
+      address: transmitterAddress,
       topics: [messageSentTopic]
     });
 
     depositForBurnEvents = [...realEvents, ...tenderlyEvents];
   } else {
-    depositForBurnEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    depositForBurnEvents = await governanceProvider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: L1MessageTransmitter.address,
-      topics: [utils.id('MessageSent(bytes)')]
+      address: transmitterAddress,
+      topics: [id('MessageSent(bytes)')]
     });
   }
 
@@ -217,7 +243,7 @@ export async function relayUnichainCCTPMint(
       data = event.data;
     }
 
-    const dataBytes = utils.arrayify(data);
+    const dataBytes = getBytes(data);
     // Since data is encodePacked, so can't simply decode via AbiCoder.decode
     const offset = 64;
     const length = {
@@ -232,7 +258,7 @@ export async function relayUnichainCCTPMint(
     start = end;
     end = start + length.uint32;
     // msgSourceDomain
-    const msgSourceDomain = BigNumber.from(dataBytes.slice(start, end)).toNumber();
+    const msgSourceDomain = toNumber(dataBytes.slice(start, end));
 
     start = end;
     end = start + length.uint32;
@@ -261,18 +287,18 @@ export async function relayUnichainCCTPMint(
     start = end;
     end = start + length.bytes32;
     // rawMsgBody burnToken
-    const burnToken = utils.hexlify(dataBytes.slice(start, end));
+    const burnToken = hexlify(dataBytes.slice(start, end));
 
     start = end;
     end = start + length.bytes32;
     // rawMsgBody mintRecipient
-    const mintRecipient = utils.getAddress(utils.hexlify(dataBytes.slice(start, end)).slice(-40));
+    const mintRecipient = getAddress(hexlify(dataBytes.slice(start, end)).slice(-40));
 
     start = end;
     end = start + length.uint256;
 
     // rawMsgBody amount
-    const amount = BigNumber.from(dataBytes.slice(start, end)).toNumber();
+    const amount = toBigInt(dataBytes.slice(start, end));
 
     start = end;
     end = start + length.bytes32;
@@ -299,19 +325,19 @@ export async function relayUnichainCCTPMint(
     );
 
     const transactionRequest = await localTokenMessengerSigner.populateTransaction({
-      to: TokenMinter.address,
+      to: tokenMinterAddress,
       from: ImpersonateLocalTokenMessenger,
-      data: TokenMinter.interface.encodeFunctionData('mint', [sourceDomain, burnToken, utils.getAddress(recipient), amount]),
+      data: TokenMinter.interface.encodeFunctionData('mint', [sourceDomain, burnToken, getAddress(recipient), amount]),
       gasPrice: 0
     });
 
     await setNextBaseFeeToZero(bridgeDeploymentManager);
     if( tenderlyLogs ) {
-      const callData = TokenMinter.interface.encodeFunctionData('mint', [sourceDomain, burnToken, utils.getAddress(recipient), amount]);
+      const callData = TokenMinter.interface.encodeFunctionData('mint', [sourceDomain, burnToken, getAddress(recipient), amount]);
       bridgeDeploymentManager.stashRelayMessage(
-        TokenMinter.address,
+        tokenMinterAddress,
         callData,
-        localTokenMessengerSigner.address
+        await localTokenMessengerSigner.getAddress()
       );
     } else {
       await (

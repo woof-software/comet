@@ -1,10 +1,13 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
-import { Log } from '@ethersproject/abstract-provider';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { OpenBridgedProposal } from '../context/Gov';
-import { BigNumber, ethers } from 'ethers';
-import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils.js';
+import type { Log, TransactionReceipt } from 'ethers';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import type { OpenBridgedProposal } from '../context/Gov.js';
+import { AbiCoder, toNumber, toQuantity } from 'ethers';
+import { applyL1ToL2Alias, isTenderlyLog } from './index.js';
+
+const abiCoder = AbiCoder.defaultAbiCoder();
 
 /*
 The Scroll relayer applies an offset to the message sender.
@@ -29,30 +32,41 @@ export default async function relayScrollMessage(
   const l2WETHGateway = await bridgeDeploymentManager.getContractOrThrow('l2WETHGateway');
   const l2WstETHGateway = await bridgeDeploymentManager.getContractOrThrow('l2WstETHGateway');
 
+  const scrollMessengerAddress = await scrollMessenger.getAddress();
+  const bridgeReceiverAddress = await bridgeReceiver.getAddress();
+  const l2MessengerAddress = await l2Messenger.getAddress();
+  const l2ERC20GatewayAddress = await l2ERC20Gateway.getAddress();
+  const l2ETHGatewayAddress = await l2ETHGateway.getAddress();
+  const l2WETHGatewayAddress = await l2WETHGateway.getAddress();
+  const l2WstETHGatewayAddress = await l2WstETHGateway.getAddress();
+  const { provider: governanceProvider } = await getHardhatEthers(governanceDeploymentManager.hre);
+  const { provider: bridgeProvider } = await getHardhatEthers(bridgeDeploymentManager.hre);
+
   const openBridgedProposals: OpenBridgedProposal[] = [];
 
   // Grab all events on the L1CrossDomainMessenger contract since the `startingBlockNumber`
   const filter = scrollMessenger.filters.SentMessage();
+  const messageTopics = await filter.getTopicFilter();
   let messageSentEvents: Log[] = [];
 
   if (tenderlyLogs) {
-    const topic = scrollMessenger.interface.getEventTopic('SentMessage');
+    const topic = messageTopics[0];
     const tenderlyEvents = tenderlyLogs.filter(
-      log => log.raw?.topics?.[0] === topic && log.raw?.address?.toLowerCase() === scrollMessenger.address.toLowerCase()
+      log => log.raw?.topics?.[0] === topic && log.raw?.address?.toLowerCase() === scrollMessengerAddress.toLowerCase()
     );
-    const realEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    const realEvents = await governanceProvider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: scrollMessenger.address,
-      topics: filter.topics!
+      address: scrollMessengerAddress,
+      topics: messageTopics
     });
     messageSentEvents = [...realEvents, ...tenderlyEvents];
   } else {
-    messageSentEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    messageSentEvents = await governanceProvider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: scrollMessenger.address,
-      topics: filter.topics!
+      address: scrollMessengerAddress,
+      topics: messageTopics
     });
   }
 
@@ -67,6 +81,9 @@ export default async function relayScrollMessage(
       parsed = scrollMessenger.interface.parseLog(messageSentEvent);
     }
 
+    if (!parsed) {
+      throw new Error('SentMessage log could not be parsed');
+    }
     const { sender, target, value, messageNonce, gasLimit, message } = parsed.args;
 
     await setNextBaseFeeToZero(bridgeDeploymentManager);
@@ -80,21 +97,21 @@ export default async function relayScrollMessage(
     } else {
       aliasAccount = await impersonateAddress(
         bridgeDeploymentManager,
-        applyL1ToL2Alias(scrollMessenger.address)
+        applyL1ToL2Alias(scrollMessengerAddress)
       );
     }
 
-    let relayMessageTxn;
+    let relayMessageTxn: TransactionReceipt | null;
     if (tenderlyLogs) {
       const callData = l2Messenger.interface.encodeFunctionData('relayMessage', [sender, target, value, messageNonce, message]);
       bridgeDeploymentManager.stashRelayMessage(
-        l2Messenger.address,
+        l2MessengerAddress,
         callData,
-        aliasAccount.address
+        await aliasAccount.getAddress()
       );
     }
     relayMessageTxn = await (
-      await l2Messenger.connect(aliasAccount).relayMessage(
+      await l2Messenger.connect(aliasAccount).getFunction('relayMessage')(
         sender,
         target,
         value,
@@ -103,6 +120,9 @@ export default async function relayScrollMessage(
         { gasPrice: 0, gasLimit }
       )
     ).wait();
+    if (relayMessageTxn === null) {
+      throw new Error('Relay transaction was not mined');
+    }
 
     const messageWithoutPrefix = message.slice(2); // strip out the 0x prefix
     const messageWithoutSigHash = '0x' + messageWithoutPrefix.slice(8);
@@ -111,9 +131,9 @@ export default async function relayScrollMessage(
     // there are two types:
     // 1. Bridging ERC20 token or ETH
     // 2. Cross-chain message passing
-    if (target === l2ERC20Gateway.address) {
+    if (target === l2ERC20GatewayAddress) {
       // 1a. Bridging ERC20 token
-      const [ l1Token, _l2Token, _from, to, amount, _data ] = ethers.utils.defaultAbiCoder.decode(
+      const [ l1Token, _l2Token, _from, to, amount, _data ] = abiCoder.decode(
         ['address _l1Token', 'address _l2Token','address _from', 'address _to','uint256 _amount', 'bytes _data'],
         messageWithoutSigHash
       );
@@ -121,27 +141,27 @@ export default async function relayScrollMessage(
       console.log(
         `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Bridged over ${amount} of ${l1Token} to user ${to}`
       );
-    } else if (target === l2ETHGateway.address){
+    } else if (target === l2ETHGatewayAddress){
       // 1a. Bridging ETH
-      const [ _from, to, amount, _data ] = ethers.utils.defaultAbiCoder.decode(
+      const [ _from, to, amount, _data ] = abiCoder.decode(
         ['address _from', 'address _to', 'uint256 _amount', 'bytes _data'],
         messageWithoutSigHash
       );
 
-      const oldBalance = await bridgeDeploymentManager.hre.ethers.provider.getBalance(to);
-      const newBalance = oldBalance.add(BigNumber.from(amount));
+      const oldBalance = await bridgeProvider.getBalance(to);
+      const newBalance = oldBalance + amount;
       // This is our best attempt to mimic the deposit transaction type (not supported in Hardhat) that Optimism uses to deposit ETH to an L2 address
-      await bridgeDeploymentManager.hre.ethers.provider.send('hardhat_setBalance', [
+      await bridgeProvider.send('hardhat_setBalance', [
         to,
-        ethers.utils.hexStripZeros(newBalance.toHexString()),
+        toQuantity(newBalance),
       ]);
 
       console.log(
         `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Bridged over ${amount} of ETH to user ${to}`
       );
-    }else if (target === l2WETHGateway.address){
+    }else if (target === l2WETHGatewayAddress){
       // 1c. Bridging WETH
-      const [ _l1Token, _l2Token, _from, to, amount, _data ] = ethers.utils.defaultAbiCoder.decode(
+      const [ _l1Token, _l2Token, _from, to, amount, _data ] = abiCoder.decode(
         ['address _l1Token', 'address _l2Token','address _from', 'address _to','uint256 _amount', 'bytes _data'],
         messageWithoutSigHash
       );
@@ -149,9 +169,9 @@ export default async function relayScrollMessage(
       console.log(
         `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Bridged over ${amount} of WETH to user ${to}`
       );
-    } else if (target === l2WstETHGateway.address){
+    } else if (target === l2WstETHGatewayAddress){
       // 1d. Bridging WstETH
-      const [ _l1Token, _l2Token, _from, to, amount, _data ] = ethers.utils.defaultAbiCoder.decode(
+      const [ _l1Token, _l2Token, _from, to, amount, _data ] = abiCoder.decode(
         ['address _l1Token', 'address _l2Token','address _from', 'address _to','uint256 _amount', 'bytes _data'],
         messageWithoutSigHash
       );
@@ -159,10 +179,17 @@ export default async function relayScrollMessage(
       console.log(
         `[${governanceDeploymentManager.network} -> ${bridgeDeploymentManager.network}] Bridged over ${amount} of WstETH to user ${to}`
       );
-    } else if (target === bridgeReceiver.address) {
+    } else if (target === bridgeReceiverAddress) {
       // Cross-chain message passing
-      const proposalCreatedEvent = relayMessageTxn.events.find(event => event.address.toLowerCase() === bridgeReceiver.address.toLowerCase());
-      const { args: { id, eta } } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+      const proposalCreatedEvent = relayMessageTxn.logs.find(event => event.address.toLowerCase() === bridgeReceiverAddress.toLowerCase());
+      if (!proposalCreatedEvent) {
+        throw new Error('ProposalCreated log not found');
+      }
+      const parsedProposal = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+      if (!parsedProposal) {
+        throw new Error('ProposalCreated log could not be parsed');
+      }
+      const { id, eta } = parsedProposal.args;
 
       // Add the proposal to the list of open bridged proposals to be executed after all the messages have been relayed
       openBridgedProposals.push({ id, eta });
@@ -177,7 +204,7 @@ export default async function relayScrollMessage(
   for (let proposal of openBridgedProposals) {
     const { eta, id } = proposal;
     // Fast forward l2 time
-    await setNextBlockTimestamp(bridgeDeploymentManager, eta.toNumber() + 1);
+    await setNextBlockTimestamp(bridgeDeploymentManager, toNumber(eta) + 1);
 
     // Execute queued proposal
     await setNextBaseFeeToZero(bridgeDeploymentManager);
@@ -185,9 +212,9 @@ export default async function relayScrollMessage(
       const callData = bridgeReceiver.interface.encodeFunctionData('executeProposal', [id]);
       const signer = await bridgeDeploymentManager.getSigner();
       bridgeDeploymentManager.stashRelayMessage(
-        bridgeReceiver.address,
+        bridgeReceiverAddress,
         callData,
-        signer.address
+        await signer.getAddress()
       );
     } else {
       await bridgeReceiver.executeProposal(id, { gasPrice: 0 });

@@ -1,7 +1,7 @@
 import fg from 'fast-glob';
-import * as path from 'path';
-import {
-  Scenario,
+import * as path from 'node:path';
+import { Scenario } from './Scenario.js';
+import type {
   ScenarioEnv,
   ScenarioFlags,
   Property,
@@ -9,7 +9,7 @@ import {
   StaticConstraint,
   DynamicConstraint,
   Transformer
-} from './Scenario';
+} from './Scenario.js';
 
 export interface ScenarioBuilder<T, U, R> {
   (name: string, requirements: R, property: Property<T, U>): void;

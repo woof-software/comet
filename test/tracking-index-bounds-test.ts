@@ -1,5 +1,4 @@
-import { expect, exp, fastForward, makeProtocol, setTotalsBasic, toYears } from './helpers';
-import { BigNumber } from 'ethers';
+import { expect, exp, fastForward, makeProtocol, setTotalsBasic, toYears } from './helpers.js';
 
 describe('total tracking index bounds', function () {
   describe('base scale of 6', function () {
@@ -14,16 +13,16 @@ describe('total tracking index bounds', function () {
       const protocol = await makeProtocol(params);
       const { cometWithExtendedAssetList: comet } = protocol;
 
-      const baseScale = (await comet.baseScale()).toBigInt();
+      const baseScale = await comet.baseScale();
       // Formula: MAX_UINT64 / (baseTrackingSupplySpeed * baseScale / baseMinForRewards)
       const secondsUntilOverflow = Number(2n**64n * (baseMinForRewards / baseScale) / params.baseTrackingSupplySpeed);
 
       // Assert there are at least 5.85 years until tracking index can overflow
       const expectedYearsUntilOverflow = 5.85;
-      expect(toYears(secondsUntilOverflow)).to.be.approximately(expectedYearsUntilOverflow, 0.01);
+      expect(Math.abs(toYears(secondsUntilOverflow) - expectedYearsUntilOverflow) < 0.01).to.be.true;
 
       await setTotalsBasic(comet, {
-        totalSupplyBase: BigNumber.from(baseMinForRewards), // 10k USDC base units
+        totalSupplyBase: baseMinForRewards, // 10k USDC base units
       });
 
       await fastForward(secondsUntilOverflow-1);
@@ -32,7 +31,7 @@ describe('total tracking index bounds', function () {
       await comet.accrue();
 
       // Second accrue should overflow
-      await expect(comet.accrue()).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
+      await expect(comet.accrue()).to.be.revertedWithPanic(0x11);
     });
 
     it('upper bound hit on tracking borrow index', async () => {
@@ -46,16 +45,16 @@ describe('total tracking index bounds', function () {
       const protocol = await makeProtocol(params);
       const { cometWithExtendedAssetList: comet } = protocol;
 
-      const baseScale = (await comet.baseScale()).toBigInt();
+      const baseScale = await comet.baseScale();
       // Formula: MAX_UINT64 / (baseTrackingBorrowSpeed * baseScale / baseMinForRewards)
       const secondsUntilOverflow = Number(2n**64n * (baseMinForRewards / baseScale) / params.baseTrackingBorrowSpeed);
 
       // Assert there are at least 5.85 years until tracking index can overflow
       const expectedYearsUntilOverflow = 5.85;
-      expect(toYears(secondsUntilOverflow)).to.be.approximately(expectedYearsUntilOverflow, 0.01);
+      expect(Math.abs(toYears(secondsUntilOverflow) - expectedYearsUntilOverflow) < 0.01).to.be.true;
 
       await setTotalsBasic(comet, {
-        totalBorrowBase: BigNumber.from(baseMinForRewards), // 10k USDC base units
+        totalBorrowBase: baseMinForRewards, // 10k USDC base units
       });
 
       await fastForward(secondsUntilOverflow-1);
@@ -64,7 +63,7 @@ describe('total tracking index bounds', function () {
       await comet.accrue();
 
       // Second accrue should overflow
-      await expect(comet.accrue()).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
+      await expect(comet.accrue()).to.be.revertedWithPanic(0x11);
     });
 
     it('lower bound hit on tracking supply index', async () => {
@@ -77,7 +76,7 @@ describe('total tracking index bounds', function () {
       const { cometWithExtendedAssetList: comet } = protocol;
 
       const t0 = await setTotalsBasic(comet, {
-        totalSupplyBase: BigNumber.from(exp(1, 15)).mul(await comet.baseScale()), // 1e15 base units
+        totalSupplyBase: exp(1, 15) * await comet.baseScale(), // 1e15 base units
       });
 
       await comet.accrue();
@@ -87,7 +86,7 @@ describe('total tracking index bounds', function () {
       expect(t1.trackingSupplyIndex).to.not.be.equal(t0.trackingSupplyIndex);
 
       const t2 = await setTotalsBasic(comet, {
-        totalSupplyBase: BigNumber.from(exp(1, 15)).mul(await comet.baseScale()).mul(3), // 3e15 base units
+        totalSupplyBase: exp(1, 15) * await comet.baseScale() * 3n, // 3e15 base units
       });
 
       await comet.accrue();
@@ -107,7 +106,7 @@ describe('total tracking index bounds', function () {
       const { cometWithExtendedAssetList: comet } = protocol;
 
       const t0 = await setTotalsBasic(comet, {
-        totalBorrowBase: BigNumber.from(exp(1, 15)).mul(await comet.baseScale()), // 1e15 base units
+        totalBorrowBase: exp(1, 15) * await comet.baseScale(), // 1e15 base units
       });
 
       await comet.accrue();
@@ -117,7 +116,7 @@ describe('total tracking index bounds', function () {
       expect(t1.trackingBorrowIndex).to.not.be.equal(t0.trackingBorrowIndex);
 
       const t2 = await setTotalsBasic(comet, {
-        totalBorrowBase: BigNumber.from(exp(1, 15)).mul(await comet.baseScale()).mul(3), // 3e15 base units
+        totalBorrowBase: exp(1, 15) * await comet.baseScale() * 3n, // 3e15 base units
       });
 
       await comet.accrue();
@@ -141,16 +140,16 @@ describe('total tracking index bounds', function () {
       const protocol = await makeProtocol(params);
       const { cometWithExtendedAssetList: comet } = protocol;
 
-      const baseScale = (await comet.baseScale()).toBigInt();
+      const baseScale = await comet.baseScale();
       // Formula: MAX_UINT64 / (baseTrackingSupplySpeed * baseScale / baseMinForRewards)
       const secondsUntilOverflow = Number(2n**64n * (baseMinForRewards / baseScale) / params.baseTrackingSupplySpeed);
 
       // Assert there are at least 58.5 years until tracking index can overflow
       const expectedYearsUntilOverflow = 58.5;
-      expect(toYears(secondsUntilOverflow)).to.be.approximately(expectedYearsUntilOverflow, 0.01);
+      expect(Math.abs(toYears(secondsUntilOverflow) - expectedYearsUntilOverflow) < 0.01).to.be.true;
 
       await setTotalsBasic(comet, {
-        totalSupplyBase: BigNumber.from(baseMinForRewards), // 100 WETH base units
+        totalSupplyBase: baseMinForRewards, // 100 WETH base units
       });
 
       await fastForward(secondsUntilOverflow-1);
@@ -159,7 +158,7 @@ describe('total tracking index bounds', function () {
       await comet.accrue();
 
       // Second accrue should overflow
-      await expect(comet.accrue()).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
+      await expect(comet.accrue()).to.be.revertedWithPanic(0x11);
     });
 
     it('upper bound hit on tracking borrow index', async () => {
@@ -174,16 +173,16 @@ describe('total tracking index bounds', function () {
       const protocol = await makeProtocol(params);
       const { cometWithExtendedAssetList: comet } = protocol;
 
-      const baseScale = (await comet.baseScale()).toBigInt();
+      const baseScale = await comet.baseScale();
       // Formula: MAX_UINT64 / (baseTrackingBorrowSpeed * baseScale / baseMinForRewards)
       const secondsUntilOverflow = Number(2n**64n * (baseMinForRewards / baseScale) / params.baseTrackingBorrowSpeed);
 
       // Assert there are at least 58.5 years until tracking index can overflow
       const expectedYearsUntilOverflow = 58.5;
-      expect(toYears(secondsUntilOverflow)).to.be.approximately(expectedYearsUntilOverflow, 0.01);
+      expect(Math.abs(toYears(secondsUntilOverflow) - expectedYearsUntilOverflow) < 0.01).to.be.true;
 
       await setTotalsBasic(comet, {
-        totalBorrowBase: BigNumber.from(baseMinForRewards), // 10k USDC base units
+        totalBorrowBase: baseMinForRewards, // 10k USDC base units
       });
 
       await fastForward(secondsUntilOverflow-1);
@@ -192,7 +191,7 @@ describe('total tracking index bounds', function () {
       await comet.accrue();
 
       // Second accrue should overflow
-      await expect(comet.accrue()).to.be.revertedWith('code 0x11 (Arithmetic operation underflowed or overflowed outside of an unchecked block)');
+      await expect(comet.accrue()).to.be.revertedWithPanic(0x11);
     });
 
     it('lower bound hit on tracking supply index', async () => {
@@ -206,7 +205,7 @@ describe('total tracking index bounds', function () {
       const { cometWithExtendedAssetList: comet } = protocol;
 
       const t0 = await setTotalsBasic(comet, {
-        totalSupplyBase: BigNumber.from(exp(1, 12)).mul(await comet.baseScale()), // 1e12 base units
+        totalSupplyBase: exp(1, 12) * await comet.baseScale(), // 1e12 base units
       });
 
       await comet.accrue();
@@ -216,7 +215,7 @@ describe('total tracking index bounds', function () {
       expect(t1.trackingSupplyIndex).to.not.be.equal(t0.trackingSupplyIndex);
 
       const t2 = await setTotalsBasic(comet, {
-        totalSupplyBase: BigNumber.from(exp(1, 13)).mul(await comet.baseScale()), // 1e13 base units
+        totalSupplyBase: exp(1, 13) * await comet.baseScale(), // 1e13 base units
       });
 
       await comet.accrue();
@@ -237,7 +236,7 @@ describe('total tracking index bounds', function () {
       const { cometWithExtendedAssetList: comet } = protocol;
 
       const t0 = await setTotalsBasic(comet, {
-        totalBorrowBase: BigNumber.from(exp(1, 12)).mul(await comet.baseScale()), // 1e12 base units
+        totalBorrowBase: exp(1, 12) * await comet.baseScale(), // 1e12 base units
       });
 
       await comet.accrue();
@@ -247,7 +246,7 @@ describe('total tracking index bounds', function () {
       expect(t1.trackingBorrowIndex).to.not.be.equal(t0.trackingBorrowIndex);
 
       const t2 = await setTotalsBasic(comet, {
-        totalBorrowBase: BigNumber.from(exp(1, 13)).mul(await comet.baseScale()), // 1e13 base units
+        totalBorrowBase: exp(1, 13) * await comet.baseScale(), // 1e13 base units
       });
 
       await comet.accrue();

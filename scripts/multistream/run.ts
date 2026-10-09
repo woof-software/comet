@@ -1,13 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { ForkSpec } from '../../plugins/scenario/World';
-import { mergeResults } from './mergeResults';
-import { JsonSuiteResult } from '../../plugins/scenario/Report';
+import { fileURLToPath } from 'node:url';
+import type { ForkSpec } from '../../plugins/scenario/World.js';
+import { mergeResults } from './mergeResults.js';
+import type { JsonSuiteResult } from '../../plugins/scenario/Report.js';
 
-const RESULTS_DIR = path.join(__dirname, '..', '..', 'results');
-const LOGS_DIR = path.join(__dirname, '..', '..', 'logs');
-const MERGED_OUTPUT = path.join(__dirname, '..', '..', 'scenario-results.json');
+const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+const RESULTS_DIR = path.join(moduleDirectory, '..', '..', 'results');
+const LOGS_DIR = path.join(moduleDirectory, '..', '..', 'logs');
+const MERGED_OUTPUT = path.join(moduleDirectory, '..', '..', 'scenario-results.json');
 
 function groupBases(bases: ForkSpec[], perBase: boolean): Map<string, ForkSpec[]> {
   const groups = new Map<string, ForkSpec[]>();

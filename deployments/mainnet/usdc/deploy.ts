@@ -1,5 +1,6 @@
-import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager/index.js';
+import type { DeploySpec } from '../../../src/deploy/index.js';
+import { deployComet } from '../../../src/deploy/index.js';
 
 export default async function deploy(deploymentManager: DeploymentManager, deploySpec: DeploySpec): Promise<Deployed> {
   const USDC = await deploymentManager.existing('USDC', '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48');
@@ -19,8 +20,8 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
   // Deploy Bulker
   const bulker = await deploymentManager.deploy(
     'bulker',
-    'Bulker.sol',
-    [await comet.governor(), WETH.address]
+    'bulkers/BaseBulker.sol',
+    [await comet.governor(), await WETH.getAddress()]
   );
 
   return { ...deployed, bulker, fxRoot };

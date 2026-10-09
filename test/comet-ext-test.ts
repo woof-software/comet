@@ -1,6 +1,7 @@
-import { CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken } from '../build/types';
-import { expect, exp, makeProtocol, setTotalsBasic } from './helpers';
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
+
+import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken } from '../build/types/index.js';
+import { expect, exp, makeProtocol } from './helpers.js';
 
 describe('CometExt', function () {
   let cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList;
@@ -15,10 +16,17 @@ describe('CometExt', function () {
     } = await makeProtocol());
 
     // Set different indices
-    await setTotalsBasic(cometWithExtendedAssetList, {
+    const totals = await cometWithExtendedAssetList.totalsBasic();
+    await (await cometWithExtendedAssetList.setTotalsBasic({
+      trackingSupplyIndex: totals.trackingSupplyIndex,
+      trackingBorrowIndex: totals.trackingBorrowIndex,
       baseSupplyIndex: 2e15,
       baseBorrowIndex: 3e15,
-    });
+      totalSupplyBase: totals.totalSupplyBase,
+      totalBorrowBase: totals.totalBorrowBase,
+      lastAccrualTime: totals.lastAccrualTime,
+      pauseFlags: totals.pauseFlags,
+    })).wait();
   });
 
   it('returns factor scale', async () => {
@@ -33,16 +41,17 @@ describe('CometExt', function () {
 
   it('returns collateralBalance (in units of the collateral asset)', async () => {
     const { WETH } = tokens;
+    const wethAddress = await WETH.getAddress();
 
     await cometWithExtendedAssetList.setCollateralBalance(
       user.address,
-      WETH.address,
+      wethAddress,
       exp(5, 18)
     );
 
     const collateralBalanceOf = await cometWithExtendedAssetList.collateralBalanceOf(
       user.address,
-      WETH.address
+      wethAddress
     );
     expect(collateralBalanceOf).to.eq(exp(5,18));
   });

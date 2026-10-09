@@ -1,28 +1,30 @@
-import { CometContext, scenario } from './context/CometContext';
+import type { CometContext } from './context/CometContext.js';
+import { scenario } from './context/CometContext.js';
 import { expect } from 'chai';
-import { expectApproximately, expectBase, expectRevertCustom, expectRevertMatches, getExpectedBaseBalance, getInterest, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, UINT256_MAX } from './utils';
-import { ContractReceipt } from 'ethers';
-import { matchesDeployment } from './utils';
-import { exp } from '../test/helpers';
-import { ethers } from 'hardhat';
-import { getConfigForScenario } from './utils/scenarioHelper';
+import { expectApproximately, expectBase, expectRevertCustom, expectRevertMatches, getExpectedBaseBalance, getInterest, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, UINT256_MAX } from './utils/index.js';
+import type { ContractTransactionReceipt } from 'ethers';
+import { parseEther, toQuantity } from 'ethers';
+import { getHardhatEthers } from '../plugins/deployment_manager/hardhat3/runtime.js';
+import { matchesDeployment } from './utils/index.js';
+import { ethers, exp } from '../test/helpers.js';
+import { getConfigForScenario } from './utils/scenarioHelper.js';
 
 // XXX introduce a SupplyCapConstraint to separately test the happy path and revert path instead
 // of testing them conditionally
-async function testSupplyCollateral(context: CometContext, assetNum: number): Promise<void | ContractReceipt> {
+async function testSupplyCollateral(context: CometContext, assetNum: number): Promise<void | ContractTransactionReceipt> {
   const comet = await context.getComet();
   const { albert } = await context.actors;
   const { asset: assetAddress, scale: scaleBN, supplyCap } = await comet.getAssetInfo(assetNum);
   const collateralAsset = context.getAssetByAddress(assetAddress);
-  const scale = scaleBN.toBigInt();
+  const scale = scaleBN;
   const toSupply = BigInt(getConfigForScenario(context, assetNum).supplyCollateral) * scale;
 
   expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupply);
 
-  await collateralAsset.approve(albert, comet.address);
+  await collateralAsset.approve(albert, await comet.getAddress());
 
-  const totalCollateralSupply = (await comet.totalsCollateral(collateralAsset.address)).totalSupplyAsset.toBigInt();
-  if (totalCollateralSupply + toSupply > supplyCap.toBigInt()) {
+  const totalCollateralSupply = (await comet.totalsCollateral(collateralAsset.address)).totalSupplyAsset;
+  if (totalCollateralSupply + toSupply > supplyCap) {
     await expectRevertCustom(
       albert.supplyAsset({
         asset: collateralAsset.address,
@@ -40,22 +42,22 @@ async function testSupplyCollateral(context: CometContext, assetNum: number): Pr
   }
 }
 
-async function testSupplyFromCollateral(context: CometContext, assetNum: number): Promise<void | ContractReceipt> {
+async function testSupplyFromCollateral(context: CometContext, assetNum: number): Promise<void | ContractTransactionReceipt> {
   const comet = await context.getComet();
   const { albert, betty } = await context.actors;
   const { asset: assetAddress, scale: scaleBN, supplyCap } = await comet.getAssetInfo(assetNum);
   const collateralAsset = context.getAssetByAddress(assetAddress);
-  const scale = scaleBN.toBigInt();
+  const scale = scaleBN;
   const toSupply = BigInt(getConfigForScenario(context, assetNum).supplyCollateral) * scale;
 
   expect(await collateralAsset.balanceOf(albert.address)).to.be.equal(toSupply);
   expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(0n);
 
-  await collateralAsset.approve(albert, comet.address);
+  await collateralAsset.approve(albert, await comet.getAddress());
   await albert.allow(betty, true);
 
-  const totalCollateralSupply = (await comet.totalsCollateral(collateralAsset.address)).totalSupplyAsset.toBigInt();
-  if (totalCollateralSupply + toSupply > supplyCap.toBigInt()) {
+  const totalCollateralSupply = (await comet.totalsCollateral(collateralAsset.address)).totalSupplyAsset;
+  if (totalCollateralSupply + toSupply > supplyCap) {
     await expectRevertCustom(
       betty.supplyAssetFrom({
         src: albert.address,
@@ -124,16 +126,16 @@ scenario(
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(100n * scale);
 
     // Albert supplies 100 units of base to Comet
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     const txn = await albert.supplyAsset({ asset: baseAsset.address, amount: 100n * scale });
 
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const baseIndexScale = await comet.baseIndexScale();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
     const baseSupplied = getExpectedBaseBalance(100n * scale, baseIndexScale, baseSupplyIndex);
 
     expect(await comet.balanceOf(albert.address)).to.be.equal(baseSupplied);
@@ -154,32 +156,30 @@ scenario(
     // Set fees for USDT for testing
     const USDT = await world.deploymentManager.existing('USDT', await comet.baseToken(), world.base.network);
     const USDTAdminAddress = await USDT.owner();
-    await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
+    const hardhatEthers = await getHardhatEthers(world.deploymentManager.hre);
+    await hardhatEthers.provider.send('hardhat_setBalance', [
       USDTAdminAddress,
-      ethers.utils.hexStripZeros(ethers.utils.parseEther('100').toHexString()),
+      toQuantity(parseEther('100')),
     ]);
-    await world.deploymentManager.hre.network.provider.request({
-      method: 'hardhat_impersonateAccount',
-      params: [USDTAdminAddress],
-    });
+    await hardhatEthers.provider.send('hardhat_impersonateAccount', [USDTAdminAddress]);
     // mine a block to ensure the impersonation is effective
-    const USDTAdminSigner = await world.deploymentManager.hre.ethers.getSigner(USDTAdminAddress);
+    const USDTAdminSigner = await hardhatEthers.getSigner(USDTAdminAddress);
     // 10 basis points, and max 10 USDT
-    await USDT.connect(USDTAdminSigner).setParams(10, 10);
+    await USDT.connect(USDTAdminSigner).getFunction('setParams')(10, 10);
 
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(1000n * scale);
 
     // Albert supplies 1000 units of base to Comet
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     const txn = await albert.supplyAsset({ asset: baseAsset.address, amount: 1000n * scale });
 
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const baseIndexScale = await comet.baseIndexScale();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
     const baseSupplied = getExpectedBaseBalance(999n * scale, baseIndexScale, baseSupplyIndex);
 
     expect(await comet.balanceOf(albert.address)).to.be.equal(baseSupplied);
@@ -205,14 +205,14 @@ scenario(
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
     const utilization = await comet.getUtilization();
-    const borrowRate = (await comet.getBorrowRate(utilization)).toBigInt();
+    const borrowRate = await comet.getBorrowRate(utilization);
 
     expectApproximately(await albert.getCometBaseBalance(), -BigInt(getConfigForScenario(context).liquidationBase) * scale, getInterest(BigInt(getConfigForScenario(context).liquidationBase) * scale, borrowRate, 1n) + 1n);
 
     // Albert repays 100 units of base borrow
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     const txn = await albert.supplyAsset({ asset: baseAsset.address, amount: BigInt(getConfigForScenario(context).liquidationBase) * scale });
 
     // XXX all these timings are crazy
@@ -237,30 +237,28 @@ scenario(
     // Set fees for USDT for testing
     const USDT = await world.deploymentManager.existing('USDT', await comet.baseToken(), world.base.network);
     const USDTAdminAddress = await USDT.owner();
-    await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
+    const hardhatEthers = await getHardhatEthers(world.deploymentManager.hre);
+    await hardhatEthers.provider.send('hardhat_setBalance', [
       USDTAdminAddress,
-      ethers.utils.hexStripZeros(ethers.utils.parseEther('100').toHexString()),
+      toQuantity(parseEther('100')),
     ]);
-    await world.deploymentManager.hre.network.provider.request({
-      method: 'hardhat_impersonateAccount',
-      params: [USDTAdminAddress],
-    });
+    await hardhatEthers.provider.send('hardhat_impersonateAccount', [USDTAdminAddress]);
     // mine a block to ensure the impersonation is effective
-    const USDTAdminSigner = await world.deploymentManager.hre.ethers.getSigner(USDTAdminAddress);
+    const USDTAdminSigner = await hardhatEthers.getSigner(USDTAdminAddress);
     // 10 basis points, and max 10 USDT
-    await USDT.connect(USDTAdminSigner).setParams(10, 10);
+    await USDT.connect(USDTAdminSigner).getFunction('setParams')(10, 10);
 
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
     const utilization = await comet.getUtilization();
-    const borrowRate = (await comet.getBorrowRate(utilization)).toBigInt();
+    const borrowRate = await comet.getBorrowRate(utilization);
 
     expectApproximately(await albert.getCometBaseBalance(), -1000n * scale, getInterest(1000n * scale, borrowRate, 1n) + 2n);
 
     // Albert repays 1000 units of base borrow
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     const txn = await albert.supplyAsset({ asset: baseAsset.address, amount: 1000n * scale });
 
     // XXX all these timings are crazy
@@ -286,30 +284,28 @@ scenario(
     // Set fees for USDT for testing
     const USDT = await world.deploymentManager.existing('USDT', await comet.baseToken(), world.base.network);
     const USDTAdminAddress = await USDT.owner();
-    await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
+    const hardhatEthers = await getHardhatEthers(world.deploymentManager.hre);
+    await hardhatEthers.provider.send('hardhat_setBalance', [
       USDTAdminAddress,
-      ethers.utils.hexStripZeros(ethers.utils.parseEther('100').toHexString()),
+      toQuantity(parseEther('100')),
     ]);
-    await world.deploymentManager.hre.network.provider.request({
-      method: 'hardhat_impersonateAccount',
-      params: [USDTAdminAddress],
-    });
+    await hardhatEthers.provider.send('hardhat_impersonateAccount', [USDTAdminAddress]);
     // mine a block to ensure the impersonation is effective
-    const USDTAdminSigner = await world.deploymentManager.hre.ethers.getSigner(USDTAdminAddress);
+    const USDTAdminSigner = await hardhatEthers.getSigner(USDTAdminAddress);
     // 10 basis points, and max 10 USDT
-    await USDT.connect(USDTAdminSigner).setParams(10, 10);
+    await USDT.connect(USDTAdminSigner).getFunction('setParams')(10, 10);
 
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
     const utilization = await comet.getUtilization();
-    const borrowRate = (await comet.getBorrowRate(utilization)).toBigInt();
+    const borrowRate = await comet.getBorrowRate(utilization);
 
     expectApproximately(await albert.getCometBaseBalance(), -999n * scale, getInterest(999n * scale, borrowRate, 4n) + 2n);
 
     // Albert repays 1000 units of base borrow
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     const txn = await albert.supplyAsset({ asset: baseAsset.address, amount: 1000n * scale });
 
     // XXX all these timings are crazy
@@ -331,19 +327,19 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(100n * scale);
     expect(await comet.balanceOf(betty.address)).to.be.equal(0n);
 
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     await albert.allow(betty, true);
 
     // Betty supplies 100 units of base from Albert
     const txn = await betty.supplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: 100n * scale });
 
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const baseIndexScale = await comet.baseIndexScale();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
     const baseSupplied = getExpectedBaseBalance(100n * scale, baseIndexScale, baseSupplyIndex);
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
@@ -365,35 +361,33 @@ scenario(
     // Set fees for USDT for testing
     const USDT = await world.deploymentManager.existing('USDT', await comet.baseToken(), world.base.network);
     const USDTAdminAddress = await USDT.owner();
-    await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
+    const hardhatEthers = await getHardhatEthers(world.deploymentManager.hre);
+    await hardhatEthers.provider.send('hardhat_setBalance', [
       USDTAdminAddress,
-      ethers.utils.hexStripZeros(ethers.utils.parseEther('100').toHexString()),
+      toQuantity(parseEther('100')),
     ]);
-    await world.deploymentManager.hre.network.provider.request({
-      method: 'hardhat_impersonateAccount',
-      params: [USDTAdminAddress],
-    });
+    await hardhatEthers.provider.send('hardhat_impersonateAccount', [USDTAdminAddress]);
     // mine a block to ensure the impersonation is effective
-    const USDTAdminSigner = await world.deploymentManager.hre.ethers.getSigner(USDTAdminAddress);
+    const USDTAdminSigner = await hardhatEthers.getSigner(USDTAdminAddress);
     // 10 basis points, and max 10 USDT
-    await USDT.connect(USDTAdminSigner).setParams(10, 10);
+    await USDT.connect(USDTAdminSigner).getFunction('setParams')(10, 10);
 
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(1000n * scale);
     expect(await comet.balanceOf(betty.address)).to.be.equal(0n);
 
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     await albert.allow(betty, true);
 
     // Betty supplies 1000 units of base from Albert
     const txn = await betty.supplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: 1000n * scale });
 
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const baseIndexScale = await comet.baseIndexScale();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex;
     const baseSupplied = getExpectedBaseBalance(999n * scale, baseIndexScale, baseSupplyIndex);
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
@@ -425,9 +419,9 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     await albert.allow(betty, true);
 
     // Betty supplies max base from Albert to repay all borrows
@@ -451,14 +445,14 @@ scenario(
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
     await expect(
       albert.supplyAsset({
         asset: baseAsset.address,
         amount: 100n * scale,
       })
-    ).to.be.reverted;
+    ).to.revert(ethers);
     // ).to.be.revertedWith('ERC20: transfer amount exceeds allowance');
   }
 );
@@ -474,7 +468,7 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
     await albert.allow(betty, true);
     await baseAsset.approve(albert, betty, 10n * scale);
@@ -486,7 +480,7 @@ scenario(
         asset: baseAsset.address,
         amount: 100n * scale,
       })
-    ).to.be.reverted;
+    ).to.revert(ethers);
     // ).to.be.revertedWith('ERC20: transfer amount exceeds allowance');
   }
 );
@@ -503,7 +497,7 @@ scenario(
     const { asset: asset0Address, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(asset0Address);
     const symbol = await collateralAsset.token.symbol();
-    const scale = scaleBN.toBigInt();
+    const scale = scaleBN;
 
     await albert.allow(betty, true);
     await collateralAsset.approve(albert, betty, 10n * scale);
@@ -545,15 +539,15 @@ scenario(
     const { albert } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     await expect(
       albert.supplyAsset({
         asset: baseAsset.address,
         amount: 100n * scale,
       })
-    ).to.be.reverted;
+    ).to.revert(ethers);
     // ).to.be.revertedWith('ERC20: transfer amount exceeds balance');
   }
 );
@@ -569,9 +563,9 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     await albert.allow(betty, true);
     await expect(
       betty.supplyAssetFrom({
@@ -580,7 +574,7 @@ scenario(
         asset: baseAsset.address,
         amount: 100n * scale,
       })
-    ).to.be.reverted;
+    ).to.revert(ethers);
     // ).to.be.revertedWith('ERC20: transfer amount exceeds balance');
   }
 );
@@ -597,9 +591,9 @@ scenario(
     const { asset: asset0Address, scale: scaleBN } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(asset0Address);
     const symbol = await collateralAsset.token.symbol();
-    const scale = scaleBN.toBigInt();
+    const scale = scaleBN;
 
-    await collateralAsset.approve(albert, comet.address);
+    await collateralAsset.approve(albert, await comet.getAddress());
     await albert.allow(betty, true);
 
     await expectRevertMatches(
@@ -636,9 +630,9 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
-    await baseAsset.approve(albert, comet.address);
+    await baseAsset.approve(albert, await comet.getAddress());
     await expectRevertCustom(
       betty.supplyAssetFrom({
         src: albert.address,

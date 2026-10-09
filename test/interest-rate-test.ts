@@ -1,15 +1,16 @@
-import { expect, exp, makeProtocol, wait } from './helpers';
+import { expect, exp, makeProtocol, wait } from './helpers.js';
 
 // Interest rate calculations can be checked with this Google Sheet:
 // https://docs.google.com/spreadsheets/d/1G3BWcFPEQYnH-IrHHye5oA0oFIP0Jyj7pybdpMuDOuI
 
 // The minimum required precision between the actual and expected annual rate for tests to pass.
-const MINIMUM_PRECISION_WEI = 1e8; // 1e8 wei of precision
+const MINIMUM_PRECISION_WEI = 100_000_000n; // 1e8 wei of precision
 
-const SECONDS_PER_YEAR = 31_536_000;
+const SECONDS_PER_YEAR = 31_536_000n;
 
 function assertInterestRatesMatch(expectedRate, actualRate, precision = MINIMUM_PRECISION_WEI) {
-  expect((actualRate.sub(expectedRate)).abs()).lte(precision);
+  const difference = actualRate - expectedRate;
+  expect(difference < 0n ? -difference : difference).lte(precision);
 }
 
 const interestRateParams = {
@@ -49,10 +50,10 @@ describe('interest rates', function () {
     expect(utilization).to.be.equal(exp(0.1, 18));
     // interestRateBase + interestRateSlopeLow * utilization
     // = 0 + 0.04 * 0.1 = 0.004
-    assertInterestRatesMatch(exp(.004, 18), supplyRate.mul(SECONDS_PER_YEAR));
+    assertInterestRatesMatch(exp(.004, 18), supplyRate * SECONDS_PER_YEAR);
     // interestRateBase + interestRateSlopeLow * utilization
     // = 0.01 + 0.05 * 0.1 = 0.015
-    assertInterestRatesMatch(exp(0.015, 18), borrowRate.mul(SECONDS_PER_YEAR));
+    assertInterestRatesMatch(exp(0.015, 18), borrowRate * SECONDS_PER_YEAR);
   });
 
   it('when above kink utilization', async () => {
@@ -80,10 +81,10 @@ describe('interest rates', function () {
     expect(utilization).to.be.equal(exp(0.9, 18));
     // interestRateBase + interestRateSlopeLow * kink + interestRateSlopeHigh * (utilization - kink)
     // = 0 + 0.04 * 0.8 + 0.4 * 0.1 = 0.072
-    assertInterestRatesMatch(exp(0.072, 18), supplyRate.mul(SECONDS_PER_YEAR));
+    assertInterestRatesMatch(exp(0.072, 18), supplyRate * SECONDS_PER_YEAR);
     // interestRateBase + interestRateSlopeLow * kink + interestRateSlopeHigh * (utilization - kink)
     // = 0.01 + 0.05 * 0.8 + 0.3 * 0.1 = 0.08
-    assertInterestRatesMatch(exp(0.08, 18), borrowRate.mul(SECONDS_PER_YEAR));
+    assertInterestRatesMatch(exp(0.08, 18), borrowRate * SECONDS_PER_YEAR);
   });
 
   it('when 0 utilization', async () => {
@@ -108,12 +109,12 @@ describe('interest rates', function () {
 
     // totalBorrowBase / totalSupplyBase
     // = 0 / 100 = 0
-    expect(utilization).to.be.equal(0);
+    expect(utilization).to.be.equal(0n);
     // interestRateBase + interestRateSlopeLow * utilization
     // = 0 + 0.04 * 0 = 0
-    assertInterestRatesMatch(0, supplyRate.mul(SECONDS_PER_YEAR));
+    assertInterestRatesMatch(0n, supplyRate * SECONDS_PER_YEAR);
     // interestRateBase + interestRateSlopeLow * utilization
     // = 0.01 + 0.05 * 0 = 0.01
-    assertInterestRatesMatch(exp(0.01, 18), borrowRate.mul(SECONDS_PER_YEAR));
+    assertInterestRatesMatch(exp(0.01, 18), borrowRate * SECONDS_PER_YEAR);
   });
 });

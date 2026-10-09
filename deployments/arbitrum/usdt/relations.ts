@@ -1,4 +1,4 @@
-import baseRelationConfig from '../../relations';
+import baseRelationConfig from '../../relations.js';
 
 export default {
   ...baseRelationConfig,

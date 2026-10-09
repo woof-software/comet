@@ -1,4 +1,4 @@
-import { RelationConfigMap } from '../plugins/deployment_manager/RelationConfig';
+import type { RelationConfigMap } from '../plugins/deployment_manager/RelationConfig.js';
 
 const relationConfigMap: RelationConfigMap = {
   comptrollerV2: {
@@ -25,7 +25,7 @@ const relationConfigMap: RelationConfigMap = {
           try {
             return cometExt.assetListFactory();
           }
-          catch (e) {
+          catch {
             return '0x0000000000000000000000000000000000000000';
           }
         },
@@ -36,7 +36,7 @@ const relationConfigMap: RelationConfigMap = {
       },
       assets: {
         field: async (comet) => {
-          const n = await comet.numAssets();
+          const n = Number(await comet.numAssets());
           return Promise.all(
             Array(n).fill(0).map(async (_, i) => {
               const assetInfo = await comet.getAssetInfo(i);
@@ -45,7 +45,7 @@ const relationConfigMap: RelationConfigMap = {
           );
         },
         alias: async (token) => {
-          const address = token.address.toLowerCase();
+          const address = (await token.getAddress()).toLowerCase();
 
           try {
             const symbol = await token.symbol();
@@ -71,13 +71,13 @@ const relationConfigMap: RelationConfigMap = {
               return 'mETH';
             }
 
-            throw new Error(`Failed to get symbol for token ${token.address}: ${e.message}`);
+            throw new Error(`Failed to get symbol for token ${address}: ${e.message}`);
           }
         },
       },
       assetPriceFeeds: {
         field: async (comet) => {
-          const n = await comet.numAssets();
+          const n = Number(await comet.numAssets());
           return Promise.all(
             Array(n).fill(0).map(async (_, i) => {
               const assetInfo = await comet.getAssetInfo(i);
@@ -90,7 +90,7 @@ const relationConfigMap: RelationConfigMap = {
             return `${await assets[i].symbol()}:priceFeed`;
           } catch (e) {
             // invalid opcode when calling symbol()
-            const address = assets[i].address.toLowerCase();
+            const address = (await assets[i].getAddress()).toLowerCase();
             
             // Known contract mappings for Arbitrum
             if (address === '0xd09acb80c1e8f2291862c4978a008791c9167003') {
@@ -106,8 +106,8 @@ const relationConfigMap: RelationConfigMap = {
             if (address === '0xcda86a272531e8640cd7f1a92c01839911b90bb0') {
               return 'mETH:priceFeed';
             }
-
-            throw new Error(`Failed to get symbol for token ${assets[i].address}: ${e.message}`);
+            
+            throw new Error(`Failed to get symbol for token ${address}: ${e.message}`);
           }
         },
       },
@@ -141,7 +141,7 @@ const relationConfigMap: RelationConfigMap = {
         }
       },
       cometFactory: {
-        field: async (configurator, { comet }) => configurator.factory(comet[0].address),
+        field: async (configurator, { comet }) => configurator.factory(await comet[0].getAddress()),
       }
     }
   },
@@ -170,7 +170,7 @@ const relationConfigMap: RelationConfigMap = {
     relations: {
       COMP: {
         field: async (governor) => {
-          if (governor.address === '0x309a862bbC1A00e45506cB8A802D1ff10004c8C0') return governor.token();
+          if (await governor.getAddress() === '0x309a862bbC1A00e45506cB8A802D1ff10004c8C0') return governor.token();
           return governor.comp();
         },
       }
@@ -205,7 +205,7 @@ const relationConfigMap: RelationConfigMap = {
     relations: {
       rewardToken: {
         field: async (rewards, { comet }) => {
-          const rewardToken = (await rewards.rewardConfig(comet[0].address)).token;
+          const rewardToken = (await rewards.rewardConfig(await comet[0].getAddress())).token;
           return rewardToken !== '0x0000000000000000000000000000000000000000' ? rewardToken : null;
         },
         alias: async (token) => token.symbol(),

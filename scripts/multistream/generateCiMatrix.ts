@@ -1,5 +1,5 @@
-import '../../plugins/scenario/type-extensions';
-import config from '../../hardhat.config';
+import '../../plugins/scenario/type-extensions.js';
+import hre from 'hardhat';
 
 function resolveBases(all: string[], inputBases: string, inputNetwork: string): string[] {
   if (inputBases) {
@@ -23,7 +23,7 @@ function groupBy(names: string[], keyOf: (name: string) => string): { name: stri
 }
 
 function main() {
-  const allBases = config.scenario.bases;
+  const allBases = hre.config.scenario.bases;
   const all = allBases.map((base) => base.name);
   const networkMap: Record<string, string> = {};
   for (const base of allBases) {

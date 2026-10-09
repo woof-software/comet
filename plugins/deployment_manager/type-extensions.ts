@@ -1,5 +1,5 @@
 import 'hardhat/types/config';
-import { RelationConfigMap } from './RelationConfig';
+import type { RelationConfigMap } from './RelationConfig.js';
 
 export interface DeploymentManagerConfig {
   relationConfigMap?: RelationConfigMap;
@@ -16,6 +16,6 @@ declare module 'hardhat/types/config' {
   }
 
   interface HardhatConfig {
-    deploymentManager?: DeploymentManagerConfig;
+    deploymentManager: DeploymentManagerConfig;
   }
 }

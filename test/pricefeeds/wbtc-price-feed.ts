@@ -1,28 +1,20 @@
-import { ethers, exp, expect } from '../helpers';
-import {
-  SimplePriceFeed__factory,
-  WBTCPriceFeed__factory
-} from '../../build/types';
+import { ethers, exp, expect } from '../helpers.js';
 
 export async function makeWBTCPriceFeed({ WBTCToBTCPrice, BTCToUSDPrice }) {
-  const SimplePriceFeedFactory = (await ethers.getContractFactory(
-    'SimplePriceFeed'
-  )) as SimplePriceFeed__factory;
+  const SimplePriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');
   const WBTCToBTCPriceFeed = await SimplePriceFeedFactory.deploy(WBTCToBTCPrice, 8);
-  await WBTCToBTCPriceFeed.deployed();
+  await WBTCToBTCPriceFeed.waitForDeployment();
 
   const BTCToUSDPriceFeed = await SimplePriceFeedFactory.deploy(BTCToUSDPrice, 8);
-  await BTCToUSDPriceFeed.deployed();
+  await BTCToUSDPriceFeed.waitForDeployment();
 
-  const WBTCPriceFeedFactory = (await ethers.getContractFactory(
-    'WBTCPriceFeed'
-  )) as WBTCPriceFeed__factory;
+  const WBTCPriceFeedFactory = await ethers.getContractFactory('WBTCPriceFeed');
   const WBTCPriceFeed = await WBTCPriceFeedFactory.deploy(
-    WBTCToBTCPriceFeed.address,
-    BTCToUSDPriceFeed.address,
+    await WBTCToBTCPriceFeed.getAddress(),
+    await BTCToUSDPriceFeed.getAddress(),
     8
   );
-  await WBTCPriceFeed.deployed();
+  await WBTCPriceFeed.waitForDeployment();
 
   return {
     WBTCToBTCPriceFeed,
@@ -86,25 +78,21 @@ const testCases = [
 
 describe('WBTC price feed', function() {
   it('reverts if constructed with bad decimals', async () => {
-    const SimplePriceFeedFactory = (await ethers.getContractFactory(
-      'SimplePriceFeed'
-    )) as SimplePriceFeed__factory;
+    const SimplePriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');
     const WBTCToBTCPriceFeed = await SimplePriceFeedFactory.deploy(exp(1, 8), 8);
-    await WBTCToBTCPriceFeed.deployed();
+    await WBTCToBTCPriceFeed.waitForDeployment();
 
     const BTCToUSDPriceFeed = await SimplePriceFeedFactory.deploy(exp(30_000), 8);
-    await BTCToUSDPriceFeed.deployed();
+    await BTCToUSDPriceFeed.waitForDeployment();
 
-    const WBTCPriceFeedFactory = (await ethers.getContractFactory(
-      'WBTCPriceFeed'
-    )) as WBTCPriceFeed__factory;
+    const WBTCPriceFeedFactory = await ethers.getContractFactory('WBTCPriceFeed');
     await expect(
       WBTCPriceFeedFactory.deploy(
-        WBTCToBTCPriceFeed.address,
-        BTCToUSDPriceFeed.address,
+        await WBTCToBTCPriceFeed.getAddress(),
+        await BTCToUSDPriceFeed.getAddress(),
         20 // decimals_ is too high
       )
-    ).to.be.revertedWith("custom error 'BadDecimals()'");
+    ).to.be.revertedWithCustomError(WBTCPriceFeedFactory, 'BadDecimals');
   });
 
   describe('latestRoundData', function() {
@@ -112,7 +100,7 @@ describe('WBTC price feed', function() {
       it(`WBTCToBTCPrice (${WBTCToBTCPrice}), BTCToUSDPrice (${BTCToUSDPrice}) -> ${result}`, async () => {
         const { WBTCPriceFeed } = await makeWBTCPriceFeed({ WBTCToBTCPrice, BTCToUSDPrice });
         const latestRoundData = await WBTCPriceFeed.latestRoundData();
-        const price = latestRoundData[1].toBigInt();
+        const price = latestRoundData[1];
 
         expect(price).to.eq(result);
       });
@@ -134,10 +122,10 @@ describe('WBTC price feed', function() {
 
       const roundData = await WBTCPriceFeed.latestRoundData();
 
-      expect(roundData[0].toBigInt()).to.eq(exp(15, 18));
-      expect(roundData[2].toBigInt()).to.eq(exp(16, 8));
-      expect(roundData[3].toBigInt()).to.eq(exp(17, 8));
-      expect(roundData[4].toBigInt()).to.eq(exp(18, 18));
+      expect(roundData[0]).to.eq(exp(15, 18));
+      expect(roundData[2]).to.eq(exp(16, 8));
+      expect(roundData[3]).to.eq(exp(17, 8));
+      expect(roundData[4]).to.eq(exp(18, 18));
     });
   });
 
@@ -147,8 +135,8 @@ describe('WBTC price feed', function() {
       BTCToUSDPrice: exp(30_000, 18)
     });
 
-    expect(await WBTCPriceFeed.version()).to.eq(1);
+    expect(await WBTCPriceFeed.version()).to.eq(1n);
     expect(await WBTCPriceFeed.description()).to.eq('Custom price feed for WBTC / USD');
-    expect(await WBTCPriceFeed.decimals()).to.eq(8);
+    expect(await WBTCPriceFeed.decimals()).to.eq(8n);
   });
 });

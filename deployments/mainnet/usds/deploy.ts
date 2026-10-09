@@ -1,5 +1,6 @@
-import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager/index.js';
+import type { DeploySpec } from '../../../src/deploy/index.js';
+import { deployComet } from '../../../src/deploy/index.js';
 
 export default async function deploy(deploymentManager: DeploymentManager, deploySpec: DeploySpec): Promise<Deployed> {
   const WETH = await deploymentManager.existing('WETH', '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2');
@@ -15,7 +16,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
     'pricefeeds/WstETHPriceFeed.sol',
     [
       '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419', // ETH / USD price feed
-      wstETH.address,                               // wstETH token
+      await wstETH.getAddress(),                               // wstETH token
       8,                                            // decimals
     ],
     true

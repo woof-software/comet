@@ -1,11 +1,12 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { executeBridgedProposal } from './bridgeProposal';
-import { setNextBaseFeeToZero } from './hreUtils';
-import { Contract, ethers } from 'ethers';
-import { Log } from '@ethersproject/abstract-provider';
-import { OpenBridgedProposal } from '../context/Gov';
-import { isTenderlyLog } from './index';
+import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
+import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
+import { executeBridgedProposal } from './bridgeProposal.js';
+import { setNextBaseFeeToZero } from './hreUtils.js';
+import { AbiCoder, Contract } from 'ethers';
+import type { Log } from 'ethers';
+import type { OpenBridgedProposal } from '../context/Gov.js';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
+import { isTenderlyLog } from './index.js';
 
 type BridgeERC20Data = {
   syncData: string;
@@ -14,24 +15,26 @@ type BridgeERC20Data = {
   amount: bigint;
 };
 
+const abiCoder = AbiCoder.defaultAbiCoder();
+
 function tryDecodeStateSyncedData(stateSyncedData: any): BridgeERC20Data | undefined {
   try {
-    const { syncData } = ethers.utils.defaultAbiCoder.decode(
+    const { syncData } = abiCoder.decode(
       ['bytes32', 'bytes syncData'],
       stateSyncedData
     );
-    const { user, rootToken, depositData } = ethers.utils.defaultAbiCoder.decode(
+    const { user, rootToken, depositData } = abiCoder.decode(
       ['address user', 'address rootToken', 'bytes depositData'],
       syncData
     );
-    const { amount } = ethers.utils.defaultAbiCoder.decode(['uint256 amount'], depositData);
+    const { amount } = abiCoder.decode(['uint256 amount'], depositData);
     return {
       syncData,
       user,
       rootToken,
       amount
     };
-  } catch (e) {
+  } catch {
     return undefined;
   }
 }
@@ -51,6 +54,11 @@ export default async function relayPolygonMessage(
   const stateSender = await governanceDeploymentManager.getContractOrThrow('stateSender');
   const bridgeReceiver = await bridgeDeploymentManager.getContractOrThrow('bridgeReceiver');
   const fxChild = await bridgeDeploymentManager.getContractOrThrow('fxChild');
+  const stateSenderAddress = await stateSender.getAddress();
+  const bridgeReceiverAddress = await bridgeReceiver.getAddress();
+  const fxChildAddress = await fxChild.getAddress();
+  const { provider: governanceProvider } = await getHardhatEthers(governanceDeploymentManager.hre);
+  const { provider: bridgeProvider } = await getHardhatEthers(bridgeDeploymentManager.hre);
   const childChainManager = new Contract(
     childChainManagerProxyAddress,
     [
@@ -58,32 +66,33 @@ export default async function relayPolygonMessage(
       'function onStateReceive(uint256, bytes calldata data) external',
       'function DEPOSIT() public view returns (bytes32)'
     ],
-    bridgeDeploymentManager.hre.ethers.provider
+    bridgeProvider
   );
 
   const openBridgedProposals: OpenBridgedProposal[] = [];
 
   const filter = stateSender.filters.StateSynced();
+  const topics = await filter.getTopicFilter();
   let stateSyncedEvents: Log[] = [];
 
   if (tenderlyLogs) {
-    const topic = stateSender.interface.getEventTopic('StateSynced');
+    const topic = topics[0];
     const tenderlyEvents = tenderlyLogs.filter(
-      log => log.raw?.topics?.[0] === topic && log.raw?.address?.toLowerCase() === stateSender.address.toLowerCase()
+      log => log.raw?.topics?.[0] === topic && log.raw?.address?.toLowerCase() === stateSenderAddress.toLowerCase()
     );
-    const realEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    const realEvents = await governanceProvider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: stateSender.address,
-      topics: filter.topics!
+      address: stateSenderAddress,
+      topics
     });
     stateSyncedEvents = [...realEvents, ...tenderlyEvents];
   } else {
-    stateSyncedEvents = await governanceDeploymentManager.hre.ethers.provider.getLogs({
+    stateSyncedEvents = await governanceProvider.getLogs({
       fromBlock: startingBlockNumber,
       toBlock: 'latest',
-      address: stateSender.address,
-      topics: filter.topics!
+      address: stateSenderAddress,
+      topics
     });
   }
 
@@ -97,6 +106,7 @@ export default async function relayPolygonMessage(
     } else {
       parsed = stateSender.interface.parseLog(stateSyncedEvent);
     }
+    if (!parsed) throw new Error('StateSynced log could not be parsed');
     // Try to decode the StateSynced data to determine what type of cross-chain activity this is. So far,
     // there are two types:
     // 1. Bridging ERC20 token
@@ -108,7 +118,7 @@ export default async function relayPolygonMessage(
 
     if (maybeBridgeERC20Data !== undefined) {
       const depositSyncType = await childChainManager.DEPOSIT();
-      const data = ethers.utils.defaultAbiCoder.encode(
+      const data = abiCoder.encode(
         ['bytes32', 'bytes'],
         [depositSyncType, maybeBridgeERC20Data.syncData]
       );
@@ -122,13 +132,13 @@ export default async function relayPolygonMessage(
         const callData = childChainManager.interface.encodeFunctionData('onStateReceive', [123, data]);
         const signer = await bridgeDeploymentManager.getSigner();
         bridgeDeploymentManager.stashRelayMessage(
-          childChainManager.address,
+          await childChainManager.getAddress(),
           callData,
-          signer.address
+          await signer.getAddress()
         );
       } else {
         await(
-          await childChainManager.connect(polygonReceiverSigner).onStateReceive(
+          await childChainManager.connect(polygonReceiverSigner).getFunction('onStateReceive')(
             123, // stateId
             data, // data
             { gasPrice: 0 }
@@ -150,30 +160,34 @@ export default async function relayPolygonMessage(
       if (tenderlyLogs) {
         const callData = fxChild.interface.encodeFunctionData('onStateReceive', [123, stateSyncedData]);
         bridgeDeploymentManager.stashRelayMessage(
-          fxChild.address,
+          fxChildAddress,
           callData,
-          polygonReceiverSigner.address
+          await polygonReceiverSigner.getAddress()
         );
       }
       const onStateReceiveTxn = await (
-        await fxChild.connect(polygonReceiverSigner).onStateReceive(
+        await fxChild.connect(polygonReceiverSigner).getFunction('onStateReceive')(
           123, // stateId
           stateSyncedData, // _data
           { gasPrice: 0 }
         )
       ).wait();
 
-      const proposalCreatedEvent = onStateReceiveTxn.events.find(
-        event => event.address === bridgeReceiver.address
+      if (!onStateReceiveTxn) throw new Error('Polygon relay transaction was not mined');
+      const proposalCreatedEvent = onStateReceiveTxn.logs.find(
+        event => event.address === bridgeReceiverAddress
       );
-      const { args: { id, eta } } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+      if (!proposalCreatedEvent) throw new Error('ProposalCreated log not found');
+      const parsedProposal = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
+      if (!parsedProposal) throw new Error('ProposalCreated log could not be parsed');
+      const { id, eta } = parsedProposal.args;
       
       openBridgedProposals.push({ id, eta });
       if (tenderlyLogs) {
         const signer = await bridgeDeploymentManager.getSigner();
         const callData = bridgeReceiver.interface.encodeFunctionData('executeProposal', [id]);
         bridgeDeploymentManager.stashRelayMessage(
-          bridgeReceiver.address,
+          bridgeReceiverAddress,
           callData,
           await signer.getAddress()
         );

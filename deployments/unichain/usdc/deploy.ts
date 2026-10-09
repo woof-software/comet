@@ -1,8 +1,6 @@
-import {
-  Deployed,
-  DeploymentManager,
-} from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet, exp } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager/index.js';
+import type { DeploySpec } from '../../../src/deploy/index.js';
+import { deployComet, exp } from '../../../src/deploy/index.js';
 
 const HOUR = 60 * 60;
 const DAY = 24 * HOUR;
@@ -101,7 +99,7 @@ async function deployContracts(
   const bridgeReceiver = await deploymentManager.deploy(
     'bridgeReceiver',
     'bridges/optimism/OptimismBridgeReceiver.sol',
-    [l2CrossDomainMessenger.address]
+    [await l2CrossDomainMessenger.getAddress()]
   );
 
   // Deploy Local Timelock
@@ -109,7 +107,7 @@ async function deployContracts(
     'timelock',
     'vendor/Timelock.sol',
     [
-      bridgeReceiver.address, // admin
+      await bridgeReceiver.getAddress(), // admin
       1 * DAY,    // delay
       14 * DAY,   // grace period
       12 * HOUR,  // minimum delay
@@ -124,7 +122,7 @@ async function deployContracts(
       trace(`Initializing BridgeReceiver`);
       await bridgeReceiver.initialize(
         MAINNET_TIMELOCK,     // govTimelock
-        localTimelock.address // localTimelock
+        await localTimelock.getAddress() // localTimelock
       );
       trace(`BridgeReceiver initialized`);
     }
@@ -141,8 +139,8 @@ async function deployContracts(
     'bulker',
     'bulkers/BaseBulker.sol',
     [
-      await comet.connect(signer).governor(), // admin
-      WETH.address,           // wrapped native token
+      await comet.connect(signer).getFunction('governor')(), // admin
+      await WETH.getAddress(),           // wrapped native token
     ]
   );
 

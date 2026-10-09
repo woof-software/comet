@@ -1,8 +1,8 @@
-import { scenario } from './context/CometContext';
-import { event, expect } from '../test/helpers';
-import { expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils';
-import { getConfigForScenario } from './utils/scenarioHelper';
-import { constants } from 'ethers';
+import { scenario } from './context/CometContext.js';
+import { event, expect } from '../test/helpers.js';
+import { expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils/index.js';
+import { getConfigForScenario } from './utils/scenarioHelper.js';
+import { MaxUint256 } from 'ethers';
 
 scenario('Comet#allow > has default permission state', {}, async ({ comet, actors }) => {
   const { albert, betty } = actors;
@@ -10,7 +10,7 @@ scenario('Comet#allow > has default permission state', {}, async ({ comet, actor
   expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
   expect(await comet.hasPermission(albert.address, albert.address)).to.be.true;
   expect(await comet.hasPermission(albert.address, betty.address)).to.be.false;
-  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(0);
+  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(0n);
 });
 
 scenario('Comet#allow > allows a user to authorize a manager', {}, async ({ comet, actors }) => {
@@ -20,12 +20,12 @@ scenario('Comet#allow > allows a user to authorize a manager', {}, async ({ come
 
   expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
   expect(await comet.hasPermission(albert.address, betty.address)).to.be.true;
-  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(constants.MaxUint256);
+  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(MaxUint256);
   expect(event({ receipt: txn }, 0)).to.deep.equal({
     Approval: {
       owner: albert.address,
       spender: betty.address,
-      amount: constants.MaxUint256.toBigInt(),
+      amount: MaxUint256,
     }
   });
 
@@ -43,7 +43,7 @@ scenario('Comet#allow > allows a user to rescind authorization', {}, async ({ co
 
   expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
   expect(await comet.hasPermission(albert.address, betty.address)).to.be.false;
-  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(0);
+  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(0n);
   expect(event({ receipt: txn }, 0)).to.deep.equal({
     Approval: {
       owner: albert.address,
@@ -58,24 +58,27 @@ scenario('Comet#allow > allows a user to rescind authorization', {}, async ({ co
 scenario('Comet#approve > updates permission state through ERC20-style approvals', {}, async ({ comet, actors }) => {
   const { albert, betty } = actors;
 
-  const approveTxn = await (await comet.connect(albert.signer).approve(betty.address, constants.MaxUint256)).wait();
+  const approveTxn = await (await comet.connect(albert.signer).approve(betty.address, MaxUint256)).wait();
+
+  if (!approveTxn) throw new Error('Approval transaction was not mined');
 
   expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
   expect(await comet.hasPermission(albert.address, betty.address)).to.be.true;
-  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(constants.MaxUint256);
+  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(MaxUint256);
   expect(event({ receipt: approveTxn }, 0)).to.deep.equal({
     Approval: {
       owner: albert.address,
       spender: betty.address,
-      amount: constants.MaxUint256.toBigInt(),
+      amount: MaxUint256,
     }
   });
 
   const revokeTxn = await (await comet.connect(albert.signer).approve(betty.address, 0)).wait();
+  if (!revokeTxn) throw new Error('Revoke transaction was not mined');
 
   expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
   expect(await comet.hasPermission(albert.address, betty.address)).to.be.false;
-  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(0);
+  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(0n);
   expect(event({ receipt: revokeTxn }, 0)).to.deep.equal({
     Approval: {
       owner: albert.address,
@@ -95,7 +98,7 @@ scenario('Comet#approve > reverts if amount is not 0 or uint256.max', {}, async 
 
   expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
   expect(await comet.hasPermission(albert.address, betty.address)).to.be.false;
-  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(0);
+  expect(await comet.allowance(albert.address, betty.address)).to.be.equal(0n);
 });
 
 scenario(
@@ -109,7 +112,7 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+    const baseSupplied = await comet.balanceOf(albert.address);
 
     expect(await baseAsset.balanceOf(betty.address)).to.be.equal(0n);
 
@@ -139,7 +142,7 @@ scenario(
     const { albert, betty, charles } = actors;
     const { asset: assetAddress, scale: scaleBN } = await comet.getAssetInfo(1);
     const collateralAsset = context.getAssetByAddress(assetAddress);
-    const scale = scaleBN.toBigInt();
+    const scale = scaleBN;
     const supplied = BigInt(getConfigForScenario(context, 1).transferCollateral) * scale;
     const toTransfer = supplied / 2n;
 
@@ -169,7 +172,7 @@ scenario(
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+    const baseSupplied = await comet.balanceOf(albert.address);
 
     // 1. Authorize Betty, then prove the grant works with a partial withdraw.
     await albert.allow(betty, true);
@@ -239,7 +242,7 @@ scenario(
     // ... but hasPermission is hardcoded true for owner == manager, and the
     // allowance view follows hasPermission, so self-permission still holds.
     expect(await comet.hasPermission(albert.address, albert.address)).to.be.true;
-    expect(await comet.allowance(albert.address, albert.address)).to.be.equal(constants.MaxUint256);
+    expect(await comet.allowance(albert.address, albert.address)).to.be.equal(MaxUint256);
 
     return txn; // return txn to measure gas
   }
@@ -255,7 +258,7 @@ scenario(
   async ({ comet, actors }, context) => {
     const { albert } = actors;
     const baseAsset = context.getAssetByAddress(await comet.baseToken());
-    const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+    const baseSupplied = await comet.balanceOf(albert.address);
 
     expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
 
@@ -281,7 +284,7 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
     expect(await comet.hasPermission(albert.address, betty.address)).to.be.true;
-    expect(await comet.allowance(albert.address, betty.address)).to.be.equal(constants.MaxUint256);
+    expect(await comet.allowance(albert.address, betty.address)).to.be.equal(MaxUint256);
   }
 );
 
@@ -297,7 +300,7 @@ scenario(
 
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.false;
     expect(await comet.hasPermission(albert.address, betty.address)).to.be.false;
-    expect(await comet.allowance(albert.address, betty.address)).to.be.equal(0);
+    expect(await comet.allowance(albert.address, betty.address)).to.be.equal(0n);
   }
 );
 
@@ -316,7 +319,7 @@ scenario(
     await albert.allow(betty, true);
     expect(await comet.isAllowed(albert.address, betty.address)).to.be.true;
     expect(await comet.hasPermission(albert.address, betty.address)).to.be.true;
-    expect(await comet.allowance(albert.address, betty.address)).to.be.equal(constants.MaxUint256);
+    expect(await comet.allowance(albert.address, betty.address)).to.be.equal(MaxUint256);
   }
 );
 

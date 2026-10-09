@@ -1,10 +1,10 @@
 import nock from 'nock';
 import { expect } from 'chai';
 
-import { Cache } from '../Cache';
-import { getBuildFile, storeBuildFile } from '../ContractMap';
-import { fetchAndCacheContract, fetchContract, importContract } from '../Import';
-import { BuildFile } from '../Types';
+import { Cache } from '../Cache.js';
+import { getBuildFile, storeBuildFile } from '../ContractMap.js';
+import { fetchAndCacheContract, fetchContract, importContract } from '../Import.js';
+import type { BuildFile } from '../Types.js';
 
 export const apiTestResult = {
   status: '1',

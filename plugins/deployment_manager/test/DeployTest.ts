@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { buildToken, deployBuild, faucetTokenBuildFile, tokenArgs, hre } from './DeployHelpers';
+import { buildToken, deployBuild, faucetTokenBuildFile, tokenArgs, hre } from './DeployHelpers.js';
 
 // TODO: Test verify
 // TODO: Test caching
