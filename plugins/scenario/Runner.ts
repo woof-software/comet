@@ -1,7 +1,7 @@
 import { Scenario, ScenarioEnv, Solution } from './Scenario';
 import { ForkSpec, World } from './World';
 import { Loader } from './Loader';
-import { showReport, pluralize, Result } from './Report';
+import { showReport, pluralize, Result, FormatConfig } from './Report';
 import { AssertionError } from 'chai';
 
 export type Address = string;
@@ -159,7 +159,7 @@ async function retry(fn: () => Promise<any>, retries: number = 10, timeLimit?: n
     return await asyncCallWithTimeout(fn(), timeLimit);
   } catch (e) {
     if (retries === 0) throw e;
-    if(e.reason !== 'could not detect network')
+    if (e.reason !== 'could not detect network')
       throw e;
 
     console.warn(`Retrying in ${wait}ms...`);
@@ -184,8 +184,8 @@ async function asyncCallWithTimeout(asyncPromise: Promise<any>, timeLimit: numbe
   });
 }
 
-export async function runScenarios(bases: ForkSpec[]) {
-  const loader = await Loader.load();
+export async function runScenarios(bases: ForkSpec[], glob: string = 'scenario/**.ts', output?: string) {
+  const loader = await Loader.load(glob);
   const [runningScenarios, skippedScenarios] = loader.splitScenarios();
 
   const startTime = Date.now();
@@ -241,5 +241,6 @@ export async function runScenarios(bases: ForkSpec[]) {
     }
   }
 
-  await showReport(results, startTime, Date.now());
+  const formatConfig: FormatConfig | undefined = output ? { console: {}, json: { output } } : undefined;
+  await showReport(results, startTime, Date.now(), formatConfig);
 }

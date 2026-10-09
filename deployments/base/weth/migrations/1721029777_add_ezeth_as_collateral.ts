@@ -32,7 +32,7 @@ export default migration('1721029777_add_ezeth_as_collateral', {
       'ezETH',
       EZETH_ADDRESS,
       'base',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const ezETHPricefeed = await deploymentManager.existing(
       'ezETH:priceFeed',

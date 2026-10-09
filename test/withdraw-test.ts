@@ -1,5 +1,5 @@
 import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS, UserCollateral } from './helpers';
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, CometHarnessInterface, FaucetToken, CometHarnessInterfaceExtendedAssetList, SimplePriceFeed } from '../build/types';
+import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList, SimplePriceFeed } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { TotalsCollateralStruct } from 'build/types/CometHarnessInterfaceExtendedAssetList';
@@ -1387,7 +1387,7 @@ describe('withdraw', function () {
     const COLLATERAL_SUPPLY = exp(100, 6);
     const ALICE_COLLATERAL_BALANCE = exp(1, 6);
 
-    let evilComet: CometHarnessInterface;
+    let evilComet: CometHarnessInterfaceExtendedAssetList;
     let USDC: FaucetToken;
     let EVIL: EvilToken;
     let evilAlice: SignerWithAddress;
@@ -1395,7 +1395,7 @@ describe('withdraw', function () {
     let reentrancySnapshot: SnapshotRestorer;
 
     before(async () => {
-      const { comet, tokens, users } = await makeProtocol({
+      const { cometWithExtendedAssetList: comet, tokens, users } = await makeProtocol({
         assets: {
           USDC: { decimals: 6 },
           EVIL: {
@@ -1464,7 +1464,7 @@ describe('withdraw', function () {
 
   describe('non-standard tokens', function () {
     describe('USDT-like token (no return value)', function () {
-      let nstComet: CometHarnessInterface;
+      let nstComet: CometHarnessInterfaceExtendedAssetList;
       let alice: SignerWithAddress;
       let bob: SignerWithAddress;
       let usdt: NonStandardFaucetFeeToken;
@@ -1486,7 +1486,7 @@ describe('withdraw', function () {
         };
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
-        nstComet = protocol.comet;
+        nstComet = protocol.cometWithExtendedAssetList;
         [alice, bob] = protocol.users;
 
         const tokens = protocol.tokens;
@@ -1527,7 +1527,7 @@ describe('withdraw', function () {
       const NUMERATOR = 10;
       const DENOMINATOR = 10000;
 
-      let feeComet: CometHarnessInterface;
+      let feeComet: CometHarnessInterfaceExtendedAssetList;
       let feeBaseToken: NonStandardFaucetFeeToken;
       let feeCollateral: NonStandardFaucetFeeToken;
       let alice: SignerWithAddress;
@@ -1547,7 +1547,7 @@ describe('withdraw', function () {
         };
 
         const protocol = await makeProtocol({ base: 'USDT', assets: assets });
-        feeComet = protocol.comet;
+        feeComet = protocol.cometWithExtendedAssetList;
         feeBaseToken = protocol.tokens['USDT'] as NonStandardFaucetFeeToken;
         feeCollateral = protocol.tokens['FeeCollateral'] as NonStandardFaucetFeeToken;
         [alice, bob] = protocol.users;
@@ -1778,7 +1778,7 @@ describe('withdraw', function () {
         await cometWith24Collaterals.connect(alice).withdraw(baseTokenWith24Collaterals.address, borrowAmount);
 
         expect(await baseTokenWith24Collaterals.balanceOf(alice.address)).to.equal(aliceBalanceBefore.add(borrowAmount));
-        expect(await baseBalanceOf(cometWith24Collaterals as unknown as CometHarnessInterface, alice.address)).to.equal(BigInt(-borrowAmount));
+        expect(await baseBalanceOf(cometWith24Collaterals as unknown as CometHarnessInterfaceExtendedAssetList, alice.address)).to.equal(BigInt(-borrowAmount));
       });
     });
   });

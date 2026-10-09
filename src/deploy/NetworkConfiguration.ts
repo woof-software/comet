@@ -1,4 +1,4 @@
-import { AssetConfigStruct } from '../../build/types/Comet';
+import { AssetConfigStruct } from '../../build/types/CometWithExtendedAssetList';
 import { ConfigurationStruct } from '../../build/types/Configurator';
 import { ProtocolConfiguration } from './index';
 import { ContractMap } from '../../plugins/deployment_manager/ContractMap';
