@@ -3,6 +3,7 @@ pragma solidity ^0.8.15;
 import "@forge-std/src/Vm.sol";
 import "@comet-contracts/bridges/arbitrum/ArbitrumBridgeReceiver.sol";
 import "@comet-contracts/marketupdates/MarketAdminPermissionChecker.sol";
+import "@comet-contracts/Comet.sol";
 import "../script/marketupdates/helpers/GovernanceHelper.sol";
 import "../script/marketupdates/helpers/MarketUpdateAddresses.sol";
 import "../script/marketupdates/helpers/ChainAddresses.sol";
