@@ -1,7 +1,7 @@
 import { BigNumber } from 'ethers';
 
-const factorScale = BigInt(1e18);
-const BASE_INDEX_SCALE = BigInt(1e15);
+export const factorScale = BigInt(1e18);
+export const BASE_INDEX_SCALE = BigInt(1e15);
 
 function toBigInt(f: bigint | BigNumber): bigint {
   if (typeof f === 'bigint') {
