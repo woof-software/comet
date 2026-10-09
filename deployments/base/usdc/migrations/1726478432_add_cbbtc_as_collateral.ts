@@ -32,7 +32,7 @@ export default migration('1726478432_add_cbbtc_as_collateral', {
       'cbBTC',
       CBBTC_ADDRESS,
       'base',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const cbBTCPriceFeed = await deploymentManager.existing(
       'cbBTC:priceFeed',

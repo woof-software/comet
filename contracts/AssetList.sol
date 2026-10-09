@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import { IPriceFeed } from "./IPriceFeed.sol";
-import { IERC20NonStandard } from "./IERC20NonStandard.sol";
+import { IPriceFeed } from "./interfaces/IPriceFeed.sol";
+import { IERC20NonStandard } from "./interfaces/IERC20NonStandard.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import { IAssetList } from "./interfaces/assetList/IAssetList.sol";

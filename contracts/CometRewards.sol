@@ -2,7 +2,7 @@
 pragma solidity 0.8.15;
 
 import "./CometInterface.sol";
-import "./ERC20.sol";
+import "./interfaces/ERC20.sol";
 
 /**
  * @title Compound's CometRewards Contract
