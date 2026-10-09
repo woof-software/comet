@@ -2,9 +2,9 @@
 pragma solidity 0.8.15;
 
 import { ConfiguratorStorage, CometConfiguration } from "./ConfiguratorStorage.sol";
-import { CometFactoryWithExtendedAssetList } from "./CometFactoryWithExtendedAssetList.sol";
 import { IAssetListFactory } from "./interfaces/IAssetListFactory.sol";
 import { IAssetList, IAssetListStructs } from "./interfaces/assetList/IAssetList.sol";
+import { ICometFactory } from "./interfaces/ICometFactory.sol";
 import { IConfiguratorEvents } from "./interfaces/configurator/IConfiguratorEvents.sol";
 import { IConfiguratorErrors } from "./interfaces/configurator/IConfiguratorErrors.sol";
 import { ConfigHash } from "./libraries/ConfigHash.sol";
@@ -441,7 +441,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @dev Note: Callable by anyone
      */
     function deploy(address cometProxy) external returns (address) {
-        address newComet = CometFactoryWithExtendedAssetList(factory[cometProxy]).clone(configuratorParams[cometProxy]);
+        address newComet = ICometFactory(factory[cometProxy]).clone(configuratorParams[cometProxy]);
         emit CometDeployed(cometProxy, newComet);
         return newComet;
     }
