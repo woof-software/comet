@@ -82,6 +82,28 @@ const remoteNetworks = Object.fromEntries(
 );
 
 export default defineConfig({
+  // Hardhat 3 moved `networks.hardhat.chains` here. Keep the legacy generic
+  // fork simulation and its synthetic activation blocks, not real network dates.
+  chainDescriptors: Object.fromEntries(
+    networkConfigs.map(({ network, chainId }) => [
+      chainId,
+      {
+        name: network,
+        chainType: chainId === 1 ? 'l1' as const : 'generic' as const,
+        hardforkHistory: {
+          berlin: { blockNumber: 1 },
+          london: { blockNumber: 2 },
+          ...([1, 59144, 2020, 8453, 130].includes(chainId)
+            ? { shanghai: { blockNumber: 3 } }
+            : {}),
+          ...([1, 59144, 8453, 130].includes(chainId)
+            ? { cancun: { blockNumber: 4 } }
+            : {}),
+        },
+      },
+    ])
+  ),
+
   plugins: [
     sourceFilterPlugin,
     deploymentManagerPlugin,
