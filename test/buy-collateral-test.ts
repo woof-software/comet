@@ -750,7 +750,8 @@ describe('buyCollateral', function () {
         try {
           await normalComet.connect(normalAlice).supplyFrom(normalAlice.address, normalBob.address, (await normalBaseToken.getAddress()), exp(1, 6));
           await normalComet.connect(normalAlice).buyCollateral((await normalCollateralToken.getAddress()), 0, exp(3000, 6), normalAlice.address);
-          await evilComet.connect(evilAlice).buyCollateral((await evilCollateralToken.getAddress()), 0, exp(3000, 6), evilAlice.address);
+          // Explicit gas skips estimation so the expected revert happens in the mined block.
+          await evilComet.connect(evilAlice).buyCollateral((await evilCollateralToken.getAddress()), 0, exp(3000, 6), evilAlice.address, { gasLimit: 1_000_000 });
           await ethers.provider.send('evm_mine', []);
         } finally {
           await ethers.provider.send('evm_setAutomine', [true]);

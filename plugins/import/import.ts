@@ -195,8 +195,13 @@ async function scrapeContractCreationCodeFromBlockscoutRPC(network: string, addr
   // get code from JSON rpc
   const rpcUrl = await getBlockscoutRPCUrl(network);
   const provider = new JsonRpcProvider(rpcUrl);
-  const code = await provider.send('eth_getCode', [address, 'latest']);
-  return code.slice(2);
+  try {
+    const code = await provider.send('eth_getCode', [address, 'latest']);
+    return code.slice(2);
+  } finally {
+    // ethers v6 keeps background retries alive; release this one-shot provider.
+    provider.destroy();
+  }
 }
 
 async function getContractCreationCodeFromBlockscout(network: string, address: string) {
