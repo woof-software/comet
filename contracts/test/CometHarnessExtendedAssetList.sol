@@ -93,7 +93,7 @@ contract CometHarnessExtendedAssetList is CometWithExtendedAssetList {
             getPrice(baseTokenPriceFeed),
             uint64(baseScale)
         );
-        for (uint8 i = 0; i < numAssets; ) {
+        for (uint8 i = 0; i < numAssets(); ) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 AssetInfo memory asset = getAssetInfo(i);
                 uint newAmount = mulPrice(

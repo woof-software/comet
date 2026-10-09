@@ -6,7 +6,6 @@ import "./interfaces/IERC20NonStandard.sol";
 import "./interfaces/IPriceFeed.sol";
 import "./interfaces/IAssetListFactory.sol";
 import "./interfaces/IAssetListFactoryHolder.sol";
-import "./interfaces/IAssetList.sol";
 import { IAssetList } from "./interfaces/assetList/IAssetList.sol";
 
 /**

@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
+import "../../CometFactoryWithExtendedAssetList.sol";
 import "./CometConfigurationV1.sol";
 import "./ConfiguratorV1Storage.sol";
-import "../../CometFactoryWithExtendedAssetList.sol";
-import "../../CometConfiguration.sol";
-import "../../ConfiguratorStorage.sol";
 
 /**
  * @title Compound's Configurator Contract, V1 copy
@@ -334,11 +332,11 @@ contract ConfiguratorV1 is ConfiguratorV1Storage {
      * @notice Deploy a new Comet implementation using the factory and Configuration for that Comet proxy
      * @dev Note: Callable by anyone
      */
-    function deploy(address cometProxy) external returns (address) {
-        address newComet = CometFactoryWithExtendedAssetList(factory[cometProxy]).clone(configuratorParams[cometProxy]);
-        emit CometDeployed(cometProxy, newComet);
-        return newComet;
-    }
+    // function deploy(address cometProxy) external returns (address) {
+    //     address newComet = CometFactoryWithExtendedAssetListV1(factory[cometProxy]).clone(configuratorParams[cometProxy]);
+    //     emit CometDeployed(cometProxy, newComet);
+    //     return newComet;
+    // }
 
     /**
      * @notice Transfers the governor rights to a new address

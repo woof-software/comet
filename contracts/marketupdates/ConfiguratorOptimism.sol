@@ -3,7 +3,7 @@ pragma solidity 0.8.15;
 
 import { ConfiguratorStorageOptimism, CometConfiguration, MarketAdminPermissionCheckerInterface } from "./ConfiguratorStorageOptimism.sol";
 import { CometFactoryWithExtendedAssetList } from "../CometFactoryWithExtendedAssetList.sol";
-import { IAssetListFactory } from "../IAssetListFactory.sol";
+import { IAssetListFactory } from "../interfaces/IAssetListFactory.sol";
 import { IAssetList, IAssetListStructs } from "../interfaces/assetList/IAssetList.sol";
 import { IConfiguratorEvents } from "../interfaces/configurator/IConfiguratorEvents.sol";
 import { IConfiguratorErrors } from "../interfaces/configurator/IConfiguratorErrors.sol";
