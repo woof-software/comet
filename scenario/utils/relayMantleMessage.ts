@@ -174,14 +174,13 @@ export default async function relayMantleMessage(
 export async function simulateL2ToL1TokenBridging(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
-  l2StartingBlockNumber?: number,
-  tenderlyLogs?: any[],
-  _proposalIds?: BigNumber[]
+  l2StartingBlockNumber: number,
+  tenderlyLogs?: any[]
 ) {
   await simulateLayerZeroOFTDelivery(
     governanceDeploymentManager,
     bridgeDeploymentManager,
-    l2StartingBlockNumber ?? 0,
+    l2StartingBlockNumber,
     LZ_ENDPOINT,
     LZ_ENDPOINT,
     MAINNET_EID,
