@@ -8,9 +8,12 @@ const WITHDRAW_AMOUNT = exp(205_000, 18);
 
 const MAINNET_EID = 30101;
 
-const MNT_FEE_BUFFER_MULTIPLIER = 3;
+const MNT_FEE_BUFFER_MULTIPLIER = 4;
 
 let mainnetTimelockUsdeBefore: BigNumber;
+
+const formatAmount = (amount: BigNumber | bigint, decimals = 18) =>
+  Number(utils.formatUnits(amount, decimals)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default migration('1790959547_withdraw_reserves', {
   async prepare() {
@@ -35,6 +38,7 @@ export default migration('1790959547_withdraw_reserves', {
     } = await deploymentManager.getContracts();
 
     mainnetTimelockUsdeBefore = await mainnetUSDe.balanceOf(mainnetTimelock.address);
+    const reservesAtCreation = await comet.getReserves();
 
     // 1. Withdraw 205,000 USDe from the Mantle cUSDEv3 to the Mantle Timelock
     const withdrawReservesCalldata = utils.defaultAbiCoder.encode(
@@ -90,18 +94,33 @@ export default migration('1790959547_withdraw_reserves', {
       },
     ];
 
-    const description = `# Withdraw 205,000 USDe from cUSDEv3 reserves on Mantle
+    const description = `# Withdraw reserves from cUSDEv3 on Mantle
 
 ## Proposal summary
 
-This proposal withdraws 205,000 USDe from the reserves of the Compound III USDe market on Mantle and sends it to the Compound Timelock on Ethereum Mainnet using LayerZero's OFT standard.
+This proposal withdraws 205,000 USDe of reserves from the Compound III USDe market on Mantle and sends it to the Compound Timelock on Ethereum Mainnet using LayerZero's OFT standard.
+
+Withdrawing the reserves is the final step of the deprecation process and secures the market's protocol-owned funds by moving them to the Timelock on Mainnet.
+
+## Reserves withdrawal
+
+Reserves are the protocol-owned portion of the market's base asset: the Comet's USDe balance plus outstanding borrows, minus what is owed to suppliers, as reported by \`getReserves()\`. They do not belong to any user, so withdrawing them does not change supplier or borrower balances. Only the governor of the market (the Mantle Timelock) can call \`withdrawReserves\`.
+
+| Source | Amount |
+| --- | --- |
+| cUSDEv3 reserves at proposal creation (\`getReserves()\`) | ${formatAmount(reservesAtCreation)} USDe |
+| Withdrawn and sent to the Mainnet Timelock | ${formatAmount(WITHDRAW_AMOUNT)} USDe |
+
+The proposal does not withdraw all reserves. The market still has open borrow positions, so the remaining ${formatAmount(reservesAtCreation.sub(WITHDRAW_AMOUNT))} USDe is left as a buffer that keeps the market solvent until those positions are repaid or liquidated. The rest can be withdrawn by a later proposal once they are closed. The withdrawal amount is fixed in the proposal calldata.
 
 ## Proposal actions
 
 The proposal action sends a message through the Mantle L1 Cross Domain Messenger to the Mantle Bridge Receiver, which queues the following calls on the Mantle Timelock:
 
 1. Call \`withdrawReserves(address,uint256)\` on the Mantle cUSDEv3 to withdraw 205,000 USDe to the Mantle Timelock.
-2. Call \`send\` on USDe (a LayerZero OFT) to send the withdrawn USDe to the Mainnet Timelock.
+2. Call \`send\` on USDe to send 205,000 USDe to the Mainnet Timelock. USDe on Mantle is a LayerZero OFT: it is burned on Mantle and released on Mainnet by the USDe OFT adapter, so no approval is needed. The LayerZero messaging fee is paid in native MNT from the Mantle Timelock's own balance: ${formatAmount(feeWithBuffer)} MNT is sent with the call, the fee quoted at proposal creation with a ${MNT_FEE_BUFFER_MULTIPLIER}x buffer, and the LayerZero endpoint refunds any excess over the actual fee to the Mantle Timelock.
+
+Once LayerZero verifies the message, its executor delivers it on Mainnet and the USDe is released to the Mainnet Timelock.
 `;
     const txn = await govDeploymentManager.retry(async () =>
       trace(
