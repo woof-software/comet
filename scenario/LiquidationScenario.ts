@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { event, expect } from '../test/helpers';
-import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList, isAssetDelisted, servicePatch2 } from './utils';
+import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList, isAssetDelisted, servicePatch, fundAccount, servicePatch2 } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -213,6 +213,7 @@ scenario(
     filter: async (ctx) => !matchesDeployment(ctx, [
       { network: 'base', deployment: 'usds' },
       { network: 'ronin' },
+      { network: 'scroll' },
     ]),
     tokenBalances: async (ctx) => (
       {
@@ -329,7 +330,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#liquidation > skips liquidation value of asset ${i} with liquidateCF=0`,
     {
-      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await servicePatch2(ctx),
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await servicePatch(ctx),
       tokenBalances: async (ctx: CometContext) => (
         {
           albert: { $base: '== 0' },
@@ -427,7 +428,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       tokenBalances: async (ctx) => ({
         albert: { $base: '== 0' },
         $comet: {
-          $base: getConfigForScenario(ctx).withdrawBase
+          $base: getConfigForScenario(ctx, i).withdrawBase
         }
       }),
     },
@@ -468,7 +469,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 
       // Set up betty's base token supply for forcing accrue
       // Betty needs base tokens supplied to Comet to be able to withdraw them
-      const bettyBaseAmount = BigInt(getConfigForScenario(context).withdrawBase) * baseScale;
+      const bettyBaseAmount = BigInt(getConfigForScenario(context, i).withdrawBase) * baseScale;
       const baseAsset = context.getAssetByAddress(baseToken);
       await context.sourceTokens(bettyBaseAmount, baseAsset, betty);
       await baseAsset.approve(betty, comet.address);
@@ -487,15 +488,16 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       }
 
       // Force accrue to ensure state is up to date
-      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).withdrawBase) / 100n * baseScale });
+      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, i).withdrawBase) / 100n * baseScale });
 
       // Verify account is liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
-      
-      await context.setNextBaseFeeToZero();
-      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
-      await context.setNextBaseFeeToZero();
-      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+
+      await fundAccount(world, admin);
+      await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, asset, 0n);
+      await configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, asset, 0n);
+      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n);
+      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
 
       // Verify liquidationFactor is 0
       expect((await comet.getAssetInfoByAddress(asset)).liquidationFactor).to.equal(0);
@@ -574,7 +576,7 @@ scenario(
 
     // Calculate how much of each collateral to supply so that combined they cover the borrow.
     // We split the borrow coverage roughly 50/50 between the two assets.
-    const targetBorrowBase = BigInt(getConfigForScenario(context).withdrawBase);
+    const targetBorrowBase = BigInt(getConfigForScenario(context, 1).withdrawBase);
     const targetBorrowBaseWei = targetBorrowBase * baseScale;
     const halfBorrowWei = targetBorrowBaseWei / 2n;
 
@@ -609,7 +611,7 @@ scenario(
     expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
     // Set up betty with base tokens so she can force accrue later
-    const bettyBaseAmount = BigInt(getConfigForScenario(context).withdrawBase) * baseScale;
+    const bettyBaseAmount = BigInt(getConfigForScenario(context, 1).withdrawBase) * baseScale;
     const baseAsset = context.getAssetByAddress(baseToken);
     await context.sourceTokens(bettyBaseAmount, baseAsset, betty);
     await baseAsset.approve(betty, comet.address);
@@ -628,7 +630,7 @@ scenario(
     }
 
     // Force accrue to ensure state is up to date
-    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).withdrawBase) / 100n * baseScale });
+    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, 1).withdrawBase) / 100n * baseScale });
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
 
@@ -636,14 +638,11 @@ scenario(
     // This simulates a governance action to de-list an asset whose price feed
     // has become unavailable. After this, absorbInternal should skip asset0
     // entirely — not seize it, not call getPrice() on it.
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).updateAssetLiquidationFactor(
-      comet.address, assetInfo0.asset, 0n, { gasPrice: 0 }
-    );
-    await context.setNextBaseFeeToZero();
-    await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(
-      configurator.address, comet.address, { gasPrice: 0 }
-    );
+    await fundAccount(world, admin);
+    await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, assetInfo0.asset, 0n);
+    await configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, assetInfo0.asset, 0n);
+    await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, assetInfo0.asset, 0n);
+    await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
 
     // Verify liquidationFactor for asset0 is now 0
     const updatedAssetInfo0 = await comet.getAssetInfoByAddress(assetInfo0.asset);

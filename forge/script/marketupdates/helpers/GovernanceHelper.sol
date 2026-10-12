@@ -3,8 +3,8 @@ pragma solidity ^0.8.0;
 
 import "../../../lib/forge-std/src/Vm.sol";
 import "../../../lib/forge-std/src/console.sol";
-import "../../../../contracts/IGovernorBravo.sol";
-import "../../../../contracts/IComp.sol";
+import "../../../../contracts/interfaces/IGovernorBravo.sol";
+import "../../../../contracts/interfaces/IComp.sol";
 import "../../../../contracts/marketupdates/MarketUpdateProposer.sol";
 
 import "./MarketUpdateAddresses.sol";

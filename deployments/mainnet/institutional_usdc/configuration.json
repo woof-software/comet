@@ -1,0 +1,66 @@
+{
+  "name": "Compound Institutional USDC",
+  "symbol": "ciUSDCv3",
+  "baseToken": "USDC",
+  "baseTokenAddress": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  "baseTokenPriceFeed": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
+  "borrowMin": "1e6",
+  "governor": "0x4f05f11CA5dE8946958d58AD765f16755f23b113",
+  "pauseGuardian": "0xbbf3f1421D886E9b2c5D716B5192aC998af2012c",
+  "storeFrontPriceFactor": 0.6,
+  "targetReserves": "10000000e6",
+  "rates": {
+    "supplyKink": 0.9,
+    "supplySlopeLow": 0.036,
+    "supplySlopeHigh": 3.196,
+    "supplyBase": 0,
+    "borrowKink": 0.9,
+    "borrowSlopeLow": 0.027778,
+    "borrowSlopeHigh": 3.6,
+    "borrowBase": 0.015
+  },
+  "tracking": {
+    "indexScale": "1e15",
+    "baseSupplySpeed": "0e15",
+    "baseBorrowSpeed": "0e15",
+    "baseMinForRewards": "1e6"
+  },
+  "assets": {
+    "WETH": {
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "priceFeed": "0xc0053f3FBcCD593758258334Dfce24C2A9A673aD",
+      "decimals": "18",
+      "borrowCF": 0.87,
+      "liquidateCF": 0.93,
+      "liquidationFactor": 0.95,
+      "supplyCap": "526513e16"
+    },
+    "wstETH": {
+      "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+      "priceFeed": "0xA2699232B341881B1Ed85d91592b7c259E029aCf",
+      "decimals": "18",
+      "borrowCF": 0.85,
+      "liquidateCF": 0.92,
+      "liquidationFactor": 0.93,
+      "supplyCap": "420266e16"
+    },
+    "cbBTC": {
+      "address": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
+      "priceFeed": "0x50C1008722Ffa2d3170f3bA5cB9e7C0238bfa2a9",
+      "decimals": "8",
+      "borrowCF": 0.81,
+      "liquidateCF": 0.86,
+      "liquidationFactor": 0.9,
+      "supplyCap": "150e8"
+    },
+    "WBTC": {
+      "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+      "priceFeed": "0xc8E4c3F58d5FC4409522503927Ecea057EbbA1fc",
+      "decimals": "8",
+      "borrowCF": 0.81,
+      "liquidateCF": 0.86,
+      "liquidationFactor": 0.9,
+      "supplyCap": "150e8"
+    }
+  }
+}

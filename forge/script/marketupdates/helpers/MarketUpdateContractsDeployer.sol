@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.15;
 
-import "../../../../contracts/Create2DeployerInterface.sol";
+import "../../../../contracts/interfaces/Create2DeployerInterface.sol";
 import "../../../../contracts/marketupdates/MarketUpdateTimelock.sol";
 import "../../../../contracts/marketupdates/MarketUpdateProposer.sol";
 import "../../../../contracts/Configurator.sol";

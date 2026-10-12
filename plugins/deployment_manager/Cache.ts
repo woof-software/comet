@@ -1,6 +1,7 @@
 import * as fs from 'fs/promises';
 import * as nodepath from 'path';
 import { inspect } from 'util';
+import { randomUUID } from 'crypto';
 import { fileExists, objectFromMap, objectToMap, stringifyJson } from './Utils';
 
 export type FileSpec = string | string[] | { rel: string | string[] } | { top: string | string[] };
@@ -25,7 +26,12 @@ function parseJson<K>(x: string | undefined): K {
   if (x === undefined) {
     return undefined;
   } else {
-    return JSON.parse(x);
+    try {
+      return JSON.parse(x);
+    } catch (e) {
+      console.warn(`Ignoring unparseable cache content: ${(e as Error).message}`);
+      return undefined;
+    }
   }
 }
 
@@ -111,7 +117,14 @@ export class Cache {
       await fs.mkdir(dir, { recursive: true });
     }
 
-    await fs.writeFile(path, transformer(data));
+    // Some cache files are shared across concurrently-running processes (e.g. a per-network
+    // .contracts/<address>.json cache shared by every deployment on that network — see
+    // ContractMap.ts's getFileSpec). Writing straight to `path` would let a concurrent reader
+    // observe a truncated file mid-write; write to a temp file and rename instead, since rename
+    // is atomic on the same filesystem (true for deploymentDir, which is always local disk).
+    const tmpPath = `${path}.tmp.${randomUUID()}`;
+    await fs.writeFile(tmpPath, transformer(data));
+    await fs.rename(tmpPath, path);
   }
 
   private async getDisk<T>(spec: FileSpec, transformer: (x: string | undefined) => T): Promise<T> {

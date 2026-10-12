@@ -35,6 +35,7 @@
     "lint-contracts": "solhint 'contracts/**/*.sol'",
     "lint-contracts:fix": "solhint --fix 'contracts/**/*.sol'",
     "scenario": "hardhat scenario",
+    "scenario:multistream": "hardhat scenario:multistream",
     "spider": "hardhat spider",
     "test": "hardhat test ./test/*.ts ./test/**/*.ts ./plugins/deployment_manager/test/*.ts ",
     "test:coverage": "NODE_OPTIONS='--max-old-space-size=8192' hardhat coverage --no-compile",

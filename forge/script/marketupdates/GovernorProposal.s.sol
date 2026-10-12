@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import "../../lib/forge-std/src/Script.sol";
 import "../../lib/forge-std/src/console.sol";
 
-import "../../../contracts/IGovernorBravo.sol";
-import "../../../contracts/IComp.sol";
+import "../../../contracts/interfaces/IGovernorBravo.sol";
+import "../../../contracts/interfaces/IComp.sol";
 import "../../../contracts/CometProxyAdmin.sol";
 
 import "./helpers/GovernanceHelper.sol";

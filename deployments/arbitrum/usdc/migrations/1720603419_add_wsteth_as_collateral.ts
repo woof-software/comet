@@ -52,7 +52,7 @@ export default migration('1720603419_add_wsteth_as_collateral', {
       'wstETH',
       WSTETH_ADDRESS,
       'arbitrum',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     const wstETHPricefeed = await deploymentManager.existing(

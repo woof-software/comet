@@ -2,8 +2,8 @@
 pragma solidity 0.8.15;
 
 import "../SweepableBridgeReceiver.sol";
-import {IERC165} from "../../IERC165.sol";
-import {IAny2EVMMessageReceiver, Any2EVMMessage} from "../../IAny2EVMMessageReceiver.sol";
+import {IERC165} from "../../interfaces/IERC165.sol";
+import {IAny2EVMMessageReceiver, Any2EVMMessage} from "../../interfaces/IAny2EVMMessageReceiver.sol";
 
 contract RoninBridgeReceiver is SweepableBridgeReceiver, IERC165, IAny2EVMMessageReceiver{
     uint64 constant MAINNET_CHAIN_SELECTOR = 5009297550715157269;

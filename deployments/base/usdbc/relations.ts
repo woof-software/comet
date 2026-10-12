@@ -7,7 +7,7 @@ export default {
   },
 
   Proxy: {
-    artifact: 'contracts/ERC20.sol:ERC20'
+    artifact: 'contracts/interfaces/ERC20.sol:ERC20'
   },
 
   l2CrossDomainMessenger: {

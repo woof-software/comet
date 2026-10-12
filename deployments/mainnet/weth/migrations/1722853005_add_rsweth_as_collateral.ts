@@ -29,7 +29,7 @@ export default migration('1722853005_add_rsweth_as_collateral', {
       'rswETH',
       RSWETH_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const rswEthPricefeed = await deploymentManager.existing(
       'rswETH:priceFeed',
@@ -98,7 +98,7 @@ export default migration('1722853005_add_rsweth_as_collateral', {
       'rswETH',
       RSWETH_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     
     const rswETHAssetConfig = {

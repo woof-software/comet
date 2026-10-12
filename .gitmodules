@@ -4,4 +4,8 @@
 [submodule "contracts/capo"]
 	path = contracts/capo
 	url = git@github.com:woof-software/compound-capo.git
-	branch = lst-lrt-oracles
+	branch = main
+[submodule "plugins/import/contracts-archive"]
+	path = plugins/import/contracts-archive
+	url = git@github.com:woof-software/comet-contracts-archive.git
+	branch = develop

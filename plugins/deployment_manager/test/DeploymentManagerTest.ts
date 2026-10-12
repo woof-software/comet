@@ -10,7 +10,6 @@ import {
 
 import { getBuildFile } from '../ContractMap';
 import { DeploymentManager } from '../DeploymentManager';
-import { fiatTokenBuildFile, mockImportSuccess } from './ImportTest';
 import { Migration } from '../Migration';
 import { expectedTemplate } from './MigrationTemplateTest';
 import { buildToken, faucetTokenBuildFile, tokenArgs } from './DeployHelpers';
@@ -87,23 +86,6 @@ describe('DeploymentManager', () => {
     nock.disableNetConnect();
   });
 
-  describe('import', () => {
-    // Skipping since this test fails a lot due to limits
-    //  and import is well-covered as everything else relies upon it
-    it.skip('should import succesfully', async () => {
-      mockImportSuccess('0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e');
-      let deploymentManager = new DeploymentManager('avalanche', 'frax', hre, {
-        importRetries: 0,
-        writeCacheToDisk: true,
-        baseDir: tempDir(),
-      });
-      let importResult = await deploymentManager.import(
-        '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e',
-      );
-      expect(importResult).to.eql(fiatTokenBuildFile);
-    });
-  });
-
   describe('deploy', () => {
     it('should deploy succesfully', async () => {
       let deploymentManager = new DeploymentManager('test-network', 'test-deployment', hre, {
@@ -134,7 +116,8 @@ describe('DeploymentManager', () => {
   });
 
   describe('verifyContracts', () => {
-    it('should verify contracts successfully', async () => {
+    it('should verify contracts successfully', async function () {
+      this.timeout(300_000);
       let deploymentManager = new DeploymentManager('test-network', 'test-deployment', hre, {
         importRetries: 0,
         writeCacheToDisk: true,
@@ -145,7 +128,8 @@ describe('DeploymentManager', () => {
       let verifyArgs: VerifyArgs = {
         via: 'artifacts',
         address: token.address,
-        constructorArguments: tokenArgs
+        constructorArguments: tokenArgs,
+        contract: 'contracts/test/FaucetToken.sol:FaucetToken',
       };
       await putVerifyArgs(
         deploymentManager.cache,

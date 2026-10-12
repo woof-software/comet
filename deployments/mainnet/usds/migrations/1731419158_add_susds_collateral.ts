@@ -32,7 +32,7 @@ export default migration('1731419158_add_susds_collateral', {
       'sUSDS',
       SUSDS_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const sUSDSPriceFeed = await deploymentManager.existing(
       'sUSDS:priceFeed',
@@ -101,7 +101,7 @@ export default migration('1731419158_add_susds_collateral', {
       'sUSDS',
       SUSDS_ADDRESS,
       'mainnet',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
     const sUSDSAssetConfig = {
       asset: sUSDS.address,

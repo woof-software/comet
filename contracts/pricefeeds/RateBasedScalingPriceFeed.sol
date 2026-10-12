@@ -2,8 +2,8 @@
 pragma solidity 0.8.15;
 
 import "../vendor/@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
-import "../IPriceFeed.sol";
-import "../IRateProvider.sol";
+import "../interfaces/IPriceFeed.sol";
+import "../interfaces/IRateProvider.sol";
 
 /**
  * @title Scaling price feed for rate based oracles

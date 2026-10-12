@@ -42,7 +42,7 @@ export default {
   },
   // wstETH
   '0xf610a9dfb7c89644979b4a0f27063e9e7d7cda32': {
-    artifact: 'contracts/ERC20.sol:ERC20',
+    artifact: 'contracts/interfaces/ERC20.sol:ERC20',
     delegates: {
       field: {
         slot: '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc'

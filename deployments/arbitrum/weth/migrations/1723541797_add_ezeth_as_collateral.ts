@@ -46,7 +46,7 @@ export default migration('1723541797_add_ezeth_as_collateral', {
       'ezETH',
       EZETH_ADDRESS,
       'arbitrum',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     const ezETHPriceFeed = await deploymentManager.existing(
@@ -161,7 +161,7 @@ export default migration('1723541797_add_ezeth_as_collateral', {
       'ezETH',
       EZETH_ADDRESS,
       'arbitrum',
-      'contracts/ERC20.sol:ERC20'
+      'contracts/interfaces/ERC20.sol:ERC20'
     );
 
     const ezETHAssetConfig = {
