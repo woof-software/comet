@@ -11,6 +11,9 @@ const L2_USDC_GATEWAY = '0x33B60d5Dd260d453cAC3782b0bDC01ce84672142';
 
 let mainnetTimelockUsdcBefore: BigNumber;
 
+const formatUsdc = (amount: BigNumber | bigint) =>
+  Number(utils.formatUnits(amount, 6)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export default migration('1790772750_withdraw_reserves', {
   async prepare() {
     return {};
@@ -34,6 +37,7 @@ export default migration('1790772750_withdraw_reserves', {
     } = await deploymentManager.getContracts();
 
     mainnetTimelockUsdcBefore = await mainnetUSDC.balanceOf(mainnetTimelock.address);
+    const reservesAtCreation = await comet.getReserves();
 
     // 1. Withdraw 8,500 USDC from the Scroll cUSDCv3 to the Scroll Timelock
     const withdrawReservesCalldata = utils.defaultAbiCoder.encode(
@@ -86,11 +90,24 @@ export default migration('1790772750_withdraw_reserves', {
       },
     ];
 
-    const description = `# Withdraw 8,500 USDC from cUSDCv3 reserves on Scroll
+    const description = `# Withdraw reserves from cUSDCv3 on Scroll
 
 ## Proposal summary
 
-This proposal withdraws 8,500 USDC from the reserves of the Compound III USDC market on Scroll and bridges it back to the Compound Timelock on Ethereum Mainnet using Scroll's native USDC bridge.
+This proposal withdraws 8,500 USDC of reserves from the Compound III USDC market on Scroll and bridges it back to the Compound Timelock on Ethereum Mainnet using Scroll's native USDC bridge.
+
+Withdrawing the reserves is the final step of the deprecation process and secures the market's protocol-owned funds by moving them to the Timelock on Mainnet. 
+
+## Reserves withdrawal
+
+Reserves are the protocol-owned portion of the market's base asset: the Comet's USDC balance plus outstanding borrows, minus what is owed to suppliers, as reported by \`getReserves()\`. They do not belong to any user, so withdrawing them does not change supplier or borrower balances. Only the governor of the market (the Scroll Timelock) can call \`withdrawReserves\`.
+
+| Source | Amount |
+| --- | --- |
+| cUSDCv3 reserves at proposal creation (\`getReserves()\`) | ${formatUsdc(reservesAtCreation)} USDC |
+| Withdrawn and bridged to the Mainnet Timelock | ${formatUsdc(WITHDRAW_AMOUNT)} USDC |
+
+The proposal does not withdraw all reserves. The market still has open borrow positions, so the remaining USDC is left as a buffer that keeps the market solvent until those positions are repaid or liquidated. The rest can be withdrawn by a later proposal once they are closed.
 
 ## Proposal actions
 
@@ -99,6 +116,8 @@ The proposal action sends a message through the Scroll Messenger to the Scroll B
 1. Call \`withdrawReserves(address,uint256)\` on the Scroll cUSDCv3 to withdraw 8,500 USDC to the Scroll Timelock.
 2. Approve the L2 USDC gateway to spend 8,500 USDC from the Scroll Timelock.
 3. Call \`withdrawERC20\` on the L2 USDC gateway to bridge the USDC back to the Mainnet Timelock.
+
+Once the Scroll batch containing the withdrawal is finalized on Mainnet, the withdrawal is claimed on the Scroll L1 messenger with \`relayMessageWithProof\`. Anyone can submit the claim, and the USDC can only be released to the Mainnet Timelock.
 `;
     const txn = await govDeploymentManager.retry(async () =>
       trace(
