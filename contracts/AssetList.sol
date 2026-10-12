@@ -186,7 +186,6 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     function setBorrowCollateralFactor(address asset, uint64 borrowCollateralFactor) external onlyConfigurator {
         StorageAssetConfig storage config = _listedConfig(asset);
         _validateCollateralFactors(borrowCollateralFactor, config.liquidateCollateralFactor, config.liquidationFactor);
-        emit UpdateAssetBorrowCollateralFactor(asset, config.borrowCollateralFactor, borrowCollateralFactor);
         config.borrowCollateralFactor = borrowCollateralFactor;
     }
 
@@ -199,7 +198,6 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     function setLiquidateCollateralFactor(address asset, uint64 liquidateCollateralFactor) external onlyConfigurator {
         StorageAssetConfig storage config = _listedConfig(asset);
         _validateCollateralFactors(config.borrowCollateralFactor, liquidateCollateralFactor, config.liquidationFactor);
-        emit UpdateAssetLiquidateCollateralFactor(asset, config.liquidateCollateralFactor, liquidateCollateralFactor);
         config.liquidateCollateralFactor = liquidateCollateralFactor;
     }
 
@@ -210,7 +208,6 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     function setLiquidationFactor(address asset, uint64 liquidationFactor) external onlyConfigurator {
         StorageAssetConfig storage config = _listedConfig(asset);
         _validateCollateralFactors(config.borrowCollateralFactor, config.liquidateCollateralFactor, liquidationFactor);
-        emit UpdateAssetLiquidationFactor(asset, config.liquidationFactor, liquidationFactor);
         config.liquidationFactor = liquidationFactor;
     }
 
@@ -220,7 +217,6 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      */
     function setSupplyCap(address asset, uint128 supplyCap) external onlyConfigurator {
         StorageAssetConfig storage config = _listedConfig(asset);
-        emit UpdateAssetSupplyCap(asset, config.supplyCap, supplyCap);
         config.supplyCap = supplyCap;
     }
 
@@ -355,8 +351,6 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
 
         if (!assetConfigStorage.assets.add(asset)) revert AssetAlreadyAdded();
         assetConfigStorage.configs[asset] = config;
-
-        emit AssetAdded(asset, config);
     }
 
     /**

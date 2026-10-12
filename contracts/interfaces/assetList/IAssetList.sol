@@ -2,7 +2,6 @@
 pragma solidity 0.8.15;
 
 import { IAssetListErrors } from "./IAssetListErrors.sol";
-import { IAssetListEvents } from "./IAssetListEvents.sol";
 import { IAssetListStructs } from "./IAssetListStructs.sol";
 
 /**
@@ -11,7 +10,7 @@ import { IAssetListStructs } from "./IAssetListStructs.sol";
  * @author Woof
  * @custom:security-contact dmitriy@woof.software
  */
-interface IAssetList is IAssetListErrors, IAssetListEvents, IAssetListStructs {
+interface IAssetList is IAssetListErrors, IAssetListStructs {
     function numAssets() external view returns (uint8);
 
     function configurator() external view returns (address);
