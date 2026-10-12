@@ -2,7 +2,6 @@ import { DeploymentManager } from '../../plugins/deployment_manager';
 import { getRoots } from '../../plugins/deployment_manager/Roots';
 import { OpenProposal } from '../context/Gov';
 import { utils } from 'ethers';
-import { forkedHreForBase } from '../../plugins/scenario/utils/hreForBase';
 
 const EXCLUDED_ROOTS = ['comptrollerV2', 'comet', 'configurator', 'rewards', 'bulker', 'cometFactory'];
 
@@ -103,45 +102,20 @@ export async function isBridgeProposal(
     ? [bridgeDeploymentManager]
     : [];
 
-  for(const bridgeNetwork of otherUnderlyingNetworks) {
+  // Other L2s are relayed only when the migration registered them (addBridgedDeploymentManager),
+  // so unrelated open proposals don't fork and relay networks the scenario doesn't target.
+  const registeredManagers = [...governanceDeploymentManager.bridgedDeploymentManagers.values()];
+  for (const bridgeNetwork of otherUnderlyingNetworks) {
     if (bridgeNetwork === governanceDeploymentManager.network) {
       bridgeManagers.push(governanceDeploymentManager);
       continue;
     }
-
-    // default deployment token is USDC for all networks except Ronin (WETH) and Mantle (USDE)
-    let deploymentToken: string;
-    switch (bridgeNetwork) {
-      case 'arbitrum':
-      case 'polygon':
-      case 'base':
-      case 'linea':
-      case 'optimism':
-      case 'unichain':
-      case 'scroll':
-        deploymentToken = 'usdc';
-        break;
-      case 'mantle':
-        deploymentToken = 'usde';
-        break;
-      case 'ronin':
-        deploymentToken = 'weth';
-        break;
-      default: {
-        const tag = `[${governanceDeploymentManager.network} -> ${bridgeNetwork}]`;
-        throw new Error(`${tag} Unable to determine whether to relay Proposal ${openProposal.id}`);
-      }
+    const dm = registeredManagers.find((m) => m.network === bridgeNetwork);
+    if (dm) {
+      bridgeManagers.push(dm);
+    } else {
+      console.log(`[${governanceDeploymentManager.network} -> ${bridgeNetwork}] Proposal ${openProposal.id} not relayed: network not targeted by this scenario`);
     }
-
-    // Keyed by the exact network:deployment pair, so no ambiguity — on a cache
-    // hit, reuse the hre already registered for it instead of forking again.
-    const key = `${bridgeNetwork}:${deploymentToken}`;
-    const hre = governanceDeploymentManager.bridgedDeploymentManagers.has(key)
-      ? undefined
-      : await forkedHreForBase({ name: '', network: bridgeNetwork, deployment: '' });
-    const dm = await governanceDeploymentManager.addBridgedDeploymentManager(bridgeNetwork, deploymentToken, hre);
-
-    bridgeManagers.push(dm);
   }
   return bridgeManagers;
 }
