@@ -1,10 +1,10 @@
-import { scenario } from './context/CometContext.js';
+import { scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { exp } from '../test/helpers.js';
-import { expectRevertCustom, perSecond } from './utils/index.js';
+import { exp } from '../test/helpers';
+import { expectRevertCustom, perSecond } from './utils';
 import { Wallet, ZeroAddress } from 'ethers';
-import { FaucetToken__factory } from '../build/types/index.js';
-import { getConfigForScenario } from './utils/scenarioHelper.js';
+import { FaucetToken__factory } from '../build/types';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 scenario('has assets', {}, async ({ comet, assets }) => {
   const numAssets = await comet.numAssets();

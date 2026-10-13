@@ -1,9 +1,9 @@
 import { encodeBytes32String } from 'ethers';
 import type { Signer } from 'ethers';
-import { CometHarnessInterfaceExtendedAssetList__factory, Configurator__factory, CometExtAssetList__factory, CometFactoryWithExtendedAssetList__factory, PriceFeedWithRevert__factory, FaucetToken__factory } from '../build/types/index.js';
-import type { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, NonStandardFaucetFeeToken, SimplePriceFeed, PriceFeedWithRevert } from '../build/types/index.js';
-import { expect, exp, ethers, MAX_ASSETS, presentValue, mulPrice, mulFactor, makeConfigurator, makeProtocol, takeSnapshot } from './helpers.js';
-import type { SignerWithAddress, SnapshotRestorer } from './helpers.js';
+import { CometHarnessInterfaceExtendedAssetList__factory, Configurator__factory, CometExtAssetList__factory, CometFactoryWithExtendedAssetList__factory, PriceFeedWithRevert__factory, FaucetToken__factory } from '../build/types';
+import type { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, NonStandardFaucetFeeToken, SimplePriceFeed, PriceFeedWithRevert } from '../build/types';
+import { expect, exp, ethers, MAX_ASSETS, presentValue, mulPrice, mulFactor, makeConfigurator, makeProtocol, takeSnapshot } from './helpers';
+import type { SignerWithAddress, SnapshotRestorer } from './helpers';
 describe('isBorrowCollateralized', function () {
   // Constants
   const ONE_HOUR = 60 * 60;

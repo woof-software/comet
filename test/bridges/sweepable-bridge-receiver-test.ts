@@ -1,13 +1,13 @@
 import { AbiCoder } from 'ethers';
 
-import { ethers, exp, expect, wait } from './../helpers.js';
+import { ethers, exp, expect, wait } from './../helpers';
 import {
   SweepableBridgeReceiverHarness__factory,
   FaucetToken__factory,
   NonStandardFaucetToken__factory,
-} from '../../build/types/index.js';
-import type { SweepableBridgeReceiverHarness, Timelock } from '../../build/types/index.js';
-import { encodeBridgeReceiverCalldata, makeTimelock } from './base-bridge-receiver-test.js';
+} from '../../build/types';
+import type { SweepableBridgeReceiverHarness, Timelock } from '../../build/types';
+import { encodeBridgeReceiverCalldata, makeTimelock } from './base-bridge-receiver-test';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

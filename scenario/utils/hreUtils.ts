@@ -1,5 +1,5 @@
-import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
+import { DeploymentManager } from '../../plugins/deployment_manager';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
 
 export async function setNextBaseFeeToZero(dm: DeploymentManager) {
   const { provider } = await getHardhatEthers(dm.hre);

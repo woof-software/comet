@@ -1,5 +1,5 @@
-import { get, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan.js';
-import { getBlockscoutApiUrl, getBlockscoutRPCUrl } from './blockscout.js';
+import { get, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan';
+import { getBlockscoutApiUrl, getBlockscoutRPCUrl } from './blockscout';
 import { JsonRpcProvider } from 'ethers';
 
 export function debug(...args: any[]) {

@@ -1,7 +1,7 @@
 import type { AddressLike as EthersAddressLike, BigNumberish, ContractRunner, Signer } from 'ethers';
-import type { TypedContractMethod } from '../../build/types/common.js';
-import { Loader, World, debug } from '../../plugins/scenario/index.js';
-import type { Migration } from '../../plugins/deployment_manager/index.js';
+import type { TypedContractMethod } from '../../build/types/common';
+import { Loader, World, debug } from '../../plugins/scenario';
+import type { Migration } from '../../plugins/deployment_manager';
 import {
   NativeTokenConstraint,
   TokenBalanceConstraint,
@@ -15,9 +15,9 @@ import {
   FilterConstraint,
   PriceConstraint,
   ReservesConstraint
-} from '../constraints/index.js';
-import CometActor from './CometActor.js';
-import CometAsset from './CometAsset.js';
+} from '../constraints';
+import CometActor from './CometActor';
+import CometAsset from './CometAsset';
 import type {
   CometInterface,
   Configurator,
@@ -30,7 +30,7 @@ import type {
   BaseBridgeReceiver,
   ERC20,
   CometExtAssetList,
-} from '../../build/types/index.js';
+} from '../../build/types';
 import {
   BaseBridgeReceiver__factory,
   BaseBulker__factory,
@@ -42,15 +42,15 @@ import {
   Fauceteer__factory,
   IGovernorBravo__factory,
   SimpleTimelock__factory,
-} from '../../build/types/index.js';
-import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer.js';
-import { deployComet, COMP_WHALES, WHALES } from '../../src/deploy/index.js';
-import type { ProtocolConfiguration } from '../../src/deploy/index.js';
-import { getAddressFromNumber, resolveAddress } from './Address.js';
-import type { AddressLike } from './Address.js';
-import { fastGovernanceExecute, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils/index.js';
-import type { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario.js';
-import type { Requirements } from '../constraints/Requirements.js';
+} from '../../build/types';
+import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
+import { deployComet, COMP_WHALES, WHALES } from '../../src/deploy';
+import type { ProtocolConfiguration } from '../../src/deploy';
+import { getAddressFromNumber, resolveAddress } from './Address';
+import type { AddressLike } from './Address';
+import { fastGovernanceExecute, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
+import type { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
+import type { Requirements } from '../constraints/Requirements';
 
 export type ActorMap = { [name: string]: CometActor };
 export type AssetMap = { [name: string]: CometAsset };

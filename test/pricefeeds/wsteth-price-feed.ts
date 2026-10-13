@@ -1,4 +1,4 @@
-import { ethers, exp, expect } from '../helpers.js';
+import { ethers, exp, expect } from '../helpers';
 
 export async function makeWstETH({ stEthPrice, tokensPerStEth }) {
   const SimplePriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');

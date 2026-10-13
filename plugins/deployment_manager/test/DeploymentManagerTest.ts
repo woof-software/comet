@@ -3,16 +3,16 @@ import type { Contract } from 'ethers';
 import hre from 'hardhat';
 import nock from 'nock';
 
-import { getBuildFile } from '../ContractMap.js';
-import { DeploymentManager } from '../DeploymentManager.js';
-import type { Migration } from '../Migration.js';
-import { expectedTemplate } from './MigrationTemplateTest.js';
-import { buildToken, faucetTokenBuildFile, tokenArgs } from './DeployHelpers.js';
-import { tempDir } from './TestHelpers.js';
-import type { VerifyArgs } from '../Verify.js';
-import { getVerifyArgs, putVerifyArgs } from '../VerifyArgs.js';
-import { mockVerifySuccess } from './VerifyTest.js';
-import { objectFromMap } from '../Utils.js';
+import { getBuildFile } from '../ContractMap';
+import { DeploymentManager } from '../DeploymentManager';
+import type { Migration } from '../Migration';
+import { expectedTemplate } from './MigrationTemplateTest';
+import { buildToken, faucetTokenBuildFile, tokenArgs } from './DeployHelpers';
+import { tempDir } from './TestHelpers';
+import type { VerifyArgs } from '../Verify';
+import { getVerifyArgs, putVerifyArgs } from '../VerifyArgs';
+import { mockVerifySuccess } from './VerifyTest';
+import { objectFromMap } from '../Utils';
 
 export interface TestContracts {
   finn: Contract;

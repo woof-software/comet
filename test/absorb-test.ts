@@ -1,9 +1,9 @@
 import { MaxUint256, ZeroAddress } from 'ethers';
 import type { ContractTransactionResponse, EventLog } from 'ethers';
 import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
-import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types/index.js';
-import { ethers, event, expect, exp, factor, defaultAssets, makeProtocol, mulPrice, portfolio, totalsAndReserves, wait, bumpTotalsCollateral, setTotalsBasic } from './helpers.js';
-import { mulFactor, divPrice, presentValue, principalValue, presentValueSupply } from './helpers/math.js';
+import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types';
+import { ethers, event, expect, exp, factor, defaultAssets, makeProtocol, mulPrice, portfolio, totalsAndReserves, wait, bumpTotalsCollateral, setTotalsBasic } from './helpers';
+import { mulFactor, divPrice, presentValue, principalValue, presentValueSupply } from './helpers/math';
 
 function expectApproximately(actual: bigint, expected: bigint, tolerance: bigint): void {
   const difference = actual >= expected ? actual - expected : expected - actual;

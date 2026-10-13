@@ -6,8 +6,8 @@ import {
   GovernorSimple__factory,
   SimpleTimelock__factory,
   TransparentUpgradeableProxy__factory
-} from '../../build/types/index.js';
-import { ethers, event, expect, makeConfigurator, wait } from './../helpers.js';
+} from '../../build/types';
+import { ethers, event, expect, makeConfigurator, wait } from './../helpers';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

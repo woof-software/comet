@@ -1,11 +1,11 @@
 import { id } from 'ethers';
 import type { BigNumberish, Contract, TransactionRequest } from 'ethers';
-import type { CometConfiguration } from '../../build/types/CometWithExtendedAssetList.js';
+import type { CometConfiguration } from '../../build/types/CometWithExtendedAssetList';
 
-export { cloneGov, deployNetworkComet as deployComet, sameAddress } from './Network.js';
-export { getConfiguration, getConfigurationStruct } from './NetworkConfiguration.js';
-export { exp, getBlock, wait } from '../../test/helpers.js';
-export { debug } from '../../plugins/deployment_manager/Utils.js';
+export { cloneGov, deployNetworkComet as deployComet, sameAddress } from './Network';
+export { getConfiguration, getConfigurationStruct } from './NetworkConfiguration';
+export { exp, getBlock, wait } from '../../test/helpers';
+export { debug } from '../../plugins/deployment_manager/Utils';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

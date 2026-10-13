@@ -1,6 +1,6 @@
-import { expect, exp } from '../helpers.js';
-import { arbitragePurchaseableCollateral, getAssets, hasPurchaseableCollateral, liquidateUnderwaterBorrowers } from '../../scripts/liquidation_bot/liquidateUnderwaterBorrowers.js';
-import { forkMainnet, makeProtocol, makeLiquidatableProtocol, resetHardhatNetwork } from './makeLiquidatableProtocol.js';
+import { expect, exp } from '../helpers';
+import { arbitragePurchaseableCollateral, getAssets, hasPurchaseableCollateral, liquidateUnderwaterBorrowers } from '../../scripts/liquidation_bot/liquidateUnderwaterBorrowers';
+import { forkMainnet, makeProtocol, makeLiquidatableProtocol, resetHardhatNetwork } from './makeLiquidatableProtocol';
 
 describe.skip('Liquidation Bot', function () {
   before(forkMainnet);

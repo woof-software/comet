@@ -1,13 +1,13 @@
 import { AbiCoder, ZeroAddress } from 'ethers';
 
-import { makeMarketAdmin, advanceTimeAndMineBlock } from './market-updates-helper.js';
-import { expect, makeConfigurator, wait, event } from '../helpers.js';
+import { makeMarketAdmin, advanceTimeAndMineBlock } from './market-updates-helper';
+import { expect, makeConfigurator, wait, event } from '../helpers';
 import {
   Configurator__factory,
   ITimelock__factory,
   MarketAdminPermissionChecker__factory,
   MarketUpdateProposer__factory,
-} from '../../build/types/index.js';
+} from '../../build/types';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

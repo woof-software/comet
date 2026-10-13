@@ -5,8 +5,8 @@
 */
 import { AbiCoder, id, keccak256 } from 'ethers';
 
-import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager.js';
-import { nonForkedHreForBase } from '../plugins/scenario/utils/hreForBase.js';
+import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager';
+import { nonForkedHreForBase } from '../plugins/scenario/utils/hreForBase';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

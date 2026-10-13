@@ -1,5 +1,5 @@
-import type { World } from './World.js';
-import { getStackFile } from './Stack.js';
+import type { World } from './World';
+import { getStackFile } from './Stack';
 
 // A solution modifies a given context and world in a way that satisfies a constraint.
 export type Solution<T> = (T, World) => Promise<T | void>;

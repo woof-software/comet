@@ -2,9 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'node:url';
-import type { ForkSpec } from '../../plugins/scenario/World.js';
-import { mergeResults } from './mergeResults.js';
-import type { JsonSuiteResult } from '../../plugins/scenario/Report.js';
+import type { ForkSpec } from '../../plugins/scenario/World';
+import { mergeResults } from './mergeResults';
+import type { JsonSuiteResult } from '../../plugins/scenario/Report';
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const RESULTS_DIR = path.join(moduleDirectory, '..', '..', 'results');

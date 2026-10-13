@@ -1,5 +1,5 @@
-import { CometHarnessExtendedAssetList__factory } from '../build/types/index.js';
-import { expect, exp, makeConfigurator, ONE, makeProtocol } from './helpers.js';
+import { CometHarnessExtendedAssetList__factory } from '../build/types';
+import { expect, exp, makeConfigurator, ONE, makeProtocol } from './helpers';
 
 const cometErrors = {
   interface: CometHarnessExtendedAssetList__factory.createInterface(),

@@ -8,10 +8,10 @@ import hardhatTypechain from '@nomicfoundation/hardhat-typechain';
 import hardhatVerify from '@nomicfoundation/hardhat-verify';
 import { configVariable, defineConfig } from 'hardhat/config';
 
-import deploymentManagerConfig from './plugins/deployment_manager/hardhat3/default-config.js';
-import deploymentManagerPlugin from './plugins/deployment_manager/hardhat3/plugin.js';
-import sourceFilterPlugin from './plugins/hardhat3/source-filter-plugin.js';
-import type {} from './plugins/scenario/type-extensions.js';
+import deploymentManagerConfig from './plugins/deployment_manager/hardhat3/default-config';
+import deploymentManagerPlugin from './plugins/deployment_manager/hardhat3/plugin';
+import sourceFilterPlugin from './plugins/hardhat3/source-filter-plugin';
+import type {} from './plugins/scenario/type-extensions';
 
 const {
   ETH_PK,

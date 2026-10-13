@@ -1,7 +1,7 @@
-import { FaucetToken__factory, SimplePriceFeed__factory, CometHarnessInterfaceExtendedAssetList__factory, Configurator__factory, CometExtAssetList__factory, CometFactoryWithExtendedAssetList__factory } from '../build/types/index.js';
-import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed, Configurator, CometProxyAdmin } from '../build/types/index.js';
-import { ethers, expect, exp, makeConfigurator, presentValueBorrow, presentValueSupply, defaultAssets, MAX_ASSETS, oneMonth, takeSnapshot, makeProtocol, setTotalsBasic } from './helpers.js';
-import type { SnapshotRestorer, SignerWithAddress } from './helpers.js';
+import { FaucetToken__factory, SimplePriceFeed__factory, CometHarnessInterfaceExtendedAssetList__factory, Configurator__factory, CometExtAssetList__factory, CometFactoryWithExtendedAssetList__factory } from '../build/types';
+import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed, Configurator, CometProxyAdmin } from '../build/types';
+import { ethers, expect, exp, makeConfigurator, presentValueBorrow, presentValueSupply, defaultAssets, MAX_ASSETS, oneMonth, takeSnapshot, makeProtocol, setTotalsBasic } from './helpers';
+import type { SnapshotRestorer, SignerWithAddress } from './helpers';
 import { encodeBytes32String } from 'ethers';
 import type { ContractTransactionReceipt, BaseContract } from 'ethers';
 

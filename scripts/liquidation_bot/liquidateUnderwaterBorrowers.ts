@@ -1,14 +1,14 @@
 import type {
   CometInterface,
   OnChainLiquidator
-} from '../../build/types/index.js';
-import type { OnChainLiquidator as OnChainLiquidatorTypes } from '../../build/types/liquidator/OnChainLiquidator.js';
-import { exp } from '../../test/helpers.js';
+} from '../../build/types';
+import type { OnChainLiquidator as OnChainLiquidatorTypes } from '../../build/types/liquidator/OnChainLiquidator';
+import { exp } from '../../test/helpers';
 import type { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
 import { encodeBytes32String, MaxUint256, ZeroAddress } from 'ethers';
 import type { BigNumberish, Signer } from 'ethers';
-import googleCloudLog, { LogSeverity } from './googleCloudLog.js';
-import { sendTxn } from './sendTransaction.js';
+import googleCloudLog, { LogSeverity } from './googleCloudLog';
+import { sendTxn } from './sendTransaction';
 
 type PoolConfigStruct = OnChainLiquidatorTypes.PoolConfigStruct;
 

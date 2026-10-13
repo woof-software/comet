@@ -1,8 +1,8 @@
 import hre from 'hardhat';
 import { ZeroAddress } from 'ethers';
 
-import { OnChainLiquidator__factory } from '../../build/types/index.js';
-import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager.js';
+import { OnChainLiquidator__factory } from '../../build/types';
+import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
 
 interface LiquidationAddresses {
   balancerVault: string;

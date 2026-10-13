@@ -1,7 +1,7 @@
 import { ZeroAddress } from 'ethers';
 
-import { GovernorSimple__factory } from '../build/types/index.js';
-import { ethers, expect } from './helpers.js';
+import { GovernorSimple__factory } from '../build/types';
+import { ethers, expect } from './helpers';
 
 async function buildGovernorSimple() {
   const [deployer] = await ethers.getSigners();

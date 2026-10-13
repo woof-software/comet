@@ -1,4 +1,4 @@
-import { ethers, expect, makeProtocol } from './helpers.js';
+import { ethers, expect, makeProtocol } from './helpers';
 
 describe('getPrice', function () {
   it('returns price data for assets, with 8 decimals', async () => {

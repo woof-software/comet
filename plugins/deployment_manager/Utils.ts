@@ -1,8 +1,8 @@
 import * as fs from 'fs/promises';
 import type { HardhatRuntimeEnvironment as HRE } from 'hardhat/types/hre';
 import { Contract } from 'ethers';
-import type { ABI, BuildFile, ContractMetadata } from './Types.js';
-import { getHardhatEthers } from './hardhat3/runtime.js';
+import type { ABI, BuildFile, ContractMetadata } from './Types';
+import { getHardhatEthers } from './hardhat3/runtime';
 
 type InputOrOutput = {
   name: string;

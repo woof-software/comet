@@ -1,6 +1,6 @@
-import type { Address, Alias } from './Types.js';
-import { Cache } from './Cache.js';
-import type { VerifyArgs } from './Verify.js';
+import type { Address, Alias } from './Types';
+import { Cache } from './Cache';
+import type { VerifyArgs } from './Verify';
 
 export type VerifyArgsMap = Map<Address, VerifyArgs>;
 export type InvertedAliases = Map<Address, Alias[]>;

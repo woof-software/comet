@@ -1,11 +1,11 @@
-import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils.js';
+import type { DeploymentManager } from '../../plugins/deployment_manager';
+import { impersonateAddress } from '../../plugins/scenario/utils';
+import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { AbiCoder, Contract, getAddress, hexlify, id, parseEther, toNumber, toQuantity, zeroPadValue } from 'ethers';
 import type { Log, TransactionReceipt } from 'ethers';
-import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
-import type { OpenBridgedProposal } from '../context/Gov.js';
-import { applyL1ToL2Alias, isTenderlyLog } from './index.js';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
+import type { OpenBridgedProposal } from '../context/Gov';
+import { applyL1ToL2Alias, isTenderlyLog } from './index';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

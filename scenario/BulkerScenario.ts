@@ -1,10 +1,10 @@
-import type { CometContext } from './context/CometContext.js';
-import { scenario } from './context/CometContext.js';
+import type { CometContext } from './context/CometContext';
+import { scenario } from './context/CometContext';
 import { AbiCoder, MaxUint256, ZeroAddress } from 'ethers';
 import { expect } from 'chai';
-import { expectBase, isRewardSupported, isBulkerSupported, getExpectedBaseBalance, matchesDeployment } from './utils/index.js';
-import { exp } from '../test/helpers.js';
-import { getConfigForScenario } from './utils/scenarioHelper.js';
+import { expectBase, isRewardSupported, isBulkerSupported, getExpectedBaseBalance, matchesDeployment } from './utils';
+import { exp } from '../test/helpers';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

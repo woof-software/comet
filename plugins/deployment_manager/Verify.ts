@@ -2,9 +2,9 @@ import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
 import type { Contract } from 'ethers';
 import { verifyContract as hardhatVerifyContract } from '@nomicfoundation/hardhat-verify/verify';
 
-import { manualVerifyContract } from './ManualVerify.js';
-import type { BuildFile } from './Types.js';
-import { debug } from './Utils.js';
+import { manualVerifyContract } from './ManualVerify';
+import type { BuildFile } from './Types';
+import { debug } from './Utils';
 
 export type VerifyArgs =
   | { via: 'artifacts', address: string, constructorArguments: any, contract?: string }

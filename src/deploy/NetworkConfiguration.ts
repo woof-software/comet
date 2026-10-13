@@ -1,8 +1,8 @@
-import type { CometConfiguration as CometConfigurationTypes } from '../../build/types/CometWithExtendedAssetList.js';
-import type { CometConfiguration as ConfiguratorTypes } from '../../build/types/Configurator.js';
-import type { ProtocolConfiguration } from './index.js';
-import type { ContractMap } from '../../plugins/deployment_manager/ContractMap.js';
-import type { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager.js';
+import type { CometConfiguration as CometConfigurationTypes } from '../../build/types/CometWithExtendedAssetList';
+import type { CometConfiguration as ConfiguratorTypes } from '../../build/types/Configurator';
+import type { ProtocolConfiguration } from './index';
+import type { ContractMap } from '../../plugins/deployment_manager/ContractMap';
+import type { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
 
 type AssetConfigStruct = CometConfigurationTypes.AssetConfigStruct;
 type ConfigurationStruct = ConfiguratorTypes.ConfigurationStruct;

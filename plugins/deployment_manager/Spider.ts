@@ -1,27 +1,27 @@
 import { Contract, ZeroAddress } from 'ethers';
 import type { HardhatRuntimeEnvironment as HRE } from 'hardhat/types/hre';
 
-import { Cache } from './Cache.js';
+import { Cache } from './Cache';
 import {
   aliasTemplateKey,
   getFieldKey,
   readAlias,
   readField,
-} from './RelationConfig.js';
+} from './RelationConfig';
 import type {
   Ctx,
   AliasRender,
   RelationConfigMap,
   RelationConfig,
   RelationInnerConfig,
-} from './RelationConfig.js';
-import type { Address, Alias, BuildFile, TraceFn } from './Types.js';
-import type { Aliases } from './Aliases.js';
-import type { ContractMap } from './ContractMap.js';
-import type { Roots } from './Roots.js';
-import { asArray, debug, getEthersContract, mergeContracts } from './Utils.js';
-import { fetchAndCacheContract, readContract } from './Import.js';
-import { getHardhatEthers } from './hardhat3/runtime.js';
+} from './RelationConfig';
+import type { Address, Alias, BuildFile, TraceFn } from './Types';
+import type { Aliases } from './Aliases';
+import type { ContractMap } from './ContractMap';
+import type { Roots } from './Roots';
+import { asArray, debug, getEthersContract, mergeContracts } from './Utils';
+import { fetchAndCacheContract, readContract } from './Import';
+import { getHardhatEthers } from './hardhat3/runtime';
 
 export interface Spider {
   roots: Roots;

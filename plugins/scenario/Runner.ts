@@ -1,10 +1,10 @@
-import { Scenario } from './Scenario.js';
-import type { ScenarioEnv, Solution } from './Scenario.js';
-import { World } from './World.js';
-import type { ForkSpec } from './World.js';
-import { Loader } from './Loader.js';
-import { showReport, pluralize } from './Report.js';
-import type { Result, FormatConfig } from "./Report.js";
+import { Scenario } from './Scenario';
+import type { ScenarioEnv, Solution } from './Scenario';
+import { World } from './World';
+import type { ForkSpec } from './World';
+import { Loader } from './Loader';
+import { showReport, pluralize } from './Report';
+import type { Result, FormatConfig } from "./Report";
 import { AssertionError } from 'chai';
 
 export type Address = string;

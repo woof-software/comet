@@ -5,7 +5,7 @@ import { definePlugin } from 'hardhat/plugins';
 const sourceFilterPlugin: HardhatPlugin = definePlugin({
   id: 'comet-source-filter',
   hookHandlers: {
-    solidity: () => import('./source-filter.js'),
+    solidity: () => import('./source-filter'),
   },
 });
 

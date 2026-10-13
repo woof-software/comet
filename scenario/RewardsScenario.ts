@@ -1,13 +1,13 @@
-import type { CometContext, CometProperties } from './context/CometContext.js';
-import { scenario } from './context/CometContext.js';
+import type { CometContext, CometProperties } from './context/CometContext';
+import { scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { exp } from '../test/helpers.js';
-import { isRewardSupported, matchesDeployment } from './utils/index.js';
+import { exp } from '../test/helpers';
+import { isRewardSupported, matchesDeployment } from './utils';
 import type { ContractTransactionReceipt } from 'ethers';
-import { getHardhatEthers } from '../plugins/deployment_manager/hardhat3/runtime.js';
-import { CometRewards__factory, ERC20__factory } from '../build/types/index.js';
-import type { World } from '../plugins/scenario/index.js';
-import { getConfigForScenario } from './utils/scenarioHelper.js';
+import { getHardhatEthers } from '../plugins/deployment_manager/hardhat3/runtime';
+import { CometRewards__factory, ERC20__factory } from '../build/types';
+import type { World } from '../plugins/scenario';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 function calculateRewardsOwed(
   userBalance: bigint,

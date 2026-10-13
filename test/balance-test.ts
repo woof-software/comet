@@ -1,9 +1,9 @@
 import { getNumber } from 'ethers';
 import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
-import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types/index.js';
-import { ethers, expect, exp, makeProtocol, oneMonth, defaultAssets, setTotalsBasic } from './helpers.js';
-import { takeSnapshot } from './helpers/snapshot.js';
-import type { SnapshotRestorer } from './helpers/snapshot.js';
+import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types';
+import { ethers, expect, exp, makeProtocol, oneMonth, defaultAssets, setTotalsBasic } from './helpers';
+import { takeSnapshot } from './helpers/snapshot';
+import type { SnapshotRestorer } from './helpers/snapshot';
 
 function abs(value: bigint): bigint {
   return value < 0n ? -value : value;

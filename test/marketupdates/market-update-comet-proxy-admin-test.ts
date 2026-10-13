@@ -1,7 +1,7 @@
 import { Interface, LogDescription } from 'ethers';
 
-import { event, expect, makeConfigurator, wait } from './../helpers.js';
-import { makeMarketAdmin } from './market-updates-helper.js';
+import { event, expect, makeConfigurator, wait } from './../helpers';
+import { makeMarketAdmin } from './market-updates-helper';
 
 describe('CometProxyAdmin', function() {
   it('only main-governor-timelock can transferOwnership of CometProxyAdmin as it is the owner', async () => {

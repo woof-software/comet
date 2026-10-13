@@ -1,14 +1,14 @@
-import type { StaticConstraint, Solution, World } from '../../plugins/scenario/index.js';
-import type { Migration, Actions } from '../../plugins/deployment_manager/Migration.js';
+import type { StaticConstraint, Solution, World } from '../../plugins/scenario';
+import type { Migration, Actions } from '../../plugins/deployment_manager/Migration';
 import { toNumber } from 'ethers';
-import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
-import { debug } from '../../plugins/scenario/index.js';
-import type { CometContext, MigrationData } from '../context/CometContext.js';
-import { loadMigrations } from '../../plugins/deployment_manager/Migration.js';
-import { modifiedPaths } from '../utils/index.js';
-import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
-import { exp } from '../../test/helpers.js';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
+import { debug } from '../../plugins/scenario';
+import type { CometContext, MigrationData } from '../context/CometContext';
+import { loadMigrations } from '../../plugins/deployment_manager/Migration';
+import { modifiedPaths } from '../utils';
+import type { DeploymentManager } from '../../plugins/deployment_manager';
+import { impersonateAddress } from '../../plugins/scenario/utils';
+import { exp } from '../../test/helpers';
 
 async function getMigrations<T>(world: World): Promise<Migration<T>[]> {
   // TODO: make this configurable from cli params/env var?

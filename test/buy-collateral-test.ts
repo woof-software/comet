@@ -1,11 +1,11 @@
 import { MaxUint256 } from 'ethers';
 import type { ContractTransactionResponse } from 'ethers';
 import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
-import { EvilToken__factory, NonStandardFaucetFeeToken__factory, CometHarnessInterfaceExtendedAssetList__factory, Configurator__factory } from '../build/types/index.js';
-import type { EvilToken, NonStandardFaucetFeeToken, FaucetToken, SimplePriceFeed, Configurator, CometProxyAdmin, CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList } from '../build/types/index.js';
-import { ethers, event, expect, exp, makeConfigurator, makeProtocol, portfolio, ReentryAttack, wait, MAX_ASSETS } from './helpers.js';
-import { takeSnapshot } from './helpers/snapshot.js';
-import type { SnapshotRestorer } from './helpers/snapshot.js';
+import { EvilToken__factory, NonStandardFaucetFeeToken__factory, CometHarnessInterfaceExtendedAssetList__factory, Configurator__factory } from '../build/types';
+import type { EvilToken, NonStandardFaucetFeeToken, FaucetToken, SimplePriceFeed, Configurator, CometProxyAdmin, CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList } from '../build/types';
+import { ethers, event, expect, exp, makeConfigurator, makeProtocol, portfolio, ReentryAttack, wait, MAX_ASSETS } from './helpers';
+import { takeSnapshot } from './helpers/snapshot';
+import type { SnapshotRestorer } from './helpers/snapshot';
 
 function abs(value: bigint): bigint {
   return value < 0n ? -value : value;

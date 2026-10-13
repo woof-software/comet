@@ -1,7 +1,7 @@
 import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
 
-import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken } from '../build/types/index.js';
-import { expect, exp, makeProtocol } from './helpers.js';
+import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken } from '../build/types';
+import { expect, exp, makeProtocol } from './helpers';
 
 describe('CometExt', function () {
   let cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList;

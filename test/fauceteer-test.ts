@@ -1,8 +1,8 @@
 import {
   Fauceteer__factory,
   FaucetToken__factory
-} from '../build/types/index.js';
-import { ethers, exp, expect, fastForward } from './helpers.js';
+} from '../build/types';
+import { ethers, exp, expect, fastForward } from './helpers';
 
 async function makeFauceteer() {
   const [deployer] = await ethers.getSigners();

@@ -1,11 +1,11 @@
 import { getNumber } from 'ethers';
 import type { EventLog } from 'ethers';
-import { CometHarnessExtendedAssetList__factory } from '../build/types/index.js';
-import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types/index.js';
+import { CometHarnessExtendedAssetList__factory } from '../build/types';
+import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types';
 import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
-import { ethers, expect, exp, fastForward, getBlock, makeProtocol, wait, setTotalsBasic, oneMonth, oneDay, defaultAssets } from './helpers.js';
-import { takeSnapshot } from './helpers/snapshot.js';
-import type { SnapshotRestorer } from './helpers/snapshot.js';
+import { ethers, expect, exp, fastForward, getBlock, makeProtocol, wait, setTotalsBasic, oneMonth, oneDay, defaultAssets } from './helpers';
+import { takeSnapshot } from './helpers/snapshot';
+import type { SnapshotRestorer } from './helpers/snapshot';
 
 type UserBasic = Awaited<ReturnType<CometHarnessInterfaceExtendedAssetList['userBasic']>>;
 type TotalsBasicStructOutput = Awaited<ReturnType<CometHarnessInterfaceExtendedAssetList['totalsBasic']>>;

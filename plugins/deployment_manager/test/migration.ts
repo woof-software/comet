@@ -1,4 +1,4 @@
-import { migration } from '../Migration.js';
+import { migration } from '../Migration';
 
 export default migration('test migration', {
   prepare: async (_deploymentManager) => {

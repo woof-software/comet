@@ -1,10 +1,10 @@
-import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { BridgedProposalState } from '../context/Gov.js';
-import type { OpenBridgedProposal } from '../context/Gov.js';
+import type { DeploymentManager } from '../../plugins/deployment_manager';
+import { BridgedProposalState } from '../context/Gov';
+import type { OpenBridgedProposal } from '../context/Gov';
 import { toNumber } from 'ethers';
-import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
-import { fetchLogs } from '../utils/index.js';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils.js';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
+import { fetchLogs } from '../utils';
+import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 
 export async function getOpenBridgedProposals(
   deploymentManager: DeploymentManager,

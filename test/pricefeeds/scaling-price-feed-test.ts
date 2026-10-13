@@ -1,4 +1,4 @@
-import { ethers, exp, expect } from '../helpers.js';
+import { ethers, exp, expect } from '../helpers';
 
 export async function makeScalingPriceFeed({ price, priceFeedDecimals }) {
   const SimplePriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');

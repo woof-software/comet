@@ -1,7 +1,7 @@
 import { expect } from 'chai';
-import type { Constraint, World } from '../../plugins/scenario/index.js';
-import type { CometContext } from '../context/CometContext.js';
-import type { Requirements } from './Requirements.js';
+import type { Constraint, World } from '../../plugins/scenario';
+import type { CometContext } from '../context/CometContext';
+import type { Requirements } from './Requirements';
 
 export class FilterConstraint<T extends CometContext, R extends Requirements> implements Constraint<T, R> {
   async solve(requirements: R, context: T) {

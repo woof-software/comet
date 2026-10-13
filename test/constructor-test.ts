@@ -1,8 +1,8 @@
 import { encodeBytes32String } from 'ethers';
 import type { Contract } from 'ethers';
 
-import { CometHarnessExtendedAssetList__factory } from '../build/types/index.js';
-import { ethers, exp, expect, makeProtocol, ONE } from './helpers.js';
+import { CometHarnessExtendedAssetList__factory } from '../build/types';
+import { ethers, exp, expect, makeProtocol, ONE } from './helpers';
 
 const cometErrors = {
   interface: CometHarnessExtendedAssetList__factory.createInterface(),

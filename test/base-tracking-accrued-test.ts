@@ -1,4 +1,4 @@
-import { ethers, expect, exp, fastForward, getBlock, makeProtocol } from './helpers.js';
+import { ethers, expect, exp, fastForward, getBlock, makeProtocol } from './helpers';
 
 describe('baseTrackingAccrued', function() {
   it('supply updates baseTrackingAccrued to 6 decimal value', async () => {

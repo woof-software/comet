@@ -4,12 +4,12 @@ import hre from 'hardhat';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
 import nock from 'nock';
 
-import { Cache } from '../Cache.js';
-import { spider } from '../Spider.js';
-import type { RelationConfigMap } from '../RelationConfig.js';
-import { objectFromMap } from '../Utils.js';
-import { deploy } from '../Deploy.js';
-import { getHardhatEthers } from '../hardhat3/runtime.js';
+import { Cache } from '../Cache';
+import { spider } from '../Spider';
+import type { RelationConfigMap } from '../RelationConfig';
+import { objectFromMap } from '../Utils';
+import { deploy } from '../Deploy';
+import { getHardhatEthers } from '../hardhat3/runtime';
 
 interface TestContracts {
   finn: Contract;

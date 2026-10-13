@@ -1,10 +1,10 @@
-import { scenario } from './context/CometContext.js';
-import { event, expect } from '../test/helpers.js';
-import { expectRevertCustom, timeUntilUnderwater } from './utils/index.js';
-import { matchesDeployment } from './utils/index.js';
-import { getConfigForScenario } from './utils/scenarioHelper.js';
+import { scenario } from './context/CometContext';
+import { event, expect } from '../test/helpers';
+import { expectRevertCustom, timeUntilUnderwater } from './utils';
+import { matchesDeployment } from './utils';
+import { getConfigForScenario } from './utils/scenarioHelper';
 import { parseEther, toQuantity } from 'ethers';
-import { getHardhatEthers } from '../plugins/deployment_manager/hardhat3/runtime.js';
+import { getHardhatEthers } from '../plugins/deployment_manager/hardhat3/runtime';
 
 scenario(
   'Comet#liquidation > isLiquidatable=true for underwater position',

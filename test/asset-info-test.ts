@@ -1,8 +1,8 @@
 import { ZeroAddress } from 'ethers';
 import type { Contract } from 'ethers';
 
-import { ethers, expect, exp, makeProtocol, ONE } from './helpers.js';
-import { CometHarnessExtendedAssetList__factory } from '../build/types/index.js';
+import { ethers, expect, exp, makeProtocol, ONE } from './helpers';
+import { CometHarnessExtendedAssetList__factory } from '../build/types';
 
 const cometErrors = {
   interface: CometHarnessExtendedAssetList__factory.createInterface(),

@@ -1,8 +1,8 @@
 import { Contract, EventLog } from 'ethers';
 import type { ContractEventName } from 'ethers';
-import { erc20 } from './ERC20.js';
-import { DeploymentManager } from '../../deployment_manager/DeploymentManager.js';
-import { getHardhatEthers } from '../../deployment_manager/hardhat3/runtime.js';
+import { erc20 } from './ERC20';
+import { DeploymentManager } from '../../deployment_manager/DeploymentManager';
+import { getHardhatEthers } from '../../deployment_manager/hardhat3/runtime';
 
 const getMaxEntry = (args: [string, bigint][]) =>
   args.reduce(([a1, m], [a2, e]) => (m >= e ? [a1, m] : [a2, e]));

@@ -1,6 +1,6 @@
 import type { BigNumberish } from 'ethers';
 
-export type { BaseBridgeReceiver, IGovernorBravo } from '../../build/types/index.js';
+export type { BaseBridgeReceiver, IGovernorBravo } from '../../build/types';
 
 export enum ProposalState {
   Pending,

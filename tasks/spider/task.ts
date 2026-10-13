@@ -13,7 +13,7 @@ const spiderTask = task(
     type: ArgumentType.STRING_WITHOUT_DEFAULT,
     defaultValue: undefined,
   })
-  .setAction(async () => import("./task-action.js"))
+  .setAction(async () => import("./task-action"))
   .build();
 
 const taskDefinitions: NewTaskDefinition[] = [spiderTask];

@@ -1,5 +1,5 @@
-import { expect, makeProtocol } from './helpers.js';
-import type { Comet } from './helpers.js';
+import { expect, makeProtocol } from './helpers';
+import type { Comet } from './helpers';
 
 describe('Pause Guardian', function () {
   it('Should pause supply', async function () {

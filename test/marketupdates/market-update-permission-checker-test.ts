@@ -1,5 +1,5 @@
-import { ethers, event, expect, wait } from './../helpers.js';
-import { createRandomWallet, makeMarketAdmin } from './market-updates-helper.js';
+import { ethers, event, expect, wait } from './../helpers';
+import { createRandomWallet, makeMarketAdmin } from './market-updates-helper';
 
 describe('MarketUpdatePermissionChecker', () => {
   it('only the owner can update the market admin', async () => {

@@ -1,6 +1,6 @@
-import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager/index.js';
-import type { DeploySpec } from '../../../src/deploy/index.js';
-import { deployComet } from '../../../src/deploy/index.js';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
+import type { DeploySpec } from '../../../src/deploy';
+import { deployComet } from '../../../src/deploy';
 
 const HOUR = 60 * 60;
 const DAY = 24 * HOUR;

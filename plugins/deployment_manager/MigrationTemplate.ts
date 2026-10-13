@@ -1,4 +1,4 @@
-import { Cache } from './Cache.js';
+import { Cache } from './Cache';
 
 export interface MigrationTemplateVars {
   timestamp: number;

@@ -1,4 +1,4 @@
-import { expect, exp, makeProtocol, wait } from './helpers.js';
+import { expect, exp, makeProtocol, wait } from './helpers';
 
 // Interest rate calculations can be checked with this Google Sheet:
 // https://docs.google.com/spreadsheets/d/1G3BWcFPEQYnH-IrHHye5oA0oFIP0Jyj7pybdpMuDOuI

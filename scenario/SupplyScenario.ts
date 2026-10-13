@@ -1,13 +1,13 @@
-import type { CometContext } from './context/CometContext.js';
-import { scenario } from './context/CometContext.js';
+import type { CometContext } from './context/CometContext';
+import { scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectBase, expectRevertCustom, expectRevertMatches, getExpectedBaseBalance, getInterest, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, UINT256_MAX } from './utils/index.js';
+import { expectApproximately, expectBase, expectRevertCustom, expectRevertMatches, getExpectedBaseBalance, getInterest, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, UINT256_MAX } from './utils';
 import type { ContractTransactionReceipt } from 'ethers';
 import { parseEther, toQuantity } from 'ethers';
-import { getHardhatEthers } from '../plugins/deployment_manager/hardhat3/runtime.js';
-import { matchesDeployment } from './utils/index.js';
-import { ethers, exp } from '../test/helpers.js';
-import { getConfigForScenario } from './utils/scenarioHelper.js';
+import { getHardhatEthers } from '../plugins/deployment_manager/hardhat3/runtime';
+import { matchesDeployment } from './utils';
+import { ethers, exp } from '../test/helpers';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 // XXX introduce a SupplyCapConstraint to separately test the happy path and revert path instead
 // of testing them conditionally

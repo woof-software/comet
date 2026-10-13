@@ -1,6 +1,6 @@
 import { MaxUint256 } from 'ethers';
 
-import { exp, expect, makeProtocol } from './helpers.js';
+import { exp, expect, makeProtocol } from './helpers';
 
 describe('approveThis', function () {
   describe('asset is Comet', function() {

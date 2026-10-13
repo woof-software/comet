@@ -26,7 +26,7 @@ const scenarioTask = task("scenario", "Runs scenario tests")
     defaultValue: undefined,
   })
   .setAction(async () => ({
-    default: (await import("./task-actions.js")).scenarioAction,
+    default: (await import("./task-actions")).scenarioAction,
   }))
   .build();
 
@@ -41,7 +41,7 @@ const scenarioSpiderTask = task(
     defaultValue: undefined,
   })
   .setAction(async () => ({
-    default: (await import("./task-actions.js")).scenarioSpiderAction,
+    default: (await import("./task-actions")).scenarioSpiderAction,
   }))
   .build();
 
@@ -61,7 +61,7 @@ const scenarioMultistreamTask = task(
       "Shard streams per base instead of per network. Bypasses the bridged-deployment write-race protection",
   })
   .setAction(async () => ({
-    default: (await import("./task-actions.js")).scenarioMultistreamAction,
+    default: (await import("./task-actions")).scenarioMultistreamAction,
   }))
   .build();
 

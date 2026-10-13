@@ -1,4 +1,4 @@
-import { ethers, exp, expect, getBlock } from '../helpers.js';
+import { ethers, exp, expect, getBlock } from '../helpers';
 
 export async function makeConstantPriceFeed({ decimals, constantPrice }) {
   const constantPriceFeedFactory = await ethers.getContractFactory('ConstantPriceFeed');

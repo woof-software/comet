@@ -5,8 +5,8 @@ import type {
 } from '@flashbots/ethers-provider-bundle';
 import type { TransactionRequest } from 'ethers';
 
-import googleCloudLog, { LogSeverity } from './googleCloudLog.js';
-import type { SignerWithFlashbots } from './liquidateUnderwaterBorrowers.js';
+import googleCloudLog, { LogSeverity } from './googleCloudLog';
+import type { SignerWithFlashbots } from './liquidateUnderwaterBorrowers';
 
 function isFlashbotsTxnResponse(bundleReceipt: FlashbotsTransactionResponse | RelayResponseError): bundleReceipt is FlashbotsTransactionResponse {
   return (bundleReceipt as FlashbotsTransactionResponse).bundleTransactions !== undefined;

@@ -1,10 +1,10 @@
-import { scenario } from './context/CometContext.js';
+import { scenario } from './context/CometContext';
 import { expect } from 'chai';
 import { AbiCoder, ZeroAddress } from 'ethers';
-import { exp } from '../test/helpers.js';
-import { CometModified__factory, FaucetToken__factory } from '../build/types/index.js';
-import { calldata } from '../src/deploy/index.js';
-import { expectBase, isBridgedDeployment } from './utils/index.js';
+import { exp } from '../test/helpers';
+import { CometModified__factory, FaucetToken__factory } from '../build/types';
+import { calldata } from '../src/deploy';
+import { expectBase, isBridgedDeployment } from './utils';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

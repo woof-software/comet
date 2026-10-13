@@ -1,15 +1,15 @@
 import { AbiCoder, MaxUint256, encodeBytes32String } from 'ethers';
 import { expect } from 'chai';
-import { scenario } from './context/CometContext.js';
-import type { CometContext } from './context/CometContext.js';
-import CometAsset from './context/CometAsset.js';
+import { scenario } from './context/CometContext';
+import type { CometContext } from './context/CometContext';
+import CometAsset from './context/CometAsset';
 import {
   ERC20__factory,
   IWstETH__factory,
   MainnetBulker__factory
-} from '../build/types/index.js';
-import { exp } from '../test/helpers.js';
-import { expectApproximately, expectRevertCustom, isBulkerSupported, matchesDeployment } from './utils/index.js';
+} from '../build/types';
+import { exp } from '../test/helpers';
+import { expectApproximately, expectRevertCustom, isBulkerSupported, matchesDeployment } from './utils';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

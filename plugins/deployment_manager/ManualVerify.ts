@@ -3,8 +3,8 @@ import { Interface } from 'ethers';
 import type { Contract } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
 
-import type { BuildFile } from './Types.js';
-import { getPrimaryContract } from './Utils.js';
+import type { BuildFile } from './Types';
+import { getPrimaryContract } from './Utils';
 
 /** Verifies imported/spidered bytecode using the compiler metadata kept in its build file. */
 export async function manualVerifyContract(

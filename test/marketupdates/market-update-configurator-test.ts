@@ -1,6 +1,6 @@
-import { Configurator__factory } from './../../build/types/index.js';
-import { expect, makeConfigurator, event, wait } from './../helpers.js';
-import { makeMarketAdmin } from './market-updates-helper.js';
+import { Configurator__factory } from './../../build/types';
+import { expect, makeConfigurator, event, wait } from './../helpers';
+import { makeMarketAdmin } from './market-updates-helper';
 
 describe('Configurator', function() {
   it('already initialized and is not able to initialize again with main-governor-timelock as admin', async () => {

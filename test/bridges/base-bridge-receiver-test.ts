@@ -1,10 +1,10 @@
 import { AbiCoder, ZeroAddress, keccak256 } from 'ethers';
 
-import { ethers, event, expect, wait } from './../helpers.js';
+import { ethers, event, expect, wait } from './../helpers';
 import {
   BaseBridgeReceiverHarness__factory,
   Timelock__factory
-} from '../../build/types/index.js';
+} from '../../build/types';
 
 const BRIDGE_RECEIVER_CALLDATA_ABI = ['address[]', 'uint256[]', 'string[]', 'bytes[]'];
 const abiCoder = AbiCoder.defaultAbiCoder();

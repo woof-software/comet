@@ -1,5 +1,5 @@
-import type { RelationConfigMap } from '../../../plugins/deployment_manager/RelationConfig.js';
-import baseRelationConfig from '../../relations.js';
+import type { RelationConfigMap } from '../../../plugins/deployment_manager/RelationConfig';
+import baseRelationConfig from '../../relations';
 
 export default {
   ...baseRelationConfig,
