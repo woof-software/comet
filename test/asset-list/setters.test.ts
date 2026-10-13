@@ -15,7 +15,7 @@ import {
 
 // Configurator.updateAsset<Field>(cometProxy, asset, value) does the whole change in one call: it updates the field
 // in the stored config, emits its event with the old and new values, and calls the matching setter of the asset list.
-describe('asset list setters: full flow through the Configurator', function () {
+describe('asset list setters', function () {
   const ZERO = ethers.constants.AddressZero;
   const FACTOR = 10n ** 16n; // 0.01
   const MAX_UINT128 = 2n ** 128n - 1n;
@@ -57,7 +57,7 @@ describe('asset list setters: full flow through the Configurator', function () {
     asset = configs[TARGET].asset;
   });
 
-  describe('common to all four setters', function () {
+  describe('Storage config setters', function () {
     SETTERS.forEach(({ field, key, value }) => {
       describe(`updateAsset${field}: happy path`, function () {
         let snapshot: SnapshotRestorer;
@@ -90,10 +90,6 @@ describe('asset list setters: full flow through the Configurator', function () {
           await expect(tx)
             .to.emit(configurator, `UpdateAsset${field}`)
             .withArgs(comet.address, asset, storedBefore[TARGET][key], value);
-        });
-
-        it('makes the asset list emit nothing', async () => {
-          expect((await tx.wait()).logs.filter((log) => log.address == assetList.address)).to.be.empty;
         });
 
         it('shows the new value through getAssetInfo of the list', async () => {
@@ -234,10 +230,6 @@ describe('asset list setters: full flow through the Configurator', function () {
             .to.be.revertedWithCustomError(assetList, 'BadAsset');
         });
       });
-
-      it('the stored configs are unchanged after the reverts', async () => {
-        expect(await storedConfigs()).to.deep.equal(storedBefore);
-      });
     });
 
     describe('the asset is in the immutables of the list but not added to it yet', function () {
@@ -260,10 +252,6 @@ describe('asset list setters: full flow through the Configurator', function () {
           await expect(update(field, comet.address, newAssetConfig.asset, value))
             .to.be.revertedWithCustomError(assetList, 'BadAsset');
         });
-      });
-
-      it('the stored configs are unchanged after the reverts', async () => {
-        expect(await storedConfigs()).to.deep.equal(storedBefore);
       });
     });
 

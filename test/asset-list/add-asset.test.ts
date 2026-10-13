@@ -280,7 +280,7 @@ describe('asset list add asset: full flow through the Configurator', function ()
     });
   });
 
-  describe('additional checks', function () {
+  describe('additional checks after adding new asset', function () {
     describe('the four setter flows on the new asset', function () {
       let snapshot: SnapshotRestorer;
       let assetInfo: AssetInfoStructOutput;
@@ -373,14 +373,6 @@ describe('asset list add asset: full flow through the Configurator', function ()
 
     beforeEach(async () => (snapshot = await takeSnapshot()));
     afterEach(async () => await snapshot.restore());
-
-    // Step 1 has none of these checks today, so the cases below wait for them
-
-    it.skip('step 1: the asset is already in the stored configs');
-
-    it.skip('step 1: the asset is the zero address');
-
-    it.skip(`step 1: there are already ${MAX_ASSETS} assets`);
 
     // Redeploy: the AssetList constructor rejects the config, and the error passes through deployAssetList
 
