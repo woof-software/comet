@@ -137,11 +137,11 @@ Reserves are the protocol-owned portion of a market's base asset: the Comet's ba
 | Source | Amount |
 | --- | --- |
 | cUSDCv3 reserves at proposal creation (\`getReserves()\`) | ${formatAmount(usdcReserves)} USDC.e |
-| Withdrawn from cUSDCv3 | ${formatAmount(USDCE_AMOUNT)} USDC.e |
+| Withdrawn from cUSDCv3, swapped to USDC and sent to the Mainnet Timelock | ${formatAmount(USDCE_AMOUNT)} USDC.e |
 | cUSDTv3 reserves at proposal creation (\`getReserves()\`) | ${formatAmount(usdtReserves)} USDT |
-| Withdrawn from cUSDTv3 | ${formatAmount(USDT_AMOUNT)} USDT |
+| Withdrawn from cUSDTv3, swapped to USDC and sent to the Mainnet Timelock | ${formatAmount(USDT_AMOUNT)} USDT |
 
-The proposal does not withdraw all reserves. Both markets still have open borrow positions, so the remaining ${formatAmount(usdcReserves.sub(USDCE_AMOUNT))} USDC.e and ${formatAmount(usdtReserves.sub(USDT_AMOUNT))} USDT are left as buffers that keep the markets solvent until those positions are repaid or liquidated. The rest can be withdrawn by a later proposal once they are closed. The withdrawal amounts are fixed in the proposal calldata.
+The proposal does not withdraw all reserves. Both markets still have open borrow positions, so the remaining USDC.e and USDT are left as buffers that keep the markets solvent until those positions are repaid or liquidated. The rest can be withdrawn by a later proposal once they are closed.
 
 ## Swaps
 
@@ -158,11 +158,11 @@ If either swap would return less than its minimum, the whole proposal execution 
 
 The proposal action sends a message through Polygon's FxRoot to the Polygon Bridge Receiver, which queues the following calls on the Polygon Timelock:
 
-1. Withdraw ${formatAmount(USDCE_AMOUNT)} USDC.e from the Polygon cUSDCv3 reserves.
-2. Withdraw ${formatAmount(USDT_AMOUNT)} USDT from the Polygon cUSDTv3 reserves.
+1. Withdraw 470,000 USDC.e from the Polygon cUSDCv3 reserves.
+2. Withdraw 65,000 USDT from the Polygon cUSDTv3 reserves.
 3. Transfer the USDC.e and USDT to the Uniswap Universal Router.
 4. Call \`execute\` on the Universal Router to swap both into native USDC, delivered to the Polygon Timelock.
-5. Approve and call \`depositForBurn\` on the CCTP TokenMessenger to burn ${formatAmount(BURN_AMOUNT)} USDC on Polygon (CCTP standard transfer, no fee).
+5. Approve and call \`depositForBurn\` on the CCTP TokenMessenger to burn ${Number(utils.formatUnits(BURN_AMOUNT, 6)).toLocaleString('en-US')} USDC on Polygon (CCTP standard transfer, no fee).
 
 The USDC is minted to the Mainnet Timelock once Circle's attestation for the burn is relayed on Ethereum Mainnet.
 `;
