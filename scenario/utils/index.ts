@@ -1392,11 +1392,16 @@ function loadCachedBytecodes() {
 export async function executeOpenProposal(
   dm: DeploymentManager,
   { id, startBlock, endBlock }: OpenProposal
-) {
+): Promise<boolean> {
   const governor = await dm.getContractOrThrow('governor');
   const blockNow = await dm.hre.ethers.provider.getBlockNumber();
+  // Late quorum can extend voting past the endBlock recorded at creation; prefer the live deadline.
+  // GovernorBravo (e.g. the development clone) has no proposalDeadline, so fall back to endBlock.
+  const deadline = await governor.proposalDeadline(id)
+    .then((d) => d.toNumber())
+    .catch(() => endBlock.toNumber());
   const blocksUntilEnd =
-    endBlock.toNumber() - Math.max(startBlock.toNumber(), blockNow) + 1;
+    deadline - Math.max(startBlock.toNumber(), blockNow) + 1;
 
   if (blocksUntilEnd > 0) {
     await mineBlocks(dm, blocksUntilEnd);
@@ -1408,6 +1413,7 @@ export async function executeOpenProposal(
   }
 
   // Execute proposal (maybe, w/ gas limit so we see if exec reverts, not a gas estimation error)
+  let executed = false;
   if ((await governor.state(id)) == ProposalState.Queued) {
     const block = await dm.hre.ethers.provider.getBlock('latest');
     const eta = await (async () => {
@@ -1434,12 +1440,15 @@ export async function executeOpenProposal(
     if (receipt.gasUsed.toNumber() >= 16_777_215) {
       throw new Error('Execution may have failed due to hitting gas limit');
     }
+    executed = true;
   }
 
   await redeployRenzoOracle(dm);
 
   // mine a block
   await dm.hre.ethers.provider.send('evm_mine', []);
+
+  return executed;
 }
 
 async function testnetPropose(
@@ -1769,7 +1778,13 @@ export async function executeOpenProposalAndRelay(
 ) {
   const startingBlockNumber =
     await governanceDeploymentManager.hre.ethers.provider.getBlockNumber();
-  await executeOpenProposal(governanceDeploymentManager, openProposal);
+  const executed = await executeOpenProposal(governanceDeploymentManager, openProposal);
+  if (!executed) {
+    const governor = await governanceDeploymentManager.getContractOrThrow('governor');
+    const state = await governor.state(openProposal.id);
+    console.log(`Proposal ${openProposal.id} not executed on ${governanceDeploymentManager.network} (state ${ProposalState[state]}), skipping relay`);
+    return;
+  }
 
   console.log(`Executed proposal ${openProposal.id} on ${governanceDeploymentManager.network}, checking if relay to ${bridgeDeploymentManager.network} is needed...`);
 
