@@ -5,19 +5,18 @@ export interface TenderlyVnetInfo {
   id: string;
   adminRpcUrl: string;
   publicRpcUrl: string;
-  dashboardUrl?: string;
 }
 
 // All Virtual TestNets created by this flow live in the same Tenderly project.
 const TENDERLY_PROJECT = 'comet';
 
-interface TenderlyCreds {
+export interface TenderlyCreds {
   account: string;
   project: string;
   accessKey: string;
 }
 
-function getTenderlyCreds(): TenderlyCreds {
+export function getTenderlyCreds(): TenderlyCreds {
   const account = process.env.TENDERLY_USERNAME || process.env.TENDERLY_ACCOUNT;
   const accessKey = process.env.TENDERLY_ACCESS_KEY;
 
@@ -40,7 +39,8 @@ function publicRpcFromAdminRpc(adminRpcUrl: string): string {
   const segments = url.pathname.split('/').filter(Boolean);
   const lastSegment = segments.pop() as string;
 
-  segments.push(lastSegment.split('-')[0]);
+  // Drop only the trailing -<adminSuffix>; the slug itself is hyphenated.
+  segments.push(lastSegment.split('-').slice(0, -1).join('-'));
   url.pathname = '/' + segments.join('/');
   return url.toString();
 }
@@ -85,18 +85,12 @@ export async function createVirtualTestnet(
     throw new Error(`Tenderly did not return an Admin RPC URL for the new Virtual TestNet: ${JSON.stringify(data)}`);
   }
 
-  const instanceId = data?.active_instance?.id;
-  const dashboardUrl = instanceId
-    ? `https://dashboard.tenderly.co/${account}/${project}/testnets/${data.id}/instance/${instanceId}`
-    : undefined;
-
   console.log(`Created Tenderly Virtual TestNet '${slug}' for ${dm.network} (id: ${data.id})`);
 
   return {
     id: data.id,
     adminRpcUrl,
     publicRpcUrl: publicRpcUrl ?? publicRpcFromAdminRpc(adminRpcUrl),
-    dashboardUrl,
   };
 }
 
