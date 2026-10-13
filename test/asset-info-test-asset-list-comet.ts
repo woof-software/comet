@@ -1,6 +1,7 @@
-import { AssetList, AssetList__factory, AssetListFactory, AssetListFactory__factory, FaucetToken, FaucetToken__factory, SimplePriceFeed, SimplePriceFeed__factory } from 'build/types';
-import { expect, exp, makeConfigurator, makeProtocol, ethers } from './helpers';
+import { AssetList, AssetList__factory, FaucetToken, FaucetToken__factory, SimplePriceFeed, SimplePriceFeed__factory, TransparentUpgradeableProxy__factory } from 'build/types';
+import { expect, exp, makeConfigurator, makeProtocol, ethers, MAX_ASSETS, takeSnapshot, SnapshotRestorer, SignerWithAddress } from './helpers';
 import { AssetInfoStructOutput } from 'build/types/AssetList';
+import { AssetConfigStruct } from 'build/types/Configurator';
 
 describe('asset info', function () {
   it('initializes protocol', async () => {
@@ -19,7 +20,7 @@ describe('asset info', function () {
     const configuratorAsProxy = configurator.attach(configuratorProxy.address);
 
     // The configurator holds the asset configs this comet was built from, so every asset info must match them
-    const { assetConfigs } = await configuratorAsProxy.getConfiguration(comet.address);
+    const assetConfigs = await configuratorAsProxy.getAssetConfigs(comet.address);
     expect(await comet.numAssets()).to.be.equal(assetConfigs.length);
 
     for (let i = 0; i < assetConfigs.length; i++) {
@@ -75,7 +76,6 @@ describe('asset info', function () {
 
   context('collateral factors validation', function () {
     let assetList: AssetList;
-    let assetListFactory: AssetListFactory;
     let faucetToken: FaucetToken;
     let priceFeed: SimplePriceFeed;
 
@@ -95,9 +95,30 @@ describe('asset info', function () {
       supplyCap: bigint;
     };
 
-    before(async () => {
-      assetListFactory = await (await ethers.getContractFactory('AssetListFactory') as AssetListFactory__factory).deploy();
+    // Deploys an asset list the way a market gets one: the implementation holds the immutable part of the config,
+    // and the proxy is initialized with the factors and the supply cap, which is where they are validated
+    async function deployAssetList(assetConfig: typeof baseAssetConfig): Promise<AssetList> {
+      const [, proxyAdmin, configurator] = await ethers.getSigners();
+      const AssetListFactory = await ethers.getContractFactory('AssetList') as AssetList__factory;
+      const implementation = await AssetListFactory.deploy([{
+        asset: assetConfig.asset,
+        decimals: assetConfig.decimals,
+        priceFeed: assetConfig.priceFeed,
+      }]);
+      const proxy = await (await ethers.getContractFactory('TransparentUpgradeableProxy') as TransparentUpgradeableProxy__factory).deploy(
+        implementation.address,
+        proxyAdmin.address,
+        AssetListFactory.interface.encodeFunctionData('initialize', [[{
+          borrowCollateralFactor: assetConfig.borrowCollateralFactor,
+          liquidateCollateralFactor: assetConfig.liquidateCollateralFactor,
+          liquidationFactor: assetConfig.liquidationFactor,
+          supplyCap: assetConfig.supplyCap,
+        }], configurator.address]),
+      );
+      return AssetListFactory.attach(proxy.address);
+    }
 
+    before(async () => {
       faucetToken = await (await ethers.getContractFactory('FaucetToken') as FaucetToken__factory).deploy(10n ** 24n, 'Test Token', 18, 'TEST');
 
       priceFeed = await (await ethers.getContractFactory('SimplePriceFeed') as SimplePriceFeed__factory).deploy(exp(1, 8), 8);
@@ -112,7 +133,7 @@ describe('asset info', function () {
         supplyCap: 10n ** 24n,
       };
 
-      assetList = await (await ethers.getContractFactory('AssetList') as AssetList__factory).deploy([baseAssetConfig]);
+      assetList = await deployAssetList(baseAssetConfig);
     });
 
     // normal active collateral
@@ -120,12 +141,12 @@ describe('asset info', function () {
       let assetInfo: AssetInfoStructOutput;
 
       before(async () => {
-        const assetList = await (await ethers.getContractFactory('AssetList') as AssetList__factory).deploy([{
+        const assetList = await deployAssetList({
           ...baseAssetConfig,
           borrowCollateralFactor: collateralBCF,
           liquidateCollateralFactor: collateralLCF,
           liquidationFactor: collateralLF,
-        }]);
+        });
         assetInfo = await assetList.getAssetInfo(0);
       });
 
@@ -148,12 +169,12 @@ describe('asset info', function () {
       let assetInfo: AssetInfoStructOutput;
 
       before(async () => {
-        const assetList = await (await ethers.getContractFactory('AssetList') as AssetList__factory).deploy([{
+        const assetList = await deployAssetList({
           ...baseAssetConfig,
           borrowCollateralFactor: 0n,
           liquidateCollateralFactor: collateralLCF,
           liquidationFactor: collateralLF,
-        }]);
+        });
         assetInfo = await assetList.getAssetInfo(0);
       });
 
@@ -175,12 +196,12 @@ describe('asset info', function () {
       let assetInfo: AssetInfoStructOutput;
 
       before(async () => {
-        const assetList = await (await ethers.getContractFactory('AssetList') as AssetList__factory).deploy([{
+        const assetList = await deployAssetList({
           ...baseAssetConfig,
           borrowCollateralFactor: 0n,
           liquidateCollateralFactor: 0n,
           liquidationFactor: collateralLF,
-        }]);
+        });
         assetInfo = await assetList.getAssetInfo(0);
       });
 
@@ -202,12 +223,12 @@ describe('asset info', function () {
       let assetInfo: AssetInfoStructOutput;
 
       before(async () => {
-        const assetList = await (await ethers.getContractFactory('AssetList') as AssetList__factory).deploy([{
+        const assetList = await deployAssetList({
           ...baseAssetConfig,
           borrowCollateralFactor: 0n,
           liquidateCollateralFactor: 0n,
           liquidationFactor: 0n,
-        }]);
+        });
         assetInfo = await assetList.getAssetInfo(0);
       });
 
@@ -229,10 +250,10 @@ describe('asset info', function () {
       let assetInfo: AssetInfoStructOutput;
 
       before(async () => {
-        const assetList = await (await ethers.getContractFactory('AssetList') as AssetList__factory).deploy([{
+        const assetList = await deployAssetList({
           ...baseAssetConfig,
           liquidationFactor: exp(1, 18),
-        }]);
+        });
         assetInfo = await assetList.getAssetInfo(0);
       });
 
@@ -254,19 +275,19 @@ describe('asset info', function () {
 
       it('BCF equals LCF when both are non-zero', async () => {
         await expect(
-          assetListFactory.createAssetList([{ ...baseAssetConfig, borrowCollateralFactor: collateralLCF, liquidateCollateralFactor: collateralLCF }])
+          deployAssetList({ ...baseAssetConfig, borrowCollateralFactor: collateralLCF, liquidateCollateralFactor: collateralLCF })
         ).to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
       });
 
       it('BCF exceeds LCF', async () => {
         await expect(
-          assetListFactory.createAssetList([{ ...baseAssetConfig, borrowCollateralFactor: collateralLF, liquidateCollateralFactor: collateralLCF }])
+          deployAssetList({ ...baseAssetConfig, borrowCollateralFactor: collateralLF, liquidateCollateralFactor: collateralLCF })
         ).to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
       });
 
       it('BCF is non-zero but LCF is zero', async () => {
         await expect(
-          assetListFactory.createAssetList([{ ...baseAssetConfig, liquidateCollateralFactor: 0n }])
+          deployAssetList({ ...baseAssetConfig, liquidateCollateralFactor: 0n })
         ).to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
       });
 
@@ -274,20 +295,20 @@ describe('asset info', function () {
 
       it('LCF equals LF when both are non-zero', async () => {
         await expect(
-          assetListFactory.createAssetList([{ ...baseAssetConfig, borrowCollateralFactor: 0n, liquidateCollateralFactor: collateralLF, liquidationFactor: collateralLF }])
+          deployAssetList({ ...baseAssetConfig, borrowCollateralFactor: 0n, liquidateCollateralFactor: collateralLF, liquidationFactor: collateralLF })
         ).to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
       });
 
       it('LCF exceeds LF', async () => {
         await expect(
-          assetListFactory.createAssetList([{ ...baseAssetConfig, borrowCollateralFactor: 0n, liquidateCollateralFactor: collateralLF, liquidationFactor: collateralLCF }])
+          deployAssetList({ ...baseAssetConfig, borrowCollateralFactor: 0n, liquidateCollateralFactor: collateralLF, liquidationFactor: collateralLCF })
         ).to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
       });
 
       it('LCF is non-zero but LF is zero', async () => {
         // LCF > 0 means LCF >= LF=0 is always true → LiquidateCFTooLarge
         await expect(
-          assetListFactory.createAssetList([{ ...baseAssetConfig, borrowCollateralFactor: 0n, liquidationFactor: 0n }])
+          deployAssetList({ ...baseAssetConfig, borrowCollateralFactor: 0n, liquidationFactor: 0n })
         ).to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
       });
 
@@ -295,92 +316,59 @@ describe('asset info', function () {
 
       it('LF exceeds MAX_COLLATERAL_FACTOR', async () => {
         await expect(
-          assetListFactory.createAssetList([{ ...baseAssetConfig, liquidationFactor: exp(1, 18) + 1n }])
+          deployAssetList({ ...baseAssetConfig, liquidationFactor: exp(1, 18) + 1n })
         ).to.be.revertedWithCustomError(assetList, 'LiqPenaltyTooHigh');
       });
     });
 
     /*//////////////////////////////////////////////////////////////
-                            DESCALED FACTORS
+                         FULL PRECISION FACTORS
     //////////////////////////////////////////////////////////////*/
 
-    context('descaled factors', function () {
-      // Factors are stored with four decimal digits of precision: dividing by 1e14 keeps only
-      // the first four digits, so 0.1234 is exactly one stored unit and 0.1235 is the next one up.
-      const descaledFactor = 123400000000000000n;
-      const nextDescaledFactor = 123500000000000000n;
-      // A value above 0.1234 that still loses its extra digits and becomes 1234 once stored.
-      const sameDescaledFactor = 123456000000000000n;
+    context('full precision factors', function () {
+      // Factors are stored as given, with all 18 decimals, so factors one wei apart are still strictly ordered
+      const factor = 123456000000000000n;
 
-      context('LCF > BCF after descale', function () {
+      context('LCF one wei above BCF', function () {
         let assetInfo: AssetInfoStructOutput;
 
         before(async () => {
-          const assetList = await (await ethers.getContractFactory('AssetList') as AssetList__factory).deploy([{
+          const assetList = await deployAssetList({
             ...baseAssetConfig,
-            borrowCollateralFactor: descaledFactor,
-            liquidateCollateralFactor: nextDescaledFactor,
-          }]);
+            borrowCollateralFactor: factor,
+            liquidateCollateralFactor: factor + 1n,
+          });
           assetInfo = await assetList.getAssetInfo(0);
         });
 
         it('stores borrowCollateralFactor', () => {
-          expect(assetInfo.borrowCollateralFactor).to.equal(descaledFactor);
+          expect(assetInfo.borrowCollateralFactor).to.equal(factor);
         });
 
-        it('stores liquidateCollateralFactor one precision unit above borrowCollateralFactor', () => {
-          expect(assetInfo.liquidateCollateralFactor).to.equal(nextDescaledFactor);
+        it('stores liquidateCollateralFactor one wei above borrowCollateralFactor', () => {
+          expect(assetInfo.liquidateCollateralFactor).to.equal(factor + 1n);
         });
       });
 
-      context('LF > LCF after descale', function () {
+      context('LF one wei above LCF', function () {
         let assetInfo: AssetInfoStructOutput;
 
         before(async () => {
-          const assetList = await (await ethers.getContractFactory('AssetList') as AssetList__factory).deploy([{
+          const assetList = await deployAssetList({
             ...baseAssetConfig,
             borrowCollateralFactor: 0n,
-            liquidateCollateralFactor: descaledFactor,
-            liquidationFactor: nextDescaledFactor,
-          }]);
+            liquidateCollateralFactor: factor,
+            liquidationFactor: factor + 1n,
+          });
           assetInfo = await assetList.getAssetInfo(0);
         });
 
         it('stores liquidateCollateralFactor', () => {
-          expect(assetInfo.liquidateCollateralFactor).to.equal(descaledFactor);
+          expect(assetInfo.liquidateCollateralFactor).to.equal(factor);
         });
 
-        it('stores liquidationFactor one precision unit above liquidateCollateralFactor', () => {
-          expect(assetInfo.liquidationFactor).to.equal(nextDescaledFactor);
-        });
-      });
-
-      context('descale revert when', function () {
-        // Each case passes the check on the original factors, because the upper factor is larger,
-        // but both factors become the same number once stored, so the stored ordering check rejects it.
-
-        it('LCF is above BCF only in digits that descale drops', async () => {
-          await expect(
-            assetListFactory.createAssetList([{ ...baseAssetConfig, borrowCollateralFactor: descaledFactor, liquidateCollateralFactor: sameDescaledFactor }])
-          ).to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
-        });
-
-        it('LCF is one wei above BCF', async () => {
-          await expect(
-            assetListFactory.createAssetList([{ ...baseAssetConfig, borrowCollateralFactor: descaledFactor, liquidateCollateralFactor: descaledFactor + 1n }])
-          ).to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
-        });
-
-        it('LF is above LCF only in digits that descale drops', async () => {
-          await expect(
-            assetListFactory.createAssetList([{ ...baseAssetConfig, borrowCollateralFactor: 0n, liquidateCollateralFactor: descaledFactor, liquidationFactor: sameDescaledFactor }])
-          ).to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
-        });
-
-        it('LF is one wei above LCF', async () => {
-          await expect(
-            assetListFactory.createAssetList([{ ...baseAssetConfig, borrowCollateralFactor: 0n, liquidateCollateralFactor: descaledFactor, liquidationFactor: descaledFactor + 1n }])
-          ).to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
+        it('stores liquidationFactor one wei above liquidateCollateralFactor', () => {
+          expect(assetInfo.liquidationFactor).to.equal(factor + 1n);
         });
       });
     });
@@ -397,17 +385,17 @@ describe('asset info', function () {
   describe('supply cap', function () {
     // The largest value the uint128 supply cap field can hold
     const MAX_UINT128 = 2n ** 128n - 1n;
-    // The asset list keeps the lower 88 bits of the cap in one word and the upper 40 bits in the other
+    // A cap with only the upper 40 bits of the uint128 set
     const UPPER_BITS_ONLY = (2n ** 40n - 1n) << 88n;
 
-    let assetListFactory: AssetListFactory;
+    let AssetListContractFactory: AssetList__factory;
     let priceFeed: SimplePriceFeed;
     let FaucetTokenFactory: FaucetToken__factory;
 
     let snapshot: SnapshotRestorer;
 
     before(async () => {
-      assetListFactory = await (await ethers.getContractFactory('AssetListFactory') as AssetListFactory__factory).deploy();
+      AssetListContractFactory = await ethers.getContractFactory('AssetList') as AssetList__factory;
       priceFeed = await (await ethers.getContractFactory('SimplePriceFeed') as SimplePriceFeed__factory).deploy(exp(1, 8), 8);
       FaucetTokenFactory = await ethers.getContractFactory('FaucetToken') as FaucetToken__factory;
 
@@ -438,9 +426,12 @@ describe('asset info', function () {
       const normalSupplyCap = oneToken * 1_000_000n;
 
       let assetConfigs: AssetConfigStruct[] = [];
+      let proxyAdmin: SignerWithAddress;
+      let configurator: SignerWithAddress;
 
       // Deploys one token per collateral, all with the same decimals and the normal supply cap
       before(async () => {
+        [, proxyAdmin, configurator] = await ethers.getSigners();
         for (let i = 0; i < MAX_ASSETS; i++) {
           const token = await FaucetTokenFactory.deploy(1n, `Test Token ${i}`, decimals, `TEST${i}`);
           assetConfigs.push({
@@ -455,15 +446,24 @@ describe('asset info', function () {
         }
       });
 
+      // Deploys an asset list implementation for the collaterals and a proxy on top of it, initialized with the given calldata
+      async function deployAssetListProxy(configs: AssetConfigStruct[], initData: string): Promise<AssetList> {
+        const implementation = await AssetListContractFactory.deploy(configs);
+        const proxy = await (await ethers.getContractFactory('TransparentUpgradeableProxy') as TransparentUpgradeableProxy__factory).deploy(
+          implementation.address,
+          proxyAdmin.address,
+          initData,
+        );
+        return AssetListContractFactory.attach(proxy.address);
+      }
+
       // Creates an asset list where every collateral has the given cap, then checks each collateral reads back as configured
       function runHappyCaseTests(supplyCap: bigint) {
         let assetList: AssetList;
 
         it('creates the asset list', async () => {
           const configs = assetConfigs.map(assetConfig => ({ ...assetConfig, supplyCap }));
-          const address = await assetListFactory.callStatic.createAssetList(configs);
-          await expect(assetListFactory.createAssetList(configs)).to.not.be.reverted;
-          assetList = await ethers.getContractAt('AssetList', address) as AssetList;
+          assetList = await deployAssetListProxy(configs, AssetListContractFactory.interface.encodeFunctionData('initialize', [configs, configurator.address]));
         });
 
         it(`holds ${MAX_ASSETS} collaterals`, async () => {
@@ -514,8 +514,8 @@ describe('asset info', function () {
         runHappyCaseTests(supplyCap);
       });
 
-      // A cap above uint128 max, set on one collateral at a time, must make the factory's ABI decoder revert with no reason.
-      // ethers won't encode it as uint128, so the call is sent raw with the cap encoded as uint256 (same 32-byte layout).
+      // A cap above uint128 max, set on one collateral at a time, must make the list's ABI decoder revert with no reason.
+      // ethers won't encode it as uint128, so initialize is sent raw with the cap encoded as uint256 (same 32-byte layout).
       Array.from({ length: MAX_ASSETS }).forEach((_, i) => {
         context(`uint128 max + 1 cap on collateral ${i}`, function () {
           before(() => {
@@ -526,14 +526,15 @@ describe('asset info', function () {
             assetConfigs[i].supplyCap = normalSupplyCap;
           });
 
-          it('reverts on create asset list', async () => {
-            const data = assetListFactory.interface.getSighash('createAssetList') + ethers.utils.defaultAbiCoder.encode(
-              ['tuple(address asset, address priceFeed, uint8 decimals, uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint256 supplyCap)[]'],
-              [assetConfigs]
+          it('reverts on initialize', async () => {
+            const assetList = await deployAssetListProxy(assetConfigs, '0x');
+            const data = AssetListContractFactory.interface.getSighash('initialize') + ethers.utils.defaultAbiCoder.encode(
+              ['tuple(uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint256 supplyCap)[]', 'address'],
+              [assetConfigs, configurator.address]
             ).slice(2);
             const [signer] = await ethers.getSigners();
 
-            await expect(signer.sendTransaction({ to: assetListFactory.address, data, gasLimit: 30_000_000 })).to.be.revertedWithoutReason();
+            await expect(signer.sendTransaction({ to: assetList.address, data, gasLimit: 30_000_000 })).to.be.revertedWithoutReason();
           });
         });
       });

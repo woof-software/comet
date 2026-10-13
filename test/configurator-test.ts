@@ -5,8 +5,8 @@ import {
   CometFactoryWithExtendedAssetList,
   CometFactoryWithExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList,
-  CometProxyAdmin,
-  Configurator__factory,
+  CometProxyAdminOptimism as CometProxyAdmin,
+  ConfiguratorOptimism__factory,
   ConfiguratorProxy__factory,
   MarketAdminPermissionChecker,
   MarketAdminPermissionChecker__factory,
@@ -14,7 +14,7 @@ import {
   SimplePriceFeed__factory,
   TransparentUpgradeableProxy
 } from '../build/types';
-import { ConfigurationStruct, Configurator } from '../build/types/Configurator';
+import { ConfigurationStruct, ConfiguratorOptimism as Configurator } from '../build/types/ConfiguratorOptimism';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
@@ -75,7 +75,7 @@ describe('configurator', function () {
       let proxyFactory: ConfiguratorProxy__factory;
 
       before(async () => {
-        const ConfiguratorFactory = (await ethers.getContractFactory('Configurator')) as Configurator__factory;
+        const ConfiguratorFactory = (await ethers.getContractFactory('ConfiguratorOptimism')) as ConfiguratorOptimism__factory;
         configuratorImplementation = await ConfiguratorFactory.deploy();
 
         proxyFactory = await ethers.getContractFactory('ConfiguratorProxy') as ConfiguratorProxy__factory;
@@ -1410,10 +1410,9 @@ describe('configurator', function () {
       let firstAsset: { asset: string, priceFeed: string };
 
       before(async () => {
-        const config = await configuratorProxy.getConfiguration(cometProxy.address);
         firstAsset = {
-          asset: config.assetConfigs[0].asset,
-          priceFeed: config.assetConfigs[0].priceFeed,
+          asset: (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].asset,
+          priceFeed: (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].priceFeed,
         };
       });
 
@@ -1440,7 +1439,7 @@ describe('configurator', function () {
             const snapshot = await takeSnapshot();
 
             await configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, firstAsset.asset, ZERO_ADDRESS);
-            expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].priceFeed).to.be.equal(ZERO_ADDRESS);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].priceFeed).to.be.equal(ZERO_ADDRESS);
             
             await snapshot.restore();
           });
@@ -1448,7 +1447,7 @@ describe('configurator', function () {
 
         describe('happy path', function() {
           it('sanity check: current and new price feed are different', async () => {
-            oldPriceFeed = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].priceFeed;
+            oldPriceFeed = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].priceFeed;
             expect(oldPriceFeed).to.not.equal(newPriceFeed.address);
           });
 
@@ -1464,8 +1463,7 @@ describe('configurator', function () {
           });
 
           it('new priceFeed is stored in configuration', async () => {
-            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
-            expect(configuration.assetConfigs[0].priceFeed).to.be.equal(newPriceFeed.address);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].priceFeed).to.be.equal(newPriceFeed.address);
           });
 
           it('deploy and upgrade comet with new configuration', async () => {
@@ -1480,7 +1478,7 @@ describe('configurator', function () {
       });
 
       describe('updateAssetBorrowCollateralFactor', function() {
-        const NEW_BORROW_CF = exp(0.9, 18);
+        const NEW_BORROW_CF = exp(0.78, 18);
         let oldBorrowCF: BigNumber;
         let setTx: ContractTransaction;
 
@@ -1496,7 +1494,7 @@ describe('configurator', function () {
             const snapshot = await takeSnapshot();
 
             await configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor(cometProxy.address, firstAsset.asset, 0);
-            expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].borrowCollateralFactor).to.be.equal(0);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].borrowCollateralFactor).to.be.equal(0);
 
             await snapshot.restore();
           });
@@ -1504,7 +1502,7 @@ describe('configurator', function () {
 
         describe('happy path', function() {
           it('sanity check: current and new borrow collateral factor are different', async () => {
-            oldBorrowCF = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].borrowCollateralFactor;
+            oldBorrowCF = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].borrowCollateralFactor;
             expect(oldBorrowCF).to.not.equal(NEW_BORROW_CF);
           });
 
@@ -1520,8 +1518,7 @@ describe('configurator', function () {
           });
 
           it('new borrowCollateralFactor is stored in configuration', async () => {
-            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
-            expect(configuration.assetConfigs[0].borrowCollateralFactor).to.be.equal(NEW_BORROW_CF);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].borrowCollateralFactor).to.be.equal(NEW_BORROW_CF);
           });
 
           it('deploy and upgrade comet with new configuration', async () => {
@@ -1536,7 +1533,7 @@ describe('configurator', function () {
       });
 
       describe('updateAssetLiquidateCollateralFactor', function() {
-        const NEW_LIQUIDATE_CF = exp(0.95, 18);
+        const NEW_LIQUIDATE_CF = exp(0.85, 18);
         let oldLiquidateCF: BigNumber;
         let setTx: ContractTransaction;
 
@@ -1548,11 +1545,12 @@ describe('configurator', function () {
         });
 
         describe('edge cases', function() {
-          it('can be set to zero', async () => {
+          it('can be set to zero once the borrow collateral factor is zero', async () => {
             const snapshot = await takeSnapshot();
 
+            await configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor(cometProxy.address, firstAsset.asset, 0);
             await configuratorProxy.connect(governor).updateAssetLiquidateCollateralFactor(cometProxy.address, firstAsset.asset, 0);
-            expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidateCollateralFactor).to.be.equal(0);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].liquidateCollateralFactor).to.be.equal(0);
 
             await snapshot.restore();
           });
@@ -1560,7 +1558,7 @@ describe('configurator', function () {
 
         describe('happy path', function() {
           it('sanity check: current and new liquidate collateral factor are different', async () => {
-            oldLiquidateCF = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidateCollateralFactor;
+            oldLiquidateCF = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].liquidateCollateralFactor;
             expect(oldLiquidateCF).to.not.equal(NEW_LIQUIDATE_CF);
           });
 
@@ -1576,8 +1574,7 @@ describe('configurator', function () {
           });
 
           it('new liquidateCollateralFactor is stored in configuration', async () => {
-            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
-            expect(configuration.assetConfigs[0].liquidateCollateralFactor).to.be.equal(NEW_LIQUIDATE_CF);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].liquidateCollateralFactor).to.be.equal(NEW_LIQUIDATE_CF);
           });
 
           it('deploy and upgrade comet with new configuration', async () => {
@@ -1604,17 +1601,19 @@ describe('configurator', function () {
         });
 
         describe('edge cases', function() {
-          it('can be set to zero', async () => {
+          it('can be set to zero once the collateral factors are zero', async () => {
             const snapshot = await takeSnapshot();
+            await configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor(cometProxy.address, firstAsset.asset, 0);
+            await configuratorProxy.connect(governor).updateAssetLiquidateCollateralFactor(cometProxy.address, firstAsset.asset, 0);
             await configuratorProxy.connect(governor).updateAssetLiquidationFactor(cometProxy.address, firstAsset.asset, 0);
-            expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidationFactor).to.be.equal(0);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].liquidationFactor).to.be.equal(0);
             await snapshot.restore();
           });
         });
 
         describe('happy path', function() {
           it('sanity check: current and new liquidation factor are different', async () => {
-            oldLiquidationFactor = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidationFactor;
+            oldLiquidationFactor = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].liquidationFactor;
             expect(oldLiquidationFactor).to.not.equal(NEW_LIQUIDATION_FACTOR);
           });
 
@@ -1630,8 +1629,7 @@ describe('configurator', function () {
           });
 
           it('new liquidationFactor is stored in configuration', async () => {
-            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
-            expect(configuration.assetConfigs[0].liquidationFactor).to.be.equal(NEW_LIQUIDATION_FACTOR);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].liquidationFactor).to.be.equal(NEW_LIQUIDATION_FACTOR);
           });
 
           it('deploy and upgrade comet with new configuration', async () => {
@@ -1660,13 +1658,13 @@ describe('configurator', function () {
         describe('edge cases', function() {
           it('can be set to zero', async () => {
             await configuratorProxy.connect(governor).updateAssetSupplyCap(cometProxy.address, firstAsset.asset, 0);
-            expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].supplyCap).to.be.equal(0);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].supplyCap).to.be.equal(0);
           });
         });
 
         describe('happy path', function() {
           it('sanity check: current and new supply cap are different', async () => {
-            oldSupplyCap = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].supplyCap;
+            oldSupplyCap = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].supplyCap;
             expect(oldSupplyCap).to.not.equal(NEW_SUPPLY_CAP);
           });
 
@@ -1682,8 +1680,7 @@ describe('configurator', function () {
           });
 
           it('new supplyCap is stored in configuration', async () => {
-            const configuration = await configuratorProxy.getConfiguration(cometProxy.address);
-            expect(configuration.assetConfigs[0].supplyCap).to.be.equal(NEW_SUPPLY_CAP);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].supplyCap).to.be.equal(NEW_SUPPLY_CAP);
           });
 
           it('deploy and upgrade comet with new configuration', async () => {
@@ -1740,12 +1737,15 @@ describe('configurator', function () {
           });
 
           it('new asset is stored in configuration', async () => {
-            const updated = await configuratorProxy.getConfiguration(cometProxy.address);
-            expect(updated.assetConfigs[updated.assetConfigs.length - 1].asset).to.equal(unsupportedTokenAddr);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[(await configuratorProxy.getAssetConfigs(cometProxy.address)).length - 1].asset).to.equal(unsupportedTokenAddr);
           });
 
           it('deploy and upgrade comet with new configuration', async () => {
             await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+          });
+
+          it('adds the asset to the upgraded asset list', async () => {
+            await configuratorProxy.connect(governor).addAssetToAssetList(cometProxy.address, unsupportedTokenAddr);
           });
 
           it('new asset is available in comet', async () => {
@@ -1762,8 +1762,7 @@ describe('configurator', function () {
 
         describe('revert cases', function() {
           it('reverts by non-governor', async () => {
-            const config = await configuratorProxy.getConfiguration(cometProxy.address);
-            const assetConfig0 = config.assetConfigs[0];
+            const assetConfig0 = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0];
             const newAssetConfig = {
               ...assetConfig0,
               borrowCollateralFactor: NEW_BORROW_CF,
@@ -1775,13 +1774,12 @@ describe('configurator', function () {
 
         describe('happy path', function() {
           it('sanity check: current and new borrow collateral factor are different', async () => {
-            oldAssetConfig = (await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0];
+            oldAssetConfig = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0];
             expect(oldAssetConfig.borrowCollateralFactor).to.not.equal(NEW_BORROW_CF);
           });
 
           it('updates asset successfully', async () => {
-            const config = await configuratorProxy.getConfiguration(cometProxy.address);
-            const assetConfig0 = config.assetConfigs[0];
+            const assetConfig0 = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0];
             const newAssetConfig = {
               ...assetConfig0,
               borrowCollateralFactor: NEW_BORROW_CF,
@@ -1795,25 +1793,23 @@ describe('configurator', function () {
           });
 
           it('new borrowCollateralFactor is stored in configuration', async () => {
-            const updated = await configuratorProxy.getConfiguration(cometProxy.address);
-            expect(updated.assetConfigs[0].borrowCollateralFactor).to.equal(NEW_BORROW_CF);
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].borrowCollateralFactor).to.equal(NEW_BORROW_CF);
           });
 
           it('deploy and upgrade comet with new configuration', async () => {
             await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
           });
 
-          it('borrowCollateralFactor is updated in comet', async () => {
+          it('borrowCollateralFactor in comet is unchanged, since updateAsset does not reach the asset list', async () => {
             const assetInfo = await comet.getAssetInfoByAddress(firstAsset.asset);
-            expect(assetInfo.borrowCollateralFactor).to.equal(NEW_BORROW_CF);
+            expect(assetInfo.borrowCollateralFactor).to.equal(oldAssetConfig.borrowCollateralFactor);
           });
         });
       });
 
       describe('getAssetIndex', function() {
         it('returns correct index for existing asset', async () => {
-          const config = await configuratorProxy.getConfiguration(cometProxy.address);
-          const firstAssetAddr = config.assetConfigs[0].asset;
+          const firstAssetAddr = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].asset;
           const index = await configuratorProxy.getAssetIndex(cometProxy.address, firstAssetAddr);
           expect(index).to.equal(0);
         });
@@ -1876,15 +1872,13 @@ describe('configurator', function () {
         it('can add duplicate asset (no on-chain guard)', async () => {
           const snapshot = await takeSnapshot();
 
-          const config = await configuratorProxy.getConfiguration(cometProxy.address);
-          const existingAsset = config.assetConfigs[0];
-          const numAssetsBefore = config.assetConfigs.length;
+          const existingAsset = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0];
+          const numAssetsBefore = (await configuratorProxy.getAssetConfigs(cometProxy.address)).length;
 
           await configuratorProxy.connect(governor).addAsset(cometProxy.address, existingAsset);
 
-          const updated = await configuratorProxy.getConfiguration(cometProxy.address);
-          expect(updated.assetConfigs.length).to.equal(numAssetsBefore + 1);
-          expect(updated.assetConfigs[updated.assetConfigs.length - 1].asset).to.equal(existingAsset.asset);
+          expect((await configuratorProxy.getAssetConfigs(cometProxy.address)).length).to.equal(numAssetsBefore + 1);
+          expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[(await configuratorProxy.getAssetConfigs(cometProxy.address)).length - 1].asset).to.equal(existingAsset.asset);
 
           await snapshot.restore();
         });
@@ -2011,45 +2005,41 @@ describe('configurator', function () {
 
         it('market admin can call updateAssetBorrowCollateralFactor', async () => {
           const innerSnapshot = await takeSnapshot();
-          const config = await configuratorProxy.getConfiguration(cometProxy.address);
-          const assetAddr = config.assetConfigs[0].asset;
+          const assetAddr = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].asset;
           const newVal = exp(0.8, 18);
           await expect(configuratorProxy.connect(marketAdmin).updateAssetBorrowCollateralFactor(cometProxy.address, assetAddr, newVal))
             .to.not.be.reverted;
-          expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].borrowCollateralFactor).to.equal(newVal);
+          expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].borrowCollateralFactor).to.equal(newVal);
           await innerSnapshot.restore();
         });
 
         it('market admin can call updateAssetLiquidateCollateralFactor', async () => {
           const innerSnapshot = await takeSnapshot();
-          const config = await configuratorProxy.getConfiguration(cometProxy.address);
-          const assetAddr = config.assetConfigs[0].asset;
+          const assetAddr = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].asset;
           const newVal = exp(0.92, 18);
           await expect(configuratorProxy.connect(marketAdmin).updateAssetLiquidateCollateralFactor(cometProxy.address, assetAddr, newVal))
             .to.not.be.reverted;
-          expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidateCollateralFactor).to.equal(newVal);
+          expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].liquidateCollateralFactor).to.equal(newVal);
           await innerSnapshot.restore();
         });
 
         it('market admin can call updateAssetLiquidationFactor', async () => {
           const innerSnapshot = await takeSnapshot();
-          const config = await configuratorProxy.getConfiguration(cometProxy.address);
-          const assetAddr = config.assetConfigs[0].asset;
+          const assetAddr = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].asset;
           const newVal = exp(0.93, 18);
           await expect(configuratorProxy.connect(marketAdmin).updateAssetLiquidationFactor(cometProxy.address, assetAddr, newVal))
             .to.not.be.reverted;
-          expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].liquidationFactor).to.equal(newVal);
+          expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].liquidationFactor).to.equal(newVal);
           await innerSnapshot.restore();
         });
 
         it('market admin can call updateAssetSupplyCap', async () => {
           const innerSnapshot = await takeSnapshot();
-          const config = await configuratorProxy.getConfiguration(cometProxy.address);
-          const assetAddr = config.assetConfigs[0].asset;
+          const assetAddr = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].asset;
           const newVal = exp(500, 18);
           await expect(configuratorProxy.connect(marketAdmin).updateAssetSupplyCap(cometProxy.address, assetAddr, newVal))
             .to.not.be.reverted;
-          expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetConfigs[0].supplyCap).to.equal(newVal);
+          expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].supplyCap).to.equal(newVal);
           await innerSnapshot.restore();
         });
 
@@ -2172,9 +2162,8 @@ describe('configurator', function () {
       });
 
       it('updateAssetSupplyCap emits event with old == new when setting same value', async () => {
-        const config = await configuratorProxy.getConfiguration(cometProxy.address);
-        const assetAddr = config.assetConfigs[0].asset;
-        const currentCap = config.assetConfigs[0].supplyCap;
+        const assetAddr = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].asset;
+        const currentCap = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].supplyCap;
 
         const tx = await configuratorProxy.connect(governor).updateAssetSupplyCap(cometProxy.address, assetAddr, currentCap);
         await expect(tx)

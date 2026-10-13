@@ -51,9 +51,9 @@ describe('absorb', function () {
         base: 'USDC',
         assets: {
           USDC: { decimals: baseTokenDecimals, initialPrice: 1 },
-          COMP: { decimals: 18, initialPrice: compPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF },
-          WETH: { decimals: 18, initialPrice: wethPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF },
-          WBTC: { decimals: 8, initialPrice: wbtcPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF },
+          COMP: { decimals: 18, initialPrice: compPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF, liquidationFactor: LIQUIDATION_FACTOR },
+          WETH: { decimals: 18, initialPrice: wethPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF, liquidationFactor: LIQUIDATION_FACTOR },
+          WBTC: { decimals: 8, initialPrice: wbtcPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF, liquidationFactor: LIQUIDATION_FACTOR },
         }
       }
     );
@@ -1098,6 +1098,8 @@ describe('absorb', function () {
             decimals: 18,
             initialPrice: collateralPrice,
             borrowCF: exp(0.8, 18),
+            liquidateCF: LIQUIDATION_CF,
+            liquidationFactor: LIQUIDATION_FACTOR,
           }])
         );
         const protocol = await makeProtocol({

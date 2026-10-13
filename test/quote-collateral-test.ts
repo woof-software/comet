@@ -34,8 +34,8 @@ describe('quoteCollateral', function () {
         {
           decimals: j < 8 ? 18 : j < 16 ? 8 : 6,
           initialPrice: j > 1 ? 200 : 200 + (10 * j),
-          borrowCF: exp(0.75, 18),
-          liquidateCF: exp(0.8, 18),
+          borrowCF: exp(0.5, 18),
+          liquidateCF: exp(0.55, 18),
           liquidationFactor: exp(0.6, 18),
         },
       ])
@@ -185,6 +185,9 @@ describe('quoteCollateral', function () {
       // liquidationFactor = 0.0001 → discount is nearly the full storeFrontPriceFactor
       // discountFactor = 0.8 * (1 - 0.0001) ≈ 0.79992
       // assetPriceDiscounted = 200e8 * (1 - 0.79992) ≈ 40.016e8
+      // The collateral factors must stay below the liquidation factor, so they go to zero first, as for a delisted asset
+      await configurator.updateAssetBorrowCollateralFactor(comet.address, collateralToken.address, 0);
+      await configurator.updateAssetLiquidateCollateralFactor(comet.address, collateralToken.address, 0);
       await configurator.updateAssetLiquidationFactor(comet.address, collateralToken.address, exp(0.0001, 18));
       await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
 
