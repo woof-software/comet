@@ -4,7 +4,7 @@ import { writeEnacted } from '../../plugins/deployment_manager/Enacted';
 import { HardhatRuntimeEnvironment, HardhatConfig } from 'hardhat/types';
 import { DeploymentManager, VerifyArgs } from '../../plugins/deployment_manager';
 import { impersonateAddress } from '../../plugins/scenario/utils';
-import hreForBase, { migrationStarted} from '../../plugins/scenario/utils/hreForBase';
+import hreForBase, { migrationStarted, migrationEnded } from '../../plugins/scenario/utils/hreForBase';
 
 // TODO: Don't depend on scenario's hreForBase
 async function getForkEnv(env: HardhatRuntimeEnvironment, deployment: string): Promise<HardhatRuntimeEnvironment> {
@@ -284,6 +284,8 @@ task('migrate', 'Runs migration')
       if (enact && !noEnacted) {
         await writeEnacted(migration, dm, true);
       }
+
+      migrationEnded();
     }
   );
 
@@ -407,4 +409,5 @@ task('deploy_and_migrate', 'Runs deploy and migration')
         await writeEnacted(migration, dm, true);
       }
 
+      migrationEnded();
     });
