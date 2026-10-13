@@ -114,7 +114,7 @@ Reserves are the protocol-owned portion of the market's base asset: the Comet's 
 | cUSDEv3 reserves at proposal creation (\`getReserves()\`) | ${formatAmount(reservesAtCreation)} USDe |
 | Withdrawn and sent to the Mainnet Timelock | ${formatAmount(WITHDRAW_AMOUNT)} USDe |
 
-The proposal does not withdraw all reserves. The market still has open borrow positions, so the remaining ${formatAmount(reservesAtCreation.sub(WITHDRAW_AMOUNT))} USDe is left as a buffer that keeps the market solvent until those positions are repaid or liquidated. The rest can be withdrawn by a later proposal once they are closed. The withdrawal amount is fixed in the proposal calldata.
+The proposal does not withdraw all reserves. The market still has open borrow positions, so the remaining USDe is left as a buffer that keeps the market solvent until those positions are repaid or liquidated. The rest can be withdrawn by a later proposal once they are closed.
 
 ## Proposal actions
 
