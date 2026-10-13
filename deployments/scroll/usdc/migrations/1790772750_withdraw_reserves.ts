@@ -9,7 +9,9 @@ const WITHDRAW_AMOUNT = exp(8_500, 6);
 // Dedicated USDC gateway pair, not the generic L2StandardERC20Gateway; the L2 side isn't in any deployment's roots.
 const L2_USDC_GATEWAY = '0x33B60d5Dd260d453cAC3782b0bDC01ce84672142';
 
+let cometBalanceBefore: BigNumber;
 let mainnetTimelockUsdcBefore: BigNumber;
+let scrollTimelockUsdcBefore: BigNumber;
 
 const formatUsdc = (amount: BigNumber | bigint) =>
   Number(utils.formatUnits(amount, 6)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -36,7 +38,10 @@ export default migration('1790772750_withdraw_reserves', {
       USDC,
     } = await deploymentManager.getContracts();
 
+    cometBalanceBefore = await USDC.balanceOf(comet.address);
+    scrollTimelockUsdcBefore = await USDC.balanceOf(timelock.address);
     mainnetTimelockUsdcBefore = await mainnetUSDC.balanceOf(mainnetTimelock.address);
+
     const reservesAtCreation = await comet.getReserves();
 
     // 1. Withdraw 8,500 USDC from the Scroll cUSDCv3 to the Scroll Timelock
@@ -136,14 +141,17 @@ Once the Scroll batch containing the withdrawal is finalized on Mainnet, the wit
     return false;
   },
 
-  async verify(deploymentManager: DeploymentManager, govDeploymentManager: DeploymentManager, preMigrationBlockNumber: number) {
+  async verify(deploymentManager: DeploymentManager, govDeploymentManager: DeploymentManager) {
     const { comet, timelock, USDC } = await deploymentManager.getContracts();
     const { timelock: mainnetTimelock, USDC: mainnetUSDC } = await govDeploymentManager.getContracts();
 
     // Comet's USDC balance dropped by exactly the withdrawn amount
-    const cometBalanceBefore = await USDC.balanceOf(comet.address, { blockTag: preMigrationBlockNumber });
     const cometBalanceAfter = await USDC.balanceOf(comet.address);
     expect(cometBalanceBefore.sub(cometBalanceAfter)).to.equal(WITHDRAW_AMOUNT);
+
+    // The Scroll Timelock's USDC balance should remain the same as before the withdrawal (no USDC left)
+    const scrollTimelockUsdcAfter = await USDC.balanceOf(timelock.address);
+    expect(scrollTimelockUsdcBefore).to.equal(scrollTimelockUsdcAfter);
 
     // The Scroll Timelock bridged everything out; nothing was left behind and no allowance remains
     expect(await USDC.balanceOf(timelock.address)).to.equal(0);
