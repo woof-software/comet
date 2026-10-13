@@ -8,9 +8,12 @@ const WITHDRAW_AMOUNT = exp(205_000, 18);
 
 const MAINNET_EID = 30101;
 
-const MNT_FEE_BUFFER_MULTIPLIER = 4;
+// Fixed LayerZero fee: the Mantle Timelock's full MNT balance; the endpoint refunds the excess over the real fee
+const MNT_FEE = utils.parseEther('50');
 
+let cometBalanceBefore: BigNumber;
 let mainnetTimelockUsdeBefore: BigNumber;
+let mantleTimelockUsdeBefore: BigNumber;
 
 const formatAmount = (amount: BigNumber | bigint, decimals = 18) =>
   Number(utils.formatUnits(amount, decimals)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -37,6 +40,8 @@ export default migration('1790959547_withdraw_reserves', {
       USDe,
     } = await deploymentManager.getContracts();
 
+    cometBalanceBefore = await USDe.balanceOf(comet.address);
+    mantleTimelockUsdeBefore = await USDe.balanceOf(timelock.address);
     mainnetTimelockUsdeBefore = await mainnetUSDe.balanceOf(mainnetTimelock.address);
     const reservesAtCreation = await comet.getReserves();
 
@@ -58,12 +63,10 @@ export default migration('1790959547_withdraw_reserves', {
       '0x',
       '0x',
     ];
-    const quotedFee = await USDe.quoteSend(sendParam, false);
-    const feeWithBuffer = quotedFee.nativeFee.mul(MNT_FEE_BUFFER_MULTIPLIER);
 
     const sendCalldata = utils.defaultAbiCoder.encode(
       ['(uint32,bytes32,uint256,uint256,bytes,bytes,bytes)', '(uint256,uint256)', 'address'],
-      [sendParam, [feeWithBuffer, 0], timelock.address]
+      [sendParam, [MNT_FEE, 0], timelock.address]
     );
 
     const l2ProposalData = utils.defaultAbiCoder.encode(
@@ -73,7 +76,7 @@ export default migration('1790959547_withdraw_reserves', {
           comet.address,
           USDe.address,
         ],
-        [0, feeWithBuffer],
+        [0, MNT_FEE],
         [
           'withdrawReserves(address,uint256)',
           'send((uint32,bytes32,uint256,uint256,bytes,bytes,bytes),(uint256,uint256),address)',
@@ -118,7 +121,7 @@ The proposal does not withdraw all reserves. The market still has open borrow po
 The proposal action sends a message through the Mantle L1 Cross Domain Messenger to the Mantle Bridge Receiver, which queues the following calls on the Mantle Timelock:
 
 1. Call \`withdrawReserves(address,uint256)\` on the Mantle cUSDEv3 to withdraw 205,000 USDe to the Mantle Timelock.
-2. Call \`send\` on USDe to send 205,000 USDe to the Mainnet Timelock. USDe on Mantle is a LayerZero OFT: it is burned on Mantle and released on Mainnet by the USDe OFT adapter, so no approval is needed. The LayerZero messaging fee is paid in native MNT from the Mantle Timelock's own balance: ${formatAmount(feeWithBuffer)} MNT is sent with the call, the fee quoted at proposal creation with a ${MNT_FEE_BUFFER_MULTIPLIER}x buffer, and the LayerZero endpoint refunds any excess over the actual fee to the Mantle Timelock.
+2. Call \`send\` on USDe to send 205,000 USDe to the Mainnet Timelock. USDe on Mantle is a LayerZero OFT: it is burned on Mantle and released on Mainnet by the USDe OFT adapter, so no approval is needed. The LayerZero messaging fee is paid in native MNT from the Mantle Timelock's own balance: a fixed ${formatAmount(MNT_FEE)} MNT is sent with the call, well above the current fee, so the call still succeeds if the fee rises before execution. The LayerZero endpoint refunds any excess over the actual fee to the Mantle Timelock.
 
 Once LayerZero verifies the message, its executor delivers it on Mainnet and the USDe is released to the Mainnet Timelock.
 `;
@@ -139,14 +142,17 @@ Once LayerZero verifies the message, its executor delivers it on Mainnet and the
     return false;
   },
 
-  async verify(deploymentManager: DeploymentManager, govDeploymentManager: DeploymentManager, preMigrationBlockNumber: number) {
+  async verify(deploymentManager: DeploymentManager, govDeploymentManager: DeploymentManager) {
     const { comet, timelock, USDe } = await deploymentManager.getContracts();
     const { timelock: mainnetTimelock, USDe: mainnetUSDe } = await govDeploymentManager.getContracts();
 
     // Comet's USDe balance dropped by exactly the withdrawn amount
-    const cometBalanceBefore = await USDe.balanceOf(comet.address, { blockTag: preMigrationBlockNumber });
     const cometBalanceAfter = await USDe.balanceOf(comet.address);
     expect(cometBalanceBefore.sub(cometBalanceAfter)).to.equal(WITHDRAW_AMOUNT);
+
+    // The Mantle Timelock's USDe balance should remain the same as before the withdrawal (no USDe left)
+    const mantleTimelockUsdeAfter = await USDe.balanceOf(timelock.address);
+    expect(mantleTimelockUsdeBefore).to.equal(mantleTimelockUsdeAfter);
 
     // The Mantle Timelock sent everything out; nothing was left behind
     expect(await USDe.balanceOf(timelock.address)).to.equal(0);
