@@ -2,7 +2,6 @@
 pragma solidity ^0.8.15;
 
 import { CometMainInterface } from "@comet-contracts/CometMainInterface.sol";
-import { CometProxyAdmin, Deployable } from "@comet-contracts/CometProxyAdmin.sol";
 import { CometWithExtendedAssetList } from "@comet-contracts/CometWithExtendedAssetList.sol";
 import { FaucetToken } from "@comet-contracts/test/FaucetToken.sol";
 
@@ -96,14 +95,13 @@ contract SupplyCapTest is ProtocolFixture {
         assertEq(_totalSupplyAsset(address(collateral)), 0, "collateral held against a zero cap");
     }
 
-    /// Puts the caps in the configurator and upgrades the market onto them
+    /// Sets the caps through the configurator, which writes them to the market's asset list
     function _setSupplyCaps(uint128[] memory supplyCaps) internal {
         vm.startPrank(timelock);
 
         for (uint256 i; i < supplyCaps.length; ++i) {
             configurator.updateAssetSupplyCap(address(cometProxy), address(collaterals[i]), supplyCaps[i]);
         }
-        proxyAdmin.deployAndUpgradeTo(Deployable(address(configuratorProxy)), cometProxy);
 
         vm.stopPrank();
     }

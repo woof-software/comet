@@ -3,11 +3,12 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 import "../../contracts/CometWithExtendedAssetList.sol";
-import "../../contracts/configurator/CometConfigurationIntermediate.sol";
+import "../../contracts/CometConfiguration.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
+import { AssetListDeployer } from "./helpers/AssetListDeployer.sol";
 
-contract PolygonLiquidatorTest is Test {
+contract PolygonLiquidatorTest is Test, AssetListDeployer {
     CometWithExtendedAssetList public comet;
     OnChainLiquidator public liquidator;
 
@@ -53,8 +54,8 @@ contract PolygonLiquidatorTest is Test {
             WETH9
         );
 
-        CometConfigurationIntermediate.AssetConfig[] memory assetConfigs = new CometConfigurationIntermediate.AssetConfig[](3);
-        assetConfigs[0] = CometConfigurationIntermediate.AssetConfig({
+        CometConfiguration.AssetConfig[] memory assetConfigs = new CometConfiguration.AssetConfig[](3);
+        assetConfigs[0] = CometConfiguration.AssetConfig({
             asset: WETH9,
             priceFeed: WETH9_PRICE_FEED,
             decimals: 18,
@@ -64,17 +65,17 @@ contract PolygonLiquidatorTest is Test {
             supplyCap: 0
         });
 
-        assetConfigs[1] = CometConfigurationIntermediate.AssetConfig({
+        assetConfigs[1] = CometConfiguration.AssetConfig({
             asset: WBTC,
             priceFeed: WBTC_PRICE_FEED,
             decimals: 8,
             borrowCollateralFactor: 7e17,
-            liquidateCollateralFactor: 95e16,
+            liquidateCollateralFactor: 9e17,
             liquidationFactor: 95e16,
             supplyCap: 0
         });
 
-        assetConfigs[2] = CometConfigurationIntermediate.AssetConfig({
+        assetConfigs[2] = CometConfiguration.AssetConfig({
             asset: WMATIC,
             priceFeed: WMATIC_PRICE_FEED,
             decimals: 18,
@@ -84,7 +85,7 @@ contract PolygonLiquidatorTest is Test {
             supplyCap: 0
         });
 
-        comet = new CometWithExtendedAssetList(CometConfigurationIntermediate.Configuration(
+        comet = new CometWithExtendedAssetList(CometConfiguration.Configuration(
             {
                 governor: TIMELOCK,
                 pauseGuardian: GNOSIS_SAFE,
@@ -106,7 +107,7 @@ contract PolygonLiquidatorTest is Test {
                 baseMinForRewards: 1000000e6,
                 baseBorrowMin: 100e6,
                 targetReserves: 5000000e6,
-                assetConfigs: assetConfigs
+                assetList: address(deployAssetList(assetConfigs, makeAddr("proxyAdmin"), makeAddr("configurator")))
             }
         ));
 

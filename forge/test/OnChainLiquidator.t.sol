@@ -3,11 +3,12 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 import "../../contracts/CometWithExtendedAssetList.sol";
-import "../../contracts/configurator/CometConfigurationIntermediate.sol";
+import "../../contracts/CometConfiguration.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
+import { AssetListDeployer } from "./helpers/AssetListDeployer.sol";
 
-contract OnChainLiquidatorTest is Test {
+contract OnChainLiquidatorTest is Test, AssetListDeployer {
     CometWithExtendedAssetList public comet;
     OnChainLiquidator public liquidator;
 
@@ -49,8 +50,8 @@ contract OnChainLiquidatorTest is Test {
             WETH9
         );
 
-        CometConfigurationIntermediate.AssetConfig[] memory assetConfigs = new CometConfigurationIntermediate.AssetConfig[](2);
-        assetConfigs[0] = CometConfigurationIntermediate.AssetConfig({
+        CometConfiguration.AssetConfig[] memory assetConfigs = new CometConfiguration.AssetConfig[](2);
+        assetConfigs[0] = CometConfiguration.AssetConfig({
             asset: CB_ETH,
             priceFeed: address(cbEthPriceFeed),
             decimals: 18,
@@ -59,7 +60,7 @@ contract OnChainLiquidatorTest is Test {
             liquidationFactor: 95e16,
             supplyCap: 0
         });
-        assetConfigs[1] = CometConfigurationIntermediate.AssetConfig({
+        assetConfigs[1] = CometConfiguration.AssetConfig({
             asset: WST_ETH,
             priceFeed: address(wstEthPriceFeed),
             decimals: 18,
@@ -69,7 +70,7 @@ contract OnChainLiquidatorTest is Test {
             supplyCap: 0
         });
 
-        comet = new CometWithExtendedAssetList(CometConfigurationIntermediate.Configuration(
+        comet = new CometWithExtendedAssetList(CometConfiguration.Configuration(
             {
                 governor: TIMELOCK,
                 pauseGuardian: GNOSIS_SAFE,
@@ -91,7 +92,7 @@ contract OnChainLiquidatorTest is Test {
                 baseMinForRewards: 1000000e6,
                 baseBorrowMin: 100e6,
                 targetReserves: 5000000e6,
-                assetConfigs: assetConfigs
+                assetList: address(deployAssetList(assetConfigs, makeAddr("proxyAdmin"), makeAddr("configurator")))
             }
         ));
 

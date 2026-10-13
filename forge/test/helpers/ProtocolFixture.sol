@@ -3,6 +3,7 @@ pragma solidity ^0.8.15;
 
 import "forge-std/Test.sol";
 
+import { AssetList } from "@comet-contracts/AssetList.sol";
 import { AssetListFactory } from "@comet-contracts/AssetListFactory.sol";
 import { CometConfiguration } from "@comet-contracts/CometConfiguration.sol";
 import { CometExtAssetList } from "@comet-contracts/CometExtAssetList.sol";
@@ -14,13 +15,12 @@ import { Configurator } from "@comet-contracts/Configurator.sol";
 import { ConfiguratorProxy } from "@comet-contracts/ConfiguratorProxy.sol";
 import { TransparentUpgradeableProxy } from "@comet-contracts/vendor/proxy/transparent/TransparentUpgradeableProxy.sol";
 
-import { MarketAdminPermissionChecker } from "@comet-contracts/marketupdates/MarketAdminPermissionChecker.sol";
-import { MarketAdminPermissionCheckerInterface } from "@comet-contracts/marketupdates/MarketAdminPermissionCheckerInterface.sol";
-
 import { FaucetToken } from "@comet-contracts/test/FaucetToken.sol";
 import { SimplePriceFeed } from "@comet-contracts/test/SimplePriceFeed.sol";
 
-abstract contract ProtocolFixture is Test {
+import { AssetListDeployer } from "./AssetListDeployer.sol";
+
+abstract contract ProtocolFixture is Test, AssetListDeployer {
     /// One row of the market's asset table. Mirrors an entry of default-assets.ts.
     /// `price` is in whole dollars; the collateral factors are 1e18-scaled.
     struct AssetSpec {
@@ -52,7 +52,6 @@ abstract contract ProtocolFixture is Test {
     /// Governor of Comet, the Configurator and the ProxyAdmin.
     address internal timelock = makeAddr("timelock");
     address internal pauseGuardian = makeAddr("pauseGuardian");
-    address internal marketAdmin = makeAddr("marketAdmin");
     /// Liquidation module roles. Kept apart from the DAO, which already holds the pauser role.
     address internal multisig = makeAddr("multisig");
     address internal executor = makeAddr("executor");
@@ -76,7 +75,8 @@ abstract contract ProtocolFixture is Test {
     ConfiguratorProxy internal configuratorProxy;
     CometExtAssetList internal extensionDelegate;
     AssetListFactory internal assetListFactory;
-    MarketAdminPermissionChecker internal permissionChecker;
+    /// The market's asset list, reached through its proxy.
+    AssetList internal assetList;
 
     /*//////////////////////////////////////////////////////////////
                                  MARKET
@@ -99,10 +99,9 @@ abstract contract ProtocolFixture is Test {
         deployAssets();
         deployExtensionDelegate();
 
-        deployMarketContracts(buildCometConfiguration());
+        deployMarketContracts();
 
-        setupConfigurator(buildCometConfiguration());
-        setupMarketAdminPermissionChecker();
+        setupConfigurator();
         initializeMarket();
     }
 
@@ -137,15 +136,9 @@ abstract contract ProtocolFixture is Test {
         );
     }
 
-    function buildCometConfiguration()
-        internal
-        view
-        virtual
-        returns (CometConfiguration.Configuration memory)
-    {
-        CometConfiguration.AssetConfig[] memory assetConfigs =
-            new CometConfiguration.AssetConfig[](collaterals.length);
-        
+    function buildAssetConfigs() internal view virtual returns (CometConfiguration.AssetConfig[] memory assetConfigs) {
+        assetConfigs = new CometConfiguration.AssetConfig[](collaterals.length);
+
         for (uint256 i; i < collaterals.length; ++i) {
             AssetSpec memory spec = assetSpecs[i + 1]; // index 0 is the base token
             assetConfigs[i] = CometConfiguration.AssetConfig({
@@ -158,7 +151,14 @@ abstract contract ProtocolFixture is Test {
                 supplyCap: uint128(4_000_000 * 10 ** spec.decimals / spec.price) // supply cap is $4 million for each collateral
             });
         }
+    }
 
+    function buildCometConfiguration()
+        internal
+        view
+        virtual
+        returns (CometConfiguration.Configuration memory)
+    {
         uint64 baseUnit = uint64(10 ** assetSpecs[0].decimals);
 
         return CometConfiguration.Configuration({
@@ -183,7 +183,7 @@ abstract contract ProtocolFixture is Test {
             // In dollars, converted at the price the base token is configured with.
             baseBorrowMin: uint104(BASE_BORROW_MIN_USD * uint256(baseUnit) / assetSpecs[0].price),
             targetReserves: 0,
-            assetConfigs: assetConfigs
+            assetList: address(assetList)
         });
     }
 
@@ -195,13 +195,8 @@ abstract contract ProtocolFixture is Test {
         }
     }
 
-    function deployMarketContracts(CometConfiguration.Configuration memory config) internal {
+    function deployMarketContracts() internal {
         proxyAdmin = new CometProxyAdmin(timelock);
-
-        CometWithExtendedAssetList cometImpl = new CometWithExtendedAssetList(config);
-        cometProxy = new TransparentUpgradeableProxy(address(cometImpl), address(proxyAdmin), "");
-
-        cometFactory = new CometFactoryWithExtendedAssetList();
 
         Configurator configuratorImpl = new Configurator();
         configuratorProxy = new ConfiguratorProxy(
@@ -211,27 +206,28 @@ abstract contract ProtocolFixture is Test {
         );
         configurator = Configurator(address(configuratorProxy));
 
+        // The asset list comes first, because the Comet constructor already reads it
+        assetList = deployAssetList(buildAssetConfigs(), address(proxyAdmin), address(configuratorProxy));
+
+        CometWithExtendedAssetList cometImpl = new CometWithExtendedAssetList(buildCometConfiguration());
+        cometProxy = new TransparentUpgradeableProxy(address(cometImpl), address(proxyAdmin), "");
+
+        cometFactory = new CometFactoryWithExtendedAssetList();
+
         vm.label(address(cometProxy), "comet");
         vm.label(address(configuratorProxy), "configurator");
     }
 
-    function setupConfigurator(CometConfiguration.Configuration memory config) internal {
+    function setupConfigurator() internal {
+        CometConfiguration.AssetConfig[] memory assetConfigs = buildAssetConfigs();
+
         vm.startPrank(timelock);
-        configurator.setConfiguration(address(cometProxy), config);
+        configurator.setConfiguration(address(cometProxy), buildCometConfiguration());
         configurator.setFactory(address(cometProxy), address(cometFactory));
-        vm.stopPrank();
-    }
-
-    /**
-     * @notice Deploys the permission checker and registers it with both the Configurator and the
-     *         proxy admin, which is what lets the market admin update the market alongside the DAO.
-     */
-    function setupMarketAdminPermissionChecker() internal {
-        permissionChecker = new MarketAdminPermissionChecker(timelock, marketAdmin, address(0));
-
-        vm.startPrank(timelock);
-        configurator.setMarketAdminPermissionChecker(MarketAdminPermissionCheckerInterface(address(permissionChecker)));
-        proxyAdmin.setMarketAdminPermissionChecker(MarketAdminPermissionCheckerInterface(address(permissionChecker)));
+        configurator.setAssetListFactory(address(cometProxy), address(assetListFactory));
+        for (uint256 i; i < assetConfigs.length; ++i) {
+            configurator.addAsset(address(cometProxy), assetConfigs[i]);
+        }
         vm.stopPrank();
     }
 

@@ -9,9 +9,8 @@ import { ProtocolFixture } from "../helpers/ProtocolFixture.sol";
 
 /**
  * @title Collateral factor descaling invariants
- * @notice The asset list stores each collateral factor with four decimal digits, so everything below
- *         one precision step of 1e14 is dropped when the factor is stored. These fuzz tests state what
- *         governance expects from a valid factor setup and show where dropping those digits breaks it.
+ * @notice The asset list stores each collateral factor in full, with all 18 decimals. These fuzz tests
+ *         state what governance expects from a valid factor setup and hold the stored factors to it.
  *         Each test gives every collateral of the market the same factors, which covers every asset index.
  */
 contract CollateralFactorsTest is ProtocolFixture {
@@ -115,13 +114,13 @@ contract CollateralFactorsTest is ProtocolFixture {
                                 HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /// Builds an asset list from the market's own asset configs, with the given factors on every collateral
+    /// Builds an asset list from the market's own asset configs, initialized with the given factors on every collateral
     function _deployWithFactors(uint64 collateralBCF, uint64 collateralLCF, uint64 collateralLF)
         internal
         returns (AssetList)
     {
         CometConfiguration.AssetConfig[] memory assetConfigs =
-            configurator.getConfiguration(address(cometProxy)).assetConfigs;
+            configurator.getAssetConfigs(address(cometProxy));
 
         for (uint256 i; i < assetConfigs.length; ++i) {
             assetConfigs[i].borrowCollateralFactor = collateralBCF;
@@ -129,6 +128,6 @@ contract CollateralFactorsTest is ProtocolFixture {
             assetConfigs[i].liquidationFactor = collateralLF;
         }
 
-        return new AssetList(assetConfigs);
+        return deployAssetList(assetConfigs, address(proxyAdmin), address(configuratorProxy));
     }
 }
