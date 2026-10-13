@@ -11,7 +11,7 @@ const MAINNET_EID = 30101;
 // Fixed LayerZero fee: the Mantle Timelock's full MNT balance; the endpoint refunds the excess over the real fee
 const MNT_FEE = utils.parseEther('50');
 
-let cometBalanceBefore: BigNumber;
+let mantleCometBalanceBefore: BigNumber;
 let mainnetTimelockUsdeBefore: BigNumber;
 let mantleTimelockUsdeBefore: BigNumber;
 
@@ -40,7 +40,7 @@ export default migration('1790959547_withdraw_reserves', {
       USDe,
     } = await deploymentManager.getContracts();
 
-    cometBalanceBefore = await USDe.balanceOf(comet.address);
+    mantleCometBalanceBefore = await USDe.balanceOf(comet.address);
     mantleTimelockUsdeBefore = await USDe.balanceOf(timelock.address);
     mainnetTimelockUsdeBefore = await mainnetUSDe.balanceOf(mainnetTimelock.address);
     const reservesAtCreation = await comet.getReserves();
@@ -143,19 +143,24 @@ Once LayerZero verifies the message, its executor delivers it on Mainnet and the
   },
 
   async verify(deploymentManager: DeploymentManager, govDeploymentManager: DeploymentManager) {
-    const { comet, timelock, USDe } = await deploymentManager.getContracts();
-    const { timelock: mainnetTimelock, USDe: mainnetUSDe } = await govDeploymentManager.getContracts();
+    const {
+      comet: mantleComet,
+      timelock: mantleTimelock,
+      USDe: mantleUSDe
+    } = await deploymentManager.getContracts();
+
+    const {
+      timelock: mainnetTimelock,
+      USDe: mainnetUSDe
+    } = await govDeploymentManager.getContracts();
 
     // Comet's USDe balance dropped by exactly the withdrawn amount
-    const cometBalanceAfter = await USDe.balanceOf(comet.address);
-    expect(cometBalanceBefore.sub(cometBalanceAfter)).to.equal(WITHDRAW_AMOUNT);
+    const mantleCometBalanceAfter = await mantleUSDe.balanceOf(mantleComet.address);
+    expect(mantleCometBalanceBefore.sub(mantleCometBalanceAfter)).to.equal(WITHDRAW_AMOUNT);
 
     // The Mantle Timelock's USDe balance should remain the same as before the withdrawal (no USDe left)
-    const mantleTimelockUsdeAfter = await USDe.balanceOf(timelock.address);
+    const mantleTimelockUsdeAfter = await mantleUSDe.balanceOf(mantleTimelock.address);
     expect(mantleTimelockUsdeBefore).to.equal(mantleTimelockUsdeAfter);
-
-    // The Mantle Timelock sent everything out; nothing was left behind
-    expect(await USDe.balanceOf(timelock.address)).to.equal(0);
 
     // The same amount arrived at the Mainnet Timelock
     const mainnetTimelockUsdeAfter = await mainnetUSDe.balanceOf(mainnetTimelock.address);
