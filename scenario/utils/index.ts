@@ -1395,10 +1395,11 @@ export async function executeOpenProposal(
 ): Promise<boolean> {
   const governor = await dm.getContractOrThrow('governor');
   const blockNow = await dm.hre.ethers.provider.getBlockNumber();
-  // Late quorum can extend voting past the endBlock recorded at creation; prefer the live deadline
-  const deadline = typeof governor.proposalDeadline === 'function'
-    ? (await governor.proposalDeadline(id)).toNumber()
-    : endBlock.toNumber();
+  // Late quorum can extend voting past the endBlock recorded at creation; prefer the live deadline.
+  // GovernorBravo (e.g. the development clone) has no proposalDeadline, so fall back to endBlock.
+  const deadline = await governor.proposalDeadline(id)
+    .then((d) => d.toNumber())
+    .catch(() => endBlock.toNumber());
   const blocksUntilEnd =
     deadline - Math.max(startBlock.toNumber(), blockNow) + 1;
 
