@@ -17,7 +17,7 @@ import {
 
 // AssetList checks the order of the collateral factors in initialize and in every factor setter:
 // BCF below LCF unless BCF is zero, LCF below LF unless LCF is zero, and LF at most 1e18
-describe.only('asset list factors validation', function () {
+describe('asset list factors validation', function () {
   const MAX_COLLATERAL_FACTOR = exp(1, 18);
   const TARGET = 0; // index of the fixture asset the revert cases call the setters for
   // Decimals of the collaterals each new asset list in the initialize cases holds: the fixture decimals, repeated

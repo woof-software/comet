@@ -10,7 +10,6 @@ import {
   CometProxyAdmin,
   Configurator,
   FaucetToken,
-  MarketAdminPermissionChecker,
 } from '../../build/types';
 import { ImmutableAssetConfigStruct, StorageAssetConfigStruct } from '../../build/types/AssetList';
 import { AssetConfigStruct } from '../../build/types/Configurator';
@@ -34,7 +33,6 @@ export const SUPPLY_CAP = 1_000_000n;
 export type AssetListFixture = {
   governor: SignerWithAddress; // owns the proxy admin, governs the Configurator and the Comet
   pauseGuardian: SignerWithAddress;
-  marketAdmin: SignerWithAddress; // holds its role only in the market admin variant of the fixture
   users: SignerWithAddress[]; // hold no role
   AssetListContractFactory: AssetList__factory;
   assetListImplementation: AssetList; // built from `configs`, not initialized
@@ -47,7 +45,6 @@ export type AssetListFixture = {
   cometFactory: CometFactoryWithExtendedAssetList;
   comet: CometInterface; // proxy
   baseToken: FaucetToken;
-  permissionChecker?: MarketAdminPermissionChecker; // only in the market admin variant
 };
 
 async function deploy<T extends Contract>(name: string, ...args: unknown[]): Promise<T> {
@@ -118,11 +115,8 @@ export async function deployAssetListProxy(
 
 // A complete market: a Comet reading one asset per ASSET_DECIMALS entry from an AssetList proxy. The Configurator
 // holds the same configuration, so deploying a new Comet through the proxy admin changes nothing.
-// With `withMarketAdmin`, the Configurator and the proxy admin are the Optimism variants, which let the market
-// admin of a MarketAdminPermissionChecker in.
-export async function deployAssetListFixture(withMarketAdmin = false): Promise<AssetListFixture> {
-  const [governor, pauseGuardian, marketAdmin, ...users] = await ethers.getSigners();
-  const variant = withMarketAdmin ? 'Optimism' : '';
+export async function deployAssetListFixture(): Promise<AssetListFixture> {
+  const [governor, pauseGuardian, ...users] = await ethers.getSigners();
   const deployProxy = async (name: string, implementation: Contract, initializer: string, args: unknown[] = []) =>
     (await deploy(
       name,
@@ -131,8 +125,8 @@ export async function deployAssetListFixture(withMarketAdmin = false): Promise<A
       implementation.interface.encodeFunctionData(initializer, args)
     )).address;
 
-  const proxyAdmin = await deploy<CometProxyAdmin>(`CometProxyAdmin${variant}`, governor.address);
-  const configuratorImplementation = await deploy<Configurator>(`Configurator${variant}`);
+  const proxyAdmin = await deploy<CometProxyAdmin>('CometProxyAdmin', governor.address);
+  const configuratorImplementation = await deploy<Configurator>('Configurator');
   const configurator = configuratorImplementation.attach(
     await deployProxy('ConfiguratorProxy', configuratorImplementation, 'initialize', [governor.address])
   );
@@ -196,18 +190,9 @@ export async function deployAssetListFixture(withMarketAdmin = false): Promise<A
     await configurator.addAsset(comet.address, { ...configs[i], ...storageConfigs[i] });
   }
 
-  let permissionChecker: MarketAdminPermissionChecker;
-  if (withMarketAdmin) {
-    permissionChecker = await deploy('MarketAdminPermissionChecker', governor.address, marketAdmin.address, ethers.constants.AddressZero);
-    for (const contract of [configurator, proxyAdmin] as Contract[]) {
-      await contract.setMarketAdminPermissionChecker(permissionChecker.address);
-    }
-  }
-
   return {
     governor,
     pauseGuardian,
-    marketAdmin,
     users,
     AssetListContractFactory,
     assetListImplementation,
@@ -220,6 +205,5 @@ export async function deployAssetListFixture(withMarketAdmin = false): Promise<A
     cometFactory,
     comet,
     baseToken,
-    permissionChecker,
   };
 }
