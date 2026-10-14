@@ -157,7 +157,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
 
         for (uint8 i; i < numAssets; ++i) {
             (uint256 word_a, ) = _loadPackedAsset(i);
-            _addAsset(address(uint160(word_a)), storageConfigs[i]);
+            _addAsset(address(uint160(word_a)), storageConfigs[i], true);
         }
     }
 
@@ -166,15 +166,16 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Register an asset that is in the immutables but has no storage config yet, and set its storage config
-     * @dev Used after the list is upgraded to an implementation built with more assets: initialize ran only once,
-     *      so the new assets are not registered until this is called for each of them
-     * @param asset The asset, must be in the immutables of this implementation and not registered yet
+     * @notice Set the storage config of an asset that is in the immutables, registering the asset first if it is new
+     * @dev Used after the list is upgraded to a new implementation: initialize ran only once, so a new asset is not
+     *      registered until this is called for it, and an asset already registered gets its whole storage config
+     *      replaced. The factors are checked together, so their order of change does not matter here
+     * @param asset The asset, must be in the immutables of this implementation
      * @param config The factors and supply cap of the asset
      */
-    function addAsset(address asset, StorageAssetConfig calldata config) external onlyConfigurator {
+    function addOrUpdateAsset(address asset, StorageAssetConfig calldata config) external onlyConfigurator {
         if (!_isInImmutables(asset)) revert BadAsset();
-        _addAsset(asset, config);
+        _addAsset(asset, config, false);
     }
 
     /**
@@ -340,16 +341,18 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
 
     /**
      * @dev Validates the factors of an asset, registers it so the setters can change it later,
-     *      and stores its factors and supply cap unscaled. Reverts if the asset is already registered
+     *      and stores its factors and supply cap unscaled
+     * @param revertIfRegistered Whether to revert for an asset already registered; otherwise its config is replaced
      */
-    function _addAsset(address asset, StorageAssetConfig calldata config) internal {
+    function _addAsset(address asset, StorageAssetConfig calldata config, bool revertIfRegistered) internal {
         _validateCollateralFactors(
             config.borrowCollateralFactor,
             config.liquidateCollateralFactor,
             config.liquidationFactor
         );
 
-        if (!assetConfigStorage.assets.add(asset)) revert AssetAlreadyAdded();
+        // Registers a new asset; an asset already registered stays as it is
+        if (!assetConfigStorage.assets.add(asset) && revertIfRegistered) revert AssetAlreadyAdded();
         assetConfigStorage.configs[asset] = config;
     }
 

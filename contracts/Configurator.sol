@@ -226,28 +226,6 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Adds a new asset config at the end of the asset configs of a Comet proxy
-     * @param cometProxy The Comet proxy to add the asset config to
-     * @param assetConfig The config of the new asset
-     */
-    function addAsset(address cometProxy, AssetConfig calldata assetConfig) external onlyGovernor {
-        assetConfigs[cometProxy].push(assetConfig);
-        emit AddAsset(cometProxy, assetConfig);
-    }
-
-    /**
-     * @notice Adds an asset to the asset list of a Comet proxy, with the factors and supply cap of its stored config
-     * @param cometProxy The Comet proxy whose asset list to add the asset to
-     * @param asset The asset to add
-     */
-    function addAssetToAssetList(address cometProxy, address asset) external onlyGovernor {
-        address assetList = configuratorParams[cometProxy].assetList;
-        AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
-        IAssetList(assetList).addAsset(asset, _storagePart(assetConfig));
-        emit AddAssetToAssetList(cometProxy, assetList, asset);
-    }
-
-    /**
      * @notice Replaces the config of one asset of a Comet proxy, found by its address
      * @dev The immutable part takes effect on the asset list only after deployAssetList and the asset list proxy upgrade
      * @param cometProxy The Comet proxy whose asset config to update
@@ -258,6 +236,29 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         AssetConfig memory oldAssetConfig = assetConfigs[cometProxy][assetIndex];
         assetConfigs[cometProxy][assetIndex] = newAssetConfig;
         emit UpdateAsset(cometProxy, oldAssetConfig, newAssetConfig);
+    }
+
+    /**
+     * @notice Adds a new asset config at the end of the asset configs of a Comet proxy
+     * @param cometProxy The Comet proxy to add the asset config to
+     * @param assetConfig The config of the new asset
+     */
+    function addAsset(address cometProxy, AssetConfig calldata assetConfig) external onlyGovernor {
+        assetConfigs[cometProxy].push(assetConfig);
+        emit AddAsset(cometProxy, assetConfig);
+    }
+
+    /**
+     * @notice Adds an asset to the asset list of a Comet proxy, or updates it if already there, with the factors and
+     *         supply cap of its stored config
+     * @param cometProxy The Comet proxy whose asset list to add the asset to
+     * @param asset The asset to add or update
+     */
+    function addOrUpdateAssetToAssetList(address cometProxy, address asset) external onlyGovernor {
+        address assetList = configuratorParams[cometProxy].assetList;
+        AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
+        IAssetList(assetList).addOrUpdateAsset(asset, _storagePart(assetConfig));
+        emit AddedOrUpdatedAssetToAssetList(cometProxy, assetList, asset);
     }
 
     /**

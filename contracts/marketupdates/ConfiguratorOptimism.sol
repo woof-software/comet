@@ -257,15 +257,16 @@ contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvent
     }
 
     /**
-     * @notice Adds an asset to the asset list of a Comet proxy, with the factors and supply cap of its stored config
+     * @notice Adds an asset to the asset list of a Comet proxy, or updates it if already there, with the factors and
+     *         supply cap of its stored config
      * @param cometProxy The Comet proxy whose asset list to add the asset to
-     * @param asset The asset to add
+     * @param asset The asset to add or update
      */
-    function addAssetToAssetList(address cometProxy, address asset) external onlyGovernor {
+    function addOrUpdateAssetToAssetList(address cometProxy, address asset) external onlyGovernor {
         address assetList = configuratorParams[cometProxy].assetList;
         AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
-        IAssetList(assetList).addAsset(asset, _storagePart(assetConfig));
-        emit AddAssetToAssetList(cometProxy, assetList, asset);
+        IAssetList(assetList).addOrUpdateAsset(asset, _storagePart(assetConfig));
+        emit AddedOrUpdatedAssetToAssetList(cometProxy, assetList, asset);
     }
 
     /**
