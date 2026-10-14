@@ -213,13 +213,11 @@ describe('asset list setters', function () {
     describe('the asset is in the stored configs but not in the immutables of the list (list not upgraded yet)', function () {
       let snapshot: SnapshotRestorer;
       let newAssetConfig: AssetConfigStruct;
-      let storedBefore: AssetConfigStructOutput[];
 
       before(async () => {
         snapshot = await takeSnapshot();
         newAssetConfig = await deployAssetConfig();
         await configurator.addAsset(comet.address, newAssetConfig);
-        storedBefore = await storedConfigs();
       });
 
       after(async () => await snapshot.restore());
@@ -235,14 +233,12 @@ describe('asset list setters', function () {
     describe('the asset is in the immutables of the list but not added to it yet', function () {
       let snapshot: SnapshotRestorer;
       let newAssetConfig: AssetConfigStruct;
-      let storedBefore: AssetConfigStructOutput[];
 
       before(async () => {
         snapshot = await takeSnapshot();
         newAssetConfig = await deployAssetConfig();
         await configurator.addAsset(comet.address, newAssetConfig);
         await proxyAdmin.deployAndUpgradeAssetListTo(configurator.address, comet.address);
-        storedBefore = await storedConfigs();
       });
 
       after(async () => await snapshot.restore());
