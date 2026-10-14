@@ -60,19 +60,17 @@ describe('quoteCollateral', function () {
     priceFeeds = protocol.priceFeeds;
 
     // Upgrade proxy to extended asset list implementation
-    const assetListFactory = protocol.assetListFactory;
     configurator = configurator.attach(configuratorProxyAddress);
-    const CometExtAssetList = await (
-      await ethers.getContractFactory('CometExtAssetList')
+    const CometExt = await (
+      await ethers.getContractFactory('CometExt')
     ).deploy(
       {
         name32: ethers.utils.formatBytes32String('Test Comet'),
         symbol32: ethers.utils.formatBytes32String('Test Comet'),
       },
-      assetListFactory.address
     );
-    await CometExtAssetList.deployed();
-    await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+    await CometExt.deployed();
+    await configurator.setExtensionDelegate(cometProxyAddress, CometExt.address);
     const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
     await CometFactoryWithExtendedAssetList.deployed();
     await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
@@ -674,7 +672,6 @@ describe('quoteCollateral', function () {
     let configuratorProxy: ConfiguratorProxy;
     let proxyAdmin: CometProxyAdmin;
     let cometProxyAddress: string;
-    let assetListFactoryAddress: string;
 
     // Constants
     const QUOTE_AMOUNT = exp(200, 6);
@@ -708,21 +705,19 @@ describe('quoteCollateral', function () {
       configuratorProxy = configuratorAndProtocol.configuratorProxy;
       proxyAdmin = configuratorAndProtocol.proxyAdmin;
       tokens = configuratorAndProtocol.tokens;
-      assetListFactoryAddress = configuratorAndProtocol.assetListFactory.address;
       quoteCollateralToken = tokens[`ASSET1`];
       configurator = configurator.attach(configuratorProxy.address);
 
-      const CometExtAssetList = await (
-        await ethers.getContractFactory('CometExtAssetList')
+      const CometExt = await (
+        await ethers.getContractFactory('CometExt')
       ).deploy(
         {
           name32: ethers.utils.formatBytes32String('Compound Comet'),
           symbol32: ethers.utils.formatBytes32String('BASE'),
         },
-        assetListFactoryAddress
       );
-      await CometExtAssetList.deployed();
-      await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+      await CometExt.deployed();
+      await configurator.setExtensionDelegate(cometProxyAddress, CometExt.address);
       const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
       await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);

@@ -1,5 +1,5 @@
 import { ethers, expect, exp, makeProtocol, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS } from './helpers';
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometExtAssetList, CometHarnessInterfaceExtendedAssetList } from '../build/types';
+import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList, CometExt } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { TotalsCollateralStruct } from 'build/types/CometHarnessInterfaceExtendedAssetList';
@@ -2381,7 +2381,7 @@ async function getPrincipalChange(
   user: string,
   amount: BigNumber
 ): Promise<BigNumber> {
-  const cometExtension: CometExtAssetList = (await ethers.getContractAt('CometExtAssetList', comet.address)) as CometExtAssetList;
+  const cometExtension: CometExt = (await ethers.getContractAt('CometExt', comet.address)) as CometExt;
   const curTime = (await ethers.provider.getBlock('latest')).timestamp;
 
   const timeElapsed = curTime - lastUpdated;

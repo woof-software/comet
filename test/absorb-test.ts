@@ -1,5 +1,5 @@
 import { expect, exp, makeProtocol, mulPrice, mulFactor, divPrice, presentValue, principalValue, ZERO_ADDRESS, presentValueSupply, ethers, SnapshotRestorer, makeConfigurator, MAX_ASSETS, takeSnapshot } from './helpers';
-import { CometExtAssetList, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
+import { CometExt, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 
@@ -1252,12 +1252,11 @@ describe('absorb', function () {
     let configuratorProxy: ConfiguratorProxy;
     let proxyAdmin: CometProxyAdmin;
     let cometProxyAddress: string;
-    let assetListFactoryAddress: string;
     let comet: CometWithExtendedAssetList;
     let comet24Assets: CometWithExtendedAssetList;
     let configuratorProxy24Assets: Configurator;
     let proxyAdmin24Assets: CometProxyAdmin;
-    let cometExt: CometExtAssetList;
+    let cometExt: CometExt;
 
     // Tokens
     let baseToken: FaucetToken | NonStandardFaucetFeeToken;
@@ -1313,7 +1312,6 @@ describe('absorb', function () {
       configurator = configuratorAndProtocol.configurator;
       configuratorProxy = configuratorAndProtocol.configuratorProxy;
       proxyAdmin = configuratorAndProtocol.proxyAdmin;
-      assetListFactoryAddress = configuratorAndProtocol.assetListFactory.address;
       comet = comet.attach(cometProxyAddress);
 
       // Tokens
@@ -1353,17 +1351,16 @@ describe('absorb', function () {
       totalsSupplyAssetBeforeAbsorption = (await comet.totalsCollateral(compToken.address)).totalSupplyAsset;
 
       configurator = configurator.attach(configuratorProxy.address);
-      const CometExtAssetList = await (
-        await ethers.getContractFactory('CometExtAssetList')
+      const CometExt = await (
+        await ethers.getContractFactory('CometExt')
       ).deploy(
         {
           name32: ethers.utils.formatBytes32String('Compound Comet'),
           symbol32: ethers.utils.formatBytes32String('BASE'),
-        },
-        assetListFactoryAddress
+        }
       );
-      await CometExtAssetList.deployed();
-      await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+      await CometExt.deployed();
+      await configurator.setExtensionDelegate(cometProxyAddress, CometExt.address);
       // 2) switch factory to CometFactoryWithExtendedAssetList
       const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
@@ -1391,23 +1388,22 @@ describe('absorb', function () {
       configuratorProxy24Assets = configuratorAndProtocol24Assets.configurator.attach(configuratorAndProtocol24Assets.configuratorProxy.address);
       proxyAdmin24Assets = configuratorAndProtocol24Assets.proxyAdmin;
 
-      const CometExtAssetList24Assets = await (
-        await ethers.getContractFactory('CometExtAssetList')
+      const CometExt24Assets = await (
+        await ethers.getContractFactory('CometExt')
       ).deploy(
         {
           name32: ethers.utils.formatBytes32String('Compound Comet'),
           symbol32: ethers.utils.formatBytes32String('BASE'),
-        },
-        configuratorAndProtocol24Assets.assetListFactory.address
+        }
       );
-      await CometExtAssetList24Assets.deployed();
-      await configuratorProxy24Assets.setExtensionDelegate(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address, CometExtAssetList24Assets.address);
+      await CometExt24Assets.deployed();
+      await configuratorProxy24Assets.setExtensionDelegate(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address, CometExt24Assets.address);
       await configuratorProxy24Assets.setFactory(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address, CometFactoryWithExtendedAssetList.address);
       await configuratorAndProtocol24Assets.proxyAdmin.deployAndUpgradeTo(configuratorAndProtocol24Assets.configuratorProxy.address, configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address);
 
       baseToken24Assets = configuratorAndProtocol24Assets.tokens['USDC'];
 
-      cometExt = (await ethers.getContractAt('CometExtAssetList', comet.address)) as CometExtAssetList;
+      cometExt = (await ethers.getContractAt('CometExt', comet.address)) as CometExt;
       const totalBasics = await cometExt.totalsBasic();
       oldPrincipal = (await comet.userBasic(alice.address)).principal.toBigInt();
       totalSupplyBase = totalBasics.totalSupplyBase;

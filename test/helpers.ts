@@ -6,8 +6,6 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import {
   BaseBulker,
   BaseBulker__factory,
-  CometExtAssetList,
-  CometExtAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as Comet,
   CometRewards,
   CometRewards__factory,
@@ -40,7 +38,7 @@ import {
   AssetListFactory__factory,
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
-  MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
+  MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory, CometExt, CometExt__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
@@ -84,7 +82,7 @@ export type ProtocolOpts = {
   symbol?: string;
   governor?: SignerWithAddress;
   pauseGuardian?: SignerWithAddress;
-  extensionDelegateAssetList?: CometExtAssetList;
+  extensionDelegateAssetList?: CometExt;
   base?: string;
   reward?: string;
   supplyKink?: Numeric;
@@ -112,7 +110,7 @@ export type Protocol = {
   opts: ProtocolOpts;
   governor: SignerWithAddress;
   pauseGuardian: SignerWithAddress;
-  extensionDelegateAssetList: CometExtAssetList;
+  extensionDelegateAssetList: CometExt;
   users: SignerWithAddress[];
   base: string;
   reward: string;
@@ -397,8 +395,8 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
 
   let extensionDelegateAssetList = opts.extensionDelegateAssetList;
   if (extensionDelegateAssetList === undefined) {
-    const CometExtFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
-    extensionDelegateAssetList = await CometExtFactory.deploy({ name32, symbol32 }, assetListFactory.address);
+    const CometExtFactory = (await ethers.getContractFactory('CometExt')) as CometExt__factory;
+    extensionDelegateAssetList = await CometExtFactory.deploy({ name32, symbol32 });
     await extensionDelegateAssetList.deployed();
   }
 
@@ -470,7 +468,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     opts,
     governor,
     pauseGuardian,
-    extensionDelegateAssetList: extensionDelegateAssetList as CometExtAssetList,
+    extensionDelegateAssetList: extensionDelegateAssetList as CometExt,
     users,
     base,
     reward,
@@ -488,7 +486,7 @@ export async function getConfigurationForConfigurator(
   cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList,
   governor: SignerWithAddress,
   pauseGuardian: SignerWithAddress,
-  extensionDelegateAssetList: CometExtAssetList,
+  extensionDelegateAssetList: CometExt,
   assetList: AssetList,
   tokens: {
     [p: string]: FaucetToken | NonStandardFaucetFeeToken;

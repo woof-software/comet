@@ -156,9 +156,11 @@ export async function deployAssetListFixture(): Promise<AssetListFixture> {
     baseToken: baseToken.address,
     baseTokenPriceFeed: (await deploy('SimplePriceFeed', 10n ** 8n, PRICE_FEED_DECIMALS)).address,
     extensionDelegate: (await deploy(
-      'CometExtAssetList',
-      { name32: ethers.utils.formatBytes32String('Comet'), symbol32: ethers.utils.formatBytes32String('BASE') },
-      assetListFactory.address
+      'CometExt',
+      { 
+        name32: ethers.utils.formatBytes32String('Comet'),
+        symbol32: ethers.utils.formatBytes32String('BASE') 
+      }
     )).address,
     supplyKink: 8n * 10n ** 17n,
     supplyPerYearInterestRateSlopeLow: 5n * 10n ** 16n,

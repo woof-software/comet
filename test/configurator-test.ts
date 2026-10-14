@@ -1,7 +1,7 @@
 import { ethers, exp, expect, makeConfigurator, SnapshotRestorer, takeSnapshot, ZERO_ADDRESS } from './helpers';
 import {
-  CometExtAssetList,
-  CometExtAssetList__factory,
+  CometExt,
+  CometExt__factory,
   CometFactoryWithExtendedAssetList,
   CometFactoryWithExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList,
@@ -32,7 +32,6 @@ describe('configurator', function () {
   let alice: SignerWithAddress;
   let pauseGuardian: SignerWithAddress;
   // Variables
-  let assetListFactoryAddr: string;
   let unsupportedTokenAddr: string;
 
   before(async () => {
@@ -46,7 +45,6 @@ describe('configurator', function () {
     governor = protocol.governor;
     alice = protocol.users[1];
     pauseGuardian = protocol.pauseGuardian;
-    assetListFactoryAddr = protocol.assetListFactory.address;
     unsupportedTokenAddr = protocol.unsupportedToken.address;
   });
 
@@ -610,7 +608,7 @@ describe('configurator', function () {
 
     describe('setExtensionDelegate', function() {
       let setTx: ContractTransaction;
-      let newExtensionDelegate: CometExtAssetList;
+      let newExtensionDelegate: CometExt;
       let oldExtensionDelegate: string;
 
       before(async () => {
@@ -618,8 +616,8 @@ describe('configurator', function () {
 
         const name32 = ethers.utils.formatBytes32String('Compound Comet');
         const symbol32 = ethers.utils.formatBytes32String('cBASE');
-        const ExtFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
-        newExtensionDelegate = await ExtFactory.deploy({ name32, symbol32 }, assetListFactoryAddr);
+        const ExtFactory = (await ethers.getContractFactory('CometExt')) as CometExt__factory;
+        newExtensionDelegate = await ExtFactory.deploy({ name32, symbol32 });
       });
 
       describe('revert cases', function() {
