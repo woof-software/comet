@@ -100,6 +100,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
     /// @notice The number of assets this contract actually supports
     uint8 public override immutable numAssets;
 
+    /// @notice The maximum utilization on which borrows and withdrawals are allowed
+    /// @dev It keeps healthy state of the market, with no over-utilization leading to illiquidity,
+    /// and keeps protocol reserves from exhaustion
+    uint64 public override immutable maxSupportedUtilization;
+
     /// @notice Factor to divide by when accruing rewards in order to preserve 6 decimals (i.e. baseScale / 1e6)
     uint internal immutable accrualDescaleFactor;
     
@@ -107,11 +112,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
     address immutable public assetList;
 
     uint8 internal constant MAX_ASSETS_FOR_ASSET_LIST = 24;
-
-    /// @dev The protocol only supports 200% utilization on which borrows are allowed
-    /// It keeps healthy state of the market, with no over-utilization leading to illiquidity,
-    /// and keeps protocol reserves from exhaustion
-    uint256 public constant MAX_SUPPORTED_UTILIZATION = 2e18;
 
     /**
      * @notice Construct a new protocol instance
@@ -124,6 +124,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         if (config.storeFrontPriceFactor > FACTOR_SCALE) revert BadDiscount();
         if (config.assetConfigs.length > MAX_ASSETS_FOR_ASSET_LIST) revert TooManyAssets();
         if (config.baseMinForRewards == 0) revert BadMinimum();
+        if (config.maxSupportedUtilization < FACTOR_SCALE) revert BadMaxSupportedUtilization();
         if (IPriceFeed(config.baseTokenPriceFeed).decimals() != PRICE_FEED_DECIMALS) revert BadDecimals();
 
         // Copy configuration
@@ -147,6 +148,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
             baseBorrowMin = config.baseBorrowMin;
             targetReserves = config.targetReserves;
+            maxSupportedUtilization = config.maxSupportedUtilization;
         }
 
         // Set interest rate model configs
@@ -1096,10 +1098,10 @@ contract CometWithExtendedAssetList is CometMainInterface {
             /// evaluated against total supply *excluding* the destination's newly credited amount — i.e. the supply
             /// that would remain if the destination withdrew right away. This prevents a pattern where a borrower
             /// transfers base to a fresh account that then withdraws, draining pool liquidity and pushing
-            /// utilization beyond MAX_SUPPORTED_UTILIZATION.
+            /// utilization beyond maxSupportedUtilization.
             uint256 totalSupplyWithoutDst = presentValueSupply(baseSupplyIndex, totalSupplyBase - supplyAmount);
             uint256 presentTotalBorrow = presentValueBorrow(baseBorrowIndex, totalBorrowBase);
-            if (totalSupplyWithoutDst > 0 && presentTotalBorrow * FACTOR_SCALE / totalSupplyWithoutDst > MAX_SUPPORTED_UTILIZATION) revert ExceedsSupportedUtilization();
+            if (totalSupplyWithoutDst > 0 && presentTotalBorrow * FACTOR_SCALE / totalSupplyWithoutDst > maxSupportedUtilization) revert ExceedsSupportedUtilization();
         } else {
             if (isLendersTransferPaused()) revert LendersTransferPaused();
         }
@@ -1212,7 +1214,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
             if (!isBorrowCollateralized(src)) revert NotCollateralized();
             /// @dev safeguard against the over-utilization leading to illiquidity and reserves exhaustion
             /// At this point totals are updated and it is a borrow case, so we can check resulting utilization
-            if (getUtilization() > MAX_SUPPORTED_UTILIZATION) revert ExceedsSupportedUtilization();
+            if (getUtilization() > maxSupportedUtilization) revert ExceedsSupportedUtilization();
         } else {
             if (isLendersWithdrawPaused()) revert LendersWithdrawPaused();
         }
