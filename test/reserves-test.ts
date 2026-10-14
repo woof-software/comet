@@ -1516,7 +1516,7 @@ describe('reserves', function () {
 
       // The upgraded asset list knows the new assets, but their factors and caps are set only once they are added to it
       for (let i = numExisting; i < numCollaterals; i++) {
-        await configurator.addAssetToAssetList(comet.address, collateralTokens[i].address);
+        await configurator.addOrUpdateAssetToAssetList(comet.address, collateralTokens[i].address);
       }
 
       // Seed + supply base

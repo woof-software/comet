@@ -88,13 +88,13 @@ export async function deployImmutableAssetConfigs(decimalsList: number[]): Promi
   return configs;
 }
 
-// ConfigHash.hashConfig(TYPEHASH, abi.encode(configs)), computed off-chain.
-export function hashConfig(configs: ImmutableAssetConfigStruct[]): string {
+// ConfigHash.hashConfig(typeHash, abi.encode(configs)), computed off-chain.
+export function hashConfig(configs: ImmutableAssetConfigStruct[], typeHash = TYPEHASH): string {
   const encoded = ethers.utils.defaultAbiCoder.encode(
     ['tuple(address asset, uint8 decimals, address priceFeed)[]'],
     [configs]
   );
-  return ethers.utils.keccak256(ethers.utils.hexConcat([TYPEHASH, encoded]));
+  return ethers.utils.keccak256(ethers.utils.hexConcat([typeHash, encoded]));
 }
 
 // Deploys a proxy of an AssetList implementation, initialized through the proxy constructor data.
