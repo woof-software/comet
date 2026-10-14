@@ -103,8 +103,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
     /// @notice The address of the asset list (an upgradeable proxy, so it stays the same across Comet upgrades)
     IAssetList immutable public assetList;
 
-    uint8 internal constant MAX_ASSETS_FOR_ASSET_LIST = 24;
-
     /// @dev The protocol only supports 200% utilization on which borrows are allowed
     /// It keeps healthy state of the market, with no over-utilization leading to illiquidity,
     /// and keeps protocol reserves from exhaustion
@@ -120,7 +118,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         if (decimals_ > MAX_BASE_DECIMALS) revert BadDecimals();
         if (config.storeFrontPriceFactor > FACTOR_SCALE) revert BadDiscount();
         if (config.assetList == address(0)) revert BadAssetList();
-        if (IAssetList(config.assetList).numAssets() > MAX_ASSETS_FOR_ASSET_LIST) revert TooManyAssets();
+        if (IAssetList(config.assetList).numAssets() > MAX_ASSETS) revert TooManyAssets();
         if (config.baseMinForRewards == 0) revert BadMinimum();
         if (IPriceFeed(config.baseTokenPriceFeed).decimals() != PRICE_FEED_DECIMALS) revert BadDecimals();
 

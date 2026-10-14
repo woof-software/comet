@@ -13,7 +13,7 @@ abstract contract CometCore is CometConfiguration, CometStorage, CometMath, IAss
     /// @dev The max number of assets this contract is hardcoded to support
     ///  Do not change this variable without updating all the fields throughout the contract,
     //    including the size of UserBasic.assetsIn and corresponding integer conversions.
-    uint8 internal constant MAX_ASSETS = 15;
+    uint8 internal constant MAX_ASSETS = 24;
 
     /// @dev The max number of decimals base token can have
     ///  Note this cannot just be increased arbitrarily.
