@@ -80,6 +80,7 @@ export async function makeProtocol() {
     baseMinForRewards: exp(1, 6),
     baseBorrowMin: exp(1, 6),
     targetReserves: exp(5_000_000, 6),
+    maxSupportedUtilization: exp(2, 18),
     assetConfigs: [
       {
         asset: COMP,

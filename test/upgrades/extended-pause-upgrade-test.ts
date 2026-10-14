@@ -1,12 +1,13 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import { setupFork, SnapshotRestorer, takeSnapshot, impersonateAccount, setBalance } from '../helpers';
+import { exp, setupFork, SnapshotRestorer, takeSnapshot, impersonateAccount, setBalance } from '../helpers';
 import {
   CometExtAssetList__factory,
   CometFactoryWithExtendedAssetList__factory,
   CometProxyAdmin,
   CometWithExtendedAssetList,
   Configurator,
+  Configurator__factory,
   CometExtAssetList,
 } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
@@ -133,6 +134,28 @@ describe('extended pause upgrade test', function () {
       'CometFactoryWithExtendedAssetList'
     )) as CometFactoryWithExtendedAssetList__factory;
     const newFactory = await CometFactoryWithExtendedAssetList.deploy();
+
+    // Upgrade configurator to support the new Configuration struct
+    const ConfiguratorFactory = (await ethers.getContractFactory(
+      'Configurator'
+    )) as Configurator__factory;
+    const newConfiguratorImpl = await ConfiguratorFactory.deploy();
+    const configuratorAdminAddress = await ethers.provider.getStorageAt(
+      CONFIGURATOR_ADDRESS,
+      ADMIN_SLOT
+    );
+    const configuratorProxyAdmin = (await ethers.getContractAt(
+      'CometProxyAdmin',
+      ethers.utils.getAddress('0x' + configuratorAdminAddress.slice(26))
+    )) as CometProxyAdmin;
+    await configuratorProxyAdmin
+      .connect(governor)
+      .upgrade(CONFIGURATOR_ADDRESS, newConfiguratorImpl.address);
+
+    // Set max supported utilization, which is not initialized in the existing configuration
+    await configurator
+      .connect(governor)
+      .setMaxSupportedUtilization(COMET_ADDRESS, exp(2, 18));
 
     // Step 1: Set the new extension delegate in configurator
     await configurator

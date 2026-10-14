@@ -98,6 +98,7 @@ export type ProtocolOpts = {
   baseMinForRewards?: Numeric;
   baseBorrowMin?: Numeric;
   targetReserves?: Numeric;
+  maxSupportedUtilization?: Numeric;
   baseTokenBalance?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
 };
@@ -315,7 +316,7 @@ export const ZERO = factor(0);
 export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const DEFAULT_PRICEFEED_DECIMALS = 8;
 export const MAX_ASSETS = 24;
-export const MAX_SUPPORTED_UTILIZATION = exp(2, 18);
+export const DEFAULT_MAX_SUPPORTED_UTILIZATION = exp(2, 18);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;
@@ -364,6 +365,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const baseMinForRewards = dfn(opts.baseMinForRewards, exp(1, assets[base].decimals));
   const baseBorrowMin = dfn(opts.baseBorrowMin, exp(1, assets[base].decimals));
   const targetReserves = dfn(opts.targetReserves, 0);
+  const maxSupportedUtilization = dfn(opts.maxSupportedUtilization, DEFAULT_MAX_SUPPORTED_UTILIZATION);
 
   const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
   const tokens = {};
@@ -412,6 +414,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    maxSupportedUtilization,
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
       if (symbol != base && _i <= 12) {
         acc.push({
@@ -501,6 +504,7 @@ export async function getConfigurationForConfigurator(
   const baseMinForRewards = await cometWithExtendedAssetList.baseMinForRewards();
   const baseBorrowMin = await cometWithExtendedAssetList.baseBorrowMin();
   const targetReserves = await cometWithExtendedAssetList.targetReserves();
+  const maxSupportedUtilization = await cometWithExtendedAssetList.maxSupportedUtilization();
 
   // Deploy CometFactory
   const CometFactoryWithExtendedAssetListFactory = (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')) as CometFactoryWithExtendedAssetList__factory;
@@ -532,6 +536,7 @@ export async function getConfigurationForConfigurator(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    maxSupportedUtilization,
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
       if (symbol != base) {
         acc.push({
