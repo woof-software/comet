@@ -2,7 +2,7 @@ import { DeploymentManager } from '../../plugins/deployment_manager';
 import relayPolygonMessage, { simulateL2ToL1TokenBridging as simulatePolygonL2ToL1TokenBridging } from './relayPolygonMessage';
 import { relayArbitrumMessage, relayArbitrumCCTPMint, simulateL2ToL1TokenBridging } from './relayArbitrumMessage';
 import relayBaseMessage,{ simulateL2ToL1TokenBridging as simulateBaseL2ToL1TokenBridging} from './relayBaseMessage';
-import relayLineaMessage from './relayLineaMessage';
+import relayLineaMessage, { simulateL2ToL1MessageClaims as simulateLineaL2ToL1MessageClaims } from './relayLineaMessage';
 import relayOptimismMessage, { simulateL2ToL1TokenBridging as simulateOptimismL2ToL1TokenBridging } from './relayOptimismMessage';
 import relayMantleMessage, { simulateL2ToL1TokenBridging as simulateMantleL2ToL1TokenBridging } from './relayMantleMessage';
 import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMessage';
@@ -127,13 +127,23 @@ export default async function relayMessage(
       );
       return proposal;
     }
-    case 'linea':
-      return await relayLineaMessage(
+    case 'linea': {
+      // Only blocks mined by this relay, so earlier proposals' messages aren't claimed again.
+      const l2StartingBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() + 1;
+      proposal = await relayLineaMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         startingBlockNumber,
         tenderlyLogs
       );
+      await simulateLineaL2ToL1MessageClaims(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
+        tenderlyLogs
+      );
+      return proposal;
+    }
     case 'scroll': {
       // Only blocks mined by this relay, so earlier proposals' withdrawals aren't finalized again.
       const l2StartingBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() + 1;
