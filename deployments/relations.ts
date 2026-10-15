@@ -1,3 +1,4 @@
+import { Contract, constants, utils } from 'ethers';
 import { RelationConfigMap } from '../plugins/deployment_manager/RelationConfig';
 
 const relationConfigMap: RelationConfigMap = {
@@ -20,13 +21,26 @@ const relationConfigMap: RelationConfigMap = {
       'cometExt': {
         field: async (comet) => comet.extensionDelegate(),
       },
+      // The factory is an immutable of the ext delegate, which the Comet ABI does not include
       'assetListFactory': {
-        field: async (cometExt) => {
+        field: async (comet) => {
+          const cometExt = new Contract(await comet.extensionDelegate(), ['function assetListFactory() view returns (address)'], comet.provider);
           try {
-            return cometExt.assetListFactory();
+            return await cometExt.assetListFactory();
           }
           catch (e) {
-            return '0x0000000000000000000000000000000000000000';
+            return null;
+          }
+        },
+      },
+      // Markets deployed before the asset list have no assetList getter
+      'assetList': {
+        field: async (comet) => {
+          try {
+            return await comet.assetList();
+          }
+          catch (e) {
+            return null;
           }
         },
       },
@@ -127,6 +141,16 @@ const relationConfigMap: RelationConfigMap = {
   // Ext delegate — always use CometExt ABI so new interface is included, even if the implementation contract doesn't have it (e.g., old markets)
   'comet:implementation:implementation': {
     artifact: 'contracts/CometExt.sol:CometExt',
+  },
+  // Lists deployed before the upgradeable asset list are not proxies, so their implementation slot is empty
+  assetList: {
+    delegates: {
+      field: async (assetList) => {
+        const slot = await assetList.provider.getStorageAt(assetList.address, '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc');
+        const implementation = utils.getAddress('0x' + slot.substring(26));
+        return implementation !== constants.AddressZero ? implementation : null;
+      },
+    },
   },
   configurator: {
     delegates: {

@@ -43,3 +43,31 @@ export async function servicePatch(ctx: CometContext): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Filter for scenarios that cover the hashed asset list
+ * @param ctx The Comet context
+ * @returns true if the market still has to be moved to the hashed asset list: its Comet has no asset list, or the
+ *  list does not answer configHash() with exactly 32 bytes, the same check the Configurator makes
+ */
+export async function isAssetListMigrationRequired(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+
+    const iface = new ethers.utils.Interface([
+      'function assetList() external view returns (address)',
+      'function configHash() external view returns (bytes32)',
+    ]);
+
+    const [assetList] = iface.decodeFunctionResult(
+      'assetList',
+      await ethers.provider.call({ to: comet.address, data: iface.getSighash('assetList') })
+    );
+    const configHash = await ethers.provider.call({ to: assetList, data: iface.getSighash('configHash') });
+
+    return ethers.utils.hexDataLength(configHash) !== 32;
+  } catch (e) {
+    return true;
+  }
+}
