@@ -141,8 +141,8 @@ export async function deployNetworkComet(
   );
   const cometExt = await deploymentManager.deploy(
     'comet:implementation:implementation',
-    'CometExtAssetList.sol',
-    [extConfiguration, assetListFactory.address],
+    'CometExt.sol',
+    [extConfiguration],
     maybeForce(deploySpec.cometExt)
   );
   

@@ -21,18 +21,6 @@ const relationConfigMap: RelationConfigMap = {
       'cometExt': {
         field: async (comet) => comet.extensionDelegate(),
       },
-      // The factory is an immutable of the ext delegate, which the Comet ABI does not include
-      'assetListFactory': {
-        field: async (comet) => {
-          const cometExt = new Contract(await comet.extensionDelegate(), ['function assetListFactory() view returns (address)'], comet.provider);
-          try {
-            return await cometExt.assetListFactory();
-          }
-          catch (e) {
-            return null;
-          }
-        },
-      },
       // Markets deployed before the asset list have no assetList getter
       'assetList': {
         field: async (comet) => {
@@ -166,7 +154,27 @@ const relationConfigMap: RelationConfigMap = {
       },
       cometFactory: {
         field: async (configurator, { comet }) => configurator.factory(comet[0].address),
-      }
+      },
+      // Markets deployed before the upgradeable asset list keep the factory as an immutable of the ext delegate;
+      // newer ones register it in the Configurator
+      assetListFactory: {
+        field: async (configurator, { comet }) => {
+          const cometExt = new Contract(await comet[0].extensionDelegate(), ['function assetListFactory() view returns (address)'], configurator.provider);
+          try {
+            return await cometExt.assetListFactory();
+          }
+          catch (e) {
+            const configuratorV2 = new Contract(configurator.address, ['function cometAssetListFactories(address) view returns (address)'], configurator.provider);
+            try {
+              const assetListFactory = await configuratorV2.cometAssetListFactories(comet[0].address);
+              return assetListFactory !== constants.AddressZero ? assetListFactory : null;
+            }
+            catch (e) {
+              return null;
+            }
+          }
+        },
+      },
     }
   },
   cometAdmin: {
