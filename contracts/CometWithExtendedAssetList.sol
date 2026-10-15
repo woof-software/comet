@@ -1099,11 +1099,21 @@ contract CometWithExtendedAssetList is CometMainInterface {
             /// that would remain if the destination withdrew right away. This prevents a pattern where a borrower
             /// transfers base to a fresh account that then withdraws, draining pool liquidity and pushing
             /// utilization beyond maxSupportedUtilization.
+            /// Cross-multiplication is used so that zero supply with outstanding borrows is also rejected.
             uint256 totalSupplyWithoutDst = presentValueSupply(baseSupplyIndex, totalSupplyBase - supplyAmount);
             uint256 presentTotalBorrow = presentValueBorrow(baseBorrowIndex, totalBorrowBase);
-            if (totalSupplyWithoutDst > 0 && presentTotalBorrow * FACTOR_SCALE / totalSupplyWithoutDst > maxSupportedUtilization) revert ExceedsSupportedUtilization();
+            if (presentTotalBorrow * FACTOR_SCALE > maxSupportedUtilization * totalSupplyWithoutDst) revert ExceedsSupportedUtilization();
         } else {
             if (isLendersTransferPaused()) revert LendersTransferPaused();
+
+            /// @dev When a lender repays the destination's borrow, total supply and total borrow decrease by the same
+            /// amount. If total borrow exceeds total supply, this raises utilization and may drain total supply to zero,
+            /// so the resulting utilization is checked against the supported ceiling.
+            if (repayAmount > 0) {
+                uint256 presentTotalSupply = presentValueSupply(baseSupplyIndex, totalSupplyBase);
+                uint256 presentTotalBorrow = presentValueBorrow(baseBorrowIndex, totalBorrowBase);
+                if (presentTotalBorrow * FACTOR_SCALE > maxSupportedUtilization * presentTotalSupply) revert ExceedsSupportedUtilization();
+            }
         }
 
         if (withdrawAmount > 0) {
@@ -1212,12 +1222,16 @@ contract CometWithExtendedAssetList is CometMainInterface {
             if (isBorrowersWithdrawPaused()) revert BorrowersWithdrawPaused();
             if (uint256(-srcBalance) < baseBorrowMin) revert BorrowTooSmall();
             if (!isBorrowCollateralized(src)) revert NotCollateralized();
-            /// @dev safeguard against the over-utilization leading to illiquidity and reserves exhaustion
-            /// At this point totals are updated and it is a borrow case, so we can check resulting utilization
-            if (getUtilization() > maxSupportedUtilization) revert ExceedsSupportedUtilization();
         } else {
             if (isLendersWithdrawPaused()) revert LendersWithdrawPaused();
         }
+
+        /// @dev safeguard against the over-utilization leading to illiquidity and reserves exhaustion
+        /// At this point totals are updated, so we can check resulting utilization for both lenders and borrowers.
+        /// Cross-multiplication is used so that zero supply with outstanding borrows is also rejected.
+        uint256 presentTotalSupply = presentValueSupply(baseSupplyIndex, totalSupplyBase);
+        uint256 presentTotalBorrow = presentValueBorrow(baseBorrowIndex, totalBorrowBase);
+        if (presentTotalBorrow * FACTOR_SCALE > maxSupportedUtilization * presentTotalSupply) revert ExceedsSupportedUtilization();
 
         doTransferOut(baseToken, to, amount);
 
