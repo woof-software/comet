@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import "./../CometFactoryWithExtendedAssetList.sol";
-import "./../CometConfiguration.sol";
-import "./../ConfiguratorStorage.sol";
+import "../../CometFactoryWithExtendedAssetList.sol";
+import "./CometConfigurationV1.sol";
+import "./ConfiguratorV1Storage.sol";
 
 /**
- * @title Compound's Configurator Contract
- * @notice The contract that stores the configuration for Comet proxies
- * @dev This contract is just to simulate the full deployment process of market updates. Should be deleted after the market updates are deployed.
+ * @title Compound's Configurator Contract, V1 copy
+ * @dev Temporary copy for testing the Configurator upgrade path (ConfiguratorV1 -> ConfiguratorIntermediate -> Configurator).
+ *      Delete this folder once the upgrade is deployed.
  */
-contract ConfiguratorOld is ConfiguratorStorage {
+contract ConfiguratorV1 is ConfiguratorV1Storage {
 
     /** Custom events **/
-
     event AddAsset(address indexed cometProxy, AssetConfig assetConfig);
     event CometDeployed(address indexed cometProxy, address indexed newComet);
     event GovernorTransferred(address indexed oldGovernor, address indexed newGovernor);
@@ -45,7 +44,6 @@ contract ConfiguratorOld is ConfiguratorStorage {
     event UpdateAssetSupplyCap(address indexed cometProxy, address indexed asset, uint128 oldSupplyCap, uint128 newSupplyCap);
 
     /** Custom errors **/
-
     error AlreadyInitialized();
     error AssetDoesNotExist();
     error ConfigurationAlreadyExists();
@@ -93,7 +91,7 @@ contract ConfiguratorOld is ConfiguratorStorage {
         Configuration memory oldConfiguration = configuratorParams[cometProxy];
         if (oldConfiguration.baseToken != address(0) &&
             (oldConfiguration.baseToken != newConfiguration.baseToken ||
-                oldConfiguration.trackingIndexScale != newConfiguration.trackingIndexScale))
+             oldConfiguration.trackingIndexScale != newConfiguration.trackingIndexScale))
             revert ConfigurationAlreadyExists();
 
         configuratorParams[cometProxy] = newConfiguration;
@@ -112,7 +110,6 @@ contract ConfiguratorOld is ConfiguratorStorage {
 
     function setPauseGuardian(address cometProxy, address newPauseGuardian) external {
         if (msg.sender != governor) revert Unauthorized();
-
         address oldPauseGuardian = configuratorParams[cometProxy].pauseGuardian;
         configuratorParams[cometProxy].pauseGuardian = newPauseGuardian;
         emit SetPauseGuardian(cometProxy, oldPauseGuardian, newPauseGuardian);
@@ -335,11 +332,11 @@ contract ConfiguratorOld is ConfiguratorStorage {
      * @notice Deploy a new Comet implementation using the factory and Configuration for that Comet proxy
      * @dev Note: Callable by anyone
      */
-    function deploy(address cometProxy) external returns (address) {
-        address newComet = CometFactoryWithExtendedAssetList(factory[cometProxy]).clone(configuratorParams[cometProxy]);
-        emit CometDeployed(cometProxy, newComet);
-        return newComet;
-    }
+    // function deploy(address cometProxy) external returns (address) {
+    //     address newComet = CometFactoryWithExtendedAssetListV1(factory[cometProxy]).clone(configuratorParams[cometProxy]);
+    //     emit CometDeployed(cometProxy, newComet);
+    //     return newComet;
+    // }
 
     /**
      * @notice Transfers the governor rights to a new address

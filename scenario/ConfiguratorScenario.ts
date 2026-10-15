@@ -1,4 +1,5 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { servicePatch2 } from './utils';
 import { expect } from 'chai';
 import { BigNumber, ethers } from 'ethers';
 import { CometContext, scenario } from './context/CometContext';
@@ -155,7 +156,6 @@ async function deployMockERC20(context: CometContext, alias: string, force?: boo
 
 async function deployCometExt(context: CometContext, force?: boolean): Promise<string> {
   const dm = context.world.deploymentManager;
-  const assetListFactory = await dm.deploy('test:assetListFactory', 'AssetListFactory.sol', []);
 
   const extConfiguration = {
     name32: ethers.utils.formatBytes32String('MOCK'),
@@ -164,12 +164,43 @@ async function deployCometExt(context: CometContext, force?: boolean): Promise<s
 
   const cometExt = await dm.deploy(
     'test:comet:implementation:implementation',
-    'CometExtAssetList.sol',
-    [extConfiguration, assetListFactory.address],
+    'CometExt.sol',
+    [extConfiguration],
     force
   );
 
   return cometExt.address;
+}
+
+// The Comet reads its collateral from an asset list: an implementation holding the asset and its price feed,
+// behind a proxy owned by the Comet's proxy admin and initialized with the factors and supply cap
+async function deployAssetList(context: CometContext): Promise<string> {
+  const dm = context.world.deploymentManager;
+  const cometAdmin = await context.getCometAdmin();
+  const configurator = await context.getConfigurator();
+
+  const assetListImpl = await dm.deploy('test:assetList:implementation', 'AssetList.sol', [[
+    {
+      asset: await deployMockERC20(context, 'asset'),
+      decimals: 18,
+      priceFeed: await deployPriceFeed(context, 'asset'),
+    },
+  ]]);
+  const storageConfigs = [
+    {
+      borrowCollateralFactor: exp(0.65, 18), // 650000000000000000n
+      liquidateCollateralFactor: exp(0.7, 18), // 700000000000000000n
+      liquidationFactor: exp(0.8, 18), // 800000000000000000n
+      supplyCap: exp(1.4, 24), // 1400000000000000000000000n
+    },
+  ];
+  const assetListProxy = await dm.deploy('test:assetList', 'vendor/proxy/transparent/TransparentUpgradeableProxy.sol', [
+    assetListImpl.address,
+    cometAdmin.address,
+    assetListImpl.interface.encodeFunctionData('initialize', [storageConfigs, configurator.address]),
+  ]);
+
+  return assetListProxy.address;
 }
 
 async function deployComet(context: CometContext): Promise<string> {
@@ -197,17 +228,7 @@ async function deployComet(context: CometContext): Promise<string> {
     baseMinForRewards: exp(1, 9), // 1000000000n
     baseBorrowMin: exp(1, 5), // 100000n
     targetReserves: exp(2, 13), //20000000000000n
-    assetConfigs: [
-      {
-        asset: await deployMockERC20(context, 'asset'),
-        priceFeed: await deployPriceFeed(context, 'asset'),
-        decimals: 18,
-        borrowCollateralFactor: exp(0.65, 18), // 650000000000000000n
-        liquidateCollateralFactor: exp(0.7, 18), // 700000000000000000n
-        liquidationFactor: exp(0.8, 18), // 800000000000000000n
-        supplyCap: exp(1.4, 24) // 1400000000000000000000000n
-      }
-    ]
+    assetList: await deployAssetList(context),
   };
 
   const cometAdmin = await context.getCometAdmin();

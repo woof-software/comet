@@ -34,8 +34,8 @@ describe('quoteCollateral', function () {
         {
           decimals: j < 8 ? 18 : j < 16 ? 8 : 6,
           initialPrice: j > 1 ? 200 : 200 + (10 * j),
-          borrowCF: exp(0.75, 18),
-          liquidateCF: exp(0.8, 18),
+          borrowCF: exp(0.5, 18),
+          liquidateCF: exp(0.55, 18),
           liquidationFactor: exp(0.6, 18),
         },
       ])
@@ -60,19 +60,17 @@ describe('quoteCollateral', function () {
     priceFeeds = protocol.priceFeeds;
 
     // Upgrade proxy to extended asset list implementation
-    const assetListFactory = protocol.assetListFactory;
     configurator = configurator.attach(configuratorProxyAddress);
-    const CometExtAssetList = await (
-      await ethers.getContractFactory('CometExtAssetList')
+    const CometExt = await (
+      await ethers.getContractFactory('CometExt')
     ).deploy(
       {
         name32: ethers.utils.formatBytes32String('Test Comet'),
         symbol32: ethers.utils.formatBytes32String('Test Comet'),
       },
-      assetListFactory.address
     );
-    await CometExtAssetList.deployed();
-    await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+    await CometExt.deployed();
+    await configurator.setExtensionDelegate(cometProxyAddress, CometExt.address);
     const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
     await CometFactoryWithExtendedAssetList.deployed();
     await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
@@ -185,6 +183,9 @@ describe('quoteCollateral', function () {
       // liquidationFactor = 0.0001 → discount is nearly the full storeFrontPriceFactor
       // discountFactor = 0.8 * (1 - 0.0001) ≈ 0.79992
       // assetPriceDiscounted = 200e8 * (1 - 0.79992) ≈ 40.016e8
+      // The collateral factors must stay below the liquidation factor, so they go to zero first, as for a delisted asset
+      await configurator.updateAssetBorrowCollateralFactor(comet.address, collateralToken.address, 0);
+      await configurator.updateAssetLiquidateCollateralFactor(comet.address, collateralToken.address, 0);
       await configurator.updateAssetLiquidationFactor(comet.address, collateralToken.address, exp(0.0001, 18));
       await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
 
@@ -671,7 +672,6 @@ describe('quoteCollateral', function () {
     let configuratorProxy: ConfiguratorProxy;
     let proxyAdmin: CometProxyAdmin;
     let cometProxyAddress: string;
-    let assetListFactoryAddress: string;
 
     // Constants
     const QUOTE_AMOUNT = exp(200, 6);
@@ -694,7 +694,6 @@ describe('quoteCollateral', function () {
           {
             decimals: 18,
             initialPrice: 200,
-            liquidationFactor: exp(0.6, 18),
           },
         ])
       );
@@ -706,21 +705,19 @@ describe('quoteCollateral', function () {
       configuratorProxy = configuratorAndProtocol.configuratorProxy;
       proxyAdmin = configuratorAndProtocol.proxyAdmin;
       tokens = configuratorAndProtocol.tokens;
-      assetListFactoryAddress = configuratorAndProtocol.assetListFactory.address;
       quoteCollateralToken = tokens[`ASSET1`];
       configurator = configurator.attach(configuratorProxy.address);
 
-      const CometExtAssetList = await (
-        await ethers.getContractFactory('CometExtAssetList')
+      const CometExt = await (
+        await ethers.getContractFactory('CometExt')
       ).deploy(
         {
           name32: ethers.utils.formatBytes32String('Compound Comet'),
           symbol32: ethers.utils.formatBytes32String('BASE'),
         },
-        assetListFactoryAddress
       );
-      await CometExtAssetList.deployed();
-      await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+      await CometExt.deployed();
+      await configurator.setExtensionDelegate(cometProxyAddress, CometExt.address);
       const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
       await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
@@ -754,6 +751,9 @@ describe('quoteCollateral', function () {
     });
 
     it('update liquidationFactor to 0 to remove discount', async () => {
+      // A zero liquidation factor is only valid when both collateral factors are zero too
+      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, quoteCollateralToken.address, 0n);
+      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, quoteCollateralToken.address, 0n);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, quoteCollateralToken.address, exp(0, 18));
 
       await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
@@ -793,7 +793,10 @@ describe('quoteCollateral', function () {
 
         expect(quoteAmount).to.eq(expectedQuoteWithDiscount);
 
-        // Update liquidation factor to 0 to remove discount
+        // Update liquidation factor to 0 to remove discount; a zero liquidation factor is only valid
+        // when both collateral factors are zero too
+        await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, asset.address, 0n);
+        await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, asset.address, 0n);
         await configurator.updateAssetLiquidationFactor(cometProxyAddress, asset.address, exp(0, 18));
         await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
 

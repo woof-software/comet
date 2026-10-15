@@ -83,21 +83,19 @@ describe('isBorrowCollateralized', function () {
     priceFeeds = protocol.priceFeeds;
 
     // Upgrade proxy to extended asset list implementation to support many assets
-    const assetListFactory = protocol.assetListFactory;
     configurator = configurator.attach(configuratorProxyAddress);
-    const CometExtAssetList = await (
-      await ethers.getContractFactory('CometExtAssetList')
+    const CometExt = await (
+      await ethers.getContractFactory('CometExt')
     ).deploy(
       {
         name32: ethers.utils.formatBytes32String('Test Comet'),
         symbol32: ethers.utils.formatBytes32String('Test Comet'),
       },
-      assetListFactory.address
     );
-    await CometExtAssetList.deployed();
+    await CometExt.deployed();
     await configurator.setExtensionDelegate(
       cometProxyAddress,
-      CometExtAssetList.address
+      CometExt.address
     );
     const CometFactoryWithExtendedAssetList = await (
       await ethers.getContractFactory('CometFactoryWithExtendedAssetList')
@@ -2291,8 +2289,6 @@ describe('isBorrowCollateralized', function () {
           {
             decimals: 18,
             initialPrice: 200,
-            borrowCF: exp(0.75, 18),
-            liquidateCF: exp(0.8, 18),
           },
         ])
       );
@@ -2312,19 +2308,17 @@ describe('isBorrowCollateralized', function () {
       pauseGuardian = protocol.pauseGuardian;
 
       // Upgrade proxy to extended asset list implementation to support many assets
-      const assetListFactory = protocol.assetListFactory;
       configurator = configurator.attach(configuratorProxyAddress);
-      const CometExtAssetList = await (
-        await ethers.getContractFactory('CometExtAssetList')
+      const CometExt = await (
+        await ethers.getContractFactory('CometExt')
       ).deploy(
         {
           name32: ethers.utils.formatBytes32String('Compound Comet'),
           symbol32: ethers.utils.formatBytes32String('BASE'),
         },
-        assetListFactory.address
       );
-      await CometExtAssetList.deployed();
-      await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+      await CometExt.deployed();
+      await configurator.setExtensionDelegate(cometProxyAddress, CometExt.address);
       const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
       await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
@@ -2394,9 +2388,9 @@ describe('isBorrowCollateralized', function () {
       }
 
       // Borrow base against the collateral
-      // With 5 assets at price 200, borrowCF 0.9: each asset contributes ~180 USDC liquidity
-      // Total liquidity: 5 * 180 = 900 USDC. Borrow 400 to stay well collateralized initially.
-      // After zeroing 3 assets, only 2 contribute (360 total) < 400 borrowed, so undercollateralized.
+      // With 5 assets at price 200, borrowCF 0.75: each asset contributes 150 USDC liquidity
+      // Total liquidity: 5 * 150 = 750 USDC. Borrow 400 to stay well collateralized initially.
+      // After zeroing 3 assets, only 2 contribute (300 total) < 400 borrowed, so undercollateralized.
       const borrowAmount = exp(400, 6);
       await baseToken.allocateTo(comet.address, borrowAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
@@ -2423,8 +2417,8 @@ describe('isBorrowCollateralized', function () {
         expect(liquidityByAsset[sym].gt(0)).to.be.true;
       }
 
-      // With only two assets contributing (price 200, borrowCF 0.9),
-      // each contributes ~180 USDC liquidity, total ~360 USDC vs 400 borrowed
+      // With only two assets contributing (price 200, borrowCF 0.75),
+      // each contributes 150 USDC liquidity, total 300 USDC vs 400 borrowed
       // Position should be undercollateralized
       expect(await comet.isBorrowCollateralized(alice.address)).to.be.false;
 
@@ -2440,7 +2434,7 @@ describe('isBorrowCollateralized', function () {
         await targetToken.connect(alice).approve(comet.address, supplyAmount);
         await comet.connect(alice).supply(targetToken.address, supplyAmount);
 
-        // Borrow an amount collateralized by the single supplied asset (~180 USDC liquidity)
+        // Borrow the full amount the single supplied asset allows (150 USDC liquidity)
         const borrowAmount = exp(150, 6);
         await baseToken.allocateTo(comet.address, borrowAmount);
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount);

@@ -31,7 +31,9 @@ describe('transfer', function () {
   // Constants
   const baseTokenSupplyAmount = exp(100, 6);
   const collateralTokenSupplyAmount = exp(1, 18);
-  const collateralTokenTransferAmount = collateralTokenSupplyAmount / 4n;
+  // Dave keeps 0.9 COMP (~$157, ~$118 at the default 0.75 borrow collateral factor), enough to back
+  // the 1 USDC he borrows plus the 100 USDC base transfer in the deactivated collateral flows
+  const collateralTokenTransferAmount = collateralTokenSupplyAmount / 10n;
   // Storage
   let deactivatedCollateralIndex: number;
   let aliceCollateralBefore: UserCollateral;

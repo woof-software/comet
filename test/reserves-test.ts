@@ -36,7 +36,7 @@ describe('reserves', function () {
             decimals: 18,
             borrowCF: exp(0.8, 18),
             liquidateCF: exp(0.95, 18),
-            liquidationFactor: exp(0.95, 18),
+            liquidationFactor: exp(0.96, 18),
           },
         }),
       }
@@ -47,19 +47,17 @@ describe('reserves', function () {
     proxyAdmin = protocol.proxyAdmin;
 
     // Upgrade proxy to extended asset list implementation
-    const assetListFactory = protocol.assetListFactory;
     configurator = protocol.configurator.attach(configuratorProxyAddress);
-    const CometExtAssetList = await (
-      await ethers.getContractFactory('CometExtAssetList')
+    const CometExt = await (
+      await ethers.getContractFactory('CometExt')
     ).deploy(
       {
         name32: ethers.utils.formatBytes32String('Test Comet'),
         symbol32: ethers.utils.formatBytes32String('Test Comet'),
       },
-      assetListFactory.address
     );
-    await CometExtAssetList.deployed();
-    await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+    await CometExt.deployed();
+    await configurator.setExtensionDelegate(cometProxyAddress, CometExt.address);
     const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
     await CometFactoryWithExtendedAssetList.deployed();
     await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
@@ -467,9 +465,11 @@ describe('reserves', function () {
         expect(totalBorrowAfter).to.be.equal(0);
       });
 
-      it('total supply should not change after liquidation', async function () {
+      it('total supply should grow only by the collateral value left to the borrower', async function () {
+        // The liquidation factor is above the liquidate collateral factor, so the seized collateral is worth
+        // more than the debt and the rest is credited to the borrower as supply
         const { totalSupplyBase: totalSupplyAfter } = await comet.totalsBasic();
-        expect(totalSupplyAfter).to.be.equal(totalSupplyBefore);
+        expect(totalSupplyAfter.sub(totalSupplyBefore)).to.be.equal((await comet.userBasic(dave.address)).principal);
       });
 
       let newReserves: BigNumber;
@@ -1351,7 +1351,7 @@ describe('reserves', function () {
           priceFeed: priceFeeds.WETH.address,
           borrowCollateralFactor: exp(0.8, 18),
           liquidateCollateralFactor: exp(0.95, 18),
-          liquidationFactor: exp(0.95, 18),
+          liquidationFactor: exp(0.96, 18),
           supplyCap: exp(100, 18),
         }
       );
@@ -1479,15 +1479,7 @@ describe('reserves', function () {
         const token = collaterals[key];
         const feed = priceFeeds[key];
         const decimals = await token.decimals();
-        await configurator.updateAsset(comet.address, {
-          asset: token.address,
-          priceFeed: feed.address,
-          decimals: decimals,
-          borrowCollateralFactor: exp(0.8, 18),
-          liquidateCollateralFactor: exp(0.95, 18),
-          liquidationFactor: exp(0.95, 18),
-          supplyCap: exp(10000, decimals),
-        });
+        await configurator.updateAssetSupplyCap(comet.address, token.address, exp(10000, decimals));
         collateralTokens.push(token);
         collateralFeeds.push(feed);
       }
@@ -1511,7 +1503,7 @@ describe('reserves', function () {
           decimals: 18,
           borrowCollateralFactor: exp(0.8, 18),
           liquidateCollateralFactor: exp(0.95, 18),
-          liquidationFactor: exp(0.95, 18),
+          liquidationFactor: exp(0.96, 18),
           supplyCap: exp(10000, 18),
         });
         collateralTokens.push(token);
@@ -1519,6 +1511,11 @@ describe('reserves', function () {
       }
 
       await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
+
+      // The upgraded asset list knows the new assets, but their factors and caps are set only once they are added to it
+      for (let i = numExisting; i < numCollaterals; i++) {
+        await configurator.setAssetConfigToAssetList(comet.address, collateralTokens[i].address);
+      }
 
       // Seed + supply base
       await baseToken.connect(alice).allocateTo(alice.address, seedAmount);

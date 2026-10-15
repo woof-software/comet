@@ -37,6 +37,7 @@ export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
 import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
 export * from './hreUtils';
+export * from './versionControl';
 
 /** Convert a per-year interest factor to per-second (Comet constructor truncation). */
 export function perSecond(perYear: BigNumber): BigNumber {
@@ -506,36 +507,38 @@ export async function usesAssetList(ctx: CometContext): Promise<boolean> {
   return await comet.maxAssets() === MAX_ASSETS;
 }
 
-export function isBridgedDeployment(ctx: CometContext): boolean {
-  return ctx.world.auxiliaryDeploymentManager !== undefined;
+/**
+ * @notice Whether the market still needs the move to an asset list that supports ConfigHash
+ * @dev A Comet without assetList() (legacy Comet) needs it. Otherwise the list is probed with a raw call to configHash(),
+ *      the same rule as ConfigHash._trySupportsConfigHash: it is supported only if the call succeeds and returns
+ *      exactly one 32-byte word
+ */
+export async function isAssetListMigrationRequired(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const provider = ctx.world.deploymentManager.hre.ethers.provider;
+  const iface = new utils.Interface([
+    'function assetList() view returns (address)',
+    'function configHash() view returns (bytes32)',
+  ]);
+
+  let assetList: string;
+  try {
+    const result = await provider.call({ to: comet.address, data: iface.encodeFunctionData('assetList') });
+    [assetList] = iface.decodeFunctionResult('assetList', result);
+  } catch {
+    return true;
+  }
+
+  try {
+    const result = await provider.call({ to: assetList, data: iface.encodeFunctionData('configHash') });
+    return utils.hexDataLength(result) !== 32;
+  } catch {
+    return true;
+  }
 }
 
-export async function supportUtilizationLimit(ctx: CometContext): Promise<boolean> {
-  try {
-    const comet = await ctx.getComet();
-    const ethers = ctx.world.deploymentManager.hre.ethers;
-    
-    const iface = new ethers.utils.Interface([
-      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
-    ]);
-    const functionSelector = iface.getSighash('MAX_SUPPORTED_UTILIZATION');
-    
-    // Try to call the function using a low-level static call
-    // If the function doesn't exist, this will revert
-    const result = await ethers.provider.call({
-      to: comet.address,
-      data: functionSelector
-    });
-    
-    // If the call succeeds (doesn't revert), the function exists
-    // Decode the result to verify it's a valid bool response
-    if (result && result !== '0x') {
-      return true;
-    }
-    return false;
-  } catch (error) {
-    return false;
-  }
+export function isBridgedDeployment(ctx: CometContext): boolean {
+  return ctx.world.auxiliaryDeploymentManager !== undefined;
 }
 
 /**
