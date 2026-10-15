@@ -125,6 +125,7 @@ export const WHALES = {
     '0x167384319b41f7094e62f7506409eb38079abff8', // WMATIC whale
     '0x6d80113e533a2C0fe82EaBD35f1875DcEA89Ea97', // WMATIC whale
     '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045', // USDC.e whale
+    '0x0182Db893e4eEa9c273e915675c0Ec9790099Ee8', // COMP whale
   ],
   arbitrum: [
     '0x8eb270e296023e9d92081fdf967ddd7878724424', // rETH whale
