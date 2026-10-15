@@ -1743,7 +1743,7 @@ describe('configurator', function () {
           });
 
           it('adds the asset to the upgraded asset list', async () => {
-            await configuratorProxy.connect(governor).addOrUpdateAssetToAssetList(cometProxy.address, unsupportedTokenAddr);
+            await configuratorProxy.connect(governor).setAssetConfigToAssetList(cometProxy.address, unsupportedTokenAddr);
           });
 
           it('new asset is available in comet', async () => {
