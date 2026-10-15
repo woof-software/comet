@@ -1,5 +1,5 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed} from 'build/types';
-import { expect, exp, makeProtocol, ethers, DEFAULT_PRICEFEED_DECIMALS, SnapshotRestorer, takeSnapshot, factorScale, MAX_SUPPORTED_UTILIZATION } from './helpers';
+import { expect, exp, makeProtocol, ethers, DEFAULT_PRICEFEED_DECIMALS, SnapshotRestorer, takeSnapshot, factorScale } from './helpers';
 import { BigNumber } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
@@ -912,6 +912,7 @@ describe('interest calculation', function () {
         let currTotalSupplyBase: BigNumber;
         let currTotalBorrowBase: BigNumber;
         let expectedLastAccrualTime: number;
+        let maxSupportedUtilization: BigNumber;
 
         before(async function () {
           snapshot = await takeSnapshot();
@@ -941,6 +942,7 @@ describe('interest calculation', function () {
           prevBorrowIndex = (await comet.totalsBasic()).baseBorrowIndex;
           prevUtilization = await comet.getUtilization();
           lastUpdatedTime = (await comet.totalsBasic()).lastAccrualTime;
+          maxSupportedUtilization = await comet.maxSupportedUtilization();
         });
 
         it('can borrow via transfer to reach utilization > 100% (borrow from reserves) (user action in test)', async () => {
@@ -1019,7 +1021,7 @@ describe('interest calculation', function () {
           // Check that utilization is not exceeded
           const totalSupplyWithoutDst = currTotalSupplyBase.sub(BORROW_AMOUNT_TRANSFER);
           const utilization = currTotalBorrowBase.mul(factorScale).div(totalSupplyWithoutDst);
-          expect(utilization).to.be.lessThan(MAX_SUPPORTED_UTILIZATION);
+          expect(utilization).to.be.lessThan(maxSupportedUtilization);
         });
 
         it('supply rate grows to the high slope of the interest curve (> 100%)', async () => {
@@ -1200,7 +1202,7 @@ describe('interest calculation', function () {
           // Check that utilization is not exceeded
           const totalSupplyWithoutDst = currTotalSupplyBase.sub(BORROW_AMOUNT_TRANSFER);
           const utilization = currTotalBorrowBase.mul(factorScale).div(totalSupplyWithoutDst);
-          expect(utilization).to.be.greaterThan(MAX_SUPPORTED_UTILIZATION);
+          expect(utilization).to.be.greaterThan(maxSupportedUtilization);
         });
 
         it('should revert for any new user pushing utilization over 200%', async () => {
@@ -1216,7 +1218,7 @@ describe('interest calculation', function () {
           // Check that utilization will be exceeded
           const totalSupplyWithoutDst = currTotalSupplyBase.sub(BORROW_AMOUNT_TRANSFER);
           const utilization = currTotalBorrowBase.mul(factorScale).div(totalSupplyWithoutDst);
-          expect(utilization).to.be.greaterThan(MAX_SUPPORTED_UTILIZATION);
+          expect(utilization).to.be.greaterThan(maxSupportedUtilization);
 
           // Then try to borrow
           await expect(comet.connect(charlie).transfer(eve.address, BORROW_AMOUNT_TRANSFER)).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');

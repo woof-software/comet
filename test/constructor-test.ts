@@ -78,6 +78,7 @@ describe('constructor', function () {
       baseMinForRewards: exp(1, 6),
       baseBorrowMin: exp(1, 6),
       targetReserves: 0,
+      maxSupportedUtilization: exp(2, 18),
       assetConfigs: [{
         asset: tokens['EVIL'].address,
         priceFeed: priceFeeds['EVIL'].address,
