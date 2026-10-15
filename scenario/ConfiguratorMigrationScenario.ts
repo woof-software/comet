@@ -50,7 +50,7 @@ async function executeProposal(
 // Moves a live market from the V1 Configurator, which keeps the asset configs inside the Configuration, to the
 // asset list: the Configurator is upgraded and migrated, an asset list is deployed for the market, and the Comet is
 // rebuilt on it. Runs on every live base whose asset list does not support ConfigHash yet, one market per run.
-scenario.only(
+scenario(
   'Configurator migration to the asset list (V1 → Intermediate → Configurator)',
   {
     filter: async (ctx) => await isAssetListMigrationRequired(ctx),
