@@ -280,6 +280,39 @@ export default async function relayLineaMessage(
   return openBridgedProposals;
 }
 
+// Mimics the last step of claiming an L2 -> L1 message on Mainnet: the rollup sends the message's ETH and
+// calldata to its recipient. A real claim needs a finalized Merkle proof, which a fork can't produce.
+export async function simulateL2ToL1MessageClaims(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber: number,
+  tenderlyLogs?: any[]
+) {
+  if (tenderlyLogs) {
+    return;
+  }
+  console.log('Simulating L2->L1 message claims for any executed Linea proposals...');
+
+  const l2MessageService = await bridgeDeploymentManager.getContractOrThrow('l2MessageService');
+  const lineaMessageService = await governanceDeploymentManager.getContractOrThrow('lineaMessageService');
+
+  const messageSentEvents = await bridgeDeploymentManager.hre.ethers.provider.getLogs({
+    fromBlock: l2StartingBlockNumber,
+    toBlock: 'latest',
+    address: l2MessageService.address,
+    topics: [l2MessageService.interface.getEventTopic('MessageSent')]
+  });
+
+  for (const event of messageSentEvents) {
+    const { _to, _value, _calldata } = l2MessageService.interface.parseLog(event).args;
+    console.log(`[Linea -> mainnet] Simulating claim of ${_value} wei to ${_to}`);
+
+    const rollupSigner = await impersonateAddress(governanceDeploymentManager, lineaMessageService.address);
+    await setNextBaseFeeToZero(governanceDeploymentManager);
+    await (await rollupSigner.sendTransaction({ to: _to, value: _value, data: _calldata, gasPrice: 0 })).wait();
+  }
+}
+
 // Helper to fetch logs in chunks of 10,000 blocks
 async function fetchLogsInChunks(provider: any, filter: any, fromBlock: number, toBlock: number, address: string) {
   const chunkSize = 10000;
