@@ -76,7 +76,7 @@ supplyCaps.forEach(([name, capFor]) => {
       const ethers = context.world.deploymentManager.hre.ethers;
       const comet = await context.getComet();
       const configurator = await context.getConfigurator();
-      const cometExt = await ethers.getContractAt('CometExtAssetList', comet.address);
+      const cometExt = await ethers.getContractAt('CometExt', comet.address);
       const { admin } = context.actors;
 
       // The admin pays for the configurator calls and the comet upgrade
@@ -116,7 +116,7 @@ scenario(
     const ethers = context.world.deploymentManager.hre.ethers;
     const comet = await context.getComet();
     const configurator = await context.getConfigurator();
-    const cometExt = await ethers.getContractAt('CometExtAssetList', comet.address);
+    const cometExt = await ethers.getContractAt('CometExt', comet.address);
     const { admin } = context.actors;
 
     // The admin pays for the calls that are expected to revert
@@ -166,7 +166,7 @@ scenario(
 async function getAssetListFactory(context: CometContext): Promise<AssetListFactory> {
   const ethers = context.world.deploymentManager.hre.ethers;
   const comet = await context.getComet();
-  const cometExt = await ethers.getContractAt('CometExtAssetList', comet.address);
+  const cometExt = await ethers.getContractAt('CometExt', comet.address);
   return await ethers.getContractAt('AssetListFactory', await cometExt.assetListFactory()) as AssetListFactory;
 }
 

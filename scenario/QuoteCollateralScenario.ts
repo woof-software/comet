@@ -20,7 +20,7 @@ import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, fundAccount, servicePat
  *    without discount, handling the transition correctly
  *
  * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
- * the extended asset list feature (CometExtAssetList), as the quoteCollateral behavior with liquidationFactor = 0
+ * the extended asset list feature (CometExt), as the quoteCollateral behavior with liquidationFactor = 0
  * is specific to that implementation. The test filters deployments using the usesAssetList() utility function
  * to ensure compatibility, and excludes assets that are already delisted.
  */

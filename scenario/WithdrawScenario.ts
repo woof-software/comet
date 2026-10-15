@@ -1221,7 +1221,7 @@ scenario(
  * new borrows, making it critical for preventing new positions from being opened with unpriceable collateral.
  *
  * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
- * the extended asset list feature (CometExtAssetList), as the borrowCollateralFactor = 0 behavior is specific
+ * the extended asset list feature (CometExt), as the borrowCollateralFactor = 0 behavior is specific
  * to that implementation. The base Comet contract does not have this check and will attempt to call getPrice()
  * even when borrowCF=0, which would cause a revert if the price feed is unavailable. The test filters deployments
  * using the usesAssetList() utility function to ensure compatibility, and excludes assets that are already delisted.

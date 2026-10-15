@@ -507,6 +507,36 @@ export async function usesAssetList(ctx: CometContext): Promise<boolean> {
   return await comet.maxAssets() === MAX_ASSETS;
 }
 
+/**
+ * @notice Whether the market still needs the move to an asset list that supports ConfigHash
+ * @dev A Comet without assetList() (legacy Comet) needs it. Otherwise the list is probed with a raw call to configHash(),
+ *      the same rule as ConfigHash._trySupportsConfigHash: it is supported only if the call succeeds and returns
+ *      exactly one 32-byte word
+ */
+export async function isAssetListMigrationRequired(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const provider = ctx.world.deploymentManager.hre.ethers.provider;
+  const iface = new utils.Interface([
+    'function assetList() view returns (address)',
+    'function configHash() view returns (bytes32)',
+  ]);
+
+  let assetList: string;
+  try {
+    const result = await provider.call({ to: comet.address, data: iface.encodeFunctionData('assetList') });
+    [assetList] = iface.decodeFunctionResult('assetList', result);
+  } catch {
+    return true;
+  }
+
+  try {
+    const result = await provider.call({ to: assetList, data: iface.encodeFunctionData('configHash') });
+    return utils.hexDataLength(result) !== 32;
+  } catch {
+    return true;
+  }
+}
+
 export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
 }

@@ -322,7 +322,7 @@ scenario.skip(
  *    causing positions to become liquidatable when their only collateral asset is delisted
  *
  * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
- * the extended asset list feature (CometExtAssetList), as the liquidateCollateralFactor = 0 behavior is specific
+ * the extended asset list feature (CometExt), as the liquidateCollateralFactor = 0 behavior is specific
  * to that implementation. The test filters deployments using the usesAssetList() utility function to ensure
  * compatibility, and excludes assets that are already delisted.
  */
@@ -415,7 +415,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
  *    during absorption, but still proceeds with debt absorption
  *
  * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
- * the extended asset list feature (CometExtAssetList), as the liquidationFactor = 0 behavior is specific
+ * the extended asset list feature (CometExt), as the liquidationFactor = 0 behavior is specific
  * to that implementation. The test filters deployments using the usesAssetList() utility function to ensure
  * compatibility, and excludes assets that are already delisted.
  */
