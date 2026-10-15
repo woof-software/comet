@@ -157,7 +157,8 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
 
         for (uint8 i; i < numAssets; ++i) {
             (uint256 word_a, ) = _loadPackedAsset(i);
-            _addAsset(address(uint160(word_a)), storageConfigs[i], true);
+            // The same asset listed twice is registered only once, so the second time is rejected
+            if (!_setAssetConfig(address(uint160(word_a)), storageConfigs[i])) revert AssetAlreadyAdded();
         }
     }
 
@@ -173,9 +174,10 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      * @param asset The asset, must be in the immutables of this implementation
      * @param config The factors and supply cap of the asset
      */
-    function addOrUpdateAsset(address asset, StorageAssetConfig calldata config) external onlyConfigurator {
+    function setAssetConfig(address asset, StorageAssetConfig calldata config) external onlyConfigurator {
         if (!_isInImmutables(asset)) revert BadAsset();
-        _addAsset(asset, config, false);
+        // An asset already registered gets its config replaced, so whether it was new does not matter here
+        _setAssetConfig(asset, config);
     }
 
     /**
@@ -341,19 +343,19 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
 
     /**
      * @dev Validates the factors of an asset, registers it so the setters can change it later,
-     *      and stores its factors and supply cap unscaled
-     * @param revertIfRegistered Whether to revert for an asset already registered; otherwise its config is replaced
+     *      and stores its factors and supply cap unscaled, replacing the config of an asset already registered
+     * @return True if the asset was registered by this call, false if it was registered before
      */
-    function _addAsset(address asset, StorageAssetConfig calldata config, bool revertIfRegistered) internal {
+    function _setAssetConfig(address asset, StorageAssetConfig calldata config) internal returns (bool) {
         _validateCollateralFactors(
             config.borrowCollateralFactor,
             config.liquidateCollateralFactor,
             config.liquidationFactor
         );
 
-        // Registers a new asset; an asset already registered stays as it is
-        if (!assetConfigStorage.assets.add(asset) && revertIfRegistered) revert AssetAlreadyAdded();
         assetConfigStorage.configs[asset] = config;
+        // Registers a new asset; an asset already registered stays as it is
+        return assetConfigStorage.assets.add(asset);
     }
 
     /**

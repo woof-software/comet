@@ -63,7 +63,7 @@ interface IConfiguratorEvents {
     event UpdateAsset(address indexed cometProxy, CometConfiguration.AssetConfig oldAssetConfig, CometConfiguration.AssetConfig newAssetConfig);
     event UpdateAssetPriceFeed(address indexed cometProxy, address indexed asset, address oldPriceFeed, address newPriceFeed);
     event AddAsset(address indexed cometProxy, CometConfiguration.AssetConfig assetConfig);
-    event AddedOrUpdatedAssetToAssetList(address indexed cometProxy, address indexed assetList, address indexed asset);
+    event SetAssetConfigToAssetList(address indexed cometProxy, address indexed assetList, address indexed asset);
     event UpdateAssetBorrowCollateralFactor(address indexed cometProxy, address indexed asset, uint64 oldBorrowCF, uint64 newBorrowCF);
     event UpdateAssetLiquidateCollateralFactor(address indexed cometProxy, address indexed asset, uint64 oldLiquidateCF, uint64 newLiquidateCF);
     event UpdateAssetLiquidationFactor(address indexed cometProxy, address indexed asset, uint64 oldLiquidationFactor, uint64 newLiquidationFactor);
