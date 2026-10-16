@@ -1,4 +1,4 @@
-import { Contract, utils } from 'ethers';
+import { BigNumber, Contract, utils } from 'ethers';
 import { DeploymentManager } from '../../plugins/deployment_manager';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 
@@ -63,6 +63,70 @@ export async function simulateOpStackBridgeERC20To(
   await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
     l1Portal,
     utils.hexZeroPad('0x32', 32),
+    utils.hexZeroPad('0xdead', 32)
+  ]);
+}
+
+export const BRIDGE_ETH_TO_SIGNATURE = 'bridgeETHTo(address,uint32,bytes)';
+
+// Finalizes a bridgeETHTo on L1 the same way, calling finalizeBridgeETH with the bridged ETH as the impersonated messenger.
+export async function simulateOpStackBridgeETHTo(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  calldata: string,
+  amount: BigNumber,
+  opts: {
+    networkLabel: string;
+    l1Portal: string;
+    l1CrossDomainMessenger: Contract;
+    l1StandardBridge: Contract;
+  }
+): Promise<void> {
+  const { networkLabel, l1Portal, l1CrossDomainMessenger, l1StandardBridge } = opts;
+  const l2Timelock = await bridgeDeploymentManager.getContractOrThrow('timelock');
+  const l2Bridge = await bridgeDeploymentManager.getContractOrThrow('l2StandardBridge');
+  const l2CrossDomainMessenger = await bridgeDeploymentManager.getContractOrThrow('l2CrossDomainMessenger');
+
+  const [to, , extraData] = utils.defaultAbiCoder.decode(['address', 'uint32', 'bytes'], calldata);
+
+  console.log(`Simulating ${networkLabel} L2→L1 bridgeETHTo: ${amount.toString()} wei to ${to}`);
+  await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
+    l1Portal,
+    utils.hexZeroPad('0x32', 32),
+    utils.hexZeroPad(l2CrossDomainMessenger.address, 32)
+  ]);
+
+  await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
+    l1CrossDomainMessenger.address,
+    '0xcc',
+    utils.hexZeroPad(l2Bridge.address, 32)
+  ]);
+
+  const domainMessengerSigner = await impersonateAddress(
+    governanceDeploymentManager,
+    l1CrossDomainMessenger.address
+  );
+  // The messenger forwards the ETH released from L1 escrow
+  await governanceDeploymentManager.hre.network.provider.send('hardhat_setBalance', [
+    domainMessengerSigner.address,
+    utils.hexStripZeros(amount.add(utils.parseEther('1')).toHexString()),
+  ]);
+
+  await (
+    await l1StandardBridge.connect(domainMessengerSigner).finalizeBridgeETH(
+      l2Timelock.address, to, amount, extraData,
+      { value: amount, gasPrice: 0, gasLimit: 2_500_000 }
+    )
+  ).wait();
+
+  await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
+    l1Portal,
+    utils.hexZeroPad('0x32', 32),
+    utils.hexZeroPad('0xdead', 32)
+  ]);
+  await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
+    l1CrossDomainMessenger.address,
+    '0xcc',
     utils.hexZeroPad('0xdead', 32)
   ]);
 }
