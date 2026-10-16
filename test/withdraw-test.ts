@@ -1,7 +1,7 @@
-import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, setTotalsBasic, fastForward, baseBalanceOf, takeSnapshot, MAX_ASSETS, event, portfolio, wait } from './helpers.js';
-import type { SnapshotRestorer, SignerWithAddress } from './helpers.js';
-import { EvilToken__factory, NonStandardFaucetFeeToken__factory } from '../build/types/index.js';
-import type { EvilToken, NonStandardFaucetFeeToken, CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types/index.js';
+import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, setTotalsBasic, fastForward, baseBalanceOf, takeSnapshot, MAX_ASSETS, event, portfolio, wait } from './helpers';
+import type { SnapshotRestorer, SignerWithAddress } from './helpers';
+import { EvilToken__factory, NonStandardFaucetFeeToken__factory } from '../build/types';
+import type { EvilToken, NonStandardFaucetFeeToken, CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types';
 import { MaxUint256, ZeroAddress } from 'ethers';
 import type { ContractTransactionResponse } from 'ethers';
 describe('withdraw', function () {

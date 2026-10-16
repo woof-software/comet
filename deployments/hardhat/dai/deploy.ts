@@ -1,11 +1,11 @@
 import type { Contract } from 'ethers';
 
-import { DeploymentManager } from '../../../plugins/deployment_manager/index.js';
-import type { Deployed } from '../../../plugins/deployment_manager/index.js';
-import { getHardhatEthers } from '../../../plugins/deployment_manager/hardhat3/runtime.js';
-import type { Configurator } from '../../../build/types/index.js';
-import { cloneGov, deployComet, exp, sameAddress, wait } from '../../../src/deploy/index.js';
-import type { DeploySpec } from '../../../src/deploy/index.js';
+import { DeploymentManager } from '../../../plugins/deployment_manager';
+import type { Deployed } from '../../../plugins/deployment_manager';
+import { getHardhatEthers } from '../../../plugins/deployment_manager/hardhat3/runtime';
+import type { Configurator } from '../../../build/types';
+import { cloneGov, deployComet, exp, sameAddress, wait } from '../../../src/deploy';
+import type { DeploySpec } from '../../../src/deploy';
 
 // Fixed test addresses for the dev market-admin role (impersonated by scenarios).
 const MARKET_ADMIN = '0x1111111111111111111111111111111111111111';

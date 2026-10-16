@@ -1,4 +1,4 @@
-import { scenario } from './context/CometContext.js';
+import { scenario } from './context/CometContext';
 import { expect } from 'chai';
 import { AbiCoder } from 'ethers';
 import {
@@ -7,9 +7,9 @@ import {
   PolygonBridgeReceiver__factory,
   ScrollBridgeReceiver__factory,
   Timelock__factory
-} from '../build/types/index.js';
-import { calldata } from '../src/deploy/index.js';
-import { isBridgedDeployment, matchesDeployment, createCrossChainProposal } from './utils/index.js';
+} from '../build/types';
+import { calldata } from '../src/deploy';
+import { isBridgedDeployment, matchesDeployment, createCrossChainProposal } from './utils';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

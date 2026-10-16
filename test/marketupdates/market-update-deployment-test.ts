@@ -1,11 +1,11 @@
 import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
 import { AbiCoder, parseEther, ZeroAddress } from 'ethers';
 
-import { ethers, expect, makeProtocol, getConfigurationForConfigurator } from './../helpers.js';
+import { ethers, expect, makeProtocol, getConfigurationForConfigurator } from './../helpers';
 import {
   initializeAndFundGovernorTimelock,
   advanceTimeAndMineBlock,
-} from './market-updates-helper.js';
+} from './market-updates-helper';
 import {
   CometHarnessInterfaceExtendedAssetList__factory,
   CometFactoryWithExtendedAssetList__factory,
@@ -19,7 +19,7 @@ import {
   MarketUpdateTimelock__factory,
   SimpleTimelock,
   TransparentUpgradeableProxy__factory,
-} from './../../build/types/index.js';
+} from './../../build/types';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

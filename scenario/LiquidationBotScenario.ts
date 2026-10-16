@@ -1,13 +1,13 @@
-import { CometContext, scenario } from './context/CometContext.js';
+import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
 import { MaxUint256, ZeroAddress } from 'ethers';
-import { isValidAssetIndex, matchesDeployment, MAX_ASSETS, timeUntilUnderwater } from './utils/index.js';
-import { event, exp, wait } from '../test/helpers.js';
-import CometActor from './context/CometActor.js';
-import type { CometInterface } from '../build/types/index.js';
-import { OnChainLiquidator__factory } from '../build/types/index.js';
-import { getPoolConfig, flashLoanPools } from '../scripts/liquidation_bot/liquidateUnderwaterBorrowers.js';
-import { getConfigForScenario } from './utils/scenarioHelper.js';
+import { isValidAssetIndex, matchesDeployment, MAX_ASSETS, timeUntilUnderwater } from './utils';
+import { event, exp, wait } from '../test/helpers';
+import CometActor from './context/CometActor';
+import type { CometInterface } from '../build/types';
+import { OnChainLiquidator__factory } from '../build/types';
+import { getPoolConfig, flashLoanPools } from '../scripts/liquidation_bot/liquidateUnderwaterBorrowers';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 interface LiquidationAddresses {
   balancerVault: string;

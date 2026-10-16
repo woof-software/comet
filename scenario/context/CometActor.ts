@@ -6,11 +6,11 @@ import type {
   Overrides,
   Signer,
 } from 'ethers';
-import type { CometContext } from './CometContext.js';
-import { resolveAddress } from './Address.js';
-import type { AddressLike } from './Address.js';
-import { ERC20__factory } from '../../build/types/index.js';
-import { baseBalanceOf } from '../../test/helpers.js';
+import type { CometContext } from './CometContext';
+import { resolveAddress } from './Address';
+import type { AddressLike } from './Address';
+import { ERC20__factory } from '../../build/types';
+import { baseBalanceOf } from '../../test/helpers';
 
 export const types = {
   Authorization: [

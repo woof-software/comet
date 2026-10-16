@@ -1,7 +1,7 @@
-import type { DeploymentManager } from './DeploymentManager.js';
+import type { DeploymentManager } from './DeploymentManager';
 import * as ts from 'typescript';
 import * as fs from 'fs/promises';
-import type { Migration } from './Migration.js';
+import type { Migration } from './Migration';
 
 export async function writeEnacted<T>(migration: Migration<T>, deploymentManager: DeploymentManager, writeToFile: boolean = true): Promise<string> {
   const network = deploymentManager.network;

@@ -2,8 +2,8 @@ import SafeProtocolKit from '@safe-global/protocol-kit';
 import type { SafeConfig } from '@safe-global/protocol-kit';
 import { Contract } from 'ethers';
 
-import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager.js';
-import { nonForkedHreForBase, forkedHreForBase } from '../plugins/scenario/utils/hreForBase.js';
+import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager';
+import { nonForkedHreForBase, forkedHreForBase } from '../plugins/scenario/utils/hreForBase';
 
 const SRC_NETWORK = process.env['SRC_NETWORK'] ?? 'mainnet';
 const DST_NETWORK = process.env['DST_NETWORK'] ?? 'hardhat';

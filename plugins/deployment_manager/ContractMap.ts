@@ -1,9 +1,9 @@
 import * as fs from 'fs/promises';
 import * as nodepath from 'path';
 import { Contract } from 'ethers';
-import { Cache } from './Cache.js';
-import type { FileSpec } from './Cache.js';
-import type { Address, Alias, BuildFile } from './Types.js';
+import { Cache } from './Cache';
+import type { FileSpec } from './Cache';
+import type { Address, Alias, BuildFile } from './Types';
 
 export type ContractMap = Map<Alias, Contract>;
 

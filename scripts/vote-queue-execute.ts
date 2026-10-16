@@ -1,7 +1,7 @@
 import hre from 'hardhat';
-import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager.js';
-import { ProposalState } from '../scenario/context/Gov.js';
-import config from '../hardhat.config.js';
+import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager';
+import { ProposalState } from '../scenario/context/Gov';
+import config from '../hardhat.config';
 
 function requireEnv(name: string): string {
   const value = process.env[name];

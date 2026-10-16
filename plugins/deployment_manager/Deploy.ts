@@ -2,14 +2,14 @@ import { Contract, ContractFactory, Signer } from 'ethers';
 import { readFile } from 'node:fs/promises';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
 
-import { putVerifyArgs } from './VerifyArgs.js';
-import { Cache } from './Cache.js';
-import { storeBuildFile } from './ContractMap.js';
-import type { BuildFile, TraceFn } from './Types.js';
-import { debug, getPrimaryContract, stringifyJson, asyncCallWithTimeout } from './Utils.js';
-import { verifyContract } from './Verify.js';
-import type { VerifyArgs, VerificationStrategy } from './Verify.js';
-import { getHardhatEthers } from './hardhat3/runtime.js';
+import { putVerifyArgs } from './VerifyArgs';
+import { Cache } from './Cache';
+import { storeBuildFile } from './ContractMap';
+import type { BuildFile, TraceFn } from './Types';
+import { debug, getPrimaryContract, stringifyJson, asyncCallWithTimeout } from './Utils';
+import { verifyContract } from './Verify';
+import type { VerifyArgs, VerificationStrategy } from './Verify';
+import { getHardhatEthers } from './hardhat3/runtime';
 
 export interface DeployOpts {
   cache?: Cache; // caches the build file, if included

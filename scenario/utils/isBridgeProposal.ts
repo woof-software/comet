@@ -1,8 +1,8 @@
-import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { getRoots } from '../../plugins/deployment_manager/Roots.js';
-import type { OpenProposal } from '../context/Gov.js';
+import type { DeploymentManager } from '../../plugins/deployment_manager';
+import { getRoots } from '../../plugins/deployment_manager/Roots';
+import type { OpenProposal } from '../context/Gov';
 import { AbiCoder, dataSlice, toNumber } from 'ethers';
-import { forkedHreForBase } from '../../plugins/scenario/utils/hreForBase.js';
+import { forkedHreForBase } from '../../plugins/scenario/utils/hreForBase';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

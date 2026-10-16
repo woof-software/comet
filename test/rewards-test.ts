@@ -1,4 +1,4 @@
-import { defaultAssets, ethers, expect, exp, factorScale, fastForward, makeProtocol, makeRewards, objectify, wait, event, getBlock } from './helpers.js';
+import { defaultAssets, ethers, expect, exp, factorScale, fastForward, makeProtocol, makeRewards, objectify, wait, event, getBlock } from './helpers';
 
 describe('CometRewards', () => {
   describe('claim + supply', () => {

@@ -1,15 +1,15 @@
-import type { StaticConstraint } from '../../plugins/scenario/index.js';
-import type { IGovernorBravo, OpenProposal } from '../context/Gov.js';
-import { IGovernorBravo__factory } from '../../build/types/index.js';
+import type { StaticConstraint } from '../../plugins/scenario';
+import type { IGovernorBravo, OpenProposal } from '../context/Gov';
+import { IGovernorBravo__factory } from '../../build/types';
 import { toNumber } from 'ethers';
-import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
-import { debug } from '../../plugins/scenario/index.js';
-import { ProposalState } from '../context/Gov.js';
-import type { CometContext } from '../context/CometContext.js';
-import { fetchLogs } from '../utils/index.js';
-import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { isBridgedDeployment, voteForOpenProposal, executeOpenProposalAndRelay } from '../utils/index.js';
-import { getOpenBridgedProposals, executeBridgedProposal } from '../utils/bridgeProposal.js';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
+import { debug } from '../../plugins/scenario';
+import { ProposalState } from '../context/Gov';
+import type { CometContext } from '../context/CometContext';
+import { fetchLogs } from '../utils';
+import type { DeploymentManager } from '../../plugins/deployment_manager';
+import { isBridgedDeployment, voteForOpenProposal, executeOpenProposalAndRelay } from '../utils';
+import { getOpenBridgedProposals, executeBridgedProposal } from '../utils/bridgeProposal';
 
 export async function getOpenProposals(deploymentManager: DeploymentManager, governor: IGovernorBravo): Promise<OpenProposal[]> {
   const timelockBuf = 30000; // XXX this should be timelock.delay + timelock.GRACE_PERIOD

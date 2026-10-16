@@ -1,9 +1,9 @@
-import type { Constraint } from '../../plugins/scenario/index.js';
-import type { CometContext } from '../context/CometContext.js';
-import { optionalNumber } from '../utils/index.js';
-import { defactor, factor, factorScale } from '../../test/helpers.js';
+import type { Constraint } from '../../plugins/scenario';
+import type { CometContext } from '../context/CometContext';
+import { optionalNumber } from '../utils';
+import { defactor, factor, factorScale } from '../../test/helpers';
 import { expect } from 'chai';
-import type { Requirements } from './Requirements.js';
+import type { Requirements } from './Requirements';
 
 /**
  # Utilization Constraint

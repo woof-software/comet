@@ -1,9 +1,9 @@
-import type { CometContext } from './context/CometContext.js';
-import { scenario } from './context/CometContext.js';
+import type { CometContext } from './context/CometContext';
+import { scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils/index.js';
+import { expectApproximately, expectRevertCustom, hasMinBorrowGreaterThanOne, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS } from './utils';
 import type { ContractTransactionReceipt } from 'ethers';
-import { getConfigForScenario } from './utils/scenarioHelper.js';
+import { getConfigForScenario } from './utils/scenarioHelper';
 
 async function testWithdrawCollateral(context: CometContext, assetNum: number): Promise<void | ContractTransactionReceipt> {
   const comet = await context.getComet();

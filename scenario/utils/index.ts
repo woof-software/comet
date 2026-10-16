@@ -29,37 +29,36 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import axiosModule from 'axios';
-import { CometContext } from '../context/CometContext.js';
-import CometAsset from '../context/CometAsset.js';
-import { exp } from '../../test/helpers.js';
-import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
-import { ProposalState, OpenProposal } from '../context/Gov.js';
-import { debug } from '../../plugins/deployment_manager/Utils.js';
-import { COMP_WHALES } from '../../src/deploy/index.js';
-import relayMessage from './relayMessage.js';
+import axios from 'axios';
+import { CometContext } from '../context/CometContext';
+import CometAsset from '../context/CometAsset';
+import { exp } from '../../test/helpers';
+import { DeploymentManager } from '../../plugins/deployment_manager';
+import { impersonateAddress } from '../../plugins/scenario/utils';
+import { ProposalState, OpenProposal } from '../context/Gov';
+import { debug } from '../../plugins/deployment_manager/Utils';
+import { COMP_WHALES } from '../../src/deploy';
+import relayMessage from './relayMessage';
 import {
   mineBlocks,
   setEtherBalance,
   setNextBaseFeeToZero,
   setNextBlockTimestamp,
-} from './hreUtils.js';
-import { BaseBridgeReceiver, CometInterface } from '../../build/types/index.js';
-import CometActor from './../context/CometActor.js';
-import { isBridgeProposal } from './isBridgeProposal.js';
-import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
+} from './hreUtils';
+import { BaseBridgeReceiver, CometInterface } from '../../build/types';
+import CometActor from './../context/CometActor';
+import { isBridgeProposal } from './isBridgeProposal';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
 export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
-const axios = axiosModule.default;
 
-import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase.js';
-import { getOrCreateVirtualTestnet } from './tenderlyVnet.js';
-import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants.js';
-export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants.js';
-export * from './hreUtils.js';
+import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
+import { getOrCreateVirtualTestnet } from './tenderlyVnet';
+import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
+export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
+export * from './hreUtils';
 
 /** Convert a per-year interest factor to per-second (Comet constructor truncation). */
 export function perSecond(perYear: bigint): bigint {

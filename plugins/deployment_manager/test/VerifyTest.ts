@@ -3,9 +3,9 @@ import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-import { verifyContract } from '../Verify.js';
-import { deployBuild } from '../Deploy.js';
-import { buildToken, faucetTokenBuildFile, tokenArgs } from './DeployHelpers.js';
+import { verifyContract } from '../Verify';
+import { deployBuild } from '../Deploy';
+import { buildToken, faucetTokenBuildFile, tokenArgs } from './DeployHelpers';
 
 let verifyMockConfigured = false;
 

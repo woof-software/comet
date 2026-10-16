@@ -1,5 +1,5 @@
-import { scenario } from './context/CometContext.js';
-import { expectRevertCustom } from './utils/index.js';
+import { scenario } from './context/CometContext';
+import { expectRevertCustom } from './utils';
 import { expect } from 'chai';
 import { MaxUint256 } from 'ethers';
 

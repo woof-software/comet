@@ -2,11 +2,11 @@ import hre from 'hardhat';
 import { expect } from 'chai';
 import * as os from 'os';
 
-import { Cache } from '../Cache.js';
-import { objectFromMap } from '../Utils.js';
-import { deleteVerifyArgs, getVerifyArgs, putVerifyArgs } from '../VerifyArgs.js';
-import type { VerifyArgs } from '../Verify.js';
-import { deploy, faucetTokenBuildFile } from './DeployHelpers.js';
+import { Cache } from '../Cache';
+import { objectFromMap } from '../Utils';
+import { deleteVerifyArgs, getVerifyArgs, putVerifyArgs } from '../VerifyArgs';
+import type { VerifyArgs } from '../Verify';
+import { deploy, faucetTokenBuildFile } from './DeployHelpers';
 
 describe('VerifyArgs', () => {
   it('gets, sets, and deletes verify args', async () => {

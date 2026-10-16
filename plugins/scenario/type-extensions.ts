@@ -1,5 +1,5 @@
 import 'hardhat/types/config';
-import type { ForkSpec } from './World.js';
+import type { ForkSpec } from './World';
 
 export interface ScenarioConfig {
   bases: ForkSpec[];

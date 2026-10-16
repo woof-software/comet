@@ -1,7 +1,7 @@
-import { scenario } from './context/CometContext.js';
+import { scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { annualize, defactor, exp } from '../test/helpers.js';
-import { FuzzType } from './constraints/Fuzzing.js';
+import { annualize, defactor, exp } from '../test/helpers';
+import { FuzzType } from './constraints/Fuzzing';
 
 function expectApproximately(actual: number, expected: number, delta: number) {
   // Hardhat's approximately matcher only accepts integers; rates are fractional.

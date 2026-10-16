@@ -2,8 +2,8 @@ import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/
 import { EventLog, MaxUint256, ZeroAddress } from 'ethers';
 import type { ContractTransactionReceipt } from 'ethers';
 
-import { ethers, expect, makeProtocol } from './helpers.js';
-import type { Comet } from './helpers.js';
+import { ethers, expect, makeProtocol } from './helpers';
+import type { Comet } from './helpers';
 
 describe('CometExt allow / approve permissions', function () {
   // shared environment, built ONCE

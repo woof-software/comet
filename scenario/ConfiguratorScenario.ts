@@ -1,12 +1,12 @@
 import { expect } from 'chai';
 import { ethers } from 'ethers';
 import type { Signer } from 'ethers';
-import type { CometContext } from './context/CometContext.js';
-import { scenario } from './context/CometContext.js';
-import { exp } from '../test/helpers.js';
-import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker } from './utils/index.js';
-import { MarketAdminPermissionChecker__factory } from '../build/types/index.js';
-import { SECONDS_PER_YEAR } from './utils/constants.js';
+import type { CometContext } from './context/CometContext';
+import { scenario } from './context/CometContext';
+import { exp } from '../test/helpers';
+import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker } from './utils';
+import { MarketAdminPermissionChecker__factory } from '../build/types';
+import { SECONDS_PER_YEAR } from './utils/constants';
 
 // Based on contract's internal precision: FACTOR_SCALE=1e18 with 4 decimal places
 const FACTOR_SCALE = 10n ** 18n;

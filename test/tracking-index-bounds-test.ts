@@ -1,4 +1,4 @@
-import { expect, exp, fastForward, makeProtocol, setTotalsBasic, toYears } from './helpers.js';
+import { expect, exp, fastForward, makeProtocol, setTotalsBasic, toYears } from './helpers';
 
 describe('total tracking index bounds', function () {
   describe('base scale of 6', function () {

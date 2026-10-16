@@ -21,7 +21,7 @@ const deployTask = task("deploy", "Deploys market")
     defaultValue: undefined,
   })
   .setAction(async () => ({
-    default: (await import("./task-actions.js")).deployAction,
+    default: (await import("./task-actions")).deployAction,
   }))
   .build();
 
@@ -46,7 +46,7 @@ const publishTask = task(
     defaultValue: [],
   })
   .setAction(async () => ({
-    default: (await import("./task-actions.js")).publishAction,
+    default: (await import("./task-actions")).publishAction,
   }))
   .build();
 
@@ -59,7 +59,7 @@ const generateMigrationTask = task("gen:migration", "Generates a new migration")
     defaultValue: undefined,
   })
   .setAction(async () => ({
-    default: (await import("./task-actions.js")).generateMigrationAction,
+    default: (await import("./task-actions")).generateMigrationAction,
   }))
   .build();
 
@@ -108,7 +108,7 @@ const migrateTask = task("migrate", "Runs migration")
     description: "overwrites artifact if exists, fails otherwise",
   })
   .setAction(async () => ({
-    default: (await import("./task-actions.js")).migrateAction,
+    default: (await import("./task-actions")).migrateAction,
   }))
   .build();
 
@@ -154,7 +154,7 @@ const deployAndMigrateTask = task(
     defaultValue: undefined,
   })
   .setAction(async () => ({
-    default: (await import("./task-actions.js")).deployAndMigrateAction,
+    default: (await import("./task-actions")).deployAndMigrateAction,
   }))
   .build();
 

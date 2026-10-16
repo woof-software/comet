@@ -1,6 +1,6 @@
 import type { ConfigHooks } from 'hardhat/types/hooks';
 
-import type { DeploymentManagerConfig } from '../type-extensions.js';
+import type { DeploymentManagerConfig } from '../type-extensions';
 
 export default async (): Promise<Partial<ConfigHooks>> => ({
   async resolveUserConfig(userConfig, resolveConfigurationVariable, next) {

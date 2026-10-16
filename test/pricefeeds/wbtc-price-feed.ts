@@ -1,4 +1,4 @@
-import { ethers, exp, expect } from '../helpers.js';
+import { ethers, exp, expect } from '../helpers';
 
 export async function makeWBTCPriceFeed({ WBTCToBTCPrice, BTCToUSDPrice }) {
   const SimplePriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');

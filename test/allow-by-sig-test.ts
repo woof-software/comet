@@ -1,9 +1,9 @@
 import { MaxUint256, Signature, ZeroAddress } from 'ethers';
 import type { HardhatEthersSigner as SignerWithAddress } from '@nomicfoundation/hardhat-ethers/types';
-import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types/index.js';
-import { ethers, expect, exp, makeProtocol, wait, event, defaultAssets } from './helpers.js';
-import { takeSnapshot } from './helpers/snapshot.js';
-import type { SnapshotRestorer } from './helpers/snapshot.js';
+import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types';
+import { ethers, expect, exp, makeProtocol, wait, event, defaultAssets } from './helpers';
+import { takeSnapshot } from './helpers/snapshot';
+import type { SnapshotRestorer } from './helpers/snapshot';
 
 function expectApproximately(actual: bigint, expected: bigint, tolerance: bigint): void {
   const difference = actual >= expected ? actual - expected : expected - actual;

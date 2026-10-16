@@ -1,9 +1,9 @@
 // NB: this couples this plugin to deployment manager plugin
-import { DeploymentManager } from '../deployment_manager/DeploymentManager.js';
-import type { ExtendedNonceManager } from '../deployment_manager/NonceManager.js';
-import { getHardhatEthers } from '../deployment_manager/hardhat3/runtime.js';
-import hreForBase from './utils/hreForBase.js';
-import { impersonateAddress } from './utils/index.js';
+import { DeploymentManager } from '../deployment_manager/DeploymentManager';
+import type { ExtendedNonceManager } from '../deployment_manager/NonceManager';
+import { getHardhatEthers } from '../deployment_manager/hardhat3/runtime';
+import hreForBase from './utils/hreForBase';
+import { impersonateAddress } from './utils';
 
 export type ForkSpec = {
   name: string;

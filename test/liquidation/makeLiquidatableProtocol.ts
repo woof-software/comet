@@ -3,14 +3,14 @@ import type { HardhatEthers } from '@nomicfoundation/hardhat-ethers/types';
 import type { HttpNetworkConfig } from 'hardhat/types/config';
 import type { NetworkConnection } from 'hardhat/types/network';
 
-import { exp, hre, setTotalsBasic } from '../helpers.js';
+import { exp, hre, setTotalsBasic } from '../helpers';
 import {
   CometExt__factory,
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList__factory,
   ERC20__factory,
   OnChainLiquidator__factory
-} from '../../build/types/index.js';
+} from '../../build/types';
 import {
   BALANCER_VAULT,
   COMP,
@@ -38,7 +38,7 @@ import {
   WST_ETH,
   UNISWAP_V3_FACTORY,
   SUSHISWAP_ROUTER
-} from './addresses.js';
+} from './addresses';
 
 export enum Exchange {
   Uniswap,

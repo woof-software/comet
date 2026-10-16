@@ -1,4 +1,4 @@
-import { ethers, exp, expect } from '../helpers.js';
+import { ethers, exp, expect } from '../helpers';
 
 export async function makeMultiplicativePriceFeed({ priceA, priceB, decimalsA = 8, decimalsB = 8 }) {
   const SimplePriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed');

@@ -1,7 +1,7 @@
 import { expect } from 'chai';
-import { tempDir } from './TestHelpers.js';
-import { Cache } from '../Cache.js';
-import { objectFromMap } from '../Utils.js';
+import { tempDir } from './TestHelpers';
+import { Cache } from '../Cache';
+import { objectFromMap } from '../Utils';
 
 describe('Cache', () => {
   it('read and store values in-memory', async () => {

@@ -1,4 +1,4 @@
-import '../../plugins/scenario/type-extensions.js';
+import '../../plugins/scenario/type-extensions';
 import hre from 'hardhat';
 
 function resolveBases(all: string[], inputBases: string, inputNetwork: string): string[] {

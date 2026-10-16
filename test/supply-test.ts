@@ -1,8 +1,8 @@
 import { MaxUint256, ZeroAddress } from 'ethers';
 
-import { EvilToken__factory, NonStandardFaucetFeeToken__factory } from '../build/types/index.js';
-import type { EvilToken, NonStandardFaucetFeeToken } from '../build/types/index.js';
-import { ethers, event, expect, exp, makeProtocol, portfolio, ReentryAttack, setTotalsBasic, wait, fastForward, defaultAssets } from './helpers.js';
+import { EvilToken__factory, NonStandardFaucetFeeToken__factory } from '../build/types';
+import type { EvilToken, NonStandardFaucetFeeToken } from '../build/types';
+import { ethers, event, expect, exp, makeProtocol, portfolio, ReentryAttack, setTotalsBasic, wait, fastForward, defaultAssets } from './helpers';
 
 describe('supplyTo', function () {
   it('supplies base from sender if the asset is base', async () => {

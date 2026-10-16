@@ -1,4 +1,4 @@
-import type { RelationConfigMap } from '../plugins/deployment_manager/RelationConfig.js';
+import type { RelationConfigMap } from '../plugins/deployment_manager/RelationConfig';
 
 const relationConfigMap: RelationConfigMap = {
   comptrollerV2: {

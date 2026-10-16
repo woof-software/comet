@@ -1,7 +1,7 @@
-import { CometHarnessInterfaceExtendedAssetList__factory, Configurator__factory, CometExtAssetList__factory, CometFactoryWithExtendedAssetList__factory, FaucetToken__factory, PriceFeedWithRevert__factory } from '../build/types/index.js';
-import type { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, SimplePriceFeed } from '../build/types/index.js';
-import { expect, exp, ethers, MAX_ASSETS, mulFactor, factorScale, makeConfigurator, ZERO_ADDRESS, takeSnapshot, makeProtocol } from './helpers.js';
-import type { SnapshotRestorer, SignerWithAddress } from './helpers.js';
+import { CometHarnessInterfaceExtendedAssetList__factory, Configurator__factory, CometExtAssetList__factory, CometFactoryWithExtendedAssetList__factory, FaucetToken__factory, PriceFeedWithRevert__factory } from '../build/types';
+import type { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, SimplePriceFeed } from '../build/types';
+import { expect, exp, ethers, MAX_ASSETS, mulFactor, factorScale, makeConfigurator, ZERO_ADDRESS, takeSnapshot, makeProtocol } from './helpers';
+import type { SnapshotRestorer, SignerWithAddress } from './helpers';
 import { encodeBytes32String } from 'ethers';
 describe('quoteCollateral', function () {
   // Constants

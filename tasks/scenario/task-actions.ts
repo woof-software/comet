@@ -1,8 +1,8 @@
 import type { HardhatRuntimeEnvironment } from "hardhat/types/hre";
 import type { NewTaskActionFunction } from "hardhat/types/tasks";
 
-import { DeploymentManager } from "../../plugins/deployment_manager/DeploymentManager.js";
-import type { ForkSpec } from "../../plugins/scenario/World.js";
+import { DeploymentManager } from "../../plugins/deployment_manager/DeploymentManager";
+import type { ForkSpec } from "../../plugins/scenario/World";
 
 interface ScenarioTaskArguments {
   bases?: string;
@@ -22,22 +22,22 @@ interface ScenarioMultistreamTaskArguments {
 
 async function hreForBase(
   ...args: Parameters<
-    typeof import("../../plugins/scenario/utils/hreForBase.js").default
+    typeof import("../../plugins/scenario/utils/hreForBase").default
   >
 ) {
   const { default: createHreForBase } = await import(
-    "../../plugins/scenario/utils/hreForBase.js"
+    "../../plugins/scenario/utils/hreForBase"
   );
   return createHreForBase(...args);
 }
 
 async function runScenarios(
   ...args: Parameters<
-    typeof import("../../plugins/scenario/Runner.js").runScenarios
+    typeof import("../../plugins/scenario/Runner").runScenarios
   >
 ) {
   const { runScenarios: run } = await import(
-    "../../plugins/scenario/Runner.js"
+    "../../plugins/scenario/Runner"
   );
   return run(...args);
 }
@@ -76,7 +76,7 @@ export const scenarioMultistreamAction: NewTaskActionFunction<
   ScenarioMultistreamTaskArguments
 > = async (taskArguments, env) => {
   const bases = getBasesFromTaskArgs(taskArguments.bases, env);
-  const { runMultistream } = await import("../../scripts/multistream/run.js");
+  const { runMultistream } = await import("../../scripts/multistream/run");
   await runMultistream(bases, taskArguments.perBase);
 };
 

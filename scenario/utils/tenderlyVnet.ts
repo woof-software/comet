@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import type { AxiosStatic } from 'axios';
-import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
+import type { DeploymentManager } from '../../plugins/deployment_manager';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
 
 const axios: AxiosStatic = createRequire(import.meta.url)('axios');
 

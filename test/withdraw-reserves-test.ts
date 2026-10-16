@@ -1,6 +1,6 @@
-import { ethers, expect, exp, makeProtocol, MAX_ASSETS, takeSnapshot, setTotalsBasic } from './helpers.js';
-import type { SnapshotRestorer, SignerWithAddress } from './helpers.js';
-import type { CometHarnessInterfaceExtendedAssetList, FaucetToken } from '../build/types/index.js';
+import { ethers, expect, exp, makeProtocol, MAX_ASSETS, takeSnapshot, setTotalsBasic } from './helpers';
+import type { SnapshotRestorer, SignerWithAddress } from './helpers';
+import type { CometHarnessInterfaceExtendedAssetList, FaucetToken } from '../build/types';
 import type { ContractTransactionResponse } from 'ethers';
 describe('withdrawReserves', function () {
   // Contracts

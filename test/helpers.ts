@@ -20,7 +20,7 @@ import {
   AssetListFactory__factory,
   CometHarnessExtendedAssetList__factory,
   MarketAdminPermissionChecker__factory,
-} from '../build/types/index.js';
+} from '../build/types';
 import type {
   AssetListFactory,
   BaseBulker,
@@ -39,10 +39,10 @@ import type {
   NonStandardFaucetFeeToken,
   SimplePriceFeed,
   TransparentUpgradeableProxy,
-} from '../build/types/index.js';
-import type { ICometData as CometStorage } from '../build/types/test/CometHarnessExtendedAssetList.js';
-import { takeSnapshot } from './helpers/snapshot.js';
-import type { SnapshotRestorer } from './helpers/snapshot.js';
+} from '../build/types';
+import type { ICometData as CometStorage } from '../build/types/test/CometHarnessExtendedAssetList';
+import { takeSnapshot } from './helpers/snapshot';
+import type { SnapshotRestorer } from './helpers/snapshot';
 
 type TotalsBasicStructOutput = Awaited<ReturnType<CometHarnessInterfaceExtendedAssetList['totalsBasic']>>;
 type TotalsCollateralStructOutput = Awaited<ReturnType<CometHarnessInterfaceExtendedAssetList['totalsCollateral']>>;
@@ -51,7 +51,7 @@ const { ethers } = await hre.network.getOrCreate();
 
 export type { Comet, SnapshotRestorer, SignerWithAddress };
 export { ethers, expect, hre, takeSnapshot };
-export * from './helpers/math.js';
+export * from './helpers/math';
 
 export type Numeric = number | bigint;
 

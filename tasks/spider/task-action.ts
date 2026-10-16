@@ -2,8 +2,8 @@ import { execSync } from "node:child_process";
 
 import type { NewTaskActionFunction } from "hardhat/types/tasks";
 
-import { DeploymentManager } from "../../plugins/deployment_manager/DeploymentManager.js";
-import { getDefaultConnection } from "../../plugins/deployment_manager/hardhat3/runtime.js";
+import { DeploymentManager } from "../../plugins/deployment_manager/DeploymentManager";
+import { getDefaultConnection } from "../../plugins/deployment_manager/hardhat3/runtime";
 
 interface SpiderTaskArguments {
   clean: boolean;

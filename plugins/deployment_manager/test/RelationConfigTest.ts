@@ -7,13 +7,13 @@ import {
   getFieldKey,
   readAlias,
   readField,
-} from '../RelationConfig.js';
+} from '../RelationConfig';
 import type {
   AliasTemplate,
   FieldKey,
   RelationConfigMap,
   RelationInnerConfig,
-} from '../RelationConfig.js';
+} from '../RelationConfig';
 
 interface FieldKeyTest {
   name: string;

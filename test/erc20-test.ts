@@ -1,6 +1,6 @@
 import { MaxUint256, ZeroAddress } from 'ethers';
 
-import { baseBalanceOf, expect, makeProtocol, setTotalsBasic } from './helpers.js';
+import { baseBalanceOf, expect, makeProtocol, setTotalsBasic } from './helpers';
 
 describe('erc20', function () {
   it('has correct name', async () => {

@@ -3,8 +3,8 @@ import { expect } from 'chai';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { getArtifactSpec, loadMigrations, migration } from '../Migration.js';
-import { DeploymentManager } from '../../deployment_manager/DeploymentManager.js';
+import { getArtifactSpec, loadMigrations, migration } from '../Migration';
+import { DeploymentManager } from '../../deployment_manager/DeploymentManager';
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 

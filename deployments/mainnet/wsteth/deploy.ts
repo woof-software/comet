@@ -1,6 +1,6 @@
-import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager/index.js';
-import type { DeploySpec } from '../../../src/deploy/index.js';
-import { deployComet, exp } from '../../../src/deploy/index.js';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
+import type { DeploySpec } from '../../../src/deploy';
+import { deployComet, exp } from '../../../src/deploy';
 
 export default async function deploy(deploymentManager: DeploymentManager, deploySpec: DeploySpec): Promise<Deployed> {
   const wstETH = await deploymentManager.existing('wstETH', '0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0');

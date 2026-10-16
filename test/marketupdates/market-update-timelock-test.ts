@@ -1,8 +1,8 @@
 import { AbiCoder, keccak256 } from 'ethers';
 
-import { makeMarketAdmin, advanceTimeAndMineBlock } from './market-updates-helper.js';
-import { expect, getBlock, makeConfigurator } from '../helpers.js';
-import { Configurator__factory } from '../../build/types/index.js';
+import { makeMarketAdmin, advanceTimeAndMineBlock } from './market-updates-helper';
+import { expect, getBlock, makeConfigurator } from '../helpers';
+import { Configurator__factory } from '../../build/types';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

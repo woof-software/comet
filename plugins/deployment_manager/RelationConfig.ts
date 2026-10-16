@@ -1,6 +1,6 @@
 import { Contract, getAddress } from 'ethers';
-import type { DeploymentManagerConfig } from './type-extensions.js';
-import type { Address, Alias } from './Types.js';
+import type { DeploymentManagerConfig } from './type-extensions';
+import type { Address, Alias } from './Types';
 
 export type Ctx = { [aliasTemplate: string]: Contract[] };
 

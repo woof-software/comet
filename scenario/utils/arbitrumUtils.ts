@@ -1,6 +1,6 @@
 import { AbiCoder, Contract, Interface, dataLength, parseUnits, toBeHex } from 'ethers';
-import type { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager.js';
-import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
+import type { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

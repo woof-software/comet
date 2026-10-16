@@ -2,9 +2,9 @@ import hre from 'hardhat';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
 import type { NetworkConnection, NetworkManager } from 'hardhat/types/network';
 import type { EthereumProvider } from 'hardhat/types/providers';
-import { networkConfigs } from '../../../hardhat.config.js';
+import { networkConfigs } from '../../../hardhat.config';
 
-import type { ForkSpec } from '../World.js';
+import type { ForkSpec } from '../World';
 
 function hreForConnection(connection: NetworkConnection): HardhatRuntimeEnvironment {
   const network = Object.create(hre.network) as NetworkManager;

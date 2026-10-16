@@ -1,4 +1,4 @@
-import type { Requirements } from './Requirements.js';
+import type { Requirements } from './Requirements';
 
 export enum FuzzType {
   INT64,

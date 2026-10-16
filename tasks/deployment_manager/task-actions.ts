@@ -4,12 +4,12 @@ import type { HardhatConfig } from "hardhat/types/config";
 import type { HardhatRuntimeEnvironment } from "hardhat/types/hre";
 import type { NewTaskActionFunction } from "hardhat/types/tasks";
 
-import { writeEnacted } from "../../plugins/deployment_manager/Enacted.js";
-import { loadMigrations } from "../../plugins/deployment_manager/Migration.js";
-import type { Migration } from "../../plugins/deployment_manager/Migration.js";
-import { DeploymentManager } from "../../plugins/deployment_manager/index.js";
-import type { VerifyArgs } from "../../plugins/deployment_manager/index.js";
-import { getDefaultConnection } from "../../plugins/deployment_manager/hardhat3/runtime.js";
+import { writeEnacted } from "../../plugins/deployment_manager/Enacted";
+import { loadMigrations } from "../../plugins/deployment_manager/Migration";
+import type { Migration } from "../../plugins/deployment_manager/Migration";
+import { DeploymentManager } from "../../plugins/deployment_manager";
+import type { VerifyArgs } from "../../plugins/deployment_manager";
+import { getDefaultConnection } from "../../plugins/deployment_manager/hardhat3/runtime";
 
 interface DeployTaskArguments {
   simulate: boolean;
@@ -61,18 +61,18 @@ function requireOption(value: string | undefined, name: string): string {
 
 async function hreForBase(
   ...args: Parameters<
-    typeof import("../../plugins/scenario/utils/hreForBase.js").default
+    typeof import("../../plugins/scenario/utils/hreForBase").default
   >
 ) {
   const { default: createHreForBase } = await import(
-    "../../plugins/scenario/utils/hreForBase.js"
+    "../../plugins/scenario/utils/hreForBase"
   );
   return createHreForBase(...args);
 }
 
 async function migrationStarted() {
   const { migrationStarted: markMigrationStarted } = await import(
-    "../../plugins/scenario/utils/hreForBase.js"
+    "../../plugins/scenario/utils/hreForBase"
   );
   markMigrationStarted();
 }
@@ -152,7 +152,7 @@ async function runMigration<T>(
     console.log("Enactment complete");
 
     if (tenderly) {
-      const { tenderlyExecute } = await import("../../scenario/utils/index.js");
+      const { tenderlyExecute } = await import("../../scenario/utils");
       await tenderlyExecute(
         govDeploymentManager,
         deploymentManager,
@@ -162,7 +162,7 @@ async function runMigration<T>(
     }
     if (tenderlyVnet) {
       const { tenderlyVnetExecute } = await import(
-        "../../scenario/utils/index.js"
+        "../../scenario/utils"
       );
       await tenderlyVnetExecute(
         govDeploymentManager,
@@ -264,7 +264,7 @@ async function maybeImpersonate(
   }
   if (impersonate) {
     const { impersonateAddress } = await import(
-      "../../plugins/scenario/utils/index.js"
+      "../../plugins/scenario/utils"
     );
     const signer = await impersonateAddress(
       governanceDm,

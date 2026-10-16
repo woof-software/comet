@@ -1,12 +1,12 @@
-import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { impersonateAddress } from '../../plugins/scenario/utils/index.js';
-import { executeBridgedProposal } from './bridgeProposal.js';
-import { setNextBaseFeeToZero } from './hreUtils.js';
+import type { DeploymentManager } from '../../plugins/deployment_manager';
+import { impersonateAddress } from '../../plugins/scenario/utils';
+import { executeBridgedProposal } from './bridgeProposal';
+import { setNextBaseFeeToZero } from './hreUtils';
 import { AbiCoder, Contract } from 'ethers';
 import type { Log } from 'ethers';
-import type { OpenBridgedProposal } from '../context/Gov.js';
-import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
-import { isTenderlyLog } from './index.js';
+import type { OpenBridgedProposal } from '../context/Gov';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
+import { isTenderlyLog } from './index';
 
 type BridgeERC20Data = {
   syncData: string;

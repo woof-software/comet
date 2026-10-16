@@ -1,14 +1,14 @@
-import type { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime.js';
-import relayPolygonMessage from './relayPolygonMessage.js';
-import { relayArbitrumMessage, relayArbitrumCCTPMint, simulateL2ToL1TokenBridging } from './relayArbitrumMessage.js';
-import relayBaseMessage, { simulateL2ToL1TokenBridging as simulateBaseL2ToL1TokenBridging } from './relayBaseMessage.js';
-import relayLineaMessage from './relayLineaMessage.js';
-import relayOptimismMessage, { simulateL2ToL1TokenBridging as simulateOptimismL2ToL1TokenBridging } from './relayOptimismMessage.js';
-import relayMantleMessage from './relayMantleMessage.js';
-import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMessage.js';
-import relayScrollMessage from './relayScrollMessage.js';
-import relayRoninMessage from './relayRoninMessage.js';
+import type { DeploymentManager } from '../../plugins/deployment_manager';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
+import relayPolygonMessage from './relayPolygonMessage';
+import { relayArbitrumMessage, relayArbitrumCCTPMint, simulateL2ToL1TokenBridging } from './relayArbitrumMessage';
+import relayBaseMessage, { simulateL2ToL1TokenBridging as simulateBaseL2ToL1TokenBridging } from './relayBaseMessage';
+import relayLineaMessage from './relayLineaMessage';
+import relayOptimismMessage, { simulateL2ToL1TokenBridging as simulateOptimismL2ToL1TokenBridging } from './relayOptimismMessage';
+import relayMantleMessage from './relayMantleMessage';
+import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMessage';
+import relayScrollMessage from './relayScrollMessage';
+import relayRoninMessage from './relayRoninMessage';
 
 const L2_BLOCK_BUFFER = 5;
 

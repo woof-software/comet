@@ -1,10 +1,10 @@
-import type { Constraint, Solution } from '../../plugins/scenario/index.js';
-import type { CometContext } from '../context/CometContext.js';
-import type CometActor from '../context/CometActor.js';
+import type { Constraint, Solution } from '../../plugins/scenario';
+import type { CometContext } from '../context/CometContext';
+import type CometActor from '../context/CometActor';
 import { expect } from 'chai';
-import type { Requirements } from './Requirements.js';
-import { baseBalanceOf, exp, factorScale } from '../../test/helpers.js';
-import { ComparativeAmount, ComparisonOp, getAssetFromName, parseAmount, getExpectedBaseBalance, getToTransferAmount } from '../utils/index.js';
+import type { Requirements } from './Requirements';
+import { baseBalanceOf, exp, factorScale } from '../../test/helpers';
+import { ComparativeAmount, ComparisonOp, getAssetFromName, parseAmount, getExpectedBaseBalance, getToTransferAmount } from '../utils';
 
 async function borrowBase(borrowActor: CometActor, toBorrowBase: bigint, context: CometContext) {
   const comet = await context.getComet();

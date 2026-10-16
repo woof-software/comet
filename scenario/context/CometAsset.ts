@@ -1,10 +1,10 @@
 import { MaxUint256 } from 'ethers';
 import type { Overrides, Signer } from 'ethers';
-import type { ERC20 } from '../../build/types/index.js';
-import CometActor from './CometActor.js';
-import { resolveAddress } from './Address.js';
-import type { AddressLike } from './Address.js';
-import { wait } from '../../test/helpers.js';
+import type { ERC20 } from '../../build/types';
+import CometActor from './CometActor';
+import { resolveAddress } from './Address';
+import type { AddressLike } from './Address';
+import { wait } from '../../test/helpers';
 
 export default class CometAsset {
   token: ERC20;

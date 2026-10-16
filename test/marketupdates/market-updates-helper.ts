@@ -2,8 +2,8 @@ import {
   SimpleTimelock__factory,
   MarketUpdateTimelock__factory,
   MarketUpdateProposer__factory, MarketAdminPermissionChecker__factory,
-} from './../../build/types/index.js';
-import { ethers, expect } from './../helpers.js';
+} from './../../build/types';
+import { ethers, expect } from './../helpers';
 
 export async function makeMarketAdmin() {
   const {

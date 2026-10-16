@@ -3,18 +3,18 @@ import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
 import { BrowserProvider, Wallet } from 'ethers';
 import type { Signer } from 'ethers';
 
-import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager.js';
+import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
 import {
   CometInterface__factory,
   OnChainLiquidator__factory,
-} from '../../build/types/index.js';
+} from '../../build/types';
 import {
   arbitragePurchaseableCollateral,
   liquidateUnderwaterBorrowers,
   getAssets,
-} from './liquidateUnderwaterBorrowers.js';
-import type { Asset } from './liquidateUnderwaterBorrowers.js';
-import googleCloudLog, { LogSeverity } from './googleCloudLog.js';
+} from './liquidateUnderwaterBorrowers';
+import type { Asset } from './liquidateUnderwaterBorrowers';
+import googleCloudLog, { LogSeverity } from './googleCloudLog';
 
 const loopDelay = 5000;
 const loopsUntilUpdateAssets = 1000;

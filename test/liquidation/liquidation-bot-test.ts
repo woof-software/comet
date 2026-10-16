@@ -1,8 +1,8 @@
 import { encodeBytes32String, MaxUint256, ZeroAddress } from 'ethers';
 
-import { event, expect, exp, wait } from '../helpers.js';
-import { Exchange, forkMainnet, makeLiquidatableProtocol, resetHardhatNetwork } from './makeLiquidatableProtocol.js';
-import { DAI, SUSHISWAP_ROUTER, UNISWAP_ROUTER } from './addresses.js';
+import { event, expect, exp, wait } from '../helpers';
+import { Exchange, forkMainnet, makeLiquidatableProtocol, resetHardhatNetwork } from './makeLiquidatableProtocol';
+import { DAI, SUSHISWAP_ROUTER, UNISWAP_ROUTER } from './addresses';
 
 describe.skip('Liquidator', function () {
   before(forkMainnet);

@@ -1,11 +1,11 @@
-import { NonStandardFaucetFeeToken__factory } from '../build/types/index.js';
-import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken } from '../build/types/index.js';
-import { ethers, expect, exp, makeProtocol, presentValue, ZERO_ADDRESS, presentValueSupply, mulPrice, mulFactor, defaultAssets, baseBalanceOf, event, portfolio, setTotalsBasic, wait, fastForward } from './helpers.js';
-import type { SignerWithAddress } from './helpers.js';
+import { NonStandardFaucetFeeToken__factory } from '../build/types';
+import type { CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken } from '../build/types';
+import { ethers, expect, exp, makeProtocol, presentValue, ZERO_ADDRESS, presentValueSupply, mulPrice, mulFactor, defaultAssets, baseBalanceOf, event, portfolio, setTotalsBasic, wait, fastForward } from './helpers';
+import type { SignerWithAddress } from './helpers';
 import { MaxUint256, ZeroAddress } from 'ethers';
 import type { ContractTransactionResponse, ContractTransactionReceipt, BaseContract } from 'ethers';
-import { takeSnapshot } from './helpers/snapshot.js';
-import type { SnapshotRestorer } from './helpers/snapshot.js';
+import { takeSnapshot } from './helpers/snapshot';
+import type { SnapshotRestorer } from './helpers/snapshot';
 
 function decodedEvents(receipt: ContractTransactionReceipt | null, contract: BaseContract) {
   if (!receipt) throw new Error('Transaction receipt not found');

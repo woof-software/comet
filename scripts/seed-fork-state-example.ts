@@ -1,9 +1,9 @@
 import hre from 'hardhat';
-import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager.js';
-import { impersonateAddress } from '../plugins/scenario/utils/index.js';
-import { setNextBaseFeeToZero } from '../scenario/utils/hreUtils.js';
-import { getConfigurationStruct } from '../src/deploy/index.js';
-import { exp } from '../test/helpers.js';
+import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager';
+import { impersonateAddress } from '../plugins/scenario/utils';
+import { setNextBaseFeeToZero } from '../scenario/utils/hreUtils';
+import { getConfigurationStruct } from '../src/deploy';
+import { exp } from '../test/helpers';
 
 function requireEnv(name: string): string {
   const value = process.env[name];

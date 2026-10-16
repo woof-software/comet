@@ -1,8 +1,8 @@
 import { AbiCoder, MaxUint256, ZeroAddress } from 'ethers';
 
-import { baseBalanceOf, ethers, expect, exp, makeProtocol, wait, makeBulker, defaultAssets, getGasUsed, makeRewards, fastForward, event, setTotalsBasic } from './helpers.js';
-import { FaucetWETH__factory, NonStandardFaucetToken__factory } from '../build/types/index.js';
-import type { CometHarnessInterfaceExtendedAssetList } from '../build/types/index.js';
+import { baseBalanceOf, ethers, expect, exp, makeProtocol, wait, makeBulker, defaultAssets, getGasUsed, makeRewards, fastForward, event, setTotalsBasic } from './helpers';
+import { FaucetWETH__factory, NonStandardFaucetToken__factory } from '../build/types';
+import type { CometHarnessInterfaceExtendedAssetList } from '../build/types';
 
 const abiCoder = AbiCoder.defaultAbiCoder();
 

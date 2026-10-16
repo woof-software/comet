@@ -1,11 +1,11 @@
 import { encodeBytes32String } from 'ethers';
 import type { Contract, Signer } from 'ethers';
 
-import { DeploymentManager } from '../../plugins/deployment_manager/index.js';
-import type { Deployed } from '../../plugins/deployment_manager/index.js';
-import { COMP_WHALES, wait } from './index.js';
-import type { DeploySpec, ProtocolConfiguration } from './index.js';
-import { getConfiguration } from './NetworkConfiguration.js';
+import { DeploymentManager } from '../../plugins/deployment_manager';
+import type { Deployed } from '../../plugins/deployment_manager';
+import { COMP_WHALES, wait } from './index';
+import type { DeploySpec, ProtocolConfiguration } from './index';
+import { getConfiguration } from './NetworkConfiguration';
 
 export function sameAddress(a: string, b: string) {
   return BigInt(a) === BigInt(b);
