@@ -1,5 +1,6 @@
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
-import { Address, BuildFile } from './Types';
+import { readFile } from 'node:fs/promises';
+import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
+import type { Address, BuildFile } from './Types';
 import { getBuildFile, storeBuildFile } from './ContractMap';
 import { Cache } from './Cache';
 import { loadContract } from '../import/import';
@@ -93,7 +94,20 @@ export async function readContract(
     return cachedBuildFile;
   } else {
     const artifact = await hre.artifacts.readArtifact(fullyQualifiedName);
-    const buildInfo = await hre.artifacts.getBuildInfo(fullyQualifiedName);
+    const buildInfoId = await hre.artifacts.getBuildInfoId(fullyQualifiedName);
+    if (buildInfoId === undefined) {
+      throw new Error(`Missing build info for ${fullyQualifiedName}`);
+    }
+    const buildInfoPath = await hre.artifacts.getBuildInfoPath(buildInfoId);
+    if (buildInfoPath === undefined) {
+      throw new Error(`Missing build info file for ${fullyQualifiedName}`);
+    }
+    const buildInfo = JSON.parse(await readFile(buildInfoPath, 'utf8'));
+    const inputSourceName = artifact.inputSourceName ?? artifact.sourceName;
+    const source = buildInfo.input.sources[inputSourceName]?.content;
+    if (source === undefined) {
+      throw new Error(`Missing source ${inputSourceName} in build info for ${fullyQualifiedName}`);
+    }
     return {
       contract: artifact.contractName,
       contracts: {
@@ -103,10 +117,10 @@ export async function readContract(
           abi: artifact.abi,
           bin: artifact.bytecode,
           metadata: 'unknown',
-          source: buildInfo.input.sources[artifact.sourceName].content,
+          source,
           constructorArgs: 'unknown',
         },
-      },
+      } as BuildFile['contracts'],
       version: buildInfo.solcLongVersion,
     };
   }

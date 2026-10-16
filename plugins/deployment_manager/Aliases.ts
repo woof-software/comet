@@ -1,4 +1,4 @@
-import { Address, Alias } from './Types';
+import type { Address, Alias } from './Types';
 import { Cache } from './Cache';
 
 export type Aliases = Map<Alias, Address>;

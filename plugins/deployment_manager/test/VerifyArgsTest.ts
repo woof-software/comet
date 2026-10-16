@@ -1,10 +1,11 @@
 import hre from 'hardhat';
 import { expect } from 'chai';
+import * as os from 'os';
+
 import { Cache } from '../Cache';
 import { objectFromMap } from '../Utils';
-import * as os from 'os';
 import { deleteVerifyArgs, getVerifyArgs, putVerifyArgs } from '../VerifyArgs';
-import { VerifyArgs } from '../Verify';
+import type { VerifyArgs } from '../Verify';
 import { deploy, faucetTokenBuildFile } from './DeployHelpers';
 
 describe('VerifyArgs', () => {

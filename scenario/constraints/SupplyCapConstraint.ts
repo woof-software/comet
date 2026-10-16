@@ -1,7 +1,7 @@
-import { Constraint, Solution } from '../../plugins/scenario';
-import { CometContext } from '../context/CometContext';
+import type { Constraint, Solution } from '../../plugins/scenario';
+import type { CometContext } from '../context/CometContext';
 import { expect } from 'chai';
-import { Requirements } from './Requirements';
+import type { Requirements } from './Requirements';
 import { exp } from '../../test/helpers';
 import { ComparisonOp, getAssetFromName, parseAmount } from '../utils';
 
@@ -17,7 +17,7 @@ export class SupplyCapConstraint<T extends CometContext, R extends Requirements>
         const supplyAmountPerAsset = {};
         for (const [assetName, rawAmount] of Object.entries(supplyCaps)) {
           const asset = await getAssetFromName(assetName, context);
-          const decimals = await asset.token.decimals();
+          const decimals = await asset.decimals();
           const amount = parseAmount(rawAmount);
           expect(amount.op).to.equal(ComparisonOp.GTE, `Operation ${amount.op} not supported (yet) by supply cap constraint`);
           supplyAmountPerAsset[asset.address] = exp(amount.val, decimals);
@@ -38,9 +38,9 @@ export class SupplyCapConstraint<T extends CometContext, R extends Requirements>
       for (const [assetName, rawAmount] of Object.entries(supplyCaps)) {
         const asset = await getAssetFromName(assetName, context);
         const assetInfo = await comet.getAssetInfoByAddress(asset.address);
-        const decimals = await asset.token.decimals();
+        const decimals = await asset.decimals();
         const amount = parseAmount(rawAmount);
-        const actualCap = assetInfo.supplyCap.toBigInt();
+        const actualCap = assetInfo.supplyCap;
         const expectedCap = exp(amount.val, decimals);
         switch (amount.op) {
           case ComparisonOp.EQ:

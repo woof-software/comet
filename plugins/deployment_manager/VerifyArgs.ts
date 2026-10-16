@@ -1,6 +1,6 @@
-import { Address, Alias } from './Types';
+import type { Address, Alias } from './Types';
 import { Cache } from './Cache';
-import { VerifyArgs } from './Verify';
+import type { VerifyArgs } from './Verify';
 
 export type VerifyArgsMap = Map<Address, VerifyArgs>;
 export type InvertedAliases = Map<Address, Alias[]>;

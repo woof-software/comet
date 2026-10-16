@@ -1,7 +1,7 @@
 import fg from 'fast-glob';
-import * as path from 'path';
-import {
-  Scenario,
+import * as path from 'node:path';
+import { Scenario } from './Scenario';
+import type {
   ScenarioEnv,
   ScenarioFlags,
   Property,

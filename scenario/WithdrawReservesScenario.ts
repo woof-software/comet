@@ -14,17 +14,18 @@ scenario(
     const { admin, albert } = actors;
 
     const baseToken = context.getAssetByAddress(await comet.baseToken());
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
+    const cometAddress = await comet.getAddress();
 
-    const cometBaseBalance = await baseToken.balanceOf(comet.address);
+    const cometBaseBalance = await baseToken.balanceOf(cometAddress);
 
-    expect(await comet.governor()).to.equal(timelock.address);
+    expect(await comet.governor()).to.equal(await timelock.getAddress());
 
     const toWithdrawAmount = 10n * scale;
     await context.setNextBaseFeeToZero();
     const txn = await admin.withdrawReserves(albert.address, toWithdrawAmount, { gasPrice: 0 });
 
-    expect(await baseToken.balanceOf(comet.address)).to.equal(cometBaseBalance - toWithdrawAmount);
+    expect(await baseToken.balanceOf(cometAddress)).to.equal(cometBaseBalance - toWithdrawAmount);
     expect(await baseToken.balanceOf(albert.address)).to.equal(toWithdrawAmount);
 
     return txn; // return txn to measure gas
@@ -55,7 +56,7 @@ scenario(
   async ({ comet, actors }, context) => {
     const { admin, albert } = actors;
 
-    const scale = (await comet.baseScale()).toBigInt();
+    const scale = await comet.baseScale();
 
     await context.setNextBaseFeeToZero();
     await expectRevertCustom(

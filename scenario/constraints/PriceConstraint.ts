@@ -1,7 +1,7 @@
-import { Constraint } from '../../plugins/scenario';
-import { CometContext } from '../context/CometContext';
+import type { Constraint } from '../../plugins/scenario';
+import type { CometContext } from '../context/CometContext';
 import { expect } from 'chai';
-import { Requirements } from './Requirements';
+import type { Requirements } from './Requirements';
 import { getAssetFromName } from '../utils';
 
 export class PriceConstraint<T extends CometContext, R extends Requirements> implements Constraint<T, R> {
@@ -31,11 +31,11 @@ export class PriceConstraint<T extends CometContext, R extends Requirements> imp
         if (cometAsset.address === baseToken) {
           const baseTokenPriceFeed = await comet.baseTokenPriceFeed();
           const cometPrice = await comet.getPrice(baseTokenPriceFeed);
-          expect(cometPrice).to.eq(price * 1e8);
+          expect(cometPrice).to.eq(BigInt(price * 1e8));
         } else {
           const assetInfo = await comet.getAssetInfoByAddress(cometAsset.address);
           const cometPrice = await comet.getPrice(assetInfo.priceFeed);
-          expect(cometPrice).to.eq(price * 1e8);
+          expect(cometPrice).to.eq(BigInt(price * 1e8));
         }
       }
     }

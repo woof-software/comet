@@ -1,4 +1,6 @@
-export { Constraint, Initializer, Property, Scenario, Solution, StaticConstraint, Transformer } from './Scenario';
+export { Scenario } from './Scenario';
+export type { Constraint, Initializer, Property, Solution, StaticConstraint, Transformer } from './Scenario';
 export { Loader } from './Loader';
-export { ForkSpec, World } from './World';
+export { World } from './World';
+export type { ForkSpec } from './World';
 export { debug } from '../deployment_manager/Utils';

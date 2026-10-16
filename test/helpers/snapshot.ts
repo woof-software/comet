@@ -10,7 +10,7 @@ export interface SnapshotRestorer {
 }
 
 export async function takeSnapshot(): Promise<SnapshotRestorer> {
-  const provider = hre.network.provider;
+  const { provider } = await hre.network.getOrCreate();
   let snapshotId = await provider.request({
     method: 'evm_snapshot',
   });
