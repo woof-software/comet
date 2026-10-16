@@ -398,7 +398,6 @@ async function getInitialContext(world: World): Promise<CometContext> {
 
 async function getContextProperties(context: CometContext): Promise<CometProperties> {
   const comet = await context.getComet();
-  const cometExt = await context.world.deploymentManager.hre.ethers.getContractAt('CometExtAssetList', comet.address) as CometExtAssetList;
   
   return {
     actors: context.actors,
@@ -411,7 +410,6 @@ async function getContextProperties(context: CometContext): Promise<CometPropert
     rewards: await context.getRewards(),
     bulker: await context.getBulker(),
     bridgeReceiver: await context.getBridgeReceiver(),
-    cometExt
   };
 }
 
