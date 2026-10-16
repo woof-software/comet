@@ -1304,6 +1304,7 @@ describe('absorb', function () {
             liquidationFactor: exp(0.6, 18),
           },
         },
+        initialLenderSupply: exp(1000, 6),
       });
       // Note: Always interact with the proxy address, we'll upgrade implementation later
       cometProxyAddress = configuratorAndProtocol.cometProxyWithExtendedAssetList.address;
@@ -1322,9 +1323,6 @@ describe('absorb', function () {
 
       alice = configuratorAndProtocol.users[0];
       bob = configuratorAndProtocol.users[1];
-
-      // Allocate base token to comet
-      await baseToken.allocateTo(comet.address, exp(1000, 6));
 
       // Supply COMP from Alice
       await compToken.allocateTo(alice.address, aliceCompSupply);
@@ -1380,7 +1378,10 @@ describe('absorb', function () {
         ])
       );
       // Create protocol with configurator so we can update liquidationFactor later
-      const configuratorAndProtocol24Assets = await makeConfigurator({ assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals }});
+      const configuratorAndProtocol24Assets = await makeConfigurator({
+        assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals },
+        initialLenderSupply: exp(1000, 6),
+      });
       comet24Assets = configuratorAndProtocol24Assets.cometWithExtendedAssetList.attach(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address) as CometWithExtendedAssetList;
       underwater24Assets = configuratorAndProtocol24Assets.users[0];
       absorber24Assets = configuratorAndProtocol24Assets.users[1];

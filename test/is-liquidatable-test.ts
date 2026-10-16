@@ -1131,7 +1131,10 @@ describe('isLiquidatable', function () {
           },
         ])
       );
-      const protocol = await makeConfigurator({ assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals } });
+      const protocol = await makeConfigurator({
+        assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals },
+        initialLenderSupply: exp(10_000, 6),
+      });
 
       configurator = protocol.configurator;
       configuratorProxyAddress = protocol.configuratorProxy.address;

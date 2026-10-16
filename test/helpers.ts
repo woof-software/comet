@@ -100,6 +100,7 @@ export type ProtocolOpts = {
   targetReserves?: Numeric;
   maxSupportedUtilization?: Numeric;
   baseTokenBalance?: Numeric;
+  initialLenderSupply?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
 };
 
@@ -317,6 +318,10 @@ export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const DEFAULT_PRICEFEED_DECIMALS = 8;
 export const MAX_ASSETS = 24;
 export const DEFAULT_MAX_SUPPORTED_UTILIZATION = exp(2, 18);
+// Derived from a hash so it never collides with mnemonic signers or deployed contract addresses
+export const INITIAL_LENDER = ethers.utils.getAddress(
+  ethers.utils.hexDataSlice(ethers.utils.keccak256(ethers.utils.toUtf8Bytes('comet.test.initial-lender')), 12)
+);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;
@@ -458,6 +463,11 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     await wait(baseToken.allocateTo(cometWithExtendedAssetList.address, baseTokenBalance));
   }
 
+  const cometInterface = await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address) as CometWithExtendedAssetList;
+  if (opts.initialLenderSupply) {
+    await seedInitialLender(cometInterface, tokens[base], opts.initialLenderSupply);
+  }
+
   return {
     opts,
     governor,
@@ -466,7 +476,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     users,
     base,
     reward,
-    cometWithExtendedAssetList: await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address) as CometWithExtendedAssetList,
+    cometWithExtendedAssetList: cometInterface,
     assetListFactory: assetListFactory,
     tokens,
     unsupportedToken,
@@ -569,7 +579,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
-  } = await makeProtocol(opts);
+  } = await makeProtocol({ ...opts, initialLenderSupply: undefined }); // the lender is seeded into the proxy below
 
   // Deploy ProxyAdmin
   const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdmin')) as CometProxyAdmin__factory;
@@ -601,6 +611,15 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     (await cometWithExtendedAssetList.populateTransaction.initializeStorage()).data,
   );
   await cometProxyWithExtendedAssetList.deployed();
+
+  // Tests borrow through the proxy, so the initial lender has to live in its storage
+  if (opts.initialLenderSupply) {
+    await seedInitialLender(
+      cometWithExtendedAssetList.attach(cometProxyWithExtendedAssetList.address),
+      tokens[base],
+      opts.initialLenderSupply
+    );
+  }
 
   // Deploy CometFactory
   const CometFactoryWithExtendedAssetListFactory = (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')) as CometFactoryWithExtendedAssetList__factory;
@@ -700,6 +719,20 @@ export async function makeBulker(opts: BulkerOpts): Promise<BulkerInfo> {
     bulker,
   };
 }
+
+// Writes the initial lender's position straight into storage, so no accrual happens and block time is untouched
+export async function seedInitialLender(
+  cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList,
+  baseToken: FaucetToken | NonStandardFaucetFeeToken,
+  amount: Numeric
+) {
+  const totals = await cometWithExtendedAssetList.totalsBasic();
+  const principal = principalValue(BigInt(amount), totals.baseSupplyIndex, totals.baseBorrowIndex);
+  await wait(baseToken.allocateTo(cometWithExtendedAssetList.address, amount));
+  await wait(cometWithExtendedAssetList.setBasePrincipal(INITIAL_LENDER, principal));
+  await setTotalsBasic(cometWithExtendedAssetList, { totalSupplyBase: totals.totalSupplyBase.toBigInt() + principal });
+}
+
 export async function bumpTotalsCollateral(cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList, token: FaucetToken | NonStandardFaucetFeeToken, delta: bigint): Promise<TotalsCollateralStructOutput> {
   const t0 = await cometWithExtendedAssetList.totalsCollateral(token.address);
   const t1 = Object.assign({}, t0, { totalSupplyAsset: t0.totalSupplyAsset.toBigInt() + delta });

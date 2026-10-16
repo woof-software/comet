@@ -1,5 +1,5 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken, NonStandardFaucetFeeToken__factory } from 'build/types';
-import { ethers, expect, exp, makeProtocol, presentValue, ZERO_ADDRESS, presentValueSupply, mulPrice, mulFactor, defaultAssets, MAX_ASSETS, UserBasic, UserCollateral } from './helpers';
+import { ethers, expect, exp, makeProtocol, presentValue, ZERO_ADDRESS, presentValueSupply, mulPrice, mulFactor, defaultAssets, MAX_ASSETS, UserBasic, UserCollateral, seedInitialLender } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from './helpers/snapshot';
@@ -539,6 +539,9 @@ describe('transfer', function () {
           await weth.allocateTo(bob.address, COLLATERAL_AMOUNT);
           await weth.connect(bob).approve(comet.address, COLLATERAL_AMOUNT);
           await comet.connect(bob).supply(weth.address, COLLATERAL_AMOUNT);
+
+          // Third-party lender, so the borrow is backed by supply other than the recipient's
+          await seedInitialLender(comet, baseToken, exp(10, baseTokenDecimals));
 
           bobPrincipalBefore = (await comet.userBasic(bob.address)).principal.toBigInt();
           alicePrincipalBefore = (await comet.userBasic(alice.address)).principal.toBigInt();

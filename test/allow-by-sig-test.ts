@@ -15,7 +15,6 @@ const types = {
 
 describe('allowBySig', function () {
   const baseTokenDecimals = 6;
-  const seedAmount = BigNumber.from(exp(10_000, baseTokenDecimals));
   const supplyAmount = BigNumber.from(exp(100, baseTokenDecimals));
 
   let comet: CometHarnessInterfaceExtendedAssetList;
@@ -56,6 +55,8 @@ describe('allowBySig', function () {
           liquidationFactor: exp(0.95, 18),
         },
       }),
+      // Seed base liquidity so borrowing is possible
+      initialLenderSupply: exp(10_000, baseTokenDecimals),
     });
     comet = protocol.cometWithExtendedAssetList;
     baseToken = protocol.tokens.USDC as FaucetToken;
@@ -68,9 +69,6 @@ describe('allowBySig', function () {
     }
     [alice, bob, charles] = protocol.users;
     pauseGuardian = protocol.pauseGuardian;
-
-    // Seed reserves so borrowing is possible
-    await baseToken.allocateTo(comet.address, seedAmount);
 
     // Alice supplies some USDC in the initial snapshot
     await baseToken.allocateTo(alice.address, supplyAmount);
