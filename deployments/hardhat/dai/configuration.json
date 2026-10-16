@@ -13,7 +13,7 @@
     "supplyBase": 0,
     "borrowKink": 0.8,
     "borrowSlopeLow": 0.035,
-    "borrowSlopeHigh": 0.25,
+    "borrowSlopeHigh": 0.45,
     "borrowBase": 0.015
   },
   "tracking": {

@@ -4,12 +4,11 @@ import { BigNumber, ethers } from 'ethers';
 import { CometContext, scenario } from './context/CometContext';
 import { exp } from '../test/helpers';
 import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker } from './utils';
-import { SECONDS_PER_YEAR } from './utils/constants';
+import { FACTOR_SCALE, SECONDS_PER_YEAR } from './utils/constants';
 import { MarketAdminPermissionChecker } from '../build/types';
 
 // Based on contract's internal precision: FACTOR_SCALE=1e18 with 4 decimal places
-const FACTOR_SCALE = 10n ** 18n;
-const MIN_FACTOR_INCREMENT = FACTOR_SCALE / 10n ** 4n;
+const MIN_FACTOR_INCREMENT = FACTOR_SCALE.toBigInt() / 10n ** 4n;
 
 type ArrayMethods = keyof Omit<any[], number>;
 
