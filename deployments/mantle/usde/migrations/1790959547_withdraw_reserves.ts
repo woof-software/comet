@@ -138,8 +138,8 @@ Once LayerZero verifies the message, its executor delivers it on Mainnet and the
     trace(`Created proposal ${proposalId}.`);
   },
 
-  async enacted(): Promise<boolean> {
-    return false;
+  async enacted(deploymentManager: DeploymentManager): Promise<boolean> {
+    return true;
   },
 
   async verify(deploymentManager: DeploymentManager, govDeploymentManager: DeploymentManager) {
