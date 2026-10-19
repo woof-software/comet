@@ -336,6 +336,10 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     config.withdrawCollateral = 10;
   }
 
+  if (ctx.world.base.network === 'unichain' && ctx.world.base.deployment === 'usdc') {
+    config.liquidationBase = 10000;
+  }
+
   if (ctx.world.base.network === 'unichain' && ctx.world.base.deployment === 'weth') {
     config.liquidationBase = 250;
     config.liquidationBase1 = 350;

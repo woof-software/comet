@@ -6,7 +6,7 @@ const PROPOSAL_CREATED_TOPIC = utils.id('ProposalCreated(address,uint256,address
 export interface DecodedProposalCreatedArgs {
   id: BigNumber;
   targets: string[];
-  values: any[];
+  values: BigNumber[];
   signatures: string[];
   calldatas: string[];
   eta: any;
@@ -31,7 +31,11 @@ export async function fetchBridgeReceiverProposals(
     })
   );
   const events = logs
-    .map((log) => bridgeReceiver.interface.parseLog(log).args as unknown as DecodedProposalCreatedArgs)
+    .map((log): DecodedProposalCreatedArgs => {
+      const args = bridgeReceiver.interface.parseLog(log).args;
+      // `values` is Array.prototype.values on an ethers Result, so it's read by position
+      return { id: args.id, targets: args.targets, values: args[3], signatures: args.signatures, calldatas: args.calldatas, eta: args.eta };
+    })
     .filter((event) => !proposalIds || proposalIds.some((id) => id.toString() === event.id.toString()));
   return { bridgeReceiver, events };
 }
