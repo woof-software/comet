@@ -30,6 +30,8 @@ import {
   BaseBridgeReceiver,
   ERC20,
   CometExt,
+  AssetList,
+  CometWithExtendedAssetList,
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
@@ -61,6 +63,7 @@ export interface CometProperties {
   bulker: BaseBulker;
   bridgeReceiver: BaseBridgeReceiver;
   cometExt?: CometExt;
+  assetList?: AssetList;
 }
 
 export class CometContext {
@@ -106,6 +109,18 @@ export class CometContext {
 
   async getConfigurator(): Promise<Configurator> {
     return this.world.deploymentManager.contract('configurator');
+  }
+
+  // The asset list the Comet reads its collateral from, or undefined for a Comet that has no asset list
+  async getAssetList(): Promise<AssetList | undefined> {
+    const ethers = this.world.deploymentManager.hre.ethers;
+    const comet = await this.getComet();
+    try {
+      const extendedComet = await ethers.getContractAt('CometWithExtendedAssetList', comet.address) as CometWithExtendedAssetList;
+      return await ethers.getContractAt('AssetList', await extendedComet.assetList()) as AssetList;
+    } catch {
+      return undefined;
+    }
   }
 
   async getTimelock(): Promise<SimpleTimelock> {
@@ -405,6 +420,7 @@ async function getContextProperties(context: CometContext): Promise<CometPropert
     comet,
     configurator: await context.getConfigurator(),
     proxyAdmin: await context.getCometAdmin(),
+    assetList: await context.getAssetList(),
     timelock: await context.getTimelock(),
     governor: await context.getGovernor(),
     rewards: await context.getRewards(),

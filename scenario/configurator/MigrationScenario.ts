@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { utils } from 'ethers';
-import { CometContext, scenario } from './context/CometContext';
-import { calldata } from '../src/deploy';
+import { CometContext, scenario } from '../context/CometContext';
+import { calldata } from '../../src/deploy';
 import {
   createCrossChainProposal,
   getMinimumBorrowAmounts,
@@ -9,7 +9,7 @@ import {
   isAssetListMigrationRequired,
   isBridgedDeployment,
   supportsMarketAdminPermissionChecker,
-} from './utils';
+} from '../utils';
 import {
   AssetList,
   BaseBridgeReceiver,
@@ -17,7 +17,7 @@ import {
   CometWithExtendedAssetList,
   Configurator,
   ConfiguratorV1,
-} from '../build/types';
+} from '../../build/types';
 
 // The slot a transparent proxy keeps its admin in (EIP-1967)
 const ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
