@@ -167,6 +167,11 @@ describe('configurator: assets configs management', function () {
           .to.be.revertedWithCustomError(configurator, 'Unauthorized');
       });
 
+      it('step 1: the asset is already in the stored configs', async () => {
+        await expect(configurator.addAsset(comet.address, (await storedConfigs())[TARGET]))
+          .to.be.revertedWithCustomError(configurator, 'AssetAlreadyExists');
+      });
+
       it('step 2: the caller is not the governor', async () => {
         await expect(configurator.connect(other).setAssetConfigToAssetList(comet.address, asset))
           .to.be.revertedWithCustomError(configurator, 'Unauthorized');

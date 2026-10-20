@@ -1,40 +1,22 @@
 import { expect } from 'chai';
 import { constants, utils } from 'ethers';
-import { CometContext, CometProperties, scenario } from './context/CometContext';
-import { createCrossChainProposal, fundAccount, isBridgedDeployment } from './utils';
-import { getConfigForScenario } from './utils/scenarioHelper';
-import { isAssetListMigrationRequired } from './utils/versionControl';
-import CometActor from './context/CometActor';
-import { AssetList, AssetListFactory, CometWithExtendedAssetList } from '../build/types';
-import { AssetInfoStructOutput } from '../build/types/CometInterface';
-import { calldata } from '../src/deploy';
+import { CometContext, CometProperties, scenario } from '../context/CometContext';
+import { executeProposal, fundAccount, servicePatch2 } from '../utils';
+import { getConfigForScenario } from '../utils/scenarioHelper';
+import { isAssetListMigrationRequired } from '../utils/versionControl';
+import CometActor from '../context/CometActor';
+import { AssetList, AssetListFactory, CometWithExtendedAssetList, FaucetToken } from '../../build/types';
+import { AssetInfoStructOutput } from '../../build/types/CometInterface';
+import { calldata } from '../../src/deploy';
+import { exp } from '../../test/helpers';
+import { hashConfig } from '../../test/asset-list/shared';
+import { deployMockERC20, deployPriceFeed } from '../configurator/shared';
 
 // EIP-1967 implementation slot of the asset list proxy
 const IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
 const ASSET_INFO_KEYS = [
   'offset', 'asset', 'priceFeed', 'scale', 'borrowCollateralFactor', 'liquidateCollateralFactor', 'liquidationFactor', 'supplyCap',
 ];
-
-// All steps of one flow go into one proposal: on mainnet the governor executes it, on an L2 it is relayed to the
-// bridge receiver, whose timelock governs the market there
-async function executeProposal(
-  context: CometContext,
-  { bridgeReceiver }: CometProperties,
-  targets: string[],
-  signatures: string[],
-  calldatas: string[]
-) {
-  const values = targets.map(() => 0);
-  if (isBridgedDeployment(context)) {
-    const l2ProposalData = utils.defaultAbiCoder.encode(
-      ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
-      [targets, values, signatures, calldatas]
-    );
-    await createCrossChainProposal(context, l2ProposalData, bridgeReceiver);
-  } else {
-    await context.fastGovernanceExecute(targets, values, signatures, calldatas);
-  }
-}
 
 // What a proposal that leaves the asset list alone must not change: the list itself, every asset the Comet reads from
 // it, the market totals and the positions of the actors. Positions are read as stored, so accrued interest does not count
@@ -124,7 +106,7 @@ scenario(
 
     await executeProposal(
       context,
-      properties,
+      properties.bridgeReceiver,
       [configurator.address, proxyAdmin.address],
       ['setBorrowKink(address,uint64)', 'deployAndUpgradeTo(address,address)'],
       [
@@ -191,7 +173,7 @@ scenario(
 
     await executeProposal(
       context,
-      properties,
+      properties.bridgeReceiver,
       [configurator.address],
       ['updateAssetPriceFeed(address,address,address)'],
       [await calldata(configurator.populateTransaction.updateAssetPriceFeed(comet.address, asset, newFeed))]
@@ -210,7 +192,7 @@ scenario(
 
     await executeProposal(
       context,
-      properties,
+      properties.bridgeReceiver,
       [proxyAdmin.address],
       ['upgrade(address,address)'],
       [await calldata(proxyAdmin.populateTransaction.upgrade(assetList.address, newImplementation))]
@@ -275,7 +257,7 @@ scenario(
     const fromBlock = await ethers.provider.getBlockNumber();
     await executeProposal(
       context,
-      properties,
+      properties.bridgeReceiver,
       [configurator.address],
       ['updateAssetSupplyCap(address,address,uint128)'],
       [await calldata(configurator.populateTransaction.updateAssetSupplyCap(comet.address, asset, newCap))]
@@ -355,7 +337,7 @@ scenario(
 
     await executeProposal(
       context,
-      properties,
+      properties.bridgeReceiver,
       [configurator.address, proxyAdmin.address],
       ['updateAssetList(address,address)', 'deployAndUpgradeTo(address,address)'],
       [
@@ -394,7 +376,7 @@ scenario(
     const newBorrowCF = borrowCollateralFactor.mul(9).div(10);
     await executeProposal(
       context,
-      properties,
+      properties.bridgeReceiver,
       [configurator.address],
       ['updateAssetBorrowCollateralFactor(address,address,uint64)'],
       [await calldata(configurator.populateTransaction.updateAssetBorrowCollateralFactor(
@@ -460,7 +442,7 @@ scenario(
     const fromBlock = await ethers.provider.getBlockNumber();
     await executeProposal(
       context,
-      properties,
+      properties.bridgeReceiver,
       [configurator.address, proxyAdmin.address, configurator.address],
       [
         'updateAsset(address,(address,address,uint8,uint64,uint64,uint64,uint128))',
@@ -536,5 +518,150 @@ scenario(
     expect(after.userBasic).to.deep.equal(before.userBasic);
     expect(after.userCollateral).to.deep.equal(before.userCollateral);
     expect(after.liquidity).to.deep.equal(before.liquidity);
+  }
+);
+
+// The storage part of a config, for the direct AssetList.setAssetConfig calls
+const storageConfig = {
+  borrowCollateralFactor: exp(0.75, 18),
+  liquidateCollateralFactor: exp(0.8, 18),
+  liquidationFactor: exp(0.9, 18),
+  supplyCap: exp(1000, 18),
+};
+
+// Adding an asset to a live market takes four steps:
+//   1. Configurator.addAsset appends the full config to the stored configs.
+//   2. Configurator.deployAssetList builds a new list implementation that has the asset in its immutables.
+//   3. The list proxy is upgraded to it; CometProxyAdmin.deployAndUpgradeAssetListTo does 2 and 3 together.
+//   4. Configurator.setAssetConfigToAssetList registers the asset in the list with the factors and cap of the stored config.
+
+scenario(
+  'AssetList#addAsset > adds a new asset through the Configurator and fills the list',
+  {
+    filter: async (ctx: CometContext) => await servicePatch2(ctx) && (await (await ctx.getComet()).numAssets()) < 23
+  },
+  async ({ comet, configurator, proxyAdmin, assetList, actors }, context) => {
+    const { admin } = actors;
+    await fundAccount(context.world, admin);
+
+    const numAssets = await comet.numAssets();
+    const storageKeys = ['borrowCollateralFactor', 'liquidateCollateralFactor', 'liquidationFactor', 'supplyCap'];
+    const immutableKeys = ['asset', 'decimals', 'priceFeed'];
+
+    // A new collateral with its own 18 decimals token and price feed, active and with a cap of 1000 tokens
+    const newAssetConfig = {
+      asset: await deployMockERC20(context, 'asset'),
+      priceFeed: await deployPriceFeed(context, 'asset'),
+      decimals: 18,
+      ...storageConfig,
+    };
+    const { asset } = newAssetConfig;
+
+    const allAssetsInfo = () => Promise.all([...Array(numAssets).keys()].map((i) => assetList.getAssetInfo(i)));
+
+    /* Step 1: addAsset */
+
+    const assetConfigsBeforeAdd = await configurator.getAssetConfigs(comet.address);
+
+    // It emits AddAsset on the Configurator with the full config
+    await expect(configurator.connect(admin.signer).addAsset(comet.address, newAssetConfig))
+      .to.emit(configurator, 'AddAsset')
+      .withArgs(comet.address, Object.values(newAssetConfig));
+
+    const assetConfigsAfterAdd = await configurator.getAssetConfigs(comet.address);
+
+    // It appends the full config at the end of the stored configs and leaves the existing ones unchanged
+    expect(assetConfigsAfterAdd.length).to.equal(numAssets + 1);
+    for (const key of Object.keys(newAssetConfig)) expect(assetConfigsAfterAdd[numAssets][key]).to.equal(newAssetConfig[key]);
+    expect(assetConfigsAfterAdd.slice(0, numAssets)).to.deep.equal(assetConfigsBeforeAdd);
+
+    // getAssetIndex, getImmutableAssetConfig and getStorageAssetConfig all know the new asset
+    expect(await configurator.getAssetIndex(comet.address, asset)).to.equal(numAssets);
+    
+    const immutableConfig = (await configurator.getImmutableAssetConfig(comet.address))[numAssets];
+    for (const key of immutableKeys) expect(immutableConfig[key]).to.equal(newAssetConfig[key]);
+
+    const newStorageConfig = (await configurator.getStorageAssetConfig(comet.address))[numAssets];
+    for (const key of storageKeys) expect(newStorageConfig[key]).to.equal(newAssetConfig[key]);
+
+    /* Between step 1 and the upgrade */
+
+    // Neither the list nor the Comet knows the asset yet
+    expect(await assetList.numAssets()).to.equal(numAssets);
+    await expect(assetList.getAssetInfoByAddress(asset)).to.be.revertedWithCustomError(assetList, 'BadAsset');
+    expect(await comet.numAssets()).to.equal(numAssets);
+    await expect(comet.getAssetInfoByAddress(asset)).to.be.revertedWithCustomError(assetList, 'BadAsset');
+
+    // The hash of the immutable configs changed, so deployAssetList would build a new implementation
+    expect((await configurator.callStatic.deployAssetList(comet.address)).newAssetListImpl).to.not.equal(constants.AddressZero);
+
+    /* Redeploy and upgrade */
+
+    const allAssetsInfoBeforeUpgrade = await allAssetsInfo();
+    await proxyAdmin.connect(admin.signer).deployAndUpgradeAssetListTo(configurator.address, comet.address);
+    const newImplementation = assetList.attach(await proxyAdmin.getProxyImplementation(assetList.address));
+    const upgradedAssetInfo = await assetList.getAssetInfo(numAssets);
+
+    // The new implementation has one more asset, the new one in its last slot, and a configHash matching the configs
+    expect(await newImplementation.numAssets()).to.equal(numAssets + 1);
+    expect((await newImplementation.getAssetInfo(numAssets)).asset).to.equal(asset);
+    expect(await newImplementation.configHash()).to.equal(hashConfig(await configurator.getImmutableAssetConfig(comet.address)));
+
+    // The factors and caps of the existing assets are still in the list storage
+    expect(await allAssetsInfo()).to.deep.equal(allAssetsInfoBeforeUpgrade);
+
+    // The list reads the address, price feed and scale of the new asset from the immutables,
+    // but the asset is not registered yet, so its factors and cap are zero
+    expect(upgradedAssetInfo.asset).to.equal(asset);
+    expect(upgradedAssetInfo.priceFeed).to.equal(newAssetConfig.priceFeed);
+    expect(upgradedAssetInfo.scale).to.equal(exp(1, 18));
+    for (const key of storageKeys) expect(upgradedAssetInfo[key]).to.equal(0);
+
+    // The immutable configs match the list again, so deployAssetList would build nothing
+    expect((await configurator.callStatic.deployAssetList(comet.address)).newAssetListImpl).to.equal(constants.AddressZero);
+
+    /* Step 2: setAssetConfigToAssetList */
+
+    const assetConfigsBeforeStep2 = await configurator.getAssetConfigs(comet.address);
+    const allAssetsInfoBeforeStep2 = await allAssetsInfo();
+    await expect(configurator.connect(admin.signer).setAssetConfigToAssetList(comet.address, asset))
+      .to.emit(configurator, 'SetAssetConfigToAssetList')
+      .withArgs(comet.address, assetList.address, asset);
+    const assetInfo = await assetList.getAssetInfo(numAssets);
+
+    // The asset gets the factors and cap of its stored config
+    for (const key of storageKeys) expect(assetInfo[key]).to.equal(newAssetConfig[key]);
+
+    // getAssetInfoByAddress returns the same values as getAssetInfo, and the offset is the index of the asset
+    expect(await assetList.getAssetInfoByAddress(asset)).to.deep.equal(assetInfo);
+    expect(assetInfo.offset).to.equal(numAssets);
+
+    // The stored configs and the already registered assets are unchanged
+    expect(await configurator.getAssetConfigs(comet.address)).to.deep.equal(assetConfigsBeforeStep2);
+    expect(await allAssetsInfo()).to.deep.equal(allAssetsInfoBeforeStep2);
+
+    /* Redeploy the Comet and supply the new asset */
+
+    await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
+    expect(await comet.numAssets()).to.equal(numAssets + 1);
+
+    // The mock token has no holders to source it from, so 1 wei is allocated to Albert from its faucet
+    const { albert } = actors;
+    const supplyAmount = 1n;
+    const token = await context.world.deploymentManager.hre.ethers.getContractAt('FaucetToken', asset) as FaucetToken;
+    await token.allocateTo(albert.address, supplyAmount);
+
+    const albertBalanceBefore = (await token.balanceOf(albert.address)).toBigInt();
+    const cometBalanceBefore = (await token.balanceOf(comet.address)).toBigInt();
+    const { totalSupplyAsset: totalSupplyBefore } = await comet.totalsCollateral(asset);
+
+    await token.connect(albert.signer).approve(comet.address, supplyAmount);
+    await comet.connect(albert.signer).supply(asset, supplyAmount);
+
+    // The token moved from Albert to the Comet, and the Comet credits Albert with it as collateral
+    expect(await token.balanceOf(albert.address)).to.equal(albertBalanceBefore - supplyAmount);
+    expect(await token.balanceOf(comet.address)).to.equal(cometBalanceBefore + supplyAmount);
+    expect(await comet.collateralBalanceOf(albert.address, asset)).to.equal(supplyAmount);
+    expect((await comet.totalsCollateral(asset)).totalSupplyAsset).to.equal(totalSupplyBefore.toBigInt() + supplyAmount);
   }
 );

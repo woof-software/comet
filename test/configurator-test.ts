@@ -1430,16 +1430,10 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(alice).updateAssetPriceFeed(cometProxy.address, firstAsset.asset, newPriceFeed.address))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
           });
-        });
 
-        describe('edge cases', function() {
-          it('can be set to zero address', async () => {
-            const snapshot = await takeSnapshot();
-
-            await configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, firstAsset.asset, ZERO_ADDRESS);
-            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[0].priceFeed).to.be.equal(ZERO_ADDRESS);
-            
-            await snapshot.restore();
+          it('reverts if new price feed is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, firstAsset.asset, ZERO_ADDRESS))
+              .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
           });
         });
 
@@ -1827,7 +1821,7 @@ describe('configurator', function () {
         const NON_EXISTENT_ASSET = '0x0000000000000000000000000000000000000001';
 
         it('updateAssetPriceFeed reverts with AssetDoesNotExist', async () => {
-          await expect(configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, NON_EXISTENT_ASSET, ZERO_ADDRESS))
+          await expect(configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, NON_EXISTENT_ASSET, alice.address))
             .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
         });
 
@@ -1893,21 +1887,14 @@ describe('configurator', function () {
           await expect(configuratorProxy.connect(alice).transferGovernor(alice.address))
             .to.be.revertedWithCustomError(configurator, 'Unauthorized');
         });
+
+        it('reverts if new governor is zero address', async () => {
+          await expect(configuratorProxy.connect(governor).transferGovernor(ZERO_ADDRESS))
+            .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
+        });
       });
 
       describe('edge cases', function() {
-        it('can transfer to zero address (bricks the configurator)', async () => {
-          const snapshot = await takeSnapshot();
-
-          await configuratorProxy.connect(governor).transferGovernor(ZERO_ADDRESS);
-          expect(await configuratorProxy.governor()).to.equal(ZERO_ADDRESS);
-
-          await expect(configuratorProxy.connect(governor).transferGovernor(governor.address))
-            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
-
-          await snapshot.restore();
-        });
-
         it('can transfer to the same governor', async () => {
           await configuratorProxy.connect(governor).transferGovernor(governor.address);
           expect(await configuratorProxy.governor()).to.equal(governor.address);

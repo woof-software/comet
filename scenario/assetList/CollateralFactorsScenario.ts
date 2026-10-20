@@ -1,10 +1,7 @@
 import { expect } from 'chai';
 import { CometContext, scenario } from '../context/CometContext';
 import { fundAccount, getUsableCollateralIndices, servicePatch2 } from '../utils';
-import { validateAssetInfos } from './shared';
-
-// The highest liquidation factor the asset list accepts: a factor of one
-const MAX_COLLATERAL_FACTOR = 10n ** 18n;
+import { MAX_COLLATERAL_FACTOR, validateAssetInfos } from './shared';
 
 /*//////////////////////////////////////////////////////////////
                           HAPPY CASES

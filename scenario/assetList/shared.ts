@@ -33,6 +33,9 @@ export async function validateAssetInfos(context: CometContext, assetConfigs: (A
   }
 }
 
+// The highest liquidation factor the asset list accepts: a factor of one
+export const MAX_COLLATERAL_FACTOR = 10n ** 18n;
+
 // The largest value the uint128 supply cap field can hold
 export const MAX_UINT128 = 2n ** 128n - 1n;
 

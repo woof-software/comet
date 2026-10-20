@@ -2,16 +2,13 @@ import { expect } from 'chai';
 import { ethers } from 'ethers';
 import { CometContext, scenario } from '../context/CometContext';
 import { fundAccount, getUsableCollateralIndices, servicePatch2 } from '../utils';
-import { supplyCaps } from '../assetList/shared';
+import { MAX_COLLATERAL_FACTOR, supplyCaps } from '../assetList/shared';
 import { exp } from '../../test/helpers';
 import { deployMockERC20, deployPriceFeed } from './shared';
 
 // The Configurator side of the asset config functions: the stored configs and the reverts.
 // What the asset list and the Comet read after the same calls is in scenario/assetList/CollateralFactorsScenario.ts
 // and scenario/assetList/FractionalSupplyCapsScenario.ts
-
-// The highest liquidation factor the asset list accepts: a factor of one
-const MAX_COLLATERAL_FACTOR = 10n ** 18n;
 
 /*//////////////////////////////////////////////////////////////
                             ADD ASSET
@@ -106,7 +103,7 @@ scenario(
                     SET ASSET CONFIG TO ASSET LIST
 //////////////////////////////////////////////////////////////*/
 
-// What the asset list reads after setAssetConfigToAssetList is checked in scenario/assetList/AddAssetScenario.ts;
+// What the asset list reads after setAssetConfigToAssetList is checked in scenario/assetList/AssetListGovernanceScenario.ts;
 // here are only the reverts of the Configurator
 
 scenario(

@@ -277,7 +277,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param newPriceFeed The new price feed
      */
     function updateAssetPriceFeed(address cometProxy, address asset, address newPriceFeed) external onlyGovernor {
-        if (asset == address(0)) revert InvalidAddress();
+        if (newPriceFeed == address(0)) revert InvalidAddress();
 
         uint256 assetIndex = getAssetIndex(cometProxy, asset);
         address oldPriceFeed = assetConfigs[cometProxy][assetIndex].priceFeed;

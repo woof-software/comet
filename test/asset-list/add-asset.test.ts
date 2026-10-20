@@ -392,6 +392,11 @@ describe('asset list add asset: full flow through the Configurator', function ()
       await expect(configurator.deployAssetList(comet.address)).to.be.revertedWithCustomError(assetList, 'BadDecimals');
     });
 
+    it('step 1: the asset is already in the stored configs', async () => {
+      await expect(configurator.addAsset(comet.address, { ...(await storedConfigs())[0] }))
+        .to.be.revertedWithCustomError(configurator, 'AssetAlreadyExists');
+    });
+
     it('step 2: the asset is not in the stored configs', async () => {
       await expect(configurator.setAssetConfigToAssetList(comet.address, other.address))
         .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');

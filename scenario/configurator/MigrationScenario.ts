@@ -1,18 +1,17 @@
 import { expect } from 'chai';
 import { utils } from 'ethers';
-import { CometContext, scenario } from '../context/CometContext';
+import { scenario } from '../context/CometContext';
 import { calldata } from '../../src/deploy';
 import {
-  createCrossChainProposal,
+  executeProposal,
   getMinimumBorrowAmounts,
   getUsableCollateralIndices,
   isAssetListMigrationRequired,
-  isBridgedDeployment,
+  matchesDeployment,
   supportsMarketAdminPermissionChecker,
 } from '../utils';
 import {
   AssetList,
-  BaseBridgeReceiver,
   CometProxyAdmin,
   CometWithExtendedAssetList,
   Configurator,
@@ -27,33 +26,15 @@ function namedFields(struct: object): string[] {
   return Object.keys(struct).filter((key) => isNaN(Number(key)));
 }
 
-// Runs the actions as one governance proposal: directly on mainnet, and through the bridge on L2s
-async function executeProposal(
-  context: CometContext,
-  bridgeReceiver: BaseBridgeReceiver,
-  targets: string[],
-  signatures: string[],
-  calldatas: string[]
-) {
-  const values = targets.map(() => 0);
-  if (isBridgedDeployment(context)) {
-    const l2ProposalData = utils.defaultAbiCoder.encode(
-      ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
-      [targets, values, signatures, calldatas]
-    );
-    await createCrossChainProposal(context, l2ProposalData, bridgeReceiver);
-  } else {
-    await context.fastGovernanceExecute(targets, values, signatures, calldatas);
-  }
-}
-
 // Moves a live market from the V1 Configurator, which keeps the asset configs inside the Configuration, to the
 // asset list: the Configurator is upgraded and migrated, an asset list is deployed for the market, and the Comet is
 // rebuilt on it. Runs on every live base whose asset list does not support ConfigHash yet, one market per run.
 scenario(
   'Configurator migration to the asset list (V1 → Intermediate → Configurator)',
   {
-    filter: async (ctx) => await isAssetListMigrationRequired(ctx),
+    filter: async (ctx) =>
+      matchesDeployment(ctx, [{ network: 'mainnet' }, { network: 'arbitrum' }, { network: 'base' }, { network: 'optimism' }]) &&
+      await isAssetListMigrationRequired(ctx),
   },
   async ({ comet, configurator: liveConfigurator, proxyAdmin: liveProxyAdmin, actors, bridgeReceiver }, context) => {
     const dm = context.world.deploymentManager;
@@ -68,6 +49,22 @@ scenario(
                         STEP 1: SNAPSHOT THE MARKET
     //////////////////////////////////////////////////////////////*/
 
+    // Albert supplies collateral and borrows base against it, so the upgrades below run under a live borrow position.
+    // It is opened before the snapshot, as it changes the market totals
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const [collateralIndex] = await getUsableCollateralIndices(context, 1);
+    const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
+    await context.sourceTokens(supplyAmount, collateralAsset.address, albert.address);
+    await collateralAsset.approve(albert, comet.address);
+    await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
+    await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
+    await comet.connect(albert.signer).withdraw(baseToken.address, borrowAmount);
+
+    const borrowBalanceBefore = await comet.borrowBalanceOf(albert.address);
+    const balanceBefore = await comet.balanceOf(albert.address);
+    const collateralBalanceBefore = await comet.collateralBalanceOf(albert.address, collateralAsset.address);
+    const { principal: principalBefore } = await comet.userBasic(albert.address);
+
     // The V1 Configurator returns the asset configs as part of the Configuration
     const configuratorV1 = (await ethers.getContractAt('ConfiguratorV1', configurator.address)) as ConfiguratorV1;
     const v1Configuration = await configuratorV1.getConfiguration(comet.address);
@@ -80,7 +77,6 @@ scenario(
 
     // Only stored values are compared: a view like getReserves accrues interest with time,
     // and the proposals below let time pass
-    const baseToken = context.getAssetByAddress(await comet.baseToken());
     const totalsBasicBefore = await comet.totalsBasic();
     const baseBalanceBefore = await baseToken.balanceOf(comet.address);
     const totalsCollateralBefore = await Promise.all(assets.map((asset) => comet.totalsCollateral(asset)));
@@ -257,14 +253,14 @@ scenario(
                            STEP 6: SMOKE TEST
     //////////////////////////////////////////////////////////////*/
 
-    // Albert supplies collateral and borrows base against it
-    const [collateralIndex] = await getUsableCollateralIndices(context, 1);
-    const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
-    await context.sourceTokens(supplyAmount, collateralAsset.address, albert.address);
-    await collateralAsset.approve(albert, comet.address);
-    await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
-    await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
-    await comet.connect(albert.signer).withdraw(baseToken.address, borrowAmount);
+    // The borrow position opened before the upgrades is intact. The stored principal is still the debt as it was,
+    // so it stays negative and unchanged; the borrow balance only grew by the interest accrued while the proposals ran
+    const { principal: principalAfter } = await comet.userBasic(albert.address);
+    expect(principalAfter).to.equal(principalBefore);
+    expect(principalAfter).to.be.lessThan(0);
+    expect(await comet.borrowBalanceOf(albert.address)).to.be.greaterThanOrEqual(borrowBalanceBefore);
+    expect(await comet.balanceOf(albert.address)).to.equal(balanceBefore);
+    expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.equal(collateralBalanceBefore);
 
     expect(await comet.isBorrowCollateralized(albert.address)).to.be.true;
     expect(await comet.isLiquidatable(albert.address)).to.be.false;
