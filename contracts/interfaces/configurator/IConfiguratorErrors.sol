@@ -10,6 +10,9 @@ interface IConfiguratorErrors {
     /// @dev The Configurator is already initialized, or is the implementation, which can never be initialized
     error AlreadyInitialized();
 
+    /// @dev The asset is already in the asset configs of the Comet proxy
+    error AssetAlreadyExists();
+
     /// @dev The asset is not in the asset configs of the Comet proxy
     error AssetDoesNotExist();
 

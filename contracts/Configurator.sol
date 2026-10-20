@@ -244,7 +244,15 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param assetConfig The config of the new asset
      */
     function addAsset(address cometProxy, AssetConfig calldata assetConfig) external onlyGovernor {
-        assetConfigs[cometProxy].push(assetConfig);
+        if (assetConfig.asset == address(0)) revert InvalidAddress();
+
+        AssetConfig[] storage cometAssetConfigs = assetConfigs[cometProxy];
+        uint256 numAssets = cometAssetConfigs.length;
+        for (uint256 i; i < numAssets; ++i) {
+            if (cometAssetConfigs[i].asset == assetConfig.asset) revert AssetAlreadyExists();
+        }
+
+        cometAssetConfigs.push(assetConfig);
         emit AddAsset(cometProxy, assetConfig);
     }
 
@@ -269,6 +277,8 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param newPriceFeed The new price feed
      */
     function updateAssetPriceFeed(address cometProxy, address asset, address newPriceFeed) external onlyGovernor {
+        if (asset == address(0)) revert InvalidAddress();
+
         uint256 assetIndex = getAssetIndex(cometProxy, asset);
         address oldPriceFeed = assetConfigs[cometProxy][assetIndex].priceFeed;
         assetConfigs[cometProxy][assetIndex].priceFeed = newPriceFeed;
@@ -415,6 +425,8 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @notice Transfers the governor rights to a new address
      */
     function transferGovernor(address newGovernor) external onlyGovernor {
+        if (newGovernor == address(0)) revert InvalidAddress();
+        
         address oldGovernor = governor;
         governor = newGovernor;
         emit GovernorTransferred(oldGovernor, newGovernor);
