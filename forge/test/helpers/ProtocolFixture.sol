@@ -6,7 +6,7 @@ import "forge-std/Test.sol";
 import { AssetList } from "@comet-contracts/AssetList.sol";
 import { AssetListFactory } from "@comet-contracts/AssetListFactory.sol";
 import { CometConfiguration } from "@comet-contracts/CometConfiguration.sol";
-import { CometExtAssetList } from "@comet-contracts/CometExtAssetList.sol";
+import { CometExt } from "@comet-contracts/CometExt.sol";
 import { CometFactoryWithExtendedAssetList } from "@comet-contracts/CometFactoryWithExtendedAssetList.sol";
 import { CometInterface } from "@comet-contracts/CometInterface.sol";
 import { CometProxyAdmin, Deployable } from "@comet-contracts/CometProxyAdmin.sol";
@@ -73,7 +73,7 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
     /// The Configurator, reached through its proxy.
     Configurator internal configurator;
     ConfiguratorProxy internal configuratorProxy;
-    CometExtAssetList internal extensionDelegate;
+    CometExt internal extensionDelegate;
     AssetListFactory internal assetListFactory;
     /// The market's asset list, reached through its proxy.
     AssetList internal assetList;
@@ -130,9 +130,10 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
 
     function deployExtensionDelegate() internal {
         assetListFactory = new AssetListFactory();
-        extensionDelegate = new CometExtAssetList(
-            CometConfiguration.ExtConfiguration({ name32: "Compound USDC", symbol32: "cUSDCv3" }),
-            address(assetListFactory)
+        extensionDelegate = new CometExt(
+            CometConfiguration.ExtConfiguration(
+                { name32: "Compound USDC", symbol32: "cUSDCv3" }
+            )
         );
     }
 
