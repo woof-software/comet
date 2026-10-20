@@ -106,13 +106,6 @@ describe('interest calculation', function () {
       exp(10000, baseDecimals)
     ); // 10k$
 
-    const WITHDRAW_AMOUNT_EXCEEDS_LIMIT: BigNumber = BigNumber.from(
-      exp(16000, baseDecimals)
-    ); // 12k$
-    const WITHDRAW_AMOUNT_EXTRA: BigNumber = BigNumber.from(
-      exp(2000, baseDecimals)
-    ); // 2k$
-
     const AVERAGE_WAIT_TIME = 3600; // 1 hr
 
     let aliceDepositTimestamp: number;
@@ -1773,59 +1766,6 @@ describe('interest calculation', function () {
         const balance = await comet.borrowBalanceOf(bob.address);
         // 1 wei difference is possible
         expect(balance).to.be.approximately(expectedBalance, 1);
-      });
-    });
-
-    // TODO: needs rewrite, lender withdrawals are now capped by maxSupportedUtilization
-    describe.skip('lenders can withdraw from the market even peaking utilization', function () {
-      it('withdraw by lenders does not revert if reaching >200% utilization from regular level in one step', async () => {
-        await baseToken.allocateTo(
-          comet.address,
-          WITHDRAW_AMOUNT_EXCEEDS_LIMIT
-        );
-
-        let curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.lessThan(exp(1, 18)); // < 100%
-
-        await expect(
-          comet
-            .connect(alice)
-            .withdraw(baseToken.address, WITHDRAW_AMOUNT_EXCEEDS_LIMIT)
-        ).to.not.be.reverted;
-
-        // 20k supplied, 8k borrowed -> withdraw of 16k will spike utilization over 200%
-        curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.greaterThanOrEqual(exp(2, 18)); // > 200%
-      });
-
-      it('withdraw by lenders does not revert within 200%+ utilization', async () => {
-        let curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.greaterThanOrEqual(exp(2, 18)); // > 200%
-
-        await expect(
-          comet
-            .connect(alice)
-            .withdraw(baseToken.address, WITHDRAW_AMOUNT_EXTRA)
-        ).to.not.be.reverted;
-
-        // 4k supplied, 8k borrowed -> withdraw of 2k will spike utilization over 400%
-        curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.greaterThanOrEqual(exp(4, 18)); // > 200%
-      });
-
-      it('withdraw by lenders does not revert if reaching utilization above uint64 limit (> 1900%)', async () => {
-        /// withdraw everything except 1$
-        const curBalance = await comet.balanceOf(alice.address);
-
-        await expect(
-          comet
-            .connect(alice)
-            .withdraw(baseToken.address, curBalance.sub(exp(1, baseDecimals)))
-        ).to.not.be.reverted;
-
-        // 2k supplied, 8k borrowed -> withdraw of 2k - 1$ will spike utilization over 8000%, exceeding uint64 limit
-        const curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.greaterThanOrEqual(exp(80, 18)); // > 8000%, far exceedint uint64 limit
       });
     });
   });

@@ -318,7 +318,6 @@ export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const DEFAULT_PRICEFEED_DECIMALS = 8;
 export const MAX_ASSETS = 24;
 export const DEFAULT_MAX_SUPPORTED_UTILIZATION = exp(2, 18);
-// Derived from a hash so it never collides with mnemonic signers or deployed contract addresses
 export const INITIAL_LENDER = ethers.utils.getAddress(
   ethers.utils.hexDataSlice(ethers.utils.keccak256(ethers.utils.toUtf8Bytes('comet.test.initial-lender')), 12)
 );
@@ -465,7 +464,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
 
   const cometInterface = await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address) as CometWithExtendedAssetList;
   if (opts.initialLenderSupply) {
-    await seedInitialLender(cometInterface, tokens[base], opts.initialLenderSupply);
+    await supplyFromInitialLender(cometInterface, tokens[base], opts.initialLenderSupply);
   }
 
   return {
@@ -614,7 +613,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
 
   // Tests borrow through the proxy, so the initial lender has to live in its storage
   if (opts.initialLenderSupply) {
-    await seedInitialLender(
+    await supplyFromInitialLender(
       cometWithExtendedAssetList.attach(cometProxyWithExtendedAssetList.address),
       tokens[base],
       opts.initialLenderSupply
@@ -721,7 +720,7 @@ export async function makeBulker(opts: BulkerOpts): Promise<BulkerInfo> {
 }
 
 // Writes the initial lender's position straight into storage, so no accrual happens and block time is untouched
-export async function seedInitialLender(
+export async function supplyFromInitialLender(
   cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList,
   baseToken: FaucetToken | NonStandardFaucetFeeToken,
   amount: Numeric
@@ -739,6 +738,24 @@ export async function bumpTotalsCollateral(cometWithExtendedAssetList: CometHarn
   await token.allocateTo(cometWithExtendedAssetList.address, delta);
   await wait(cometWithExtendedAssetList.setTotalsCollateral(token.address, t1));
   return t1;
+}
+
+// Raises the debt of an account without moving tokens or accruing, to reach states regular operations cannot
+export async function bumpBorrow(cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList, account: string, amount: bigint) {
+  const principal = (await cometWithExtendedAssetList.userBasic(account)).principal.toBigInt();
+  await wait(cometWithExtendedAssetList.setBasePrincipal(account, principal - amount));
+  await setTotalsBasic(cometWithExtendedAssetList, { totalBorrowBase: (await cometWithExtendedAssetList.totalsBasic()).totalBorrowBase.toBigInt() + amount });
+}
+
+export async function allocateAndSupply(
+  cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList,
+  token: FaucetToken | NonStandardFaucetFeeToken,
+  user: SignerWithAddress,
+  amount: bigint
+) {
+  await wait(token.allocateTo(user.address, amount));
+  await wait(token.connect(user).approve(cometWithExtendedAssetList.address, amount));
+  await wait(cometWithExtendedAssetList.connect(user).supply(token.address, amount));
 }
 
 export async function setTotalsBasic(cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList, overrides = {}): Promise<TotalsBasicStructOutput> {

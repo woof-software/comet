@@ -3,6 +3,7 @@ import {
   AssetListFactory__factory,
   CometExtAssetList__factory,
   CometHarnessExtendedAssetList__factory,
+  CometHarnessInterfaceExtendedAssetList,
   FaucetToken__factory,
   SimplePriceFeed__factory,
 } from '../build/types';
@@ -173,5 +174,41 @@ describe('constructor', function () {
         borrowInterestRateSlopeLow: uint64Max + 1n
       })
     ).to.be.rejectedWith('value out-of-bounds'); // ethers.js error
+  });
+
+  describe('max supported utilization', function () {
+    const uint64Max = 2n ** 64n - 1n;
+
+    describe('happy path', function () {
+      let cometAtFullUtilization: CometHarnessInterfaceExtendedAssetList;
+      let cometAtUint64Max: CometHarnessInterfaceExtendedAssetList;
+
+      before(async function () {
+        cometAtFullUtilization = (await makeProtocol({ maxSupportedUtilization: exp(1, 18) })).cometWithExtendedAssetList;
+        cometAtUint64Max = (await makeProtocol({ maxSupportedUtilization: uint64Max })).cometWithExtendedAssetList;
+      });
+
+      it('allows maxSupportedUtilization equal to 100%', async function () {
+        expect(await cometAtFullUtilization.maxSupportedUtilization()).to.eq(exp(1, 18));
+      });
+
+      it('allows maxSupportedUtilization equal to uint64 max', async function () {
+        expect(await cometAtUint64Max.maxSupportedUtilization()).to.eq(uint64Max);
+      });
+    });
+
+    describe('revert cases', function () {
+      it('reverts if maxSupportedUtilization is below 100%', async function () {
+        await expect(
+          makeProtocol({ maxSupportedUtilization: exp(1, 18) - 1n })
+        ).to.be.revertedWith("custom error 'BadMaxSupportedUtilization()'");
+      });
+
+      it('reverts if maxSupportedUtilization is zero', async function () {
+        await expect(
+          makeProtocol({ maxSupportedUtilization: 0 })
+        ).to.be.revertedWith("custom error 'BadMaxSupportedUtilization()'");
+      });
+    });
   });
 });
