@@ -315,7 +315,7 @@ scenario(
       comet.address,
       ethers.constants.AddressZero,
       await deployPriceFeed(context, 'asset')
-    )).to.be.revertedWithCustomError(configurator, 'InvalidAddress');
+    )).to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
   }
 );
 

@@ -267,8 +267,13 @@ describe('configurator: assets configs management', function () {
       });
 
       it('the asset is not in the stored configs', async () => {
-        await expect(configurator.updateAssetPriceFeed(comet.address, other.address, ZERO))
+        await expect(configurator.updateAssetPriceFeed(comet.address, other.address, await newPriceFeed()))
           .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+      });
+
+      it('the new price feed is the zero address', async () => {
+        await expect(configurator.updateAssetPriceFeed(comet.address, asset, ZERO))
+          .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
       });
     });
   });

@@ -11,7 +11,7 @@ import {
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { ImmutableAssetConfigStruct, StorageAssetConfigStruct } from '../../build/types/AssetList';
-import { TYPEHASH, deployAssetListFixture, hashConfig } from './shared';
+import { deployAssetListFixture, hashConfig } from './shared';
 import { AssetInfoStructOutput } from 'build/types/IAssetList';
 
 describe('asset list deployment scenarios', function () {
@@ -125,6 +125,8 @@ describe('asset list deployment scenarios', function () {
                        CASE 2: TYPEHASH UPDATED
   //////////////////////////////////////////////////////////////*/
 
+  // AssetListTypeHashMock is a full copy of AssetList with only the TYPEHASH changed, so it has to be kept in sync with
+  // contracts/AssetList.sol by hand: after any change there, copy it into the mock as well
   describe('TYPEHASH updated', function () {
     const NEW_TYPEHASH = ethers.utils.id('ImmutableConfigV2[](address asset,uint8 decimals,address priceFeed)');
 
@@ -168,7 +170,6 @@ describe('asset list deployment scenarios', function () {
 
     it('the proxy reports the new TYPEHASH', async () => {
       expect(await assetList.TYPEHASH()).to.equal(NEW_TYPEHASH);
-      expect(await assetList.TYPEHASH()).to.not.equal(TYPEHASH);
     });
 
     it('the proxy reports the new configHash', async () => {

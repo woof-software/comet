@@ -247,12 +247,33 @@ contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvent
     //////////////////////////////////////////////////////////////*/
 
     /**
+     * @notice Replaces the config of one asset of a Comet proxy, found by its address
+     * @dev The immutable part takes effect on the asset list only after deployAssetList and the asset list proxy upgrade
+     * @param cometProxy The Comet proxy whose asset config to update
+     * @param newAssetConfig The new config of the asset
+     */
+    function updateAsset(address cometProxy, AssetConfig calldata newAssetConfig) external onlyGovernor {
+        uint256 assetIndex = getAssetIndex(cometProxy, newAssetConfig.asset);
+        AssetConfig memory oldAssetConfig = assetConfigs[cometProxy][assetIndex];
+        assetConfigs[cometProxy][assetIndex] = newAssetConfig;
+        emit UpdateAsset(cometProxy, oldAssetConfig, newAssetConfig);
+    }
+
+    /**
      * @notice Adds a new asset config at the end of the asset configs of a Comet proxy
      * @param cometProxy The Comet proxy to add the asset config to
      * @param assetConfig The config of the new asset
      */
     function addAsset(address cometProxy, AssetConfig calldata assetConfig) external onlyGovernor {
-        assetConfigs[cometProxy].push(assetConfig);
+        if (assetConfig.asset == address(0)) revert InvalidAddress();
+
+        AssetConfig[] storage cometAssetConfigs = assetConfigs[cometProxy];
+        uint256 numAssets = cometAssetConfigs.length;
+        for (uint256 i; i < numAssets; ++i) {
+            if (cometAssetConfigs[i].asset == assetConfig.asset) revert AssetAlreadyExists();
+        }
+
+        cometAssetConfigs.push(assetConfig);
         emit AddAsset(cometProxy, assetConfig);
     }
 
@@ -270,19 +291,6 @@ contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvent
     }
 
     /**
-     * @notice Replaces the config of one asset of a Comet proxy, found by its address
-     * @dev The immutable part takes effect on the asset list only after deployAssetList and the asset list proxy upgrade
-     * @param cometProxy The Comet proxy whose asset config to update
-     * @param newAssetConfig The new config of the asset
-     */
-    function updateAsset(address cometProxy, AssetConfig calldata newAssetConfig) external onlyGovernor {
-        uint256 assetIndex = getAssetIndex(cometProxy, newAssetConfig.asset);
-        AssetConfig memory oldAssetConfig = assetConfigs[cometProxy][assetIndex];
-        assetConfigs[cometProxy][assetIndex] = newAssetConfig;
-        emit UpdateAsset(cometProxy, oldAssetConfig, newAssetConfig);
-    }
-
-    /**
      * @notice Sets the price feed of one asset of a Comet proxy
      * @dev Takes effect on the asset list only after deployAssetList and the asset list proxy upgrade
      * @param cometProxy The Comet proxy whose asset config to update
@@ -290,6 +298,8 @@ contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvent
      * @param newPriceFeed The new price feed
      */
     function updateAssetPriceFeed(address cometProxy, address asset, address newPriceFeed) external onlyGovernor {
+        if (newPriceFeed == address(0)) revert InvalidAddress();
+
         uint256 assetIndex = getAssetIndex(cometProxy, asset);
         address oldPriceFeed = assetConfigs[cometProxy][assetIndex].priceFeed;
         assetConfigs[cometProxy][assetIndex].priceFeed = newPriceFeed;
@@ -436,6 +446,8 @@ contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvent
      * @notice Transfers the governor rights to a new address
      */
     function transferGovernor(address newGovernor) external onlyGovernor {
+        if (newGovernor == address(0)) revert InvalidAddress();
+        
         address oldGovernor = governor;
         governor = newGovernor;
         emit GovernorTransferred(oldGovernor, newGovernor);

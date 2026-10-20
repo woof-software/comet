@@ -1860,19 +1860,19 @@ describe('configurator', function () {
         });
       });
 
-      describe('addAsset edge cases', function() {
-        it('can add duplicate asset (no on-chain guard)', async () => {
-          const snapshot = await takeSnapshot();
-
+      describe('addAsset revert cases', function() {
+        it('reverts if the asset is already in the asset configs', async () => {
           const existingAsset = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0];
-          const numAssetsBefore = (await configuratorProxy.getAssetConfigs(cometProxy.address)).length;
 
-          await configuratorProxy.connect(governor).addAsset(cometProxy.address, existingAsset);
+          await expect(configuratorProxy.connect(governor).addAsset(cometProxy.address, existingAsset))
+            .to.be.revertedWithCustomError(configurator, 'AssetAlreadyExists');
+        });
 
-          expect((await configuratorProxy.getAssetConfigs(cometProxy.address)).length).to.equal(numAssetsBefore + 1);
-          expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[(await configuratorProxy.getAssetConfigs(cometProxy.address)).length - 1].asset).to.equal(existingAsset.asset);
+        it('reverts if the asset is zero address', async () => {
+          const existingAsset = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0];
 
-          await snapshot.restore();
+          await expect(configuratorProxy.connect(governor).addAsset(cometProxy.address, { ...existingAsset, asset: ZERO_ADDRESS }))
+            .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
         });
       });
     });

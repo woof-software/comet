@@ -447,6 +447,7 @@ describe('asset list add asset: full flow through the Configurator', function ()
       await expect(configurator.setAssetConfigToAssetList(other.address, assetConfig.asset)).to.be.reverted;
     });
   });
+  
   // Step 2 on an asset that is already registered replaces its whole storage config with the stored one
   describe('step 2 on an asset already registered', function () {
     const UPDATED = {
@@ -462,31 +463,75 @@ describe('asset list add asset: full flow through the Configurator', function ()
     after(async () => await snapshot.restore());
 
     context('registered by initialize', function () {
+      let configuratorAssetConfigsBefore: AssetConfigStructOutput[];
+      let assetListAssetConfigsBefore: AssetInfoStructOutput[];
+
+      before(async () => {
+        configuratorAssetConfigsBefore = await storedConfigs();
+        assetListAssetConfigsBefore = await Promise.all(
+          [...Array(await assetList.numAssets()).keys()].map((i) => assetList.getAssetInfo(i))
+        );
+      });
+
       it('updates the stored config', async () => {
-        await configurator.updateAsset(comet.address, { ...(await storedConfigs())[0], ...UPDATED });
+        await configurator.updateAsset(comet.address, { ...configuratorAssetConfigsBefore[0], ...UPDATED });
+      });
+
+      it('before step 2 the list still reads the old factors and supply cap', async () => {
+        const info = await assetList.getAssetInfo(0);
+        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(assetListAssetConfigsBefore[0][key]);
       });
 
       it('step 2 succeeds', async () => {
-        await expect(configurator.setAssetConfigToAssetList(comet.address, configs[0].asset)).to.not.be.reverted;
+        await expect(configurator.setAssetConfigToAssetList(comet.address, configs[0].asset))
+          .to.emit(configurator, 'SetAssetConfigToAssetList')
+          .withArgs(comet.address, assetList.address, configs[0].asset);
       });
 
       it('the list reads the new factors and supply cap', async () => {
         const info = await assetList.getAssetInfo(0);
         for (const key of STORAGE_KEYS) expect(info[key]).to.equal(UPDATED[key]);
       });
+
+      it('the Comet reads the new factors and supply cap', async () => {
+        const info = await comet.getAssetInfo(0);
+        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(UPDATED[key]);
+      });
     });
 
     context('registered by an earlier step 2', function () {
+      let configuratorAssetConfigsBefore: AssetConfigStructOutput[];
+      let assetListAssetConfigsBefore: AssetInfoStructOutput[];
+
+      before(async () => {
+        configuratorAssetConfigsBefore = await storedConfigs();
+        assetListAssetConfigsBefore = await Promise.all(
+          [...Array(await assetList.numAssets()).keys()].map((i) => assetList.getAssetInfo(i))
+        );
+      });
+
       it('updates the stored config', async () => {
-        await configurator.updateAsset(comet.address, { ...newAssetConfig, ...UPDATED });
+        await configurator.updateAsset(comet.address, { ...configuratorAssetConfigsBefore[NUM_ASSETS], ...UPDATED });
+      });
+
+      it('before step 2 the list still reads the old factors and supply cap', async () => {
+        const info = await assetList.getAssetInfo(NUM_ASSETS);
+        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(assetListAssetConfigsBefore[NUM_ASSETS][key]);
       });
 
       it('step 2 succeeds', async () => {
-        await expect(configurator.setAssetConfigToAssetList(comet.address, asset)).to.not.be.reverted;
+        await expect(configurator.setAssetConfigToAssetList(comet.address, asset))
+          .to.emit(configurator, 'SetAssetConfigToAssetList')
+          .withArgs(comet.address, assetList.address, asset);
       });
 
       it('the list reads the new factors and supply cap', async () => {
         const info = await assetList.getAssetInfoByAddress(asset);
+        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(UPDATED[key]);
+      });
+
+      it('the Comet reads the new factors and supply cap', async () => {
+        const info = await comet.getAssetInfo(NUM_ASSETS);
         for (const key of STORAGE_KEYS) expect(info[key]).to.equal(UPDATED[key]);
       });
     });

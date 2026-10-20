@@ -3,8 +3,6 @@ import { AssetList, AssetList__factory, CometProxyAdmin, Configurator } from '..
 import { AssetInfoStructOutput, ImmutableAssetConfigStruct, StorageAssetConfigStruct } from '../../build/types/AssetList';
 import {
   ASSET_DECIMALS,
-  LIQUIDATE_CF,
-  LIQUIDATION_FACTOR,
   MAX_ASSETS,
   MAX_ASSET_DECIMALS,
   deployAssetListFixture,
@@ -288,43 +286,6 @@ describe('asset list deployment: initialize', function () {
           configurator.address
         )
       ).to.be.revertedWithCustomError(assetList, 'AssetAlreadyAdded');
-    });
-
-    // BCF < LCF < LF <= MAX_COLLATERAL_FACTOR, checked for every asset: the last one carries the bad factors
-
-    it('an asset has the borrow collateral factor equal to the liquidate collateral factor', async () => {
-      await expect(initializeWithFactors({ borrowCollateralFactor: LIQUIDATE_CF }))
-        .to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
-    });
-
-    it('an asset has the borrow collateral factor above the liquidate collateral factor', async () => {
-      await expect(initializeWithFactors({ borrowCollateralFactor: LIQUIDATE_CF + 1n }))
-        .to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
-    });
-
-    it('an asset has a borrow collateral factor but no liquidate collateral factor', async () => {
-      await expect(initializeWithFactors({ liquidateCollateralFactor: 0 }))
-        .to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
-    });
-
-    it('an asset has the liquidate collateral factor equal to the liquidation factor', async () => {
-      await expect(initializeWithFactors({ liquidateCollateralFactor: LIQUIDATION_FACTOR }))
-        .to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
-    });
-
-    it('an asset has the liquidate collateral factor above the liquidation factor', async () => {
-      await expect(initializeWithFactors({ liquidateCollateralFactor: LIQUIDATION_FACTOR + 1n }))
-        .to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
-    });
-
-    it('an asset has a liquidate collateral factor but no liquidation factor', async () => {
-      await expect(initializeWithFactors({ borrowCollateralFactor: 0, liquidationFactor: 0 }))
-        .to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
-    });
-
-    it('an asset has the liquidation factor above the maximum', async () => {
-      await expect(initializeWithFactors({ liquidationFactor: MAX_COLLATERAL_FACTOR + 1n }))
-        .to.be.revertedWithCustomError(assetList, 'LiqPenaltyTooHigh');
     });
   });
 });

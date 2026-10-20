@@ -13,6 +13,9 @@ import { IAssetListStructs } from "../../interfaces/assetList/IAssetListStructs.
 
 /**
  * @dev AssetList with a changed TYPEHASH string, otherwise the same code and storage
+ * @dev A full copy of contracts/AssetList.sol: Solidity can't override a constant, so the contract can't inherit it.
+ *      Any change to AssetList.sol must be copied here as well, or the deployment scenarios test a list that differs
+ *      from the real one in more than the TYPEHASH
  * @author Woof
  * @custom:security-contact dmitriy@woof.software
  */
