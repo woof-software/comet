@@ -217,9 +217,11 @@ async function tryStrategies<T>(strategies: (() => Promise<T>)[]): Promise<T> {
 
 async function getContractCreationCode(network: string, address: string, family: 'blockscout' | 'etherscan') {
   if (family === 'blockscout') {
+    // eth_getCode returns the code already deployed at the address, which reverts when deployed again as if it were
+    // creation code, so it is only the last resort, enough for an import that needs just the ABI
     return tryStrategies([
-      () => scrapeContractCreationCodeFromRPC(network, address),
       () => pullFirstTransactionForContractFromBlockscout(network, address),
+      () => scrapeContractCreationCodeFromRPC(network, address),
     ]);
   }
 
