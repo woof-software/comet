@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import { annualize, defactor, exp, factorScale } from '../test/helpers';
 import { BigNumber } from 'ethers';
 import { FuzzType } from './constraints/Fuzzing';
-import { supportUtilizationLimit, isFreshMarket } from './utils';
+import { supportUtilizationLimit, supportsConfigurableMaxSupportedUtilization, isFreshMarket, withdrawFromInitialLender } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { setNextBlockTimestamp } from './utils/hreUtils';
 
@@ -13,11 +13,20 @@ function calculateInterestRateSupply(
   interestRateBase: BigNumber,
   interestRateSlopeLow: BigNumber,
   interestRateSlopeHigh: BigNumber,
-  totalSupplyBase: BigNumber
+  totalSupplyBase: BigNumber,
+  baseSupplyIndex: BigNumber,
+  baseIndexScale: BigNumber,
+  cometBaseBalance: BigNumber
 ): BigNumber {
   const factorScale = BigNumber.from(exp(1, 18));
 
   if (totalSupplyBase.isZero()) return BigNumber.from(0);
+
+  // Without borrows lenders are paid from reserves, so the rate is cut once supplies reach the balance of Comet
+  if (utilization.isZero() && !interestRateBase.isZero()) {
+    const presentTotalSupply = totalSupplyBase.mul(baseSupplyIndex).div(baseIndexScale);
+    if (presentTotalSupply.gte(cometBaseBalance)) return BigNumber.from(0);
+  }
   
   if (utilization.lte(kink)) {
     const interestRateWithoutBase = interestRateSlopeLow.mul(utilization).div(factorScale);
@@ -70,8 +79,10 @@ function calculateUtilization(
 scenario(
   'Comet#interestRate > rates using on-chain configuration constants',
   {},
-  async ({ comet }) => {
+  async ({ comet }, context: CometContext) => {
     let { totalSupplyBase, totalBorrowBase, baseSupplyIndex, baseBorrowIndex } = await comet.totalsBasic();
+    const baseIndexScale = await comet.baseIndexScale();
+    const cometBaseBalance = BigNumber.from(await context.getAssetByAddress(await comet.baseToken()).balanceOf(comet.address));
     const supplyKink = await comet.supplyKink();
     const supplyPerSecondInterestRateBase = await comet.supplyPerSecondInterestRateBase();
     const supplyPerSecondInterestRateSlopeLow = await comet.supplyPerSecondInterestRateSlopeLow();
@@ -93,7 +104,10 @@ scenario(
         supplyPerSecondInterestRateBase,
         supplyPerSecondInterestRateSlopeLow,
         supplyPerSecondInterestRateSlopeHigh,
-        totalSupplyBase
+        totalSupplyBase,
+        baseSupplyIndex,
+        baseIndexScale,
+        cometBaseBalance
       )
     );
     totalBorrowBase = (await comet.totalsBasic()).totalBorrowBase;
@@ -113,6 +127,7 @@ scenario(
 scenario(
   'Comet#interestRate > below kink rates using hypothetical configuration constants',
   {
+    filter: async (ctx: CometContext) => await supportsConfigurableMaxSupportedUtilization(ctx),
     upgrade: {
       supplyKink: exp(0.8, 18),
       supplyPerYearInterestRateBase: exp(0, 18),
@@ -136,6 +151,7 @@ scenario(
 scenario(
   'Comet#interestRate > above kink rates using hypothetical configuration constants',
   {
+    filter: async (ctx: CometContext) => await supportsConfigurableMaxSupportedUtilization(ctx),
     upgrade: {
       supplyKink: exp(0.8, 18),
       supplyPerYearInterestRateBase: exp(0, 18),
@@ -159,14 +175,17 @@ scenario(
 scenario(
   'Comet#interestRate > rates using fuzzed configuration constants',
   {
+    filter: async (ctx: CometContext) => await supportsConfigurableMaxSupportedUtilization(ctx),
     upgrade: {
       // TODO: Read types directly from Solidity?
       supplyPerYearInterestRateBase: { type: FuzzType.UINT64 },
       borrowPerYearInterestRateBase: { type: FuzzType.UINT64, max: (1e18).toString() /* 100% */ },
     }
   },
-  async ({ comet }) => {
+  async ({ comet }, context: CometContext) => {
     let { totalSupplyBase, totalBorrowBase, baseSupplyIndex, baseBorrowIndex } = await comet.totalsBasic();
+    const baseIndexScale = await comet.baseIndexScale();
+    const cometBaseBalance = BigNumber.from(await context.getAssetByAddress(await comet.baseToken()).balanceOf(comet.address));
     const supplyKink = await comet.supplyKink();
     const supplyPerSecondInterestRateBase = await comet.supplyPerSecondInterestRateBase();
     const supplyPerSecondInterestRateSlopeLow = await comet.supplyPerSecondInterestRateSlopeLow();
@@ -189,7 +208,10 @@ scenario(
         supplyPerSecondInterestRateBase,
         supplyPerSecondInterestRateSlopeLow,
         supplyPerSecondInterestRateSlopeHigh,
-        totalSupplyBase
+        totalSupplyBase,
+        baseSupplyIndex,
+        baseIndexScale,
+        cometBaseBalance
       )
     );
     totalBorrowBase = (await comet.totalsBasic()).totalBorrowBase;
@@ -223,6 +245,10 @@ scenario(
     filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
   },
   async ({ comet }, context: CometContext) => {
+    // Only needed on development, where the market is deployed with a supply from the initial lender.
+    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+    await withdrawFromInitialLender(context);
+
     const { albert, betty } = context.actors;
     const { asset, scale, borrowCollateralFactor, priceFeed } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(asset);
@@ -289,6 +315,10 @@ scenario(
     },
   },
   async ({ comet }, context: CometContext) => {
+    // Only needed on development, where the market is deployed with a supply from the initial lender.
+    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+    await withdrawFromInitialLender(context);
+
     const ethers = context.world.deploymentManager.hre.ethers;
 
     // Get initial state
@@ -343,6 +373,10 @@ scenario(
     },
   },
   async ({ comet }, context: CometContext) => {
+    // Only needed on development, where the market is deployed with a supply from the initial lender.
+    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+    await withdrawFromInitialLender(context);
+
     const ethers = context.world.deploymentManager.hre.ethers;
     const { albert } = context.actors;
 
@@ -405,6 +439,10 @@ scenario(
     },
   },
   async ({ comet }, context: CometContext) => {
+    // Only needed on development, where the market is deployed with a supply from the initial lender.
+    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+    await withdrawFromInitialLender(context);
+
     const ethers = context.world.deploymentManager.hre.ethers;
     const { albert } = context.actors;
 
@@ -485,6 +523,10 @@ scenario(
     },
   },
   async ({ comet }, context: CometContext) => {
+    // Only needed on development, where the market is deployed with a supply from the initial lender.
+    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+    await withdrawFromInitialLender(context);
+
     const ethers = context.world.deploymentManager.hre.ethers;
     const { albert, betty } = context.actors;
 

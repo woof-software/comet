@@ -115,6 +115,7 @@ export async function deployNetworkComet(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    maxSupportedUtilization,
     assetConfigs,
     rewardTokenAddress
   } = await getConfiguration(deploymentManager, configOverrides);
@@ -175,6 +176,7 @@ export async function deployNetworkComet(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    maxSupportedUtilization,
     assetConfigs,
   };
 

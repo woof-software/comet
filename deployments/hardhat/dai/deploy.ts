@@ -1,6 +1,6 @@
 import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
-import { Configurator, FaucetToken, SimplePriceFeed } from '../../../build/types';
-import { DeploySpec, cloneGov, deployComet, exp, sameAddress, wait } from '../../../src/deploy';
+import { CometInterface, Configurator, FaucetToken, SimplePriceFeed } from '../../../build/types';
+import { DeploySpec, DEVELOPMENT_INITIAL_LENDER, cloneGov, deployComet, exp, sameAddress, wait } from '../../../src/deploy';
 
 // Fixed test addresses for the dev market-admin role (impersonated by scenarios).
 const MARKET_ADMIN = '0x1111111111111111111111111111111111111111';
@@ -24,6 +24,30 @@ async function makePriceFeed(
   decimals: number
 ): Promise<SimplePriceFeed> {
   return deploymentManager.deploy(alias, 'test/SimplePriceFeed.sol', [initialPrice * 1e8, decimals]);
+}
+
+async function supplyFromInitialLender(
+  deploymentManager: DeploymentManager,
+  comet: CometInterface,
+  token: FaucetToken,
+  amount: bigint
+) {
+  await deploymentManager.hre.network.provider.request({
+    method: 'hardhat_impersonateAccount',
+    params: [DEVELOPMENT_INITIAL_LENDER],
+  });
+  await deploymentManager.hre.network.provider.send('hardhat_setBalance', [
+    DEVELOPMENT_INITIAL_LENDER,
+    '0x' + (10n ** 18n).toString(16),
+  ]);
+  const lender = await deploymentManager.hre.ethers.getSigner(DEVELOPMENT_INITIAL_LENDER);
+  await wait(token.allocateTo(DEVELOPMENT_INITIAL_LENDER, amount));
+  await wait(token.connect(lender).approve(comet.address, amount));
+  await wait(comet.connect(lender).supply(token.address, amount));
+  await deploymentManager.hre.network.provider.request({
+    method: 'hardhat_stopImpersonatingAccount',
+    params: [DEVELOPMENT_INITIAL_LENDER],
+  });
 }
 
 // TODO: Support configurable assets as well?
@@ -68,6 +92,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
     assetConfigs: [assetConfig0, assetConfig1],
   });
   const { rewards } = deployed;
+  const comet = deployed.comet as unknown as CometInterface;
   const configurator = deployed.configurator as unknown as Configurator;
 
   // Deploy + wire a MarketAdminPermissionChecker so the market-admin Configurator
@@ -139,6 +164,16 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
         }
       );
     })
+  );
+
+  // Borrows are capped by maxSupportedUtilization, so the market needs a lender for its base to be borrowable
+  await deploymentManager.idempotent(
+    async () => (await comet.balanceOf(DEVELOPMENT_INITIAL_LENDER)).eq(0),
+    async () => {
+      trace(`Supplying DAI to Comet from the initial lender ${DEVELOPMENT_INITIAL_LENDER}`);
+      await supplyFromInitialLender(deploymentManager, comet, DAI, exp(100_000, 18));
+      trace(`comet.balanceOf(${DEVELOPMENT_INITIAL_LENDER}): ${await comet.balanceOf(DEVELOPMENT_INITIAL_LENDER)}`);
+    }
   );
 
   return { ...deployed, fauceteer };

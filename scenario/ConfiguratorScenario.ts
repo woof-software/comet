@@ -197,6 +197,7 @@ async function deployComet(context: CometContext): Promise<string> {
     baseMinForRewards: exp(1, 9), // 1000000000n
     baseBorrowMin: exp(1, 5), // 100000n
     targetReserves: exp(2, 13), //20000000000000n
+    maxSupportedUtilization: exp(2, 18), // 2000000000000000000n
     assetConfigs: [
       {
         asset: await deployMockERC20(context, 'asset'),

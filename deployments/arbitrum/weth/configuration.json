@@ -9,6 +9,7 @@
     "rewardTokenAddress": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
     "storeFrontPriceFactor": 0.7,
     "targetReserves": "5000e18",
+    "maxSupportedUtilization": "2e18",
     "rates": {
       "supplyKink": 0.85,
       "supplySlopeLow": 0.0185,
