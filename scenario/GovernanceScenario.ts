@@ -1,9 +1,14 @@
 import { scenario } from './context/CometContext';
 import { expect } from 'chai';
 import { constants, utils } from 'ethers';
-import { isBridgedDeployment } from './utils';
+import { isAssetListMigrationRequired, isBridgedDeployment, migrateToAssetList } from './utils';
 
-scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => {
+scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin, actors }, context) => {
+  // TEMP SOLUTION: remove as soon as the real asset list migration is prepared or executed on chain.
+  // CometModifiedFactory builds a CometWithExtendedAssetList, so a market still on the V1 Configurator is migrated first
+  if (await isAssetListMigrationRequired(context)) {
+    await migrateToAssetList(context, actors.admin.signer);
+  }
   // For this scenario, we will be using the value of LiquidatorPoints.numAbsorbs for address ZERO to test that initialize has been called
   expect((await comet.liquidatorPoints(constants.AddressZero)).numAbsorbs).to.be.equal(0);
 
@@ -29,7 +34,12 @@ scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => 
   expect((await comet.liquidatorPoints(constants.AddressZero)).numAbsorbs).to.be.equal(2 ** 32 - 1);
 });
 
-scenario('upgrade Comet implementation and initialize using deployUpgradeToAndCall', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => {
+scenario('upgrade Comet implementation and initialize using deployUpgradeToAndCall', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin, actors }, context) => {
+  // TEMP SOLUTION: remove as soon as the real asset list migration is prepared or executed on chain.
+  // CometModifiedFactory builds a CometWithExtendedAssetList, so a market still on the V1 Configurator is migrated first
+  if (await isAssetListMigrationRequired(context)) {
+    await migrateToAssetList(context, actors.admin.signer);
+  }
   // For this scenario, we will be using the value of LiquidatorPoints.numAbsorbs for address ZERO to test that initialize has been called
   expect((await comet.liquidatorPoints(constants.AddressZero)).numAbsorbs).to.be.equal(0);
 
@@ -62,6 +72,11 @@ scenario('upgrade Comet implementation and initialize using deployUpgradeToAndCa
 });
 
 scenario('upgrade Comet implementation and call new function', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin, actors }, context) => {
+  // TEMP SOLUTION: remove as soon as the real asset list migration is prepared or executed on chain.
+  // CometModifiedFactory builds a CometWithExtendedAssetList, so a market still on the V1 Configurator is migrated first
+  if (await isAssetListMigrationRequired(context)) {
+    await migrateToAssetList(context, actors.admin.signer);
+  }
   const { signer } = actors;
 
   // Deploy new version of Comet Factory

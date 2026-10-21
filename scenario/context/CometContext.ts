@@ -37,7 +37,16 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { ProtocolConfiguration, deployComet, COMP_WHALES, WHALES } from '../../src/deploy';
 import { AddressLike, getAddressFromNumber, resolveAddress } from './Address';
-import { fastGovernanceExecute, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
+import {
+  fastGovernanceExecute,
+  isAssetListMigrationRequired,
+  max,
+  migrateToAssetList,
+  mineBlocks,
+  setEtherBalance,
+  setNextBaseFeeToZero,
+  setNextBlockTimestamp,
+} from '../utils';
 import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
 import { Requirements } from '../constraints/Requirements';
 
@@ -170,6 +179,13 @@ export class CometContext {
 
     const currentComet = await this.getComet();
     const admin = await world.impersonateAddress(await currentComet.governor(), { value: 20n ** 18n });
+
+    // TEMP SOLUTION: remove as soon as the real asset list migration is prepared or executed on chain.
+    // deployComet expects a market already on the asset list Configurator, so a market that still runs the V1
+    // Configurator is migrated first
+    if (await isAssetListMigrationRequired(this)) {
+      await migrateToAssetList(this, admin);
+    }
 
     const deploySpec = { cometMain: true, cometExt: true };
     const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, admin);

@@ -25,7 +25,7 @@ import relayMessage from './relayMessage';
 import { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
 import { getOrCreateVirtualTestnet } from './tenderlyVnet';
-import { BaseBridgeReceiver, CometInterface, FaucetToken } from '../../build/types';
+import { AssetList, BaseBridgeReceiver, CometInterface, CometProxyAdmin, Configurator, FaucetToken } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
@@ -2059,4 +2059,72 @@ export async function getMinimumBorrowAmounts(context: CometContext, collateralI
   supplyAmount = (supplyAmount * 11n) / 10n;
 
   return { collateralAsset, supplyAmount, borrowAmount };
+}
+
+// TEMP SOLUTION: remove as soon as the real asset list migration is prepared or executed on chain.
+// Moves a live market from the V1 Configurator to the asset list, the same steps as the migration scenario but called
+// directly by the governor instead of through proposals: the Configurator is upgraded through the intermediate
+// version that migrates the asset configs, an asset list factory and an asset list are deployed, and the Comet is
+// rebuilt on the list. The new contracts are deployed under the aliases deployComet reads, so that a following
+// deployComet finds them and does not roll the Configurator back to the old implementation
+export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAddress) {
+  const dm = ctx.world.deploymentManager;
+  const ethers = dm.hre.ethers;
+  const comet = await ctx.getComet();
+  const configurator = (await ethers.getContractAt('Configurator', (await ctx.getConfigurator()).address, admin)) as Configurator;
+  const proxyAdmin = (await ethers.getContractAt('CometProxyAdmin', (await ctx.getCometAdmin()).address, admin)) as CometProxyAdmin;
+
+  // A Configurator that stores the market admin permission checker has its own storage layout, so its own versions
+  const withMarketAdmin = await supportsMarketAdminPermissionChecker(ctx);
+  const configuratorIntermediate = await dm.deploy(
+    'test:configuratorIntermediate',
+    withMarketAdmin ? 'migration/ConfiguratorIntermediateOptimism.sol' : 'migration/ConfiguratorIntermediate.sol',
+    [],
+    true
+  );
+  const configuratorImplementation = await dm.deploy(
+    'configurator:implementation',
+    withMarketAdmin ? 'marketupdates/ConfiguratorOptimism.sol' : 'Configurator.sol',
+    [],
+    true
+  );
+  const assetListFactory = await dm.deploy('assetListFactory', 'AssetListFactory.sol', [], true);
+  const cometFactory = await dm.deploy('cometFactory', 'CometFactoryWithExtendedAssetList.sol', [], true);
+
+  // The Configurator proxy is upgraded by its own admin, read from the EIP-1967 admin slot
+  const adminSlot = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
+  const configuratorAdmin = proxyAdmin.attach(
+    utils.getAddress('0x' + (await ethers.provider.getStorageAt(configurator.address, adminSlot)).slice(26))
+  );
+  const intermediate = await ethers.getContractAt('ConfiguratorIntermediate', configurator.address, admin);
+
+  await (await configuratorAdmin.upgrade(configurator.address, configuratorIntermediate.address)).wait();
+  await (await intermediate.migrateAssetConfig([comet.address])).wait();
+  await (await configuratorAdmin.upgrade(configurator.address, configuratorImplementation.address)).wait();
+  await (await configurator.setAssetListFactory(comet.address, assetListFactory.address)).wait();
+
+  // The list is built from the immutable part of the migrated configs, and its proxy keeps the factors and caps
+  const assetListImplementation = (await dm.deploy(
+    'assetList:implementation',
+    'AssetList.sol',
+    [await configurator.getImmutableAssetConfig(comet.address)],
+    true
+  )) as AssetList;
+  const assetListProxy = await dm.deploy(
+    'assetList',
+    'vendor/proxy/transparent/TransparentUpgradeableProxy.sol',
+    [
+      assetListImplementation.address,
+      proxyAdmin.address,
+      assetListImplementation.interface.encodeFunctionData('initialize', [
+        await configurator.getStorageAssetConfig(comet.address),
+        configurator.address,
+      ]),
+    ],
+    true
+  );
+
+  await (await configurator.updateAssetList(comet.address, assetListProxy.address)).wait();
+  await (await configurator.setFactory(comet.address, cometFactory.address)).wait();
+  await (await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address)).wait();
 }
