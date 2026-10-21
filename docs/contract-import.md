@@ -48,7 +48,7 @@ Decided by `blockScoutNetworks` in [`Import.ts`](../plugins/deployment_manager/I
 
 Etherscan goes through the unified V2 API, so the chain is selected by `chainid` rather than a per-chain host. Keys come from `getEtherscanApiKey`, which has a primary key per network and rotates through every configured `ETHERSCAN_KEY*` on retry.
 
-Bytecode is fetched separately from source, and it must be the creation code, not the code deployed at the address: `eth_getCode` returns the latter, which reverts when deployed again, so it is never used. On the Blockscout path `getContractCreationCode` reads `creation_bytecode` from the Blockscout V2 API first, then falls back to the input of the contract's first transaction. When Sourcify supplied the source, its stored creation code is tried first. On the Etherscan path it reads the first transaction's input (rotating keys), then scrapes the verified bytecode from the contract page. Where the creation code ends with the reported constructor arguments, that suffix is stripped.
+Bytecode is fetched separately from source. On the Blockscout path `getContractCreationCodeFromBlockscout` tries `eth_getCode` over that network's RPC first, then falls back to reading the input of the contract's first transaction - **so a network's `*_QUICKNODE_LINK` is needed to import from it, not just to fork it**. Where the creation code ends with the reported constructor arguments, that suffix is stripped.
 
 ## Sourcify fallback
 
@@ -72,6 +72,6 @@ This matters more than it used to. `base.blockscout.com` has been observed retur
 
 ## Adding a network
 
-1. Add its RPC variable to `.env` and `.env.example`, for forking.
+1. Add its RPC variable to `.env` and `.env.example` - needed for import, not just forking.
 2. For Blockscout: add the host to all three maps in [`blockscout.ts`](../plugins/import/blockscout.ts) and add the network to `blockScoutNetworks`. For Etherscan: make sure it has a `chainId` in `networkConfigs` and a key in `getEtherscanApiKey`.
 3. Add a `sourcifyChainIds` entry only if that explorer is known to have verification gaps a second source would fill.
