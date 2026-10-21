@@ -1,7 +1,6 @@
 import { get, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan';
-import { getBlockscoutApiKey, getBlockscoutApiUrl, getBlockscoutRPCUrl, getBlockscoutUrl } from './blockscout';
+import { getBlockscoutApiKey, getBlockscoutApiUrl, getBlockscoutUrl } from './blockscout';
 import { networkConfigs } from '../../hardhat.config';
-import { providers } from 'ethers';
 
 export function debug(...args: any[]) {
   if (process.env['DEBUG']) {
@@ -34,6 +33,9 @@ export function trace(network: string, address: string, ...args: any[]) {
 // Thrown by every step for "definitively not verified here" - distinguishes that from a
 // transient error so the waterfall can skip straight to the next step without retrying.
 const NOT_VERIFIED = 'Contract source code not verified';
+
+// Which source supplied the ABI/source; the creation code is fetched from the same place
+type SourceFamily = 'blockscout' | 'sourcify' | 'etherscan';
 
 function isNotVerified(e: any): boolean {
   return !!e?.message?.includes(NOT_VERIFIED);
@@ -101,14 +103,21 @@ function paramString(params: { [k: string]: string | number }) {
   return Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}=${v}`).join('&');
 }
 
-// Bytecode fetch is source-agnostic: RPC works regardless of which step below supplied
-// the ABI/source, so it's tried first for both families in getContractCreationCode.
+// Blockscout v2 returns the code that created the contract, even when a factory deployed it.
+// Don't swap this for eth_getCode: that returns the code already deployed at the address,
+// which reverts when deployed again as if it were creation code.
+async function pullContractCreationCodeFromBlockscoutV2(network: string, address: string) {
+  const url = `${getBlockscoutUrl(network)}/api/v2/smart-contracts/${address}`;
 
-async function scrapeContractCreationCodeFromRPC(network: string, address: string) {
-  const rpcUrl = await getBlockscoutRPCUrl(network);
-  const provider = new providers.JsonRpcProvider(rpcUrl);
-  const code = await provider.send('eth_getCode', [address, 'latest']);
-  return code.slice(2);
+  trace(network, address, `Attempting to pull Contract Creation code from ${url}`);
+  const result = await get(url, { apikey: getBlockscoutApiKey(network) });
+
+  const contractCreationCode = result?.creation_bytecode;
+  if (!contractCreationCode) {
+    throw new Error(`Unable to find Contract Creation code at ${url}`);
+  }
+  trace(network, address, `Creation Code found at ${url}`);
+  return contractCreationCode.slice(2);
 }
 
 async function pullFirstTransactionForContractFromBlockscout(network: string, address: string) {
@@ -132,26 +141,6 @@ async function pullFirstTransactionForContractFromBlockscout(network: string, ad
   const contractCreationCode = result.result?.[0]?.input;
   if (!contractCreationCode) {
     throw new Error(`Unable to find Contract Creation tx at ${debugUrl}`);
-  }
-  trace(network, address, `Creation Code found in first tx at ${debugUrl}`);
-  return contractCreationCode.slice(2);
-}
-
-async function scrapeContractCreationCodeFromEtherscanApi(network: string, address: string, i?: number) {
-  const params = {
-    module: 'proxy',
-    action: 'eth_getCode',
-    address,
-    apikey: getEtherscanApiKey(network, i)
-  };
-  const url = `${getEtherscanApiUrl(network)}&${paramString(params)}`;
-  const debugUrl = `${getEtherscanApiUrl(network)}&${paramString({ ...params, ...{ apikey: '[API_KEY]' } })}`;
-
-  trace(network, address, `Attempting to pull Contract Creation code from API at ${debugUrl}`);
-  const result = await get(url, {});
-  const contractCreationCode = result.result;
-  if (!contractCreationCode) {
-    throw new Error(`Unable to find Contract Creation code from API at ${debugUrl}`);
   }
   trace(network, address, `Creation Code found in first tx at ${debugUrl}`);
   return contractCreationCode.slice(2);
@@ -215,22 +204,39 @@ async function tryStrategies<T>(strategies: (() => Promise<T>)[]): Promise<T> {
   throw new Error(errors.map(e => e.message).join('; '));
 }
 
-async function getContractCreationCode(network: string, address: string, family: 'blockscout' | 'etherscan') {
+// Sourcify keeps the creation code of the contracts it verified. The onchain copy is the exact code that was deployed;
+// when Sourcify hasn't stored it, the recompiled one is used, which is the same code without the constructor arguments
+async function pullContractCreationCodeFromSourcify(network: string, address: string) {
+  const url = `https://sourcify.dev/server/v2/contract/${getChainId(network)}/${address}`;
+
+  trace(network, address, `Attempting to pull Contract Creation code from ${url}`);
+  const result = await get(url, { fields: 'creationBytecode' });
+
+  const contractCreationCode = result?.creationBytecode?.onchainBytecode ?? result?.creationBytecode?.recompiledBytecode;
+  if (!contractCreationCode) {
+    throw new Error(`Unable to find Contract Creation code at ${url}`);
+  }
+  trace(network, address, `Creation Code found at ${url}`);
+  return contractCreationCode.slice(2);
+}
+
+async function getContractCreationCode(network: string, address: string, family: SourceFamily) {
   if (family === 'blockscout') {
     return tryStrategies([
-      () => scrapeContractCreationCodeFromRPC(network, address),
+      () => pullContractCreationCodeFromBlockscoutV2(network, address),
       () => pullFirstTransactionForContractFromBlockscout(network, address),
     ]);
   }
 
-  // Etherscan family: RPC first, then scrape/proxy/txlist rotated across every key.
+  // Etherscan: txlist rotated across every key, then the page scrape. Sourcify is tried first when it supplied the
+  // source, as Etherscan's free plan does not cover every chain (Base among them)
   const maxKeyRotations = 12;
-  const strategies = [() => scrapeContractCreationCodeFromRPC(network, address)];
+  const strategies: (() => Promise<string>)[] = [];
+  if (family === 'sourcify') {
+    strategies.push(() => pullContractCreationCodeFromSourcify(network, address));
+  }
   for (let i = 0; i < maxKeyRotations; i++) {
-    strategies.push(
-      () => scrapeContractCreationCodeFromEtherscanApi(network, address, i),
-      () => pullFirstTransactionForContractFromEtherscan(network, address, i),
-    );
+    strategies.push(() => pullFirstTransactionForContractFromEtherscan(network, address, i));
   }
   strategies.push(() => scrapeContractCreationCodeFromEtherscan(network, address));
   return tryStrategies(strategies);
@@ -388,7 +394,7 @@ async function getEtherscanApiDataWithKeyRotation(network: string, address: stri
 
 interface SourceStep {
   name: string;
-  family: 'blockscout' | 'etherscan';
+  family: SourceFamily;
   configured: (network: string) => boolean;
   fetch: (network: string, address: string) => Promise<EtherscanData>;
 }
@@ -415,7 +421,7 @@ const sourceSteps: SourceStep[] = [
   { name: 'Blockscout V2', family: 'blockscout', configured: isBlockscoutConfigured, fetch: getBlockscoutV2ApiData },
   { name: 'Blockscout V1', family: 'blockscout', configured: isBlockscoutConfigured, fetch: getBlockscoutV1ApiData },
   // No allowlist: every network is attempted, same as an unverified address would fail.
-  { name: 'Sourcify', family: 'etherscan', configured: () => true, fetch: getSourcifyApiData },
+  { name: 'Sourcify', family: 'sourcify', configured: () => true, fetch: getSourcifyApiData },
   { name: 'Etherscan', family: 'etherscan', configured: isEtherscanConfigured, fetch: getEtherscanApiDataWithKeyRotation },
 ];
 
@@ -432,7 +438,7 @@ async function fetchFromStep(step: SourceStep, network: string, address: string)
   }
 }
 
-async function fetchContractSource(network: string, address: string): Promise<{ data: EtherscanData, family: 'blockscout' | 'etherscan' }> {
+async function fetchContractSource(network: string, address: string): Promise<{ data: EtherscanData, family: SourceFamily }> {
   const errors: string[] = [];
   let allDefinitive = true;
   for (const step of sourceSteps) {
@@ -493,7 +499,7 @@ async function buildContractFromSourceData(
   network: string,
   address: string,
   data: EtherscanData,
-  family: 'blockscout' | 'etherscan'
+  family: SourceFamily
 ) {
   const { abi, contract, compiler, constructorArgs } = data;
   const { language, settings, sources } = parseSources(data);
