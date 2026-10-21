@@ -1,5 +1,5 @@
 import { get, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan';
-import { getBlockscoutApiUrl, getBlockscoutRPCUrl } from './blockscout';
+import { getBlockscoutApiKeyParams, getBlockscoutApiUrl, getBlockscoutRPCUrl } from './blockscout';
 import { providers } from 'ethers';
 
 export function debug(...args: any[]) {
@@ -82,16 +82,15 @@ async function pullFirstTransactionForContractFromBlockscout(network: string, ad
     sort: 'asc',
   };
   const url = `${getBlockscoutApiUrl(network)}?${paramString(params)}`;
-  const debugUrl = `${getBlockscoutApiUrl(network)}?${paramString(params)}`;
 
-  debug(`Attempting to pull Contract Creation code from first tx at ${debugUrl}`);
-  const result = await get(url, {});
+  debug(`Attempting to pull Contract Creation code from first tx at ${url}`);
+  const result = await get(url, getBlockscoutApiKeyParams(network));
 
   const contractCreationCode = result.result?.[0]?.input;
   if (!contractCreationCode) {
-    throw new Error(`Unable to find Contract Creation tx at ${debugUrl}`);
+    throw new Error(`Unable to find Contract Creation tx at ${url}`);
   }
-  debug(`Creation Code found in first tx at ${debugUrl}`);
+  debug(`Creation Code found in first tx at ${url}`);
   return contractCreationCode.slice(2);
 }
 
@@ -148,6 +147,7 @@ async function getBlockscoutApiData(
     module: 'contract',
     action: 'getsourcecode',
     address,
+    ...getBlockscoutApiKeyParams(network),
   });
 
   if (result.status !== '1') {
