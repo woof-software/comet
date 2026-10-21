@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'ethers';
-import { scenario } from '../context/CometContext';
-import { fundAccount } from '../utils';
+import { CometContext, scenario } from '../context/CometContext';
+import { fundAccount, servicePatch2 } from '../utils';
 import { deployTimelock } from './shared';
 
 // The governor of the Configurator itself, which every governor-only function checks the caller against
@@ -66,7 +66,7 @@ scenario(
 
 scenario(
   'Configurator#transferGovernor reverts if new governor is zero address',
-  {},
+  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
   async ({ configurator, actors }) => {
     const { admin } = actors;
     await fundAccount(admin.context.world, admin);
