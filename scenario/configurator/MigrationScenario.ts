@@ -34,7 +34,9 @@ scenario(
   {
     filter: async (ctx) =>
       matchesDeployment(ctx, [{ network: 'mainnet' }, { network: 'arbitrum' }, { network: 'base' }, { network: 'optimism' }]) &&
-      await isAssetListMigrationRequired(ctx),
+      await isAssetListMigrationRequired(ctx) &&
+      // The borrow position needs a collateral that can be supplied; a wound-down market has none
+      (await getUsableCollateralIndices(ctx, 1)).length > 0,
   },
   async ({ comet, configurator: liveConfigurator, proxyAdmin: liveProxyAdmin, actors, bridgeReceiver }, context) => {
     const dm = context.world.deploymentManager;

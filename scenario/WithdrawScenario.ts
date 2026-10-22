@@ -1304,15 +1304,16 @@ scenario(
     const { albert, pauseGuardian } = actors;
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
+    // The pause check does not depend on the amount, so 1 wei of every collateral is enough
+    const withdrawCollateral = 1n;
 
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
       if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context, offset).withdrawCollateral))) continue;
       if (await isAssetDelisted(context, offset)) continue;
 
-      const { asset, scale: scaleBN } = await comet.getAssetInfo(offset);
+      const { asset } = await comet.getAssetInfo(offset);
       const collateralAsset = context.getAssetByAddress(asset);
-      const withdrawCollateral = BigInt(getConfigForScenario(context, offset).withdrawCollateral) * scaleBN.toBigInt();
 
       log(`Withdrawing reverts when collateral asset ${offset} withdraw is paused`);
 
@@ -1356,16 +1357,16 @@ scenario(
 
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
+    // The pause check does not depend on the amount, so 1 wei of every collateral is enough
+    const withdrawCollateral = 1n;
 
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
       if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context).withdrawCollateral))) continue;
       if (await isAssetDelisted(context, offset)) continue;
 
-      const { asset, scale: scaleBN } = await comet.getAssetInfo(offset);
+      const { asset } = await comet.getAssetInfo(offset);
       const collateralAsset = context.getAssetByAddress(asset);
-      const scale = scaleBN.toBigInt();
-      const withdrawCollateral = BigInt(getConfigForScenario(context, offset).withdrawCollateral) * scale;
 
       log(`Withdrawing reverts when collateral asset ${offset} withdraw is paused`);
 
@@ -1428,16 +1429,16 @@ scenario(
     await fundAccount(world, pauseGuardian);
     // Allow betty to withdraw asset from albert
     await albert.allow(betty, true);
+    // The pause check does not depend on the amount, so 1 wei of every collateral is enough
+    const withdrawCollateral = 1n;
 
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
       if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context).withdrawCollateral))) continue;
       if (await isAssetDelisted(context, offset)) continue;
 
-      const { asset, scale: scaleBN } = await comet.getAssetInfo(offset);
+      const { asset } = await comet.getAssetInfo(offset);
       const collateralAsset = context.getAssetByAddress(asset);
-      const scale = scaleBN.toBigInt();
-      const withdrawCollateral = BigInt(getConfigForScenario(context).withdrawCollateral) * scale;
 
       log(`Withdrawing reverts when collateral asset ${offset} withdraw is paused`);
       // Source collateral asset
