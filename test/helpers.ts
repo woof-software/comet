@@ -758,6 +758,26 @@ export async function allocateAndSupply(
   await wait(cometWithExtendedAssetList.connect(user).supply(token.address, amount));
 }
 
+// Totals, reserves and balances that a reverted operation must leave unchanged
+export async function getMarketState(
+  cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList,
+  token: FaucetToken | NonStandardFaucetFeeToken,
+  accounts: SignerWithAddress[]
+) {
+  return {
+    totalSupply: (await cometWithExtendedAssetList.totalSupply()).toBigInt(),
+    totalBorrow: (await cometWithExtendedAssetList.totalBorrow()).toBigInt(),
+    reserves: (await cometWithExtendedAssetList.getReserves()).toBigInt(),
+    balances: await Promise.all(accounts.map(async (account) => ({
+      supply: (await cometWithExtendedAssetList.balanceOf(account.address)).toBigInt(),
+      borrow: (await cometWithExtendedAssetList.borrowBalanceOf(account.address)).toBigInt(),
+      wallet: (await token.balanceOf(account.address)).toBigInt(),
+    }))),
+  };
+}
+
+export type MarketState = Awaited<ReturnType<typeof getMarketState>>;
+
 export async function setTotalsBasic(cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList, overrides = {}): Promise<TotalsBasicStructOutput> {
   const t0 = await cometWithExtendedAssetList.totalsBasic();
   const t1 = Object.assign({}, t0, overrides);
