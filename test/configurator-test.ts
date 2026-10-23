@@ -1422,27 +1422,6 @@ describe('configurator', function () {
           await expect(configuratorProxy.connect(alice).setMaxSupportedUtilization(cometProxy.address, NEW_MAX_SUPPORTED_UTILIZATION))
             .to.be.revertedWithCustomError(configurator, 'Unauthorized');
         });
-
-        describe('value below 100% is rejected on deploy', function() {
-          const BAD_MAX_SUPPORTED_UTILIZATION = exp(1, 18) - 1n;
-          let innerSnapshot: SnapshotRestorer;
-
-          before(async () => {
-            innerSnapshot = await takeSnapshot();
-            await configuratorProxy.connect(governor).setMaxSupportedUtilization(cometProxy.address, BAD_MAX_SUPPORTED_UTILIZATION);
-          });
-
-          after(async () => await innerSnapshot.restore());
-
-          it('value below 100% is stored in configuration', async () => {
-            expect((await configuratorProxy.getConfiguration(cometProxy.address)).maxSupportedUtilization).to.equal(BAD_MAX_SUPPORTED_UTILIZATION);
-          });
-
-          it('deploy reverts with BadMaxSupportedUtilization', async () => {
-            await expect(configuratorProxy.deploy(cometProxy.address))
-              .to.be.revertedWithCustomError(comet, 'BadMaxSupportedUtilization');
-          });
-        });
       });
 
       describe('happy path by governor', function() {

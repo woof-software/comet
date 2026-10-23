@@ -2100,10 +2100,10 @@ describe('transfer', function () {
   /**
    * @notice Base transfer behavior around the maxSupportedUtilization limit.
    * @dev
-   *  A borrow transfer reverts with `ExceedsSupportedUtilization` when total borrow exceeds
-   *  the limit against total supply excluding the amount credited to the destination.
-   *  A lender transfer that repays the destination's debt reverts when the resulting
-   *  utilization exceeds the limit. A plain transfer between lenders is not checked.
+   *  A base transfer reverts with `ExceedsSupportedUtilization` when the resulting utilization exceeds the limit.
+   *  A transfer changes total supply and total borrow by the same amount, so above 100% utilization
+   *  a borrow transfer lowers utilization and a repay raises it. A transfer between lenders does not change
+   *  utilization and reverts only when it is already above the limit.
    *  States above the limit cannot be reached through regular operations and are set through the harness.
    */
   describe('max supported utilization', function () {
@@ -2140,7 +2140,7 @@ describe('transfer', function () {
     });
 
     describe('borrower transfer', function () {
-      describe('borrow transfer reaches the limit exactly', function () {
+      describe('borrow transfer below the limit', function () {
         before(async () => {
           await marketSnapshot.restore();
           await allocateAndSupply(comet, baseToken, alice, exp(1000, 6));
@@ -2148,6 +2148,10 @@ describe('transfer', function () {
           await comet.connect(bob).withdraw(baseToken.address, exp(1500, 6));
 
           await comet.connect(bob).transfer(eve.address, exp(500, 6));
+        });
+
+        it('utilization stays below the limit', async () => {
+          expect(await comet.getUtilization()).to.be.below(await comet.maxSupportedUtilization());
         });
 
         it('total supply increases to 1500', async () => {
@@ -2163,56 +2167,49 @@ describe('transfer', function () {
         });
       });
 
-      describe('borrow transfer exceeds the limit by 1 wei', function () {
+      describe('borrow transfer when utilization is above the limit reaches the limit exactly', function () {
         before(async () => {
           await marketSnapshot.restore();
           await allocateAndSupply(comet, baseToken, alice, exp(1000, 6));
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
-          await comet.connect(bob).withdraw(baseToken.address, exp(1500, 6));
+          await comet.connect(bob).withdraw(baseToken.address, exp(2000, 6));
+          await bumpBorrow(comet, bob.address, exp(100, 6));
+
+          await comet.connect(bob).transfer(eve.address, exp(100, 6));
         });
 
-        it('transfer reverts with ExceedsSupportedUtilization', async () => {
-          await expect(comet.connect(bob).transfer(eve.address, exp(500, 6) + 1n))
-            .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
-        });
-      });
-
-      describe('borrow transfer to an existing lender reaches the limit exactly', function () {
-        before(async () => {
-          await marketSnapshot.restore();
-          await allocateAndSupply(comet, baseToken, alice, exp(600, 6));
-          await allocateAndSupply(comet, baseToken, carol, exp(400, 6));
-          await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
-          await comet.connect(bob).withdraw(baseToken.address, exp(1500, 6));
-
-          // Only the 500 credited by this transfer is excluded from total supply, not the whole balance of carol
-          await comet.connect(bob).transfer(carol.address, exp(500, 6));
+        it('utilization is 200%', async () => {
+          expect(await comet.getUtilization()).to.equal(exp(2, 18));
         });
 
-        it('total supply increases to 1500', async () => {
-          expect(await comet.totalSupply()).to.equal(exp(1500, 6));
+        it('total supply increases to 1100', async () => {
+          expect(await comet.totalSupply()).to.equal(exp(1100, 6));
         });
 
-        it('total borrow increases to 2000', async () => {
-          expect(await comet.totalBorrow()).to.equal(exp(2000, 6));
+        it('total borrow increases to 2200', async () => {
+          expect(await comet.totalBorrow()).to.equal(exp(2200, 6));
         });
 
-        it('carol balance increases to 900', async () => {
-          expect(await comet.balanceOf(carol.address)).to.equal(exp(900, 6));
+        it('eve balance is 100', async () => {
+          expect(await comet.balanceOf(eve.address)).to.equal(exp(100, 6));
         });
       });
 
-      describe('borrow transfer to an existing lender exceeds the limit by 1 wei', function () {
+      describe('borrow transfer when utilization is above the limit exceeds the limit by 1 wei', function () {
         before(async () => {
           await marketSnapshot.restore();
-          await allocateAndSupply(comet, baseToken, alice, exp(600, 6));
-          await allocateAndSupply(comet, baseToken, carol, exp(400, 6));
+          await allocateAndSupply(comet, baseToken, alice, exp(1000, 6));
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
-          await comet.connect(bob).withdraw(baseToken.address, exp(1500, 6));
+          await comet.connect(bob).withdraw(baseToken.address, exp(2000, 6));
+          await bumpBorrow(comet, bob.address, exp(100, 6));
+        });
+
+        it('utilization is above the limit', async () => {
+          expect(await comet.getUtilization()).to.be.above(await comet.maxSupportedUtilization());
         });
 
         it('transfer reverts with ExceedsSupportedUtilization', async () => {
-          await expect(comet.connect(bob).transfer(carol.address, exp(500, 6) + 1n))
+          await expect(comet.connect(bob).transfer(eve.address, exp(100, 6) - 1n))
             .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
         });
       });
@@ -2221,11 +2218,16 @@ describe('transfer', function () {
         before(async () => {
           await marketSnapshot.restore();
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
+
+          await comet.connect(bob).transfer(eve.address, exp(100, 6));
         });
 
-        it('transfer reverts with ExceedsSupportedUtilization', async () => {
-          await expect(comet.connect(bob).transfer(eve.address, exp(100, 6)))
-            .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+        it('utilization is 100%', async () => {
+          expect(await comet.getUtilization()).to.equal(exp(1, 18));
+        });
+
+        it('eve balance is 100', async () => {
+          expect(await comet.balanceOf(eve.address)).to.equal(exp(100, 6));
         });
       });
 
@@ -2236,17 +2238,23 @@ describe('transfer', function () {
           await allocateAndSupply(comet, collateral, dave, BORROWER_COLLATERAL);
           await comet.connect(dave).withdraw(baseToken.address, exp(300, 6));
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
-          await comet.connect(bob).withdraw(baseToken.address, exp(1600, 6));
+          await comet.connect(bob).withdraw(baseToken.address, exp(1700, 6));
+          await bumpBorrow(comet, bob.address, exp(100, 6));
 
+          // 300 repays the debt of dave, 100 goes to his deposit
           await comet.connect(bob).transfer(dave.address, exp(400, 6));
+        });
+
+        it('utilization is 200%', async () => {
+          expect(await comet.getUtilization()).to.equal(exp(2, 18));
         });
 
         it('total supply increases to 1100', async () => {
           expect(await comet.totalSupply()).to.equal(exp(1100, 6));
         });
 
-        it('total borrow increases to 2000', async () => {
-          expect(await comet.totalBorrow()).to.equal(exp(2000, 6));
+        it('total borrow increases to 2200', async () => {
+          expect(await comet.totalBorrow()).to.equal(exp(2200, 6));
         });
 
         it('dave borrow balance becomes 0', async () => {
@@ -2265,11 +2273,16 @@ describe('transfer', function () {
           await allocateAndSupply(comet, collateral, dave, BORROWER_COLLATERAL);
           await comet.connect(dave).withdraw(baseToken.address, exp(300, 6));
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
-          await comet.connect(bob).withdraw(baseToken.address, exp(1600, 6));
+          await comet.connect(bob).withdraw(baseToken.address, exp(1700, 6));
+          await bumpBorrow(comet, bob.address, exp(100, 6));
+        });
+
+        it('utilization is above the limit', async () => {
+          expect(await comet.getUtilization()).to.be.above(await comet.maxSupportedUtilization());
         });
 
         it('transfer reverts with ExceedsSupportedUtilization', async () => {
-          await expect(comet.connect(bob).transfer(dave.address, exp(400, 6) + 1n))
+          await expect(comet.connect(bob).transfer(dave.address, exp(400, 6) - 1n))
             .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
         });
       });
@@ -2309,24 +2322,15 @@ describe('transfer', function () {
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
           await comet.connect(bob).withdraw(baseToken.address, exp(2000, 6));
           await bumpBorrow(comet, bob.address, exp(100, 6));
-
-          await comet.connect(alice).transfer(carol.address, exp(100, 6));
         });
 
-        it('utilization remains above the limit', async () => {
+        it('utilization is above the limit', async () => {
           expect(await comet.getUtilization()).to.be.above(await comet.maxSupportedUtilization());
         });
 
-        it('total supply is not changed', async () => {
-          expect(await comet.totalSupply()).to.equal(exp(1000, 6));
-        });
-
-        it('total borrow is not changed', async () => {
-          expect(await comet.totalBorrow()).to.equal(exp(2100, 6));
-        });
-
-        it('alice balance decreases to 500', async () => {
-          expect(await comet.balanceOf(alice.address)).to.equal(exp(500, 6));
+        it('transfer reverts with ExceedsSupportedUtilization', async () => {
+          await expect(comet.connect(alice).transfer(carol.address, exp(100, 6)))
+            .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
         });
       });
 

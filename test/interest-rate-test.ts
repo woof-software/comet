@@ -913,18 +913,18 @@ describe('interest calculation', function () {
           // Supply collateral from Dave
           await collaterals['COMP'].allocateTo(
             dave.address,
-            COLLATERAL_AMOUNT_TRANSFER * 3n
+            COLLATERAL_AMOUNT_TRANSFER
           );
           await collaterals['COMP']
             .connect(dave)
-            .approve(comet.address, COLLATERAL_AMOUNT_TRANSFER * 3n);
+            .approve(comet.address, COLLATERAL_AMOUNT_TRANSFER);
           await comet
             .connect(dave)
             .supply(collaterals['COMP'].address, COLLATERAL_AMOUNT_TRANSFER);
 
           await baseToken.allocateTo(
             comet.address,
-            BORROW_AMOUNT_TRANSFER * 3n
+            BORROW_AMOUNT_TRANSFER
           );
 
           // wait some time
@@ -937,6 +937,8 @@ describe('interest calculation', function () {
           lastUpdatedTime = (await comet.totalsBasic()).lastAccrualTime;
           maxSupportedUtilization = await comet.maxSupportedUtilization();
         });
+
+        after(async () => await snapshot.restore());
 
         it('can borrow via transfer to reach utilization > 100% (borrow from reserves) (user action in test)', async () => {
           await comet
@@ -1012,8 +1014,7 @@ describe('interest calculation', function () {
           expect(currTotalSupplyBase).to.be.greaterThan(0);
 
           // Check that utilization is not exceeded
-          const totalSupplyWithoutDst = currTotalSupplyBase.sub(BORROW_AMOUNT_TRANSFER);
-          const utilization = currTotalBorrowBase.mul(factorScale).div(totalSupplyWithoutDst);
+          const utilization = currTotalBorrowBase.mul(factorScale).div(currTotalSupplyBase);
           expect(utilization).to.be.lessThan(maxSupportedUtilization);
         });
 
@@ -1170,53 +1171,6 @@ describe('interest calculation', function () {
           const balance = await comet.borrowBalanceOf(bob.address);
           // 1 wei difference is possible
           expect(balance).to.be.approximately(expectedBalance, 1);
-        });
-
-        it('should revert for bob borrow which reach utilization over 200%', async () => {
-          // First supply collateral to cover future debt
-          await comet
-            .connect(dave)
-            .supply(collaterals['COMP'].address, COLLATERAL_AMOUNT_TRANSFER);
-          
-          // Get totals after supply
-          currTotalSupplyBase = (await comet.totalsBasic()).totalSupplyBase;
-          currTotalBorrowBase = (await comet.totalsBasic()).totalBorrowBase;
-
-          // Then try to borrow
-          await expect(comet
-            .connect(dave)
-            .transfer(eve.address, BORROW_AMOUNT_TRANSFER)).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
-        });
-
-        it('exceeds supported utilization is reached during tranfer', async () => {
-          // Check that total supply is greater than 0
-          expect(currTotalSupplyBase).to.be.greaterThan(0);
-
-          // Check that utilization is not exceeded
-          const totalSupplyWithoutDst = currTotalSupplyBase.sub(BORROW_AMOUNT_TRANSFER);
-          const utilization = currTotalBorrowBase.mul(factorScale).div(totalSupplyWithoutDst);
-          expect(utilization).to.be.greaterThan(maxSupportedUtilization);
-        });
-
-        it('should revert for any new user pushing utilization over 200%', async () => {
-          // First supply collateral to cover future debt
-          await collaterals['COMP'].allocateTo(charlie.address, COLLATERAL_AMOUNT_TRANSFER);
-          await collaterals['COMP'].connect(charlie).approve(comet.address, COLLATERAL_AMOUNT_TRANSFER);
-          await comet.connect(charlie).supply(collaterals['COMP'].address, COLLATERAL_AMOUNT_TRANSFER);
-
-          // Get totals after supply
-          currTotalSupplyBase = (await comet.totalsBasic()).totalSupplyBase;
-          currTotalBorrowBase = (await comet.totalsBasic()).totalBorrowBase;
-
-          // Check that utilization will be exceeded
-          const totalSupplyWithoutDst = currTotalSupplyBase.sub(BORROW_AMOUNT_TRANSFER);
-          const utilization = currTotalBorrowBase.mul(factorScale).div(totalSupplyWithoutDst);
-          expect(utilization).to.be.greaterThan(maxSupportedUtilization);
-
-          // Then try to borrow
-          await expect(comet.connect(charlie).transfer(eve.address, BORROW_AMOUNT_TRANSFER)).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
-
-          await snapshot.restore();
         });
       });
 

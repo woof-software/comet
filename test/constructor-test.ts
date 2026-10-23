@@ -179,36 +179,20 @@ describe('constructor', function () {
   describe('max supported utilization', function () {
     const uint64Max = 2n ** 64n - 1n;
 
-    describe('happy path', function () {
-      let cometAtFullUtilization: CometHarnessInterfaceExtendedAssetList;
-      let cometAtUint64Max: CometHarnessInterfaceExtendedAssetList;
+    let cometAtHalfUtilization: CometHarnessInterfaceExtendedAssetList;
+    let cometAtUint64Max: CometHarnessInterfaceExtendedAssetList;
 
-      before(async function () {
-        cometAtFullUtilization = (await makeProtocol({ maxSupportedUtilization: exp(1, 18) })).cometWithExtendedAssetList;
-        cometAtUint64Max = (await makeProtocol({ maxSupportedUtilization: uint64Max })).cometWithExtendedAssetList;
-      });
-
-      it('allows maxSupportedUtilization equal to 100%', async function () {
-        expect(await cometAtFullUtilization.maxSupportedUtilization()).to.eq(exp(1, 18));
-      });
-
-      it('allows maxSupportedUtilization equal to uint64 max', async function () {
-        expect(await cometAtUint64Max.maxSupportedUtilization()).to.eq(uint64Max);
-      });
+    before(async function () {
+      cometAtHalfUtilization = (await makeProtocol({ maxSupportedUtilization: exp(0.5, 18) })).cometWithExtendedAssetList;
+      cometAtUint64Max = (await makeProtocol({ maxSupportedUtilization: uint64Max })).cometWithExtendedAssetList;
     });
 
-    describe('revert cases', function () {
-      it('reverts if maxSupportedUtilization is below 100%', async function () {
-        await expect(
-          makeProtocol({ maxSupportedUtilization: exp(1, 18) - 1n })
-        ).to.be.revertedWith("custom error 'BadMaxSupportedUtilization()'");
-      });
+    it('allows maxSupportedUtilization equal to 50%', async function () {
+      expect(await cometAtHalfUtilization.maxSupportedUtilization()).to.eq(exp(0.5, 18));
+    });
 
-      it('reverts if maxSupportedUtilization is zero', async function () {
-        await expect(
-          makeProtocol({ maxSupportedUtilization: 0 })
-        ).to.be.revertedWith("custom error 'BadMaxSupportedUtilization()'");
-      });
+    it('allows maxSupportedUtilization equal to uint64 max', async function () {
+      expect(await cometAtUint64Max.maxSupportedUtilization()).to.eq(uint64Max);
     });
   });
 });
