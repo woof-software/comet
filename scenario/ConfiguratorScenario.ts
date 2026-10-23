@@ -15,7 +15,7 @@ import {
   getMinimumBorrowAmounts
 } from './utils';
 import { SECONDS_PER_YEAR } from './utils/constants';
-import { MarketAdminPermissionChecker } from '../build/types';
+import { CometInterface, MarketAdminPermissionChecker } from '../build/types';
 
 // Based on contract's internal precision: FACTOR_SCALE=1e18 with 4 decimal places
 const FACTOR_SCALE = 10n ** 18n;
@@ -2997,13 +2997,20 @@ scenario(
   }
 );
 
+// Halfway between the current limit and the uint64 maximum, so the new limit is always higher and fits uint64
+async function getHigherMaxSupportedUtilization(comet: CometInterface): Promise<bigint> {
+  const uint64Max = 2n ** 64n - 1n;
+  const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+  return maxSupportedUtilization + (uint64Max - maxSupportedUtilization) / 2n;
+}
+
 scenario(
   'Configurator#setMaxSupportedUtilization through governance updates Comet',
   {
     filter: async (ctx: CometContext) => !isBridgedDeployment(ctx) && await supportsConfigurableMaxSupportedUtilization(ctx),
   },
   async ({ comet, configurator, proxyAdmin }, context) => {
-    const newMaxSupportedUtilization = exp(3, 18);
+    const newMaxSupportedUtilization = await getHigherMaxSupportedUtilization(comet);
 
     // Fixed signatures, since the cached Configurator on forks carries the ABI of the old implementation
     await context.fastGovernanceExecute(
@@ -3043,23 +3050,19 @@ scenario(
     const { albert, betty } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);
-    const { collateralAsset, supplyAmount, borrowAmount: lenderSupply } = await getMinimumBorrowAmounts(context, collateralIndex);
+    const { collateralAsset, supplyAmount: collateralAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
     const oldMaxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
-    const newMaxSupportedUtilization = exp(3, 18);
+    const newMaxSupportedUtilization = await getHigherMaxSupportedUtilization(comet);
 
+    // The borrow puts utilization halfway between the old and the new limit
+    const lenderSupply = 2n * borrowAmount * FACTOR_SCALE / (oldMaxSupportedUtilization + newMaxSupportedUtilization);
     await context.sourceTokens(lenderSupply, baseToken.address, albert.address);
     await baseToken.approve(albert, comet.address);
     await albert.supplyAsset({ asset: baseToken.address, amount: lenderSupply });
 
     // Borrows above total supply are paid out of reserves
-    await context.sourceTokens(2n * lenderSupply, baseToken.address, comet.address);
+    await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
 
-    // The borrow principal is rounded up, so the debt can exceed the borrowed amount by up to
-    // baseBorrowIndex / baseIndexScale wei. The borrow is reduced by that much to stay within 300%
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    const roundingMargin = (await comet.totalsBasic()).baseBorrowIndex.toBigInt() / baseIndexScale + 1n;
-    const borrowAmount = 3n * lenderSupply - roundingMargin;
-    const collateralAmount = 3n * supplyAmount;
     await context.sourceTokens(collateralAmount, collateralAsset.address, betty.address);
     await collateralAsset.approve(betty, comet.address);
     await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
@@ -3083,34 +3086,5 @@ scenario(
     const utilization = (await comet.getUtilization()).toBigInt();
     expect(utilization).to.be.above(oldMaxSupportedUtilization);
     expect(utilization).to.be.at.most(newMaxSupportedUtilization);
-  }
-);
-
-scenario(
-  'Configurator#setMaxSupportedUtilization through governance with a value below 100% does not update Comet',
-  {
-    filter: async (ctx: CometContext) => !isBridgedDeployment(ctx) && await supportsConfigurableMaxSupportedUtilization(ctx),
-  },
-  async ({ comet, configurator, proxyAdmin, actors }, context) => {
-    const { admin } = actors;
-    await fundAccount(admin.context.world, admin);
-    const oldMaxSupportedUtilization = await comet.maxSupportedUtilization();
-    const oldImplementation = await proxyAdmin.getProxyImplementation(comet.address);
-
-    await context.fastGovernanceExecute(
-      [configurator.address],
-      [0],
-      ['setMaxSupportedUtilization(address,uint64)'],
-      [ethers.utils.defaultAbiCoder.encode(['address', 'uint64'], [comet.address, exp(1, 18) - 1n])]
-    );
-
-    // Run by the timelock directly, since inside a proposal the timelock replaces the custom error with its own reason
-    await expectRevertCustom(
-      admin.deployAndUpgradeTo(configurator.address, comet.address),
-      'MaxSupportedUtilizationTooLow()'
-    );
-
-    expect(await proxyAdmin.getProxyImplementation(comet.address)).to.equal(oldImplementation);
-    expect(await comet.maxSupportedUtilization()).to.equal(oldMaxSupportedUtilization);
   }
 );

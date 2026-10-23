@@ -1636,7 +1636,8 @@ scenario(
     const { collateralAsset, supplyAmount: collateralAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
     const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
 
-    const lenderSupply = 2n * borrowAmount;
+    // Utilization is half of the limit after the borrow
+    const lenderSupply = 2n * borrowAmount * factorScale / maxSupportedUtilization;
     await context.sourceTokens(lenderSupply, baseToken.address, albert.address);
     await baseToken.approve(albert, comet.address);
     await albert.supplyAsset({ asset: baseToken.address, amount: lenderSupply });
@@ -1718,19 +1719,18 @@ scenario(
     const { albert, betty, charles } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);
-    const { collateralAsset, supplyAmount, borrowAmount: lenderSupply } = await getMinimumBorrowAmounts(context, collateralIndex);
+    const { collateralAsset, supplyAmount: collateralAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
     const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
 
+    // Utilization is 95% of the limit after the borrow
+    const lenderSupply = borrowAmount * 20n * factorScale / (19n * maxSupportedUtilization);
     await context.sourceTokens(lenderSupply, baseToken.address, albert.address);
     await baseToken.approve(albert, comet.address);
     await albert.supplyAsset({ asset: baseToken.address, amount: lenderSupply });
 
     // Borrows above total supply are paid out of reserves, they also cover the bad debt after absorb
-    await context.sourceTokens(2n * lenderSupply, baseToken.address, comet.address);
+    await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
 
-    // 190% utilization, just below the limit
-    const borrowAmount = lenderSupply * 19n / 10n;
-    const collateralAmount = supplyAmount * 19n / 10n;
     await context.sourceTokens(collateralAmount, collateralAsset.address, betty.address);
     await collateralAsset.approve(betty, comet.address);
     await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
