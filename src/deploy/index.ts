@@ -1,4 +1,4 @@
-import { AssetConfigStruct } from '../../build/types/CometWithExtendedAssetList';
+import { AssetConfigStruct } from '../../build/types/Configurator';
 import { BigNumberish, Contract, PopulatedTransaction, utils } from 'ethers';
 
 export { cloneGov, deployNetworkComet as deployComet, sameAddress } from './Network';
@@ -175,7 +175,6 @@ export const WHALES = {
   ],
   base: [
     '0x6D3c5a4a7aC4B1428368310E4EC3bB1350d01455', // USDbC whale
-    '0x46e6b214b524310239732D51387075E0e70970bf', // ezETH whale
     '0xDD5745756C2de109183c6B5bB886F9207bEF114D', // ezETH whale
     '0x7c468017FA704A1Cca3aa3d075eC21018FAd5E72', // ezETH whale
     '0x6e01Eb6BbEd4407deA78EBF532055B04d0d08f0F', // ezETH whale
@@ -193,11 +192,13 @@ export const WHALES = {
     '0x98c7A2338336d2d354663246F64676009c7bDa97', // USDbC whale
     '0x0E635F8EeED4F7279d56692D552F034ECE136019', // USDbC whale
     '0x58Ee32056D946a37f5b49582dE3dEE1dAc0Bb974', // USDbC whale
-    '0x46e6b214b524310239732D51387075E0e70970bf', // oETH whale
     '0x6969343c4938b4ca79B1237C94f825df23A9905d', // oETH whale
     '0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb', // oETH whale
     '0x73Cbc02516f5F4945cE2F2fACf002b2c6aA359e7', // oETH whale
     '0xc2D684807032f3766eEd01756e95B66EfbF89841', // oETH whale
+    '0x3128a0F7f0ea68E7B7c9B00AFa7E41045828e858', // sUSDS
+    '0xB3C77edE8f91fb1EC0f48F4E8F696a245438cC11', // sUSDS
+    '0x1601843c5E9bC251A3272907010AFa41Fa18347E', // sUSDS
   ],
   scroll: [
     '0xaaaaAAAACB71BF2C8CaE522EA5fa455571A74106', // USDC whale
@@ -211,6 +212,8 @@ export const WHALES = {
     '0x5F82C97e9b1755237692a946aE814998Bc0e2124', // USDM whale
     '0x8af3827a41c26c7f32c81e93bb66e837e0210d5c', // USDC whale
     '0xc45A479877e1e9Dfe9FcD4056c699575a1045dAA', // wstETH whale
+    '0xbb0b4642492b275F154e415fc52Dacc931103fD9', // wstETH whale
+    '0xce95AfbB8EA029495c66020883F87aaE8864AF92', // wstETH whale
     '0x45738e2859a49362DaB108C24aE7bA43CA6BA8fD', // COMP whale
     '0x1356b0b269A990eFC859567f447D04069bb70393', // COMP whale
     '0x59B4c274e3DB1370E020d82Ac58034380De8b0bC', // COMP whale

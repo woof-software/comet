@@ -389,8 +389,9 @@ describe('withdraw', function () {
       });
 
       it('gas used is within limit', async () => {
+        // Asset info is read through the asset list proxy, which costs more than reading the list directly
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(121000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(130000);
       });
     });
 

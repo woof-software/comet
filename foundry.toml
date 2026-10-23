@@ -15,6 +15,11 @@ optimizer = true
 optimizer_runs = 1
 via_ir = true
 
+[profile.default.fuzz]
+runs = 2000
+# Fixed seed, so a run is reproducible and the same inputs are covered on every machine
+seed = '0xdead'
+
 [profile.default.optimizer_details]
 yul = true
 

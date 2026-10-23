@@ -135,23 +135,64 @@ export async function deployNetworkComet(
 
   const assetListFactory = await deploymentManager.deploy(
     'assetListFactory',
-    'AssetListFactory.sol',
+    'test/assetList/AssetListFactory.sol',
     [],
     maybeForce()
   );
   const cometExt = await deploymentManager.deploy(
     'comet:implementation:implementation',
-    'CometExtAssetList.sol',
-    [extConfiguration, assetListFactory.address],
+    'CometExt.sol',
+    [extConfiguration],
     maybeForce(deploySpec.cometExt)
   );
   
 
   const cometFactory = await deploymentManager.deploy(
     'cometFactory',
-    'CometFactoryWithExtendedAssetList.sol',
+    'test/CometFactoryWithExtendedAssetList.sol',
     [],
     maybeForce(deploySpec.cometMain)
+  );
+
+  const configuratorImpl = await deploymentManager.deploy(
+    'configurator:implementation',
+    'Configurator.sol',
+    [],
+    maybeForce()
+  );
+
+  // If we deploy a new proxy, we initialize it to the current/new impl
+  // If its an existing proxy, the impl we got for the alias must already be current
+  // In other words, we shan't have deployed an impl in the last step unless there was no proxy too
+  const configuratorProxy = await deploymentManager.deploy(
+    'configurator',
+    'ConfiguratorProxy.sol',
+    [configuratorImpl.address, cometAdmin.address, (await configuratorImpl.populateTransaction.initialize(admin.address)).data],
+    maybeForce()
+  );
+
+  // The asset list is built from the immutable part of the asset configs (asset, decimals, price feed); the factors
+  // and supply caps live in the storage of its proxy, which only the Configurator may update
+  const assetListImpl = await deploymentManager.deploy(
+    'assetList:implementation',
+    'AssetList.sol',
+    [assetConfigs.map(({ asset, decimals, priceFeed }) => ({ asset, decimals, priceFeed }))],
+    maybeForce()
+  );
+
+  const storageAssetConfigs = assetConfigs.map(
+    ({ borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap }) =>
+      ({ borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap })
+  );
+  const assetListProxy = await deploymentManager.deploy(
+    'assetList',
+    'vendor/proxy/transparent/TransparentUpgradeableProxy.sol',
+    [
+      assetListImpl.address,
+      cometAdmin.address,
+      (await assetListImpl.populateTransaction.initialize(storageAssetConfigs, configuratorProxy.address)).data,
+    ],
+    maybeForce()
   );
 
   const configuration = {
@@ -175,7 +216,7 @@ export async function deployNetworkComet(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
-    assetConfigs,
+    assetList: assetListProxy.address,
   };
 
   const tmpCometImpl = await deploymentManager.deploy(
@@ -190,23 +231,6 @@ export async function deployNetworkComet(
     'vendor/proxy/transparent/TransparentUpgradeableProxy.sol',
     [tmpCometImpl.address, cometAdmin.address, []], // NB: temporary implementation contract
     maybeForce(),
-  );
-
-  const configuratorImpl = await deploymentManager.deploy(
-    'configurator:implementation',
-    'Configurator.sol',
-    [],
-    maybeForce()
-  );
-
-  // If we deploy a new proxy, we initialize it to the current/new impl
-  // If its an existing proxy, the impl we got for the alias must already be current
-  // In other words, we shan't have deployed an impl in the last step unless there was no proxy too
-  const configuratorProxy = await deploymentManager.deploy(
-    'configurator',
-    'ConfiguratorProxy.sol',
-    [configuratorImpl.address, cometAdmin.address, (await configuratorImpl.populateTransaction.initialize(admin.address)).data],
-    maybeForce()
   );
 
   const rewards = await deploymentManager.deploy(
@@ -258,6 +282,26 @@ export async function deployNetworkComet(
     async () => {
       trace(`Setting factory in Configurator to ${cometFactory.address}`);
       trace(await wait(configurator.connect(admin).setFactory(comet.address, cometFactory.address)));
+    }
+  );
+
+  await deploymentManager.idempotent(
+    async () => amAdmin && !sameAddress(await configurator.cometAssetListFactories(comet.address), assetListFactory.address),
+    async () => {
+      trace(`Setting asset list factory in Configurator to ${assetListFactory.address}`);
+      trace(await wait(configurator.connect(admin).setAssetListFactory(comet.address, assetListFactory.address)));
+    }
+  );
+
+  // The asset list proxy already holds these assets; the Configurator keeps the same configs, so that the next
+  // deployAssetList finds the hashes equal and deploys nothing
+  await deploymentManager.idempotent(
+    async () => amAdmin && (await configurator.getAssetConfigs(comet.address)).length == 0,
+    async () => {
+      for (const assetConfig of assetConfigs) {
+        trace(`Adding asset ${assetConfig.asset} to Configurator`);
+        trace(await wait(configurator.connect(admin).addAsset(comet.address, assetConfig)));
+      }
     }
   );
 

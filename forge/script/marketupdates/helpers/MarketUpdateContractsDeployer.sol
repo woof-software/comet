@@ -4,8 +4,8 @@ pragma solidity ^0.8.15;
 import "../../../../contracts/interfaces/Create2DeployerInterface.sol";
 import "../../../../contracts/marketupdates/MarketUpdateTimelock.sol";
 import "../../../../contracts/marketupdates/MarketUpdateProposer.sol";
-import "../../../../contracts/Configurator.sol";
-import "../../../../contracts/CometProxyAdmin.sol";
+import "../../../../contracts/marketupdates/ConfiguratorOptimism.sol";
+import "../../../../contracts/marketupdates/CometProxyAdminOptimism.sol";
 import "../../../../contracts/marketupdates/MarketAdminPermissionChecker.sol";
 import "../../../lib/forge-std/src/console.sol";
 import "./MarketUpdateAddresses.sol";
@@ -129,10 +129,10 @@ library MarketUpdateContractsDeployer {
         deployContractWithCreate2(create2Deployer, salt, cometProxyAdminParams);
 
         // Post-deployment actions
-        CometProxyAdmin(computedCometProxyAdminAddress).setMarketAdminPermissionChecker(MarketAdminPermissionChecker(computedMarketAdminPermissionCheckerAddress));
-        CometProxyAdmin(computedCometProxyAdminAddress).transferOwnership(localTimelockAddress);
+        CometProxyAdminOptimism(computedCometProxyAdminAddress).setMarketAdminPermissionChecker(MarketAdminPermissionChecker(computedMarketAdminPermissionCheckerAddress));
+        CometProxyAdminOptimism(computedCometProxyAdminAddress).transferOwnership(localTimelockAddress);
 
-        console.log("Owner of cometProxyAdmin: ", CometProxyAdmin(computedCometProxyAdminAddress).owner());
+        console.log("Owner of cometProxyAdmin: ", CometProxyAdminOptimism(computedCometProxyAdminAddress).owner());
 
 
         return DeployedContracts({
@@ -206,10 +206,10 @@ library MarketUpdateContractsDeployer {
 
     function getConfiguratorParams() internal pure returns (ContractDeploymentParams memory) {
         return ContractDeploymentParams({
-            creationCode: type(Configurator).creationCode,
+            creationCode: type(ConfiguratorOptimism).creationCode,
             constructorArgs: "",
-            expectedRuntimeCode: type(Configurator).runtimeCode,
-            contractName: "Configurator"
+            expectedRuntimeCode: type(ConfiguratorOptimism).runtimeCode,
+            contractName: "ConfiguratorOptimism"
         });
     }
 
@@ -225,10 +225,10 @@ library MarketUpdateContractsDeployer {
 
     function getCometProxyAdminParams(address msgSender) internal pure returns (ContractDeploymentParams memory) {
         return ContractDeploymentParams({
-            creationCode: type(CometProxyAdmin).creationCode,
+            creationCode: type(CometProxyAdminOptimism).creationCode,
             constructorArgs: abi.encode(msgSender),
-            expectedRuntimeCode: type(CometProxyAdmin).runtimeCode,
-            contractName: "CometProxyAdmin"
+            expectedRuntimeCode: type(CometProxyAdminOptimism).runtimeCode,
+            contractName: "CometProxyAdminOptimism"
         });
     }
 

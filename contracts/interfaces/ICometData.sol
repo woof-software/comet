@@ -46,15 +46,4 @@ interface ICometData {
         uint128 approxSpend;
         uint32 _reserved;
     }
-
-    struct AssetInfo {
-        uint8 offset;
-        address asset;
-        address priceFeed;
-        uint64 scale;
-        uint64 borrowCollateralFactor;
-        uint64 liquidateCollateralFactor;
-        uint64 liquidationFactor;
-        uint128 supplyCap;
-    }
 }

@@ -4,14 +4,16 @@ pragma solidity 0.8.15;
 import "./CometConfiguration.sol";
 import "./CometStorage.sol";
 import "./CometMath.sol";
+import { IAssetListStructs } from "./interfaces/assetList/IAssetListStructs.sol";
 
-abstract contract CometCore is CometConfiguration, CometStorage, CometMath {
+/// @dev `AssetInfo` is declared in IAssetListStructs, so Comet and the asset list share one type
+abstract contract CometCore is CometConfiguration, CometStorage, CometMath, IAssetListStructs {
     /** Internal constants **/
 
     /// @dev The max number of assets this contract is hardcoded to support
     ///  Do not change this variable without updating all the fields throughout the contract,
     //    including the size of UserBasic.assetsIn and corresponding integer conversions.
-    uint8 internal constant MAX_ASSETS = 15;
+    uint8 internal constant MAX_ASSETS = 24;
 
     /// @dev The max number of decimals base token can have
     ///  Note this cannot just be increased arbitrarily.

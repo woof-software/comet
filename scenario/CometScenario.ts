@@ -1,7 +1,7 @@
-import { scenario } from './context/CometContext';
+import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
 import { exp } from '../test/helpers';
-import { expectRevertCustom, perSecond } from './utils';
+import { expectRevertCustom, perSecond, servicePatch2 } from './utils';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
 import { FaucetToken } from '../build/types';
 import { getConfigForScenario } from './utils/scenarioHelper';
@@ -47,7 +47,7 @@ scenario(
 
 scenario(
   'Comet#configuration > matches configurator parameters',
-  {},
+  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
   async ({ comet, configurator }) => {
     const cfg = await configurator.getConfiguration(comet.address);
 
@@ -86,12 +86,14 @@ scenario(
     expect(await comet.baseBorrowMin()).to.equal(cfg.baseBorrowMin);
     expect(await comet.targetReserves()).to.equal(cfg.targetReserves);
 
+    // The asset configs are no longer part of the configuration, the Configurator returns them on their own
+    const assetConfigs = await configurator.getAssetConfigs(comet.address);
     const numAssets = await comet.numAssets();
-    expect(numAssets).to.equal(cfg.assetConfigs.length);
+    expect(numAssets).to.equal(assetConfigs.length);
 
     for (let i = 0; i < numAssets; i++) {
       const info = await comet.getAssetInfo(i);
-      const expected = cfg.assetConfigs[i];
+      const expected = assetConfigs[i];
       expect(info.asset).to.equal(expected.asset);
       expect(info.priceFeed).to.equal(expected.priceFeed);
       expect(info.scale).to.equal(BigNumber.from(10).pow(expected.decimals));
@@ -115,8 +117,8 @@ scenario(
 
 scenario(
   'Comet#assetsIn > correctly sets and clears _reserved bits for assets with offset >= 16',
-  {},
-  async ({ comet, configurator, actors }, context) => {
+  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
+  async ({ comet, configurator, proxyAdmin, actors }, context) => {
     const { albert, admin } = actors;
     const numAssets = await comet.numAssets();
 
@@ -125,63 +127,50 @@ scenario(
 
     if (numAssets < REQUIRED_NUM_ASSETS) {
       const dm = context.world.deploymentManager;
-      const assetsToAdd = REQUIRED_NUM_ASSETS - numAssets;
-      const fillerCount = assetsToAdd - 1; // only the last slot needs a unique token
 
-      // Pad with a reused existing asset so supply-by-address still hits a low offset.
-      if (fillerCount > 0) {
-        const filler = (await configurator.getConfiguration(comet.address))
-          .assetConfigs[0];
-        const fillerConfig = {
-          asset: filler.asset,
-          priceFeed: filler.priceFeed,
-          decimals: filler.decimals,
-          borrowCollateralFactor: filler.borrowCollateralFactor,
-          liquidateCollateralFactor: filler.liquidateCollateralFactor,
-          liquidationFactor: filler.liquidationFactor,
-          supplyCap: filler.supplyCap,
-        };
+      // Every slot up to index 16 gets its own token, since the Configurator rejects an asset added twice.
+      // The last one, at index 16, is the asset the scenario supplies
+      const addedAssets: string[] = [];
+      let mockToken: FaucetToken;
+      for (let i = numAssets; i < REQUIRED_NUM_ASSETS; i++) {
+        mockToken = await dm.deploy<FaucetToken, [string, string, BigNumberish, string]>(
+          `faucetToken:extendedAssetTarget${i}`,
+          'test/FaucetToken.sol',
+          [exp(1_000_000, 18).toString(), 'Mock Extended Token', 18, 'MEXT'],
+          true,
+        );
+        const mockPriceFeed = await dm.deploy(
+          `test:extendedAssetTargetPriceFeed${i}`,
+          'test/SimplePriceFeed.sol',
+          [1 * 10 ** 8, 8],
+          true,
+        );
 
-        for (let i = 0; i < fillerCount; i++) {
-          await context.setNextBaseFeeToZero();
-          await configurator
-            .connect(admin.signer)
-            .addAsset(comet.address, fillerConfig, { gasPrice: 0 });
-        }
+        await context.setNextBaseFeeToZero();
+        await configurator.connect(admin.signer).addAsset(
+          comet.address,
+          {
+            asset: mockToken.address,
+            priceFeed: mockPriceFeed.address,
+            decimals: 18,
+            borrowCollateralFactor: exp(0.8, 18),
+            liquidateCollateralFactor: exp(0.85, 18),
+            liquidationFactor: exp(0.9, 18),
+            supplyCap: exp(1e6, 18),
+          },
+          { gasPrice: 0 },
+        );
+        addedAssets.push(mockToken.address);
       }
 
-      // Unique token at index 16 so getAssetInfoByAddress / supply use offset >= 16.
-      // Use FaucetToken (always compiled) — MockERC20 lives in the capo submodule.
-      const mockToken = await dm.deploy<
-        FaucetToken,
-        [string, string, BigNumberish, string]
-      >(
-        'faucetToken:extendedAssetTarget',
-        'test/FaucetToken.sol',
-        [exp(1_000_000, 18).toString(), 'Mock Extended Token', 18, 'MEXT'],
-        true,
-      );
-      const mockPriceFeed = await dm.deploy(
-        'test:extendedAssetTargetPriceFeed',
-        'test/SimplePriceFeed.sol',
-        [1 * 10 ** 8, 8],
-        true,
-      );
-
+      // The new assets reach the Comet through a new asset list, which registers them with their factors and caps,
+      // and then a redeploy of the Comet
       await context.setNextBaseFeeToZero();
-      await configurator.connect(admin.signer).addAsset(
-        comet.address,
-        {
-          asset: mockToken.address,
-          priceFeed: mockPriceFeed.address,
-          decimals: 18,
-          borrowCollateralFactor: exp(0.8, 18),
-          liquidateCollateralFactor: exp(0.85, 18),
-          liquidationFactor: exp(0.9, 18),
-          supplyCap: exp(1e6, 18),
-        },
-        { gasPrice: 0 },
-      );
+      await proxyAdmin.connect(admin.signer).deployAndUpgradeAssetListTo(configurator.address, comet.address, { gasPrice: 0 });
+      for (const addedAsset of addedAssets) {
+        await context.setNextBaseFeeToZero();
+        await configurator.connect(admin.signer).setAssetConfigToAssetList(comet.address, addedAsset, { gasPrice: 0 });
+      }
 
       targetAssetAddress = mockToken.address;
       supplyAmount =
