@@ -287,19 +287,13 @@ contract AssetListTypeHashMock is IAssetList, IConfigHash, Initializable {
      * @return The packed asset info and the price feed address
      */
     function _packAsset(ImmutableAssetConfig[] memory assetConfigs, uint i) internal view returns (uint256, address) {
-        ImmutableAssetConfig memory assetConfig;
-        if (i < assetConfigs.length) {
-            assembly {
-                assetConfig := mload(add(add(assetConfigs, 0x20), mul(i, 0x20)))
-            }
-        } else {
-            return (0, address(0));
-        }
+        if (i >= assetConfigs.length) return (0, address(0));
+        ImmutableAssetConfig memory assetConfig = assetConfigs[i];
         address asset = assetConfig.asset;
         address priceFeed = assetConfig.priceFeed;
         uint8 decimals_ = assetConfig.decimals;
 
-        // A zero asset would still be counted in numAssets
+        // The zero address is what every unused asset slot holds, so a listed asset that is zero would look like an empty slot
         if (asset == address(0)) revert BadAsset();
 
         // Sanity check price feed and asset decimals
