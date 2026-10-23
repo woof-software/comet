@@ -51,8 +51,8 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
       [],
       true
     );
-    const assetListFactory = await deploymentManager.deploy('assetListFactory', 'AssetListFactory.sol', [], true);
-    const cometFactory = await deploymentManager.deploy('cometFactory', 'CometFactoryWithExtendedAssetList.sol', [], true);
+    const assetListFactory = await deploymentManager.deploy('assetListFactory', 'test/assetList/AssetListFactory.sol', [], true);
+    const cometFactory = await deploymentManager.deploy('cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], true);
 
     // A ProxyAdmin is not behind a proxy, so the new admin is a new contract and the proxies are moved to it.
     // The timelock owns it from the start, so no ownership transfer is needed
