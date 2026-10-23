@@ -3,17 +3,14 @@ pragma solidity 0.8.15;
 
 import { IPriceFeed } from "./interfaces/IPriceFeed.sol";
 import { IERC20NonStandard } from "./interfaces/IERC20NonStandard.sol";
+import { IAssetList } from "./interfaces/assetList/IAssetList.sol";
+import { ConfigHash, IConfigHash } from "./libraries/ConfigHash.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import { IAssetList } from "./interfaces/assetList/IAssetList.sol";
-import { IConfigHash } from "./interfaces/IConfigHash.sol";
-import { IConfigHash } from "./interfaces/IConfigHash.sol";
-import { ConfigHash } from "./libraries/ConfigHash.sol";
 
 /**
  * @title Compound's Asset List
- * @author Woof
- * @custom:security-contact dmitriy@woof.software
+ * @author Compound
  */
 contract AssetList is IAssetList, IConfigHash, Initializable {
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -22,7 +19,8 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
                          CONSTANTS / IMMUTABLES
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IConfigHash
+    /// @dev Required by IConfigHash library. Determines the type of the config.
+    /// @dev Update if new immutable config types are added.
     bytes32 public constant TYPEHASH =
         keccak256("ImmutableConfig[](address asset,uint8 decimals,address priceFeed)");
 
