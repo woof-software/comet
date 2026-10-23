@@ -53,7 +53,7 @@ export function getMinSupplyCapIncrement(decimals: number): bigint {
 
 export async function deployCometFactory(context: CometContext, force?: boolean): Promise<string> {
   const dm = context.world.deploymentManager;
-  const cometFactory = await dm.deploy('test:cometFactory', 'CometFactoryWithExtendedAssetList.sol', [], force);
+  const cometFactory = await dm.deploy('test:cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], force);
 
   return cometFactory.address;
 }

@@ -13,7 +13,7 @@ import { deployPriceFeed } from './shared';
 async function deployAssetListFactory(context: CometContext): Promise<string> {
   const assetListFactory = await context.world.deploymentManager.deploy(
     'test:assetListFactory',
-    'AssetListFactory.sol',
+    'test/assetList/AssetListFactory.sol',
     []
   );
 

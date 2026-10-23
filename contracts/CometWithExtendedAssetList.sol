@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import "./CometMainInterface.sol";
-import "./interfaces/IERC20NonStandard.sol";
-import "./interfaces/IPriceFeed.sol";
-import "./interfaces/IAssetListFactory.sol";
-import "./interfaces/IAssetListFactoryHolder.sol";
-import { IAssetList } from "./interfaces/assetList/IAssetList.sol";
+import { CometMainInterface } from "contracts/CometMainInterface.sol";
+import { IERC20NonStandard } from "contracts/interfaces/IERC20NonStandard.sol";
+import { IPriceFeed } from "contracts/interfaces/IPriceFeed.sol";
+import { IAssetList } from "contracts/interfaces/assetList/IAssetList.sol";
 
 /**
  * @title Compound's Comet Contract
