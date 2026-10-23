@@ -102,8 +102,8 @@ scenario(
       [],
       true
     );
-    const assetListFactory = await dm.deploy('test:assetListFactory', 'AssetListFactory.sol', [], true);
-    const cometFactory = await dm.deploy('test:cometFactory', 'CometFactoryWithExtendedAssetList.sol', [], true);
+    const assetListFactory = await dm.deploy('test:assetListFactory', 'test/assetList/AssetListFactory.sol', [], true);
+    const cometFactory = await dm.deploy('test:cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], true);
 
     /*//////////////////////////////////////////////////////////////
           STEP 3: PROPOSAL 1, CONFIGURATOR UPGRADE AND MIGRATION

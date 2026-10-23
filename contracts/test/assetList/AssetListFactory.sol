@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import { AssetList } from "./AssetList.sol";
-import { IAssetListStructs } from "./interfaces/assetList/IAssetListStructs.sol";
+import { AssetList } from "contracts/AssetList.sol";
+import { IAssetListStructs } from "contracts/interfaces/assetList/IAssetListStructs.sol";
 
 /**
  * @title Compound's Asset List Factory

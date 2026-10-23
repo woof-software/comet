@@ -135,7 +135,7 @@ export async function deployNetworkComet(
 
   const assetListFactory = await deploymentManager.deploy(
     'assetListFactory',
-    'AssetListFactory.sol',
+    'test/assetList/AssetListFactory.sol',
     [],
     maybeForce()
   );
@@ -149,7 +149,7 @@ export async function deployNetworkComet(
 
   const cometFactory = await deploymentManager.deploy(
     'cometFactory',
-    'CometFactoryWithExtendedAssetList.sol',
+    'test/CometFactoryWithExtendedAssetList.sol',
     [],
     maybeForce(deploySpec.cometMain)
   );
