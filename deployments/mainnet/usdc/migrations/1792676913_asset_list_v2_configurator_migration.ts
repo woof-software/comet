@@ -114,16 +114,28 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
       return cometExt.address;
     }
 
+    const usdcAssetList = await deployAssetList(comet.address, 'assetList');
+    const usdsAssetList = await deployAssetList(USDS_COMET, 'usdsAssetList');
+    const usdcCometExt = await deployCometExt(comet.address, 'comet:implementation:implementation');
+    const usdsCometExt = await deployCometExt(USDS_COMET, 'usdsCometExt');
+
+    // The alias still carries the ABI of the old implementation, which the lists above were read with. After the
+    // proposal the proxy runs the new implementation, and the scenarios read it through this alias, so it gets the new ABI
+    await deploymentManager.putAlias(
+      'configurator',
+      await deploymentManager.hre.ethers.getContractAt('Configurator', configurator.address)
+    );
+
     return {
       configuratorIntermediate: configuratorIntermediate.address,
       configuratorImplementation: configuratorImplementation.address,
       assetListFactory: assetListFactory.address,
       cometFactory: cometFactory.address,
       cometAdmin: cometAdmin.address,
-      usdcAssetList: await deployAssetList(comet.address, 'assetList'),
-      usdsAssetList: await deployAssetList(USDS_COMET, 'usdsAssetList'),
-      usdcCometExt: await deployCometExt(comet.address, 'comet:implementation:implementation'),
-      usdsCometExt: await deployCometExt(USDS_COMET, 'usdsCometExt'),
+      usdcAssetList,
+      usdsAssetList,
+      usdcCometExt,
+      usdsCometExt,
     };
   },
 
@@ -275,7 +287,7 @@ Further detailed information can be found on the corresponding [proposal pull re
   },
 
   async enacted(): Promise<boolean> {
-    return true;
+    return false;
   },
 
   async verify(deploymentManager: DeploymentManager, _, preMigrationBlockNumber: number) {
