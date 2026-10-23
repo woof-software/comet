@@ -33,9 +33,9 @@ import {
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
-import { ProtocolConfiguration, deployComet, COMP_WHALES, WHALES } from '../../src/deploy';
+import { ProtocolConfiguration, deployComet, COMP_WHALES, DEVELOPMENT_INITIAL_LENDER, WHALES } from '../../src/deploy';
 import { AddressLike, getAddressFromNumber, resolveAddress } from './Address';
-import { fastGovernanceExecute, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
+import { fastGovernanceExecute, matchesDeployment, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
 import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
 import { Requirements } from '../constraints/Requirements';
 
@@ -234,7 +234,8 @@ export class CometContext {
     const { world } = this;
     const { signer } = this.actors;
 
-    const actorAddress = getAddressFromNumber(Object.keys(this.actors).length + 1);
+    // Offset past precompile addresses, some of which revert on the ETH sent below
+    const actorAddress = getAddressFromNumber(0x1000 + Object.keys(this.actors).length + 1);
     const actorSigner = await world.impersonateAddress(actorAddress);
     const actor: CometActor = new CometActor(name, actorSigner, actorAddress, this);
     this.actors[name] = actor;
@@ -357,6 +358,13 @@ async function getActors(context: CometContext): Promise<{ [name: string]: Comet
     await setEtherBalance(world.deploymentManager, adminAddress, 10n ** 18n);
   }
   const pauseGuardianSigner = useLocalPauseGuardianSigner ? localPauseGuardianSigner : await world.impersonateAddress(pauseGuardianAddress);
+  // The development market is deployed with a supply from the initial lender
+  const initialLenderActors: { [name: string]: CometActor } = {};
+  if (matchesDeployment(context, [{ network: 'hardhat' }])) {
+    const initialLenderSigner = await world.impersonateAddress(DEVELOPMENT_INITIAL_LENDER);
+    await setEtherBalance(world.deploymentManager, DEVELOPMENT_INITIAL_LENDER, 10n ** 18n);
+    initialLenderActors.initialLender = await buildActor('initialLender', initialLenderSigner, context);
+  }
 
   return {
     admin: await buildActor('admin', adminSigner, context),
@@ -364,6 +372,7 @@ async function getActors(context: CometContext): Promise<{ [name: string]: Comet
     albert: await buildActor('albert', albertSigner, context),
     betty: await buildActor('betty', bettySigner, context),
     charles: await buildActor('charles', charlesSigner, context),
+    ...initialLenderActors,
     signer: await buildActor('signer', localAdminSigner, context),
   };
 }

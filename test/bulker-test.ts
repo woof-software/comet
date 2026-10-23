@@ -207,6 +207,7 @@ describe('bulker', function () {
   });
 
   it('supplyNativeToken with max base', async () => {
+    const borrowAmount = exp(10, 18);
     const protocol = await makeProtocol({
       base: 'WETH',
       assets: defaultAssets({}, {
@@ -218,14 +219,14 @@ describe('bulker', function () {
       // set rates at 0 to ignore effects of interest rate accrual, which are not relevant to this test
       borrowInterestRateBase: 0,
       borrowInterestRateSlopeLow: 0,
+      // keep utilization below the borrow kink so the zeroed rates above stay in effect
+      initialLenderSupply: borrowAmount * 2n,
     });
     const { cometWithExtendedAssetList : comet, tokens: { USDC, WETH }, users: [alice] } = protocol;
     const bulkerInfo = await makeBulker({ weth: WETH.address });
     const { bulker } = bulkerInfo;
 
-    const borrowAmount = exp(10, 18);
     const supplyAmount = exp(50_000, 6);
-    await WETH.allocateTo(comet.address, borrowAmount);
     await USDC.allocateTo(alice.address, supplyAmount);
 
     // Alice supplies collateral to borrow the base asset

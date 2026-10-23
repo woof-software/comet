@@ -1,5 +1,5 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed} from 'build/types';
-import { expect, exp, makeProtocol, ethers, DEFAULT_PRICEFEED_DECIMALS, SnapshotRestorer, takeSnapshot, factorScale, MAX_SUPPORTED_UTILIZATION } from './helpers';
+import { expect, exp, makeProtocol, ethers, DEFAULT_PRICEFEED_DECIMALS, SnapshotRestorer, takeSnapshot, factorScale } from './helpers';
 import { BigNumber } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
@@ -105,13 +105,6 @@ describe('interest calculation', function () {
     const BORROW_AMOUNT_EXCEEDS_LIMIT: BigNumber = BigNumber.from(
       exp(10000, baseDecimals)
     ); // 10k$
-
-    const WITHDRAW_AMOUNT_EXCEEDS_LIMIT: BigNumber = BigNumber.from(
-      exp(16000, baseDecimals)
-    ); // 12k$
-    const WITHDRAW_AMOUNT_EXTRA: BigNumber = BigNumber.from(
-      exp(2000, baseDecimals)
-    ); // 2k$
 
     const AVERAGE_WAIT_TIME = 3600; // 1 hr
 
@@ -912,6 +905,7 @@ describe('interest calculation', function () {
         let currTotalSupplyBase: BigNumber;
         let currTotalBorrowBase: BigNumber;
         let expectedLastAccrualTime: number;
+        let maxSupportedUtilization: BigNumber;
 
         before(async function () {
           snapshot = await takeSnapshot();
@@ -919,18 +913,18 @@ describe('interest calculation', function () {
           // Supply collateral from Dave
           await collaterals['COMP'].allocateTo(
             dave.address,
-            COLLATERAL_AMOUNT_TRANSFER * 3n
+            COLLATERAL_AMOUNT_TRANSFER
           );
           await collaterals['COMP']
             .connect(dave)
-            .approve(comet.address, COLLATERAL_AMOUNT_TRANSFER * 3n);
+            .approve(comet.address, COLLATERAL_AMOUNT_TRANSFER);
           await comet
             .connect(dave)
             .supply(collaterals['COMP'].address, COLLATERAL_AMOUNT_TRANSFER);
 
           await baseToken.allocateTo(
             comet.address,
-            BORROW_AMOUNT_TRANSFER * 3n
+            BORROW_AMOUNT_TRANSFER
           );
 
           // wait some time
@@ -941,7 +935,10 @@ describe('interest calculation', function () {
           prevBorrowIndex = (await comet.totalsBasic()).baseBorrowIndex;
           prevUtilization = await comet.getUtilization();
           lastUpdatedTime = (await comet.totalsBasic()).lastAccrualTime;
+          maxSupportedUtilization = await comet.maxSupportedUtilization();
         });
+
+        after(async () => await snapshot.restore());
 
         it('can borrow via transfer to reach utilization > 100% (borrow from reserves) (user action in test)', async () => {
           await comet
@@ -1017,9 +1014,8 @@ describe('interest calculation', function () {
           expect(currTotalSupplyBase).to.be.greaterThan(0);
 
           // Check that utilization is not exceeded
-          const totalSupplyWithoutDst = currTotalSupplyBase.sub(BORROW_AMOUNT_TRANSFER);
-          const utilization = currTotalBorrowBase.mul(factorScale).div(totalSupplyWithoutDst);
-          expect(utilization).to.be.lessThan(MAX_SUPPORTED_UTILIZATION);
+          const utilization = currTotalBorrowBase.mul(factorScale).div(currTotalSupplyBase);
+          expect(utilization).to.be.lessThan(maxSupportedUtilization);
         });
 
         it('supply rate grows to the high slope of the interest curve (> 100%)', async () => {
@@ -1175,53 +1171,6 @@ describe('interest calculation', function () {
           const balance = await comet.borrowBalanceOf(bob.address);
           // 1 wei difference is possible
           expect(balance).to.be.approximately(expectedBalance, 1);
-        });
-
-        it('should revert for bob borrow which reach utilization over 200%', async () => {
-          // First supply collateral to cover future debt
-          await comet
-            .connect(dave)
-            .supply(collaterals['COMP'].address, COLLATERAL_AMOUNT_TRANSFER);
-          
-          // Get totals after supply
-          currTotalSupplyBase = (await comet.totalsBasic()).totalSupplyBase;
-          currTotalBorrowBase = (await comet.totalsBasic()).totalBorrowBase;
-
-          // Then try to borrow
-          await expect(comet
-            .connect(dave)
-            .transfer(eve.address, BORROW_AMOUNT_TRANSFER)).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
-        });
-
-        it('exceeds supported utilization is reached during tranfer', async () => {
-          // Check that total supply is greater than 0
-          expect(currTotalSupplyBase).to.be.greaterThan(0);
-
-          // Check that utilization is not exceeded
-          const totalSupplyWithoutDst = currTotalSupplyBase.sub(BORROW_AMOUNT_TRANSFER);
-          const utilization = currTotalBorrowBase.mul(factorScale).div(totalSupplyWithoutDst);
-          expect(utilization).to.be.greaterThan(MAX_SUPPORTED_UTILIZATION);
-        });
-
-        it('should revert for any new user pushing utilization over 200%', async () => {
-          // First supply collateral to cover future debt
-          await collaterals['COMP'].allocateTo(charlie.address, COLLATERAL_AMOUNT_TRANSFER);
-          await collaterals['COMP'].connect(charlie).approve(comet.address, COLLATERAL_AMOUNT_TRANSFER);
-          await comet.connect(charlie).supply(collaterals['COMP'].address, COLLATERAL_AMOUNT_TRANSFER);
-
-          // Get totals after supply
-          currTotalSupplyBase = (await comet.totalsBasic()).totalSupplyBase;
-          currTotalBorrowBase = (await comet.totalsBasic()).totalBorrowBase;
-
-          // Check that utilization will be exceeded
-          const totalSupplyWithoutDst = currTotalSupplyBase.sub(BORROW_AMOUNT_TRANSFER);
-          const utilization = currTotalBorrowBase.mul(factorScale).div(totalSupplyWithoutDst);
-          expect(utilization).to.be.greaterThan(MAX_SUPPORTED_UTILIZATION);
-
-          // Then try to borrow
-          await expect(comet.connect(charlie).transfer(eve.address, BORROW_AMOUNT_TRANSFER)).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
-
-          await snapshot.restore();
         });
       });
 
@@ -1771,58 +1720,6 @@ describe('interest calculation', function () {
         const balance = await comet.borrowBalanceOf(bob.address);
         // 1 wei difference is possible
         expect(balance).to.be.approximately(expectedBalance, 1);
-      });
-    });
-
-    describe('lenders can withdraw from the market even peaking utilization', function () {
-      it('withdraw by lenders does not revert if reaching >200% utilization from regular level in one step', async () => {
-        await baseToken.allocateTo(
-          comet.address,
-          WITHDRAW_AMOUNT_EXCEEDS_LIMIT
-        );
-
-        let curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.lessThan(exp(1, 18)); // < 100%
-
-        await expect(
-          comet
-            .connect(alice)
-            .withdraw(baseToken.address, WITHDRAW_AMOUNT_EXCEEDS_LIMIT)
-        ).to.not.be.reverted;
-
-        // 20k supplied, 8k borrowed -> withdraw of 16k will spike utilization over 200%
-        curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.greaterThanOrEqual(exp(2, 18)); // > 200%
-      });
-
-      it('withdraw by lenders does not revert within 200%+ utilization', async () => {
-        let curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.greaterThanOrEqual(exp(2, 18)); // > 200%
-
-        await expect(
-          comet
-            .connect(alice)
-            .withdraw(baseToken.address, WITHDRAW_AMOUNT_EXTRA)
-        ).to.not.be.reverted;
-
-        // 4k supplied, 8k borrowed -> withdraw of 2k will spike utilization over 400%
-        curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.greaterThanOrEqual(exp(4, 18)); // > 200%
-      });
-
-      it('withdraw by lenders does not revert if reaching utilization above uint64 limit (> 1900%)', async () => {
-        /// withdraw everything except 1$
-        const curBalance = await comet.balanceOf(alice.address);
-
-        await expect(
-          comet
-            .connect(alice)
-            .withdraw(baseToken.address, curBalance.sub(exp(1, baseDecimals)))
-        ).to.not.be.reverted;
-
-        // 2k supplied, 8k borrowed -> withdraw of 2k - 1$ will spike utilization over 8000%, exceeding uint64 limit
-        const curUtilization = await comet.getUtilization();
-        expect(curUtilization).to.be.greaterThanOrEqual(exp(80, 18)); // > 8000%, far exceedint uint64 limit
       });
     });
   });

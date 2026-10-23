@@ -4,9 +4,9 @@ import { BigNumberish, constants, utils } from 'ethers';
 import { exp } from '../test/helpers';
 import { FaucetToken } from '../build/types';
 import { calldata } from '../src/deploy';
-import { expectBase, isBridgedDeployment } from './utils';
+import { expectBase, isBridgedDeployment, supportsConfigurableMaxSupportedUtilization } from './utils';
 
-scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => {
+scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => !isBridgedDeployment(ctx) && await supportsConfigurableMaxSupportedUtilization(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => {
   // For this scenario, we will be using the value of LiquidatorPoints.numAbsorbs for address ZERO to test that initialize has been called
   expect((await comet.liquidatorPoints(constants.AddressZero)).numAbsorbs).to.be.equal(0);
 
@@ -32,7 +32,7 @@ scenario('upgrade Comet implementation and initialize', {filter: async (ctx) => 
   expect((await comet.liquidatorPoints(constants.AddressZero)).numAbsorbs).to.be.equal(2 ** 32 - 1);
 });
 
-scenario('upgrade Comet implementation and initialize using deployUpgradeToAndCall', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => {
+scenario('upgrade Comet implementation and initialize using deployUpgradeToAndCall', {filter: async (ctx) => !isBridgedDeployment(ctx) && await supportsConfigurableMaxSupportedUtilization(ctx)}, async ({ comet, configurator, proxyAdmin }, context) => {
   // For this scenario, we will be using the value of LiquidatorPoints.numAbsorbs for address ZERO to test that initialize has been called
   expect((await comet.liquidatorPoints(constants.AddressZero)).numAbsorbs).to.be.equal(0);
 
@@ -64,7 +64,7 @@ scenario('upgrade Comet implementation and initialize using deployUpgradeToAndCa
   expect((await comet.liquidatorPoints(constants.AddressZero)).numAbsorbs).to.be.equal(2 ** 32 - 1);
 });
 
-scenario('upgrade Comet implementation and call new function', {filter: async (ctx) => !isBridgedDeployment(ctx)}, async ({ comet, configurator, proxyAdmin, actors }, context) => {
+scenario('upgrade Comet implementation and call new function', {filter: async (ctx) => !isBridgedDeployment(ctx) && await supportsConfigurableMaxSupportedUtilization(ctx)}, async ({ comet, configurator, proxyAdmin, actors }, context) => {
   const { signer } = actors;
 
   // Deploy new version of Comet Factory

@@ -3,9 +3,19 @@ import { expect } from 'chai';
 import { BigNumber, ethers } from 'ethers';
 import { CometContext, scenario } from './context/CometContext';
 import { exp } from '../test/helpers';
-import { expectRevertCustom, fundAccount, supportsMarketAdminPermissionChecker } from './utils';
+import {
+  expectRevertCustom,
+  fundAccount,
+  supportsMarketAdminPermissionChecker,
+  isBridgedDeployment,
+  supportsConfigurableMaxSupportedUtilization,
+  isFreshMarket,
+  withdrawFromInitialLender,
+  getUsableCollateralIndices,
+  getMinimumBorrowAmounts
+} from './utils';
 import { SECONDS_PER_YEAR } from './utils/constants';
-import { MarketAdminPermissionChecker } from '../build/types';
+import { CometInterface, MarketAdminPermissionChecker } from '../build/types';
 
 // Based on contract's internal precision: FACTOR_SCALE=1e18 with 4 decimal places
 const FACTOR_SCALE = 10n ** 18n;
@@ -197,6 +207,7 @@ async function deployComet(context: CometContext): Promise<string> {
     baseMinForRewards: exp(1, 9), // 1000000000n
     baseBorrowMin: exp(1, 5), // 100000n
     targetReserves: exp(2, 13), //20000000000000n
+    maxSupportedUtilization: exp(2, 18), // 2000000000000000000n
     assetConfigs: [
       {
         asset: await deployMockERC20(context, 'asset'),
@@ -2983,5 +2994,97 @@ scenario(
       configurator.connect(admin.signer).updateAssetSupplyCap(comet.address, nonExistingAsset, 1n),
       'AssetDoesNotExist()'
     );
+  }
+);
+
+// Halfway between the current limit and the uint64 maximum, so the new limit is always higher and fits uint64
+async function getHigherMaxSupportedUtilization(comet: CometInterface): Promise<bigint> {
+  const uint64Max = 2n ** 64n - 1n;
+  const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+  return maxSupportedUtilization + (uint64Max - maxSupportedUtilization) / 2n;
+}
+
+scenario(
+  'Configurator#setMaxSupportedUtilization through governance updates Comet',
+  {
+    filter: async (ctx: CometContext) => !isBridgedDeployment(ctx) && await supportsConfigurableMaxSupportedUtilization(ctx),
+  },
+  async ({ comet, configurator, proxyAdmin }, context) => {
+    const newMaxSupportedUtilization = await getHigherMaxSupportedUtilization(comet);
+
+    // Fixed signatures, since the cached Configurator on forks carries the ABI of the old implementation
+    await context.fastGovernanceExecute(
+      [configurator.address, proxyAdmin.address],
+      [0, 0],
+      ['setMaxSupportedUtilization(address,uint64)', 'deployAndUpgradeTo(address,address)'],
+      [
+        ethers.utils.defaultAbiCoder.encode(['address', 'uint64'], [comet.address, newMaxSupportedUtilization]),
+        ethers.utils.defaultAbiCoder.encode(['address', 'address'], [configurator.address, comet.address]),
+      ]
+    );
+
+    expect(await comet.maxSupportedUtilization()).to.equal(newMaxSupportedUtilization);
+  }
+);
+
+scenario(
+  'Configurator#setMaxSupportedUtilization through governance allows borrows up to the new limit',
+  {
+    filter: async (ctx: CometContext) =>
+      !isBridgedDeployment(ctx) && await supportsConfigurableMaxSupportedUtilization(ctx) && await isFreshMarket(ctx),
+    // Zero rates keep indexes still between transactions, so utilization does not move after the borrow
+    upgrade: {
+      supplyPerYearInterestRateBase: 0,
+      supplyPerYearInterestRateSlopeLow: 0,
+      supplyPerYearInterestRateSlopeHigh: 0,
+      borrowPerYearInterestRateBase: 0,
+      borrowPerYearInterestRateSlopeLow: 0,
+      borrowPerYearInterestRateSlopeHigh: 0,
+    },
+  },
+  async ({ comet, configurator, proxyAdmin, actors }, context) => {
+    // Only needed on development, where the market is deployed with a supply from the initial lender.
+    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+    await withdrawFromInitialLender(context);
+
+    const { albert, betty } = actors;
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const [collateralIndex] = await getUsableCollateralIndices(context, 1);
+    const { collateralAsset, supplyAmount: collateralAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
+    const oldMaxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+    const newMaxSupportedUtilization = await getHigherMaxSupportedUtilization(comet);
+
+    // The borrow puts utilization halfway between the old and the new limit
+    const lenderSupply = 2n * borrowAmount * FACTOR_SCALE / (oldMaxSupportedUtilization + newMaxSupportedUtilization);
+    await context.sourceTokens(lenderSupply, baseToken.address, albert.address);
+    await baseToken.approve(albert, comet.address);
+    await albert.supplyAsset({ asset: baseToken.address, amount: lenderSupply });
+
+    // Borrows above total supply are paid out of reserves
+    await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
+
+    await context.sourceTokens(collateralAmount, collateralAsset.address, betty.address);
+    await collateralAsset.approve(betty, comet.address);
+    await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
+
+    await expect(
+      comet.connect(betty.signer).withdraw(baseToken.address, borrowAmount)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+
+    await context.fastGovernanceExecute(
+      [configurator.address, proxyAdmin.address],
+      [0, 0],
+      ['setMaxSupportedUtilization(address,uint64)', 'deployAndUpgradeTo(address,address)'],
+      [
+        ethers.utils.defaultAbiCoder.encode(['address', 'uint64'], [comet.address, newMaxSupportedUtilization]),
+        ethers.utils.defaultAbiCoder.encode(['address', 'address'], [configurator.address, comet.address]),
+      ]
+    );
+
+    await betty.withdrawAsset({ asset: baseToken.address, amount: borrowAmount });
+
+    const utilization = (await comet.getUtilization()).toBigInt();
+    expect(utilization).to.be.above(oldMaxSupportedUtilization);
+    expect(utilization).to.be.at.most(newMaxSupportedUtilization);
   }
 );

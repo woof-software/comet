@@ -1,12 +1,13 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import { setupFork, SnapshotRestorer, takeSnapshot, impersonateAccount, setBalance } from '../helpers';
+import { exp, setupFork, SnapshotRestorer, takeSnapshot, impersonateAccount, setBalance } from '../helpers';
 import {
   CometExtAssetList__factory,
   CometFactoryWithExtendedAssetList__factory,
   CometProxyAdmin,
   CometWithExtendedAssetList,
   Configurator,
+  Configurator__factory,
   CometExtAssetList,
 } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
@@ -42,7 +43,6 @@ describe('extended pause upgrade test', function () {
   // Extension delegate storage snapshot
   let assetListFactoryBefore: string;
   let maxAssetsBefore: number;
-  let versionBefore: string;
   let nameBefore: string;
   let symbolBefore: string;
   let baseAccrualScaleBefore: BigNumber;
@@ -134,6 +134,28 @@ describe('extended pause upgrade test', function () {
     )) as CometFactoryWithExtendedAssetList__factory;
     const newFactory = await CometFactoryWithExtendedAssetList.deploy();
 
+    // Upgrade configurator to support the new Configuration struct
+    const ConfiguratorFactory = (await ethers.getContractFactory(
+      'Configurator'
+    )) as Configurator__factory;
+    const newConfiguratorImpl = await ConfiguratorFactory.deploy();
+    const configuratorAdminAddress = await ethers.provider.getStorageAt(
+      CONFIGURATOR_ADDRESS,
+      ADMIN_SLOT
+    );
+    const configuratorProxyAdmin = (await ethers.getContractAt(
+      'CometProxyAdmin',
+      ethers.utils.getAddress('0x' + configuratorAdminAddress.slice(26))
+    )) as CometProxyAdmin;
+    await configuratorProxyAdmin
+      .connect(governor)
+      .upgrade(CONFIGURATOR_ADDRESS, newConfiguratorImpl.address);
+
+    // Set max supported utilization, which is not initialized in the existing configuration
+    await configurator
+      .connect(governor)
+      .setMaxSupportedUtilization(COMET_ADDRESS, exp(2, 18));
+
     // Step 1: Set the new extension delegate in configurator
     await configurator
       .connect(governor)
@@ -157,7 +179,6 @@ describe('extended pause upgrade test', function () {
     // Extension delegate storage snapshot
     assetListFactoryBefore = await cometExt.assetListFactory();
     maxAssetsBefore = await cometExt.maxAssets();
-    versionBefore = await cometExt.version();
     nameBefore = await cometExt.name();
     symbolBefore = await cometExt.symbol();
     baseAccrualScaleBefore = await cometExt.baseAccrualScale();
@@ -197,7 +218,8 @@ describe('extended pause upgrade test', function () {
   it('should save comet extension storage safely after upgrade', async function () {
     expect(await cometExt.assetListFactory()).to.equal(assetListFactoryBefore);
     expect(await cometExt.maxAssets()).to.equal(maxAssetsBefore);
-    expect(await cometExt.version()).to.equal(versionBefore);
+    // version is a constant of the extension, so it comes from the new implementation
+    expect(await cometExt.version()).to.equal(await newCometExt.version());
     expect(await cometExt.name()).to.equal(nameBefore);
     expect(await cometExt.symbol()).to.equal(symbolBefore);
     expect(await cometExt.baseAccrualScale()).to.equal(baseAccrualScaleBefore);

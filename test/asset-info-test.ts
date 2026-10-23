@@ -111,6 +111,7 @@ describe('asset info', function () {
       baseMinForRewards: 0,
       baseBorrowMin: 0,
       targetReserves: 0,
+      maxSupportedUtilization: exp(2, 18),
       assetConfigs: Object.entries(assets).reduce((acc, [symbol], _i) => {
         if (symbol != base) {
           acc.push({
