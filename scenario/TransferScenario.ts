@@ -15,7 +15,10 @@ import {
   presentValueBorrow,
   getUsableCollateralIndices,
   getMinimumBorrowAmounts,
-  deployUnsupportedAsset
+  deployUnsupportedAsset,
+  supportUtilizationLimit,
+  isFreshMarket,
+  withdrawFromInitialLender
 } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';
@@ -1565,5 +1568,110 @@ scenario(
       expect(albertBalanceAfter).to.be.equal(albertBalanceBefore.toBigInt() - transferAmount);
       expect(bettyBalanceAfter).to.be.equal(bettyBalanceBefore.toBigInt() + transferAmount);
     }
+  }
+);
+
+scenario(
+  'Comet#transfer > borrow transfer reverts above max supported utilization',
+  {
+    filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
+    // Zero rates keep indexes still between transactions, so the limit is exceeded by exactly 1 wei
+    upgrade: {
+      supplyPerYearInterestRateBase: 0,
+      supplyPerYearInterestRateSlopeLow: 0,
+      supplyPerYearInterestRateSlopeHigh: 0,
+      borrowPerYearInterestRateBase: 0,
+      borrowPerYearInterestRateSlopeLow: 0,
+      borrowPerYearInterestRateSlopeHigh: 0,
+    },
+  },
+  async ({ comet, actors }, context) => {
+    // Only needed on development, where the market is deployed with a supply from the initial lender.
+    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+    await withdrawFromInitialLender(context);
+
+    const { albert, betty, charles } = actors;
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const [collateralIndex] = await getUsableCollateralIndices(context, 1);
+    const { collateralAsset, supplyAmount, borrowAmount: lenderSupply } = await getMinimumBorrowAmounts(context, collateralIndex);
+    const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+
+    await context.sourceTokens(lenderSupply, baseToken.address, albert.address);
+    await baseToken.approve(albert, comet.address);
+    await albert.supplyAsset({ asset: baseToken.address, amount: lenderSupply });
+
+    // The amount credited to charles is excluded from total supply, so the limit is checked against the supply of albert only
+    const transferAmount = lenderSupply * maxSupportedUtilization / factorScale + 1n;
+    const collateralAmount = supplyAmount * transferAmount / lenderSupply + 1n;
+    await context.sourceTokens(collateralAmount, collateralAsset.address, betty.address);
+    await collateralAsset.approve(betty, comet.address);
+    await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
+
+    await expect(
+      comet.connect(betty.signer).transfer(charles.address, transferAmount)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+  }
+);
+
+scenario(
+  'Comet#transfer > lender transfer above 100% utilization is limited only when it repays a borrow',
+  {
+    filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
+    // Zero rates keep indexes still between transactions, so balances change by the exact amounts
+    upgrade: {
+      supplyPerYearInterestRateBase: 0,
+      supplyPerYearInterestRateSlopeLow: 0,
+      supplyPerYearInterestRateSlopeHigh: 0,
+      borrowPerYearInterestRateBase: 0,
+      borrowPerYearInterestRateSlopeLow: 0,
+      borrowPerYearInterestRateSlopeHigh: 0,
+    },
+  },
+  async ({ comet, actors }, context) => {
+    // Only needed on development, where the market is deployed with a supply from the initial lender.
+    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+    await withdrawFromInitialLender(context);
+
+    const { albert, betty, charles } = actors;
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const [collateralIndex] = await getUsableCollateralIndices(context, 1);
+    const { collateralAsset, supplyAmount, borrowAmount: unit } = await getMinimumBorrowAmounts(context, collateralIndex);
+    const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+
+    // Amounts are picked for the 200% limit: S = 3 units, B = 5 units, utilization is 167%
+    const albertSupply = 2n * unit;
+    await context.sourceTokens(albertSupply, baseToken.address, albert.address);
+    await baseToken.approve(albert, comet.address);
+    await albert.supplyAsset({ asset: baseToken.address, amount: albertSupply });
+
+    await context.sourceTokens(unit, baseToken.address, charles.address);
+    await baseToken.approve(charles, comet.address);
+    await charles.supplyAsset({ asset: baseToken.address, amount: unit });
+
+    // Borrows above total supply are paid out of reserves
+    await context.sourceTokens(2n * unit, baseToken.address, comet.address);
+
+    const borrowAmount = 5n * unit;
+    const collateralAmount = 5n * supplyAmount;
+    await context.sourceTokens(collateralAmount, collateralAsset.address, betty.address);
+    await collateralAsset.approve(betty, comet.address);
+    await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
+    await betty.withdrawAsset({ asset: baseToken.address, amount: borrowAmount });
+
+    const utilization = (await comet.getUtilization()).toBigInt();
+    expect(utilization).to.be.above(factorScale);
+    expect(utilization).to.be.below(maxSupportedUtilization);
+
+    // Repaying 2 of 5 units with 2 of 3 units of supply leaves 3 / 1 = 300% utilization
+    await expect(
+      comet.connect(albert.signer).transfer(betty.address, albertSupply)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+
+    const charlesSupplyBefore = (await comet.balanceOf(charles.address)).toBigInt();
+    await comet.connect(albert.signer).transfer(charles.address, albertSupply);
+
+    expect(await comet.balanceOf(albert.address)).to.equal(0n);
+    expect(await comet.balanceOf(charles.address)).to.equal(charlesSupplyBefore + albertSupply);
+    expect(await comet.getUtilization()).to.equal(utilization);
   }
 );

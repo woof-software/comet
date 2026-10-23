@@ -3,7 +3,17 @@ import { expect } from 'chai';
 import { BigNumber, ethers } from 'ethers';
 import { CometContext, scenario } from './context/CometContext';
 import { exp } from '../test/helpers';
-import { expectRevertCustom, fundAccount, supportsMarketAdminPermissionChecker } from './utils';
+import {
+  expectRevertCustom,
+  fundAccount,
+  supportsMarketAdminPermissionChecker,
+  isBridgedDeployment,
+  supportsConfigurableMaxSupportedUtilization,
+  isFreshMarket,
+  withdrawFromInitialLender,
+  getUsableCollateralIndices,
+  getMinimumBorrowAmounts
+} from './utils';
 import { SECONDS_PER_YEAR } from './utils/constants';
 import { MarketAdminPermissionChecker } from '../build/types';
 
@@ -2984,5 +2994,123 @@ scenario(
       configurator.connect(admin.signer).updateAssetSupplyCap(comet.address, nonExistingAsset, 1n),
       'AssetDoesNotExist()'
     );
+  }
+);
+
+scenario(
+  'Configurator#setMaxSupportedUtilization through governance updates Comet',
+  {
+    filter: async (ctx: CometContext) => !isBridgedDeployment(ctx) && await supportsConfigurableMaxSupportedUtilization(ctx),
+  },
+  async ({ comet, configurator, proxyAdmin }, context) => {
+    const newMaxSupportedUtilization = exp(3, 18);
+
+    // Fixed signatures, since the cached Configurator on forks carries the ABI of the old implementation
+    await context.fastGovernanceExecute(
+      [configurator.address, proxyAdmin.address],
+      [0, 0],
+      ['setMaxSupportedUtilization(address,uint64)', 'deployAndUpgradeTo(address,address)'],
+      [
+        ethers.utils.defaultAbiCoder.encode(['address', 'uint64'], [comet.address, newMaxSupportedUtilization]),
+        ethers.utils.defaultAbiCoder.encode(['address', 'address'], [configurator.address, comet.address]),
+      ]
+    );
+
+    expect(await comet.maxSupportedUtilization()).to.equal(newMaxSupportedUtilization);
+  }
+);
+
+scenario(
+  'Configurator#setMaxSupportedUtilization through governance allows borrows up to the new limit',
+  {
+    filter: async (ctx: CometContext) =>
+      !isBridgedDeployment(ctx) && await supportsConfigurableMaxSupportedUtilization(ctx) && await isFreshMarket(ctx),
+    // Zero rates keep indexes still between transactions, so utilization does not move after the borrow
+    upgrade: {
+      supplyPerYearInterestRateBase: 0,
+      supplyPerYearInterestRateSlopeLow: 0,
+      supplyPerYearInterestRateSlopeHigh: 0,
+      borrowPerYearInterestRateBase: 0,
+      borrowPerYearInterestRateSlopeLow: 0,
+      borrowPerYearInterestRateSlopeHigh: 0,
+    },
+  },
+  async ({ comet, configurator, proxyAdmin, actors }, context) => {
+    // Only needed on development, where the market is deployed with a supply from the initial lender.
+    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+    await withdrawFromInitialLender(context);
+
+    const { albert, betty } = actors;
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const [collateralIndex] = await getUsableCollateralIndices(context, 1);
+    const { collateralAsset, supplyAmount, borrowAmount: lenderSupply } = await getMinimumBorrowAmounts(context, collateralIndex);
+    const oldMaxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+    const newMaxSupportedUtilization = exp(3, 18);
+
+    await context.sourceTokens(lenderSupply, baseToken.address, albert.address);
+    await baseToken.approve(albert, comet.address);
+    await albert.supplyAsset({ asset: baseToken.address, amount: lenderSupply });
+
+    // Borrows above total supply are paid out of reserves
+    await context.sourceTokens(2n * lenderSupply, baseToken.address, comet.address);
+
+    // The borrow principal is rounded up, so the debt can exceed the borrowed amount by up to
+    // baseBorrowIndex / baseIndexScale wei. The borrow is reduced by that much to stay within 300%
+    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
+    const roundingMargin = (await comet.totalsBasic()).baseBorrowIndex.toBigInt() / baseIndexScale + 1n;
+    const borrowAmount = 3n * lenderSupply - roundingMargin;
+    const collateralAmount = 3n * supplyAmount;
+    await context.sourceTokens(collateralAmount, collateralAsset.address, betty.address);
+    await collateralAsset.approve(betty, comet.address);
+    await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
+
+    await expect(
+      comet.connect(betty.signer).withdraw(baseToken.address, borrowAmount)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+
+    await context.fastGovernanceExecute(
+      [configurator.address, proxyAdmin.address],
+      [0, 0],
+      ['setMaxSupportedUtilization(address,uint64)', 'deployAndUpgradeTo(address,address)'],
+      [
+        ethers.utils.defaultAbiCoder.encode(['address', 'uint64'], [comet.address, newMaxSupportedUtilization]),
+        ethers.utils.defaultAbiCoder.encode(['address', 'address'], [configurator.address, comet.address]),
+      ]
+    );
+
+    await betty.withdrawAsset({ asset: baseToken.address, amount: borrowAmount });
+
+    const utilization = (await comet.getUtilization()).toBigInt();
+    expect(utilization).to.be.above(oldMaxSupportedUtilization);
+    expect(utilization).to.be.at.most(newMaxSupportedUtilization);
+  }
+);
+
+scenario(
+  'Configurator#setMaxSupportedUtilization through governance with a value below 100% does not update Comet',
+  {
+    filter: async (ctx: CometContext) => !isBridgedDeployment(ctx) && await supportsConfigurableMaxSupportedUtilization(ctx),
+  },
+  async ({ comet, configurator, proxyAdmin, actors }, context) => {
+    const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
+    const oldMaxSupportedUtilization = await comet.maxSupportedUtilization();
+    const oldImplementation = await proxyAdmin.getProxyImplementation(comet.address);
+
+    await context.fastGovernanceExecute(
+      [configurator.address],
+      [0],
+      ['setMaxSupportedUtilization(address,uint64)'],
+      [ethers.utils.defaultAbiCoder.encode(['address', 'uint64'], [comet.address, exp(1, 18) - 1n])]
+    );
+
+    // Run by the timelock directly, since inside a proposal the timelock replaces the custom error with its own reason
+    await expectRevertCustom(
+      admin.deployAndUpgradeTo(configurator.address, comet.address),
+      'MaxSupportedUtilizationTooLow()'
+    );
+
+    expect(await proxyAdmin.getProxyImplementation(comet.address)).to.equal(oldImplementation);
+    expect(await comet.maxSupportedUtilization()).to.equal(oldMaxSupportedUtilization);
   }
 );
