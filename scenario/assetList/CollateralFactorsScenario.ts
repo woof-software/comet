@@ -128,6 +128,8 @@ scenario(
 //////////////////////////////////////////////////////////////*/
 
 // The asset list stores factors in full, so one wei past the neighbouring factor is already a break
+// The calls are static: a reverted transaction still uses up the nonce of the impersonated admin on a fork, and its
+// nonce counter does not see it, so the next transaction in the loop would fail on the nonce instead of the factor
 
 scenario(
   'Comet#assetList > reverts on BCF above LCF for each collateral',
@@ -140,7 +142,7 @@ scenario(
 
     // One collateral at a time gets a borrow collateral factor above its liquidate collateral factor
     for (const assetConfig of assetConfigs) {
-      await expect(configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(
+      await expect(configurator.connect(admin.signer).callStatic.updateAssetBorrowCollateralFactor(
         comet.address,
         assetConfig.asset,
         assetConfig.liquidateCollateralFactor.add(1)
@@ -160,7 +162,7 @@ scenario(
 
     // One collateral at a time gets a liquidate collateral factor above its liquidation factor
     for (const assetConfig of assetConfigs) {
-      await expect(configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(
+      await expect(configurator.connect(admin.signer).callStatic.updateAssetLiquidateCollateralFactor(
         comet.address,
         assetConfig.asset,
         assetConfig.liquidationFactor.add(1)
@@ -180,7 +182,7 @@ scenario(
 
     // One collateral at a time gets a liquidation factor just above the maximum
     for (const assetConfig of assetConfigs) {
-      await expect(configurator.connect(admin.signer).updateAssetLiquidationFactor(
+      await expect(configurator.connect(admin.signer).callStatic.updateAssetLiquidationFactor(
         comet.address,
         assetConfig.asset,
         MAX_COLLATERAL_FACTOR + 1n
