@@ -1,6 +1,5 @@
 import { get, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan';
-import { getBlockscoutApiUrl, getBlockscoutRPCUrl } from './blockscout';
-import { providers } from 'ethers';
+import { getBlockscoutApiKeyParams, getBlockscoutApiUrl } from './blockscout';
 
 export function debug(...args: any[]) {
   if (process.env['DEBUG']) {
@@ -82,16 +81,15 @@ async function pullFirstTransactionForContractFromBlockscout(network: string, ad
     sort: 'asc',
   };
   const url = `${getBlockscoutApiUrl(network)}?${paramString(params)}`;
-  const debugUrl = `${getBlockscoutApiUrl(network)}?${paramString(params)}`;
 
-  debug(`Attempting to pull Contract Creation code from first tx at ${debugUrl}`);
-  const result = await get(url, {});
+  debug(`Attempting to pull Contract Creation code from first tx at ${url}`);
+  const result = await get(url, getBlockscoutApiKeyParams(network));
 
   const contractCreationCode = result.result?.[0]?.input;
   if (!contractCreationCode) {
-    throw new Error(`Unable to find Contract Creation tx at ${debugUrl}`);
+    throw new Error(`Unable to find Contract Creation tx at ${url}`);
   }
-  debug(`Creation Code found in first tx at ${debugUrl}`);
+  debug(`Creation Code found in first tx at ${url}`);
   return contractCreationCode.slice(2);
 }
 
@@ -148,6 +146,7 @@ async function getBlockscoutApiData(
     module: 'contract',
     action: 'getsourcecode',
     address,
+    ...getBlockscoutApiKeyParams(network),
   });
 
   if (result.status !== '1') {
@@ -191,17 +190,26 @@ async function getBlockscoutApiData(
   };
 }
 
-async function scrapeContractCreationCodeFromBlockscoutRPC(network: string, address: string) {
-  // get code from JSON rpc
-  const rpcUrl = await getBlockscoutRPCUrl(network);
-  const provider = new providers.JsonRpcProvider(rpcUrl);
-  const code = await provider.send('eth_getCode', [address, 'latest']);
-  return code.slice(2);
+// Blockscout v2 returns the code that created the contract, even when a factory deployed it.
+// Don't swap this for eth_getCode: that returns the code already deployed at the address,
+// which reverts when deployed again as if it were creation code.
+async function pullContractCreationCodeFromBlockscoutV2(network: string, address: string) {
+  const url = `${getBlockscoutApiUrl(network)}/v2/smart-contracts/${address}`;
+
+  debug(`Attempting to pull Contract Creation code from ${url}`);
+  const result = await get(url, getBlockscoutApiKeyParams(network));
+
+  const contractCreationCode = result?.creation_bytecode;
+  if (!contractCreationCode) {
+    throw new Error(`Unable to find Contract Creation code at ${url}`);
+  }
+  debug(`Creation Code found at ${url}`);
+  return contractCreationCode.slice(2);
 }
 
 async function getContractCreationCodeFromBlockscout(network: string, address: string) {
   const strategies = [
-    scrapeContractCreationCodeFromBlockscoutRPC,
+    pullContractCreationCodeFromBlockscoutV2,
     pullFirstTransactionForContractFromBlockscout,
   ];
   let errors = [];
