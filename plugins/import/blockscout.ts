@@ -7,24 +7,7 @@ export interface Result {
   result: string;
 }
 
-// Blockscout PRO API keys only work on the api.blockscout.com gateway, not on per-chain instances
-const blockscoutProChainIds: { [network: string]: number } = {
-  'mainnet': 1,
-  'optimism': 10,
-  'base': 8453,
-  'arbitrum': 42161,
-  'unichain': 130,
-};
-
-function useBlockscoutProApi(network: string): boolean {
-  return !!process.env.BLOCKSCOUT_KEY && network in blockscoutProChainIds;
-}
-
 export function getBlockscoutApiUrl(network: string): string {
-  if (useBlockscoutProApi(network)) {
-    return `https://api.blockscout.com/${blockscoutProChainIds[network]}/api`;
-  }
-
   let host = {
     'mainnet': 'eth.blockscout.com',
     'optimism': 'optimism.blockscout.com',
@@ -40,14 +23,6 @@ export function getBlockscoutApiUrl(network: string): string {
   }
 
   return `https://${host}/api`;
-}
-
-// BLOCKSCOUT_KEY is only sent to the PRO API gateway
-export function getBlockscoutApiKeyParams(network: string): { apikey?: string } {
-  if (!useBlockscoutProApi(network)) {
-    return {};
-  }
-  return { apikey: process.env.BLOCKSCOUT_KEY };
 }
 
 export function getBlockscoutUrl(network: string): string {

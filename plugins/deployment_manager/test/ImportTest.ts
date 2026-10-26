@@ -101,19 +101,6 @@ export function mockImportSuccess(address: string) {
 }
 
 describe('Import', () => {
-  // BLOCKSCOUT_KEY from .env would route imports to api.blockscout.com instead of the mocked host
-  const blockscoutKey = process.env.BLOCKSCOUT_KEY;
-
-  before(() => {
-    delete process.env.BLOCKSCOUT_KEY;
-  });
-
-  after(() => {
-    if (blockscoutKey !== undefined) {
-      process.env.BLOCKSCOUT_KEY = blockscoutKey;
-    }
-  });
-
   beforeEach(async () => {
     nock.disableNetConnect();
   });
