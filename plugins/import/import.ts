@@ -197,7 +197,7 @@ async function pullContractCreationCodeFromBlockscoutV2(network: string, address
   const url = `${getBlockscoutApiUrl(network)}/v2/smart-contracts/${address}`;
 
   debug(`Attempting to pull Contract Creation code from ${url}`);
-  const result = await get(url, {});
+  const result = await get(url, getBlockscoutApiKeyParams(network));
 
   const contractCreationCode = result?.creation_bytecode;
   if (!contractCreationCode) {
