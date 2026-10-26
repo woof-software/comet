@@ -11,8 +11,8 @@ import { CometConfigurationIntermediate } from "contracts/migration/CometConfigu
 import { Configurator } from "contracts/Configurator.sol";
 import { ConfiguratorOptimism } from "contracts/marketupdates/ConfiguratorOptimism.sol";
 import { AssetList } from "contracts/AssetList.sol";
-import { AssetListFactory } from "contracts/AssetListFactory.sol";
-import { CometFactoryWithExtendedAssetList } from "contracts/CometFactoryWithExtendedAssetList.sol";
+import { AssetListFactory } from "contracts/test/assetList/AssetListFactory.sol";
+import { CometFactoryWithExtendedAssetList } from "contracts/test/CometFactoryWithExtendedAssetList.sol";
 import { CometWithExtendedAssetList } from "contracts/CometWithExtendedAssetList.sol";
 import { IAssetList } from "contracts/interfaces/assetList/IAssetList.sol";
 import { IAssetListStructs } from "contracts/interfaces/assetList/IAssetListStructs.sol";

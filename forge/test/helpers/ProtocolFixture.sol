@@ -4,10 +4,10 @@ pragma solidity ^0.8.15;
 import "forge-std/Test.sol";
 
 import { AssetList } from "@comet-contracts/AssetList.sol";
-import { AssetListFactory } from "@comet-contracts/AssetListFactory.sol";
+import { AssetListFactory } from "@comet-contracts/test/assetList/AssetListFactory.sol";
 import { CometConfiguration } from "@comet-contracts/CometConfiguration.sol";
 import { CometExt } from "@comet-contracts/CometExt.sol";
-import { CometFactoryWithExtendedAssetList } from "@comet-contracts/CometFactoryWithExtendedAssetList.sol";
+import { CometFactoryWithExtendedAssetList } from "@comet-contracts/test/CometFactoryWithExtendedAssetList.sol";
 import { CometInterface } from "@comet-contracts/CometInterface.sol";
 import { CometProxyAdmin, Deployable } from "@comet-contracts/CometProxyAdmin.sol";
 import { CometWithExtendedAssetList } from "@comet-contracts/CometWithExtendedAssetList.sol";

@@ -10,8 +10,8 @@ import { ConfiguratorIntermediate } from "contracts/migration/ConfiguratorInterm
 import { CometConfigurationIntermediate } from "contracts/migration/CometConfigurationIntermediate.sol";
 import { Configurator } from "contracts/Configurator.sol";
 import { AssetList } from "contracts/AssetList.sol";
-import { AssetListFactory } from "contracts/AssetListFactory.sol";
-import { CometFactoryWithExtendedAssetList } from "contracts/CometFactoryWithExtendedAssetList.sol";
+import { AssetListFactory } from "contracts/test/assetList/AssetListFactory.sol";
+import { CometFactoryWithExtendedAssetList } from "contracts/test/CometFactoryWithExtendedAssetList.sol";
 import { CometWithExtendedAssetList } from "contracts/CometWithExtendedAssetList.sol";
 import { FaucetToken } from "contracts/test/FaucetToken.sol";
 import { SimplePriceFeed } from "contracts/test/SimplePriceFeed.sol";
