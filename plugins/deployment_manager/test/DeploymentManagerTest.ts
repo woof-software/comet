@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import hre from 'hardhat';
 import nock from 'nock';
+import * as fs from 'fs/promises';
 
 import {
   Dog,
@@ -18,6 +19,7 @@ import { VerifyArgs } from '../Verify';
 import { getVerifyArgs, putVerifyArgs } from '../VerifyArgs';
 import { mockVerifySuccess } from './VerifyTest';
 import { objectFromMap } from '../Utils';
+import { getAliases } from '../Aliases';
 
 export interface TestContracts {
   finn: Dog;
@@ -101,6 +103,80 @@ describe('DeploymentManager', () => {
       // Check that we've cached the build file
       expect((await getBuildFile(deploymentManager.cache, 'test-network', spot.address)).contract).to.eql('Dog');
     });
+
+    // Run the same steps for alias reuse and forced redeployment.
+    for (const { name, force, expectedDeployments } of [
+      { name: 'reuses an existing alias without submitting another deployment', force: false, expectedDeployments: 1 },
+      { name: 'deploys a new contract and updates the alias when forced', force: true, expectedDeployments: 2 },
+    ]) {
+      it(name, async () => {
+        // Keep cache files separate from real deployments.
+        const dir = await fs.mkdtemp(tempDir());
+
+        try {
+          const manager = new DeploymentManager('test-network', 'test-deployment', hre, {
+            importRetries: 0,
+            writeCacheToDisk: true,
+            verificationStrategy: 'none',
+            baseDir: dir,
+          });
+          const signer = await manager.getSigner();
+          const sendTransaction = signer.sendTransaction;
+          let deploymentSubmissions = 0;
+
+          // Count real deployment submissions, they have no recipient address.
+          signer.sendTransaction = async (transaction) => {
+            if (await transaction.to == null) deploymentSubmissions++;
+            return sendTransaction.call(signer, transaction);
+          };
+
+          try {
+            // Create the first contract under the 'pet' alias.
+            const first: Dog = await manager.deploy(
+              'pet', 'test/Dog.sol', ['first', hre.ethers.constants.AddressZero, []]
+            );
+
+            // Check the first deployment and its alias in memory and on disk.
+            expect(deploymentSubmissions).to.equal(1);
+            expect(manager.counter).to.equal(1);
+            expect((await getAliases(manager.cache)).get('pet')).to.equal(first.address);
+            expect(JSON.parse(await fs.readFile(
+              manager.cache.getFilePath({ rel: 'aliases.json' }), 'utf8'
+            ))).to.eql({ pet: first.address });
+
+            // Reuse 'pet', or replace its address when force=true.
+            const second: Dog = await manager.deploy(
+              'pet', 'test/Dog.sol', ['second', hre.ethers.constants.AddressZero, []], force
+            );
+
+            // New constructor arguments apply only to a new contract.
+            if (force) {
+              expect(second.address).not.to.equal(first.address);
+            } else {
+              expect(second.address).to.equal(first.address);
+            }
+            expect(await first.name()).to.equal('first');
+            expect(await second.name()).to.equal(force ? 'second' : 'first');
+            expect(deploymentSubmissions).to.equal(expectedDeployments);
+            expect(manager.counter).to.equal(expectedDeployments);
+
+            // The contract lookup and both alias stores must agree.
+            const currentContract = await manager.contract('pet');
+            expect(currentContract?.address).to.equal(second.address);
+            expect((await getAliases(manager.cache)).get('pet')).to.equal(second.address);
+            expect(JSON.parse(await fs.readFile(
+              manager.cache.getFilePath({ rel: 'aliases.json' }), 'utf8'
+            ))).to.eql({ pet: second.address });
+          } finally {
+            // Restore the signer even if an assertion fails.
+            signer.sendTransaction = sendTransaction;
+          }
+        } finally {
+          // Remove the temporary cache files.
+          await fs.rm(dir, { recursive: true, force: true });
+        }
+      });
+    }
   });
 
   describe('_deployBuild', () => {
