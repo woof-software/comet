@@ -1,4 +1,4 @@
-import { ethers, exp, expect, makeProtocol, ONE } from './helpers';
+import { DEFAULT_MAX_SUPPORTED_UTILIZATION, ethers, exp, expect, makeProtocol, ONE } from './helpers';
 import {
   AssetListFactory__factory,
   CometExtAssetList__factory,
@@ -79,7 +79,7 @@ describe('constructor', function () {
       baseMinForRewards: exp(1, 6),
       baseBorrowMin: exp(1, 6),
       targetReserves: 0,
-      maxSupportedUtilization: exp(2, 18),
+      maxSupportedUtilization: DEFAULT_MAX_SUPPORTED_UTILIZATION,
       assetConfigs: [{
         asset: tokens['EVIL'].address,
         priceFeed: priceFeeds['EVIL'].address,

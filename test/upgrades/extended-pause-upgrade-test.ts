@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import { exp, setupFork, SnapshotRestorer, takeSnapshot, impersonateAccount, setBalance } from '../helpers';
+import { DEFAULT_MAX_SUPPORTED_UTILIZATION, setupFork, SnapshotRestorer, takeSnapshot, impersonateAccount, setBalance } from '../helpers';
 import {
   CometExtAssetList__factory,
   CometFactoryWithExtendedAssetList__factory,
@@ -154,7 +154,7 @@ describe('extended pause upgrade test', function () {
     // Set max supported utilization, which is not initialized in the existing configuration
     await configurator
       .connect(governor)
-      .setMaxSupportedUtilization(COMET_ADDRESS, exp(2, 18));
+      .setMaxSupportedUtilization(COMET_ADDRESS, DEFAULT_MAX_SUPPORTED_UTILIZATION);
 
     // Step 1: Set the new extension delegate in configurator
     await configurator

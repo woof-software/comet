@@ -1,4 +1,4 @@
-import { ethers, exp, expect, makeConfigurator, SnapshotRestorer, takeSnapshot, ZERO_ADDRESS } from './helpers';
+import { DEFAULT_MAX_SUPPORTED_UTILIZATION, ethers, exp, expect, makeConfigurator, SnapshotRestorer, takeSnapshot, ZERO_ADDRESS } from './helpers';
 import {
   CometExtAssetList,
   CometExtAssetList__factory,
@@ -1407,7 +1407,7 @@ describe('configurator', function () {
     });
 
     describe('setMaxSupportedUtilization', function() {
-      const OLD_MAX_SUPPORTED_UTILIZATION = exp(2, 18);
+      const OLD_MAX_SUPPORTED_UTILIZATION = DEFAULT_MAX_SUPPORTED_UTILIZATION;
       const NEW_MAX_SUPPORTED_UTILIZATION = exp(3, 18);
       let snapshot: SnapshotRestorer;
 
