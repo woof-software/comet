@@ -8,6 +8,10 @@ import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog } from './index';
 import { fetchBridgeReceiverProposals } from './bridgeReceiverProposals';
 import { DEPOSIT_FOR_BURN_SIGNATURE, simulateCCTPL2ToL1Transfer } from './cctpL2ToL1Transfer';
+import { simulateLayerZeroOFTDelivery } from './layerZeroOFTL2ToL1Transfer';
+
+// Same address on both Polygon and mainnet
+const LZ_ENDPOINT = '0x1a44076050125825900e736c501f859c50fE728c';
 
 type BridgeERC20Data = {
   syncData: string;
@@ -169,7 +173,7 @@ export default async function relayPolygonMessage(
         event => event.address === bridgeReceiver.address
       );
       const { args: { id, eta } } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
-      
+
       openBridgedProposals.push({ id, eta });
       if (tenderlyLogs) {
         const signer = await bridgeDeploymentManager.getSigner();
@@ -213,4 +217,20 @@ export async function simulateL2ToL1TokenBridging(
       }
     }
   }
+}
+
+export async function simulateL2ToL1OFTBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber: number,
+  tenderlyLogs?: any[]
+) {
+  await simulateLayerZeroOFTDelivery(
+    governanceDeploymentManager,
+    bridgeDeploymentManager,
+    l2StartingBlockNumber,
+    LZ_ENDPOINT,
+    LZ_ENDPOINT,
+    tenderlyLogs
+  );
 }
