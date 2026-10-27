@@ -11,16 +11,16 @@ const USDT_AMOUNT = exp(65_000, 6);
 const USDCE_MIN_OUT = USDCE_AMOUNT - exp(470, 6);
 const BRIDGE_AMOUNT = USDT_AMOUNT + USDCE_MIN_OUT;
 
-// https://developers.uniswap.org/docs/protocols/v3/deployments/polygon-deployments
+// https://docs.uniswap.org/contracts/v3/reference/deployments/polygon-deployments
 const SWAP_ROUTER_02 = '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45';
-// Uniswap V3 USDC.e/USDT pool 0xdac8a8e6...0255d
+// Uniswap V3 USDC.e/USDT pool 0xDaC8A8E6DBf8c690ec6815e0fF03491B2770255D
 const POOL_FEE = 100;
 
 const USDT0_OFT = '0x6BA10300f0DC58B7a1e4c0e41f5daBb7D7829e13';
 const MAINNET_EID = 30101;
 const MAINNET_USDT = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 
-// Fixed LayerZero fee, sent to the Polygon Timelock before execution; the endpoint refunds the excess over the real fee
+// Fixed LayerZero fee; the endpoint refunds the excess over the real fee
 const POL_FEE = utils.parseEther('10');
 
 let polygonUsdcCometBalanceBefore: BigNumber;
@@ -145,9 +145,9 @@ The proposal does not withdraw all reserves. Both markets still have open borrow
 
 The USDC.e is swapped into USDT through the Uniswap V3 USDC.e/USDT pool (0.01% fee) using SwapRouter02. USDT trades at a small discount to USDC.e on Polygon, so the swap is expected to return slightly more USDT than the USDC.e it spends.
 
-| Swap | Max loss |
+| Swap | Max loss % |
 | --- | --- |
-| ${formatAmount(USDCE_AMOUNT)} USDC.e -> USDT | 470.00 USDT (0.1%) |
+| ${formatAmount(USDCE_AMOUNT)} USDC.e -> USDT | 0.1% |
 
 If the swap would return less than the minimum, the whole proposal execution reverts. The withdrawn USDT plus the swap minimum is bridged; any swap output above the minimum stays on the Polygon Timelock and can be withdrawn later.
 
@@ -159,7 +159,7 @@ The proposal action sends a message through Polygon's FxRoot to the Polygon Brid
 2. Withdraw 65,000 USDT from the Polygon cUSDTv3 reserves.
 3. Approve SwapRouter02 to spend 470,000 USDC.e.
 4. Call \`exactInputSingle\` on SwapRouter02 to swap 470,000 USDC.e into USDT, delivered to the Polygon Timelock.
-5. Call \`send\` on the USDT0 OFT to send ${formatAmount(BRIDGE_AMOUNT)} USDT to the Mainnet Timelock. USDT on Polygon is USDT0: it is burned on Polygon and released on Mainnet by the USDT0 OFT adapter, so no approval is needed. The LayerZero messaging fee is paid in native POL from the Polygon Timelock's balance: a fixed ${formatAmount(POL_FEE, 18)} POL is sent with the call, well above the current fee, so the call still succeeds if the fee rises before execution. The LayerZero endpoint refunds any excess over the actual fee to the Polygon Timelock.
+5. Call \`send\` on the USDT0 OFT to send ${formatAmount(BRIDGE_AMOUNT)} USDT to the Mainnet Timelock. USDT on Polygon is USDT0: it is burned on Polygon and released on Mainnet by the USDT0 OFT adapter, so no approval is needed. The LayerZero messaging fee is paid in native POL from the Polygon Timelock's balance: a fixed ${formatAmount(POL_FEE, 18)} POL, well above the current fee, so the call still succeeds if the fee rises before execution. The LayerZero endpoint refunds any excess over the actual fee to the Polygon Timelock.
 
 Once LayerZero verifies the message, its executor delivers it on Mainnet and the USDT is released to the Mainnet Timelock.
 `;
