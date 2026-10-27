@@ -222,6 +222,102 @@ describe('DeploymentManager', () => {
       // VerifyArgs cache should be cleared upon successful verification
       expect(objectFromMap(await getVerifyArgs(deploymentManager.cache))).to.eql({});
     });
+
+    describe('queue integrity', () => {
+      let dir: string;
+      let manager: DeploymentManager;
+      const makeArgs = (address: string) => ({
+        via: 'artifacts' as const,
+        address,
+        constructorArguments: tokenArgs,
+        contract: 'contracts/test/FaucetToken.sol:FaucetToken',
+      });
+      const successful = makeArgs('0x1111111111111111111111111111111111111111');
+      const failed = makeArgs('0x2222222222222222222222222222222222222222');
+      const skipped = makeArgs('0x3333333333333333333333333333333333333333');
+
+      beforeEach(async () => {
+        dir = await fs.mkdtemp(tempDir());
+        manager = new DeploymentManager('test-network', 'test-deployment', hre, {
+          writeCacheToDisk: true,
+          baseDir: dir,
+        });
+      });
+
+      afterEach(async () => {
+        await fs.rm(dir, { recursive: true, force: true });
+      });
+
+      async function expectQueue(expected: Record<string, VerifyArgs>) {
+        // Check memory and the actual persisted queue independently.
+        expect(objectFromMap(await getVerifyArgs(manager.cache))).to.eql(expected);
+        expect(JSON.parse(await fs.readFile(
+          manager.cache.getFilePath({ rel: ['verify', 'args.json'] }), 'utf8'
+        ))).to.eql(expected);
+      }
+
+      it('keeps failed and filtered entries and retries only the remaining queue', async () => {
+        // Put a failure first to check that returning false does not stop the queue.
+        for (const args of [failed, successful, skipped]) {
+          await putVerifyArgs(manager.cache, args.address, args);
+        }
+        const verified: VerifyArgs[] = [];
+        manager.verifyContract = async (args) => {
+          verified.push(args);
+          return args.via === 'artifacts' && args.address === successful.address;
+        };
+
+        const filtered: Array<[string, VerifyArgs]> = [];
+        await manager.verifyContracts(async (address, args) => {
+          filtered.push([address, args]);
+          return address !== skipped.address;
+        });
+
+        expect(filtered).to.eql([
+          [failed.address, failed],
+          [successful.address, successful],
+          [skipped.address, skipped],
+        ]);
+        expect(verified).to.eql([failed, successful]);
+        await expectQueue({ [failed.address]: failed, [skipped.address]: skipped });
+
+        // On the next run, the successful entry must not be verified again.
+        const retried: VerifyArgs[] = [];
+        manager.verifyContract = async (args) => {
+          retried.push(args);
+          return true;
+        };
+        await manager.verifyContracts();
+
+        expect(retried).to.eql([failed, skipped]);
+        await expectQueue({});
+      });
+
+      it('propagates verification errors and preserves failed and unprocessed entries', async () => {
+        for (const args of [successful, failed, skipped]) {
+          await putVerifyArgs(manager.cache, args.address, args);
+        }
+        const failure = new Error('Verification unavailable');
+        const verified: VerifyArgs[] = [];
+        manager.verifyContract = async (args) => {
+          verified.push(args);
+          if (args.via === 'artifacts' && args.address === failed.address) throw failure;
+          return true;
+        };
+
+        // A thrown error stops processing and must reach the caller unchanged.
+        let caught: unknown;
+        try {
+          await manager.verifyContracts();
+        } catch (error) {
+          caught = error;
+        }
+
+        expect(caught).to.equal(failure);
+        expect(verified).to.eql([successful, failed]);
+        await expectQueue({ [failed.address]: failed, [skipped.address]: skipped });
+      });
+    });
   });
 
   describe('putAlias', () => {
