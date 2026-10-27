@@ -257,8 +257,10 @@ describe('isLiquidatable', function () {
       // Calculate weighted collateral value
       const weightedCollateral = mulFactor(collateralUSD, (await comet.getAssetInfo(0)).liquidateCollateralFactor);
 
-      // Check if weighted collateral value exceeds debt value
-      expect(weightedCollateral).to.be.greaterThan(debtUSD);
+      // liquidity = debtUSD (negative) + weightedCollateral (positive)
+      // not liquidatable when liquidity >= 0, meaning weighted collateral covers the debt
+      const liquidity = debtUSD + weightedCollateral;
+      expect(liquidity).to.be.gte(0n);
     });
 
     it('user should not be liquidatable', async () => {
@@ -344,7 +346,6 @@ describe('isLiquidatable', function () {
   // position eventually makes him liquidatable. We compute the approximate time
   // when liquidity becomes zero using the same index/interest model as the contract.
   describe('becomes liquidatable over time due to interest on borrow position', function () {
-    const FACTOR_SCALE = factorScale;
     const SAFETY_NUMERATOR = 11n;   // 10% extra time beyond theoretical boundary
     const SAFETY_DENOMINATOR = 10n;
 
@@ -406,7 +407,7 @@ describe('isLiquidatable', function () {
       //
       // Rearranged in integer arithmetic:
       //   t = (weightedCollateral - D0) * FACTOR_SCALE / (D0 * borrowRate)
-      const numerator = (weightedCollateral - debtUSD0) * FACTOR_SCALE;
+      const numerator = (weightedCollateral - debtUSD0) * factorScale;
       const denominator = debtUSD0 * borrowRate;
 
       // Ceil division gives the smallest t where:

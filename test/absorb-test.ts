@@ -842,6 +842,29 @@ describe('absorb', function () {
         await expect(comet.connect(absorber).absorb(absorber.address, [alice.address])).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
       });
     });
+
+    describe('total borrows underflow', function () {
+      // Fresh protocol so totalBorrowBase is 0 while the underwater user has a negative principal
+      let underflowComet: CometHarnessInterfaceExtendedAssetList;
+      let underflowAbsorber: SignerWithAddress;
+      let underwater: SignerWithAddress;
+
+      before(async () => {
+        const underflowProtocol = await makeProtocol();
+        underflowComet = underflowProtocol.cometWithExtendedAssetList;
+        [underflowAbsorber, underwater] = underflowProtocol.users;
+
+        await underflowComet.setBasePrincipal(underwater.address, -100);
+      });
+
+      it('total borrow base is zero', async () => {
+        expect((await underflowComet.totalsBasic()).totalBorrowBase).to.be.equal(0);
+      });
+
+      it('reverts if total borrows underflows', async () => {
+        await expect(underflowComet.absorb(underflowAbsorber.address, [underwater.address])).to.be.revertedWithPanic('0x11');
+      });
+    });
   });
 
   describe('edge cases', function () {
@@ -1073,7 +1096,6 @@ describe('absorb', function () {
     });
 
     describe('absorb with 24 collaterals', function () {
-      const MAX_ASSETS = 24;
       const BASE_TOKEN_LEND_AMOUNT: bigint = exp(250, baseTokenDecimals);
       const SUPPLY_COLLATERAL_AMOUNT: bigint = exp(1, 18);
       const BORROW_AMOUNT: bigint = exp(190, baseTokenDecimals);

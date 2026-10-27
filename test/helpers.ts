@@ -48,6 +48,7 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
 
 // Math helpers
+import { factorScale } from './helpers/math';
 export * from './helpers/math';
 export * from './helpers/network-helpers';
 
@@ -314,7 +315,6 @@ export function defaultAssets(overrides = {}, perAssetOverrides = {}) {
 export const oneDay = 24 * 60 * 60;
 export const oneMonth = 30 * oneDay;
 export const factorDecimals = 18;
-export const factorScale = factor(1);
 export const ONE = factorScale;
 export const ZERO = factor(0);
 export const ZERO_ADDRESS = ethers.constants.AddressZero;

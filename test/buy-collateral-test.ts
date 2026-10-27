@@ -419,6 +419,8 @@ describe('buyCollateral', function () {
     let buyTx: ContractTransaction;
 
     before(async () => {
+      await snapshot.restore();
+
       // Set targetReserves to 0 so negative reserves allow buying
       await configuratorAsProxy.connect(governor).setTargetReserves(comet.address, 0);
       await proxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, comet.address);

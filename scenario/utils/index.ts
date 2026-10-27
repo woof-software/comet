@@ -24,7 +24,7 @@ import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
 import { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
-import { getOrCreateVirtualTestnet } from './tenderlyVnet';
+import { getOrCreateVirtualTestnet, getTenderlyCreds } from './tenderlyVnet';
 import { AssetList, BaseBridgeReceiver, CometInterface, CometProxyAdmin, Configurator, FaucetToken } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
@@ -621,7 +621,7 @@ export async function updateCCIPStats(
     },
     {
       network: 'ronin',
-      commitStore: '0x28c66d9693b2634b2f3b170f6d9584eec2f72ff0',
+      commitStore: '0xd154a8ce39b93098f3C55FFD94418deF75B33627',
       priceRegistry: '0xefCEa3CFA330adcDdeCe99219C57fd45cd166ac1'
     }
   ];
@@ -1133,12 +1133,9 @@ async function simulateBundle(
 ): Promise<any> {
   const rollingStateChanges = {};
   const results = [];
+  const { account: username, project, accessKey } = getTenderlyCreds();
 
   for (const sim of simulations) {
-    const project = 'comet';
-    const username = process.env.TENDERLY_USERNAME || '';
-    const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
-
     // Merge rolling state changes with simulation's own state_objects
     const stateObjects = sim.state_objects
       ? { ...rollingStateChanges, ...sim.state_objects }
@@ -1194,9 +1191,7 @@ async function simulateBundle(
 }
 
 async function shareSimulation(dm: DeploymentManager, simulationId: string) {
-  const project = 'comet';
-  const username = process.env.TENDERLY_USERNAME || '';
-  const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
+  const { account: username, project, accessKey } = getTenderlyCreds();
 
   return axios.post(
     `https://api.tenderly.co/api/v1/account/${username}/project/${project}/simulations/${simulationId}/share`,
@@ -1261,9 +1256,6 @@ export async function tenderlyVnetExecute(
   const governanceVnet = await getOrCreateVirtualTestnet(governanceDm);
   console.log(`Virtual TestNet ready for ${governanceDm.network}`);
   console.log(`  Public RPC: ${governanceVnet.publicRpcUrl}`);
-  if (governanceVnet.dashboardUrl) {
-    console.log(`  Dashboard:  ${governanceVnet.dashboardUrl}`);
-  }
 
   const governanceVnetEnv = await vnetHreForBase(governanceDm.network, governanceVnet.adminRpcUrl);
   const governanceVnetDm = new DeploymentManager(governanceDm.network, governanceDm.deployment, governanceVnetEnv, {
@@ -1326,9 +1318,6 @@ export async function tenderlyVnetExecute(
 
   console.log(`\n >>> PROPOSAL EXECUTED ${proposalId.toString()} \n`);
   console.log(`Public RPC: ${governanceVnet.publicRpcUrl}`);
-  if (governanceVnet.dashboardUrl) {
-    console.log(`Dashboard:  ${governanceVnet.dashboardUrl}`);
-  }
 
   // Collect every L2 this proposal touches: marketDm plus whatever the migration registered via
   // addBridgedDeploymentManager() (multichain proposals)
@@ -1352,9 +1341,6 @@ export async function tenderlyVnetExecute(
       const l2Vnet = await getOrCreateVirtualTestnet(l2Dm);
       console.log(`\nVirtual TestNet ready for ${l2Dm.network}`);
       console.log(`  Public RPC: ${l2Vnet.publicRpcUrl}`);
-      if (l2Vnet.dashboardUrl) {
-        console.log(`  Dashboard:  ${l2Vnet.dashboardUrl}`);
-      }
 
       const l2VnetEnv = await vnetHreForBase(l2Dm.network, l2Vnet.adminRpcUrl);
       const l2VnetDm = new DeploymentManager(l2Dm.network, l2Dm.deployment, l2VnetEnv, {
@@ -1368,9 +1354,6 @@ export async function tenderlyVnetExecute(
 
       console.log(`\n >>> PROPOSAL RELAYED to ${l2Dm.network} \n`);
       console.log(`Public RPC: ${l2Vnet.publicRpcUrl}`);
-      if (l2Vnet.dashboardUrl) {
-        console.log(`Dashboard:  ${l2Vnet.dashboardUrl}`);
-      }
     } catch (e) {
       console.log(`\n >>> FAILED to relay to ${l2Dm.network}: ${e.message} \n`);
     }
@@ -1449,11 +1432,16 @@ function loadCachedBytecodes() {
 export async function executeOpenProposal(
   dm: DeploymentManager,
   { id, startBlock, endBlock }: OpenProposal
-) {
+): Promise<boolean> {
   const governor = await dm.getContractOrThrow('governor');
   const blockNow = await dm.hre.ethers.provider.getBlockNumber();
+  // Late quorum can extend voting past the endBlock recorded at creation; prefer the live deadline.
+  // GovernorBravo (e.g. the development clone) has no proposalDeadline, so fall back to endBlock.
+  const deadline = await governor.proposalDeadline(id)
+    .then((d) => d.toNumber())
+    .catch(() => endBlock.toNumber());
   const blocksUntilEnd =
-    endBlock.toNumber() - Math.max(startBlock.toNumber(), blockNow) + 1;
+    deadline - Math.max(startBlock.toNumber(), blockNow) + 1;
 
   if (blocksUntilEnd > 0) {
     await mineBlocks(dm, blocksUntilEnd);
@@ -1465,6 +1453,7 @@ export async function executeOpenProposal(
   }
 
   // Execute proposal (maybe, w/ gas limit so we see if exec reverts, not a gas estimation error)
+  let executed = false;
   if ((await governor.state(id)) == ProposalState.Queued) {
     const block = await dm.hre.ethers.provider.getBlock('latest');
     const eta = await (async () => {
@@ -1491,12 +1480,15 @@ export async function executeOpenProposal(
     if (receipt.gasUsed.toNumber() >= 16_777_215) {
       throw new Error('Execution may have failed due to hitting gas limit');
     }
+    executed = true;
   }
 
   await redeployRenzoOracle(dm);
 
   // mine a block
   await dm.hre.ethers.provider.send('evm_mine', []);
+
+  return executed;
 }
 
 async function testnetPropose(
@@ -1847,7 +1839,13 @@ export async function executeOpenProposalAndRelay(
 ) {
   const startingBlockNumber =
     await governanceDeploymentManager.hre.ethers.provider.getBlockNumber();
-  await executeOpenProposal(governanceDeploymentManager, openProposal);
+  const executed = await executeOpenProposal(governanceDeploymentManager, openProposal);
+  if (!executed) {
+    const governor = await governanceDeploymentManager.getContractOrThrow('governor');
+    const state = await governor.state(openProposal.id);
+    console.log(`Proposal ${openProposal.id} not executed on ${governanceDeploymentManager.network} (state ${ProposalState[state]}), skipping relay`);
+    return;
+  }
 
   console.log(`Executed proposal ${openProposal.id} on ${governanceDeploymentManager.network}, checking if relay to ${bridgeDeploymentManager.network} is needed...`);
 
