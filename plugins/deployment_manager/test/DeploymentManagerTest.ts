@@ -88,6 +88,37 @@ describe('DeploymentManager', () => {
     nock.disableNetConnect();
   });
 
+  describe('managed signers', () => {
+    let manager: DeploymentManager;
+
+    beforeEach(() => {
+      manager = new DeploymentManager('test-network', 'test-deployment', hre, { baseDir: tempDir() });
+    });
+
+    it('selects the first managed signer by default and reuses the signer list', async () => {
+      const signers = await manager.getSigners();
+      expect(await manager.getSigner()).to.equal(signers[0]);
+      expect(await manager.getSigners()).to.equal(signers);
+    });
+
+    it('finds an existing signer regardless of address case', async () => {
+      const signers = await manager.getSigners();
+      const address = signers[0].address;
+      expect(await manager.getSigner('0x' + address.slice(2).toUpperCase())).to.equal(signers[0]);
+      expect(await manager.getSigner(address.toLowerCase())).to.equal(signers[0]);
+      expect(await manager.getSigners()).to.have.length(signers.length);
+    });
+
+    it('creates a managed signer for a new address and reuses it on the next lookup', async () => {
+      const initialCount = (await manager.getSigners()).length;
+      const address = '0x00000000000000000000000000000000000000a1';
+      const created = await manager.getSigner(address);
+      expect(created.address.toLowerCase()).to.equal(address);
+      expect(await manager.getSigner('0x' + address.slice(2).toUpperCase())).to.equal(created);
+      expect(await manager.getSigners()).to.have.length(initialCount + 1);
+    });
+  });
+
   describe('deploy', () => {
     it('should deploy succesfully', async () => {
       let deploymentManager = new DeploymentManager('test-network', 'test-deployment', hre, {
