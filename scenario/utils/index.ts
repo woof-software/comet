@@ -2010,6 +2010,30 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
   }
 }
 
+/**
+ * Check if Comet rejects zero-amount supply, transfer and withdraw with ZeroAmount
+ * @param ctx The Comet context
+ * @returns true if a zero base withdraw from an empty account reverts with ZeroAmount, false otherwise
+ */
+export async function rejectsZeroAmounts(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const ethers = ctx.world.deploymentManager.hre.ethers;
+
+  // Local ABI, so the custom error is decoded even if the deployment's ABI predates it
+  const cometWithZeroAmount = new ethers.Contract(
+    comet.address,
+    ['function withdraw(address asset, uint amount)', 'error ZeroAmount()'],
+    ethers.provider
+  );
+
+  try {
+    await cometWithZeroAmount.callStatic.withdraw(await comet.baseToken(), 0, { from: ethers.Wallet.createRandom().address });
+    return false;
+  } catch (e) {
+    return e.errorName === 'ZeroAmount';
+  }
+}
+
 // returns indices of collaterals that have a supply cap and all collateral factors above zero.
 // pass `amount` to get only the first N of them, omit it to get all.
 export async function getUsableCollateralIndices(ctx: CometContext, amount?: number): Promise<number[]> {
