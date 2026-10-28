@@ -8,7 +8,7 @@ contract CometExt is CometExtInterface {
     /** Public constants **/
 
     /// @notice The major version of this contract
-    string public override constant version = "0";
+    string public override constant version = "1.2.2";
 
     /** Internal constants **/
 

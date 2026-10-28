@@ -1,4 +1,4 @@
-import { ethers, expect, exp, makeProtocol, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS } from './helpers';
+import { ethers, expect, exp, makeProtocol, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS, setTotalsBasic } from './helpers';
 import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometExtAssetList, CometHarnessInterfaceExtendedAssetList } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
@@ -161,6 +161,71 @@ describe('supply', function () {
 
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
         await expect(comet.connect(alice).supply(unsupportedToken.address, 1)).to.be.revertedWithCustomError(comet, 'BadAsset');
+      });
+
+      it('reverts on zero amount', async () => {
+        await expect(comet.connect(alice).supply(baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied to another account', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied from an account', async () => {
+        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on max amount when there is no debt to repay', async () => {
+        await baseToken.connect(alice).approve(comet.address, ethers.constants.MaxUint256);
+        await expect(comet.connect(alice).supply(baseToken.address, ethers.constants.MaxUint256)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+        await baseToken.connect(alice).approve(comet.address, 0);
+      });
+
+      it('reverts on max amount supplied to an account with no debt', async () => {
+        await baseToken.connect(alice).approve(comet.address, ethers.constants.MaxUint256);
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, ethers.constants.MaxUint256)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+        await baseToken.connect(alice).approve(comet.address, 0);
+      });
+    });
+
+    describe('supply base asset: minimal amount to a supplier with a non-exact principal conversion', function () {
+      const BASE_SUPPLY_INDEX = 1_000_000_123_456_789n;
+      const BOB_SUPPLY_AMOUNT = 99_999n;
+
+      let restorer: SnapshotRestorer;
+      let bobPrincipalBefore: bigint;
+      let baseSupplyIndex: bigint;
+
+      before(async () => {
+        restorer = await takeSnapshot();
+
+        await setTotalsBasic(comet, { baseSupplyIndex: BASE_SUPPLY_INDEX });
+        await baseToken.connect(bob).approve(comet.address, BOB_SUPPLY_AMOUNT);
+        await comet.connect(bob).supply(baseToken.address, BOB_SUPPLY_AMOUNT);
+
+        bobPrincipalBefore = (await comet.userBasic(bob.address)).principal.toBigInt();
+        baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+        await baseToken.connect(alice).approve(comet.address, 1);
+      });
+
+      after(async () => {
+        await restorer.restore();
+      });
+
+      it('sanity: principal to balance conversion is not exact', async () => {
+        expect(bobPrincipalBefore * baseSupplyIndex % exp(1, 15)).to.not.equal(0n);
+      });
+
+      it('reverts on zero amount supplied to the supplier', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('supplying 1 wei to the supplier succeeds', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, 1)).to.not.be.reverted;
+      });
+
+      it('supplier principal does not decrease', async () => {
+        expect((await comet.userBasic(bob.address)).principal).to.be.gte(bobPrincipalBefore);
       });
     });
 
@@ -1001,6 +1066,18 @@ describe('supply', function () {
           'SupplyCapExceeded'
         );
         await collateral.connect(alice).approve(comet.address, 0);
+      });
+
+      it('reverts on zero amount', async () => {
+        await expect(comet.connect(alice).supply(collateral.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied to another account', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, collateral.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied from an account', async () => {
+        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, collateral.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
       });
     });
 

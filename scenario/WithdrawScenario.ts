@@ -14,7 +14,9 @@ import {
   getMinimumBorrowAmounts,
   presentValueSupply,
   expectBase,
-  deployUnsupportedAsset
+  deployUnsupportedAsset,
+  rejectsZeroAmounts,
+  UINT256_MAX
 } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';
@@ -26,6 +28,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
     {
       filter: async (ctx: CometContext) =>
         (await isValidAssetIndex(ctx, offset)) &&
+        getConfigForScenario(ctx, offset).withdrawCollateral > 0 &&
         (await isTriviallySourceable(ctx, offset, getConfigForScenario(ctx, offset).withdrawCollateral)),
       cometBalances: (ctx: CometContext) => ({
         albert: { [`$asset${offset}`]: getConfigForScenario(ctx, offset).withdrawCollateral }
@@ -61,6 +64,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
     {
       filter: async (ctx: CometContext) =>
         (await isValidAssetIndex(ctx, offset)) &&
+        getConfigForScenario(ctx, offset).withdrawCollateral > 0 &&
         (await isTriviallySourceable(ctx, offset, getConfigForScenario(ctx, offset).withdrawCollateral)),
       cometBalances: (ctx: CometContext) => ({
         albert: { [`$asset${offset}`]: getConfigForScenario(ctx, offset).withdrawCollateral }
@@ -104,6 +108,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
     {
       filter: async (ctx: CometContext) =>
         (await isValidAssetIndex(ctx, offset)) &&
+        getConfigForScenario(ctx, offset).withdrawCollateral > 0 &&
         (await isTriviallySourceable(ctx, offset, getConfigForScenario(ctx, offset).withdrawCollateral)),
       cometBalances: (ctx: CometContext) => ({
         albert: { [`$asset${offset}`]: getConfigForScenario(ctx, offset).withdrawCollateral }
@@ -1604,5 +1609,84 @@ scenario(
       // should change token balance of user
       expect(await collateralAsset.balanceOf(albert.address)).to.equal(userAssetBalanceBefore + amountToWithdraw);
     }
+  }
+);
+
+scenario(
+  'Comet#withdraw > reverts on zero base amount',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert } = actors;
+    const baseToken = await comet.baseToken();
+
+    await expect(
+      comet.connect(albert.signer).withdraw(baseToken, 0)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+  }
+);
+
+scenario(
+  'Comet#withdrawTo > reverts on zero base amount',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert, betty } = actors;
+    const baseToken = await comet.baseToken();
+
+    await expect(
+      comet.connect(albert.signer).withdrawTo(betty.address, baseToken, 0)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+  }
+);
+
+scenario(
+  'Comet#withdrawFrom > reverts on zero base amount',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert, betty } = actors;
+    const baseToken = await comet.baseToken();
+
+    await albert.allow(betty, true);
+
+    await expect(
+      comet.connect(betty.signer).withdrawFrom(albert.address, betty.address, baseToken, 0)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+  }
+);
+
+scenario(
+  'Comet#withdraw > reverts on max base amount without balance',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert } = actors;
+    const baseToken = await comet.baseToken();
+
+    expect(await comet.balanceOf(albert.address)).to.equal(0n);
+
+    await expect(
+      comet.connect(albert.signer).withdraw(baseToken, UINT256_MAX)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+  }
+);
+
+scenario(
+  'Comet#withdraw > reverts on zero collateral amount',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert } = actors;
+    const { asset } = await comet.getAssetInfo(0);
+
+    await expect(
+      comet.connect(albert.signer).withdraw(asset, 0)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
   }
 );
