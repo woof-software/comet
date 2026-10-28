@@ -222,11 +222,34 @@ function translateVnetRpcCall(
   }
 }
 
+/*
+Virtual TestNets enforce EIP-3607 and reject txs whose sender has code (e.g. Polygon's StateReceiver
+at 0x1001, impersonated to relay FxChild messages). Clear the sender's code for the tx, then restore it.
+*/
+async function sendFromContractSender(
+  rawRequest: (args: { method: string, params?: any[] }) => Promise<any>,
+  params: any[]
+): Promise<any> {
+  const sender = params[0]?.from;
+  const senderCode = sender ? await rawRequest({ method: 'eth_getCode', params: [sender, 'latest'] }) : '0x';
+  if (!senderCode || senderCode === '0x') {
+    return rawRequest({ method: 'eth_sendTransaction', params });
+  }
+
+  await rawRequest({ method: 'tenderly_setCode', params: [sender, '0x'] });
+  try {
+    return await rawRequest({ method: 'eth_sendTransaction', params });
+  } finally {
+    await rawRequest({ method: 'tenderly_setCode', params: [sender, senderCode] });
+  }
+}
+
 function patchProviderForVnet(provider: EthereumProvider): void {
   const originalRequest = provider.request.bind(provider);
   provider.request = (async (args: { method: string, params?: any[] }) => {
     const translated = translateVnetRpcCall(args.method, args.params as any[]);
     if (!translated) return null;
+    if (translated.method === 'eth_sendTransaction') return sendFromContractSender(originalRequest, translated.params);
     return originalRequest(translated);
   }) as typeof provider.request;
 
@@ -236,6 +259,7 @@ function patchProviderForVnet(provider: EthereumProvider): void {
     sendable.send = async (method: string, params?: any[]) => {
       const translated = translateVnetRpcCall(method, params);
       if (!translated) return null;
+      if (translated.method === 'eth_sendTransaction') return sendFromContractSender(originalRequest, translated.params);
       return originalSend(translated.method, translated.params);
     };
   }
