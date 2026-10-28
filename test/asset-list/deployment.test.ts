@@ -218,7 +218,7 @@ describe('asset list deployment: initialize', function () {
 
     it('stores no asset config in the implementation', async () => {
       await expect(assetListImplementation.getAssetInfoByAddress(configs[0].asset))
-        .to.be.revertedWithCustomError(assetList, 'BadAsset');
+        .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     });
 
     ASSET_DECIMALS.forEach((decimals, i) => {

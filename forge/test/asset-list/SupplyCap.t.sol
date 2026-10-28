@@ -4,8 +4,8 @@ pragma solidity ^0.8.15;
 import { AssetList } from "@comet-contracts/AssetList.sol";
 import { CometConfiguration } from "@comet-contracts/CometConfiguration.sol";
 import { CometCore } from "@comet-contracts/CometCore.sol";
-import { CometMainInterface } from "@comet-contracts/CometMainInterface.sol";
 import { IERC20NonStandard } from "@comet-contracts/interfaces/IERC20NonStandard.sol";
+import { IAssetListErrors } from "@comet-contracts/interfaces/assetList/IAssetListErrors.sol";
 
 import { ProtocolFixture } from "../helpers/ProtocolFixture.sol";
 
@@ -126,7 +126,7 @@ contract SupplyCapTest is ProtocolFixture {
             assertEq(assetInfo.supplyCap, supplyCap, "supply cap does not read back as configured");
         }
 
-        vm.expectRevert(CometMainInterface.BadAsset.selector);
+        vm.expectRevert(IAssetListErrors.AssetIndexOutOfRange.selector);
         assetList.getAssetInfo(badIndex);
     }
 

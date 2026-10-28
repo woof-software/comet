@@ -585,9 +585,9 @@ scenario(
 
     // Neither the list nor the Comet knows the asset yet
     expect(await assetList.numAssets()).to.equal(numAssets);
-    await expect(assetList.getAssetInfoByAddress(asset)).to.be.revertedWithCustomError(assetList, 'BadAsset');
+    await expect(assetList.getAssetInfoByAddress(asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     expect(await comet.numAssets()).to.equal(numAssets);
-    await expect(comet.getAssetInfoByAddress(asset)).to.be.revertedWithCustomError(assetList, 'BadAsset');
+    await expect(comet.getAssetInfoByAddress(asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
 
     // The hash of the immutable configs changed, so deployAssetList would build a new implementation
     expect((await configurator.callStatic.deployAssetList(comet.address)).newAssetListImpl).to.not.equal(constants.AddressZero);

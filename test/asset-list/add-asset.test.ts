@@ -112,7 +112,7 @@ describe('asset list add asset: full flow through the Configurator', function ()
     });
 
     it('the list does not know the asset', async () => {
-      await expect(assetList.getAssetInfoByAddress(asset)).to.be.revertedWithCustomError(assetList, 'BadAsset');
+      await expect(assetList.getAssetInfoByAddress(asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     });
 
     it('the Comet still has the same number of assets', async () => {
@@ -120,7 +120,7 @@ describe('asset list add asset: full flow through the Configurator', function ()
     });
 
     it('the Comet does not know the asset', async () => {
-      await expect(comet.getAssetInfoByAddress(asset)).to.be.revertedWithCustomError(assetList, 'BadAsset');
+      await expect(comet.getAssetInfoByAddress(asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     });
 
     it('deployAssetList returns a non-zero address, as the hash of the configs changed', async () => {

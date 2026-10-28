@@ -205,7 +205,7 @@ A factor change stops at storage. An immutable change upgrades the list behind t
 
 A new asset needs `setAssetConfigToAssetList` after the upgrade, because `initialize` ran only once. Until that call, the asset is in the immutables but has no storage config. It reads with zero factors and a zero supply cap, so it cannot be supplied.
 
-A new implementation's storage stays attached by asset address, so a different order of assets in the immutables does not mix up their factors.
+A new implementation's storage stays attached by asset address. `getAssetInfoByAddress` finds an asset without scanning: its position in the registered assets is its index in the immutables. To keep that true, `setAssetConfig` reverts with `AssetIndexMismatch` unless the asset's position matches its index, so new assets are registered in the order they were added.
 
 ---
 

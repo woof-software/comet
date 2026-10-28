@@ -5,6 +5,7 @@ import { matchesDeployment } from './utils';
 import { exp } from '../test/helpers';
 import { ethers } from 'hardhat';
 import { getConfigForScenario } from './utils/scenarioHelper';
+import { expectUnknownAssetRevert } from './assetList/shared';
 import { log } from 'console';
 
 async function getSupplyCapExceedingAmount(ctx: CometContext, assetIndex: number): Promise<number> {
@@ -906,9 +907,10 @@ scenario('Comet#supply > reverts on unregistered asset', {}, async ({ comet, act
 
   await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
-  await expect(
-    comet.connect(albert.signer).supply(unregisteredAsset.address, collateralAmount)
-  ).to.be.revertedWithCustomError(comet, 'BadAsset');
+  await expectUnknownAssetRevert(
+    context,
+    () => comet.connect(albert.signer).supply(unregisteredAsset.address, collateralAmount)
+  );
 });
 
 scenario('Comet#supplyTo > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
@@ -922,9 +924,10 @@ scenario('Comet#supplyTo > reverts on unregistered asset', {}, async ({ comet, a
 
   await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
-  await expect(
-    comet.connect(albert.signer).supplyTo(betty.address, unregisteredAsset.address, collateralAmount)
-  ).to.be.revertedWithCustomError(comet, 'BadAsset');
+  await expectUnknownAssetRevert(
+    context,
+    () => comet.connect(albert.signer).supplyTo(betty.address, unregisteredAsset.address, collateralAmount)
+  );
 });
 
 scenario('Comet#supplyFrom > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
@@ -938,9 +941,10 @@ scenario('Comet#supplyFrom > reverts on unregistered asset', {}, async ({ comet,
 
   await unregisteredAsset.connect(albert.signer).approve(comet.address, collateralAmount);
 
-  await expect(
-    comet.connect(albert.signer).supplyFrom(albert.address, betty.address, unregisteredAsset.address, collateralAmount)
-  ).to.be.revertedWithCustomError(comet, 'BadAsset');
+  await expectUnknownAssetRevert(
+    context,
+    () => comet.connect(albert.signer).supplyFrom(albert.address, betty.address, unregisteredAsset.address, collateralAmount)
+  );
 });
 
 scenario(

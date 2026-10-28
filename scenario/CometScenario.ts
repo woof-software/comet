@@ -5,7 +5,7 @@ import { expectRevertCustom, perSecond, servicePatch2 } from './utils';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
 import { FaucetToken } from '../build/types';
 import { getConfigForScenario } from './utils/scenarioHelper';
-import { getToken } from './assetList/shared';
+import { expectUnknownAssetRevert, getToken } from './assetList/shared';
 
 const MIN_OFFSET_FOR_RESERVED = 16; // _reserved covers offsets 16–23
 const REQUIRED_NUM_ASSETS = MIN_OFFSET_FOR_RESERVED + 1; // index 16 has offset 16
@@ -110,10 +110,8 @@ scenario(
 scenario(
   'Comet#getAssetInfoByAddress > reverts if asset does not exist',
   {},
-  async ({ comet }) => {
-    await expect(
-      comet.getAssetInfoByAddress(ethers.Wallet.createRandom().address),
-    ).to.be.revertedWithCustomError(comet, 'BadAsset');
+  async ({ comet }, context) => {
+    await expectUnknownAssetRevert(context, () => comet.getAssetInfoByAddress(ethers.Wallet.createRandom().address));
   },
 );
 

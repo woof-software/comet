@@ -1,5 +1,5 @@
 import { ethers, expect, exp, makeProtocol, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS } from './helpers';
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList, CometExt } from '../build/types';
+import { AssetList, EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList, CometExt } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { TotalsCollateralStruct } from 'build/types/CometHarnessInterfaceExtendedAssetList';
@@ -10,6 +10,8 @@ describe('supply', function () {
   const baseTokenDecimals = 6;
   // Contracts
   let comet: CometHarnessInterfaceExtendedAssetList;
+  // Comet forwards the asset lookups to the list, so an unknown asset reverts with the list's error
+  let assetList: AssetList;
   let baseToken: FaucetToken | NonStandardFaucetFeeToken;
   // Tokens
   let collaterals: {
@@ -47,6 +49,7 @@ describe('supply', function () {
     const protocol = await makeProtocol({base: 'USDC'});
 
     comet = protocol.cometWithExtendedAssetList;
+    assetList = protocol.assetList;
     baseToken = protocol.tokens[protocol.base];
     collaterals = Object.fromEntries(
       Object.entries(protocol.tokens).filter(([_symbol, token]) => token.address !== baseToken.address)
@@ -160,7 +163,7 @@ describe('supply', function () {
         await unsupportedToken.allocateTo(alice.address, exp(1, 18));
 
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
-        await expect(comet.connect(alice).supply(unsupportedToken.address, 1)).to.be.revertedWithCustomError(comet, 'BadAsset');
+        await expect(comet.connect(alice).supply(unsupportedToken.address, 1)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
     });
 
@@ -1496,7 +1499,7 @@ describe('supply', function () {
       it('reverts for asset other than base of collateral', async () => {
         await unsupportedToken.allocateTo(alice.address, exp(1, 18));
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
-        await expect(comet.connect(alice).supplyTo(bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(comet, 'BadAsset');
+        await expect(comet.connect(alice).supplyTo(bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('reverts when protocol paused', async () => {
@@ -1624,10 +1627,7 @@ describe('supply', function () {
       it('reverts for asset other than base of collateral', async () => {
         await unsupportedToken.allocateTo(alice.address, exp(1, 18));
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
-        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(
-          comet,
-          'BadAsset'
-        );
+        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('reverts when protocol paused', async () => {

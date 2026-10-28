@@ -16,14 +16,17 @@ interface IAssetListErrors {
     /// @dev The number of storage configs differs from the number of assets
     error StorageConfigsLengthMismatch();
 
-    /// @dev The asset is not listed, or the index is out of range
-    error BadAsset();
+    /// @dev The index is not below the number of assets
+    error AssetIndexOutOfRange();
 
-    /// @dev The asset to update is not registered in the list
+    /// @dev The asset is not registered in the list
     error AssetNotFound();
 
     /// @dev The asset is not one of the assets this implementation was built from, so it needs a list upgrade first
     error AssetNotInImmutables();
+
+    /// @dev The asset's position in the registered assets differs from its index in the immutables
+    error AssetIndexMismatch();
 
     /// @dev The asset or its price feed is the zero address
     error ZeroAddress();

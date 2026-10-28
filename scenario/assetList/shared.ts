@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import { CometContext } from '../context/CometContext';
+import { servicePatch2 } from '../utils/versionControl';
 import { ERC20 } from '../../build/types';
 import { AssetConfigStructOutput } from '../../build/types/Configurator';
 import { AssetInfoStructOutput } from '../../build/types/AssetList';
@@ -28,6 +29,17 @@ export const oneToken = (decimals): bigint => 10n ** BigInt(decimals.toString())
 // The token of a collateral, which the asset list reads the decimals from
 export const getToken = async (context: CometContext, asset: string): Promise<ERC20> =>
   await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', asset) as ERC20;
+
+// Comet forwards an asset lookup to the market's asset list, so an unknown asset reverts with the list's
+// AssetNotFound. A market not yet on the new list still reverts with BadAsset.
+// The call is passed as a function and sent only after the expected error and contract are resolved, so nothing
+// is awaited while its revert is pending
+export async function expectUnknownAssetRevert(context: CometContext, call: () => Promise<unknown>) {
+  const [contract, error] = await servicePatch2(context)
+    ? [await context.getAssetList(), 'AssetNotFound']
+    : [await context.getComet(), 'BadAsset'];
+  await expect(call()).to.be.revertedWithCustomError(contract, error);
+}
 
 // Every collateral of the comet must read back exactly as configured
 export async function validateAssetInfos(context: CometContext, assetConfigs: (AssetConfigStructOutput | { [key: string]: any })[]) {

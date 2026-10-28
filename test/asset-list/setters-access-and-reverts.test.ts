@@ -130,6 +130,38 @@ describe('asset list setters: access and reverts', function () {
       });
     });
 
+    // A lookup by address reads the asset's position in the registered assets as its index in the immutables, so new
+    // assets must be registered in the order they were added
+    describe('two new assets are registered out of order after the upgrade', function () {
+      let snapshot: SnapshotRestorer;
+      let firstAssetConfig: AssetConfigStruct;
+      let secondAssetConfig: AssetConfigStruct;
+
+      before(async () => {
+        snapshot = await takeSnapshot();
+        firstAssetConfig = await deployAssetConfig();
+        secondAssetConfig = await deployAssetConfig();
+        await configurator.addAsset(comet.address, firstAssetConfig);
+        await configurator.addAsset(comet.address, secondAssetConfig);
+        await proxyAdmin.deployAndUpgradeAssetListTo(configurator.address, comet.address);
+      });
+
+      after(async () => await snapshot.restore());
+
+      it('setAssetConfigToAssetList reverts with AssetIndexMismatch for the second asset first', async () => {
+        await expect(configurator.setAssetConfigToAssetList(comet.address, secondAssetConfig.asset))
+          .to.be.revertedWithCustomError(assetList, 'AssetIndexMismatch');
+      });
+
+      it('both register in order, and each is found by address at its own index', async () => {
+        const numAssets = configs.length;
+        await configurator.setAssetConfigToAssetList(comet.address, firstAssetConfig.asset);
+        await configurator.setAssetConfigToAssetList(comet.address, secondAssetConfig.asset);
+        expect((await assetList.getAssetInfoByAddress(firstAssetConfig.asset)).offset).to.equal(numAssets);
+        expect((await assetList.getAssetInfoByAddress(secondAssetConfig.asset)).offset).to.equal(numAssets + 1);
+      });
+    });
+
     describe('the asset list is not set for the Comet proxy', function () {
       let snapshot: SnapshotRestorer;
       let newAssetConfig: AssetConfigStruct;

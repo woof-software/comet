@@ -1,4 +1,4 @@
-import { CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken, NonStandardFaucetFeeToken__factory } from 'build/types';
+import { AssetList, CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken, NonStandardFaucetFeeToken__factory } from 'build/types';
 import { ethers, expect, exp, makeProtocol, presentValue, ZERO_ADDRESS, presentValueSupply, mulPrice, mulFactor, defaultAssets, MAX_ASSETS, UserBasic, UserCollateral } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
@@ -9,6 +9,8 @@ describe('transfer', function () {
   const baseTokenDecimals = 6;
   // Contracts
   let comet: CometHarnessInterfaceExtendedAssetList;
+  // Comet forwards the asset lookups to the list, so an unknown asset reverts with the list's error
+  let assetList: AssetList;
   let baseToken: FaucetToken;
   let collaterals: { [symbol: string]: FaucetToken } = {};
   let unsupportedToken: FaucetToken;
@@ -49,6 +51,7 @@ describe('transfer', function () {
   before(async () => {
     const protocol = await makeProtocol({ base: 'USDC'});
     comet = protocol.cometWithExtendedAssetList;
+    assetList = protocol.assetList;
     baseToken = protocol.tokens.USDC as FaucetToken;
     for (const asset in protocol.tokens) {
       if (asset === 'USDC') continue;
@@ -679,7 +682,7 @@ describe('transfer', function () {
       });
 
       it('unsupported asset & amount = 0', async () => {
-        await expect(comet.connect(alice).transferAsset(bob.address, unsupportedToken.address, 0n)).to.be.revertedWithCustomError(comet, 'BadAsset');
+        await expect(comet.connect(alice).transferAsset(bob.address, unsupportedToken.address, 0n)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('amount > balance', async () => {
@@ -1479,7 +1482,7 @@ describe('transfer', function () {
             receiver.address,
             unsupportedToken.address,
             0n
-          )).to.be.revertedWithCustomError(comet, 'BadAsset');
+          )).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
         });
 
         it('unsupported asset & amount > 0', async () => {

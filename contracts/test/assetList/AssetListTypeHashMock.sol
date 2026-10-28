@@ -176,14 +176,20 @@ contract AssetListTypeHashMock is IAssetList, IConfigHash, Initializable {
      * @notice Set the storage config of an asset that is in the immutables, registering the asset first if it is new
      * @dev Used after the list is upgraded to a new implementation: initialize ran only once, so a new asset is not
      *      registered until this is called for it, and an asset already registered gets its whole storage config
-     *      replaced. The factors are checked together, so their order of change does not matter here
+     *      replaced. The factors are checked together, so their order of change does not matter here.
+     *      New assets must be registered in the order of their index in the immutables
      * @param asset The asset, must be in the immutables of this implementation
      * @param config The factors and supply cap of the asset
      */
     function setAssetConfig(address asset, StorageAssetConfig calldata config) external onlyConfigurator {
-        if (!_isInImmutables(asset)) revert AssetNotInImmutables();
+        (bool found, uint8 index) = _immutableIndex(asset);
+        if (!found) revert AssetNotInImmutables();
         // An asset already registered gets its config replaced, so whether it was new does not matter here
         _setAssetConfig(asset, config);
+        // getAssetInfoByAddress finds an asset by its position in the registered assets, so that position must be
+        // its index in the immutables: a new asset registered out of order, or an implementation that moved an asset,
+        // would make the lookup read another asset's slot
+        if (_registeredPosition(asset) != index + 1) revert AssetIndexMismatch();
     }
 
     /**
@@ -239,24 +245,9 @@ contract AssetListTypeHashMock is IAssetList, IConfigHash, Initializable {
      * @return The asset info object
      */
     function getAssetInfo(uint8 i) public view returns (AssetInfo memory) {
-        if (i >= numAssets) revert BadAsset();
+        if (i >= numAssets) revert AssetIndexOutOfRange();
         (uint256 word_a, address priceFeed) = _loadPackedAsset(i);
-
-        address asset = address(uint160(word_a));
-
-        // Factors and supply cap are kept unscaled in storage so the Configurator can change them
-        StorageAssetConfig memory config = assetConfigs[asset];
-
-        return AssetInfo({
-            asset: asset,
-            scale: uint64(word_a >> 168),
-            offset: i,
-            priceFeed: priceFeed,
-            borrowCollateralFactor: config.borrowCollateralFactor,
-            supplyCap: config.supplyCap,
-            liquidateCollateralFactor: config.liquidateCollateralFactor,
-            liquidationFactor: config.liquidationFactor
-        });
+        return _composeAssetInfo(i, word_a, priceFeed);
     }
 
     /**
@@ -265,15 +256,13 @@ contract AssetListTypeHashMock is IAssetList, IConfigHash, Initializable {
      * @return The asset info object
      */
     function getAssetInfoByAddress(address asset) public view returns (AssetInfo memory) {
-        // Rejects unlisted assets without scanning
-        if (!assets.contains(asset)) revert BadAsset();
+        uint8 position = _registeredPosition(asset);
+        if (position == 0) revert AssetNotFound();
 
-        // Only the packed words are compared, so storage is read just once for the matching asset
-        for (uint8 i; i < numAssets; ++i) {
-            (uint256 word_a, ) = _loadPackedAsset(i);
-            if (address(uint160(word_a)) == asset) return getAssetInfo(i);
-        }
-        revert BadAsset();
+        uint8 i = position - 1;
+        (uint256 word_a, address priceFeed) = _loadPackedAsset(i);
+
+        return _composeAssetInfo(i, word_a, priceFeed);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -327,14 +316,42 @@ contract AssetListTypeHashMock is IAssetList, IConfigHash, Initializable {
     }
 
     /**
-     * @dev Whether the asset is one of the assets packed into the immutables of this implementation
+     * @dev Builds the asset info of the i-th asset from its packed word and price feed, adding its storage config
      */
-    function _isInImmutables(address asset) internal view returns (bool) {
+    function _composeAssetInfo(uint8 i, uint256 word_a, address priceFeed) internal view returns (AssetInfo memory) {
+        address asset = address(uint160(word_a));
+
+        // Factors and supply cap are kept unscaled in storage so the Configurator can change them
+        StorageAssetConfig memory config = assetConfigs[asset];
+
+        return AssetInfo({
+            asset: asset,
+            scale: uint64(word_a >> 168),
+            offset: i,
+            priceFeed: priceFeed,
+            borrowCollateralFactor: config.borrowCollateralFactor,
+            supplyCap: config.supplyCap,
+            liquidateCollateralFactor: config.liquidateCollateralFactor,
+            liquidationFactor: config.liquidationFactor
+        });
+    }
+
+    /**
+     * @dev Where the asset is in the immutables of this implementation
+     * @return found Whether the asset is in the immutables
+     * @return index The index of the asset, zero when it is not found
+     */
+    function _immutableIndex(address asset) internal view returns (bool found, uint8 index) {
         for (uint8 i; i < numAssets; ++i) {
             (uint256 word_a, ) = _loadPackedAsset(i);
-            if (address(uint160(word_a)) == asset) return true;
+            if (address(uint160(word_a)) == asset) return (true, i);
         }
-        return false;
+        return (false, 0);
+    }
+
+    /// @dev The asset's position in the registered assets, from 1, or 0 if unregistered; EnumerableSet has no getter for it
+    function _registeredPosition(address asset) internal view returns (uint8) {
+        return uint8(assets._inner._indexes[bytes32(uint256(uint160(asset)))]);
     }
 
     /**
