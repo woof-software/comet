@@ -33,7 +33,7 @@ library ConfigHash {
      * @param newConfig The new config, ABI-encoded with `abi.encode`
      * @return True if the target supports IConfigHash and the new config hashes to its configHash
      */
-    function compareConfigHashes(address target, bytes memory newConfig) internal view returns (bool) {
+    function areHashesEqual(address target, bytes memory newConfig) internal view returns (bool) {
         (bool found, bytes32 currentHash) = _trySupportsConfigHash(target);
         if (!found) return false;
         return hashConfig(IConfigHash(target).TYPEHASH(), newConfig) == currentHash;

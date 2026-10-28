@@ -2,6 +2,7 @@ import { ethers, exp, expect, makeProtocol } from './helpers';
 import {
   AssetList__factory,
   AssetListFactory__factory,
+  CometHarnessExtendedAssetList__factory,
   FaucetToken__factory,
   SimplePriceFeed__factory,
 } from '../build/types';
@@ -90,6 +91,41 @@ describe('constructor', function () {
         },
       })
     ).to.be.revertedWith("custom error 'BadDecimals()'");
+  });
+
+  // Comet reads its collateral from the asset list, so it can't be built from a configuration without one.
+  // Only the base token decimals and the store front price factor are checked before it, so the base token is
+  // the only real contract; every other field is arbitrary
+  it('reverts if the asset list is the zero address', async () => {
+    const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
+    const baseToken = await FaucetFactory.deploy(1e6, 'USDC', 6, 'USDC');
+    await baseToken.deployed();
+
+    const randomAddress = () => ethers.Wallet.createRandom().address;
+    const CometFactory = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
+    await expect(CometFactory.deploy({
+      governor: randomAddress(),
+      pauseGuardian: randomAddress(),
+      baseToken: baseToken.address,
+      baseTokenPriceFeed: randomAddress(),
+      extensionDelegate: randomAddress(),
+      supplyKink: exp(0.8, 18),
+      supplyPerYearInterestRateSlopeLow: exp(0.05, 18),
+      supplyPerYearInterestRateSlopeHigh: exp(2, 18),
+      supplyPerYearInterestRateBase: 0,
+      borrowKink: exp(0.8, 18),
+      borrowPerYearInterestRateSlopeLow: exp(0.1, 18),
+      borrowPerYearInterestRateSlopeHigh: exp(3, 18),
+      borrowPerYearInterestRateBase: exp(0.01, 18),
+      storeFrontPriceFactor: exp(0.5, 18),
+      trackingIndexScale: exp(1, 15),
+      baseTrackingSupplySpeed: 0,
+      baseTrackingBorrowSpeed: 0,
+      baseMinForRewards: exp(1, 6),
+      baseBorrowMin: exp(1, 6),
+      targetReserves: 0,
+      assetList: ethers.constants.AddressZero,
+    })).to.be.revertedWithCustomError(CometFactory, 'ZeroAssetList');
   });
 
   it('reverts if initializeStorage is called after initialization', async () => {

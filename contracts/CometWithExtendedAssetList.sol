@@ -115,7 +115,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         uint8 decimals_ = IERC20NonStandard(config.baseToken).decimals();
         if (decimals_ > MAX_BASE_DECIMALS) revert BadDecimals();
         if (config.storeFrontPriceFactor > FACTOR_SCALE) revert BadDiscount();
-        if (config.assetList == address(0)) revert BadAssetList();
+        if (config.assetList == address(0)) revert ZeroAssetList();
         if (config.baseMinForRewards == 0) revert BadMinimum();
         if (IPriceFeed(config.baseTokenPriceFeed).decimals() != PRICE_FEED_DECIMALS) revert BadDecimals();
 

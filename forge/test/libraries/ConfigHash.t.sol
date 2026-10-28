@@ -13,7 +13,7 @@ import { SimplePriceFeed } from "@comet-contracts/test/SimplePriceFeed.sol";
 
 /**
  * @title ConfigHash library
- * @notice How the Configurator decides whether an asset list has to be redeployed: compareConfigHashes reads the
+ * @notice How the Configurator decides whether an asset list has to be redeployed: areHashesEqual reads the
  *         hash the asset list was built from and tells whether the new immutable configs are still the same ones.
  */
 contract ConfigHashTest is Test {
@@ -42,72 +42,72 @@ contract ConfigHashTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    compareConfigHashes: RETURNS TRUE
+                    areHashesEqual: RETURNS TRUE
     //////////////////////////////////////////////////////////////*/
 
     /// An asset list built from the same configs needs no redeploy, read directly or through its proxy,
     /// which is the address the Configurator holds
-    function test_compareConfigHashes_trueForAssetListBuiltFromSameConfigs() public view {
-        assertTrue(ConfigHash.compareConfigHashes(address(assetList), abi.encode(configs)), "asset list");
-        assertTrue(ConfigHash.compareConfigHashes(address(assetListProxy), abi.encode(configs)), "asset list proxy");
+    function test_areHashesEqual_trueForAssetListBuiltFromSameConfigs() public view {
+        assertTrue(ConfigHash.areHashesEqual(address(assetList), abi.encode(configs)), "asset list");
+        assertTrue(ConfigHash.areHashesEqual(address(assetListProxy), abi.encode(configs)), "asset list proxy");
     }
 
     /*//////////////////////////////////////////////////////////////
-           compareConfigHashes: RETURNS FALSE, THE CONFIG DIFFERS
+           areHashesEqual: RETURNS FALSE, THE CONFIG DIFFERS
     //////////////////////////////////////////////////////////////*/
 
-    function test_compareConfigHashes_falseWhenAssetChanged() public {
+    function test_areHashesEqual_falseWhenAssetChanged() public {
         IAssetListStructs.ImmutableAssetConfig[] memory newConfigs = configs;
         newConfigs[1].asset = makeAddr("otherAsset");
 
-        assertFalse(ConfigHash.compareConfigHashes(address(assetList), abi.encode(newConfigs)));
+        assertFalse(ConfigHash.areHashesEqual(address(assetList), abi.encode(newConfigs)));
     }
 
-    function test_compareConfigHashes_falseWhenPriceFeedChanged() public {
+    function test_areHashesEqual_falseWhenPriceFeedChanged() public {
         IAssetListStructs.ImmutableAssetConfig[] memory newConfigs = configs;
         newConfigs[1].priceFeed = makeAddr("otherPriceFeed");
 
-        assertFalse(ConfigHash.compareConfigHashes(address(assetList), abi.encode(newConfigs)));
+        assertFalse(ConfigHash.areHashesEqual(address(assetList), abi.encode(newConfigs)));
     }
 
-    function test_compareConfigHashes_falseWhenElementAdded() public {
+    function test_areHashesEqual_falseWhenElementAdded() public {
         IAssetListStructs.ImmutableAssetConfig[] memory newConfigs = new IAssetListStructs.ImmutableAssetConfig[](configs.length + 1);
         for (uint256 i; i < configs.length; ++i) {
             newConfigs[i] = configs[i];
         }
         newConfigs[configs.length] = IAssetListStructs.ImmutableAssetConfig(makeAddr("newAsset"), makeAddr("newPriceFeed"));
 
-        assertFalse(ConfigHash.compareConfigHashes(address(assetList), abi.encode(newConfigs)));
+        assertFalse(ConfigHash.areHashesEqual(address(assetList), abi.encode(newConfigs)));
     }
 
-    function test_compareConfigHashes_falseWhenElementRemoved() public {
+    function test_areHashesEqual_falseWhenElementRemoved() public {
         IAssetListStructs.ImmutableAssetConfig[] memory newConfigs = new IAssetListStructs.ImmutableAssetConfig[](configs.length - 1);
         for (uint256 i; i < newConfigs.length; ++i) {
             newConfigs[i] = configs[i];
         }
 
-        assertFalse(ConfigHash.compareConfigHashes(address(assetList), abi.encode(newConfigs)));
+        assertFalse(ConfigHash.areHashesEqual(address(assetList), abi.encode(newConfigs)));
     }
 
-    function test_compareConfigHashes_falseWhenElementsReordered() public {
+    function test_areHashesEqual_falseWhenElementsReordered() public {
         IAssetListStructs.ImmutableAssetConfig[] memory newConfigs = configs;
         (newConfigs[0], newConfigs[1]) = (newConfigs[1], newConfigs[0]);
 
-        assertFalse(ConfigHash.compareConfigHashes(address(assetList), abi.encode(newConfigs)));
+        assertFalse(ConfigHash.areHashesEqual(address(assetList), abi.encode(newConfigs)));
     }
 
     /*//////////////////////////////////////////////////////////////
-       compareConfigHashes: RETURNS FALSE, NO HASH TO COMPARE WITH
+       areHashesEqual: RETURNS FALSE, NO HASH TO COMPARE WITH
     //////////////////////////////////////////////////////////////*/
 
     /// A migrated market has no asset list until the first one is deployed for it
-    function test_compareConfigHashes_falseForZeroAddress() public view {
-        assertFalse(ConfigHash.compareConfigHashes(address(0), abi.encode(configs)));
+    function test_areHashesEqual_falseForZeroAddress() public view {
+        assertFalse(ConfigHash.areHashesEqual(address(0), abi.encode(configs)));
     }
 
     /// An asset list from before config hashing, like the one on main, has no configHash getter
-    function test_compareConfigHashes_falseForOldAssetListWithoutConfigHash() public {
-        assertFalse(ConfigHash.compareConfigHashes(address(new OldAssetList()), abi.encode(configs)));
+    function test_areHashesEqual_falseForOldAssetListWithoutConfigHash() public {
+        assertFalse(ConfigHash.areHashesEqual(address(new OldAssetList()), abi.encode(configs)));
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -200,7 +200,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         // 2. New list, configs changed: hash differs, deploy
         // 3. Old list without configHash: nothing to compare, deploy
         // 4. No list yet (zero address): nothing to compare, deploy
-        if (ConfigHash.compareConfigHashes(assetListProxy, abi.encode(immutableConfigs))) return (assetListProxy, address(0));
+        if (ConfigHash.areHashesEqual(assetListProxy, abi.encode(immutableConfigs))) return (assetListProxy, address(0));
 
         address assetListFactory = cometAssetListFactories[cometProxy];
         if (assetListFactory == address(0)) revert InvalidAddress();
