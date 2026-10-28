@@ -1,4 +1,7 @@
 import { CometContext, scenario } from './context/CometContext';
+import CometActor from './context/CometActor';
+import { CometInterface } from '../build/types';
+import { ContractTransaction } from 'ethers';
 import { expect } from 'chai';
 import {
   expectBase,
@@ -1156,6 +1159,116 @@ scenario(
     ).to.be.revertedWithCustomError(comet, 'LendersTransferPaused');
   }
 );
+
+const lendersTransferPauseMethods: {
+  name: string;
+  byOperator: boolean;
+  transfer: (comet: CometInterface, asset: string, src: CometActor, dst: CometActor, amount: bigint) => Promise<ContractTransaction>;
+}[] = [
+  {
+    name: 'transfer',
+    byOperator: false,
+    transfer: (comet, _asset, src, dst, amount) => comet.connect(src.signer).transfer(dst.address, amount),
+  },
+  {
+    name: 'transferFrom',
+    byOperator: true,
+    transfer: (comet, _asset, src, dst, amount) => comet.connect(dst.signer).transferFrom(src.address, dst.address, amount),
+  },
+  {
+    name: 'transferAsset',
+    byOperator: false,
+    transfer: (comet, asset, src, dst, amount) => comet.connect(src.signer).transferAsset(dst.address, asset, amount),
+  },
+  {
+    name: 'transferAssetFrom',
+    byOperator: true,
+    transfer: (comet, asset, src, dst, amount) => comet.connect(dst.signer).transferAssetFrom(src.address, dst.address, asset, amount),
+  },
+];
+
+for (const { name, byOperator, transfer } of lendersTransferPauseMethods) {
+  scenario(
+    `Comet#${name} > reverts when lender takes min borrow on top under lenders transfer pause`,
+    {
+      filter: async (ctx: CometContext) => {
+        return (
+          (await isValidAssetIndex(ctx, 0)) &&
+          (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferAsset)) &&
+          (await usesAssetList(ctx)) &&
+          !(await isAssetDelisted(ctx, 0)) &&
+          (await supportsExtendedPause(ctx))
+        );
+      },
+      cometBalances: (ctx: CometContext) => ({
+        albert: { $base: getConfigForScenario(ctx).transferBase, $asset0: getConfigForScenario(ctx).transferAsset }
+      })
+    },
+    async ({ comet, actors }, _context, world) => {
+      const { albert, betty, pauseGuardian } = actors;
+      const baseAssetAddress = await comet.baseToken();
+      const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+
+      if (byOperator) await albert.allow(betty, true);
+
+      // Fund pause guardian account for gas fees
+      await fundAccount(world, pauseGuardian);
+
+      // Pause lenders transfer
+      await comet.connect(pauseGuardian.signer).pauseLendersTransfer(true);
+
+      const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+      // Supply keeps accruing until the tx is mined, cover an hour of it so the transfer still ends in a borrow
+      const supplyRate = (await comet.getSupplyRate(await comet.getUtilization())).toBigInt();
+      const accrualBuffer = baseSupplied * supplyRate * 3600n / factorScale + 1n;
+
+      await expect(
+        transfer(comet, baseAssetAddress, albert, betty, baseSupplied + baseBorrowMin + accrualBuffer)
+      ).to.be.revertedWithCustomError(comet, 'LendersTransferPaused');
+    }
+  );
+}
+
+for (const { name, byOperator, transfer } of lendersTransferPauseMethods) {
+  scenario(
+    `Comet#${name} > borrower without supply transfers under lenders transfer pause`,
+    {
+      filter: async (ctx: CometContext) => {
+        return (
+          (await isValidAssetIndex(ctx, 0)) &&
+          (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferAsset)) &&
+          (await usesAssetList(ctx)) &&
+          !(await isAssetDelisted(ctx, 0)) &&
+          (await supportsExtendedPause(ctx))
+        );
+      },
+      cometBalances: (ctx: CometContext) => ({
+        albert: { $base: getConfigForScenario(ctx).transferBase },
+        betty: { $asset0: getConfigForScenario(ctx).transferAsset }
+      })
+    },
+    async ({ comet, actors }, _context, world) => {
+      const { betty, charles, pauseGuardian } = actors;
+      const baseAssetAddress = await comet.baseToken();
+      const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+
+      if (byOperator) await betty.allow(charles, true);
+
+      // Fund pause guardian account for gas fees
+      await fundAccount(world, pauseGuardian);
+
+      // Pause lenders transfer
+      await comet.connect(pauseGuardian.signer).pauseLendersTransfer(true);
+
+      const charlesBalanceBefore = (await comet.balanceOf(charles.address)).toBigInt();
+
+      await transfer(comet, baseAssetAddress, betty, charles, baseBorrowMin);
+
+      expectBase(baseBorrowMin, (await comet.borrowBalanceOf(betty.address)).toBigInt());
+      expectBase(charlesBalanceBefore + baseBorrowMin, (await comet.balanceOf(charles.address)).toBigInt());
+    }
+  );
+}
 
 scenario(
   'Comet#transferAsset > reverts when specific collateral asset is paused',
