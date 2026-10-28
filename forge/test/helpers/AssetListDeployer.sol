@@ -33,9 +33,9 @@ abstract contract AssetListDeployer {
         }
 
         return AssetList(address(new TransparentUpgradeableProxy(
-            address(new AssetList(immutableConfigs)),
+            address(new AssetList(immutableConfigs, configurator_)),
             admin,
-            abi.encodeCall(AssetList.initialize, (storageConfigs, configurator_))
+            abi.encodeCall(AssetList.initialize, (storageConfigs))
         )));
     }
 }

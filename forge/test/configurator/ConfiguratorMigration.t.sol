@@ -237,7 +237,7 @@ contract ConfiguratorMigrationTest is Test {
         address assetList = address(new TransparentUpgradeableProxy(
             assetListImpl,
             address(proxyAdmin),
-            abi.encodeCall(AssetList.initialize, (configurator().getStorageAssetConfig(comet), address(proxy)))
+            abi.encodeCall(AssetList.initialize, (configurator().getStorageAssetConfig(comet)))
         ));
         configurator().updateAssetList(comet, assetList);
         configurator().setFactory(comet, address(cometFactory));

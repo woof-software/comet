@@ -42,7 +42,7 @@ Each market has one AssetList proxy (`TransparentUpgradeableProxy`). Its impleme
 
 ```mermaid
 flowchart LR
-    C["Comet proxy<br/>(CometWithExtendedAssetList)<br/>immutable assetList"] -- "getAssetInfo(i)" --> P["AssetList proxy<br/>storage: configurator,<br/>factors, supply caps"]
+    C["Comet proxy<br/>(CometWithExtendedAssetList)<br/>immutable assetList"] -- "getAssetInfo(i)" --> P["AssetList proxy<br/>storage: factors,<br/>supply caps"]
     P -- delegatecall --> I["AssetList implementation<br/>immutables: asset, decimals,<br/>scale, price feed"]
     A["CometProxyAdmin"] -. "admin of" .-> P
     A -. "admin of" .-> C
@@ -61,22 +61,21 @@ With a proxy, the address Comet holds never changes. A new implementation is swa
 
 The constructor takes up to 24 configs (`MAX_ASSETS`) and checks each one:
 
-- the asset is not the zero address;
+- neither the asset nor its price feed is the zero address;
 - the price feed has 8 decimals;
 - the token's `decimals()` matches the config;
 - decimals are at most 19, so the scale fits in `uint64`.
 
-It also stores `numAssets` and `configHash`.
+It also stores `numAssets`, `configHash` and `configurator`, the only address allowed to call the setters. `Configurator.deployAssetList` passes its own address, so every implementation it deploys answers only to it.
 
 ### Storage config
 
 `StorageAssetConfig` = `borrowCollateralFactor`, `liquidateCollateralFactor`, `liquidationFactor`, `supplyCap`. These are the values risk managers change, so they live in the proxy's storage:
 
-- `configurator`: the only address allowed to call the setters.
-- `assetConfigStorage.configs`: the config of each asset, keyed by asset address, so it stays with the right asset whatever its index in a new implementation.
-- `assetConfigStorage.assets`: an `EnumerableSet` of registered assets, so a setter rejects an unlisted asset with one lookup.
+- `assetConfigs`: the config of each asset, keyed by asset address, so it stays with the right asset whatever its index in a new implementation.
+- `assets`: an `EnumerableSet` of registered assets, so a setter rejects an unlisted asset with one lookup.
 
-`initialize(storageConfigs, configurator)` fills storage once, in the same order as the constructor's assets, and rejects an asset listed twice.
+`initialize(storageConfigs)` fills storage once, in the same order as the constructor's assets, and rejects an asset listed twice.
 
 Every write validates the factors:
 

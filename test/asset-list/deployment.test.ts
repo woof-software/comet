@@ -21,9 +21,10 @@ describe('asset list deployment: constructor', function () {
   let AssetListContractFactory: AssetList__factory;
   let assetList: AssetList; // the implementation, not initialized
   let configs: ImmutableAssetConfigStruct[];
+  let configurator: Configurator;
 
   before(async () => {
-    ({ AssetListContractFactory, assetListImplementation: assetList, configs } = await deployAssetListFixture());
+    ({ AssetListContractFactory, assetListImplementation: assetList, configs, configurator } = await deployAssetListFixture());
   });
 
   describe('happy path', function () {
@@ -39,8 +40,12 @@ describe('asset list deployment: constructor', function () {
       expect(await assetList.configHash()).to.equal(hashConfig(configs));
     });
 
+    it('sets the configurator', async () => {
+      expect(await assetList.configurator()).to.equal(configurator.address);
+    });
+
     it('the implementation cannot be initialized', async () => {
-      await expect(assetList.initialize([], ZERO)).to.be.revertedWith('Initializable: contract is already initialized');
+      await expect(assetList.initialize([])).to.be.revertedWith('Initializable: contract is already initialized');
     });
 
     // Both ends of the allowed decimals are among the fixture assets
@@ -79,7 +84,7 @@ describe('asset list deployment: constructor', function () {
 
     before(async () => {
       reorderedConfigs = [...configs].reverse();
-      reorderedAssetList = await AssetListContractFactory.deploy(reorderedConfigs);
+      reorderedAssetList = await AssetListContractFactory.deploy(reorderedConfigs, configurator.address);
       await reorderedAssetList.deployed();
     });
 
@@ -99,7 +104,7 @@ describe('asset list deployment: constructor', function () {
 
     before(async () => {
       fullConfigs = await deployImmutableAssetConfigs(Array(MAX_ASSETS).fill(18));
-      fullAssetList = await AssetListContractFactory.deploy(fullConfigs);
+      fullAssetList = await AssetListContractFactory.deploy(fullConfigs, configurator.address);
       await fullAssetList.deployed();
 
       assetInfos = [];
@@ -131,43 +136,52 @@ describe('asset list deployment: constructor', function () {
 
   describe('revert when', function () {
     it('the list of configs is empty', async () => {
-      await expect(AssetListContractFactory.deploy([])).to.be.revertedWithCustomError(assetList, 'NoAssets');
+      await expect(AssetListContractFactory.deploy([], configurator.address)).to.be.revertedWithCustomError(assetList, 'NoAssets');
     });
 
     it(`there are more than ${MAX_ASSETS} configs`, async () => {
-      await expect(AssetListContractFactory.deploy(Array(MAX_ASSETS + 1).fill(configs[0])))
+      await expect(AssetListContractFactory.deploy(Array(MAX_ASSETS + 1).fill(configs[0]), configurator.address))
         .to.be.revertedWithCustomError(assetList, 'TooManyAssets');
     });
 
     it('a price feed does not have 8 decimals', async () => {
       const badPriceFeedConfig = await deployImmutableAssetConfig(18, 18);
-      await expect(AssetListContractFactory.deploy([configs[0], badPriceFeedConfig]))
-        .to.be.revertedWithCustomError(assetList, 'BadDecimals');
+      await expect(AssetListContractFactory.deploy([configs[0], badPriceFeedConfig], configurator.address))
+        .to.be.revertedWithCustomError(assetList, 'PriceFeedDecimalsNotMatched');
     });
 
     it('the config decimals differ from the token decimals', async () => {
-      await expect(AssetListContractFactory.deploy([configs[0], { ...configs[1], decimals: 9 }]))
-        .to.be.revertedWithCustomError(assetList, 'BadDecimals');
+      await expect(AssetListContractFactory.deploy([configs[0], { ...configs[1], decimals: 9 }], configurator.address))
+        .to.be.revertedWithCustomError(assetList, 'AssetDecimalsNotMatched');
     });
 
     it(`an asset has more than ${MAX_ASSET_DECIMALS} decimals`, async () => {
       const tooManyDecimalsConfig = await deployImmutableAssetConfig(MAX_ASSET_DECIMALS + 1);
-      await expect(AssetListContractFactory.deploy([configs[0], tooManyDecimalsConfig]))
-        .to.be.revertedWithCustomError(assetList, 'BadDecimals');
+      await expect(AssetListContractFactory.deploy([configs[0], tooManyDecimalsConfig], configurator.address))
+        .to.be.revertedWithCustomError(assetList, 'MaxAssetDecimalsExceeds');
     });
 
     it('an asset inside the list is the zero address', async () => {
-      await expect(AssetListContractFactory.deploy([configs[0], { ...configs[1], asset: ZERO }, configs[2]]))
-        .to.be.revertedWithCustomError(assetList, 'BadAsset');
+      await expect(AssetListContractFactory.deploy([configs[0], { ...configs[1], asset: ZERO }, configs[2]], configurator.address))
+        .to.be.revertedWithCustomError(assetList, 'ZeroAddress');
+    });
+
+    it('the configurator is the zero address', async () => {
+      await expect(AssetListContractFactory.deploy(configs, ZERO))
+        .to.be.revertedWithCustomError(assetList, 'ZeroConfigurator');
+    });
+
+    it('a price feed inside the list is the zero address', async () => {
+      await expect(AssetListContractFactory.deploy([configs[0], { ...configs[1], priceFeed: ZERO }, configs[2]], configurator.address))
+        .to.be.revertedWithCustomError(assetList, 'ZeroAddress');
     });
   });
 });
 
-// AssetList.initialize sets the configurator and stores the factors and the supply cap of every asset the
-// implementation was built from. It runs once, through the constructor data of the proxy; the implementation
-// itself stays uninitialized.
+// AssetList.initialize stores the factors and the supply cap of every asset the implementation was built from.
+// The configurator is already fixed by the implementation's constructor. It runs once, through the constructor
+// data of the proxy; the implementation itself stays uninitialized.
 describe('asset list deployment: initialize', function () {
-  const ZERO = ethers.constants.AddressZero;
   const MAX_COLLATERAL_FACTOR = 10n ** 18n;
 
   let AssetListContractFactory: AssetList__factory;
@@ -183,8 +197,7 @@ describe('asset list deployment: initialize', function () {
     deployAssetListProxy(
       assetListImplementation,
       proxyAdmin.address,
-      storageConfigs.map((config, i) => (i == storageConfigs.length - 1 ? { ...config, ...factors } : config)),
-      configurator.address
+      storageConfigs.map((config, i) => (i == storageConfigs.length - 1 ? { ...config, ...factors } : config))
     );
 
   before(async () => {
@@ -200,12 +213,12 @@ describe('asset list deployment: initialize', function () {
   });
 
   describe('happy path (through the proxy constructor data)', function () {
-    it('sets the configurator', async () => {
+    it('the proxy sees the configurator of the implementation', async () => {
       expect(await assetList.configurator()).to.equal(configurator.address);
     });
 
-    it('leaves the configurator of the implementation unset', async () => {
-      expect(await assetListImplementation.configurator()).to.equal(ZERO);
+    it('the implementation holds the same configurator, as an immutable', async () => {
+      expect(await assetListImplementation.configurator()).to.equal(configurator.address);
     });
 
     it('stores no asset config in the implementation', async () => {
@@ -253,14 +266,9 @@ describe('asset list deployment: initialize', function () {
   });
 
   describe('revert when', function () {
-    it('the configurator is the zero address', async () => {
-      await expect(deployAssetListProxy(assetListImplementation, proxyAdmin.address, storageConfigs, ZERO))
-        .to.be.revertedWithCustomError(assetList, 'ZeroConfigurator');
-    });
-
     it('there are fewer storage configs than assets', async () => {
       await expect(
-        deployAssetListProxy(assetListImplementation, proxyAdmin.address, storageConfigs.slice(1), configurator.address)
+        deployAssetListProxy(assetListImplementation, proxyAdmin.address, storageConfigs.slice(1))
       ).to.be.revertedWithCustomError(assetList, 'StorageConfigsLengthMismatch');
     });
 
@@ -269,21 +277,19 @@ describe('asset list deployment: initialize', function () {
         deployAssetListProxy(
           assetListImplementation,
           proxyAdmin.address,
-          [...storageConfigs, storageConfigs[0]],
-          configurator.address
+          [...storageConfigs, storageConfigs[0]]
         )
       ).to.be.revertedWithCustomError(assetList, 'StorageConfigsLengthMismatch');
     });
 
     it('the same asset is listed twice', async () => {
       // The constructor does not check for duplicates, so they surface when the assets are registered
-      const duplicatesImplementation = await AssetListContractFactory.deploy([configs[0], configs[0]]);
+      const duplicatesImplementation = await AssetListContractFactory.deploy([configs[0], configs[0]], configurator.address);
       await expect(
         deployAssetListProxy(
           duplicatesImplementation,
           proxyAdmin.address,
-          [storageConfigs[0], storageConfigs[0]],
-          configurator.address
+          [storageConfigs[0], storageConfigs[0]]
         )
       ).to.be.revertedWithCustomError(assetList, 'AssetAlreadyAdded');
     });

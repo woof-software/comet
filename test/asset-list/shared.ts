@@ -101,14 +101,13 @@ export function hashConfig(configs: ImmutableAssetConfigStruct[], typeHash = TYP
 export async function deployAssetListProxy(
   implementation: AssetList,
   admin: string,
-  storageConfigs: StorageAssetConfigStruct[],
-  configurator: string
+  storageConfigs: StorageAssetConfigStruct[]
 ): Promise<AssetList> {
   const proxy = await deploy(
     'TransparentUpgradeableProxy',
     implementation.address,
     admin,
-    implementation.interface.encodeFunctionData('initialize', [storageConfigs, configurator])
+    implementation.interface.encodeFunctionData('initialize', [storageConfigs])
   );
   return implementation.attach(proxy.address);
 }
@@ -139,12 +138,11 @@ export async function deployAssetListFixture(): Promise<AssetListFixture> {
     liquidationFactor: LIQUIDATION_FACTOR,
     supplyCap: SUPPLY_CAP * 10n ** BigInt(decimals),
   }));
-  const assetListImplementation = await AssetListContractFactory.deploy(configs);
+  const assetListImplementation = await AssetListContractFactory.deploy(configs, configurator.address);
   const assetList = await deployAssetListProxy(
     assetListImplementation,
     proxyAdmin.address,
-    storageConfigs,
-    configurator.address
+    storageConfigs
   );
 
   const assetListFactory = await deploy<AssetListFactory>('AssetListFactory');

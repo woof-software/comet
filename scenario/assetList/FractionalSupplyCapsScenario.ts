@@ -83,7 +83,7 @@ scenario(
 
     // Any address that is not a collateral of the market
     await expect(assetList.connect(configuratorSigner).setSupplyCap(albert.address, 1n))
-      .to.be.revertedWithCustomError(assetList, 'BadAsset');
+      .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
   }
 );
 
@@ -159,7 +159,8 @@ scenario(
   }
 );
 
-// The configurator is set in the storage of the proxy by initialize, so the implementation has none of its own
+// The implementation holds the same configurator as an immutable, so the call passes the access check, but the
+// asset configs live in the proxy's storage and the implementation's own storage is empty, so the asset is unknown
 scenario(
   'AssetList#setSupplyCap > reverts when the configurator calls the implementation instead of the proxy',
   {
@@ -173,6 +174,6 @@ scenario(
     await fundAccount(context.world, configuratorSigner);
 
     await expect(implementation.connect(configuratorSigner).setSupplyCap(asset, supplyCap))
-      .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
+      .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
   }
 );

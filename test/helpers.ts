@@ -430,8 +430,9 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     decimals: dfn(assets[symbol].decimals, 18),
     priceFeed: priceFeeds[symbol].address,
   }));
-  const assetListImplementation = await assetListFactory.callStatic.createAssetList(assetImmutableConfigs);
-  await wait(assetListFactory.createAssetList(assetImmutableConfigs));
+  const assetListConfigurator = dfn(opts.assetListConfigurator, governor.address);
+  const assetListImplementation = await assetListFactory.callStatic.createAssetList(assetImmutableConfigs, assetListConfigurator);
+  await wait(assetListFactory.createAssetList(assetImmutableConfigs, assetListConfigurator));
   const AssetListContractFactory = (await ethers.getContractFactory('AssetList')) as AssetList__factory;
   const AssetListProxyFactory = (await ethers.getContractFactory('TransparentUpgradeableProxy')) as TransparentUpgradeableProxy__factory;
   const assetListProxy = await AssetListProxyFactory.deploy(
@@ -444,7 +445,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
         liquidationFactor: dfn(assets[symbol].liquidationFactor, exp(0.9, 18)),
         supplyCap: dfn(assets[symbol].supplyCap, exp(150000, dfn(assets[symbol].decimals, 18))),
       })),
-      dfn(opts.assetListConfigurator, governor.address),
     ]),
   );
   await assetListProxy.deployed();

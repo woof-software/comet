@@ -28,7 +28,7 @@ contract ConfigHashTest is Test {
             configs.push(_deployConfig(decimals[i]));
         }
 
-        assetList = new AssetList(configs);
+        assetList = new AssetList(configs, makeAddr("configurator"));
         assetListProxy = AssetList(address(new TransparentUpgradeableProxy(address(assetList), makeAddr("proxyAdmin"), "")));
     }
 

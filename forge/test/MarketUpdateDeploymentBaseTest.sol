@@ -155,7 +155,7 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         address assetList = address(new TransparentUpgradeableProxy(
             assetListImpl,
             address(proxyAdmin),
-            abi.encodeCall(AssetList.initialize, (configurator.getStorageAssetConfig(cometProxy), configuratorProxy))
+            abi.encodeCall(AssetList.initialize, (configurator.getStorageAssetConfig(cometProxy)))
         ));
         configurator.updateAssetList(cometProxy, assetList);
         configurator.setFactory(cometProxy, cometFactory);

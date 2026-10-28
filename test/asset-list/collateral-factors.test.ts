@@ -45,7 +45,7 @@ describe('asset list factors validation', function () {
     asset = (await assetList.getAssetInfo(TARGET)).asset;
     assets = (await configurator.getAssetConfigs(comet.address)).map((config) => config.asset);
     immutableConfigs = await deployImmutableAssetConfigs(DECIMALS);
-    implementation = await AssetListContractFactory.deploy(immutableConfigs);
+    implementation = await AssetListContractFactory.deploy(immutableConfigs, configurator.address);
   });
 
   // A new asset list of MAX_ASSETS collaterals, deployed the way a market gets one: the implementation holds the
@@ -59,8 +59,7 @@ describe('asset list factors validation', function () {
       DECIMALS.map((decimals, i) => ({
         ...(index === undefined || i === index ? f : fixtureFactors),
         supplyCap: SUPPLY_CAP * 10n ** BigInt(decimals),
-      })),
-      configurator.address
+      }))
     );
   }
 
@@ -291,7 +290,7 @@ describe('asset list factors validation', function () {
           before(async () => {
             snapshot = await takeSnapshot();
             for (const asset_ of assets) await update(field, value, asset_);
-            const newImplementation = await AssetListContractFactory.deploy(await configurator.getImmutableAssetConfig(comet.address));
+            const newImplementation = await AssetListContractFactory.deploy(await configurator.getImmutableAssetConfig(comet.address), configurator.address);
             await proxyAdmin.upgrade(assetList.address, newImplementation.address);
           });
 

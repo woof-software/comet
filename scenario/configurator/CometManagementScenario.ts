@@ -30,7 +30,7 @@ async function deployAssetList(context: CometContext): Promise<string> {
       decimals: 18,
       priceFeed: await deployPriceFeed(context, 'asset'),
     },
-  ]]);
+  ], configurator.address]);
   const storageConfigs = [
     {
       borrowCollateralFactor: exp(0.65, 18), // 650000000000000000n
@@ -42,7 +42,7 @@ async function deployAssetList(context: CometContext): Promise<string> {
   const assetListProxy = await dm.deploy('test:assetList', 'vendor/proxy/transparent/TransparentUpgradeableProxy.sol', [
     assetListImpl.address,
     cometAdmin.address,
-    assetListImpl.interface.encodeFunctionData('initialize', [storageConfigs, configurator.address]),
+    assetListImpl.interface.encodeFunctionData('initialize', [storageConfigs]),
   ]);
 
   return assetListProxy.address;

@@ -55,8 +55,8 @@ describe('asset list deployment scenarios', function () {
 
     it('deploys the new implementation from the current immutable configs', async () => {
       const immutableConfigs = await configurator.getImmutableAssetConfig(comet.address);
-      const address = await newFactory.callStatic.createAssetList(immutableConfigs);
-      await newFactory.createAssetList(immutableConfigs);
+      const address = await newFactory.callStatic.createAssetList(immutableConfigs, configurator.address);
+      await newFactory.createAssetList(immutableConfigs, configurator.address);
       newImplementation = await ethers.getContractAt('AssetListV2Mock', address) as AssetListV2Mock;
     });
 
@@ -147,8 +147,8 @@ describe('asset list deployment scenarios', function () {
 
     it('deploys the new implementation from the current immutable configs', async () => {
       const immutableConfigs = await configurator.getImmutableAssetConfig(comet.address);
-      const address = await newFactory.callStatic.createAssetList(immutableConfigs);
-      await newFactory.createAssetList(immutableConfigs);
+      const address = await newFactory.callStatic.createAssetList(immutableConfigs, configurator.address);
+      await newFactory.createAssetList(immutableConfigs, configurator.address);
       newImplementation = await ethers.getContractAt('AssetListTypeHashMock', address) as AssetListTypeHashMock;
     });
 

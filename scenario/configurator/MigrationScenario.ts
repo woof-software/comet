@@ -167,7 +167,6 @@ scenario(
         proxyAdmin.address,
         assetListImplementation.interface.encodeFunctionData('initialize', [
           await configurator.getStorageAssetConfig(comet.address),
-          configurator.address,
         ]),
       ],
       true

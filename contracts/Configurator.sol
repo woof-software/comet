@@ -204,7 +204,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
 
         address assetListFactory = cometAssetListFactories[cometProxy];
         if (assetListFactory == address(0)) revert InvalidAddress();
-        newAssetListImpl = IAssetListFactory(assetListFactory).createAssetList(immutableConfigs);
+        newAssetListImpl = IAssetListFactory(assetListFactory).createAssetList(immutableConfigs, address(this));
         emit AssetListDeployed(cometProxy, assetListProxy, newAssetListImpl);
     }
 

@@ -316,7 +316,7 @@ scenario(
       await configurator.cometAssetListFactories(comet.address),
       charles.signer
     )) as AssetListFactory;
-    const receipt = await (await assetListFactory.createAssetList(await configurator.getImmutableAssetConfig(comet.address))).wait();
+    const receipt = await (await assetListFactory.createAssetList(await configurator.getImmutableAssetConfig(comet.address), configurator.address)).wait();
     const newImplementation = receipt.events.find((event) => event.event === 'AssetListCreated').args.assetList;
     const proxy = await (await ethers.getContractFactory(
       'contracts/vendor/proxy/transparent/TransparentUpgradeableProxy.sol:TransparentUpgradeableProxy',
@@ -326,7 +326,6 @@ scenario(
       proxyAdmin.address,
       oldAssetList.interface.encodeFunctionData('initialize', [
         await configurator.getStorageAssetConfig(comet.address),
-        configurator.address,
       ])
     );
     await proxy.deployed();

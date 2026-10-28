@@ -31,7 +31,7 @@ describe('constructor', function () {
       asset: token.address,
       decimals: 17, // <-- packed decimals differ from deployed token's decimals
       priceFeed: priceFeed.address,
-    }])).to.be.revertedWith("custom error 'BadDecimals()'");
+    }], (await ethers.getSigners())[0].address)).to.be.revertedWith("custom error 'AssetDecimalsNotMatched()'");
   });
 
   it('reverts if baseTokenPriceFeed does not have 8 decimals', async () => {
@@ -60,7 +60,7 @@ describe('constructor', function () {
           },
         },
       })
-    ).to.be.revertedWith("custom error 'BadDecimals()'");
+    ).to.be.revertedWith("custom error 'PriceFeedDecimalsNotMatched()'");
   });
 
   it('reverts if base token has fewer than 6 decimals', async () => {

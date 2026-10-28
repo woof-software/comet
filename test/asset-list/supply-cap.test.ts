@@ -59,7 +59,8 @@ describe('supply cap', function () {
 
     before(async () => {
       implementation = await AssetListContractFactory.deploy(
-        await deployImmutableAssetConfigs(Array(MAX_ASSETS).fill(Number(decimals)))
+        await deployImmutableAssetConfigs(Array(MAX_ASSETS).fill(Number(decimals))),
+        configurator.address
       );
     });
 
@@ -79,8 +80,7 @@ describe('supply cap', function () {
             newAssetList = await deployAssetListProxy(
               implementation,
               proxyAdmin.address,
-              Array(MAX_ASSETS).fill(storageConfig(supplyCap)),
-              configurator.address
+              Array(MAX_ASSETS).fill(storageConfig(supplyCap))
             );
           });
 
@@ -249,7 +249,7 @@ describe('supply cap', function () {
               for (const asset of assets) {
                 await configurator.connect(governor).updateAssetSupplyCap(comet.address, asset, supplyCap);
               }
-              const newImplementation = await AssetListContractFactory.deploy(await configurator.getImmutableAssetConfig(comet.address));
+              const newImplementation = await AssetListContractFactory.deploy(await configurator.getImmutableAssetConfig(comet.address), configurator.address);
               await proxyAdmin.upgrade(assetList.address, newImplementation.address);
             });
 

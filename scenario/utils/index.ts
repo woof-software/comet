@@ -2107,7 +2107,7 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
   const assetListImplementation = (await dm.deploy(
     'assetList:implementation',
     'AssetList.sol',
-    [await configurator.getImmutableAssetConfig(comet.address)],
+    [await configurator.getImmutableAssetConfig(comet.address), configurator.address],
     true
   )) as AssetList;
   const assetListProxy = await dm.deploy(
@@ -2118,7 +2118,6 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
       proxyAdmin.address,
       assetListImplementation.interface.encodeFunctionData('initialize', [
         await configurator.getStorageAssetConfig(comet.address),
-        configurator.address,
       ]),
     ],
     true

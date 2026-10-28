@@ -217,7 +217,7 @@ contract ForkConfiguratorMigrationTest is ConfiguratorMigrationForkBase {
         address assetList = address(new TransparentUpgradeableProxy(
             assetListImpl,
             address(cometAdmin),
-            abi.encodeCall(AssetList.initialize, (configurator().getStorageAssetConfig(comet), proxy))
+            abi.encodeCall(AssetList.initialize, (configurator().getStorageAssetConfig(comet)))
         ));
         configurator().updateAssetList(comet, assetList);
         configurator().setFactory(comet, address(cometFactory));

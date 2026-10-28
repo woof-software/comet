@@ -30,8 +30,8 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     /// @dev The max asset decimals whose scale (10 to the power of the decimals) fits in uint64
     uint8 internal constant MAX_ASSET_DECIMALS = 19;
 
-    /// @dev The max value for a collateral factor (1)
-    uint64 internal constant MAX_COLLATERAL_FACTOR = 1e18;
+    /// @dev The scale for factors, so 1e18 is a factor of 1, the max for any of them
+    uint64 internal constant FACTOR_SCALE = 1e18;
 
     /// @dev The max number of assets, one per pair of immutables below
     uint8 internal constant MAX_ASSETS = 24;
@@ -91,67 +91,69 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     /// @inheritdoc IConfigHash
     bytes32 public immutable configHash;
 
+    /// @notice The only address allowed to call the setters
+    address public immutable configurator;
+
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice The only address allowed to call the setters
-    address public configurator;
+    /// @dev Registered assets, so a setter rejects an unlisted asset with one lookup
+    EnumerableSet.AddressSet internal assets;
 
-    /// @notice Storage of the asset list's mutable configs
-    AssetConfigStorage internal assetConfigStorage;
+    /// @dev Factors and supply cap of each asset, keyed by address so they stay with the asset whatever its index
+    mapping(address => StorageAssetConfig) internal assetConfigs;
 
     modifier onlyConfigurator() {
         if (msg.sender != configurator) revert OnlyConfigurator();
         _;
     }
 
-    constructor(ImmutableAssetConfig[] memory assetConfigs) {
+    constructor(ImmutableAssetConfig[] memory assetConfigs_, address configurator_) {
         _disableInitializers();
 
-        if (assetConfigs.length == 0) revert NoAssets();
-        if (assetConfigs.length > MAX_ASSETS) revert TooManyAssets();
+        if (assetConfigs_.length == 0) revert NoAssets();
+        if (assetConfigs_.length > MAX_ASSETS) revert TooManyAssets();
+        if (configurator_ == address(0)) revert ZeroConfigurator();
+        configurator = configurator_;
 
-        uint8 _numAssets = uint8(assetConfigs.length);
+        uint8 _numAssets = uint8(assetConfigs_.length);
         numAssets = _numAssets;
-        configHash = ConfigHash.hashConfig(TYPEHASH, abi.encode(assetConfigs));
+        configHash = ConfigHash.hashConfig(TYPEHASH, abi.encode(assetConfigs_));
 
-        (asset00_a, priceFeedAddress00) = _packAsset(assetConfigs, 0);
-        (asset01_a, priceFeedAddress01) = _packAsset(assetConfigs, 1);
-        (asset02_a, priceFeedAddress02) = _packAsset(assetConfigs, 2);
-        (asset03_a, priceFeedAddress03) = _packAsset(assetConfigs, 3);
-        (asset04_a, priceFeedAddress04) = _packAsset(assetConfigs, 4);
-        (asset05_a, priceFeedAddress05) = _packAsset(assetConfigs, 5);
-        (asset06_a, priceFeedAddress06) = _packAsset(assetConfigs, 6);
-        (asset07_a, priceFeedAddress07) = _packAsset(assetConfigs, 7);
-        (asset08_a, priceFeedAddress08) = _packAsset(assetConfigs, 8);
-        (asset09_a, priceFeedAddress09) = _packAsset(assetConfigs, 9);
-        (asset10_a, priceFeedAddress10) = _packAsset(assetConfigs, 10);
-        (asset11_a, priceFeedAddress11) = _packAsset(assetConfigs, 11);
-        (asset12_a, priceFeedAddress12) = _packAsset(assetConfigs, 12);
-        (asset13_a, priceFeedAddress13) = _packAsset(assetConfigs, 13);
-        (asset14_a, priceFeedAddress14) = _packAsset(assetConfigs, 14);
-        (asset15_a, priceFeedAddress15) = _packAsset(assetConfigs, 15);
-        (asset16_a, priceFeedAddress16) = _packAsset(assetConfigs, 16);
-        (asset17_a, priceFeedAddress17) = _packAsset(assetConfigs, 17);
-        (asset18_a, priceFeedAddress18) = _packAsset(assetConfigs, 18);
-        (asset19_a, priceFeedAddress19) = _packAsset(assetConfigs, 19);
-        (asset20_a, priceFeedAddress20) = _packAsset(assetConfigs, 20);
-        (asset21_a, priceFeedAddress21) = _packAsset(assetConfigs, 21);
-        (asset22_a, priceFeedAddress22) = _packAsset(assetConfigs, 22);
-        (asset23_a, priceFeedAddress23) = _packAsset(assetConfigs, 23);
+        (asset00_a, priceFeedAddress00) = 0 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[0]);
+        (asset01_a, priceFeedAddress01) = 1 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[1]);
+        (asset02_a, priceFeedAddress02) = 2 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[2]);
+        (asset03_a, priceFeedAddress03) = 3 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[3]);
+        (asset04_a, priceFeedAddress04) = 4 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[4]);
+        (asset05_a, priceFeedAddress05) = 5 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[5]);
+        (asset06_a, priceFeedAddress06) = 6 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[6]);
+        (asset07_a, priceFeedAddress07) = 7 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[7]);
+        (asset08_a, priceFeedAddress08) = 8 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[8]);
+        (asset09_a, priceFeedAddress09) = 9 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[9]);
+        (asset10_a, priceFeedAddress10) = 10 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[10]);
+        (asset11_a, priceFeedAddress11) = 11 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[11]);
+        (asset12_a, priceFeedAddress12) = 12 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[12]);
+        (asset13_a, priceFeedAddress13) = 13 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[13]);
+        (asset14_a, priceFeedAddress14) = 14 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[14]);
+        (asset15_a, priceFeedAddress15) = 15 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[15]);
+        (asset16_a, priceFeedAddress16) = 16 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[16]);
+        (asset17_a, priceFeedAddress17) = 17 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[17]);
+        (asset18_a, priceFeedAddress18) = 18 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[18]);
+        (asset19_a, priceFeedAddress19) = 19 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[19]);
+        (asset20_a, priceFeedAddress20) = 20 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[20]);
+        (asset21_a, priceFeedAddress21) = 21 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[21]);
+        (asset22_a, priceFeedAddress22) = 22 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[22]);
+        (asset23_a, priceFeedAddress23) = 23 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[23]);
     }
 
     /**
-     * @notice Set the factors and supply caps of the listed assets, and the configurator allowed to change them later
+     * @notice Set the factors and supply caps of the listed assets
      * @dev The configs go in the same order as the assets passed to the constructor, one per asset
      * @param storageConfigs The mutable part of the asset configurations
-     * @param configurator_ The configurator
      */
-    function initialize(StorageAssetConfig[] calldata storageConfigs, address configurator_) external initializer {
+    function initialize(StorageAssetConfig[] calldata storageConfigs) external initializer {
         if (storageConfigs.length != numAssets) revert StorageConfigsLengthMismatch();
-        if (configurator_ == address(0)) revert ZeroConfigurator();
-        configurator = configurator_;
 
         for (uint8 i; i < numAssets; ++i) {
             (uint256 word_a, ) = _loadPackedAsset(i);
@@ -173,7 +175,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      * @param config The factors and supply cap of the asset
      */
     function setAssetConfig(address asset, StorageAssetConfig calldata config) external onlyConfigurator {
-        if (!_isInImmutables(asset)) revert BadAsset();
+        if (!_isInImmutables(asset)) revert AssetNotInImmutables();
         // An asset already registered gets its config replaced, so whether it was new does not matter here
         _setAssetConfig(asset, config);
     }
@@ -237,7 +239,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
         address asset = address(uint160(word_a));
 
         // Factors and supply cap are kept unscaled in storage so the Configurator can change them
-        StorageAssetConfig memory config = assetConfigStorage.configs[asset];
+        StorageAssetConfig memory config = assetConfigs[asset];
 
         return AssetInfo({
             asset: asset,
@@ -258,7 +260,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      */
     function getAssetInfoByAddress(address asset) public view returns (AssetInfo memory) {
         // Rejects unlisted assets without scanning
-        if (!assetConfigStorage.assets.contains(asset)) revert BadAsset();
+        if (!assets.contains(asset)) revert BadAsset();
 
         // Only the packed words are compared, so storage is read just once for the matching asset
         for (uint8 i; i < numAssets; ++i) {
@@ -276,35 +278,31 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      * @dev Checks and gets the packed asset info and the price feed address
      * - in the packed word, the asset address is stored in the lower 160 bits (address can be interpreted as uint160),
      *      the asset decimals in the next 8 bits, and the asset scale (10 to the power of the decimals) in the next 64 bits
-     * @param assetConfigs The immutable part of the asset configurations
-     * @param i The index of the asset info to get
+     * @param assetConfig The immutable part of the asset configuration
      * @return The packed asset info and the price feed address
      */
-    function _packAsset(ImmutableAssetConfig[] memory assetConfigs, uint i) internal view returns (uint256, address) {
-        if (i >= assetConfigs.length) return (0, address(0));
-        ImmutableAssetConfig memory assetConfig = assetConfigs[i];
+    function _packAsset(ImmutableAssetConfig memory assetConfig) internal view returns (uint256, address) {
         address asset = assetConfig.asset;
         address priceFeed = assetConfig.priceFeed;
-        uint8 decimals_ = assetConfig.decimals;
+        uint8 decimals = assetConfig.decimals;
 
-        // The zero address is what every unused asset slot holds, so a listed asset that is zero would look like an empty slot
-        if (asset == address(0)) revert BadAsset();
+        if (asset == address(0) || priceFeed == address(0)) revert ZeroAddress();
 
         // Sanity check price feed and asset decimals
-        if (IPriceFeed(priceFeed).decimals() != PRICE_FEED_DECIMALS) revert BadDecimals();
-        if (IERC20NonStandard(asset).decimals() != decimals_) revert BadDecimals();
+        if (IPriceFeed(priceFeed).decimals() != PRICE_FEED_DECIMALS) revert PriceFeedDecimalsNotMatched();
+        if (IERC20NonStandard(asset).decimals() != decimals) revert AssetDecimalsNotMatched();
         // The scale is packed as uint64, so it must fit
-        if (decimals_ > MAX_ASSET_DECIMALS) revert BadDecimals();
-        uint64 scale = uint64(10 ** decimals_);
+        if (decimals > MAX_ASSET_DECIMALS) revert MaxAssetDecimalsExceeds();
+        uint64 scale = uint64(10 ** decimals);
 
         uint256 word_a = (uint160(asset) << 0 |        // bits 0-159: asset address
-                          uint256(decimals_) << 160 |  // bits 160-167: asset decimals
+                          uint256(decimals) << 160 |  // bits 160-167: asset decimals
                           uint256(scale) << 168);      // bits 168-231: asset scale (bits 232-255 unused)
         return (word_a, priceFeed);
     }
 
     /**
-     * @dev Sanity checks for factors ordering: BCF < LCF < LF <= MAX_COLLATERAL_FACTOR
+     * @dev Sanity checks for factors ordering: BCF < LCF < LF <= FACTOR_SCALE
      * Valid collateral factor configurations:
      *  1. Both BCF and LCF are 0 => collateral is fully de-listed
      *  2. borrowCF=0, liquidateCF>0 => soft de-list (no new borrows, controlled liquidation wind-down)
@@ -319,7 +317,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     ) internal pure {
         if (borrowCollateralFactor >= liquidateCollateralFactor && borrowCollateralFactor != 0) revert BorrowCFTooLarge();
         if (liquidateCollateralFactor >= liquidationFactor && liquidateCollateralFactor != 0) revert LiquidateCFTooLarge();
-        if (liquidationFactor > MAX_COLLATERAL_FACTOR) revert LiqPenaltyTooHigh();
+        if (liquidationFactor > FACTOR_SCALE) revert LiqPenaltyTooHigh();
     }
 
     /**
@@ -345,17 +343,17 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
             config.liquidationFactor
         );
 
-        assetConfigStorage.configs[asset] = config;
+        assetConfigs[asset] = config;
         // Registers a new asset; an asset already registered stays as it is
-        return assetConfigStorage.assets.add(asset);
+        return assets.add(asset);
     }
 
     /**
      * @dev Returns the stored config of an asset, reverting if the asset was not listed at construction
      */
     function _listedConfig(address asset) internal view returns (StorageAssetConfig storage) {
-        if (!assetConfigStorage.assets.contains(asset)) revert BadAsset();
-        return assetConfigStorage.configs[asset];
+        if (!assets.contains(asset)) revert AssetNotFound();
+        return assetConfigs[asset];
     }
 
     /**

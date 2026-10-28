@@ -162,8 +162,7 @@ describe('configurator: asset list management', function () {
         newList = await deployAssetListProxy(
           AssetListContractFactory.attach(newImplementation),
           proxyAdmin.address,
-          await configurator.getStorageAssetConfig(comet.address),
-          configurator.address
+          await configurator.getStorageAssetConfig(comet.address)
         );
         await configurator.updateAssetList(comet.address, newList.address);
         await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
@@ -364,10 +363,9 @@ describe('configurator: asset list management', function () {
         snapshot = await takeSnapshot();
         // A new list proxy, deployed and initialized from the stored configs
         newList = await deployAssetListProxy(
-          await AssetListContractFactory.deploy(await configurator.getImmutableAssetConfig(comet.address)),
+          await AssetListContractFactory.deploy(await configurator.getImmutableAssetConfig(comet.address), configurator.address),
           proxyAdmin.address,
-          await configurator.getStorageAssetConfig(comet.address),
-          configurator.address
+          await configurator.getStorageAssetConfig(comet.address)
         );
         oldListBefore = await listConfigs();
         tx = await configurator.updateAssetList(comet.address, newList.address);

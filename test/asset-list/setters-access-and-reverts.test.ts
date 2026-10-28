@@ -102,9 +102,9 @@ describe('asset list setters: access and reverts', function () {
       after(async () => await snapshot.restore());
 
       SETTERS.forEach(({ field, value }) => {
-        it(`updateAsset${field} reverts with BadAsset of the list`, async () => {
+        it(`updateAsset${field} reverts with AssetNotFound of the list`, async () => {
           await expect(update(field, comet.address, newAssetConfig.asset, value))
-            .to.be.revertedWithCustomError(assetList, 'BadAsset');
+            .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
         });
       });
     });
@@ -123,9 +123,9 @@ describe('asset list setters: access and reverts', function () {
       after(async () => await snapshot.restore());
 
       SETTERS.forEach(({ field, value }) => {
-        it(`updateAsset${field} reverts with BadAsset of the list`, async () => {
+        it(`updateAsset${field} reverts with AssetNotFound of the list`, async () => {
           await expect(update(field, comet.address, newAssetConfig.asset, value))
-            .to.be.revertedWithCustomError(assetList, 'BadAsset');
+            .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
         });
       });
     });

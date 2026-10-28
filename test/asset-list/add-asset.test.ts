@@ -379,17 +379,17 @@ describe('asset list add asset: full flow through the Configurator', function ()
     it('redeploy: the price feed of the new config does not have 8 decimals', async () => {
       const { priceFeed } = await deployImmutableAssetConfig(18, 18);
       await configurator.addAsset(comet.address, await deployAssetConfig(18, { priceFeed }));
-      await expect(configurator.deployAssetList(comet.address)).to.be.revertedWithCustomError(assetList, 'BadDecimals');
+      await expect(configurator.deployAssetList(comet.address)).to.be.revertedWithCustomError(assetList, 'PriceFeedDecimalsNotMatched');
     });
 
     it('redeploy: the decimals of the new config differ from the token decimals', async () => {
       await configurator.addAsset(comet.address, await deployAssetConfig(18, { decimals: 9 }));
-      await expect(configurator.deployAssetList(comet.address)).to.be.revertedWithCustomError(assetList, 'BadDecimals');
+      await expect(configurator.deployAssetList(comet.address)).to.be.revertedWithCustomError(assetList, 'AssetDecimalsNotMatched');
     });
 
     it('redeploy: the new asset has more than 19 decimals', async () => {
       await configurator.addAsset(comet.address, await deployAssetConfig(20));
-      await expect(configurator.deployAssetList(comet.address)).to.be.revertedWithCustomError(assetList, 'BadDecimals');
+      await expect(configurator.deployAssetList(comet.address)).to.be.revertedWithCustomError(assetList, 'MaxAssetDecimalsExceeds');
     });
 
     it('step 1: the asset is already in the stored configs', async () => {
@@ -409,14 +409,14 @@ describe('asset list add asset: full flow through the Configurator', function ()
 
     it('step 2: AssetList.setAssetConfig is called by the Configurator with the zero address', async () => {
       await expect(assetList.connect(await impersonate(configurator.address)).setAssetConfig(ZERO, storageConfigs[0]))
-        .to.be.revertedWithCustomError(assetList, 'BadAsset');
+        .to.be.revertedWithCustomError(assetList, 'AssetNotInImmutables');
     });
 
     it('step 2: the list proxy is not upgraded yet, so the asset is not in the immutables', async () => {
       const assetConfig = await deployAssetConfig();
       await configurator.addAsset(comet.address, assetConfig);
       await expect(configurator.setAssetConfigToAssetList(comet.address, assetConfig.asset))
-        .to.be.revertedWithCustomError(assetList, 'BadAsset');
+        .to.be.revertedWithCustomError(assetList, 'AssetNotInImmutables');
     });
 
     // Step 1 does not check the factors, so a bad stored config is rejected only by the list, at step 2

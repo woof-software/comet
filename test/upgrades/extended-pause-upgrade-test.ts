@@ -127,7 +127,6 @@ describe('extended pause upgrade test', function () {
       proxyAdmin.address,
       assetListImplementation.interface.encodeFunctionData('initialize', [
         await configurator.getStorageAssetConfig(COMET_ADDRESS),
-        CONFIGURATOR_ADDRESS,
       ])
     );
     await configurator.connect(governor).updateAssetList(COMET_ADDRESS, assetListProxy.address);

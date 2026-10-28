@@ -16,11 +16,26 @@ interface IAssetListErrors {
     /// @dev The number of storage configs differs from the number of assets
     error StorageConfigsLengthMismatch();
 
-    /// @dev The asset is the zero address, is not listed, or the index is out of range
+    /// @dev The asset is not listed, or the index is out of range
     error BadAsset();
 
-    /// @dev The price feed or asset decimals differ from what is expected
-    error BadDecimals();
+    /// @dev The asset to update is not registered in the list
+    error AssetNotFound();
+
+    /// @dev The asset is not one of the assets this implementation was built from, so it needs a list upgrade first
+    error AssetNotInImmutables();
+
+    /// @dev The asset or its price feed is the zero address
+    error ZeroAddress();
+
+    /// @dev The price feed does not have the expected 8 decimals
+    error PriceFeedDecimalsNotMatched();
+
+    /// @dev The config decimals differ from the token decimals
+    error AssetDecimalsNotMatched();
+
+    /// @dev The asset has too many decimals for its scale to fit in uint64
+    error MaxAssetDecimalsExceeds();
 
     /// @dev The borrow collateral factor is not below the liquidate collateral factor
     error BorrowCFTooLarge();
