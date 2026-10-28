@@ -5,7 +5,8 @@ pragma solidity 0.8.15;
  * @title Compound's Comet Configuration Interface, Intermediate version
  * @dev The configuration before asset configs moved to the asset list, still with Configuration.assetConfigs.
  *      Used by ConfiguratorIntermediate, which migrates the asset configs out of it, and by the legacy Comet it deploys.
- *      Same structs as V1, so V1 and Intermediate share one storage layout
+ *      Same structs as V1, so V1 and Intermediate share one storage layout. AssetConfig here still has decimals;
+ *      the migrated configs use CometConfiguration.AssetConfig, which has none
  * @author Compound
  */
 contract CometConfigurationIntermediate {

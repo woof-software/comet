@@ -13,14 +13,14 @@ import {
 } from './shared';
 
 // The Configurator stores the full config of every asset of a market. Immutable changes (asset, price feed,
-// decimals, a new asset) reach the list through deployAssetList and an upgrade of the list proxy; storage changes
+// a new asset) reach the list through deployAssetList and an upgrade of the list proxy; storage changes
 // (factors, supply cap) are written to the list by the same call that updates the stored config.
 describe('configurator: assets configs management', function () {
   const ZERO = ethers.constants.AddressZero;
   const FACTOR = 10n ** 16n; // 0.01
   const NUM_ASSETS = ASSET_DECIMALS.length;
   const TARGET = 1; // index of the asset the updates are called for
-  const IMMUTABLE_KEYS = ['asset', 'decimals', 'priceFeed'] as const;
+  const IMMUTABLE_KEYS = ['asset', 'priceFeed'] as const;
   const STORAGE_KEYS = ['borrowCollateralFactor', 'liquidateCollateralFactor', 'liquidationFactor', 'supplyCap'] as const;
   const KEYS = [...IMMUTABLE_KEYS, ...STORAGE_KEYS];
 

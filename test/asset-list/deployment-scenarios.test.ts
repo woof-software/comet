@@ -128,7 +128,7 @@ describe('asset list deployment scenarios', function () {
   // AssetListTypeHashMock is a full copy of AssetList with only the TYPEHASH changed, so it has to be kept in sync with
   // contracts/AssetList.sol by hand: after any change there, copy it into the mock as well
   describe('TYPEHASH updated', function () {
-    const NEW_TYPEHASH = ethers.utils.id('ImmutableConfigV2[](address asset,uint8 decimals,address priceFeed)');
+    const NEW_TYPEHASH = ethers.utils.id('ImmutableConfigV2[](address asset,address priceFeed)');
 
     let newFactory: AssetListTypeHashFactoryMock;
     let newImplementation: AssetListTypeHashMock;

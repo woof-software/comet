@@ -145,7 +145,6 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
             assetConfigs[i] = CometConfiguration.AssetConfig({
                 asset: address(collaterals[i]),
                 priceFeed: address(collateralPriceFeeds[i]),
-                decimals: spec.decimals,
                 borrowCollateralFactor: spec.borrowCollateralFactor,
                 liquidateCollateralFactor: spec.liquidateCollateralFactor,
                 liquidationFactor: spec.liquidationFactor,

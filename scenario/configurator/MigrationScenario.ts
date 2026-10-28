@@ -16,6 +16,7 @@ import {
   CometWithExtendedAssetList,
   Configurator,
   ConfiguratorV1,
+  ERC20,
 } from '../../build/types';
 
 // The slot a transparent proxy keeps its admin in (EIP-1967)
@@ -133,13 +134,18 @@ scenario(
       ]
     );
 
-    // The asset configs moved to their own mapping, in their original order with every field unchanged
+    // The asset configs moved to their own mapping, in their original order with every field but decimals unchanged.
+    // The migration rebuilds each config field by field, so every field is checked to catch one dropped or swapped
     const storedAssetConfigs = await configurator.getAssetConfigs(comet.address);
     expect(storedAssetConfigs.length).to.equal(v1AssetConfigs.length);
     for (let i = 0; i < v1AssetConfigs.length; i++) {
-      for (const field of namedFields(v1AssetConfigs[i])) {
+      expect(namedFields(storedAssetConfigs[i])).to.deep.equal(namedFields(v1AssetConfigs[i]).filter((field) => field !== 'decimals'));
+      for (const field of namedFields(storedAssetConfigs[i])) {
         expect(storedAssetConfigs[i][field], `asset ${i} ${field}`).to.deep.equal(v1AssetConfigs[i][field]);
       }
+      // Decimals are dropped because the asset list reads them from the token, so the V1 value must be the token's
+      const token = (await ethers.getContractAt('ERC20', v1AssetConfigs[i].asset)) as ERC20;
+      expect(await token.decimals(), `asset ${i} decimals`).to.equal(v1AssetConfigs[i].decimals);
     }
 
     // Clearing the old array zeroed the slot the new Configuration reads as assetList; every other field is kept
@@ -176,7 +182,7 @@ scenario(
     // The list was built from the market's immutable configs
     const immutableConfigs = await configurator.getImmutableAssetConfig(comet.address);
     const encodedImmutableConfigs = utils.defaultAbiCoder.encode(
-      ['tuple(address asset, uint8 decimals, address priceFeed)[]'],
+      ['tuple(address asset, address priceFeed)[]'],
       [immutableConfigs]
     );
     expect(await assetList.configHash()).to.equal(
@@ -190,7 +196,7 @@ scenario(
       const stored = storedAssetConfigs[i];
       expect(info.asset).to.equal(stored.asset);
       expect(info.priceFeed).to.equal(stored.priceFeed);
-      expect(info.scale).to.equal(10n ** BigInt(stored.decimals));
+      expect(info.scale).to.equal(10n ** BigInt(v1AssetConfigs[i].decimals));
       expect(info.borrowCollateralFactor).to.equal(stored.borrowCollateralFactor);
       expect(info.liquidateCollateralFactor).to.equal(stored.liquidateCollateralFactor);
       expect(info.liquidationFactor).to.equal(stored.liquidationFactor);

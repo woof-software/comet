@@ -22,7 +22,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     /// @dev Required by IConfigHash library. Determines the type of the config.
     /// @dev Update if new immutable config types are added.
     bytes32 public constant TYPEHASH =
-        keccak256("ImmutableConfig[](address asset,uint8 decimals,address priceFeed)");
+        keccak256("ImmutableConfig[](address asset,address priceFeed)");
 
     /// @dev The decimals required for a price feed
     uint8 internal constant PRICE_FEED_DECIMALS = 8;
@@ -284,13 +284,13 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     function _packAsset(ImmutableAssetConfig memory assetConfig) internal view returns (uint256, address) {
         address asset = assetConfig.asset;
         address priceFeed = assetConfig.priceFeed;
-        uint8 decimals = assetConfig.decimals;
 
         if (asset == address(0) || priceFeed == address(0)) revert ZeroAddress();
 
-        // Sanity check price feed and asset decimals
+        // Sanity check price feed decimals
         if (IPriceFeed(priceFeed).decimals() != PRICE_FEED_DECIMALS) revert PriceFeedDecimalsNotMatched();
-        if (IERC20NonStandard(asset).decimals() != decimals) revert AssetDecimalsNotMatched();
+        // The asset decimals come from the token itself, so they can never disagree with it
+        uint8 decimals = IERC20NonStandard(asset).decimals();
         // The scale is packed as uint64, so it must fit
         if (decimals > MAX_ASSET_DECIMALS) revert MaxAssetDecimalsExceeds();
         uint64 scale = uint64(10 ** decimals);

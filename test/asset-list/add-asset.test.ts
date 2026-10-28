@@ -26,7 +26,7 @@ describe('asset list add asset: full flow through the Configurator', function ()
   const MAX_COLLATERAL_FACTOR = 10n ** 18n;
   const NUM_ASSETS = ASSET_DECIMALS.length; // assets of the fixture; also the index the new asset gets
   const NEW_ASSET_DECIMALS = 8;
-  const IMMUTABLE_KEYS = ['asset', 'decimals', 'priceFeed'] as const;
+  const IMMUTABLE_KEYS = ['asset', 'priceFeed'] as const;
   const STORAGE_KEYS = ['borrowCollateralFactor', 'liquidateCollateralFactor', 'liquidationFactor', 'supplyCap'] as const;
 
   let AssetListContractFactory: AssetList__factory;
@@ -380,11 +380,6 @@ describe('asset list add asset: full flow through the Configurator', function ()
       const { priceFeed } = await deployImmutableAssetConfig(18, 18);
       await configurator.addAsset(comet.address, await deployAssetConfig(18, { priceFeed }));
       await expect(configurator.deployAssetList(comet.address)).to.be.revertedWithCustomError(assetList, 'PriceFeedDecimalsNotMatched');
-    });
-
-    it('redeploy: the decimals of the new config differ from the token decimals', async () => {
-      await configurator.addAsset(comet.address, await deployAssetConfig(18, { decimals: 9 }));
-      await expect(configurator.deployAssetList(comet.address)).to.be.revertedWithCustomError(assetList, 'AssetDecimalsNotMatched');
     });
 
     it('redeploy: the new asset has more than 19 decimals', async () => {

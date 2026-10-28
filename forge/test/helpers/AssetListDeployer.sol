@@ -21,7 +21,6 @@ abstract contract AssetListDeployer {
         for (uint256 i; i < assetConfigs.length; ++i) {
             immutableConfigs[i] = IAssetListStructs.ImmutableAssetConfig({
                 asset: assetConfigs[i].asset,
-                decimals: assetConfigs[i].decimals,
                 priceFeed: assetConfigs[i].priceFeed
             });
             storageConfigs[i] = IAssetListStructs.StorageAssetConfig({

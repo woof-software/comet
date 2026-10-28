@@ -18,7 +18,7 @@ import { impersonateAccount, setBalance } from '../helpers/network-helpers';
 export const MAX_ASSETS = 24;
 export const PRICE_FEED_DECIMALS = 8;
 export const MAX_ASSET_DECIMALS = 19;
-export const TYPEHASH = ethers.utils.id('ImmutableConfig[](address asset,uint8 decimals,address priceFeed)');
+export const TYPEHASH = ethers.utils.id('ImmutableConfig[](address asset,address priceFeed)');
 
 // Decimals of the fixture assets, in the order they are listed. They cover both ends of the allowed range:
 // 0 decimals (scale 1) and MAX_ASSET_DECIMALS.
@@ -58,7 +58,7 @@ export async function deployImmutableAssetConfig(
 ): Promise<ImmutableAssetConfigStruct> {
   const token = await deploy('FaucetToken', 0, 'Asset', decimals, 'ASSET');
   const priceFeed = await deploy('SimplePriceFeed', 10n ** BigInt(priceFeedDecimals), priceFeedDecimals);
-  return { asset: token.address, decimals, priceFeed: priceFeed.address };
+  return { asset: token.address, priceFeed: priceFeed.address };
 }
 
 // A new token and price feed with the fixture factors and supply cap: a full asset config, as the Configurator
@@ -91,7 +91,7 @@ export async function deployImmutableAssetConfigs(decimalsList: number[]): Promi
 // ConfigHash.hashConfig(typeHash, abi.encode(configs)), computed off-chain.
 export function hashConfig(configs: ImmutableAssetConfigStruct[], typeHash = TYPEHASH): string {
   const encoded = ethers.utils.defaultAbiCoder.encode(
-    ['tuple(address asset, uint8 decimals, address priceFeed)[]'],
+    ['tuple(address asset, address priceFeed)[]'],
     [configs]
   );
   return ethers.utils.keccak256(ethers.utils.hexConcat([typeHash, encoded]));

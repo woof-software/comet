@@ -2,6 +2,7 @@
 pragma solidity 0.8.15;
 
 import "./CometConfigurationIntermediate.sol";
+import "../CometConfiguration.sol";
 
 /**
  * @title Compound's Comet Configuration Storage Interface
@@ -27,7 +28,8 @@ contract ConfiguratorIntermediateStorage is CometConfigurationIntermediate {
     /// @notice Mapping of Comet proxy addresses to their Comet factory contracts
     mapping(address => address) public factory;
 
-    /// @notice Mapping of Comet proxy addresses to their ImmutableAssetConfig settings
-    /// @dev Appended at the end, at the same slot as in the final ConfiguratorStorage, and filled by migrateAssetConfig
-    mapping(address => AssetConfig[]) public assetConfigs;
+    /// @notice Mapping of Comet proxy addresses to their asset configs, in the final format without decimals
+    /// @dev Appended at the end, at the same slot and with the same struct as in the final ConfiguratorStorage,
+    ///      and filled by migrateAssetConfig
+    mapping(address => CometConfiguration.AssetConfig[]) public assetConfigs;
 }

@@ -16,6 +16,7 @@ import { CometFactoryWithExtendedAssetList } from "contracts/test/CometFactoryWi
 import { CometWithExtendedAssetList } from "contracts/CometWithExtendedAssetList.sol";
 import { IAssetList } from "contracts/interfaces/assetList/IAssetList.sol";
 import { IAssetListStructs } from "contracts/interfaces/assetList/IAssetListStructs.sol";
+import { IERC20NonStandard } from "contracts/interfaces/IERC20NonStandard.sol";
 import { ConfiguratorMigrationForkBase } from "./ConfiguratorMigrationForkBase.sol";
 import { console2 } from "forge-std/console2.sol";
 
@@ -192,7 +193,8 @@ contract ForkConfiguratorMigrationTest is ConfiguratorMigrationForkBase {
         for (uint256 i; i < actual.length; ++i) {
             assertEq(actual[i].asset, expected[i].asset);
             assertEq(actual[i].priceFeed, expected[i].priceFeed);
-            assertEq(actual[i].decimals, expected[i].decimals);
+            // Decimals are dropped by the migration, as the asset list reads them from the token, so the V1 value must be the token's
+            assertEq(IERC20NonStandard(actual[i].asset).decimals(), expected[i].decimals);
             assertEq(actual[i].borrowCollateralFactor, expected[i].borrowCollateralFactor);
             assertEq(actual[i].liquidateCollateralFactor, expected[i].liquidateCollateralFactor);
             assertEq(actual[i].liquidationFactor, expected[i].liquidationFactor);

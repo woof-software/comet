@@ -10,11 +10,10 @@ interface IAssetListStructs {
     /**
      * @notice The part of an asset config that never changes for a deployed asset list
      * @dev Passed to the asset list constructor and kept in immutables, so reading it costs no storage access.
-     *      Changing any of these values means deploying a new asset list
+     *      Changing any of these values means deploying a new asset list. The asset decimals are read from the token
      */
     struct ImmutableAssetConfig {
         address asset;                      // slot 0
-        uint8 decimals;
         address priceFeed;                  // slot 1
     }
 

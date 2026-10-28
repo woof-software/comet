@@ -31,9 +31,6 @@ interface IAssetListErrors {
     /// @dev The price feed does not have the expected 8 decimals
     error PriceFeedDecimalsNotMatched();
 
-    /// @dev The config decimals differ from the token decimals
-    error AssetDecimalsNotMatched();
-
     /// @dev The asset has too many decimals for its scale to fit in uint64
     error MaxAssetDecimalsExceeds();
 

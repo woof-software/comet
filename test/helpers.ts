@@ -618,7 +618,6 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     await configuratorAsProxy.connect(governor).addAsset(cometProxyWithExtendedAssetList.address, {
       asset: assetInfo.asset,
       priceFeed: assetInfo.priceFeed,
-      decimals: dfn(assets[collateralSymbols[i]].decimals, 18),
       borrowCollateralFactor: assetInfo.borrowCollateralFactor,
       liquidateCollateralFactor: assetInfo.liquidateCollateralFactor,
       liquidationFactor: assetInfo.liquidationFactor,

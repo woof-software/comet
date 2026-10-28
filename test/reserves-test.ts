@@ -1347,7 +1347,6 @@ describe('reserves', function () {
         comet.address,
         {
           asset: collaterals.WETH.address,
-          decimals: 18,
           priceFeed: priceFeeds.WETH.address,
           borrowCollateralFactor: exp(0.8, 18),
           liquidateCollateralFactor: exp(0.95, 18),
@@ -1359,7 +1358,6 @@ describe('reserves', function () {
         comet.address,
         {
           asset: collaterals.WBTC.address,
-          decimals: 8,
           priceFeed: priceFeeds.WBTC.address,
           borrowCollateralFactor: exp(0.7, 18),
           liquidateCollateralFactor: exp(0.9, 18),
@@ -1371,7 +1369,6 @@ describe('reserves', function () {
         comet.address,
         {
           asset: collaterals.COMP.address,
-          decimals: 18,
           priceFeed: priceFeeds.COMP.address,
           borrowCollateralFactor: exp(0.6, 18),
           liquidateCollateralFactor: exp(0.85, 18),
@@ -1500,7 +1497,6 @@ describe('reserves', function () {
         await configurator.addAsset(comet.address, {
           asset: token.address,
           priceFeed: feed.address,
-          decimals: 18,
           borrowCollateralFactor: exp(0.8, 18),
           liquidateCollateralFactor: exp(0.95, 18),
           liquidationFactor: exp(0.96, 18),

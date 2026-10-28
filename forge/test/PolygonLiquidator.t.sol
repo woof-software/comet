@@ -58,7 +58,6 @@ contract PolygonLiquidatorTest is Test, AssetListDeployer {
         assetConfigs[0] = CometConfiguration.AssetConfig({
             asset: WETH9,
             priceFeed: WETH9_PRICE_FEED,
-            decimals: 18,
             borrowCollateralFactor: 9e17,
             liquidateCollateralFactor: 93e16,
             liquidationFactor: 95e16,
@@ -68,7 +67,6 @@ contract PolygonLiquidatorTest is Test, AssetListDeployer {
         assetConfigs[1] = CometConfiguration.AssetConfig({
             asset: WBTC,
             priceFeed: WBTC_PRICE_FEED,
-            decimals: 8,
             borrowCollateralFactor: 7e17,
             liquidateCollateralFactor: 9e17,
             liquidationFactor: 95e16,
@@ -78,7 +76,6 @@ contract PolygonLiquidatorTest is Test, AssetListDeployer {
         assetConfigs[2] = CometConfiguration.AssetConfig({
             asset: WMATIC,
             priceFeed: WMATIC_PRICE_FEED,
-            decimals: 18,
             borrowCollateralFactor: 8e17,
             liquidateCollateralFactor: 895e15,
             liquidationFactor: 95e16,

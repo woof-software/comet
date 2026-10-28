@@ -205,7 +205,7 @@ scenario(
     expect(after.configHash).to.equal(utils.keccak256(utils.hexConcat([
       await assetList.TYPEHASH(),
       utils.defaultAbiCoder.encode(
-        ['tuple(address asset, uint8 decimals, address priceFeed)[]'],
+        ['tuple(address asset, address priceFeed)[]'],
         [await configurator.getImmutableAssetConfig(comet.address)]
       ),
     ])));
@@ -423,13 +423,12 @@ scenario(
       true
     )).address;
 
-    // The price feed is the only immutable field that can change: the asset is how updateAsset finds the config, and
-    // the decimals are the token's. Every field of the storage part changes; the factors keep their order, and the
+    // The price feed is the only immutable field that can change: the asset is how updateAsset finds the config.
+    // Every field of the storage part changes; the factors keep their order, and the
     // actor's twice-needed collateral still backs the borrow
     const newConfig = {
       asset: oldConfig.asset,
       priceFeed: newFeed,
-      decimals: oldConfig.decimals,
       borrowCollateralFactor: oldConfig.borrowCollateralFactor.mul(9).div(10),
       liquidateCollateralFactor: oldConfig.liquidateCollateralFactor.mul(9).div(10),
       liquidationFactor: oldConfig.liquidationFactor.mul(9).div(10),
@@ -444,7 +443,7 @@ scenario(
       properties.bridgeReceiver,
       [configurator.address, proxyAdmin.address, configurator.address],
       [
-        'updateAsset(address,(address,address,uint8,uint64,uint64,uint64,uint128))',
+        'updateAsset(address,(address,address,uint64,uint64,uint64,uint128))',
         'deployAndUpgradeTo(address,address)',
         'setAssetConfigToAssetList(address,address)',
       ],
@@ -473,7 +472,7 @@ scenario(
     expect(after.configHash).to.equal(utils.keccak256(utils.hexConcat([
       await assetList.TYPEHASH(),
       utils.defaultAbiCoder.encode(
-        ['tuple(address asset, uint8 decimals, address priceFeed)[]'],
+        ['tuple(address asset, address priceFeed)[]'],
         [await configurator.getImmutableAssetConfig(comet.address)]
       ),
     ])));
@@ -545,13 +544,12 @@ scenario(
 
     const numAssets = await comet.numAssets();
     const storageKeys = ['borrowCollateralFactor', 'liquidateCollateralFactor', 'liquidationFactor', 'supplyCap'];
-    const immutableKeys = ['asset', 'decimals', 'priceFeed'];
+    const immutableKeys = ['asset', 'priceFeed'];
 
     // A new collateral with its own 18 decimals token and price feed, active and with a cap of 1000 tokens
     const newAssetConfig = {
       asset: await deployMockERC20(context, 'asset'),
       priceFeed: await deployPriceFeed(context, 'asset'),
-      decimals: 18,
       ...storageConfig,
     };
     const { asset } = newAssetConfig;

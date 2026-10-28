@@ -17,6 +17,7 @@ import { FaucetToken } from "contracts/test/FaucetToken.sol";
 import { SimplePriceFeed } from "contracts/test/SimplePriceFeed.sol";
 import { IAssetList } from "contracts/interfaces/assetList/IAssetList.sol";
 import { IAssetListStructs } from "contracts/interfaces/assetList/IAssetListStructs.sol";
+import { IERC20NonStandard } from "contracts/interfaces/IERC20NonStandard.sol";
 import { Test } from "forge-std/Test.sol";
 
 contract ConfiguratorMigrationTest is Test {
@@ -214,7 +215,8 @@ contract ConfiguratorMigrationTest is Test {
         for (uint256 i; i < actual.length; ++i) {
             assertEq(actual[i].asset, expected[i].asset);
             assertEq(actual[i].priceFeed, expected[i].priceFeed);
-            assertEq(actual[i].decimals, expected[i].decimals);
+            // Decimals are dropped by the migration, as the asset list reads them from the token, so the V1 value must be the token's
+            assertEq(IERC20NonStandard(actual[i].asset).decimals(), expected[i].decimals);
             assertEq(actual[i].borrowCollateralFactor, expected[i].borrowCollateralFactor);
             assertEq(actual[i].liquidateCollateralFactor, expected[i].liquidateCollateralFactor);
             assertEq(actual[i].liquidationFactor, expected[i].liquidationFactor);

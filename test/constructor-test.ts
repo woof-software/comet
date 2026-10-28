@@ -1,5 +1,6 @@
 import { ethers, exp, expect, makeProtocol } from './helpers';
 import {
+  AssetList__factory,
   AssetListFactory__factory,
   FaucetToken__factory,
   SimplePriceFeed__factory,
@@ -26,12 +27,14 @@ describe('constructor', function () {
     const priceFeed = await PriceFeedFactory.deploy(exp(1, 8), 8);
     await priceFeed.deployed();
 
-    // The asset list is what packs the asset, so it is the one that checks the decimals against the token
-    await expect(assetListFactory.createAssetList([{
-      asset: token.address,
-      decimals: 17, // <-- packed decimals differ from deployed token's decimals
-      priceFeed: priceFeed.address,
-    }], (await ethers.getSigners())[0].address)).to.be.revertedWith("custom error 'AssetDecimalsNotMatched()'");
+    // The asset list reads the decimals from the token itself, so the scale follows the token's own decimals
+    const configs = [{ asset: token.address, priceFeed: priceFeed.address }];
+    const configurator = (await ethers.getSigners())[0].address;
+    const assetListAddress = await assetListFactory.callStatic.createAssetList(configs, configurator);
+    await (await assetListFactory.createAssetList(configs, configurator)).wait();
+    const assetList = AssetList__factory.connect(assetListAddress, ethers.provider);
+
+    expect((await assetList.getAssetInfo(0)).scale).to.equal(10n ** BigInt(await token.decimals()));
   });
 
   it('reverts if baseTokenPriceFeed does not have 8 decimals', async () => {

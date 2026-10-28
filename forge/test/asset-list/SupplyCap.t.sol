@@ -5,6 +5,7 @@ import { AssetList } from "@comet-contracts/AssetList.sol";
 import { CometConfiguration } from "@comet-contracts/CometConfiguration.sol";
 import { CometCore } from "@comet-contracts/CometCore.sol";
 import { CometMainInterface } from "@comet-contracts/CometMainInterface.sol";
+import { IERC20NonStandard } from "@comet-contracts/interfaces/IERC20NonStandard.sol";
 
 import { ProtocolFixture } from "../helpers/ProtocolFixture.sol";
 
@@ -73,7 +74,7 @@ contract SupplyCapTest is ProtocolFixture {
             assertEq(assetInfo.offset, i, "offset");
             assertEq(assetInfo.asset, assetConfigs[i].asset, "asset");
             assertEq(assetInfo.priceFeed, assetConfigs[i].priceFeed, "price feed");
-            assertEq(assetInfo.scale, 10 ** assetConfigs[i].decimals, "scale");
+            assertEq(assetInfo.scale, 10 ** IERC20NonStandard(assetConfigs[i].asset).decimals(), "scale");
             assertEq(assetInfo.borrowCollateralFactor, assetConfigs[i].borrowCollateralFactor, "borrow collateral factor");
             assertEq(assetInfo.liquidateCollateralFactor, assetConfigs[i].liquidateCollateralFactor, "liquidate collateral factor");
             assertEq(assetInfo.liquidationFactor, assetConfigs[i].liquidationFactor, "liquidation factor");

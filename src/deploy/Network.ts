@@ -171,12 +171,12 @@ export async function deployNetworkComet(
     maybeForce()
   );
 
-  // The asset list is built from the immutable part of the asset configs (asset, decimals, price feed) and the
+  // The asset list is built from the immutable part of the asset configs (asset, price feed) and the
   // Configurator, the only address allowed to update the factors and supply caps that live in its proxy's storage
   const assetListImpl = await deploymentManager.deploy(
     'assetList:implementation',
     'AssetList.sol',
-    [assetConfigs.map(({ asset, decimals, priceFeed }) => ({ asset, decimals, priceFeed })), configuratorProxy.address],
+    [assetConfigs.map(({ asset, priceFeed }) => ({ asset, priceFeed })), configuratorProxy.address],
     maybeForce()
   );
 

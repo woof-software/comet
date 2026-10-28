@@ -358,7 +358,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
     /**
      * @notice Returns the immutable part of every asset config of a Comet proxy, as the asset list is built from it
      * @param cometProxy The Comet proxy whose asset configs to return
-     * @return immutableConfigs The asset, decimals and price feed of each asset, in asset list order
+     * @return immutableConfigs The asset and price feed of each asset, in asset list order
      */
     function getImmutableAssetConfig(address cometProxy) public view returns (IAssetListStructs.ImmutableAssetConfig[] memory immutableConfigs) {
         AssetConfig[] storage cometAssetConfigs = assetConfigs[cometProxy];
@@ -368,7 +368,6 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
             AssetConfig storage assetConfig = cometAssetConfigs[i];
             immutableConfigs[i] = IAssetListStructs.ImmutableAssetConfig({
                 asset: assetConfig.asset,
-                decimals: assetConfig.decimals,
                 priceFeed: assetConfig.priceFeed
             });
         }

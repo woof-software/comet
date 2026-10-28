@@ -57,14 +57,13 @@ With a proxy, the address Comet holds never changes. A new implementation is swa
 
 ### Immutable config
 
-`ImmutableAssetConfig` = `asset`, `decimals`, `priceFeed`. These values are read on every account health check and rarely change. Keeping them in the implementation's bytecode means a read costs no storage access: an immutable is a `PUSH`, a cold storage read is 2,100 gas.
+`ImmutableAssetConfig` = `asset`, `priceFeed`. The asset decimals are not part of the config: the constructor reads them from the token's own `decimals()`, so they can never disagree with it. These values are read on every account health check and rarely change. Keeping them in the implementation's bytecode means a read costs no storage access: an immutable is a `PUSH`, a cold storage read is 2,100 gas.
 
 The constructor takes up to 24 configs (`MAX_ASSETS`) and checks each one:
 
 - neither the asset nor its price feed is the zero address;
 - the price feed has 8 decimals;
-- the token's `decimals()` matches the config;
-- decimals are at most 19, so the scale fits in `uint64`.
+- the token's decimals are at most 19, so the scale fits in `uint64`.
 
 It also stores `numAssets`, `configHash` and `configurator`, the only address allowed to call the setters. `Configurator.deployAssetList` passes its own address, so every implementation it deploys answers only to it.
 
@@ -177,7 +176,7 @@ flowchart TB
     end
     subgraph L["List upgrade"]
         direction TB
-        L1["Immutable change<br/>new asset, price feed, decimals"] --> L2["Configurator setter<br/>addAsset, updateAsset, updateAssetPriceFeed"]
+        L1["Immutable change<br/>new asset, price feed"] --> L2["Configurator setter<br/>addAsset, updateAsset, updateAssetPriceFeed"]
         L2 --> L3{"deployAssetList<br/>hash differs?"}
         L3 -- yes --> L4["Factory deploys a new implementation,<br/>proxy admin upgrades the list proxy,<br/>storage kept"]
         L4 --> L5["New asset only:<br/>setAssetConfigToAssetList<br/>registers its factors and cap"]
@@ -217,7 +216,7 @@ Storage values never need a redeploy. Immutable values need a new AssetList impl
 | What is redeployed | When |
 |---|---|
 | Nothing | Borrow collateral factor, liquidate collateral factor, liquidation factor, supply cap |
-| AssetList implementation (proxy upgrade) | Asset added, price feed changed, decimals corrected, AssetList code changed |
+| AssetList implementation (proxy upgrade) | Asset added, price feed changed, AssetList code changed |
 | Comet implementation | Comet code changed, or any Comet-level config: rates, kinks, governor, pause guardian, base price feed, extension delegate, tracking speeds, reserves, store front price factor |
 | AssetList proxy and Comet implementation | Moving a market to the asset list for the first time, or replacing the list proxy (new `assetList` address) |
 

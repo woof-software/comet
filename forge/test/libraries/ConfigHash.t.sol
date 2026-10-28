@@ -63,13 +63,6 @@ contract ConfigHashTest is Test {
         assertFalse(ConfigHash.compareConfigHashes(address(assetList), abi.encode(newConfigs)));
     }
 
-    function test_compareConfigHashes_falseWhenDecimalsChanged() public {
-        IAssetListStructs.ImmutableAssetConfig[] memory newConfigs = configs;
-        newConfigs[1].decimals += 1;
-
-        assertFalse(ConfigHash.compareConfigHashes(address(assetList), abi.encode(newConfigs)));
-    }
-
     function test_compareConfigHashes_falseWhenPriceFeedChanged() public {
         IAssetListStructs.ImmutableAssetConfig[] memory newConfigs = configs;
         newConfigs[1].priceFeed = makeAddr("otherPriceFeed");
@@ -82,7 +75,7 @@ contract ConfigHashTest is Test {
         for (uint256 i; i < configs.length; ++i) {
             newConfigs[i] = configs[i];
         }
-        newConfigs[configs.length] = IAssetListStructs.ImmutableAssetConfig(makeAddr("newAsset"), 18, makeAddr("newPriceFeed"));
+        newConfigs[configs.length] = IAssetListStructs.ImmutableAssetConfig(makeAddr("newAsset"), makeAddr("newPriceFeed"));
 
         assertFalse(ConfigHash.compareConfigHashes(address(assetList), abi.encode(newConfigs)));
     }
@@ -125,7 +118,6 @@ contract ConfigHashTest is Test {
     function _deployConfig(uint8 decimals) internal returns (IAssetListStructs.ImmutableAssetConfig memory) {
         return IAssetListStructs.ImmutableAssetConfig({
             asset: address(new FaucetToken(0, "Token", decimals, "TKN")),
-            decimals: decimals,
             priceFeed: address(new SimplePriceFeed(1e8, 8))
         });
     }

@@ -25,7 +25,6 @@ scenario(
     const newAssetConfig = {
       asset: await deployMockERC20(context, 'asset'),
       priceFeed: await deployPriceFeed(context, 'asset'),
-      decimals: 18,
       borrowCollateralFactor: exp(0.75, 18),
       liquidateCollateralFactor: exp(0.8, 18),
       liquidationFactor: exp(0.9, 18),
@@ -56,7 +55,6 @@ scenario(
     await expect(configurator.connect(admin.signer).addAsset(comet.address, {
       asset: ethers.constants.AddressZero,
       priceFeed: await deployPriceFeed(context, 'asset'),
-      decimals: 18,
       borrowCollateralFactor: exp(0.75, 18),
       liquidateCollateralFactor: exp(0.8, 18),
       liquidationFactor: exp(0.9, 18),
@@ -74,7 +72,6 @@ scenario(
     await expect(configurator.connect(albert.signer).addAsset(comet.address, {
       asset: await deployMockERC20(context, 'asset'),
       priceFeed: await deployPriceFeed(context, 'asset'),
-      decimals: 18,
       borrowCollateralFactor: exp(0.75, 18),
       liquidateCollateralFactor: exp(0.8, 18),
       liquidationFactor: exp(0.9, 18),
@@ -149,13 +146,12 @@ scenario(
 
     const [assetIndex] = await getUsableCollateralIndices(context, 1);
     const assetConfigsBefore = await configurator.getAssetConfigs(comet.address);
-    const { asset, priceFeed, decimals, liquidateCollateralFactor, liquidationFactor, supplyCap } = assetConfigsBefore[assetIndex];
+    const { asset, priceFeed, liquidateCollateralFactor, liquidationFactor, supplyCap } = assetConfigsBefore[assetIndex];
 
     // The collateral stops backing new borrows and gets one more wei of cap
     const updatedAssetConfig = {
       asset,
       priceFeed,
-      decimals,
       borrowCollateralFactor: 0,
       liquidateCollateralFactor,
       liquidationFactor,
@@ -186,14 +182,13 @@ scenario(
     await fundAccount(context.world, admin);
 
     const [assetIndex] = await getUsableCollateralIndices(context, 1);
-    const { asset, priceFeed, decimals, liquidateCollateralFactor, liquidationFactor, supplyCap } =
+    const { asset, priceFeed, liquidateCollateralFactor, liquidationFactor, supplyCap } =
       (await configurator.getAssetConfigs(comet.address))[assetIndex];
     const assetInfoBefore = await assetList.getAssetInfoByAddress(asset);
 
     await configurator.connect(admin.signer).updateAsset(comet.address, {
       asset,
       priceFeed,
-      decimals,
       borrowCollateralFactor: 0,
       liquidateCollateralFactor,
       liquidationFactor,
@@ -217,7 +212,6 @@ scenario(
     await expect(configurator.connect(admin.signer).updateAsset(comet.address, {
       asset: albert.address,
       priceFeed: await deployPriceFeed(context, 'asset'),
-      decimals: 18,
       borrowCollateralFactor: exp(0.75, 18),
       liquidateCollateralFactor: exp(0.8, 18),
       liquidationFactor: exp(0.9, 18),
@@ -263,7 +257,7 @@ scenario(
     // Only the price feed of the asset changed in the stored configs
     const assetConfigsAfter = await configurator.getAssetConfigs(comet.address);
     expect(assetConfigsAfter[assetIndex].priceFeed).to.equal(newPriceFeed);
-    for (const key of ['asset', 'decimals', 'borrowCollateralFactor', 'liquidateCollateralFactor', 'liquidationFactor', 'supplyCap']) {
+    for (const key of ['asset', 'borrowCollateralFactor', 'liquidateCollateralFactor', 'liquidationFactor', 'supplyCap']) {
       expect(assetConfigsAfter[assetIndex][key]).to.equal(assetConfigsBefore[assetIndex][key]);
     }
     for (let i = 0; i < assetConfigsBefore.length; i++) {
@@ -365,7 +359,7 @@ scenario(
     const assetConfigsAfter = await configurator.getAssetConfigs(comet.address);
     for (let i = 0; i < assetConfigs.length; i++) {
       expect(assetConfigsAfter[i].borrowCollateralFactor).to.equal(0);
-      for (const key of ['asset', 'priceFeed', 'decimals', 'liquidateCollateralFactor', 'liquidationFactor', 'supplyCap']) {
+      for (const key of ['asset', 'priceFeed', 'liquidateCollateralFactor', 'liquidationFactor', 'supplyCap']) {
         expect(assetConfigsAfter[i][key]).to.equal(assetConfigs[i][key]);
       }
     }
@@ -392,7 +386,7 @@ scenario(
     for (let i = 0; i < assetConfigs.length; i++) {
       expect(assetConfigsAfter[i].borrowCollateralFactor).to.equal(0);
       expect(assetConfigsAfter[i].liquidateCollateralFactor).to.equal(0);
-      for (const key of ['asset', 'priceFeed', 'decimals', 'liquidationFactor', 'supplyCap']) {
+      for (const key of ['asset', 'priceFeed', 'liquidationFactor', 'supplyCap']) {
         expect(assetConfigsAfter[i][key]).to.equal(assetConfigs[i][key]);
       }
     }
@@ -421,7 +415,7 @@ scenario(
       expect(assetConfigsAfter[i].borrowCollateralFactor).to.equal(0);
       expect(assetConfigsAfter[i].liquidateCollateralFactor).to.equal(0);
       expect(assetConfigsAfter[i].liquidationFactor).to.equal(0);
-      for (const key of ['asset', 'priceFeed', 'decimals', 'supplyCap']) {
+      for (const key of ['asset', 'priceFeed', 'supplyCap']) {
         expect(assetConfigsAfter[i][key]).to.equal(assetConfigs[i][key]);
       }
     }
@@ -548,7 +542,7 @@ supplyCaps.forEach(([name, capFor]) => {
       for (let i = 0; i < assetConfigs.length; i++) {
         expect(assetConfigsAfter[i].supplyCap).to.equal(newSupplyCaps[i]);
         expect(storageConfigsAfter[i].supplyCap).to.equal(newSupplyCaps[i]);
-        for (const key of ['asset', 'priceFeed', 'decimals', 'borrowCollateralFactor', 'liquidateCollateralFactor', 'liquidationFactor']) {
+        for (const key of ['asset', 'priceFeed', 'borrowCollateralFactor', 'liquidateCollateralFactor', 'liquidationFactor']) {
           expect(assetConfigsAfter[i][key]).to.equal(assetConfigs[i][key]);
         }
       }

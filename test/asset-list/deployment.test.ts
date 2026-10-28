@@ -12,7 +12,7 @@ import {
   hashConfig,
 } from './shared';
 
-// The AssetList constructor takes the immutable part of the asset configs (asset, decimals, price feed), checks it
+// The AssetList constructor takes the immutable part of the asset configs (asset, price feed), checks it
 // and packs each asset into its own pair of immutables. It also fixes the number of assets and the hash of the
 // configs. Factors and supply caps are not part of it: they are set later, when a proxy is initialized.
 describe('asset list deployment: constructor', function () {
@@ -148,11 +148,6 @@ describe('asset list deployment: constructor', function () {
       const badPriceFeedConfig = await deployImmutableAssetConfig(18, 18);
       await expect(AssetListContractFactory.deploy([configs[0], badPriceFeedConfig], configurator.address))
         .to.be.revertedWithCustomError(assetList, 'PriceFeedDecimalsNotMatched');
-    });
-
-    it('the config decimals differ from the token decimals', async () => {
-      await expect(AssetListContractFactory.deploy([configs[0], { ...configs[1], decimals: 9 }], configurator.address))
-        .to.be.revertedWithCustomError(assetList, 'AssetDecimalsNotMatched');
     });
 
     it(`an asset has more than ${MAX_ASSET_DECIMALS} decimals`, async () => {

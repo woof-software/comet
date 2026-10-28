@@ -5,6 +5,7 @@ import { expectRevertCustom, perSecond, servicePatch2 } from './utils';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
 import { FaucetToken } from '../build/types';
 import { getConfigForScenario } from './utils/scenarioHelper';
+import { getToken } from './assetList/shared';
 
 const MIN_OFFSET_FOR_RESERVED = 16; // _reserved covers offsets 16–23
 const REQUIRED_NUM_ASSETS = MIN_OFFSET_FOR_RESERVED + 1; // index 16 has offset 16
@@ -48,7 +49,7 @@ scenario(
 scenario(
   'Comet#configuration > matches configurator parameters',
   { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
-  async ({ comet, configurator }) => {
+  async ({ comet, configurator }, context) => {
     const cfg = await configurator.getConfiguration(comet.address);
 
     expect(await comet.governor()).to.equal(cfg.governor);
@@ -96,7 +97,8 @@ scenario(
       const expected = assetConfigs[i];
       expect(info.asset).to.equal(expected.asset);
       expect(info.priceFeed).to.equal(expected.priceFeed);
-      expect(info.scale).to.equal(BigNumber.from(10).pow(expected.decimals));
+      // The scale comes from the token's own decimals, which the asset list reads at construction
+      expect(info.scale).to.equal(BigNumber.from(10).pow(await (await getToken(context, expected.asset)).decimals()));
       expect(info.borrowCollateralFactor).to.equal(expected.borrowCollateralFactor);
       expect(info.liquidateCollateralFactor).to.equal(expected.liquidateCollateralFactor);
       expect(info.liquidationFactor).to.equal(expected.liquidationFactor);
@@ -152,7 +154,6 @@ scenario(
           {
             asset: mockToken.address,
             priceFeed: mockPriceFeed.address,
-            decimals: 18,
             borrowCollateralFactor: exp(0.8, 18),
             liquidateCollateralFactor: exp(0.85, 18),
             liquidationFactor: exp(0.9, 18),

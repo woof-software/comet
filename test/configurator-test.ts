@@ -1688,7 +1688,7 @@ describe('configurator', function () {
 
       describe('addAsset', function() {
         let newPriceFeedAddr: string;
-        let newAssetConfig: { asset: string, priceFeed: string, decimals: number, borrowCollateralFactor: bigint, liquidateCollateralFactor: bigint, liquidationFactor: bigint, supplyCap: bigint };
+        let newAssetConfig: { asset: string, priceFeed: string, borrowCollateralFactor: bigint, liquidateCollateralFactor: bigint, liquidationFactor: bigint, supplyCap: bigint };
         let setTx: ContractTransaction;
 
         before(async () => {
@@ -1699,7 +1699,6 @@ describe('configurator', function () {
           newAssetConfig = {
             asset: unsupportedTokenAddr,
             priceFeed: newPriceFeedAddr,
-            decimals: 6,
             borrowCollateralFactor: exp(0.8, 18),
             liquidateCollateralFactor: exp(0.9, 18),
             liquidationFactor: exp(0.95, 18),
@@ -1849,7 +1848,6 @@ describe('configurator', function () {
           const config = {
             asset: NON_EXISTENT_ASSET,
             priceFeed: ZERO_ADDRESS,
-            decimals: 6,
             borrowCollateralFactor: exp(0.8, 18),
             liquidateCollateralFactor: exp(0.9, 18),
             liquidationFactor: exp(0.95, 18),
@@ -2064,7 +2062,6 @@ describe('configurator', function () {
           const assetConfig = {
             asset: unsupportedTokenAddr,
             priceFeed: ZERO_ADDRESS,
-            decimals: 6,
             borrowCollateralFactor: exp(0.8, 18),
             liquidateCollateralFactor: exp(0.9, 18),
             liquidationFactor: exp(0.95, 18),

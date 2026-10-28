@@ -23,7 +23,7 @@ import {
 } from './shared';
 
 // The Configurator keeps, per Comet proxy, the factory that builds asset list implementations and the asset list
-// proxy the market reads from. An immutable change (asset, price feed, decimals, a new asset) goes: update the
+// proxy the market reads from. An immutable change (asset, price feed, a new asset) goes: update the
 // stored config -> deployAssetList -> upgrade the list proxy through the proxy admin.
 describe('configurator: asset list management', function () {
   const ZERO = ethers.constants.AddressZero;
