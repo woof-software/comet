@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { event, expect } from '../test/helpers';
-import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList, isAssetDelisted, servicePatch, fundAccount, servicePatch2 } from './utils';
+import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, isAssetDelisted, servicePatch, fundAccount, servicePatch2 } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -321,16 +321,13 @@ scenario.skip(
  * 2. Delisted asset: Sets liquidateCF to 0 and verifies that the collateral is excluded from liquidity calculations,
  *    causing positions to become liquidatable when their only collateral asset is delisted
  *
- * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
- * the extended asset list feature (CometExt), as the liquidateCollateralFactor = 0 behavior is specific
- * to that implementation. The test filters deployments using the usesAssetList() utility function to ensure
- * compatibility, and excludes assets that are already delisted.
+ * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and excludes assets that are already delisted.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#liquidation > skips liquidation value of asset ${i} with liquidateCF=0`,
     {
-      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await servicePatch(ctx),
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && !(await isAssetDelisted(ctx, i)) && await servicePatch(ctx),
       tokenBalances: async (ctx: CometContext) => (
         {
           albert: { $base: '== 0' },
@@ -414,17 +411,14 @@ for (let i = 0; i < MAX_ASSETS; i++) {
  * 2. Delisted asset: Sets liquidationFactor to 0 and verifies that the protocol skips seizing that collateral
  *    during absorption, but still proceeds with debt absorption
  *
- * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
- * the extended asset list feature (CometExt), as the liquidationFactor = 0 behavior is specific
- * to that implementation. The test filters deployments using the usesAssetList() utility function to ensure
- * compatibility, and excludes assets that are already delisted.
+ * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and excludes assets that are already delisted.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#liquidation > skips absorption of asset ${i} with liquidation factor = 0`,
     {
       filter: async (ctx) => 
-        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await servicePatch2(ctx),
+        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && !(await isAssetDelisted(ctx, i)) && await servicePatch2(ctx),
       tokenBalances: async (ctx) => ({
         albert: { $base: '== 0' },
         $comet: {
@@ -545,7 +539,6 @@ scenario(
       await isValidAssetIndex(ctx, 1) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx, 0).supplyCollateral) &&
       await isTriviallySourceable(ctx, 1, getConfigForScenario(ctx, 1).supplyCollateral) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       !(await isAssetDelisted(ctx, 1)) &&
       await servicePatch2(ctx),

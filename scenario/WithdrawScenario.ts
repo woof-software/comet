@@ -6,7 +6,6 @@ import {
   isValidAssetIndex,
   MAX_ASSETS,
   fundAccount,
-  usesAssetList,
   isAssetDelisted,
   supportsExtendedPause,
   getExpectedBaseBalance,
@@ -524,7 +523,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) && 
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawCollateral) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       await servicePatch(ctx);
     },
@@ -557,7 +555,6 @@ scenario(
       return (
         (await isValidAssetIndex(ctx, 0)) &&
         (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawCollateral)) &&
-        (await usesAssetList(ctx)) &&
         !(await isAssetDelisted(ctx, 0)) &&
         (await supportsExtendedPause(ctx))
       );
@@ -590,7 +587,6 @@ scenario(
     filter: async (ctx: CometContext) => { 
       return await isValidAssetIndex(ctx, 0) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawCollateral) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       await servicePatch(ctx);
     },
@@ -625,7 +621,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
        await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawBase) &&
-        await usesAssetList(ctx) &&
          !(await isAssetDelisted(ctx, 0)) &&
          await servicePatch(ctx);
     },
@@ -686,7 +681,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
        await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawBase) &&
-        await usesAssetList(ctx) &&
          !(await isAssetDelisted(ctx, 0)) &&
          await servicePatch(ctx);
     },
@@ -722,7 +716,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
        await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawBase) &&
-        await usesAssetList(ctx) &&
          !(await isAssetDelisted(ctx, 0)) &&
          await servicePatch(ctx);
     },
@@ -755,7 +748,6 @@ scenario(
       return (
         (await isValidAssetIndex(ctx, 0)) &&
         (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawBase)) &&
-        (await usesAssetList(ctx)) &&
         !(await isAssetDelisted(ctx, 0)) &&
         (await supportsExtendedPause(ctx))
       );
@@ -788,7 +780,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
        await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawBase) &&
-        await usesAssetList(ctx) &&
          !(await isAssetDelisted(ctx, 0)) &&
          await servicePatch(ctx);
     },
@@ -820,7 +811,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawCollateral) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       await servicePatch(ctx);
     },
@@ -857,7 +847,6 @@ scenario(
       return (
         (await isValidAssetIndex(ctx, 0)) &&
         (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawCollateral)) &&
-        (await usesAssetList(ctx)) &&
         !(await isAssetDelisted(ctx, 0)) &&
         (await supportsExtendedPause(ctx))
       );
@@ -895,7 +884,6 @@ scenario(
       return (
         (await isValidAssetIndex(ctx, 0)) &&
         (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawCollateral)) &&
-        (await usesAssetList(ctx)) &&
         !(await isAssetDelisted(ctx, 0)) &&
         (await supportsExtendedPause(ctx))
       );
@@ -1220,17 +1208,13 @@ scenario(
  * @dev Unlike isLiquidatable which uses liquidateCollateralFactor, this function determines whether a user can initiate
  * new borrows, making it critical for preventing new positions from being opened with unpriceable collateral.
  *
- * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
- * the extended asset list feature (CometExt), as the borrowCollateralFactor = 0 behavior is specific
- * to that implementation. The base Comet contract does not have this check and will attempt to call getPrice()
- * even when borrowCF=0, which would cause a revert if the price feed is unavailable. The test filters deployments
- * using the usesAssetList() utility function to ensure compatibility, and excludes assets that are already delisted.
+ * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and excludes assets that are already delisted.
  */
 for (let offset = 0; offset < MAX_ASSETS; offset++) {
   scenario(
     `Comet#isBorrowCollateralized > skips liquidity of asset ${offset} with borrowCF=0`,
     {
-      filter: async (ctx) => await isValidAssetIndex(ctx, offset) && await isTriviallySourceable(ctx, offset, getConfigForScenario(ctx, offset).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, offset)) && await servicePatch(ctx),
+      filter: async (ctx) => await isValidAssetIndex(ctx, offset) && await isTriviallySourceable(ctx, offset, getConfigForScenario(ctx, offset).supplyCollateral) && !(await isAssetDelisted(ctx, offset)) && await servicePatch(ctx),
       tokenBalances: async (ctx: CometContext) => (
         {
           albert: { $base: '== 0' },
@@ -1297,7 +1281,7 @@ scenario(
   'Comet#withdraw > reverts when collateral asset withdraw is paused and allows to withdraw when unpaused',
   {
     filter: async (ctx: CometContext) => {
-      return await usesAssetList(ctx) && await servicePatch(ctx);
+      return await servicePatch(ctx);
     },
   },
   async ({ comet, actors }, context, world) => {
@@ -1349,7 +1333,7 @@ scenario(
   'Comet#withdrawTo > reverts when collateral asset withdraw is paused and allows to withdraw when unpaused',
   {
     filter: async (ctx: CometContext) => {
-      return await usesAssetList(ctx) && await servicePatch(ctx);
+      return await servicePatch(ctx);
     },
   },
   async ({ comet, actors }, context, world) => {
@@ -1420,7 +1404,7 @@ scenario(
   'Comet#withdrawFrom > reverts when collateral asset withdraw is paused and allows to withdraw when unpaused',
   {
     filter: async (ctx: CometContext) => {
-      return (await usesAssetList(ctx)) && (await supportsExtendedPause(ctx));
+      return (await supportsExtendedPause(ctx));
     }
   },
   async ({ comet, actors }, context, world) => {
@@ -1550,7 +1534,7 @@ scenario(
   'Comet#withdraw > allows withdrawing deactivated collateral asset',
   {
     filter: async (ctx: CometContext) => {
-      return (await usesAssetList(ctx)) && (await supportsExtendedPause(ctx));
+      return (await supportsExtendedPause(ctx));
     }
   },
   async ({ comet, actors }, context, world) => {

@@ -39,7 +39,6 @@ describe('extended pause upgrade test', function () {
   let newImpl: string;
 
   // Extension delegate storage snapshot
-  let maxAssetsBefore: number;
   let nameBefore: string;
   let symbolBefore: string;
   let baseAccrualScaleBefore: BigNumber;
@@ -180,7 +179,6 @@ describe('extended pause upgrade test', function () {
     cometExt = await ethers.getContractAt('CometExt', COMET_ADDRESS) as CometExt;
 
     // Extension delegate storage snapshot
-    maxAssetsBefore = await cometExt.maxAssets();
     nameBefore = await cometExt.name();
     symbolBefore = await cometExt.symbol();
     baseAccrualScaleBefore = await cometExt.baseAccrualScale();
@@ -218,7 +216,6 @@ describe('extended pause upgrade test', function () {
   });
 
   it('should save comet extension storage safely after upgrade', async function () {
-    expect(await cometExt.maxAssets()).to.equal(maxAssetsBefore);
     // version is a constant of the extension code, so it is the new one's, not the one read before
     expect(await cometExt.version()).to.equal(await newCometExt.version());
     expect(await cometExt.name()).to.equal(nameBefore);
