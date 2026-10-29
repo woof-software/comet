@@ -308,8 +308,22 @@ export async function deployNetworkComet(
   await deploymentManager.idempotent(
     async () => amAdmin && (isTmpImpl || deploySpec.all || deploySpec.cometMain || deploySpec.cometExt),
     async () => {
-      trace(`Setting configuration in Configurator for ${comet.address} (${isTmpImpl})`);
-      trace(await wait(configurator.connect(admin).setConfiguration(comet.address, configuration)));
+      const storedConfiguration = await configurator.getConfiguration(comet.address);
+      if (sameAddress(storedConfiguration.assetList, '0x0000000000000000000000000000000000000000')) {
+        trace(`Setting configuration in Configurator for ${comet.address} (${isTmpImpl})`);
+        trace(await wait(configurator.connect(admin).setConfiguration(comet.address, configuration)));
+      } else {
+        // setConfiguration sets the asset list only once, so a market that already has one gets each changed field
+        // through its own setter, named set<Field>. The base token and tracking index scale never change, and the
+        // asset list is changed through updateAssetList
+        for (const field of Object.keys(configuration)) {
+          if (['baseToken', 'trackingIndexScale', 'assetList'].includes(field)) continue;
+          if (BigInt(storedConfiguration[field].toString()) === BigInt(configuration[field].toString())) continue;
+          const setter = `set${field[0].toUpperCase()}${field.slice(1)}`;
+          trace(`Calling ${setter} in Configurator for ${comet.address}`);
+          trace(await wait(configurator.connect(admin)[setter](comet.address, configuration[field])));
+        }
+      }
 
       trace(`Upgrading implementation of Comet...`);
       trace(await wait(cometAdmin.connect(admin).deployAndUpgradeTo(configurator.address, comet.address)));

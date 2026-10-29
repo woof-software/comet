@@ -16,7 +16,7 @@ interface IConfiguratorErrors {
     /// @dev The asset is not in the asset configs of the Comet proxy
     error AssetDoesNotExist();
 
-    /// @dev The Comet proxy already has a configuration with a different base token or tracking index scale
+    /// @dev The Comet proxy already has an asset list, or a configuration with a different base token or tracking index scale
     error ConfigurationAlreadyExists();
 
     /// @dev The address is the zero address

@@ -145,6 +145,8 @@ describe('configurator: asset list management', function () {
   });
 
   describe('deployAssetList', function () {
+    // setConfiguration sets a market's asset list only once, so the fixture market can't go back to having none.
+    // The first list is built for another market with the same asset configs and no list yet, then used by the Comet
     describe('happy path (first list: no asset list set for the market)', function () {
       let snapshot: SnapshotRestorer;
       let tx: ContractTransaction;
@@ -153,16 +155,20 @@ describe('configurator: asset list management', function () {
 
       before(async () => {
         snapshot = await takeSnapshot();
-        await configurator.setConfiguration(comet.address, {
+        await configurator.setConfiguration(otherMarket, {
           ...(await configurator.getConfiguration(comet.address)),
           assetList: ZERO,
         });
-        ({ newAssetListImpl: newImplementation } = await configurator.callStatic.deployAssetList(comet.address));
-        tx = await configurator.deployAssetList(comet.address);
+        await configurator.setAssetListFactory(otherMarket, assetListFactory.address);
+        for (let i = 0; i < configs.length; i++) {
+          await configurator.addAsset(otherMarket, { ...configs[i], ...storageConfigs[i] });
+        }
+        ({ newAssetListImpl: newImplementation } = await configurator.callStatic.deployAssetList(otherMarket));
+        tx = await configurator.deployAssetList(otherMarket);
         newList = await deployAssetListProxy(
           AssetListContractFactory.attach(newImplementation),
           proxyAdmin.address,
-          await configurator.getStorageAssetConfig(comet.address)
+          await configurator.getStorageAssetConfig(otherMarket)
         );
         await configurator.updateAssetList(comet.address, newList.address);
         await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
@@ -171,7 +177,7 @@ describe('configurator: asset list management', function () {
       after(async () => await snapshot.restore());
 
       it('deploys an implementation, with no list proxy to report', async () => {
-        await expect(tx).to.emit(configurator, 'AssetListDeployed').withArgs(comet.address, ZERO, newImplementation);
+        await expect(tx).to.emit(configurator, 'AssetListDeployed').withArgs(otherMarket, ZERO, newImplementation);
       });
 
       it('a proxy of it initialized with getStorageAssetConfig holds the factors and caps of every asset', async () => {

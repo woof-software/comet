@@ -47,14 +47,22 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
 
     /**
      * @notice Sets the entire Configuration for a Comet proxy
-     * @dev Note: All params can later be updated by the governor except for `baseToken` and `trackingIndexScale`
+     * @dev Note: All params can later be updated by the governor except for `baseToken` and `trackingIndexScale`.
+     *      It sets the asset list proxy only once: once a market has one, this reverts, and the list is changed
+     *      through updateAssetList
      **/
     function setConfiguration(address cometProxy, Configuration calldata newConfiguration) external onlyGovernor {
         Configuration memory oldConfiguration = configuratorParams[cometProxy];
-        if (oldConfiguration.baseToken != address(0) &&
-            (oldConfiguration.baseToken != newConfiguration.baseToken ||
-             oldConfiguration.trackingIndexScale != newConfiguration.trackingIndexScale))
-            revert ConfigurationAlreadyExists();
+        if (
+            oldConfiguration.assetList != address(0) ||
+            (
+                oldConfiguration.baseToken != address(0) &&
+                (
+                    oldConfiguration.baseToken != newConfiguration.baseToken ||
+                    oldConfiguration.trackingIndexScale != newConfiguration.trackingIndexScale
+                )
+            )
+        ) revert ConfigurationAlreadyExists();
 
         configuratorParams[cometProxy] = newConfiguration;
         emit SetConfiguration(cometProxy, oldConfiguration, newConfiguration);

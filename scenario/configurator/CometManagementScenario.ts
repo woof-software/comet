@@ -4,6 +4,7 @@ import { CometContext, scenario } from '../context/CometContext';
 import { exp } from '../../test/helpers';
 import { fundAccount } from '../utils';
 import { SECONDS_PER_YEAR } from '../utils/constants';
+import { CometWithExtendedAssetList } from '../../build/types';
 import {
   normalizeStructOutput,
   deployCometExt,
@@ -1301,24 +1302,60 @@ scenario(
                          CONFIGURATION
 //////////////////////////////////////////////////////////////*/
 
+// A market that already has an asset list can't be configured again, so this runs on a new market without one
 scenario(
-  'Configurator#setConfiguration updates existing configuration if called by governor',
+  'Configurator#setConfiguration updates the configuration of a market without an asset list if called by governor',
   {},
-  async ({ comet, configurator, actors }) => {
+  async ({ comet, configurator, actors }, context) => {
     const { admin } = actors;
     await fundAccount(admin.context.world, admin);
-    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
+    const newCometProxy = await deployComet(context);
+    const configuration = {
+      ...normalizeStructOutput(await configurator.getConfiguration(comet.address)),
+      assetList: ethers.constants.AddressZero,
+    };
+    await configurator.connect(admin.signer).setConfiguration(newCometProxy, configuration);
 
     const updatedConfiguration = {
-      ...existingConfiguration,
-      baseBorrowMin: existingConfiguration.baseBorrowMin + 1n
+      ...configuration,
+      baseBorrowMin: configuration.baseBorrowMin + 1n
     };
 
-    await configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration);
+    await configurator.connect(admin.signer).setConfiguration(newCometProxy, updatedConfiguration);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address))).to.be.deep.equal(
+    expect(normalizeStructOutput(await configurator.getConfiguration(newCometProxy))).to.be.deep.equal(
       updatedConfiguration
     );
+  }
+);
+
+// setConfiguration sets a market's asset list proxy only once: a new market gets its list with the first call, and
+// the same call made again reverts, so from then on the list is changed only through updateAssetList
+scenario(
+  'Configurator#setConfiguration sets the asset list of a market only once',
+  {},
+  async ({ comet, configurator, actors }, context) => {
+    const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
+
+    // A new market with its own asset list proxy, which the Configurator has no configuration for yet
+    const newCometProxy = await deployComet(context);
+    const newComet = await context.world.deploymentManager.hre.ethers.getContractAt(
+      'CometWithExtendedAssetList',
+      newCometProxy
+    ) as CometWithExtendedAssetList;
+    const assetList = await newComet.assetList();
+    expect((await configurator.getConfiguration(newCometProxy)).assetList).to.equal(ethers.constants.AddressZero);
+
+    // The first call sets the whole configuration, the asset list included
+    const configuration = { ...normalizeStructOutput(await configurator.getConfiguration(comet.address)), assetList };
+    await expect(configurator.connect(admin.signer).setConfiguration(newCometProxy, configuration))
+      .to.emit(configurator, 'SetConfiguration');
+    expect(normalizeStructOutput(await configurator.getConfiguration(newCometProxy))).to.be.deep.equal(configuration);
+
+    // The same call again reverts, as the market now has an asset list
+    await expect(configurator.connect(admin.signer).setConfiguration(newCometProxy, configuration))
+      .to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
   }
 );
 

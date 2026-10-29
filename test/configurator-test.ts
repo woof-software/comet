@@ -210,11 +210,22 @@ describe('configurator', function () {
 
         newConfiguration = { ...newConfiguration, baseToken: oldConfiguration.baseToken };
       });
+
+      it('reverts if the market already has an asset list, even with the same configuration', async () => {
+        expect(oldConfiguration.assetList).to.not.equal(ZERO_ADDRESS);
+
+        await expect(configuratorProxy.connect(governor).setConfiguration(cometProxy.address, oldConfiguration))
+          .to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
+      });
     });
 
-    describe('happy path', function() {
+    // The fixture market already has an asset list, so setConfiguration can only configure a new market
+    describe('happy path (new market)', function() {
+      const newMarket = ethers.Wallet.createRandom().address;
+      let emptyConfiguration: ConfigurationStruct;
       let setConfigurationTx: ContractTransaction;
       before(async () => {
+        emptyConfiguration = await configuratorProxy.getConfiguration(newMarket);
         // Make new configuration different from old configuration
         newConfiguration = {
           ...newConfiguration,
@@ -225,7 +236,7 @@ describe('configurator', function () {
       });
 
       it('sets configuration is successful', async () => {
-        setConfigurationTx = await configuratorProxy.connect(governor).setConfiguration(cometProxy.address, newConfiguration);
+        setConfigurationTx = await configuratorProxy.connect(governor).setConfiguration(newMarket, newConfiguration);
         await expect(setConfigurationTx).to.not.be.reverted;
       });
 
@@ -241,30 +252,37 @@ describe('configurator', function () {
           newConfiguration: newConfigurationArg,
         } = (setConfigurationEvent).args;
 
-        expect(cometProxyArg).to.equal(cometProxy.address);
-        // oldConfiguration is a struct Result from getConfiguration(), same shape as event arg
-        expect(oldConfigurationArg).to.deep.equal(oldConfiguration);
+        expect(cometProxyArg).to.equal(newMarket);
+        // The market had no configuration yet, so the old one is empty
+        expect(oldConfigurationArg).to.deep.equal(emptyConfiguration);
         // newConfiguration was spread into a plain object, so re-fetch from storage to get a matching struct Result
-        const storedNewConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
+        const storedNewConfiguration = await configuratorProxy.getConfiguration(newMarket);
         expect(newConfigurationArg).to.deep.equal(storedNewConfiguration);
       });
 
       it('new configuration is updated in the configurator in storage', async () => {
-        const updatedConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
+        const updatedConfiguration = await configuratorProxy.getConfiguration(newMarket);
         
         expect(updatedConfiguration.baseBorrowMin).to.be.equal(newConfiguration.baseBorrowMin);
         expect(updatedConfiguration.pauseGuardian).to.be.equal(newConfiguration.pauseGuardian);
         expect(updatedConfiguration.targetReserves).to.be.equal(newConfiguration.targetReserves);
+        expect(updatedConfiguration.assetList).to.be.equal(newConfiguration.assetList);
+      });
+
+      it('the same call again reverts, as the asset list is set only once', async () => {
+        await expect(configuratorProxy.connect(governor).setConfiguration(newMarket, newConfiguration))
+          .to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
       });
     });
 
     describe('edge cases', function() {
-      it('same configuration can be set multiple times', async () => {
-        const currentConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
-        await configuratorProxy.connect(governor).setConfiguration(cometProxy.address, currentConfiguration);
+      it('a market without an asset list can be configured again', async () => {
+        const marketWithoutList = ethers.Wallet.createRandom().address;
+        const configurationWithoutList = { ...oldConfiguration, assetList: ZERO_ADDRESS };
+        await configuratorProxy.connect(governor).setConfiguration(marketWithoutList, configurationWithoutList);
+        await configuratorProxy.connect(governor).setConfiguration(marketWithoutList, configurationWithoutList);
 
-        const updatedConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
-        expect(updatedConfiguration).to.deep.eq(currentConfiguration);
+        expect((await configuratorProxy.getConfiguration(marketWithoutList)).assetList).to.equal(ZERO_ADDRESS);
       });
     });
   });
@@ -276,6 +294,10 @@ describe('configurator', function () {
     let deployTx: ContractTransaction;
 
     describe('new implementation deployment', function() {
+      before(async () => {
+        await configuratorProxy.connect(governor).setPauseGuardian(cometProxy.address, alice.address);
+      });
+
       it('sanity check: configurations and changes', async () => {
         // Current implementation pauseGuardian check
         expect(await comet.pauseGuardian()).to.be.equal(pauseGuardian.address);
@@ -320,12 +342,8 @@ describe('configurator', function () {
       let deployTx: ContractTransaction;
 
       before(async () => {
-        // Change configuration back (pauseguardian to pauseGuardian)
-        const currentConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
-        await configuratorProxy.connect(governor).setConfiguration(
-          cometProxy.address,
-          { ...currentConfiguration, pauseGuardian: pauseGuardian.address }
-        );
+        // Change the pause guardian back
+        await configuratorProxy.connect(governor).setPauseGuardian(cometProxy.address, pauseGuardian.address);
       });
 
       it('deploy comet from ProxyAdmin is successful', async () => {
