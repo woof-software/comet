@@ -7,7 +7,7 @@ import { IAssetList } from "./interfaces/assetList/IAssetList.sol";
 import { ConfigHash, IConfigHash } from "./libraries/ConfigHash.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import { StorageSlot } from "@openzeppelin/contracts/utils/StorageSlot.sol";
+import { StorageSlot } from "./vendor/utils/StorageSlot.sol";
 
 /**
  * @title Compound's Asset List

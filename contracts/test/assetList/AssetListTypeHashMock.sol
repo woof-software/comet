@@ -5,7 +5,7 @@ import { IPriceFeed } from "../../interfaces/IPriceFeed.sol";
 import { IERC20NonStandard } from "../../interfaces/IERC20NonStandard.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import { StorageSlot } from "@openzeppelin/contracts/utils/StorageSlot.sol";
+import { StorageSlot } from "../../vendor/utils/StorageSlot.sol";
 import { IAssetList } from "../../interfaces/assetList/IAssetList.sol";
 import { IConfigHash } from "../../interfaces/IConfigHash.sol";
 import { ConfigHash } from "../../libraries/ConfigHash.sol";
