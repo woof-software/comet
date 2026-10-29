@@ -210,10 +210,9 @@ contract ForkConfiguratorMigrationTest is ConfiguratorMigrationForkBase {
         vm.startPrank(governor);
         configurator().setAssetListFactory(comet, address(assetListFactory));
 
-        // The market has no list yet, so there is no proxy and a new implementation is deployed
-        (address assetListProxy, address assetListImpl) = configurator().deployAssetList(comet);
-        assertEq(assetListProxy, address(0));
-        assertTrue(assetListImpl != address(0));
+        // The market has no list yet and deployAssetList only redeploys an existing one, so the first implementation
+        // comes straight from the factory, built from the migrated immutable configs
+        address assetListImpl = assetListFactory.createAssetList(configurator().getImmutableAssetConfig(comet), address(configurator()));
 
         // The list proxy is owned by the Comet's proxy admin, so later deploys can upgrade it
         address assetList = address(new TransparentUpgradeableProxy(
@@ -221,7 +220,10 @@ contract ForkConfiguratorMigrationTest is ConfiguratorMigrationForkBase {
             address(cometAdmin),
             abi.encodeCall(AssetList.initialize, (configurator().getStorageAssetConfig(comet)))
         ));
-        configurator().updateAssetList(comet, assetList);
+        // setConfiguration sets the list proxy once, for a market that has none yet
+        Configurator.Configuration memory configuration = configurator().getConfiguration(comet);
+        configuration.assetList = assetList;
+        configurator().setConfiguration(comet, configuration);
         configurator().setFactory(comet, address(cometFactory));
         vm.stopPrank();
 
