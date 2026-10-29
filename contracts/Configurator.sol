@@ -49,7 +49,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @notice Sets the entire Configuration for a Comet proxy
      * @dev Note: All params can later be updated by the governor except for `baseToken` and `trackingIndexScale`.
      *      It sets the asset list proxy only once: once a market has one, this reverts, and the list is changed
-     *      through updateAssetList
+     *      through the asset config setters and the next deploy
      **/
     function setConfiguration(address cometProxy, Configuration calldata newConfiguration) external onlyGovernor {
         Configuration memory oldConfiguration = configuratorParams[cometProxy];
@@ -202,31 +202,21 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      */
     function deployAssetList(address cometProxy) external returns (address assetListProxy, address newAssetListImpl) {
         assetListProxy = configuratorParams[cometProxy].assetList;
+        
+        // Only an existing list is redeployed here: the first list is deployed outside and set by setConfiguration
+        if (assetListProxy == address(0)) revert AssetListNotSet();
         IAssetListStructs.ImmutableAssetConfig[] memory immutableConfigs = getImmutableAssetConfig(cometProxy);
 
-        // 1. New list, configs unchanged: hash matches, return zero address
-        // 2. New list, configs changed: hash differs, deploy
-        // 3. Old list without configHash: nothing to compare, deploy
-        // 4. No list yet (zero address): nothing to compare, deploy
+        // The list proxy is set, so there is always a hash to compare with:
+        // 1. Configs unchanged: hash matches, return zero address
+        // 2. Configs changed: hash differs, deploy
         if (ConfigHash.areHashesEqual(assetListProxy, abi.encode(immutableConfigs))) return (assetListProxy, address(0));
 
         address assetListFactory = cometAssetListFactories[cometProxy];
-        if (assetListFactory == address(0)) revert InvalidAddress();
+        if (assetListFactory == address(0)) revert AssetListFactoryNotSet();
         newAssetListImpl = IAssetListFactory(assetListFactory).createAssetList(immutableConfigs, address(this));
+        
         emit AssetListDeployed(cometProxy, assetListProxy, newAssetListImpl);
-    }
-
-    /**
-     * @notice Points the Comet proxy's configuration to an already deployed asset list
-     * @dev Deploys nothing; the next Comet deploy uses this asset list
-     * @param cometProxy The Comet proxy whose configuration to update
-     * @param newAssetList The asset list to use
-     */
-    function updateAssetList(address cometProxy, address newAssetList) external onlyGovernor {
-        if (newAssetList == address(0)) revert InvalidAddress();
-
-        emit UpdateAssetList(cometProxy, configuratorParams[cometProxy].assetList, newAssetList);
-        configuratorParams[cometProxy].assetList = newAssetList;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -262,19 +252,6 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
 
         cometAssetConfigs.push(assetConfig);
         emit AddAsset(cometProxy, assetConfig);
-    }
-
-    /**
-     * @notice Adds an asset to the asset list of a Comet proxy, or updates it if already there, with the factors and
-     *         supply cap of its stored config
-     * @param cometProxy The Comet proxy whose asset list to add the asset to
-     * @param asset The asset to add or update
-     */
-    function setAssetConfigToAssetList(address cometProxy, address asset) external onlyGovernor {
-        address assetList = configuratorParams[cometProxy].assetList;
-        AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
-        IAssetList(assetList).setAssetConfig(asset, _storagePart(assetConfig));
-        emit SetAssetConfigToAssetList(cometProxy, assetList, asset);
     }
 
     /**

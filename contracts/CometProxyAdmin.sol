@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import "./vendor/proxy/transparent/ProxyAdmin.sol";
-import { Deployable } from "./interfaces/Deployable.sol";
+import { ProxyAdmin, TransparentUpgradeableProxy } from  "contracts/vendor/proxy/transparent/ProxyAdmin.sol";
+import { Deployable } from "contracts/interfaces/Deployable.sol";
+import { IAssetList } from "contracts/interfaces/assetList/IAssetList.sol";
 
 contract CometProxyAdmin is ProxyAdmin {
 
@@ -49,11 +50,21 @@ contract CometProxyAdmin is ProxyAdmin {
     }
 
     /**
-     * @dev Deploys a new AssetList through the Configurator and upgrades the AssetList proxy if Configurator
-     * returned a non-zero implementation address
+     * @dev Deploys a new AssetList through the Configurator and upgrades the AssetList proxy to it, writing the storage
+     * configs of all assets to the list in the same call. With no new implementation the proxy is upgraded to its
+     * current one, only to make that call
      */
     function _deployAndUpgradeAssetList(Deployable configuratorProxy, TransparentUpgradeableProxy cometProxy) private {
         (address assetListProxy, address newAssetListImpl) = configuratorProxy.deployAssetList(address(cometProxy));
-        if (newAssetListImpl != address(0)) upgrade(TransparentUpgradeableProxy(payable(assetListProxy)), newAssetListImpl);
+        TransparentUpgradeableProxy proxy = TransparentUpgradeableProxy(payable(assetListProxy));
+        if (newAssetListImpl == address(0)) newAssetListImpl = getProxyImplementation(proxy);
+        // The transparent proxy blocks plain calls from its admin, so upgradeAndCall is the only way to reach the list.
+        // Initialize ran only once, so the storage configs are written on every upgrade: a new asset gets registered
+        // and a changed one gets its factors and cap
+        upgradeAndCall(
+            proxy,
+            newAssetListImpl,
+            abi.encodeCall(IAssetList.setAssetConfigs, (configuratorProxy.getStorageAssetConfig(address(cometProxy))))
+        );
     }
 }

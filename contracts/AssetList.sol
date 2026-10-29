@@ -7,6 +7,7 @@ import { IAssetList } from "./interfaces/assetList/IAssetList.sol";
 import { ConfigHash, IConfigHash } from "./libraries/ConfigHash.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import { StorageSlot } from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 /**
  * @title Compound's Asset List
@@ -26,6 +27,9 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
 
     /// @dev The decimals required for a price feed
     uint8 internal constant PRICE_FEED_DECIMALS = 8;
+
+    /// @dev The ERC-1967 slot where the list proxy keeps its admin
+    bytes32 internal constant PROXY_ADMIN_SLOT = bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1);
 
     /// @dev The max asset decimals whose scale (10 to the power of the decimals) fits in uint64
     uint8 internal constant MAX_ASSET_DECIMALS = 19;
@@ -109,6 +113,13 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
         _;
     }
 
+    /// @dev The transparent proxy blocks plain calls from its admin, so this passes only inside the proxy admin's
+    ///      upgradeAndCall, and never on the implementation itself, whose admin slot is empty
+    modifier onlyProxyAdmin() {
+        if (msg.sender != StorageSlot.getAddressSlot(PROXY_ADMIN_SLOT).value) revert OnlyProxyAdmin();
+        _;
+    }
+
     constructor(ImmutableAssetConfig[] memory assetConfigs_, address configurator_) {
         _disableInitializers();
 
@@ -167,23 +178,25 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Set the storage config of an asset that is in the immutables, registering the asset first if it is new
-     * @dev Used after the list is upgraded to a new implementation: initialize ran only once, so a new asset is not
-     *      registered until this is called for it, and an asset already registered gets its whole storage config
-     *      replaced. The factors are checked together, so their order of change does not matter here.
-     *      New assets must be registered in the order of their index in the immutables
-     * @param asset The asset, must be in the immutables of this implementation
-     * @param config The factors and supply cap of the asset
+     * @notice Set the storage configs of all assets in the immutables, registering the new ones
+     * @dev The proxy admin calls this through upgradeAndCall on every list upgrade, so a new asset gets registered
+     *      and an updated one gets its factors and cap.
+     *      Every config is written, even an unchanged one.
+     *      Every asset's position in the registered assets is checked against its index in the immutables,
+     *      so a wrong order is caught here, at upgrade time
+     * @param storageConfigs The factors and supply cap of each asset, in the order of the immutables
      */
-    function setAssetConfig(address asset, StorageAssetConfig calldata config) external onlyConfigurator {
-        (bool found, uint8 index) = _immutableIndex(asset);
-        if (!found) revert AssetNotInImmutables();
-        // An asset already registered gets its config replaced, so whether it was new does not matter here
-        _setAssetConfig(asset, config);
-        // getAssetInfoByAddress finds an asset by its position in the registered assets, so that position must be
-        // its index in the immutables: a new asset registered out of order, or an implementation that moved an asset,
-        // would make the lookup read another asset's slot
-        if (_registeredPosition(asset) != index + 1) revert AssetIndexMismatch();
+    function setAssetConfigs(StorageAssetConfig[] calldata storageConfigs) external onlyProxyAdmin {
+        if (storageConfigs.length != numAssets) revert StorageConfigsLengthMismatch();
+
+        for (uint8 i; i < numAssets; ++i) {
+            (uint256 word_a, ) = _loadPackedAsset(i);
+            address asset = address(uint160(word_a));
+            _setAssetConfig(asset, storageConfigs[i]);
+            // getAssetInfoByAddress finds an asset by its position in the registered assets, so that position must be
+            // its index in the immutables
+            if (_registeredPosition(asset) != i + 1) revert AssetIndexMismatch();
+        }
     }
 
     /**
@@ -240,8 +253,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
      */
     function getAssetInfo(uint8 i) public view returns (AssetInfo memory) {
         if (i >= numAssets) revert AssetIndexOutOfRange();
-        (uint256 word_a, address priceFeed) = _loadPackedAsset(i);
-        return _composeAssetInfo(i, word_a, priceFeed);
+        return _composeAssetInfo(i);
     }
 
     /**
@@ -252,11 +264,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     function getAssetInfoByAddress(address asset) public view returns (AssetInfo memory) {
         uint8 position = _registeredPosition(asset);
         if (position == 0) revert AssetNotFound();
-
-        uint8 i = position - 1;
-        (uint256 word_a, address priceFeed) = _loadPackedAsset(i);
-
-        return _composeAssetInfo(i, word_a, priceFeed);
+        return _composeAssetInfo(position - 1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -312,7 +320,8 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     /**
      * @dev Builds the asset info of the i-th asset from its packed word and price feed, adding its storage config
      */
-    function _composeAssetInfo(uint8 i, uint256 word_a, address priceFeed) internal view returns (AssetInfo memory) {
+    function _composeAssetInfo(uint8 i) internal view returns (AssetInfo memory) {
+        (uint256 word_a, address priceFeed) = _loadPackedAsset(i);
         address asset = address(uint160(word_a));
 
         // Factors and supply cap are kept unscaled in storage so the Configurator can change them
@@ -328,19 +337,6 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
             liquidateCollateralFactor: config.liquidateCollateralFactor,
             liquidationFactor: config.liquidationFactor
         });
-    }
-
-    /**
-     * @dev Where the asset is in the immutables of this implementation
-     * @return found Whether the asset is in the immutables
-     * @return index The index of the asset, zero when it is not found
-     */
-    function _immutableIndex(address asset) internal view returns (bool found, uint8 index) {
-        for (uint8 i; i < numAssets; ++i) {
-            (uint256 word_a, ) = _loadPackedAsset(i);
-            if (address(uint160(word_a)) == asset) return (true, i);
-        }
-        return (false, 0);
     }
 
     /// @dev The asset's position in the registered assets, from 1, or 0 if unregistered; EnumerableSet has no getter for it

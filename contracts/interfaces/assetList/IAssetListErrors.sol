@@ -22,9 +22,6 @@ interface IAssetListErrors {
     /// @dev The asset is not registered in the list
     error AssetNotFound();
 
-    /// @dev The asset is not one of the assets this implementation was built from, so it needs a list upgrade first
-    error AssetNotInImmutables();
-
     /// @dev The asset's position in the registered assets differs from its index in the immutables
     error AssetIndexMismatch();
 
@@ -48,6 +45,9 @@ interface IAssetListErrors {
 
     /// @dev The caller is not the configurator
     error OnlyConfigurator();
+
+    /// @dev The caller is not the admin of the list proxy
+    error OnlyProxyAdmin();
 
     /// @dev The configurator is the zero address
     error ZeroConfigurator();
