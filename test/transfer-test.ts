@@ -2213,31 +2213,32 @@ describe('transfer', function () {
           exceedingAmount: exp(100, 6) - 1n,
         },
       ];
-      // bob transfers either as a new borrower or with a debt of 300 that is part of the total borrow
-      const BOB_DEBTS = [0n, exp(300, 6)];
+      // bob transfers as a new borrower with collateral only, carol as an existing borrower whose debt is part of the total borrow
+      const CAROL_DEBT = exp(300, 6);
 
       for (const { maxSupportedUtilization, totalBorrow, harnessBorrow, transferAmount, exceedingAmount } of BORROW_TRANSFER_LIMITS) {
-        for (const bobDebt of BOB_DEBTS) {
-          describe(`${maxSupportedUtilization / exp(1, 16)}% limit, bob debt ${bobDebt / exp(1, 6)}`, function () {
-            let limitComet: CometHarnessInterfaceExtendedAssetList;
-            let limitBaseToken: FaucetToken;
-            let limitSnapshot: SnapshotRestorer;
+        describe(`${maxSupportedUtilization / exp(1, 16)}% limit`, function () {
+          let limitComet: CometHarnessInterfaceExtendedAssetList;
+          let limitBaseToken: FaucetToken;
+          let limitSnapshot: SnapshotRestorer;
 
-            before(async () => {
-              const protocol = await makeProtocol({ ...ZERO_RATES_PROTOCOL_OPTS, maxSupportedUtilization });
-              limitComet = protocol.cometWithExtendedAssetList;
-              limitBaseToken = protocol.tokens.USDC as FaucetToken;
-              const limitCollateral = protocol.tokens.COMP as FaucetToken;
-              await limitBaseToken.allocateTo(limitComet.address, MARKET_RESERVES);
-              await allocateAndSupply(limitComet, limitBaseToken, alice, exp(1000, 6));
-              await allocateAndSupply(limitComet, limitCollateral, bob, BORROWER_COLLATERAL);
-              await limitComet.connect(bob).withdraw(limitBaseToken.address, bobDebt);
-              await allocateAndSupply(limitComet, limitCollateral, dave, BORROWER_COLLATERAL);
-              await limitComet.connect(dave).withdraw(limitBaseToken.address, totalBorrow - harnessBorrow - bobDebt);
-              await bumpBorrow(limitComet, dave.address, harnessBorrow);
-              limitSnapshot = await takeSnapshot();
-            });
+          before(async () => {
+            const protocol = await makeProtocol({ ...ZERO_RATES_PROTOCOL_OPTS, maxSupportedUtilization });
+            limitComet = protocol.cometWithExtendedAssetList;
+            limitBaseToken = protocol.tokens.USDC as FaucetToken;
+            const limitCollateral = protocol.tokens.COMP as FaucetToken;
+            await limitBaseToken.allocateTo(limitComet.address, MARKET_RESERVES);
+            await allocateAndSupply(limitComet, limitBaseToken, alice, exp(1000, 6));
+            await allocateAndSupply(limitComet, limitCollateral, bob, BORROWER_COLLATERAL);
+            await allocateAndSupply(limitComet, limitCollateral, carol, BORROWER_COLLATERAL);
+            await limitComet.connect(carol).withdraw(limitBaseToken.address, CAROL_DEBT);
+            await allocateAndSupply(limitComet, limitCollateral, dave, BORROWER_COLLATERAL);
+            await limitComet.connect(dave).withdraw(limitBaseToken.address, totalBorrow - harnessBorrow - CAROL_DEBT);
+            await bumpBorrow(limitComet, dave.address, harnessBorrow);
+            limitSnapshot = await takeSnapshot();
+          });
 
+          describe('new borrower transfer', function () {
             describe('borrow transfer reaches the limit exactly', function () {
               before(async () => {
                 await limitSnapshot.restore();
@@ -2257,8 +2258,8 @@ describe('transfer', function () {
                 expect(await limitComet.totalBorrow()).to.equal(totalBorrow + transferAmount);
               });
 
-              it('bob borrow balance increases by the transferred amount', async () => {
-                expect(await limitComet.borrowBalanceOf(bob.address)).to.equal(bobDebt + transferAmount);
+              it('bob borrow balance is the transferred amount', async () => {
+                expect(await limitComet.borrowBalanceOf(bob.address)).to.equal(transferAmount);
               });
 
               it('eve balance is the transferred amount', async () => {
@@ -2271,7 +2272,7 @@ describe('transfer', function () {
 
               before(async () => {
                 await limitSnapshot.restore();
-                stateBefore = await getMarketState(limitComet, limitBaseToken, [alice, bob, dave, eve]);
+                stateBefore = await getMarketState(limitComet, limitBaseToken, [alice, bob, carol, dave, eve]);
               });
 
               it('Comet base balance covers the transfer', async () => {
@@ -2284,35 +2285,88 @@ describe('transfer', function () {
               });
 
               it('market state is not changed', async () => {
-                expect(await getMarketState(limitComet, limitBaseToken, [alice, bob, dave, eve])).to.deep.equal(stateBefore);
+                expect(await getMarketState(limitComet, limitBaseToken, [alice, bob, carol, dave, eve])).to.deep.equal(stateBefore);
               });
             });
           });
-        }
+
+          describe('existing borrower transfer', function () {
+            describe('borrow transfer reaches the limit exactly', function () {
+              before(async () => {
+                await limitSnapshot.restore();
+
+                await limitComet.connect(carol).transfer(eve.address, transferAmount);
+              });
+
+              it('utilization equals the limit', async () => {
+                expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
+              });
+
+              it('total supply increases by the transferred amount', async () => {
+                expect(await limitComet.totalSupply()).to.equal(exp(1000, 6) + transferAmount);
+              });
+
+              it('total borrow increases by the transferred amount', async () => {
+                expect(await limitComet.totalBorrow()).to.equal(totalBorrow + transferAmount);
+              });
+
+              it('carol borrow balance increases by the transferred amount', async () => {
+                expect(await limitComet.borrowBalanceOf(carol.address)).to.equal(CAROL_DEBT + transferAmount);
+              });
+
+              it('eve balance is the transferred amount', async () => {
+                expect(await limitComet.balanceOf(eve.address)).to.equal(transferAmount);
+              });
+            });
+
+            describe('borrow transfer exceeds the limit by 1 wei', function () {
+              let stateBefore: MarketState;
+
+              before(async () => {
+                await limitSnapshot.restore();
+                stateBefore = await getMarketState(limitComet, limitBaseToken, [alice, bob, carol, dave, eve]);
+              });
+
+              it('Comet base balance covers the transfer', async () => {
+                expect(await limitBaseToken.balanceOf(limitComet.address)).to.be.above(exceedingAmount);
+              });
+
+              it('transfer reverts with ExceedsSupportedUtilization', async () => {
+                await expect(limitComet.connect(carol).transfer(eve.address, exceedingAmount))
+                  .to.be.revertedWithCustomError(limitComet, 'ExceedsSupportedUtilization');
+              });
+
+              it('market state is not changed', async () => {
+                expect(await getMarketState(limitComet, limitBaseToken, [alice, bob, carol, dave, eve])).to.deep.equal(stateBefore);
+              });
+            });
+          });
+        });
       }
 
       // At a 100% limit a borrow transfer keeps utilization at 100% or above, so the boundary is the market state
       // before the transfer rather than the transferred amount
-      for (const bobDebt of BOB_DEBTS) {
-        describe(`100% limit, bob debt ${bobDebt / exp(1, 6)}`, function () {
-          let limitComet: CometHarnessInterfaceExtendedAssetList;
-          let limitBaseToken: FaucetToken;
-          let limitSnapshot: SnapshotRestorer;
+      describe('100% limit', function () {
+        let limitComet: CometHarnessInterfaceExtendedAssetList;
+        let limitBaseToken: FaucetToken;
+        let limitSnapshot: SnapshotRestorer;
 
-          before(async () => {
-            const protocol = await makeProtocol({ ...ZERO_RATES_PROTOCOL_OPTS, maxSupportedUtilization: exp(1, 18) });
-            limitComet = protocol.cometWithExtendedAssetList;
-            limitBaseToken = protocol.tokens.USDC as FaucetToken;
-            const limitCollateral = protocol.tokens.COMP as FaucetToken;
-            await limitBaseToken.allocateTo(limitComet.address, MARKET_RESERVES);
-            await allocateAndSupply(limitComet, limitBaseToken, alice, exp(1000, 6));
-            await allocateAndSupply(limitComet, limitCollateral, bob, BORROWER_COLLATERAL);
-            await limitComet.connect(bob).withdraw(limitBaseToken.address, bobDebt);
-            await allocateAndSupply(limitComet, limitCollateral, dave, BORROWER_COLLATERAL);
-            await limitComet.connect(dave).withdraw(limitBaseToken.address, exp(1000, 6) - bobDebt);
-            limitSnapshot = await takeSnapshot();
-          });
+        before(async () => {
+          const protocol = await makeProtocol({ ...ZERO_RATES_PROTOCOL_OPTS, maxSupportedUtilization: exp(1, 18) });
+          limitComet = protocol.cometWithExtendedAssetList;
+          limitBaseToken = protocol.tokens.USDC as FaucetToken;
+          const limitCollateral = protocol.tokens.COMP as FaucetToken;
+          await limitBaseToken.allocateTo(limitComet.address, MARKET_RESERVES);
+          await allocateAndSupply(limitComet, limitBaseToken, alice, exp(1000, 6));
+          await allocateAndSupply(limitComet, limitCollateral, bob, BORROWER_COLLATERAL);
+          await allocateAndSupply(limitComet, limitCollateral, carol, BORROWER_COLLATERAL);
+          await limitComet.connect(carol).withdraw(limitBaseToken.address, CAROL_DEBT);
+          await allocateAndSupply(limitComet, limitCollateral, dave, BORROWER_COLLATERAL);
+          await limitComet.connect(dave).withdraw(limitBaseToken.address, exp(1000, 6) - CAROL_DEBT);
+          limitSnapshot = await takeSnapshot();
+        });
 
+        describe('new borrower transfer', function () {
           describe('borrow transfer at the limit keeps utilization at the limit', function () {
             before(async () => {
               await limitSnapshot.restore();
@@ -2332,8 +2386,8 @@ describe('transfer', function () {
               expect(await limitComet.totalBorrow()).to.equal(exp(1500, 6));
             });
 
-            it('bob borrow balance increases by 500', async () => {
-              expect(await limitComet.borrowBalanceOf(bob.address)).to.equal(bobDebt + exp(500, 6));
+            it('bob borrow balance is 500', async () => {
+              expect(await limitComet.borrowBalanceOf(bob.address)).to.equal(exp(500, 6));
             });
           });
 
@@ -2343,7 +2397,7 @@ describe('transfer', function () {
             before(async () => {
               await limitSnapshot.restore();
               await bumpBorrow(limitComet, dave.address, 1n);
-              stateBefore = await getMarketState(limitComet, limitBaseToken, [alice, bob, dave, eve]);
+              stateBefore = await getMarketState(limitComet, limitBaseToken, [alice, bob, carol, dave, eve]);
             });
 
             it('utilization is above the limit', async () => {
@@ -2360,11 +2414,64 @@ describe('transfer', function () {
             });
 
             it('market state is not changed', async () => {
-              expect(await getMarketState(limitComet, limitBaseToken, [alice, bob, dave, eve])).to.deep.equal(stateBefore);
+              expect(await getMarketState(limitComet, limitBaseToken, [alice, bob, carol, dave, eve])).to.deep.equal(stateBefore);
             });
           });
         });
-      }
+
+        describe('existing borrower transfer', function () {
+          describe('borrow transfer at the limit keeps utilization at the limit', function () {
+            before(async () => {
+              await limitSnapshot.restore();
+
+              await limitComet.connect(carol).transfer(eve.address, exp(500, 6));
+            });
+
+            it('utilization is 100%', async () => {
+              expect(await limitComet.getUtilization()).to.equal(exp(1, 18));
+            });
+
+            it('total supply increases to 1500', async () => {
+              expect(await limitComet.totalSupply()).to.equal(exp(1500, 6));
+            });
+
+            it('total borrow increases to 1500', async () => {
+              expect(await limitComet.totalBorrow()).to.equal(exp(1500, 6));
+            });
+
+            it('carol borrow balance increases by 500', async () => {
+              expect(await limitComet.borrowBalanceOf(carol.address)).to.equal(CAROL_DEBT + exp(500, 6));
+            });
+          });
+
+          describe('borrow transfer when utilization is above the limit by 1 wei', function () {
+            let stateBefore: MarketState;
+
+            before(async () => {
+              await limitSnapshot.restore();
+              await bumpBorrow(limitComet, dave.address, 1n);
+              stateBefore = await getMarketState(limitComet, limitBaseToken, [alice, bob, carol, dave, eve]);
+            });
+
+            it('utilization is above the limit', async () => {
+              expect(await limitComet.getUtilization()).to.be.above(exp(1, 18));
+            });
+
+            it('Comet base balance covers the transfer', async () => {
+              expect(await limitBaseToken.balanceOf(limitComet.address)).to.be.above(exp(500, 6));
+            });
+
+            it('transfer reverts with ExceedsSupportedUtilization', async () => {
+              await expect(limitComet.connect(carol).transfer(eve.address, exp(500, 6)))
+                .to.be.revertedWithCustomError(limitComet, 'ExceedsSupportedUtilization');
+            });
+
+            it('market state is not changed', async () => {
+              expect(await getMarketState(limitComet, limitBaseToken, [alice, bob, carol, dave, eve])).to.deep.equal(stateBefore);
+            });
+          });
+        });
+      });
 
       describe('borrow transfer with zero total supply', function () {
         before(async () => {
