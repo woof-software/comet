@@ -1,4 +1,4 @@
-import { AssetConfigStruct } from '../../build/types/CometWithExtendedAssetList';
+import { AssetConfigStruct } from '../../build/types/Configurator';
 import { ConfigurationStruct } from '../../build/types/Configurator';
 import { ProtocolConfiguration } from './index';
 import { ContractMap } from '../../plugins/deployment_manager/ContractMap';
@@ -75,7 +75,6 @@ interface NetworkTrackingConfiguration {
 interface NetworkAssetConfiguration {
   address?: string;
   priceFeed: string;
-  decimals: number;
   borrowCF: number;
   liquidateCF: number;
   liquidationFactor: number;
@@ -120,7 +119,6 @@ function getAssetConfigs(
   return Object.entries(assets).map(([assetName, assetConfig]) => ({
     asset: getContractAddress(assetName, contracts, assetConfig.address),
     priceFeed: getContractAddress(`${assetName}:priceFeed`, contracts, assetConfig.priceFeed),
-    decimals: number(assetConfig.decimals),
     borrowCollateralFactor: percentage(assetConfig.borrowCF),
     liquidateCollateralFactor: percentage(assetConfig.liquidateCF),
     liquidationFactor: percentage(assetConfig.liquidationFactor),

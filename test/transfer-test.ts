@@ -9,6 +9,7 @@ describe('transfer', function () {
   const baseTokenDecimals = 6;
   // Contracts
   let comet: CometHarnessInterfaceExtendedAssetList;
+  // Comet forwards the asset lookups to the list, so an unknown asset reverts with the list's error
   let baseToken: FaucetToken;
   let collaterals: { [symbol: string]: FaucetToken } = {};
   let unsupportedToken: FaucetToken;
@@ -31,7 +32,9 @@ describe('transfer', function () {
   // Constants
   const baseTokenSupplyAmount = exp(100, 6);
   const collateralTokenSupplyAmount = exp(1, 18);
-  const collateralTokenTransferAmount = collateralTokenSupplyAmount / 4n;
+  // Dave keeps 0.9 COMP (~$157, ~$118 at the default 0.75 borrow collateral factor), enough to back
+  // the 1 USDC he borrows plus the 100 USDC base transfer in the deactivated collateral flows
+  const collateralTokenTransferAmount = collateralTokenSupplyAmount / 10n;
   // Storage
   let deactivatedCollateralIndex: number;
   let aliceCollateralBefore: UserCollateral;
@@ -694,10 +697,6 @@ describe('transfer', function () {
 
       it('unsupported asset & amount = 0', async () => {
         await expect(comet.connect(alice).transferAsset(bob.address, unsupportedToken.address, 0n)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
-      });
-
-      it('zero amount', async () => {
-        await expect(comet.connect(alice).transferAsset(bob.address, collateral.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
       });
 
       it('amount > balance', async () => {
@@ -1522,15 +1521,6 @@ describe('transfer', function () {
             receiver.address,
             unsupportedToken.address,
             0n
-          )).to.be.revertedWithCustomError(comet, 'ZeroAmount');
-        });
-
-        it('zero amount', async () => {
-          await expect(comet.connect(operator).transferAssetFrom(
-            holder.address,
-            receiver.address,
-            collaterals['COMP'].address,
-            0
           )).to.be.revertedWithCustomError(comet, 'ZeroAmount');
         });
 

@@ -25,7 +25,7 @@ import relayMessage from './relayMessage';
 import { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
 import { getOrCreateVirtualTestnet } from './tenderlyVnet';
-import { BaseBridgeReceiver, CometInterface, FaucetToken } from '../../build/types';
+import { AssetList, BaseBridgeReceiver, CometInterface, CometProxyAdmin, Configurator, FaucetToken } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
@@ -37,6 +37,7 @@ export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
 import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
 export * from './hreUtils';
+export * from './versionControl';
 
 /** Convert a per-year interest factor to per-second (Comet constructor truncation). */
 export function perSecond(perYear: BigNumber): BigNumber {
@@ -501,41 +502,8 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
   return true;
 }
 
-export async function usesAssetList(ctx: CometContext): Promise<boolean> {
-  const comet = await ctx.getComet();
-  return await comet.maxAssets() === MAX_ASSETS;
-}
-
 export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
-}
-
-export async function supportUtilizationLimit(ctx: CometContext): Promise<boolean> {
-  try {
-    const comet = await ctx.getComet();
-    const ethers = ctx.world.deploymentManager.hre.ethers;
-    
-    const iface = new ethers.utils.Interface([
-      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
-    ]);
-    const functionSelector = iface.getSighash('MAX_SUPPORTED_UTILIZATION');
-    
-    // Try to call the function using a low-level static call
-    // If the function doesn't exist, this will revert
-    const result = await ethers.provider.call({
-      to: comet.address,
-      data: functionSelector
-    });
-    
-    // If the call succeeds (doesn't revert), the function exists
-    // Decode the result to verify it's a valid bool response
-    if (result && result !== '0x') {
-      return true;
-    }
-    return false;
-  } catch (error) {
-    return false;
-  }
 }
 
 /**
@@ -1846,6 +1814,27 @@ export async function createCrossChainProposal(
   );
 }
 
+// Runs the actions as one governance proposal: the governor executes it on mainnet, and on an L2 it is relayed to the
+// bridge receiver, whose timelock governs the market there
+export async function executeProposal(
+  context: CometContext,
+  bridgeReceiver: BaseBridgeReceiver,
+  targets: string[],
+  signatures: string[],
+  calldatas: string[]
+) {
+  const values = targets.map(() => 0);
+  if (isBridgedDeployment(context)) {
+    const l2ProposalData = utils.defaultAbiCoder.encode(
+      ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
+      [targets, values, signatures, calldatas]
+    );
+    await createCrossChainProposal(context, l2ProposalData, bridgeReceiver);
+  } else {
+    await context.fastGovernanceExecute(targets, values, signatures, calldatas);
+  }
+}
+
 export async function executeOpenProposalAndRelay(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
@@ -2089,4 +2078,73 @@ export async function getMinimumBorrowAmounts(context: CometContext, collateralI
   supplyAmount = (supplyAmount * 11n) / 10n;
 
   return { collateralAsset, supplyAmount, borrowAmount };
+}
+
+// TEMP SOLUTION: remove as soon as the real asset list migration is prepared or executed on chain.
+// Moves a live market from the V1 Configurator to the asset list, the same steps as the migration scenario but called
+// directly by the governor instead of through proposals: the Configurator is upgraded through the intermediate
+// version that migrates the asset configs, an asset list factory and an asset list are deployed, and the Comet is
+// rebuilt on the list. The new contracts are deployed under the aliases deployComet reads, so that a following
+// deployComet finds them and does not roll the Configurator back to the old implementation
+export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAddress) {
+  const dm = ctx.world.deploymentManager;
+  const ethers = dm.hre.ethers;
+  const comet = await ctx.getComet();
+  const configurator = (await ethers.getContractAt('Configurator', (await ctx.getConfigurator()).address, admin)) as Configurator;
+  const proxyAdmin = (await ethers.getContractAt('CometProxyAdmin', (await ctx.getCometAdmin()).address, admin)) as CometProxyAdmin;
+
+  // A Configurator that stores the market admin permission checker has its own storage layout, so its own versions
+  const withMarketAdmin = await supportsMarketAdminPermissionChecker(ctx);
+  const configuratorIntermediate = await dm.deploy(
+    'test:configuratorIntermediate',
+    withMarketAdmin ? 'migration/ConfiguratorIntermediateOptimism.sol' : 'migration/ConfiguratorIntermediate.sol',
+    [],
+    true
+  );
+  const configuratorImplementation = await dm.deploy(
+    'configurator:implementation',
+    withMarketAdmin ? 'marketupdates/ConfiguratorOptimism.sol' : 'Configurator.sol',
+    [],
+    true
+  );
+  const assetListFactory = await dm.deploy('assetListFactory', 'test/assetList/AssetListFactory.sol', [], true);
+  const cometFactory = await dm.deploy('cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], true);
+
+  // The Configurator proxy is upgraded by its own admin, read from the EIP-1967 admin slot
+  const adminSlot = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
+  const configuratorAdmin = proxyAdmin.attach(
+    utils.getAddress('0x' + (await ethers.provider.getStorageAt(configurator.address, adminSlot)).slice(26))
+  );
+  const intermediate = await ethers.getContractAt('ConfiguratorIntermediate', configurator.address, admin);
+
+  await (await configuratorAdmin.upgrade(configurator.address, configuratorIntermediate.address)).wait();
+  await (await intermediate.migrateAssetConfig([comet.address])).wait();
+  await (await configuratorAdmin.upgrade(configurator.address, configuratorImplementation.address)).wait();
+  await (await configurator.setAssetListFactory(comet.address, assetListFactory.address)).wait();
+
+  // The list is built from the immutable part of the migrated configs, and its proxy keeps the factors and caps
+  const assetListImplementation = (await dm.deploy(
+    'assetList:implementation',
+    'AssetList.sol',
+    [await configurator.getImmutableAssetConfig(comet.address), configurator.address],
+    true
+  )) as AssetList;
+  const assetListProxy = await dm.deploy(
+    'assetList',
+    'vendor/proxy/transparent/TransparentUpgradeableProxy.sol',
+    [
+      assetListImplementation.address,
+      proxyAdmin.address,
+      assetListImplementation.interface.encodeFunctionData('initialize', [
+        await configurator.getStorageAssetConfig(comet.address),
+      ]),
+    ],
+    true
+  );
+
+  // setConfiguration sets the list proxy once, for a market that has none yet
+  const configuration = await configurator.getConfiguration(comet.address);
+  await (await configurator.setConfiguration(comet.address, { ...configuration, assetList: assetListProxy.address })).wait();
+  await (await configurator.setFactory(comet.address, cometFactory.address)).wait();
+  await (await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address)).wait();
 }

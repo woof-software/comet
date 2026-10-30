@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import { annualize, defactor, exp, factorScale } from '../test/helpers';
 import { BigNumber } from 'ethers';
 import { FuzzType } from './constraints/Fuzzing';
-import { supportUtilizationLimit, isFreshMarket } from './utils';
+import { servicePatch, isFreshMarket } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { setNextBlockTimestamp } from './utils/hreUtils';
 
@@ -220,7 +220,7 @@ scenario.skip(
 scenario(
   'Comet#interestRate reverts for pushing utilization above 200%',
   {
-    filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
+    filter: async (ctx: CometContext) => await servicePatch(ctx) && await isFreshMarket(ctx),
   },
   async ({ comet }, context: CometContext) => {
     const { albert, betty } = context.actors;
@@ -276,7 +276,7 @@ scenario(
 scenario(
   'Comet#interestRate > supply index does not change when there are no supplies',
   {
-    filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
+    filter: async (ctx: CometContext) => await servicePatch(ctx) && await isFreshMarket(ctx),
     upgrade: {
       supplyKink: exp(0.8, 18),
       supplyPerYearInterestRateBase: exp(0.001, 18),
@@ -330,7 +330,7 @@ scenario(
 scenario(
   'Comet#interestRate > supply index does not grow without reserves even with supplies',
   {
-    filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
+    filter: async (ctx: CometContext) => await servicePatch(ctx) && await isFreshMarket(ctx),
     upgrade: {
       supplyKink: exp(0.8, 18),
       supplyPerYearInterestRateBase: exp(0.001, 18),
@@ -392,7 +392,7 @@ scenario(
 scenario(
   'Comet#interestRate > supply index grows with reserves and supplies',
   {
-    filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
+    filter: async (ctx: CometContext) => await servicePatch(ctx) && await isFreshMarket(ctx),
     upgrade: {
       supplyKink: exp(0.8, 18),
       supplyPerYearInterestRateBase: exp(0.001, 18),
@@ -472,7 +472,7 @@ scenario(
 scenario(
   'Comet#interestRate > supply interest does not exceed reserves without borrows',
   {
-    filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
+    filter: async (ctx: CometContext) => await servicePatch(ctx) && await isFreshMarket(ctx),
     upgrade: {
       supplyKink: exp(0.8, 18),
       supplyPerYearInterestRateBase: exp(0.001, 18),

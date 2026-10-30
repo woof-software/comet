@@ -35,6 +35,9 @@ abstract contract CometMainInterface is CometCore {
     error TransferOutFailed();
     error Unauthorized();
 
+    /// @dev Reverts if asset list proxy address is zero
+    error ZeroAssetList();
+
     /// @dev Error emitted when the utilization exceeds the supported utilization
     error ExceedsSupportedUtilization();
     /// @notice Error emitted when base supply is paused

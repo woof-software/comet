@@ -6,8 +6,9 @@ import "../../contracts/CometWithExtendedAssetList.sol";
 import "../../contracts/CometConfiguration.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
+import { AssetListDeployer } from "./helpers/AssetListDeployer.sol";
 
-contract OnChainLiquidatorTest is Test {
+contract OnChainLiquidatorTest is Test, AssetListDeployer {
     CometWithExtendedAssetList public comet;
     OnChainLiquidator public liquidator;
 
@@ -53,7 +54,6 @@ contract OnChainLiquidatorTest is Test {
         assetConfigs[0] = CometConfiguration.AssetConfig({
             asset: CB_ETH,
             priceFeed: address(cbEthPriceFeed),
-            decimals: 18,
             borrowCollateralFactor: 9e17,
             liquidateCollateralFactor: 93e16,
             liquidationFactor: 95e16,
@@ -62,7 +62,6 @@ contract OnChainLiquidatorTest is Test {
         assetConfigs[1] = CometConfiguration.AssetConfig({
             asset: WST_ETH,
             priceFeed: address(wstEthPriceFeed),
-            decimals: 18,
             borrowCollateralFactor: 9e17,
             liquidateCollateralFactor: 93e16,
             liquidationFactor: 95e16,
@@ -91,7 +90,7 @@ contract OnChainLiquidatorTest is Test {
                 baseMinForRewards: 1000000e6,
                 baseBorrowMin: 100e6,
                 targetReserves: 5000000e6,
-                assetConfigs: assetConfigs
+                assetList: address(deployAssetList(assetConfigs, makeAddr("proxyAdmin"), makeAddr("configurator")))
             }
         ));
 
