@@ -1,12 +1,12 @@
 import { DeploymentManager } from '../../plugins/deployment_manager';
-import relayPolygonMessage from './relayPolygonMessage';
+import relayPolygonMessage, { simulateL2ToL1TokenBridging as simulatePolygonL2ToL1TokenBridging, simulateL2ToL1OFTBridging as simulatePolygonL2ToL1OFTBridging } from './relayPolygonMessage';
 import { relayArbitrumMessage, relayArbitrumCCTPMint, simulateL2ToL1TokenBridging } from './relayArbitrumMessage';
 import relayBaseMessage,{ simulateL2ToL1TokenBridging as simulateBaseL2ToL1TokenBridging} from './relayBaseMessage';
-import relayLineaMessage from './relayLineaMessage';
+import relayLineaMessage, { simulateL2ToL1MessageClaims as simulateLineaL2ToL1MessageClaims } from './relayLineaMessage';
 import relayOptimismMessage, { simulateL2ToL1TokenBridging as simulateOptimismL2ToL1TokenBridging } from './relayOptimismMessage';
-import relayMantleMessage from './relayMantleMessage';
-import { relayUnichainMessage, relayUnichainCCTPMint } from './relayUnichainMessage';
-import relayScrollMessage from './relayScrollMessage';
+import relayMantleMessage, { simulateL2ToL1TokenBridging as simulateMantleL2ToL1TokenBridging } from './relayMantleMessage';
+import { relayUnichainMessage, relayUnichainCCTPMint, simulateL2ToL1TokenBridging as simulateUnichainL2ToL1TokenBridging } from './relayUnichainMessage';
+import relayScrollMessage, { simulateL2ToL1USDCBridging } from './relayScrollMessage';
 import relayRoninMessage from './relayRoninMessage';
 
 const L2_BLOCK_BUFFER = 5;
@@ -34,7 +34,8 @@ export default async function relayMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         l2StartingBlockNumber,
-        tenderlyLogs
+        tenderlyLogs,
+        proposal?.map(p => p.id)
       );
       return proposal;
     }
@@ -50,18 +51,31 @@ export default async function relayMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         l2StartingBlockNumber,
-        tenderlyLogs
+        tenderlyLogs,
+        proposal?.map(p => p.id)
       );
       return proposal;
     }
-    case 'mantle':
-      return await relayMantleMessage(
+    case 'mantle': {
+      // Only blocks mined by this relay, so earlier proposals' packets aren't delivered again.
+      const l2StartingBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() + 1;
+      proposal = await relayMantleMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         startingBlockNumber,
         tenderlyLogs
       );
-    case 'unichain':
+      await simulateMantleL2ToL1TokenBridging(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
+        tenderlyLogs
+      );
+      return proposal;
+    }
+    case 'unichain': {
+      // Only blocks mined by this relay, so earlier proposals' withdrawals aren't finalized again.
+      const l2StartingBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() + 1;
       proposal = await relayUnichainMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
@@ -74,14 +88,39 @@ export default async function relayMessage(
         startingBlockNumber,
         tenderlyLogs
       );
+      await simulateUnichainL2ToL1TokenBridging(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
+        tenderlyLogs
+      );
       return proposal;
-    case 'polygon':
-      return await relayPolygonMessage(
+    }
+    case 'polygon': {
+      const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
+      // Only blocks mined by this relay, so real packets from the fork's past blocks aren't delivered
+      const l2OFTStartingBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() + 1;
+      proposal = await relayPolygonMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         startingBlockNumber,
         tenderlyLogs
       );
+      await simulatePolygonL2ToL1TokenBridging(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
+        tenderlyLogs,
+        proposal?.map(p => p.id)
+      );
+      await simulatePolygonL2ToL1OFTBridging(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2OFTStartingBlockNumber,
+        tenderlyLogs
+      );
+      return proposal;
+    }
     case 'arbitrum': {
       const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
       proposal = await relayArbitrumMessage(
@@ -100,24 +139,45 @@ export default async function relayMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         l2StartingBlockNumber,
+        tenderlyLogs,
+        proposal?.map(p => p.id)
+      );
+      return proposal;
+    }
+    case 'linea': {
+      // Only blocks mined by this relay, so earlier proposals' messages aren't claimed again.
+      const l2StartingBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() + 1;
+      proposal = await relayLineaMessage(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        startingBlockNumber,
+        tenderlyLogs
+      );
+      await simulateLineaL2ToL1MessageClaims(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
         tenderlyLogs
       );
       return proposal;
     }
-    case 'linea':
-      return await relayLineaMessage(
+    case 'scroll': {
+      // Only blocks mined by this relay, so earlier proposals' withdrawals aren't finalized again.
+      const l2StartingBlockNumber = await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() + 1;
+      proposal = await relayScrollMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         startingBlockNumber,
         tenderlyLogs
       );
-    case 'scroll':
-      return await relayScrollMessage(
+      await simulateL2ToL1USDCBridging(
         governanceDeploymentManager,
         bridgeDeploymentManager,
-        startingBlockNumber,
+        l2StartingBlockNumber,
         tenderlyLogs
       );
+      return proposal;
+    }
     case 'ronin':
       return await relayRoninMessage(
         governanceDeploymentManager,
