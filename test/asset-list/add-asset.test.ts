@@ -1,6 +1,6 @@
 import { ethers, expect, takeSnapshot, SnapshotRestorer } from '../helpers';
 import { AssetList, AssetList__factory, CometInterface, CometProxyAdmin, Configurator, FaucetToken } from '../../build/types';
-import { AssetInfoStructOutput, ImmutableAssetConfigStruct, StorageAssetConfigStruct } from '../../build/types/AssetList';
+import { AssetInfoStructOutput, StorageAssetConfigStruct } from '../../build/types/AssetList';
 import { AssetConfigStruct, AssetConfigStructOutput } from '../../build/types/Configurator';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
@@ -15,11 +15,11 @@ import {
   impersonate,
 } from './shared';
 
-// Adding an asset to a live market takes four steps:
+// Adding an asset to a live market takes two steps:
 //   1. Configurator.addAsset appends the full config to the stored configs.
-//   2. Configurator.deployAssetList builds a new list implementation that has the asset in its immutables.
-//   3. The list proxy is upgraded to it; CometProxyAdmin.deployAndUpgradeAssetListTo does 2 and 3 together.
-//   4. Configurator.setAssetConfigToAssetList registers the asset in the list with the factors and cap of the stored config.
+//   2. CometProxyAdmin.deployAndUpgradeAssetListTo builds a new list implementation that has the asset in its
+//      immutables, upgrades the list proxy to it, and in the same call writes the storage configs of all assets,
+//      which registers the new asset with the factors and cap of its stored config.
 describe('asset list add asset: full flow through the Configurator', function () {
   const ZERO = ethers.constants.AddressZero;
   const FACTOR = 10n ** 16n; // 0.01
@@ -31,7 +31,6 @@ describe('asset list add asset: full flow through the Configurator', function ()
 
   let AssetListContractFactory: AssetList__factory;
   let assetList: AssetList;
-  let configs: ImmutableAssetConfigStruct[];
   let storageConfigs: StorageAssetConfigStruct[];
   let proxyAdmin: CometProxyAdmin;
   let configurator: Configurator;
@@ -49,7 +48,6 @@ describe('asset list add asset: full flow through the Configurator', function ()
     ({
       AssetListContractFactory,
       assetList,
-      configs,
       storageConfigs,
       proxyAdmin,
       configurator,
@@ -61,7 +59,7 @@ describe('asset list add asset: full flow through the Configurator', function ()
     asset = newAssetConfig.asset;
   });
 
-  describe('step 1: addAsset', function () {
+  context('step 1: addAsset', function () {
     let tx: ContractTransaction;
     let storedBefore: AssetConfigStructOutput[];
     let storedAfter: AssetConfigStructOutput[];
@@ -106,7 +104,7 @@ describe('asset list add asset: full flow through the Configurator', function ()
     });
   });
 
-  describe('between step 1 and the upgrade', function () {
+  context('between step 1 and the upgrade', function () {
     it('the list still has the same number of assets', async () => {
       expect(await assetList.numAssets()).to.equal(NUM_ASSETS);
     });
@@ -128,13 +126,15 @@ describe('asset list add asset: full flow through the Configurator', function ()
     });
   });
 
-  describe('redeploy and upgrade', function () {
+  context('step 2: redeploy and upgrade', function () {
     let tx: ContractTransaction;
+    let storedBefore: AssetConfigStructOutput[];
     let listBefore: AssetInfoStructOutput[];
     let newImplementation: AssetList;
     let assetInfo: AssetInfoStructOutput;
 
     before(async () => {
+      storedBefore = await storedConfigs();
       listBefore = await listConfigs();
       tx = await upgradeAssetList();
       newImplementation = AssetListContractFactory.attach(await proxyAdmin.getProxyImplementation(assetList.address));
@@ -174,44 +174,10 @@ describe('asset list add asset: full flow through the Configurator', function ()
       expect(assetInfo.scale).to.equal(10n ** BigInt(NEW_ASSET_DECIMALS));
     });
 
-    it('getAssetInfo returns zero factors and cap for the new asset, as it is not registered yet', async () => {
-      for (const key of STORAGE_KEYS) expect(assetInfo[key]).to.equal(0);
-    });
-
-    it('deployAssetList returns the zero address again', async () => {
-      expect((await configurator.callStatic.deployAssetList(comet.address)).newAssetListImpl).to.equal(ZERO);
-    });
-  });
-
-  describe('step 2: setAssetConfigToAssetList', function () {
-    let tx: ContractTransaction;
-    let storedBefore: AssetConfigStructOutput[];
-    let listBefore: AssetInfoStructOutput[];
-    let assetInfo: AssetInfoStructOutput;
-
-    before(async () => {
-      storedBefore = await storedConfigs();
-      listBefore = await listConfigs();
-      tx = await configurator.setAssetConfigToAssetList(comet.address, asset);
-      assetInfo = await assetList.getAssetInfo(NUM_ASSETS);
-    });
-
-    it('succeeds for the governor', async () => {
-      await expect(tx).to.not.be.reverted;
-    });
-
     STORAGE_KEYS.forEach((key) => {
       it(`registers the asset with the ${key} of the stored config`, async () => {
         expect(assetInfo[key]).to.equal(newAssetConfig[key]);
       });
-    });
-
-    it('emits SetAssetConfigToAssetList on the Configurator', async () => {
-      await expect(tx).to.emit(configurator, 'SetAssetConfigToAssetList').withArgs(comet.address, assetList.address, asset);
-    });
-
-    it('makes the asset list emit nothing', async () => {
-      expect((await tx.wait()).logs.filter((log) => log.address == assetList.address)).to.be.empty;
     });
 
     it('getAssetInfoByAddress returns the same values as getAssetInfo', async () => {
@@ -226,12 +192,12 @@ describe('asset list add asset: full flow through the Configurator', function ()
       expect(await storedConfigs()).to.deep.equal(storedBefore);
     });
 
-    it('does not change the already registered assets', async () => {
-      expect(await listConfigs()).to.deep.equal(listBefore);
+    it('deployAssetList returns the zero address again', async () => {
+      expect((await configurator.callStatic.deployAssetList(comet.address)).newAssetListImpl).to.equal(ZERO);
     });
   });
 
-  describe(`step 2 (list filled to ${MAX_ASSETS} assets)`, function () {
+  context(`step 2 (list filled to ${MAX_ASSETS} assets)`, function () {
     let snapshot: SnapshotRestorer;
     let lastAsset: string;
 
@@ -244,7 +210,6 @@ describe('asset list add asset: full flow through the Configurator', function ()
         addedAssets.push(assetConfig.asset);
       }
       await upgradeAssetList();
-      for (const addedAsset of addedAssets) await configurator.setAssetConfigToAssetList(comet.address, addedAsset);
       lastAsset = addedAssets[addedAssets.length - 1];
     });
 
@@ -257,9 +222,16 @@ describe('asset list add asset: full flow through the Configurator', function ()
     it('the offset of the asset in the last slot equals its index', async () => {
       expect((await assetList.getAssetInfoByAddress(lastAsset)).offset).to.equal(MAX_ASSETS - 1);
     });
+
+    it('every added asset is registered by the one upgrade', async () => {
+      for (let i = NUM_ASSETS + 1; i < MAX_ASSETS; i++) {
+        const { asset: addedAsset } = await assetList.getAssetInfo(i);
+        expect((await assetList.getAssetInfoByAddress(addedAsset)).offset).to.equal(i);
+      }
+    });
   });
 
-  describe('after the Comet redeploy', function () {
+  context('after the Comet redeploy', function () {
     before(async () => {
       await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
     });
@@ -280,8 +252,8 @@ describe('asset list add asset: full flow through the Configurator', function ()
     });
   });
 
-  describe('additional checks after adding new asset', function () {
-    describe('the four setter flows on the new asset', function () {
+  context('additional checks after adding new asset', function () {
+    context('the four setter flows on the new asset', function () {
       let snapshot: SnapshotRestorer;
       let assetInfo: AssetInfoStructOutput;
 
@@ -313,7 +285,7 @@ describe('asset list add asset: full flow through the Configurator', function ()
       });
     });
 
-    describe('de-listed configs', function () {
+    context('de-listed configs', function () {
       let snapshot: SnapshotRestorer;
       let softDelisted: AssetConfigStruct;
       let fullyDelisted: AssetConfigStruct;
@@ -324,51 +296,67 @@ describe('asset list add asset: full flow through the Configurator', function ()
         fullyDelisted = await deployAssetConfig(18, { borrowCollateralFactor: 0, liquidateCollateralFactor: 0 });
         await configurator.addAsset(comet.address, softDelisted);
         await configurator.addAsset(comet.address, fullyDelisted);
-        await upgradeAssetList();
       });
 
       after(async () => await snapshot.restore());
 
-      it('a soft de-listed config (borrowCF = 0, liquidateCF > 0) is added to the list', async () => {
-        await expect(configurator.setAssetConfigToAssetList(comet.address, softDelisted.asset)).to.not.be.reverted;
+      it('the upgrade succeeds with both de-listed configs', async () => {
+        await expect(upgradeAssetList()).to.not.be.reverted;
       });
 
-      it('a fully de-listed config (borrowCF = liquidateCF = 0) is added to the list', async () => {
-        await expect(configurator.setAssetConfigToAssetList(comet.address, fullyDelisted.asset)).to.not.be.reverted;
+      it('a soft de-listed config (borrowCF = 0, liquidateCF > 0) is registered in the list', async () => {
+        const info = await assetList.getAssetInfoByAddress(softDelisted.asset);
+        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(softDelisted[key]);
+      });
+
+      it('a fully de-listed config (borrowCF = liquidateCF = 0) is registered in the list', async () => {
+        const info = await assetList.getAssetInfoByAddress(fullyDelisted.asset);
+        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(fullyDelisted[key]);
       });
     });
   });
 
-  describe('access', function () {
+  context('access', function () {
     it('step 1 reverts for anyone but the governor', async () => {
       await expect(configurator.connect(other).addAsset(comet.address, newAssetConfig))
         .to.be.revertedWithCustomError(configurator, 'Unauthorized');
     });
 
-    it('step 2 reverts for anyone but the governor', async () => {
-      await expect(configurator.connect(other).setAssetConfigToAssetList(comet.address, asset))
-        .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+    it('step 2 reverts for anyone but the proxy admin owner', async () => {
+      await expect(proxyAdmin.connect(other).deployAndUpgradeAssetListTo(configurator.address, comet.address))
+        .to.be.revertedWithCustomError(proxyAdmin, 'OwnableUnauthorizedAccount').withArgs(other.address);
     });
 
-    // AssetList.setAssetConfig itself is for the Configurator only
+    // AssetList.setAssetConfigs is reached only through the proxy admin's upgradeAndCall
 
-    it('AssetList.setAssetConfig reverts when called directly by the governor', async () => {
-      await expect(assetList.connect(governor).setAssetConfig(asset, storageConfigs[0]))
-        .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
+    it('AssetList.setAssetConfigs reverts when called directly by the governor', async () => {
+      await expect(assetList.connect(governor).setAssetConfigs(storageConfigs))
+        .to.be.revertedWithCustomError(assetList, 'OnlyProxyAdmin');
     });
 
-    it('AssetList.setAssetConfig reverts when called directly by a random account', async () => {
-      await expect(assetList.connect(other).setAssetConfig(asset, storageConfigs[0]))
-        .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
+    it('AssetList.setAssetConfigs reverts when called directly by the Configurator', async () => {
+      await expect(assetList.connect(await impersonate(configurator.address)).setAssetConfigs(storageConfigs))
+        .to.be.revertedWithCustomError(assetList, 'OnlyProxyAdmin');
     });
 
-    it('AssetList.setAssetConfig reverts when called directly by the proxy admin, which never reaches the implementation', async () => {
-      await expect(assetList.connect(await impersonate(proxyAdmin.address)).setAssetConfig(asset, storageConfigs[0]))
+    it('AssetList.setAssetConfigs reverts when called directly by a random account', async () => {
+      await expect(assetList.connect(other).setAssetConfigs(storageConfigs))
+        .to.be.revertedWithCustomError(assetList, 'OnlyProxyAdmin');
+    });
+
+    it('AssetList.setAssetConfigs reverts when called directly by the proxy admin, which never reaches the implementation', async () => {
+      await expect(assetList.connect(await impersonate(proxyAdmin.address)).setAssetConfigs(storageConfigs))
         .to.be.revertedWith('TransparentUpgradeableProxy: admin cannot fallback to proxy target');
+    });
+
+    it('AssetList.setAssetConfigs reverts on the implementation itself, which has no proxy admin', async () => {
+      const implementation = AssetListContractFactory.attach(await proxyAdmin.getProxyImplementation(assetList.address));
+      await expect(implementation.connect(await impersonate(proxyAdmin.address)).setAssetConfigs(storageConfigs))
+        .to.be.revertedWithCustomError(assetList, 'OnlyProxyAdmin');
     });
   });
 
-  describe('revert when', function () {
+  context('revert when', function () {
     let snapshot: SnapshotRestorer;
 
     beforeEach(async () => (snapshot = await takeSnapshot()));
@@ -392,29 +380,8 @@ describe('asset list add asset: full flow through the Configurator', function ()
         .to.be.revertedWithCustomError(configurator, 'AssetAlreadyExists');
     });
 
-    it('step 2: the asset is not in the stored configs', async () => {
-      await expect(configurator.setAssetConfigToAssetList(comet.address, other.address))
-        .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
-    });
-
-    it('step 2: the asset is the zero address', async () => {
-      await expect(configurator.setAssetConfigToAssetList(comet.address, ZERO))
-        .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
-    });
-
-    it('step 2: AssetList.setAssetConfig is called by the Configurator with the zero address', async () => {
-      await expect(assetList.connect(await impersonate(configurator.address)).setAssetConfig(ZERO, storageConfigs[0]))
-        .to.be.revertedWithCustomError(assetList, 'AssetNotInImmutables');
-    });
-
-    it('step 2: the list proxy is not upgraded yet, so the asset is not in the immutables', async () => {
-      const assetConfig = await deployAssetConfig();
-      await configurator.addAsset(comet.address, assetConfig);
-      await expect(configurator.setAssetConfigToAssetList(comet.address, assetConfig.asset))
-        .to.be.revertedWithCustomError(assetList, 'AssetNotInImmutables');
-    });
-
-    // Step 1 does not check the factors, so a bad stored config is rejected only by the list, at step 2
+    // Step 1 does not check the factors, so a bad stored config is rejected only by the list, at step 2,
+    // and the whole upgrade reverts with it
     ([
       ['borrowCF equal to liquidateCF', { borrowCollateralFactor: LIQUIDATE_CF }, 'BorrowCFTooLarge'],
       ['borrowCF above liquidateCF', { borrowCollateralFactor: LIQUIDATE_CF + FACTOR }, 'BorrowCFTooLarge'],
@@ -429,22 +396,21 @@ describe('asset list add asset: full flow through the Configurator', function ()
       it(`step 2: the stored config has ${name}`, async () => {
         const assetConfig = await deployAssetConfig(18, factors);
         await configurator.addAsset(comet.address, assetConfig);
-        await upgradeAssetList();
-        await expect(configurator.setAssetConfigToAssetList(comet.address, assetConfig.asset))
-          .to.be.revertedWithCustomError(assetList, error);
+        await expect(upgradeAssetList()).to.be.revertedWithCustomError(assetList, error);
       });
     });
 
     it('step 2: the asset list is not set for the Comet proxy', async () => {
       // A Comet proxy the Configurator has asset configs for, but no configuration, so no asset list
-      const assetConfig = await deployAssetConfig();
-      await configurator.addAsset(other.address, assetConfig);
-      await expect(configurator.setAssetConfigToAssetList(other.address, assetConfig.asset)).to.be.reverted;
+      await configurator.addAsset(other.address, await deployAssetConfig());
+      await expect(proxyAdmin.deployAndUpgradeAssetListTo(configurator.address, other.address))
+        .to.be.revertedWithCustomError(configurator, 'AssetListNotSet');
     });
   });
   
-  // Step 2 on an asset that is already registered replaces its whole storage config with the stored one
-  describe('step 2 on an asset already registered', function () {
+  // Changing the factors or cap of a registered asset: one setter per field. Each writes to the list at once, so no
+  // upgrade is needed and the list keeps its implementation
+  context('storage setters on an asset already registered', function () {
     const UPDATED = {
       borrowCollateralFactor: 50n * FACTOR,
       liquidateCollateralFactor: 60n * FACTOR,
@@ -457,77 +423,57 @@ describe('asset list add asset: full flow through the Configurator', function ()
     before(async () => (snapshot = await takeSnapshot()));
     after(async () => await snapshot.restore());
 
-    context('registered by initialize', function () {
-      let configuratorAssetConfigsBefore: AssetConfigStructOutput[];
-      let assetListAssetConfigsBefore: AssetInfoStructOutput[];
+    ([
+      ['registered by initialize', 0],
+      ['registered by an earlier upgrade', NUM_ASSETS],
+    ] as [string, number][]).forEach(([name, index]) => {
+      context(name, function () {
+        let target: string;
+        let implementationBefore: string;
 
-      before(async () => {
-        configuratorAssetConfigsBefore = await storedConfigs();
-        assetListAssetConfigsBefore = await Promise.all(
-          [...Array(await assetList.numAssets()).keys()].map((i) => assetList.getAssetInfo(i))
-        );
-      });
+        before(async () => {
+          target = (await assetList.getAssetInfo(index)).asset;
+          implementationBefore = await proxyAdmin.getProxyImplementation(assetList.address);
+        });
 
-      it('updates the stored config', async () => {
-        await configurator.updateAsset(comet.address, { ...configuratorAssetConfigsBefore[0], ...UPDATED });
-      });
+        // Each new factor is checked against the current other two, so lowering them goes borrow, liquidate, liquidation
+        it('updateAssetBorrowCollateralFactor reaches the list at once', async () => {
+          await configurator.updateAssetBorrowCollateralFactor(comet.address, target, UPDATED.borrowCollateralFactor);
+          expect((await assetList.getAssetInfo(index)).borrowCollateralFactor).to.equal(UPDATED.borrowCollateralFactor);
+        });
 
-      it('before step 2 the list still reads the old factors and supply cap', async () => {
-        const info = await assetList.getAssetInfo(0);
-        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(assetListAssetConfigsBefore[0][key]);
-      });
+        it('updateAssetLiquidateCollateralFactor reaches the list at once', async () => {
+          await configurator.updateAssetLiquidateCollateralFactor(comet.address, target, UPDATED.liquidateCollateralFactor);
+          expect((await assetList.getAssetInfo(index)).liquidateCollateralFactor).to.equal(UPDATED.liquidateCollateralFactor);
+        });
 
-      it('step 2 succeeds', async () => {
-        await expect(configurator.setAssetConfigToAssetList(comet.address, configs[0].asset))
-          .to.emit(configurator, 'SetAssetConfigToAssetList')
-          .withArgs(comet.address, assetList.address, configs[0].asset);
-      });
+        it('updateAssetLiquidationFactor reaches the list at once', async () => {
+          await configurator.updateAssetLiquidationFactor(comet.address, target, UPDATED.liquidationFactor);
+          expect((await assetList.getAssetInfo(index)).liquidationFactor).to.equal(UPDATED.liquidationFactor);
+        });
 
-      it('the list reads the new factors and supply cap', async () => {
-        const info = await assetList.getAssetInfo(0);
-        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(UPDATED[key]);
-      });
+        it('updateAssetSupplyCap reaches the list at once', async () => {
+          await configurator.updateAssetSupplyCap(comet.address, target, UPDATED.supplyCap);
+          expect((await assetList.getAssetInfo(index)).supplyCap).to.equal(UPDATED.supplyCap);
+        });
 
-      it('the Comet reads the new factors and supply cap', async () => {
-        const info = await comet.getAssetInfo(0);
-        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(UPDATED[key]);
-      });
-    });
+        it('the stored config holds the same values as the list', async () => {
+          const stored = (await storedConfigs())[index];
+          for (const key of STORAGE_KEYS) expect(stored[key]).to.equal(UPDATED[key]);
+        });
 
-    context('registered by an earlier step 2', function () {
-      let configuratorAssetConfigsBefore: AssetConfigStructOutput[];
-      let assetListAssetConfigsBefore: AssetInfoStructOutput[];
+        it('deployAssetList returns the zero address, as the immutables did not change', async () => {
+          expect((await configurator.callStatic.deployAssetList(comet.address)).newAssetListImpl).to.equal(ZERO);
+        });
 
-      before(async () => {
-        configuratorAssetConfigsBefore = await storedConfigs();
-        assetListAssetConfigsBefore = await Promise.all(
-          [...Array(await assetList.numAssets()).keys()].map((i) => assetList.getAssetInfo(i))
-        );
-      });
+        it('the list proxy keeps its implementation', async () => {
+          expect(await proxyAdmin.getProxyImplementation(assetList.address)).to.equal(implementationBefore);
+        });
 
-      it('updates the stored config', async () => {
-        await configurator.updateAsset(comet.address, { ...configuratorAssetConfigsBefore[NUM_ASSETS], ...UPDATED });
-      });
-
-      it('before step 2 the list still reads the old factors and supply cap', async () => {
-        const info = await assetList.getAssetInfo(NUM_ASSETS);
-        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(assetListAssetConfigsBefore[NUM_ASSETS][key]);
-      });
-
-      it('step 2 succeeds', async () => {
-        await expect(configurator.setAssetConfigToAssetList(comet.address, asset))
-          .to.emit(configurator, 'SetAssetConfigToAssetList')
-          .withArgs(comet.address, assetList.address, asset);
-      });
-
-      it('the list reads the new factors and supply cap', async () => {
-        const info = await assetList.getAssetInfoByAddress(asset);
-        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(UPDATED[key]);
-      });
-
-      it('the Comet reads the new factors and supply cap', async () => {
-        const info = await comet.getAssetInfo(NUM_ASSETS);
-        for (const key of STORAGE_KEYS) expect(info[key]).to.equal(UPDATED[key]);
+        it('the Comet reads the new factors and supply cap with no upgrade', async () => {
+          const info = await comet.getAssetInfo(index);
+          for (const key of STORAGE_KEYS) expect(info[key]).to.equal(UPDATED[key]);
+        });
       });
     });
   });

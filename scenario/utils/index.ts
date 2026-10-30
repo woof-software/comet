@@ -2118,7 +2118,9 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
     true
   );
 
-  await (await configurator.updateAssetList(comet.address, assetListProxy.address)).wait();
+  // setConfiguration sets the list proxy once, for a market that has none yet
+  const configuration = await configurator.getConfiguration(comet.address);
+  await (await configurator.setConfiguration(comet.address, { ...configuration, assetList: assetListProxy.address })).wait();
   await (await configurator.setFactory(comet.address, cometFactory.address)).wait();
   await (await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address)).wait();
 }

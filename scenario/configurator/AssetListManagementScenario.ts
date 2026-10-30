@@ -148,59 +148,13 @@ scenario(
 );
 
 scenario(
-  'Configurator#deployAssetList reverts if asset list factory is zero address',
+  'Configurator#deployAssetList reverts if the market has no asset list proxy',
   { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
   async ({ configurator, actors }) => {
     const { albert } = actors;
 
-    // A Comet proxy the Configurator knows nothing about has no asset list to compare with and no asset list factory
+    // deployAssetList only redeploys an existing list, and a Comet proxy the Configurator knows nothing about has none
     await expect(configurator.callStatic.deployAssetList(albert.address))
-      .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
-  }
-);
-
-/*//////////////////////////////////////////////////////////////
-                           UPDATE ASSET LIST
-//////////////////////////////////////////////////////////////*/
-
-scenario(
-  'Configurator#updateAssetList updates the asset list if called by governor',
-  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
-  async ({ comet, configurator, actors }, context) => {
-    const { admin } = actors;
-    await fundAccount(context.world, admin);
-
-    const newAssetList = ethers.Wallet.createRandom().address;
-
-    await configurator.connect(admin.signer).updateAssetList(comet.address, newAssetList);
-
-    expect((await configurator.getConfiguration(comet.address)).assetList).to.equal(newAssetList);
-  }
-);
-
-scenario(
-  'Configurator#updateAssetList reverts if called by non-governor',
-  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
-  async ({ comet, configurator, actors }) => {
-    const { albert } = actors;
-
-    const newAssetList = ethers.Wallet.createRandom().address;
-
-    await expect(
-      configurator.connect(albert.signer).updateAssetList(comet.address, newAssetList)
-    ).to.be.revertedWithCustomError(configurator, 'Unauthorized');
-  }
-);
-
-scenario(
-  'Configurator#updateAssetList reverts if new asset list is zero address',
-  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
-  async ({ comet, configurator, actors }, context) => {
-    const { admin } = actors;
-    await fundAccount(context.world, admin);
-
-    await expect(
-      configurator.connect(admin.signer).updateAssetList(comet.address, ethers.constants.AddressZero)
-    ).to.be.revertedWithCustomError(configurator, 'InvalidAddress');
+      .to.be.revertedWithCustomError(configurator, 'AssetListNotSet');
   }
 );

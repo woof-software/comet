@@ -28,7 +28,7 @@ describe('supply cap integration', function () {
   after(async () => await snapshot.restore());
 
   for (const decimals of COLLATERAL_DECIMALS) {
-    describe(`collateral with ${decimals} decimals`, function () {
+    context(`collateral with ${decimals} decimals`, function () {
       const oneToken = 10n ** BigInt(decimals);
       let token: FaucetToken;
 

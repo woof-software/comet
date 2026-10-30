@@ -118,8 +118,10 @@ describe('extended pause upgrade test', function () {
     // initialized with the migrated factors and caps
     const assetListFactory = await (await ethers.getContractFactory('AssetListFactory')).deploy() as AssetListFactory;
     await configurator.connect(governor).setAssetListFactory(COMET_ADDRESS, assetListFactory.address);
-    const { newAssetListImpl } = await configurator.callStatic.deployAssetList(COMET_ADDRESS);
-    await configurator.deployAssetList(COMET_ADDRESS);
+    // deployAssetList only redeploys an existing list, so the first implementation comes straight from the factory
+    const immutableConfigs = await configurator.getImmutableAssetConfig(COMET_ADDRESS);
+    const newAssetListImpl = await assetListFactory.callStatic.createAssetList(immutableConfigs, configurator.address);
+    await assetListFactory.createAssetList(immutableConfigs, configurator.address);
     const assetListImplementation = await ethers.getContractAt('AssetList', newAssetListImpl);
     const assetListProxy = await (await ethers.getContractFactory('TransparentUpgradeableProxy')).deploy(
       newAssetListImpl,
@@ -128,7 +130,9 @@ describe('extended pause upgrade test', function () {
         await configurator.getStorageAssetConfig(COMET_ADDRESS),
       ])
     );
-    await configurator.connect(governor).updateAssetList(COMET_ADDRESS, assetListProxy.address);
+    // setConfiguration sets the list proxy once, for a market that has none yet
+    const configuration = await configurator.getConfiguration(COMET_ADDRESS);
+    await configurator.connect(governor).setConfiguration(COMET_ADDRESS, { ...configuration, assetList: assetListProxy.address });
 
     // Get current extension delegate
     const currentExtensionDelegate = await comet.extensionDelegate();

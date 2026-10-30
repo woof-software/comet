@@ -1,7 +1,7 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
 import { exp } from '../test/helpers';
-import { expectRevertCustom, perSecond, servicePatch2 } from './utils';
+import { expectRevertCustom, fundAccount, perSecond, servicePatch2 } from './utils';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
 import { FaucetToken } from '../build/types';
 import { getConfigForScenario } from './utils/scenarioHelper';
@@ -118,7 +118,7 @@ scenario(
 scenario(
   'Comet#assetsIn > correctly sets and clears _reserved bits for assets with offset >= 16',
   { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
-  async ({ comet, configurator, proxyAdmin, actors }, context) => {
+  async ({ comet, configurator, actors }, context) => {
     const { albert, admin } = actors;
     const numAssets = await comet.numAssets();
 
@@ -127,10 +127,11 @@ scenario(
 
     if (numAssets < REQUIRED_NUM_ASSETS) {
       const dm = context.world.deploymentManager;
+      // The admin pays for the Configurator and proxy admin calls
+      await fundAccount(context.world, admin.signer);
 
       // Every slot up to index 16 gets its own token, since the Configurator rejects an asset added twice.
       // The last one, at index 16, is the asset the scenario supplies
-      const addedAssets: string[] = [];
       let mockToken: FaucetToken;
       for (let i = numAssets; i < REQUIRED_NUM_ASSETS; i++) {
         mockToken = await dm.deploy<FaucetToken, [string, string, BigNumberish, string]>(
@@ -146,40 +147,23 @@ scenario(
           true,
         );
 
-        await context.setNextBaseFeeToZero();
-        await configurator.connect(admin.signer).addAsset(
-          comet.address,
-          {
-            asset: mockToken.address,
-            priceFeed: mockPriceFeed.address,
-            borrowCollateralFactor: exp(0.8, 18),
-            liquidateCollateralFactor: exp(0.85, 18),
-            liquidationFactor: exp(0.9, 18),
-            supplyCap: exp(1e6, 18),
-          },
-          { gasPrice: 0 },
-        );
-        addedAssets.push(mockToken.address);
-      }
-
-      // The new assets reach the Comet through a new asset list, which registers them with their factors and caps,
-      // and then a redeploy of the Comet
-      await context.setNextBaseFeeToZero();
-      await proxyAdmin.connect(admin.signer).deployAndUpgradeAssetListTo(configurator.address, comet.address, { gasPrice: 0 });
-      for (const addedAsset of addedAssets) {
-        await context.setNextBaseFeeToZero();
-        await configurator.connect(admin.signer).setAssetConfigToAssetList(comet.address, addedAsset, { gasPrice: 0 });
+        await configurator.connect(admin.signer).addAsset(comet.address, {
+          asset: mockToken.address,
+          priceFeed: mockPriceFeed.address,
+          borrowCollateralFactor: exp(0.8, 18),
+          liquidateCollateralFactor: exp(0.85, 18),
+          liquidationFactor: exp(0.9, 18),
+          supplyCap: exp(1e6, 18),
+        });
       }
 
       targetAssetAddress = mockToken.address;
-      supplyAmount =
-        BigInt(getConfigForScenario(context).supplyCollateral) * 10n ** 18n;
+      supplyAmount = BigInt(getConfigForScenario(context).supplyCollateral) * 10n ** 18n;
       await mockToken.allocateTo(albert.address, supplyAmount);
 
-      await context.setNextBaseFeeToZero();
-      await admin.deployAndUpgradeTo(configurator.address, comet.address, {
-        gasPrice: 0,
-      });
+      // The redeploy first upgrades the asset list, which registers the new assets with their factors and caps,
+      // then upgrades the Comet
+      await admin.deployAndUpgradeTo(configurator.address, comet.address);
       await context.setAssets();
     } else {
       const existing = await comet.getAssetInfo(MIN_OFFSET_FOR_RESERVED);

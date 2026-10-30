@@ -159,9 +159,11 @@ scenario(
              STEP 4: DEPLOY AND INITIALIZE THE ASSET LIST
     //////////////////////////////////////////////////////////////*/
 
-    // The market has no list yet, so the Configurator deploys a new implementation
-    const { newAssetListImpl } = await configurator.callStatic.deployAssetList(comet.address);
-    await (await configurator.deployAssetList(comet.address)).wait();
+    // The market has no list yet and deployAssetList only redeploys an existing one, so the first implementation
+    // comes straight from the factory, built from the migrated immutable configs
+    const immutableConfigs = await configurator.getImmutableAssetConfig(comet.address);
+    const newAssetListImpl = await assetListFactory.callStatic.createAssetList(immutableConfigs, configurator.address);
+    await (await assetListFactory.createAssetList(immutableConfigs, configurator.address)).wait();
     const assetListImplementation = (await ethers.getContractAt('AssetList', newAssetListImpl)) as AssetList;
 
     // The proxy is owned by the Comet's proxy admin, so later deploys can upgrade it, and is initialized on creation
@@ -180,7 +182,6 @@ scenario(
     const assetList = assetListImplementation.attach(assetListProxy.address);
 
     // The list was built from the market's immutable configs
-    const immutableConfigs = await configurator.getImmutableAssetConfig(comet.address);
     const encodedImmutableConfigs = utils.defaultAbiCoder.encode(
       ['tuple(address asset, address priceFeed)[]'],
       [immutableConfigs]
@@ -207,13 +208,19 @@ scenario(
              STEP 5: PROPOSAL 2, SWITCH THE MARKET TO THE LIST
     //////////////////////////////////////////////////////////////*/
 
+    // setConfiguration sets the list proxy once, for a market that has none yet; the configuration read after the
+    // migration is still the stored one
     await executeProposal(
       context,
       bridgeReceiver,
       [configurator.address, configurator.address, proxyAdmin.address],
-      ['updateAssetList(address,address)', 'setFactory(address,address)', 'deployAndUpgradeTo(address,address)'],
       [
-        await calldata(configurator.populateTransaction.updateAssetList(comet.address, assetList.address)),
+        configurator.interface.getFunction('setConfiguration').format(),
+        'setFactory(address,address)',
+        'deployAndUpgradeTo(address,address)',
+      ],
+      [
+        await calldata(configurator.populateTransaction.setConfiguration(comet.address, { ...configuration, assetList: assetList.address })),
         await calldata(configurator.populateTransaction.setFactory(comet.address, cometFactory.address)),
         await calldata(proxyAdmin.populateTransaction.deployAndUpgradeTo(configurator.address, comet.address)),
       ]

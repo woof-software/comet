@@ -1330,7 +1330,7 @@ scenario(
 );
 
 // setConfiguration sets a market's asset list proxy only once: a new market gets its list with the first call, and
-// the same call made again reverts, so from then on the list is changed only through updateAssetList
+// the same call made again reverts, so from then on the list is changed only through the asset config setters and a list upgrade
 scenario(
   'Configurator#setConfiguration sets the asset list of a market only once',
   {},

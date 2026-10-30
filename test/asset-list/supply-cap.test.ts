@@ -6,7 +6,7 @@ import { AssetConfigStructOutput } from '../../build/types/Configurator';
 import { ContractTransaction } from 'ethers';
 import { BORROW_CF, LIQUIDATE_CF, LIQUIDATION_FACTOR, MAX_ASSETS, deployAssetListFixture, deployAssetListProxy, deployImmutableAssetConfigs } from './shared';
 
-describe('supply cap', function () {
+context('supply cap', function () {
   // The largest value the uint128 supply cap field can hold
   const MAX_UINT128 = 2n ** 128n - 1n;
 
@@ -70,7 +70,7 @@ describe('supply cap', function () {
                               INITIALIZE
     //////////////////////////////////////////////////////////////*/
 
-    describe('initialize', function () {
+    context('initialize', function () {
       // Creates an asset list where every collateral has the cap, then checks each collateral reads it back
       for (const { name, supplyCap } of SUPPLY_CAPS) {
         context(name, function () {
@@ -123,7 +123,7 @@ describe('supply cap', function () {
     //////////////////////////////////////////////////////////////*/
 
     // The full flow on the fixture market: updateAssetSupplyCap updates the stored config and calls the asset list setter
-    describe('setter via configurator', function () {
+    context('setter via configurator', function () {
       const namedKeys = (struct: object) => Object.keys(struct).filter((key) => isNaN(Number(key)));
 
       for (const { name, supplyCap } of SUPPLY_CAPS) {

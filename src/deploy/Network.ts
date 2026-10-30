@@ -315,7 +315,7 @@ export async function deployNetworkComet(
       } else {
         // setConfiguration sets the asset list only once, so a market that already has one gets each changed field
         // through its own setter, named set<Field>. The base token and tracking index scale never change, and the
-        // asset list is changed through updateAssetList
+        // asset list proxy stays the one set first
         for (const field of Object.keys(configuration)) {
           if (['baseToken', 'trackingIndexScale', 'assetList'].includes(field)) continue;
           if (BigInt(storedConfiguration[field].toString()) === BigInt(configuration[field].toString())) continue;

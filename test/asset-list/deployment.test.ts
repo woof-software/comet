@@ -27,7 +27,7 @@ describe('asset list deployment: constructor', function () {
     ({ AssetListContractFactory, assetListImplementation: assetList, configs, configurator } = await deployAssetListFixture());
   });
 
-  describe('happy path', function () {
+  context('happy path', function () {
     it('deploys with the list of immutable configs', async () => {
       expect((await assetList.deployTransaction.wait()).status).to.equal(1);
     });
@@ -52,7 +52,7 @@ describe('asset list deployment: constructor', function () {
     const notes = { 0: ', the smallest', [MAX_ASSET_DECIMALS]: ', the largest whose scale fits in uint64' };
 
     ASSET_DECIMALS.forEach((decimals, i) => {
-      describe(`asset #${i} (${decimals} decimals${notes[decimals] ?? ''})`, function () {
+      context(`asset #${i} (${decimals} decimals${notes[decimals] ?? ''})`, function () {
         let assetInfo: AssetInfoStructOutput;
 
         before(async () => {
@@ -78,7 +78,7 @@ describe('asset list deployment: constructor', function () {
     });
   });
 
-  describe('happy path (same configs in a different order)', function () {
+  context('happy path (same configs in a different order)', function () {
     let reorderedConfigs: ImmutableAssetConfigStruct[];
     let reorderedAssetList: AssetList;
 
@@ -97,7 +97,7 @@ describe('asset list deployment: constructor', function () {
     });
   });
 
-  describe(`happy path (${MAX_ASSETS} assets, all slots)`, function () {
+  context(`happy path (${MAX_ASSETS} assets, all slots)`, function () {
     let fullConfigs: ImmutableAssetConfigStruct[];
     let fullAssetList: AssetList;
     let assetInfos: AssetInfoStructOutput[];
@@ -134,7 +134,7 @@ describe('asset list deployment: constructor', function () {
     }
   });
 
-  describe('revert when', function () {
+  context('revert when', function () {
     it('the list of configs is empty', async () => {
       await expect(AssetListContractFactory.deploy([], configurator.address)).to.be.revertedWithCustomError(assetList, 'NoAssets');
     });
@@ -207,7 +207,7 @@ describe('asset list deployment: initialize', function () {
     } = await deployAssetListFixture());
   });
 
-  describe('happy path (through the proxy constructor data)', function () {
+  context('happy path (through the proxy constructor data)', function () {
     it('the proxy sees the configurator of the implementation', async () => {
       expect(await assetList.configurator()).to.equal(configurator.address);
     });
@@ -222,7 +222,7 @@ describe('asset list deployment: initialize', function () {
     });
 
     ASSET_DECIMALS.forEach((decimals, i) => {
-      describe(`asset #${i} (${decimals} decimals)`, function () {
+      context(`asset #${i} (${decimals} decimals)`, function () {
         let assetInfo: AssetInfoStructOutput;
 
         before(async () => {
@@ -252,7 +252,7 @@ describe('asset list deployment: initialize', function () {
     });
   });
 
-  describe('happy path (liquidation factor at the maximum)', function () {
+  context('happy path (liquidation factor at the maximum)', function () {
     it('stores the liquidation factor', async () => {
       const maxFactorAssetList = await initializeWithFactors({ liquidationFactor: MAX_COLLATERAL_FACTOR });
       expect((await maxFactorAssetList.getAssetInfo(storageConfigs.length - 1)).liquidationFactor)
@@ -260,7 +260,7 @@ describe('asset list deployment: initialize', function () {
     });
   });
 
-  describe('revert when', function () {
+  context('revert when', function () {
     it('there are fewer storage configs than assets', async () => {
       await expect(
         deployAssetListProxy(assetListImplementation, proxyAdmin.address, storageConfigs.slice(1))

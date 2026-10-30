@@ -1343,39 +1343,19 @@ describe('reserves', function () {
       await snapshotAfterSetup.restore();
       await configurator.setBaseTrackingBorrowSpeed(comet.address, 0);
       await configurator.setBaseTrackingSupplySpeed(comet.address, 0);
-      await configurator.updateAsset(
-        comet.address,
-        {
-          asset: collaterals.WETH.address,
-          priceFeed: priceFeeds.WETH.address,
-          borrowCollateralFactor: exp(0.8, 18),
-          liquidateCollateralFactor: exp(0.95, 18),
-          liquidationFactor: exp(0.96, 18),
-          supplyCap: exp(100, 18),
-        }
-      );
-      await configurator.updateAsset(
-        comet.address,
-        {
-          asset: collaterals.WBTC.address,
-          priceFeed: priceFeeds.WBTC.address,
-          borrowCollateralFactor: exp(0.7, 18),
-          liquidateCollateralFactor: exp(0.9, 18),
-          liquidationFactor: exp(0.9, 18),
-          supplyCap: exp(100, 8),
-        }
-      );
-      await configurator.updateAsset(
-        comet.address,
-        {
-          asset: collaterals.COMP.address,
-          priceFeed: priceFeeds.COMP.address,
-          borrowCollateralFactor: exp(0.6, 18),
-          liquidateCollateralFactor: exp(0.85, 18),
-          liquidationFactor: exp(0.85, 18),
-          supplyCap: exp(100, 18),
-        }
-      );
+      // One setter per field. Each new factor is checked against the current other two, so raising them goes
+      // liquidation, liquidate, borrow. WETH already has the factors it needs from the setup
+      await configurator.updateAssetSupplyCap(comet.address, collaterals.WETH.address, exp(100, 18));
+
+      await configurator.updateAssetLiquidationFactor(comet.address, collaterals.WBTC.address, exp(0.95, 18));
+      await configurator.updateAssetLiquidateCollateralFactor(comet.address, collaterals.WBTC.address, exp(0.9, 18));
+      await configurator.updateAssetBorrowCollateralFactor(comet.address, collaterals.WBTC.address, exp(0.7, 18));
+      await configurator.updateAssetSupplyCap(comet.address, collaterals.WBTC.address, exp(100, 8));
+
+      await configurator.updateAssetLiquidationFactor(comet.address, collaterals.COMP.address, exp(0.9, 18));
+      await configurator.updateAssetLiquidateCollateralFactor(comet.address, collaterals.COMP.address, exp(0.85, 18));
+      await configurator.updateAssetBorrowCollateralFactor(comet.address, collaterals.COMP.address, exp(0.6, 18));
+      await configurator.updateAssetSupplyCap(comet.address, collaterals.COMP.address, exp(100, 18));
       await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
 
       // Seed + supply
@@ -1506,12 +1486,8 @@ describe('reserves', function () {
         collateralFeeds.push(feed);
       }
 
+      // The upgrade also registers the new assets in the asset list, with the factors and caps of their stored configs
       await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
-
-      // The upgraded asset list knows the new assets, but their factors and caps are set only once they are added to it
-      for (let i = numExisting; i < numCollaterals; i++) {
-        await configurator.setAssetConfigToAssetList(comet.address, collateralTokens[i].address);
-      }
 
       // Seed + supply base
       await baseToken.connect(alice).allocateTo(alice.address, seedAmount);
