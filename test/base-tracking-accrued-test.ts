@@ -101,7 +101,7 @@ describe('baseTrackingAccrued', function() {
     expect(userBasic2.baseTrackingAccrued).to.eq(0); // 1 second elapsed = .0000001 unit of rewards accrued; rounds down to 0
   });
 
-  it('acrrues at a greater number of decimals, but preserves 6', async () => {
+  it('accrues at a greater number of decimals, but preserves 6', async () => {
     const {
       cometWithExtendedAssetList : comet, tokens, users: [alice]
     } = await makeProtocol({
@@ -175,6 +175,7 @@ describe('baseTrackingAccrued', function() {
       trackingIndexScale: 1e15,
       baseTrackingBorrowSpeed: 1e15, // borrowSpeed=1 Comp/s per unit of borrowed base
       baseMinForRewards: exp(.5, 6),
+      initialLenderSupply: exp(2, 6), // for two withdrawals of 1e6
       start
     });
     const { USDC, WETH } = tokens;
@@ -182,8 +183,6 @@ describe('baseTrackingAccrued', function() {
     // allocate and approve transfers
     await WETH.allocateTo(alice.address, exp(1,18));
     await WETH.connect(alice).approve(comet.address, exp(1,18));
-
-    await USDC.allocateTo(comet.address, 2e6); // for two withdrawls of 1e6
 
     // supply WETH as collateral
     await comet.connect(alice).supply(WETH.address, exp(1,18));

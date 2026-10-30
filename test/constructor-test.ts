@@ -1,8 +1,9 @@
-import { ethers, exp, expect, makeProtocol, ONE } from './helpers';
+import { DEFAULT_MAX_SUPPORTED_UTILIZATION, ethers, exp, expect, makeProtocol, ONE } from './helpers';
 import {
   AssetListFactory__factory,
   CometExtAssetList__factory,
   CometHarnessExtendedAssetList__factory,
+  CometHarnessInterfaceExtendedAssetList,
   FaucetToken__factory,
   SimplePriceFeed__factory,
 } from '../build/types';
@@ -78,6 +79,7 @@ describe('constructor', function () {
       baseMinForRewards: exp(1, 6),
       baseBorrowMin: exp(1, 6),
       targetReserves: 0,
+      maxSupportedUtilization: DEFAULT_MAX_SUPPORTED_UTILIZATION,
       assetConfigs: [{
         asset: tokens['EVIL'].address,
         priceFeed: priceFeeds['EVIL'].address,
@@ -172,5 +174,25 @@ describe('constructor', function () {
         borrowInterestRateSlopeLow: uint64Max + 1n
       })
     ).to.be.rejectedWith('value out-of-bounds'); // ethers.js error
+  });
+
+  describe('max supported utilization', function () {
+    const uint64Max = 2n ** 64n - 1n;
+
+    let cometBelowFullUtilization: CometHarnessInterfaceExtendedAssetList;
+    let cometAtUint64Max: CometHarnessInterfaceExtendedAssetList;
+
+    before(async function () {
+      cometBelowFullUtilization = (await makeProtocol({ maxSupportedUtilization: exp(0.8, 18) })).cometWithExtendedAssetList;
+      cometAtUint64Max = (await makeProtocol({ maxSupportedUtilization: uint64Max })).cometWithExtendedAssetList;
+    });
+
+    it('allows maxSupportedUtilization equal to 80%', async function () {
+      expect(await cometBelowFullUtilization.maxSupportedUtilization()).to.eq(exp(0.8, 18));
+    });
+
+    it('allows maxSupportedUtilization equal to uint64 max', async function () {
+      expect(await cometAtUint64Max.maxSupportedUtilization()).to.eq(uint64Max);
+    });
   });
 });

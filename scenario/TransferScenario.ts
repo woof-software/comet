@@ -16,12 +16,16 @@ import {
   getUsableCollateralIndices,
   getMinimumBorrowAmounts,
   deployUnsupportedAsset,
+  supportUtilizationLimit,
+  isFreshMarket,
+  withdrawFromInitialLender,
   rejectsZeroAmounts,
   UINT256_MAX
 } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';
 import { exp, factorScale } from '../test/helpers';
+import { World } from '../plugins/scenario';
 
 for (let offset = 0; offset < MAX_ASSETS; offset++) {
   scenario(
@@ -1571,6 +1575,212 @@ scenario(
       expect(albertBalanceAfter).to.be.equal(albertBalanceBefore.toBigInt() - transferAmount);
       expect(bettyBalanceAfter).to.be.equal(bettyBalanceBefore.toBigInt() + transferAmount);
     }
+  }
+);
+
+// Only borrows accrue interest, so utilization grows with time and goes above the limit
+const BORROW_INTEREST_ONLY = {
+  supplyPerYearInterestRateBase: 0,
+  supplyPerYearInterestRateSlopeLow: 0,
+  supplyPerYearInterestRateSlopeHigh: 0,
+  borrowPerYearInterestRateBase: exp(0.5, 18),
+  borrowPerYearInterestRateSlopeLow: 0,
+  borrowPerYearInterestRateSlopeHigh: 0,
+};
+
+// Zero rates keep indexes still between transactions, so balances change by the exact amounts
+const ZERO_RATES = {
+  supplyPerYearInterestRateBase: 0,
+  supplyPerYearInterestRateSlopeLow: 0,
+  supplyPerYearInterestRateSlopeHigh: 0,
+  borrowPerYearInterestRateBase: 0,
+  borrowPerYearInterestRateSlopeLow: 0,
+  borrowPerYearInterestRateSlopeHigh: 0,
+};
+
+// A transfer changes total supply and total borrow by the same amount, which moves utilization toward 100%.
+// So only above a 100% limit a borrow transfer can bring utilization back within it and a repay can push it above
+async function hasMaxSupportedUtilizationAbove100(ctx: CometContext): Promise<boolean> {
+  return (await (await ctx.getComet()).maxSupportedUtilization()).toBigInt() > factorScale;
+}
+
+/**
+ * @notice albert lends, betty borrows at 95% of the limit and the borrow interest pushes utilization above the limit
+ * @dev The lender supply is derived from the limit, so the borrow is always the minimum borrow amount
+ */
+async function borrowAboveMaxSupportedUtilization(context: CometContext, world: World) {
+  // Only needed on development, where the market is deployed with a supply from the initial lender.
+  // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+  await withdrawFromInitialLender(context);
+
+  const comet = await context.getComet();
+  const { albert, betty } = context.actors;
+  const baseToken = context.getAssetByAddress(await comet.baseToken());
+  const [collateralIndex] = await getUsableCollateralIndices(context, 1);
+  const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
+  const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+
+  const lenderSupply = borrowAmount * 20n * factorScale / (19n * maxSupportedUtilization);
+  await context.sourceTokens(lenderSupply, baseToken.address, albert.address);
+  await baseToken.approve(albert, comet.address);
+  await albert.supplyAsset({ asset: baseToken.address, amount: lenderSupply });
+
+  // Borrows above total supply are paid out of reserves
+  await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
+
+  // The collateral covers the debt growth
+  const collateralAmount = 2n * supplyAmount;
+  await context.sourceTokens(collateralAmount, collateralAsset.address, betty.address);
+  await collateralAsset.approve(betty, comet.address);
+  await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
+  await betty.withdrawAsset({ asset: baseToken.address, amount: borrowAmount });
+
+  // totalSupply and totalBorrow include the interest accrued since the last transaction
+  let totalSupply = (await comet.totalSupply()).toBigInt();
+  let totalBorrow = (await comet.totalBorrow()).toBigInt();
+  while (totalBorrow * factorScale <= maxSupportedUtilization * totalSupply) {
+    await world.increaseTime(30 * 24 * 60 * 60);
+    totalSupply = (await comet.totalSupply()).toBigInt();
+    totalBorrow = (await comet.totalBorrow()).toBigInt();
+  }
+
+  return { collateralAsset, supplyAmount, borrowAmount, maxSupportedUtilization, totalSupply, totalBorrow };
+}
+
+scenario(
+  'Comet#transfer > borrow transfer reverts while utilization stays above the limit',
+  {
+    filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
+    upgrade: BORROW_INTEREST_ONLY,
+  },
+  async ({ comet, actors }, context, world) => {
+    const { betty, charles } = actors;
+    const { maxSupportedUtilization, totalSupply, totalBorrow } = await borrowAboveMaxSupportedUtilization(context, world);
+
+    // Smaller than the amount that brings utilization back to the limit, which is the same excess divided by (limit - 100%)
+    const transferAmount = (totalBorrow * factorScale - maxSupportedUtilization * totalSupply) / (maxSupportedUtilization + factorScale);
+
+    // Checked with callStatic, since a reverted transaction here leaves the nonce of betty out of sync with the node
+    await expect(
+      comet.connect(betty.signer).callStatic.transfer(charles.address, transferAmount)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+  }
+);
+
+scenario(
+  'Comet#transfer > borrow transfer brings utilization back within the limit',
+  {
+    filter: async (ctx: CometContext) =>
+      await supportUtilizationLimit(ctx) && await isFreshMarket(ctx) && await hasMaxSupportedUtilizationAbove100(ctx),
+    upgrade: BORROW_INTEREST_ONLY,
+  },
+  async ({ comet, actors }, context, world) => {
+    const { betty, charles } = actors;
+    const {
+      collateralAsset,
+      supplyAmount,
+      borrowAmount,
+      maxSupportedUtilization,
+      totalSupply,
+      totalBorrow
+    } = await borrowAboveMaxSupportedUtilization(context, world);
+
+    // Twice the amount that brings utilization back to the limit
+    const transferAmount = 2n * (totalBorrow * factorScale - maxSupportedUtilization * totalSupply) / (maxSupportedUtilization - factorScale);
+
+    // A limit close to 100% needs a large transfer, so the collateral is topped up for it
+    const collateralAmount = supplyAmount * transferAmount / borrowAmount + 1n;
+    await context.sourceTokens(collateralAmount, collateralAsset.address, betty.address);
+    await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
+
+    await comet.connect(betty.signer).transfer(charles.address, transferAmount);
+
+    expect(await comet.getUtilization()).to.be.at.most(maxSupportedUtilization);
+  }
+);
+
+scenario(
+  'Comet#transfer > transfer between lenders does not change utilization',
+  {
+    filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
+    upgrade: ZERO_RATES,
+  },
+  async ({ comet, actors }, context) => {
+    // Only needed on development, where the market is deployed with a supply from the initial lender.
+    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+    await withdrawFromInitialLender(context);
+
+    const { albert, betty, charles } = actors;
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const [collateralIndex] = await getUsableCollateralIndices(context, 1);
+    const { collateralAsset, supplyAmount: collateralAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
+    const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+
+    // Utilization is half of the limit
+    const albertSupply = 2n * borrowAmount * factorScale / maxSupportedUtilization;
+    await context.sourceTokens(albertSupply, baseToken.address, albert.address);
+    await baseToken.approve(albert, comet.address);
+    await albert.supplyAsset({ asset: baseToken.address, amount: albertSupply });
+
+    // Borrows above total supply are paid out of reserves
+    await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
+
+    await context.sourceTokens(collateralAmount, collateralAsset.address, betty.address);
+    await collateralAsset.approve(betty, comet.address);
+    await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
+    await betty.withdrawAsset({ asset: baseToken.address, amount: borrowAmount });
+
+    const utilization = (await comet.getUtilization()).toBigInt();
+    const charlesSupplyBefore = (await comet.balanceOf(charles.address)).toBigInt();
+    await comet.connect(albert.signer).transfer(charles.address, albertSupply);
+
+    expect(await comet.balanceOf(albert.address)).to.equal(0n);
+    expect(await comet.balanceOf(charles.address)).to.equal(charlesSupplyBefore + albertSupply);
+    expect(await comet.getUtilization()).to.equal(utilization);
+  }
+);
+
+scenario(
+  'Comet#transfer > repay transfer above 100% utilization reverts when it pushes utilization above the limit',
+  {
+    filter: async (ctx: CometContext) =>
+      await supportUtilizationLimit(ctx) && await isFreshMarket(ctx) && await hasMaxSupportedUtilizationAbove100(ctx),
+    upgrade: ZERO_RATES,
+  },
+  async ({ comet, actors }, context) => {
+    // Only needed on development, where the market is deployed with a supply from the initial lender.
+    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
+    await withdrawFromInitialLender(context);
+
+    const { albert, betty } = actors;
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const [collateralIndex] = await getUsableCollateralIndices(context, 1);
+    const { collateralAsset, supplyAmount: collateralAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
+    const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+
+    // Utilization is halfway between 100% and the limit
+    const albertSupply = 2n * borrowAmount * factorScale / (factorScale + maxSupportedUtilization);
+    await context.sourceTokens(albertSupply, baseToken.address, albert.address);
+    await baseToken.approve(albert, comet.address);
+    await albert.supplyAsset({ asset: baseToken.address, amount: albertSupply });
+
+    // Borrows above total supply are paid out of reserves
+    await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
+
+    await context.sourceTokens(collateralAmount, collateralAsset.address, betty.address);
+    await collateralAsset.approve(betty, comet.address);
+    await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
+    await betty.withdrawAsset({ asset: baseToken.address, amount: borrowAmount });
+
+    const utilization = (await comet.getUtilization()).toBigInt();
+    expect(utilization).to.be.above(factorScale);
+    expect(utilization).to.be.below(maxSupportedUtilization);
+
+    // A repay lowers total supply and total borrow by the same amount. Any supply left below half of the initial one
+    // puts utilization above the limit, here a quarter of it is left
+    await expect(
+      comet.connect(albert.signer).transfer(betty.address, albertSupply * 3n / 4n)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
   }
 );
 

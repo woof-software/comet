@@ -70,6 +70,7 @@ describe('isBorrowCollateralized', function () {
       },
       baseTrackingBorrowSpeed: exp(1 / 86400, 15, 18), // 1 comp per day
       baseTrackingSupplySpeed: exp(1 / 86400, 15, 18), // 1 comp per day
+      initialLenderSupply: exp(10_000, baseTokenDecimals),
     });
     const cometProxyAddress = protocol.cometProxyWithExtendedAssetList.address;
     comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
@@ -2296,7 +2297,10 @@ describe('isBorrowCollateralized', function () {
           },
         ])
       );
-      const protocol = await makeConfigurator({ assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals }});
+      const protocol = await makeConfigurator({
+        assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals },
+        initialLenderSupply: exp(10_000, 6),
+      });
 
       configurator = protocol.configurator;
       configuratorProxyAddress = protocol.configuratorProxy.address;

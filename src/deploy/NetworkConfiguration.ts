@@ -93,6 +93,7 @@ export interface NetworkConfiguration {
   borrowMin: ScientificNotation;
   storeFrontPriceFactor: number;
   targetReserves: ScientificNotation;
+  maxSupportedUtilization: ScientificNotation;
   rates: NetworkRateConfiguration;
   tracking: NetworkTrackingConfiguration;
   assets: { [name: string]: NetworkAssetConfiguration };
@@ -159,6 +160,7 @@ function getOverridesOrConfig(
     baseBorrowMin: _ => stringToBigInt(config.borrowMin),
     storeFrontPriceFactor: _ => percentage(config.storeFrontPriceFactor),
     targetReserves: _ => stringToBigInt(config.targetReserves),
+    maxSupportedUtilization: _ => stringToBigInt(config.maxSupportedUtilization),
     ...interestRateInfoMapping(config.rates),
     ...trackingInfoMapping(config.tracking),
     assetConfigs: _ => getAssetConfigs(config.assets, contracts),

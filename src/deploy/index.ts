@@ -32,6 +32,7 @@ export interface ProtocolConfiguration {
   baseMinForRewards?: BigNumberish;
   baseBorrowMin?: BigNumberish;
   targetReserves?: BigNumberish;
+  maxSupportedUtilization?: BigNumberish;
   assetConfigs?: AssetConfigStruct[];
   rewardTokenAddress?: string;
 }
@@ -284,6 +285,11 @@ export const WHALES = {
     '0x245db945c485b68fdc429e4f7085a1761aa4d45d', // WETH whale
   ]
 };
+
+// Supplies base on the development market, which otherwise starts without lenders
+export const DEVELOPMENT_INITIAL_LENDER = utils.getAddress(
+  utils.hexDataSlice(utils.keccak256(utils.toUtf8Bytes('comet.development.initial-lender')), 12)
+);
 
 export async function calldata(req: Promise<PopulatedTransaction>): Promise<string> {
   // Splice out the first 4 bytes (function selector) of the tx data
