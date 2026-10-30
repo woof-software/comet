@@ -922,6 +922,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
     /**
      * @dev Supply either collateral or base asset, depending on the asset, if operator is allowed
      * @dev Note: Specifying an `amount` of uint256.max will repay all of `dst`'s accrued base borrow balance
+     * @dev Note: A zero amount (including uint256.max resolving to zero) reverts. A zero base amount would re-derive
+     *  the principal through floor-rounded conversions and silently drop one principal unit
      */
     function supplyInternal(address from, address dst, address asset, uint amount) internal nonReentrant {
         if (isSupplyPaused()) revert Paused();
@@ -932,9 +934,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
             if (amount == type(uint256).max) {
                 amount = borrowBalanceOf(dst);
             }
+            if (amount == 0) revert ZeroAmount();
             return supplyBase(from, dst, amount);
         } else {
             if (isCollateralSupplyPaused()) revert CollateralSupplyPaused();
+            if (amount == 0) revert ZeroAmount();
             return supplyCollateral(from, dst, asset, safe128(amount));
         }
     }
@@ -1049,9 +1053,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
             if (amount == type(uint256).max) {
                 amount = balanceOf(src);
             }
+            if (amount == 0) revert ZeroAmount();
             return transferBase(src, dst, amount);
         } else {
             if (isCollateralTransferPaused()) revert CollateralTransferPaused();
+            if (amount == 0) revert ZeroAmount();
             return transferCollateral(src, dst, asset, safe128(amount));
         }
     }
@@ -1178,9 +1184,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
             if (amount == type(uint256).max) {
                 amount = balanceOf(src);
             }
+            if (amount == 0) revert ZeroAmount();
             return withdrawBase(src, to, amount);
         } else {
             if (isCollateralWithdrawPaused()) revert CollateralWithdrawPaused();
+            if (amount == 0) revert ZeroAmount();
             return withdrawCollateral(src, to, asset, safe128(amount));
         }
     }

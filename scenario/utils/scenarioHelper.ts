@@ -83,6 +83,7 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   }
 
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'usdt') {
+    // Zero amounts revert with ZeroAmount, so per-asset collateral scenarios skip this asset
     if(i == 12) {
       config.supplyCollateral = 0;
       config.transferCollateral = 0;
