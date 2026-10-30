@@ -244,19 +244,6 @@ contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvent
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Replaces the config of one asset of a Comet proxy, found by its address
-     * @dev The immutable part takes effect on the asset list only after deployAssetList and the asset list proxy upgrade
-     * @param cometProxy The Comet proxy whose asset config to update
-     * @param newAssetConfig The new config of the asset
-     */
-    function updateAsset(address cometProxy, AssetConfig calldata newAssetConfig) external onlyGovernor {
-        uint256 assetIndex = getAssetIndex(cometProxy, newAssetConfig.asset);
-        AssetConfig memory oldAssetConfig = assetConfigs[cometProxy][assetIndex];
-        assetConfigs[cometProxy][assetIndex] = newAssetConfig;
-        emit UpdateAsset(cometProxy, oldAssetConfig, newAssetConfig);
-    }
-
-    /**
      * @notice Adds a new asset config at the end of the asset configs of a Comet proxy
      * @param cometProxy The Comet proxy to add the asset config to
      * @param assetConfig The config of the new asset

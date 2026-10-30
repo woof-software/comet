@@ -78,22 +78,19 @@ contract CometProxyAdminOptimism is ProxyAdmin {
 
 
     /**
-     * @dev Deploys a new AssetList through the Configurator and upgrades the AssetList proxy to it, writing the storage
-     * configs of all assets to the list in the same call. With no new implementation the proxy is upgraded to its
-     * current one, only to make that call
+     * @dev Deploys a new AssetList through the Configurator and, if one was deployed, upgrades the AssetList proxy to it,
+     * writing the storage configs of all assets to the list in the same call
      */
     function _deployAndUpgradeAssetList(Deployable configuratorProxy, TransparentUpgradeableProxy cometProxy) private {
         (address assetListProxy, address newAssetListImpl) = configuratorProxy.deployAssetList(address(cometProxy));
-        TransparentUpgradeableProxy proxy = TransparentUpgradeableProxy(payable(assetListProxy));
-        if (newAssetListImpl == address(0)) newAssetListImpl = getProxyImplementation(proxy);
-        // The transparent proxy blocks plain calls from its admin, so upgradeAndCall is the only way to reach the list.
-        // Initialize ran only once, so the storage configs are written on every upgrade: a new asset gets registered
-        // and a changed one gets its factors and cap
-        _upgradeAndCall(
-            proxy,
-            newAssetListImpl,
-            abi.encodeCall(IAssetList.setAssetConfigs, (configuratorProxy.getStorageAssetConfig(address(cometProxy))))
-        );
+        
+        if (newAssetListImpl != address(0)) {
+            upgradeAndCall(
+                TransparentUpgradeableProxy(payable(assetListProxy)),
+                newAssetListImpl,
+                abi.encodeCall(IAssetList.setAssetConfigs, (configuratorProxy.getStorageAssetConfig(address(cometProxy))))
+            );
+        }
     }
 
     /**
