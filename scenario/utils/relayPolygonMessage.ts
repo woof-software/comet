@@ -9,6 +9,7 @@ import { isTenderlyLog } from './index';
 import { fetchBridgeReceiverProposals } from './bridgeReceiverProposals';
 import { DEPOSIT_FOR_BURN_SIGNATURE, simulateCCTPL2ToL1Transfer } from './cctpL2ToL1Transfer';
 import { simulateLayerZeroOFTDelivery } from './layerZeroOFTL2ToL1Transfer';
+import { simulatePolygonPoSWithdrawals } from './polygonPoSL2ToL1Transfer';
 
 // Same address on both Polygon and mainnet
 const LZ_ENDPOINT = '0x1a44076050125825900e736c501f859c50fE728c';
@@ -217,6 +218,8 @@ export async function simulateL2ToL1TokenBridging(
       }
     }
   }
+
+  await simulatePolygonPoSWithdrawals(governanceDeploymentManager, bridgeDeploymentManager, l2StartingBlockNumber, proposalIds);
 }
 
 export async function simulateL2ToL1OFTBridging(
