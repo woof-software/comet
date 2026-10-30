@@ -107,7 +107,7 @@ Only the Configurator can write to an AssetList, and only the proxy admin can sw
 
 | Role | Contract | What it does to the asset list |
 |---|---|---|
-| **Governor** (timelock) | Governor of the Configurator, owner of the proxy admin | Calls every Configurator setter, sets the factories, calls `updateAssetList` |
+| **Governor** (timelock) | Governor of the Configurator, owner of the proxy admin | Calls every Configurator setter, sets the factories, sets the list proxy once through `setConfiguration` |
 | **Market admin** (L2s with market updates, e.g. Optimism) | `ConfiguratorOptimism` and `CometProxyAdminOptimism`, through `MarketAdminPermissionChecker` | Factor and supply cap setters, `deployAndUpgradeTo`, `deployAndUpgradeAssetListTo`. Not `addAsset`, `updateAsset` or `updateAssetPriceFeed` |
 | **Configurator** | `Configurator` / `ConfiguratorOptimism` | The only caller the list's `onlyConfigurator` allows. Keeps the full `AssetConfig[]` of each market as the source of truth |
 | **Proxy admin** | `CometProxyAdmin` | Admin of both the Comet proxy and the AssetList proxy. Upgrades the list when `deployAssetList` returns a new implementation |
@@ -158,7 +158,8 @@ The constructor stores `configHash` = keccak256 of `TYPEHASH` joined with `abi.e
 
 1. **Hash matches:** returns the zero address. Nothing is deployed or upgraded.
 2. **Hash differs:** the factory deploys a new implementation, and the proxy admin upgrades the proxy to it.
-3. **No `configHash` on the current list** (built before hashing) **or no list at all:** counts as changed, so it deploys.
+
+`deployAssetList` only redeploys an existing list: it reverts with `AssetListNotSet` if the market has no list proxy. A market's first list is deployed outside the Configurator (its implementation straight from the factory, its proxy initialized with `getStorageAssetConfig`) and set with `setConfiguration`.
 
 Without the hash, every Comet redeploy would have to deploy an identical list, or rely on a person deciding whether it changed. With it, `deployAndUpgradeTo` always calls `deployAssetList` and pays only for a hash and a compare when nothing changed. `TYPEHASH` names the config's shape, so a future change to the immutable fields gives a different hash even for the same bytes.
 
@@ -201,7 +202,7 @@ A factor change stops at storage. An immutable change upgrades the list behind t
 | Whole asset (`updateAsset`) | `updateAsset`, `deployAndUpgradeAssetListTo`, `setAssetConfigToAssetList` | New implementation if the immutable half changed, storage rewritten | Untouched |
 | AssetList code only | Deploy the implementation outside the Configurator, then `proxyAdmin.upgrade(listProxy, impl)` | New implementation, storage kept | Untouched |
 | Comet code or Comet config | Setter, `deployAndUpgradeTo` | Hash matches, nothing happens | New implementation |
-| New list proxy (first migration) | Deploy and `initialize` the proxy, `updateAssetList`, `setAssetListFactory`, `setFactory`, `deployAndUpgradeTo` | New proxy | New implementation: its immutable `assetList` address changes |
+| New list proxy (first migration) | Deploy and `initialize` the proxy, `setConfiguration`, `setAssetListFactory`, `setFactory`, `deployAndUpgradeTo` | New proxy | New implementation: its immutable `assetList` address changes |
 
 A new asset needs `setAssetConfigToAssetList` after the upgrade, because `initialize` ran only once. Until that call, the asset is in the immutables but has no storage config. It reads with zero factors and a zero supply cap, so it cannot be supplied.
 
