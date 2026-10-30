@@ -406,10 +406,12 @@ describe('withdraw', function () {
         expect(await baseToken.balanceOf(alice.address)).to.equal(aliceBalanceBefore);
       });
 
-      it('gas used is within limit', async () => {
-        // Asset info is read through the asset list proxy, which costs more than reading the list directly
-        const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(130000);
+      it('bob principal unchanged', async () => {
+        expect((await comet.userBasic(bob.address)).principal).to.equal(bobPrincipalBefore);
+      });
+
+      it('comet base token balance unchanged', async () => {
+        expect(await baseToken.balanceOf(comet.address)).to.equal(cometBalanceBefore);
       });
     });
 

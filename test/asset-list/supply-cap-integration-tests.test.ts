@@ -46,8 +46,8 @@ describe('supply cap integration', function () {
         { name: 'zero cap', supplyCap: 0n },
       ];
 
-      // The zero cap, last in the list, has no amount below it. For the 1 wei cap the amount below is 0: a zero amount
-      // has no check of its own, so supplying it succeeds
+      // The zero cap, last in the list, has no amount below it. For the 1 wei cap the amount below is 0, and a zero
+      // amount reverts with ZeroAmount, so nothing is supplied
       context('amount below the cap', function () {
         for (const { name, supplyCap } of SUPPLY_CAPS.slice(0, -1)) {
           context(name, function () {
@@ -63,8 +63,10 @@ describe('supply cap integration', function () {
               await configurator.connect(governor).updateAssetSupplyCap(comet.address, token.address, supplyCap);
             });
 
-            it('supplies the amount', async () => {
-              await comet.connect(alice).supply(token.address, amount);
+            it(amount == 0n ? 'reverts on the zero amount' : 'supplies the amount', async () => {
+              const supply = comet.connect(alice).supply(token.address, amount);
+              if (amount == 0n) await expect(supply).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+              else await supply;
             });
 
             it('stores the user collateral balance', async () => {
@@ -93,8 +95,10 @@ describe('supply cap integration', function () {
               await configurator.connect(governor).updateAssetSupplyCap(comet.address, token.address, supplyCap);
             });
 
-            it('supplies the amount', async () => {
-              await comet.connect(alice).supply(token.address, amount);
+            it(amount == 0n ? 'reverts on the zero amount' : 'supplies the amount', async () => {
+              const supply = comet.connect(alice).supply(token.address, amount);
+              if (amount == 0n) await expect(supply).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+              else await supply;
             });
 
             it('stores the user collateral balance', async () => {

@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectBase, expectRevertMatches, getExpectedBaseBalance, getInterest, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, UINT256_MAX, fundAccount, isAssetDelisted, servicePatch, deployUnsupportedAsset, getUsableCollateralIndices, getMinimumBorrowAmounts } from './utils';
+import { expectApproximately, expectBase, expectRevertMatches, getExpectedBaseBalance, getInterest, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, UINT256_MAX, fundAccount, isAssetDelisted, servicePatch, deployUnsupportedAsset, getUsableCollateralIndices, getMinimumBorrowAmounts, rejectsZeroAmounts } from './utils';
 import { matchesDeployment } from './utils';
 import { exp } from '../test/helpers';
 import { ethers } from 'hardhat';
