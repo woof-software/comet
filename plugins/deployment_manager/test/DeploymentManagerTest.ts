@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import hre from 'hardhat';
 import nock from 'nock';
+import * as fs from 'fs/promises';
 
 import {
   Dog,
@@ -18,6 +19,7 @@ import { VerifyArgs } from '../Verify';
 import { getVerifyArgs, putVerifyArgs } from '../VerifyArgs';
 import { mockVerifySuccess } from './VerifyTest';
 import { objectFromMap } from '../Utils';
+import { getAliases } from '../Aliases';
 
 export interface TestContracts {
   finn: Dog;
@@ -86,6 +88,37 @@ describe('DeploymentManager', () => {
     nock.disableNetConnect();
   });
 
+  describe('managed signers', () => {
+    let manager: DeploymentManager;
+
+    beforeEach(() => {
+      manager = new DeploymentManager('test-network', 'test-deployment', hre, { baseDir: tempDir() });
+    });
+
+    it('selects the first managed signer by default and reuses the signer list', async () => {
+      const signers = await manager.getSigners();
+      expect(await manager.getSigner()).to.equal(signers[0]);
+      expect(await manager.getSigners()).to.equal(signers);
+    });
+
+    it('finds an existing signer regardless of address case', async () => {
+      const signers = await manager.getSigners();
+      const address = signers[0].address;
+      expect(await manager.getSigner('0x' + address.slice(2).toUpperCase())).to.equal(signers[0]);
+      expect(await manager.getSigner(address.toLowerCase())).to.equal(signers[0]);
+      expect(await manager.getSigners()).to.have.length(signers.length);
+    });
+
+    it('creates a managed signer for a new address and reuses it on the next lookup', async () => {
+      const initialCount = (await manager.getSigners()).length;
+      const address = '0x00000000000000000000000000000000000000a1';
+      const created = await manager.getSigner(address);
+      expect(created.address.toLowerCase()).to.equal(address);
+      expect(await manager.getSigner('0x' + address.slice(2).toUpperCase())).to.equal(created);
+      expect(await manager.getSigners()).to.have.length(initialCount + 1);
+    });
+  });
+
   describe('deploy', () => {
     it('should deploy succesfully', async () => {
       let deploymentManager = new DeploymentManager('test-network', 'test-deployment', hre, {
@@ -101,6 +134,80 @@ describe('DeploymentManager', () => {
       // Check that we've cached the build file
       expect((await getBuildFile(deploymentManager.cache, 'test-network', spot.address)).contract).to.eql('Dog');
     });
+
+    // Run the same steps for alias reuse and forced redeployment.
+    for (const { name, force, expectedDeployments } of [
+      { name: 'reuses an existing alias without submitting another deployment', force: false, expectedDeployments: 1 },
+      { name: 'deploys a new contract and updates the alias when forced', force: true, expectedDeployments: 2 },
+    ]) {
+      it(name, async () => {
+        // Keep cache files separate from real deployments.
+        const dir = await fs.mkdtemp(tempDir());
+
+        try {
+          const manager = new DeploymentManager('test-network', 'test-deployment', hre, {
+            importRetries: 0,
+            writeCacheToDisk: true,
+            verificationStrategy: 'none',
+            baseDir: dir,
+          });
+          const signer = await manager.getSigner();
+          const sendTransaction = signer.sendTransaction;
+          let deploymentSubmissions = 0;
+
+          // Count real deployment submissions, they have no recipient address.
+          signer.sendTransaction = async (transaction) => {
+            if (await transaction.to == null) deploymentSubmissions++;
+            return sendTransaction.call(signer, transaction);
+          };
+
+          try {
+            // Create the first contract under the 'pet' alias.
+            const first: Dog = await manager.deploy(
+              'pet', 'test/Dog.sol', ['first', hre.ethers.constants.AddressZero, []]
+            );
+
+            // Check the first deployment and its alias in memory and on disk.
+            expect(deploymentSubmissions).to.equal(1);
+            expect(manager.counter).to.equal(1);
+            expect((await getAliases(manager.cache)).get('pet')).to.equal(first.address);
+            expect(JSON.parse(await fs.readFile(
+              manager.cache.getFilePath({ rel: 'aliases.json' }), 'utf8'
+            ))).to.eql({ pet: first.address });
+
+            // Reuse 'pet', or replace its address when force=true.
+            const second: Dog = await manager.deploy(
+              'pet', 'test/Dog.sol', ['second', hre.ethers.constants.AddressZero, []], force
+            );
+
+            // New constructor arguments apply only to a new contract.
+            if (force) {
+              expect(second.address).not.to.equal(first.address);
+            } else {
+              expect(second.address).to.equal(first.address);
+            }
+            expect(await first.name()).to.equal('first');
+            expect(await second.name()).to.equal(force ? 'second' : 'first');
+            expect(deploymentSubmissions).to.equal(expectedDeployments);
+            expect(manager.counter).to.equal(expectedDeployments);
+
+            // The contract lookup and both alias stores must agree.
+            const currentContract = await manager.contract('pet');
+            expect(currentContract?.address).to.equal(second.address);
+            expect((await getAliases(manager.cache)).get('pet')).to.equal(second.address);
+            expect(JSON.parse(await fs.readFile(
+              manager.cache.getFilePath({ rel: 'aliases.json' }), 'utf8'
+            ))).to.eql({ pet: second.address });
+          } finally {
+            // Restore the signer even if an assertion fails.
+            signer.sendTransaction = sendTransaction;
+          }
+        } finally {
+          // Remove the temporary cache files.
+          await fs.rm(dir, { recursive: true, force: true });
+        }
+      });
+    }
   });
 
   describe('_deployBuild', () => {
@@ -145,6 +252,102 @@ describe('DeploymentManager', () => {
 
       // VerifyArgs cache should be cleared upon successful verification
       expect(objectFromMap(await getVerifyArgs(deploymentManager.cache))).to.eql({});
+    });
+
+    describe('queue integrity', () => {
+      let dir: string;
+      let manager: DeploymentManager;
+      const makeArgs = (address: string) => ({
+        via: 'artifacts' as const,
+        address,
+        constructorArguments: tokenArgs,
+        contract: 'contracts/test/FaucetToken.sol:FaucetToken',
+      });
+      const successful = makeArgs('0x1111111111111111111111111111111111111111');
+      const failed = makeArgs('0x2222222222222222222222222222222222222222');
+      const skipped = makeArgs('0x3333333333333333333333333333333333333333');
+
+      beforeEach(async () => {
+        dir = await fs.mkdtemp(tempDir());
+        manager = new DeploymentManager('test-network', 'test-deployment', hre, {
+          writeCacheToDisk: true,
+          baseDir: dir,
+        });
+      });
+
+      afterEach(async () => {
+        await fs.rm(dir, { recursive: true, force: true });
+      });
+
+      async function expectQueue(expected: Record<string, VerifyArgs>) {
+        // Check memory and the actual persisted queue independently.
+        expect(objectFromMap(await getVerifyArgs(manager.cache))).to.eql(expected);
+        expect(JSON.parse(await fs.readFile(
+          manager.cache.getFilePath({ rel: ['verify', 'args.json'] }), 'utf8'
+        ))).to.eql(expected);
+      }
+
+      it('keeps failed and filtered entries and retries only the remaining queue', async () => {
+        // Put a failure first to check that returning false does not stop the queue.
+        for (const args of [failed, successful, skipped]) {
+          await putVerifyArgs(manager.cache, args.address, args);
+        }
+        const verified: VerifyArgs[] = [];
+        manager.verifyContract = async (args) => {
+          verified.push(args);
+          return args.via === 'artifacts' && args.address === successful.address;
+        };
+
+        const filtered: Array<[string, VerifyArgs]> = [];
+        await manager.verifyContracts(async (address, args) => {
+          filtered.push([address, args]);
+          return address !== skipped.address;
+        });
+
+        expect(filtered).to.eql([
+          [failed.address, failed],
+          [successful.address, successful],
+          [skipped.address, skipped],
+        ]);
+        expect(verified).to.eql([failed, successful]);
+        await expectQueue({ [failed.address]: failed, [skipped.address]: skipped });
+
+        // On the next run, the successful entry must not be verified again.
+        const retried: VerifyArgs[] = [];
+        manager.verifyContract = async (args) => {
+          retried.push(args);
+          return true;
+        };
+        await manager.verifyContracts();
+
+        expect(retried).to.eql([failed, skipped]);
+        await expectQueue({});
+      });
+
+      it('propagates verification errors and preserves failed and unprocessed entries', async () => {
+        for (const args of [successful, failed, skipped]) {
+          await putVerifyArgs(manager.cache, args.address, args);
+        }
+        const failure = new Error('Verification unavailable');
+        const verified: VerifyArgs[] = [];
+        manager.verifyContract = async (args) => {
+          verified.push(args);
+          if (args.via === 'artifacts' && args.address === failed.address) throw failure;
+          return true;
+        };
+
+        // A thrown error stops processing and must reach the caller unchanged.
+        let caught: unknown;
+        try {
+          await manager.verifyContracts();
+        } catch (error) {
+          caught = error;
+        }
+
+        expect(caught).to.equal(failure);
+        expect(verified).to.eql([successful, failed]);
+        await expectQueue({ [failed.address]: failed, [skipped.address]: skipped });
+      });
     });
   });
 
