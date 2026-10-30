@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { BigNumber, utils } from 'ethers';
+import { BigNumber, constants, utils } from 'ethers';
 import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
 import { migration } from '../../../../plugins/deployment_manager/Migration';
 import { exp, proposal } from '../../../../src/deploy';
@@ -7,29 +7,35 @@ import { exp, proposal } from '../../../../src/deploy';
 const USDCE_AMOUNT = exp(470_000, 6);
 const USDT_AMOUNT = exp(65_000, 6);
 
-// Max loss for USDC.e -> USDT: 470 USDT (0.1%)
-const USDCE_MIN_OUT = USDCE_AMOUNT - exp(470, 6);
-const BRIDGE_AMOUNT = USDT_AMOUNT + USDCE_MIN_OUT;
-
-// https://docs.uniswap.org/contracts/v3/reference/deployments/polygon-deployments
-const SWAP_ROUTER_02 = '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45';
-// Uniswap V3 USDC.e/USDT pool 0xDaC8A8E6DBf8c690ec6815e0fF03491B2770255D
-const POOL_FEE = 100;
+// 1-of-2 Safe owned by the Timelock and the operator, same address on Polygon and Mainnet
+const SAFE = '0xD28d21422f5fA74E3d4414626c774bDA274b7Ca9';
+// Contract that pulls the USDC reserves from the Safe to the Mainnet Timelock once
+const RESERVES_TRANSFER_CONTRACT = '0x6472d31e775B6a736fB3fB00208B470C5Db14fCF';
 
 const USDT0_OFT = '0x6BA10300f0DC58B7a1e4c0e41f5daBb7D7829e13';
 const MAINNET_EID = 30101;
+const MAINNET_USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const MAINNET_USDT = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 
-// Fixed LayerZero fee; the endpoint refunds the excess over the real fee
+// Fixed LayerZero fee, paid from the Polygon Timelock's POL balance; the endpoint refunds the excess over the real fee
 const POL_FEE = utils.parseEther('10');
 
 let polygonUsdcCometBalanceBefore: BigNumber;
 let polygonUsdtCometBalanceBefore: BigNumber;
-let polygonTimelockUsdceBefore: BigNumber;
+let polygonSafeUsdceBefore: BigNumber;
 let polygonTimelockUsdtBefore: BigNumber;
 let mainnetTimelockUsdtBefore: BigNumber;
 
-const formatAmount = (amount: BigNumber | bigint, decimals = 6) =>
+const SAFE_EXEC_TRANSACTION_SIGNATURE = 'execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)';
+
+// execTransaction args for a call made by a Safe owner directly: a pre-validated signature (r = owner, s = 0, v = 1) suffices
+const encodeSafeOwnerExec = (owner: string, to: string, data: string) =>
+  utils.defaultAbiCoder.encode(
+    ['address', 'uint256', 'bytes', 'uint8', 'uint256', 'uint256', 'uint256', 'address', 'address', 'bytes'],
+    [to, 0, data, 0, 0, 0, 0, constants.AddressZero, constants.AddressZero, utils.hexConcat([utils.hexZeroPad(owner, 32), constants.HashZero, '0x01'])]
+  );
+
+const formatAmount =(amount: BigNumber | bigint, decimals = 6) =>
   Number(utils.formatUnits(amount, decimals)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default migration('1791206401_withdraw_reserves', {
@@ -63,18 +69,12 @@ export default migration('1791206401_withdraw_reserves', {
 
     polygonUsdcCometBalanceBefore = await USDCe.balanceOf(comet.address);
     polygonUsdtCometBalanceBefore = await USDT.balanceOf(cometUsdt.address);
-    polygonTimelockUsdceBefore = await USDCe.balanceOf(timelock.address);
+    polygonSafeUsdceBefore = await USDCe.balanceOf(SAFE);
     polygonTimelockUsdtBefore = await USDT.balanceOf(timelock.address);
     mainnetTimelockUsdtBefore = await mainnetUSDT.balanceOf(mainnetTimelock.address);
 
     const usdcReserves = await comet.getReserves();
     const usdtReserves = await cometUsdt.getReserves();
-
-    // SwapRouter02 exactInputSingle has no deadline
-    const swapCalldata = utils.defaultAbiCoder.encode(
-      ['(address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)'],
-      [[USDCe.address, USDT.address, POOL_FEE, timelock.address, USDCE_AMOUNT, USDCE_MIN_OUT, 0]]
-    );
 
     // USDT on Polygon is USDT0: its OFT burns from the sender directly, so no approval is needed
     const sendCalldata = utils.defaultAbiCoder.encode(
@@ -84,35 +84,45 @@ export default migration('1791206401_withdraw_reserves', {
         'address refundAddress',
       ],
       [
-        [MAINNET_EID, utils.hexZeroPad(mainnetTimelock.address, 32), BRIDGE_AMOUNT, BRIDGE_AMOUNT, '0x', '0x', '0x'],
+        [MAINNET_EID, utils.hexZeroPad(mainnetTimelock.address, 32), USDT_AMOUNT, USDT_AMOUNT, '0x', '0x', '0x'],
         [POL_FEE, 0],
         timelock.address,
       ]
     );
 
+    // The Polygon Safe burns the USDC.e through the PoS bridge, released to the Mainnet Safe after the checkpoint
+    const usdcePoSWithdrawCalldata = new utils.Interface(['function withdraw(uint256)'])
+      .encodeFunctionData('withdraw', [USDCE_AMOUNT]);
+
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
-        [comet.address, cometUsdt.address, USDCe.address, SWAP_ROUTER_02, USDT0_OFT],
-        [0, 0, 0, 0, POL_FEE],
+        [comet.address, SAFE, cometUsdt.address, USDT0_OFT],
+        [0, 0, 0, POL_FEE],
         [
           'withdrawReserves(address,uint256)',
+          SAFE_EXEC_TRANSACTION_SIGNATURE,
           'withdrawReserves(address,uint256)',
-          'approve(address,uint256)',
-          'exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))',
           'send((uint32,bytes32,uint256,uint256,bytes,bytes,bytes),(uint256,uint256),address)',
         ],
         [
-          utils.defaultAbiCoder.encode(['address to', 'uint256 amount'], [timelock.address, USDCE_AMOUNT]),
+          utils.defaultAbiCoder.encode(['address to', 'uint256 amount'], [SAFE, USDCE_AMOUNT]),
+          encodeSafeOwnerExec(timelock.address, USDCe.address, usdcePoSWithdrawCalldata),
           utils.defaultAbiCoder.encode(['address to', 'uint256 amount'], [timelock.address, USDT_AMOUNT]),
-          utils.defaultAbiCoder.encode(['address spender', 'uint256 amount'], [SWAP_ROUTER_02, USDCE_AMOUNT]),
-          swapCalldata,
           sendCalldata,
         ],
       ]
     );
 
+    const safeApproveCalldata = new utils.Interface(['function approve(address,uint256)'])
+      .encodeFunctionData('approve', [RESERVES_TRANSFER_CONTRACT, USDCE_AMOUNT]);
+
     const mainnetActions = [
+      {
+        target: SAFE,
+        signature: SAFE_EXEC_TRANSACTION_SIGNATURE,
+        calldata: encodeSafeOwnerExec(mainnetTimelock.address, MAINNET_USDC, safeApproveCalldata),
+      },
       {
         contract: fxRoot,
         signature: 'sendMessageToChild(address,bytes)',
@@ -124,9 +134,10 @@ export default migration('1791206401_withdraw_reserves', {
 
 ## Proposal summary
 
-This proposal withdraws 470,000 USDC.e and 65,000 USDT of reserves from the Compound III USDC and USDT markets on Polygon, swaps the USDC.e into USDT on Uniswap V3, and sends the USDT to the Compound Timelock on Ethereum Mainnet using LayerZero's OFT standard.
+This proposal withdraws 470,000 USDC.e and 65,000 USDT of reserves from the Compound III USDC and USDT markets on Polygon and moves them to the Compound Timelock on Ethereum Mainnet.
 
-Withdrawing the reserves is the final step of the deprecation process and secures the markets' protocol-owned funds by moving them to the Timelock on Mainnet.
+- The USDT is sent directly to the Mainnet Timelock using LayerZero's OFT standard.
+- The USDC.e is withdrawn to a Safe, which bridges it to Mainnet through the Polygon PoS bridge in the same execution. A single-use transfer contract, approved by the Mainnet Safe in this proposal, then pulls it from the Safe to the Mainnet Timelock.
 
 ## Reserves withdrawal
 
@@ -135,31 +146,30 @@ Reserves are the protocol-owned portion of a market's base asset: the Comet's ba
 | Source | Amount |
 | --- | --- |
 | cUSDCv3 reserves at proposal creation (\`getReserves()\`) | ${formatAmount(usdcReserves)} USDC.e |
-| Withdrawn from cUSDCv3 and swapped to USDT | ${formatAmount(USDCE_AMOUNT)} USDC.e |
+| Withdrawn from cUSDCv3 to the Safe | ${formatAmount(USDCE_AMOUNT)} USDC.e |
 | cUSDTv3 reserves at proposal creation (\`getReserves()\`) | ${formatAmount(usdtReserves)} USDT |
-| Withdrawn from cUSDTv3 | ${formatAmount(USDT_AMOUNT)} USDT |
+| Withdrawn from cUSDTv3 and sent to the Mainnet Timelock | ${formatAmount(USDT_AMOUNT)} USDT |
 
-The proposal does not withdraw all reserves. Both markets still have open borrow positions, so the remaining USDC.e and USDT are left as buffers that keep the markets solvent until those positions are repaid or liquidated. The rest can be withdrawn by a later proposal once they are closed.
+The proposal does not withdraw all reserves. Both markets still have open borrow positions, so the rest is left in the markets and can be withdrawn by a later proposal.
 
-## Swap
+## USDC.e path
 
-The USDC.e is swapped into USDT through the Uniswap V3 USDC.e/USDT pool (0.01% fee) using SwapRouter02. USDT trades at a small discount to USDC.e on Polygon, so the swap is expected to return slightly more USDT than the USDC.e it spends.
+USDC.e is not a LayerZero OFT, so it is withdrawn to the Safe [${SAFE}](https://polygonscan.com/address/${SAFE}). The Safe has the same address on Polygon and Mainnet, and on each chain its owners are the local Compound Timelock and the operator, with a threshold of 1.
 
-| Swap | Max loss % |
-| --- | --- |
-| ${formatAmount(USDCE_AMOUNT)} USDC.e -> USDT | 0.1% |
+This proposal has the Mainnet Safe approve the transfer contract [${RESERVES_TRANSFER_CONTRACT}](https://etherscan.io/address/${RESERVES_TRANSFER_CONTRACT}) to spend 470,000 USDC. The contract has no owner and holds only constants: the USDC address, the Safe address, the Mainnet Timelock address and the amount.
 
-If the swap would return less than the minimum, the whole proposal execution reverts. The withdrawn USDT plus the swap minimum is bridged; any swap output above the minimum stays on the Polygon Timelock and can be withdrawn later.
+On Polygon, the proposal has the Safe burn the USDC.e through the Polygon PoS bridge. Once the burn is included in a checkpoint on Mainnet, anyone can complete the exit with \`RootChainManager.exit\`, which releases it 1:1 as USDC to the Mainnet Safe. Anyone can then call \`transfer()\` on the contract once to move exactly 470,000 USDC from the Safe to the Mainnet Timelock; after that a flag blocks any further call.
 
 ## Proposal actions
 
-The proposal action sends a message through Polygon's FxRoot to the Polygon Bridge Receiver, which queues the following calls on the Polygon Timelock:
+The first proposal action calls \`execTransaction\` on the Mainnet Safe, through which the Safe approves the transfer contract to spend 470,000 USDC. The Mainnet Timelock is a Safe owner and the threshold is 1, so it executes the Safe transaction directly with a pre-validated owner signature.
 
-1. Withdraw 470,000 USDC.e from the Polygon cUSDCv3 reserves.
-2. Withdraw 65,000 USDT from the Polygon cUSDTv3 reserves.
-3. Approve SwapRouter02 to spend 470,000 USDC.e.
-4. Call \`exactInputSingle\` on SwapRouter02 to swap 470,000 USDC.e into USDT, delivered to the Polygon Timelock.
-5. Call \`send\` on the USDT0 OFT to send ${formatAmount(BRIDGE_AMOUNT)} USDT to the Mainnet Timelock. USDT on Polygon is USDT0: it is burned on Polygon and released on Mainnet by the USDT0 OFT adapter, so no approval is needed. The LayerZero messaging fee is paid in native POL from the Polygon Timelock's balance: a fixed ${formatAmount(POL_FEE, 18)} POL, well above the current fee, so the call still succeeds if the fee rises before execution. The LayerZero endpoint refunds any excess over the actual fee to the Polygon Timelock.
+The second proposal action sends a message through Polygon's FxRoot to the Polygon Bridge Receiver, which queues the following calls on the Polygon Timelock:
+
+1. Withdraw 470,000 USDC.e from the Polygon cUSDCv3 reserves to the Safe.
+2. Call \`execTransaction\` on the Polygon Safe, through which the Safe calls \`withdraw\` on USDC.e to burn the 470,000 USDC.e through the Polygon PoS bridge. The Polygon Timelock is a Safe owner and the threshold is 1, so it executes the Safe transaction directly with a pre-validated owner signature.
+3. Withdraw 65,000 USDT from the Polygon cUSDTv3 reserves to the Polygon Timelock.
+4. Call \`send\` on the USDT0 OFT to send 65,000 USDT to the Mainnet Timelock. USDT on Polygon is USDT0: it is burned on Polygon and released on Mainnet by the USDT0 OFT adapter, so no approval is needed. The LayerZero messaging fee is paid in native POL from the Polygon Timelock's balance: a fixed ${formatAmount(POL_FEE, 18)} POL is sent with the call, well above the current fee, so the call still succeeds if the fee rises before execution. The LayerZero endpoint refunds any excess over the actual fee to the Polygon Timelock.
 
 Once LayerZero verifies the message, its executor delivers it on Mainnet and the USDT is released to the Mainnet Timelock.
 `;
@@ -184,7 +194,19 @@ Once LayerZero verifies the message, its executor delivers it on Mainnet and the
     } = await deploymentManager.getContracts();
 
     const { timelock: mainnetTimelock } = await govDeploymentManager.getContracts();
+    const mainnetUSDC = await govDeploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_USDC);
     const mainnetUSDT = await govDeploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_USDT);
+    const polygonReservesTransfer = await govDeploymentManager.hre.ethers.getContractAt(
+      [
+        'function USDC() view returns (address)',
+        'function SAFE() view returns (address)',
+        'function TIMELOCK() view returns (address)',
+        'function AMOUNT() view returns (uint256)',
+        'function transferred() view returns (bool)',
+        'function transfer()',
+      ],
+      RESERVES_TRANSFER_CONTRACT
+    );
 
     const polygonUsdtDm = deploymentManager.bridgedDeploymentManagers.get('polygon:usdt') as DeploymentManager;
     const {
@@ -199,15 +221,39 @@ Once LayerZero verifies the message, its executor delivers it on Mainnet and the
     const polygonUsdtCometBalanceAfter = await polygonUSDT.balanceOf(polygonUsdtComet.address);
     expect(polygonUsdtCometBalanceBefore.sub(polygonUsdtCometBalanceAfter)).to.equal(USDT_AMOUNT);
 
-    // All USDC.e was swapped; only the swap output above the minimum is left as USDT on the Polygon Timelock
-    const polygonTimelockUsdceAfter = await polygonUSDCe.balanceOf(polygonTimelock.address);
-    expect(polygonTimelockUsdceBefore).to.equal(polygonTimelockUsdceAfter);
+    // The USDC.e went to the Safe, which burned it for the PoS bridge exit
+    const polygonSafeUsdceAfter = await polygonUSDCe.balanceOf(SAFE);
+    expect(polygonSafeUsdceAfter).to.equal(polygonSafeUsdceBefore);
 
+    // All withdrawn USDT was bridged and released to the Mainnet Timelock
     const polygonTimelockUsdtAfter = await polygonUSDT.balanceOf(polygonTimelock.address);
-    expect(polygonTimelockUsdtAfter).to.be.gte(polygonTimelockUsdtBefore);
+    expect(polygonTimelockUsdtAfter).to.equal(polygonTimelockUsdtBefore);
 
-    // The bridged amount was released to the Mainnet Timelock
     const mainnetTimelockUsdtAfter = await mainnetUSDT.balanceOf(mainnetTimelock.address);
-    expect(mainnetTimelockUsdtAfter.sub(mainnetTimelockUsdtBefore)).to.equal(BRIDGE_AMOUNT);
+    expect(mainnetTimelockUsdtAfter.sub(mainnetTimelockUsdtBefore)).to.equal(USDT_AMOUNT);
+
+    // The transfer contract is unused, points at the Safe and the Mainnet Timelock, and the Safe approved it
+    expect(await polygonReservesTransfer.USDC()).to.equal(MAINNET_USDC);
+    expect(await polygonReservesTransfer.SAFE()).to.equal(SAFE);
+    expect(await polygonReservesTransfer.TIMELOCK()).to.equal(mainnetTimelock.address);
+    expect(await polygonReservesTransfer.AMOUNT()).to.equal(USDCE_AMOUNT);
+    expect(await polygonReservesTransfer.transferred()).to.equal(false);
+    expect(await mainnetUSDC.allowance(SAFE, RESERVES_TRANSFER_CONTRACT)).to.equal(USDCE_AMOUNT);
+
+    // Anyone can pull the reserves from the Safe once
+    const caller = await govDeploymentManager.getSigner();
+
+    const mainnetSafeUsdcBefore = await mainnetUSDC.balanceOf(SAFE);
+    const mainnetTimelockUsdcBefore = await mainnetUSDC.balanceOf(mainnetTimelock.address);
+
+    await (await polygonReservesTransfer.connect(caller).transfer()).wait();
+
+    const mainnetSafeUsdcAfter = await mainnetUSDC.balanceOf(SAFE);
+    const mainnetTimelockUsdcAfter = await mainnetUSDC.balanceOf(mainnetTimelock.address);
+
+    expect(mainnetSafeUsdcBefore.sub(mainnetSafeUsdcAfter)).to.equal(USDCE_AMOUNT);
+    expect(mainnetTimelockUsdcAfter.sub(mainnetTimelockUsdcBefore)).to.equal(USDCE_AMOUNT);
+    expect(await mainnetUSDC.allowance(SAFE, RESERVES_TRANSFER_CONTRACT)).to.equal(0);
+    expect(await polygonReservesTransfer.transferred()).to.equal(true);
   },
 });
