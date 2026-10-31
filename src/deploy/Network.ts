@@ -116,6 +116,7 @@ export async function deployNetworkComet(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    targetHealthFactor,
     assetConfigs,
     rewardTokenAddress,
   } = await getConfiguration(deploymentManager, configOverrides);
@@ -196,6 +197,7 @@ export async function deployNetworkComet(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    targetHealthFactor,
     assetConfigs,
   };
 
@@ -226,7 +228,7 @@ export async function deployNetworkComet(
     'configurator:implementation',
     'Configurator.sol',
     [],
-    maybeForce()
+    maybeForce(deploySpec.cometMain) // it passes the Configuration struct to the factory, so they change together
   );
 
   // If we deploy a new proxy, we initialize it to the current/new impl

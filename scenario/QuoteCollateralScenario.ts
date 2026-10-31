@@ -55,6 +55,11 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       const expectedQuoteWithDiscount = (basePrice * QUOTE_AMOUNT * assetScale) / assetPriceDiscounted / baseScale;
       expect(quoteAmount).to.equal(expectedQuoteWithDiscount);
       
+      // LF can only be 0 with BCF and LCF at 0
+      await context.setNextBaseFeeToZero();
+      await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, asset, 0n, { gasPrice: 0 });
+      await context.setNextBaseFeeToZero();
+      await configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, asset, 0n, { gasPrice: 0 });
       await context.setNextBaseFeeToZero();
       await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
       await context.setNextBaseFeeToZero();

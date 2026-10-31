@@ -492,6 +492,11 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       // Verify account is liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
       
+      // LF can only be 0 with BCF and LCF at 0
+      await context.setNextBaseFeeToZero();
+      await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, asset, 0n, { gasPrice: 0 });
+      await context.setNextBaseFeeToZero();
+      await configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, asset, 0n, { gasPrice: 0 });
       await context.setNextBaseFeeToZero();
       await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
       await context.setNextBaseFeeToZero();
@@ -636,6 +641,11 @@ scenario(
     // This simulates a governance action to de-list an asset whose price feed
     // has become unavailable. After this, absorbInternal should skip asset0
     // entirely — not seize it, not call getPrice() on it.
+    // LF can only be 0 with BCF and LCF at 0
+    await context.setNextBaseFeeToZero();
+    await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, assetInfo0.asset, 0n, { gasPrice: 0 });
+    await context.setNextBaseFeeToZero();
+    await configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, assetInfo0.asset, 0n, { gasPrice: 0 });
     await context.setNextBaseFeeToZero();
     await configurator.connect(admin.signer).updateAssetLiquidationFactor(
       comet.address, assetInfo0.asset, 0n, { gasPrice: 0 }
