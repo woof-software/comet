@@ -19,7 +19,6 @@ contract Configurator is ConfiguratorStorage {
     event SetMarketAdminPermissionChecker(address indexed oldMarketAdminPermissionChecker, address indexed newMarketAdminPermissionChecker);
     event SetBaseTokenPriceFeed(address indexed cometProxy, address indexed oldBaseTokenPriceFeed, address indexed newBaseTokenPriceFeed);
     event SetExtensionDelegate(address indexed cometProxy, address indexed oldExt, address indexed newExt);
-    event SetLiquidationModule(address indexed cometProxy, address indexed oldLiquidationModule, address indexed newLiquidationModule);
     event SetSupplyKink(address indexed cometProxy,uint64 oldKink, uint64 newKink);
     event SetSupplyPerYearInterestRateSlopeLow(address indexed cometProxy,uint64 oldIRSlopeLow, uint64 newIRSlopeLow);
     event SetSupplyPerYearInterestRateSlopeHigh(address indexed cometProxy,uint64 oldIRSlopeHigh, uint64 newIRSlopeHigh);
@@ -34,6 +33,7 @@ contract Configurator is ConfiguratorStorage {
     event SetBaseMinForRewards(address indexed cometProxy, uint104 oldBaseMinForRewards, uint104 newBaseMinForRewards);
     event SetBaseBorrowMin(address indexed cometProxy, uint104 oldBaseBorrowMin, uint104 newBaseBorrowMin);
     event SetTargetReserves(address indexed cometProxy, uint104 oldTargetReserves, uint104 newTargetReserves);
+    event SetTargetHealthFactor(address indexed cometProxy, uint64 oldHealthFactor, uint64 newHealthFactor);
     event UpdateAsset(address indexed cometProxy, AssetConfig oldAssetConfig, AssetConfig newAssetConfig);
     event UpdateAssetPriceFeed(address indexed cometProxy, address indexed asset, address oldPriceFeed, address newPriceFeed);
     event UpdateAssetBorrowCollateralFactor(address indexed cometProxy, address indexed asset, uint64 oldBorrowCF, uint64 newBorrowCF);
@@ -149,14 +149,6 @@ contract Configurator is ConfiguratorStorage {
         emit SetExtensionDelegate(cometProxy, oldExtensionDelegate, newExtensionDelegate);
     }
 
-    function setLiquidationModule(address cometProxy, address newLiquidationModule) external {
-        if (msg.sender != governor) revert Unauthorized();
-        if (newLiquidationModule == address(0)) revert InvalidAddress();
-
-        emit SetLiquidationModule(cometProxy, configuratorParams[cometProxy].liquidationModule, newLiquidationModule);
-        configuratorParams[cometProxy].liquidationModule = newLiquidationModule;
-    }
-
     function setSupplyKink(address cometProxy, uint64 newSupplyKink) external governorOrMarketAdmin {
         uint64 oldSupplyKink = configuratorParams[cometProxy].supplyKink;
         configuratorParams[cometProxy].supplyKink = newSupplyKink;
@@ -245,6 +237,12 @@ contract Configurator is ConfiguratorStorage {
         uint104 oldTargetReserves = configuratorParams[cometProxy].targetReserves;
         configuratorParams[cometProxy].targetReserves = newTargetReserves;
         emit SetTargetReserves(cometProxy, oldTargetReserves, newTargetReserves);
+    }
+
+    function setTargetHealthFactor(address cometProxy, uint64 newTargetHealthFactor) external governorOrMarketAdmin {
+        uint64 oldTargetHealthFactor = configuratorParams[cometProxy].targetHealthFactor;
+        configuratorParams[cometProxy].targetHealthFactor = newTargetHealthFactor;
+        emit SetTargetHealthFactor(cometProxy, oldTargetHealthFactor, newTargetHealthFactor);
     }
 
     function addAsset(address cometProxy, AssetConfig calldata assetConfig) external {

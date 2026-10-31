@@ -385,6 +385,17 @@ contract CometExt is CometExtInterface {
     /**
      * @inheritdoc CometExtInterface
      */
+    function pausePartialLiquidation(bool paused) override external onlyGovernorOrPauseGuardian {
+        if (currentPauseOffsetStatus(PAUSE_PARTIAL_LIQUIDATION_OFFSET) == paused) revert OffsetStatusAlreadySet(PAUSE_PARTIAL_LIQUIDATION_OFFSET, paused);
+
+        setPauseFlag(PAUSE_PARTIAL_LIQUIDATION_OFFSET, paused);
+
+        emit PartialLiquidationPauseAction(paused);
+    }
+
+    /**
+     * @inheritdoc CometExtInterface
+     */
     function deactivateCollateral(uint24 assetIndex) override external isValidAssetIndex(assetIndex) {
         if (msg.sender != CometMainInterface(address(this)).pauseGuardian()) revert OnlyPauseGuardian();
         if (isCollateralDeactivated(assetIndex)) revert CollateralIsDeactivated(assetIndex);
@@ -420,37 +431,5 @@ contract CometExt is CometExtInterface {
         // Unpause transfer of this collateral
         collateralsTransferPauseFlags &= ~(uint24(1) << assetIndex);
         emit CollateralAssetTransferPauseAction(assetIndex, false);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        COMET OPERATIONS LOCKER
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @notice Closes the market's guarded operations while the liquidation module finishes a liquidation
-     * @dev Only the liquidation module bound to this market may take the lock; see
-     *  `CometOperationsLocker.lockCometOperations` for what it protects. The slot must be clean, so the lock
-     *  cannot be taken twice, nor from inside a call that is already running under the reentrancy guard.
-     */
-    function lockOperations() external {
-        if (msg.sender != CometMainInterface(address(this)).liquidationModule()) revert NotAuthorizedModule();
-        if (_operationsLockHolder() != address(0)) revert OperationsLocked(); // slot must be clean (0) at lock time
-
-        _setOperationsLockHolder(msg.sender);
-        
-        emit OperationsLockAcquired(msg.sender);
-    }
-
-    /**
-     * @notice Reopens the market's guarded operations
-     * @dev Only the module that currently holds the lock can release it, so the market cannot be reopened
-     *  by anyone else while a liquidation is still in flight.
-     */
-    function unlockOperations() external {
-        if (_operationsLockHolder() != msg.sender) revert NotAuthorizedModule();
-
-        _setOperationsLockHolder(address(0));
-        
-        emit OperationsLockReleased(msg.sender);
     }
 }

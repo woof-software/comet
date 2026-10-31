@@ -2,14 +2,13 @@
 pragma solidity 0.8.15;
 
 import { CometCore } from "./CometCore.sol";
-import { ICometOperationsLock } from "./interfaces/comet-operations-locker/ICometOperationsLock.sol";
 
 /**
  * @title Compound's Comet Ext Interface
  * @notice An efficient monolithic money market protocol
  * @author Compound
  */
-abstract contract CometExtInterface is CometCore, ICometOperationsLock {
+abstract contract CometExtInterface is CometCore {
     error BadAmount();
     error BadNonce();
     error BadSignatory();
@@ -121,6 +120,11 @@ abstract contract CometExtInterface is CometCore, ICometOperationsLock {
      * @param paused Whether to pause (`true`) or unpause (`false`) transfer actions for the specified collateral asset.
      */
     function pauseCollateralAssetTransfer(uint24 assetIndex, bool paused) virtual external;
+    /**
+     * @notice Pauses or unpauses partial liquidation. While paused, absorb closes the account's debt in full.
+     * @param paused Whether to pause (`true`) or unpause (`false`) partial liquidation.
+     */
+    function pausePartialLiquidation(bool paused) virtual external;
     /**
      * @notice Deactivates a collateral asset.
      * @param assetIndex The index of the collateral asset to deactivate.
@@ -237,6 +241,11 @@ abstract contract CometExtInterface is CometCore, ICometOperationsLock {
      * @param collateralAssetTransferPaused Whether transfers for this collateral asset are now paused
      */
     event CollateralAssetTransferPauseAction(uint24 assetIndex, bool collateralAssetTransferPaused);
+    /**
+     * @notice Emitted when the pause status for partial liquidation is changed
+     * @param partialLiquidationPaused Whether partial liquidation is now paused
+     */
+    event PartialLiquidationPauseAction(bool partialLiquidationPaused);
     /**
      * @notice Emitted when a collateral asset is deactivated
      * @param assetIndex The index of the collateral asset that was deactivated

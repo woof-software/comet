@@ -44,6 +44,8 @@ abstract contract CometCore is CometConfiguration, CometStorage, CometMath {
     uint24 internal constant PAUSE_COLLATERALS_TRANSFER_OFFSET = 6;
     /// @dev Offset of pause collateral withdraw
     uint24 internal constant PAUSE_COLLATERALS_WITHDRAW_OFFSET = 7;
+    /// @dev Offset of pause partial liquidation
+    uint24 internal constant PAUSE_PARTIAL_LIQUIDATION_OFFSET = 8;
 
     /// @dev The decimals required for a price feed
     uint8 internal constant PRICE_FEED_DECIMALS = 8;
@@ -61,12 +63,9 @@ abstract contract CometCore is CometConfiguration, CometStorage, CometMath {
     uint64 internal constant PRICE_SCALE = uint64(10 ** PRICE_FEED_DECIMALS);
 
     /// @dev The storage slot for reentrancy guard flags
-    /// @dev The same slot carries the operations lock: it holds the address of the liquidation module that
-    ///  closed the market, so both mechanisms are decided by a single read on the way into an operation.
     bytes32 internal constant REENTRANCY_GUARD_FLAG_SLOT = bytes32(keccak256("comet.reentrancy.guard"));
 
     /// @dev The reentrancy guard statuses
-    /// @dev Any other value in the slot is a lock holder's address, see `_operationsLockHolder`
     uint256 internal constant REENTRANCY_GUARD_NOT_ENTERED = 0;
     uint256 internal constant REENTRANCY_GUARD_ENTERED = 1;
 
@@ -83,7 +82,7 @@ abstract contract CometCore is CometConfiguration, CometStorage, CometMath {
     /**
      * @dev The positive present supply balance if positive or the negative borrow balance if negative
      */
-    function presentValue(int104 principalValue_) public view returns (int256) {
+    function presentValue(int104 principalValue_) internal view returns (int256) {
         if (principalValue_ >= 0) {
             return signed256(presentValueSupply(baseSupplyIndex, uint104(principalValue_)));
         } else {
@@ -131,27 +130,4 @@ abstract contract CometCore is CometConfiguration, CometStorage, CometMath {
     function principalValueBorrow(uint64 baseBorrowIndex_, uint256 presentValue_) internal pure returns (uint104) {
         return safe104((presentValue_ * BASE_INDEX_SCALE + baseBorrowIndex_ - 1) / baseBorrowIndex_);
     }
-    
-    /*//////////////////////////////////////////////////////////////
-                      LIQUIDATION LOCK OPERATIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev Records the module that closed the market; the zero address reopens it.
-     *  Written to the reentrancy guard slot, which is free whenever a lock may be taken.
-     */
-    function _setOperationsLockHolder(address holder) internal {
-        bytes32 slot = REENTRANCY_GUARD_FLAG_SLOT;
-        assembly ("memory-safe") { sstore(slot, holder) }
-    }
-
-    /**
-     * @dev The module currently holding the operations lock, or the zero address when the market is open.
-     *  Reading it as an address is only meaningful once the guard statuses have been ruled out.
-     */
-    function _operationsLockHolder() internal view returns (address holder) {
-        bytes32 slot = REENTRANCY_GUARD_FLAG_SLOT;
-        assembly ("memory-safe") { holder := sload(slot) }
-    }
-
 }
