@@ -6,8 +6,7 @@ import {
   setBalance,
   SnapshotRestorer,
   takeSnapshot,
-  deployDefaultLiquidationModuleWithComet,
-  deployEmptyDexAdapter,
+  TARGET_HEALTH_FACTOR,
 } from '../helpers';
 import {
   CometExtAssetList__factory,
@@ -182,23 +181,11 @@ describe('extended pause upgrade test', function () {
       .connect(governor)
       .setFactory(COMET_ADDRESS, newFactory.address);
 
-    // Fresh LM bound to the existing Comet is required before deploy: the new
-    // implementation constructor calls setAssetList on the module.
-    // Use non-DAO role holders: DAO is already granted PAUSER_ROLE in the LM constructor.
-    const [executor, pauser, multisig] = await ethers.getSigners();
-    const configuration = await configurator.getConfiguration(COMET_ADDRESS);
-    const collateralAddresses = configuration.assetConfigs.map((assetConfig) => assetConfig.asset);
-    const dexAdapter = await deployEmptyDexAdapter(collateralAddresses);
-    const liquidationModule = await deployDefaultLiquidationModuleWithComet(
-      {
-        multisig: multisig.address,
-        executors: [executor.address],
-        pausers: [pauser.address],
-        dexAdapter: dexAdapter.address,
-      },
-      COMET_ADDRESS
-    );
-    await configurator.connect(governor).setLiquidationModule(COMET_ADDRESS, liquidationModule.address);
+    // Step 3: Set the target health factor in the configurator. The live configuration predates the
+    // field and reads 0 there, which the new implementation constructor rejects with BadHealthFactor.
+    await configurator
+      .connect(governor)
+      .setTargetHealthFactor(COMET_ADDRESS, TARGET_HEALTH_FACTOR);
 
     // Deploy new implementation using configurator
     const deployTx = await configurator.connect(governor).deploy(COMET_ADDRESS);

@@ -159,7 +159,7 @@ describe('partial liquidation: debt closing rounding', function() {
 
     it('calculates expected seized amount that fully covers the closed debt', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      // One ceiling over the whole product, as the module does it. Chaining two ceilings — first on
+      // One ceiling over the whole product, as absorb does it. Chaining two ceilings — first on
       // the value, then on the amount — asks for a hair more collateral than the debt needs.
       expectedSeizeAmount = ceilDiv(
         toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
@@ -350,7 +350,7 @@ describe('partial liquidation: debt closing rounding', function() {
 
     it('calculates expected seized amount that fully covers the closed debt', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      // One ceiling over the whole product, as the module does it. Chaining two ceilings — first on
+      // One ceiling over the whole product, as absorb does it. Chaining two ceilings — first on
       // the value, then on the amount — asks for a hair more collateral than the debt needs.
       expectedSeizeAmount = ceilDiv(
         toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),
@@ -541,7 +541,7 @@ describe('partial liquidation: debt closing rounding', function() {
 
     it('calculates expected seized amount that fully covers the closed debt', async () => {
       const assetInfo = await comet.getAssetInfoByAddress(tokens[SYMBOL].address);
-      // One ceiling over the whole product, as the module does it. Chaining two ceilings — first on
+      // One ceiling over the whole product, as absorb does it. Chaining two ceilings — first on
       // the value, then on the amount — asks for a hair more collateral than the debt needs.
       expectedSeizeAmount = ceilDiv(
         toBigInt(debtRemainingValue) * factorScale * toBigInt(assetInfo.scale),

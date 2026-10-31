@@ -37,8 +37,6 @@ import {
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
   MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
   CometHarnessInterfaceExtendedAssetList,
-  DexLiquidationModule,
-  DexLiquidationModule__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
@@ -46,7 +44,7 @@ import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/
 
 // Helpers
 import type { Numeric } from './helpers/index';
-import { exp, dfn, defaultAssets, deployDefaultLiquidationModule, deployDefaultLiquidationModuleWithComet, deployEmptyDexAdapter, mulPrice, toBigInt, convertToBigInt, setBalance } from './helpers/index';
+import { exp, dfn, defaultAssets, mulPrice, toBigInt, convertToBigInt, TARGET_HEALTH_FACTOR } from './helpers/index';
 
 export * from './helpers/index';
 export { ethers, expect, hre };
@@ -80,7 +78,6 @@ export type ProtocolOpts = {
   name?: string;
   symbol?: string;
   governor?: SignerWithAddress;
-  multisig?: SignerWithAddress;
   pauseGuardian?: SignerWithAddress;
   extensionDelegate?: CometExt;
   base?: string;
@@ -100,15 +97,9 @@ export type ProtocolOpts = {
   baseMinForRewards?: Numeric;
   baseBorrowMin?: Numeric;
   targetReserves?: Numeric;
+  targetHealthFactor?: Numeric;
   baseTokenBalance?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
-  liquidationModule?: DexLiquidationModule;
-  dexAdapter?: string;
-  liquidationModuleOpts?: {
-    executors?: string[];
-    pausers?: string[];
-    incentiveBps?: bigint;
-  };
   skipInitStorage?: boolean;
 };
 
@@ -116,9 +107,6 @@ export type Protocol = {
   opts: ProtocolOpts;
   governor: SignerWithAddress;
   pauseGuardian: SignerWithAddress;
-  multisig: SignerWithAddress;
-  executors: SignerWithAddress[];
-  pausers: SignerWithAddress[];
   extensionDelegate: CometExtAssetList;
   users: SignerWithAddress[];
   base: string;
@@ -132,7 +120,6 @@ export type Protocol = {
   priceFeeds: {
     [symbol: string]: SimplePriceFeed;
   };
-  defaultLiquidationModule: DexLiquidationModule;
 };
 
 export type ConfiguratorAndProtocol = {
@@ -243,12 +230,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const symbol32 = ethers.utils.formatBytes32String(opts.symbol || '📈BASE');
   const governor = opts.governor || signers[0];
   const pauseGuardian = opts.pauseGuardian || signers[1];
-  // Reserve dedicated signers for the liquidation module roles from the tail of the signer list so
-  // low-index `users` stay stable across the suite. These are returned so tests can drive the roles.
-  const multisig = opts.multisig ?? signers[2];
-  const executors = opts.liquidationModuleOpts?.executors ? await Promise.all(opts.liquidationModuleOpts?.executors.map(toSigner)) : signers.slice(-2);
-  const pausers = opts.liquidationModuleOpts?.pausers ? await Promise.all(opts.liquidationModuleOpts?.pausers.map(toSigner)) : signers.slice(-4, -2);
-  const users = signers.slice(3); // not governor, multisig, pause guardian - though some users may be pausers or executors
+  const users = signers.slice(3); // not governor or pause guardian; signers[2] is skipped so user addresses stay as the suite expects
   const base = opts.base || 'USDC';
   const reward = opts.reward || 'COMP';
   const supplyKink = dfn(opts.supplyKink, exp(0.8, 18));
@@ -266,6 +248,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const baseMinForRewards = dfn(opts.baseMinForRewards, exp(1, assets[base].decimals));
   const baseBorrowMin = dfn(opts.baseBorrowMin, exp(1, assets[base].decimals));
   const targetReserves = dfn(opts.targetReserves, 0);
+  const targetHealthFactor = dfn(opts.targetHealthFactor, TARGET_HEALTH_FACTOR);
 
   const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
   const tokens: Record<string, FaucetToken> = {};
@@ -298,19 +281,10 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     await extensionDelegate.deployed();
   }
 
-  const defaultLiquidationModule = opts.liquidationModule ?? await deployDefaultLiquidationModule({
-    dexAdapter: opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address;}))).address,
-    multisig: multisig.address,
-    executors: opts.liquidationModuleOpts?.executors ?? executors.map((x) => x.address),
-    pausers: opts.liquidationModuleOpts?.pausers ?? pausers.map((x) => x.address),
-    incentiveBps: opts.liquidationModuleOpts?.incentiveBps
-  });
-
   const config = {
     governor: governor.address,
     pauseGuardian: pauseGuardian.address,
     extensionDelegate: extensionDelegate.address,
-    liquidationModule: defaultLiquidationModule.address,
     baseToken: tokens[base].address,
     baseTokenPriceFeed: priceFeeds[base].address,
     supplyKink,
@@ -328,6 +302,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    targetHealthFactor,
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
       if (symbol != base) {
         acc.push({
@@ -375,9 +350,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     opts,
     governor,
     pauseGuardian,
-    multisig,
-    executors,
-    pausers,
     extensionDelegate: extensionDelegate as CometExtAssetList,
     users,
     base,
@@ -387,7 +359,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     tokens,
     unsupportedToken,
     priceFeeds,
-    defaultLiquidationModule,
   };
 }
 
@@ -402,7 +373,6 @@ export async function getConfigurationForConfigurator(
   },
   base: string,
   priceFeeds: { [p: string]: SimplePriceFeed },
-  liquidationModule: string
 ) {
 
   const assets = opts.assets || defaultAssets();
@@ -423,6 +393,7 @@ export async function getConfigurationForConfigurator(
   const baseMinForRewards = await comet.baseMinForRewards();
   const baseBorrowMin = await comet.baseBorrowMin();
   const targetReserves = await comet.targetReserves();
+  const targetHealthFactor = await comet.targetHealthFactor();
 
   // Deploy Configurator
   const ConfiguratorFactory = (await ethers.getContractFactory('Configurator')) as Configurator__factory;
@@ -449,7 +420,7 @@ export async function getConfigurationForConfigurator(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
-    liquidationModule,
+    targetHealthFactor,
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
       if (symbol != base) {
         acc.push({
@@ -473,9 +444,6 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
   const {
     governor,
     pauseGuardian,
-    multisig,
-    executors,
-    pausers,
     extensionDelegate,
     users,
     base,
@@ -499,16 +467,6 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     '0x',
   );
 
-  // Deploy LiquidationModule
-  const LiquidationModule = (await ethers.getContractFactory('DexLiquidationModule')) as DexLiquidationModule__factory;
-  const liquidationModule = await LiquidationModule.deploy(
-    opts.dexAdapter ?? (await deployEmptyDexAdapter(Object.entries(tokens).filter(([symbol]) => symbol !== base).map(([, token]) => {return token.address;}))).address,
-    multisig.address,
-    executors.map((x) => x.address),
-    pausers.map((x) => x.address),
-    opts.liquidationModuleOpts?.incentiveBps ?? 0n
-  );
-
   const configuration = await getConfigurationForConfigurator(
     opts,
     comet,
@@ -518,7 +476,6 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     base,
     priceFeeds,
-    liquidationModule.address
   );
 
   // Deploy CometFactory
@@ -571,9 +528,6 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     opts,
     governor,
     pauseGuardian,
-    multisig,
-    executors,
-    pausers,
     extensionDelegate,
     users,
     base,
@@ -588,7 +542,6 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
-    defaultLiquidationModule: liquidationModule
   };
 }
 
@@ -692,49 +645,14 @@ export async function setTotalsBasic(comet: CometHarnessInterfaceExtendedAssetLi
   return t1;
 }
 
-/**
- * Redeploy Comet via Configurator with a fresh LiquidationModule.
- * Required because Comet construction calls setAssetList on the module, which reverts
- * with AlreadySet() if the previous module was already initialized.
- */
-export async function prepareFreshLiquidationModule(
-  configurator: Configurator,
-  cometProxyAddress: string,
-) {
-  const configuration = await configurator.getConfiguration(cometProxyAddress);
-  const collateralAddresses = configuration.assetConfigs.map((assetConfig) => assetConfig.asset);
-  const newDexAdapter = await deployEmptyDexAdapter(collateralAddresses);
-  // Governor is sufficient for role wiring in unit tests that only need a valid LM.
-  const governor = configuration.governor;
-  return deployDefaultLiquidationModuleWithComet(
-    {
-      multisig: governor,
-      executors: [governor],
-      pausers: [governor],
-      dexAdapter: newDexAdapter.address,
-    },
-    cometProxyAddress
-  );
-}
-
-export async function deployAndUpgradeToWithFreshModule(
-  proxyAdmin: CometProxyAdmin,
-  configurator: Configurator,
-  cometProxyAddress: string,
-) {
-  const newLiquidationModule = await prepareFreshLiquidationModule(configurator, cometProxyAddress);
-  await configurator.setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
-  await proxyAdmin.deployAndUpgradeTo(configurator.address, cometProxyAddress);
-}
-
 export async function updateAssetBorrowCollateralFactor(configurator: Configurator, cometProxyAdmin: CometProxyAdmin, cometAddress: string, assetAddress: string, borrowCF: bigint) {
   await configurator.updateAssetBorrowCollateralFactor(cometAddress, assetAddress, borrowCF);
-  await deployAndUpgradeToWithFreshModule(cometProxyAdmin, configurator, cometAddress);
+  await cometProxyAdmin.deployAndUpgradeTo(configurator.address, cometAddress);
 }
 
 export async function updateAssetLiquidateCollateralFactor(configurator: Configurator, cometProxyAdmin: CometProxyAdmin, cometAddress: string, assetAddress: string, liquidateCF: bigint, governor: SignerWithAddress) {
   await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometAddress, assetAddress, liquidateCF);
-  await deployAndUpgradeToWithFreshModule(cometProxyAdmin.connect(governor) as CometProxyAdmin, configurator.connect(governor) as Configurator, cometAddress);
+  await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configurator.address, cometAddress);
 }
 
 export async function getLiquidity(comet: CometWithExtendedAssetList, token: FaucetToken | NonStandardFaucetFeeToken, amount: bigint): Promise<BigNumber> {
@@ -942,10 +860,3 @@ export async function setupFork(blockNumber?: number, jsonRpcUrl?: string) {
   // climb again, since each block derives its base fee from the previous one.
   await hre.network.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x0']);
 }
-
-const toSigner = async (x: string | SignerWithAddress): Promise<SignerWithAddress> => {
-  if (typeof x !== 'string') return x;                 // already a signer (default slice)
-  const signer = await ethers.getImpersonatedSigner(x);
-  await setBalance(signer.address, ethers.utils.parseEther('10')); // gas to call the module
-  return signer;
-};

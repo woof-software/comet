@@ -2,8 +2,8 @@
 pragma solidity ^0.8.15;
 
 import { CometInterface } from "@comet-contracts/CometInterface.sol";
+import { CometWithExtendedAssetList } from "@comet-contracts/CometWithExtendedAssetList.sol";
 import { ICometData } from "@comet-contracts/interfaces/ICometData.sol";
-import { ICoreLiquidationModule } from "@comet-contracts/interfaces/liquidation-module/ICoreLiquidationModule.sol";
 
 import { ProtocolFixture, FaucetToken } from "../../helpers/ProtocolFixture.sol";
 import { LiquidationMath } from "../../helpers/LiquidationMath.sol";
@@ -13,9 +13,9 @@ import { stdError } from "forge-std/StdError.sol";
 
 /**
  * @title Seizure precision
- * @notice Properties of the liquidation module. Value and health are read from balances and price
- *         feeds, never from the module, so the code is not compared against itself. The one place the
- *         module is consulted is `isLiquidatable`, and only for a yes or no.
+ * @notice Properties of the liquidation in absorb. Value and health are read from balances and
+ *         price feeds, never from the liquidation code, so the code is not compared against itself.
+ *         The one place it is consulted is `isLiquidatable`, and only for a yes or no.
  *
  *         Each test builds its own position end to end. The repetition is deliberate: a position is
  *         the thing under test, and a shared builder hides the very bounds a reader has to check.
@@ -90,7 +90,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
      *         the account must be safe, and one tick below it must not be.
      *
      * @dev Both sides are asserted, so the threshold is fixed exactly rather than bounded. Valuing a
-     *      balance in two truncated steps loses a second unit per asset, which drags the module's
+     *      balance in two truncated steps loses a second unit per asset, which drags Comet's
      *      threshold above the reference and breaks the first assertion.
      *
      *      Asset 0 is the probe and holds exactly one unit of itself. With the balance equal to the
@@ -143,10 +143,10 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
         if (threshold < 2 || threshold > uint256(type(uint128).max)) return; // outside the feed's usable range
 
         collateralPriceFeeds[0].setRoundData(0, int256(threshold), 0, 0, 0);
-        bool safeAtThreshold = !liquidationModule.isLiquidatable(borrower);
+        bool safeAtThreshold = !comet.isLiquidatable(borrower);
 
         collateralPriceFeeds[0].setRoundData(0, int256(threshold - 1), 0, 0, 0);
-        bool unsafeBelow = liquidationModule.isLiquidatable(borrower);
+        bool unsafeBelow = comet.isLiquidatable(borrower);
 
         assertTrue(safeAtThreshold, "liquidatable at the price the reference calls sufficient");
         assertTrue(unsafeBelow, "not liquidatable one value unit below the reference threshold");
@@ -223,7 +223,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
         }
 
         // Without this the position proves nothing: the two valuations would agree and any answer from
-        // the module would be the right one.
+        // Comet would be the right one.
         assertGt(othersOneDivision, othersTwoStep, "the two valuations agree on this portfolio");
         assertGt(debtValue, othersOneDivision, "the debt is already covered without the probe");
 
@@ -231,7 +231,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
 
         // The probe price that brings the one-division total exactly up to the debt. The two-step total
         // then lands below it by however much the other assets lose, and an account whose collateral
-        // covers its debt is one the module must not touch.
+        // covers its debt is one absorb must not touch.
         uint256 price = Math.ceilDiv((debtValue - othersOneDivision) * FACTOR_SCALE, probe.liquidateCollateralFactor);
         collateralPriceFeeds[0].setRoundData(0, int256(price), 0, 0, 0);
 
@@ -242,7 +242,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
         assertGe(oneDivision, debtValue, "the probe price did not reach the debt");
         assertLt(twoStep, debtValue, "the two-step valuation does not fall short here");
 
-        bool liquidatable = liquidationModule.isLiquidatable(borrower);
+        bool liquidatable = comet.isLiquidatable(borrower);
 
         assertFalse(liquidatable, "an account whose collateral covers the debt was called liquidatable");
     }
@@ -280,11 +280,12 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
      *         Sizing that seizure with two truncated divisions forgave debt on every collateral in
      *         this market. Doing it in one, rounded up, forgives none.
      *
-     * @dev The credit is read from the module's own plan rather than from the borrow balance: the
-     *      balance is kept in base units and the residual is floored on its way back into them, which
-     *      folds in a quantisation of a hundred value units and drowns the property.
+     * @dev The credit is the debt's value as absorb prices it before the seizure, since this branch
+     *      credits all of it, rather than what the borrow balance loses: the balance is kept in base
+     *      units and the residual is floored on its way back into them, which folds in a quantisation
+     *      of a hundred value units and drowns the property.
      *
-     *      One value unit of slack, and no more: the module rounds the credit up from the same product
+     *      One value unit of slack, and no more: absorb rounds the credit up from the same product
      *      this reads down — it must, or the debt would land short — so ceiling and floor of one
      *      rational number part by less than one.
      */
@@ -332,14 +333,13 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
             }
 
             collateralPriceFeeds[i].setRoundData(0, int256(collateralPrice), 0, 0, 0);
-            if (!liquidationModule.isLiquidatable(borrower)) {
+            if (!comet.isLiquidatable(borrower)) {
                 vm.revertToState(snapshot);
                 continue;
             }
 
-            uint256 credited;
-            ICoreLiquidationModule.Seizure[] memory plan = liquidationModule.seizurePlan(borrower);
-            for (uint256 p; p < plan.length; ++p) credited += plan[p].seizedValue;
+            // The closing branch credits the whole debt at once, valued as absorb values it.
+            uint256 credited = comet.borrowBalanceOf(borrower) * comet.getPrice(comet.baseTokenPriceFeed()) / comet.baseScale();
 
             address[] memory accounts = new address[](1);
             accounts[0] = borrower;
@@ -403,7 +403,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
             _supplyAndBorrow(i, supply, borrow);
 
             collateralPriceFeeds[i].setRoundData(0, int256(collateralPrice), 0, 0, 0);
-            if (!liquidationModule.isLiquidatable(borrower)) {
+            if (!comet.isLiquidatable(borrower)) {
                 vm.revertToState(snapshot);
                 continue;
             }
@@ -544,7 +544,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
      *      worth 65 000 value units - so when the debt sits within a unit of what the collateral
      *      repays at its discount, the rounded-up seizure covers more than is owed.
      *
-     *      The position below lands in exactly that window. The test recomputes the module's own
+     *      The position below lands in exactly that window. The test recomputes absorb's own
      *      arithmetic, shows the unclamped value overshooting the debt, then absorbs: without
      *      `if (seizedValue > debtRemainingValue) seizedValue = debtRemainingValue;` the very next
      *      line subtracts one from the other and the whole call reverts on an underflow.
@@ -570,15 +570,15 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
         comet.withdraw(address(baseToken), borrow);
         vm.stopPrank();
 
-        if (!liquidationModule.partialLiquidationEnabled()) {
-            vm.prank(pauser);
-            liquidationModule.liquidationModeToggle(true);
+        if (CometWithExtendedAssetList(payable(address(comet))).isPartialLiquidationPaused()) {
+            vm.prank(pauseGuardian);
+            comet.pausePartialLiquidation(false);
         }
 
         collateralPriceFeeds[i].setRoundData(0, int256(priceAfter), 0, 0, 0);
-        assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
+        assertTrue(comet.isLiquidatable(borrower), "the position built is not liquidatable");
 
-        // Everything the module works from, read back off the market rather than assumed.
+        // Everything absorb works from, read back off the market rather than assumed.
         uint256 debtValue = comet.borrowBalanceOf(borrower) * comet.getPrice(address(basePriceFeed)) / comet.baseScale();
         uint256 collateralValue = supply * priceAfter / uint256(assetInfo.scale);
         uint256 collateralized = supply * priceAfter * assetInfo.liquidateCollateralFactor
@@ -589,7 +589,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
         console.log("totalCollateralizedValue", collateralized);
         console.log("value of one satoshi    ", priceAfter / uint256(assetInfo.scale));
 
-        // The seizure the module wants: the value that would restore the account to target health.
+        // The seizure absorb wants: the value that would restore the account to target health.
         uint256 wanted;
         uint256 seizedAmount;
         uint256 seizedValue;
@@ -599,7 +599,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
                 - uint256(assetInfo.liquidateCollateralFactor) * FACTOR_SCALE;
             wanted = Math.ceilDiv(gap * FACTOR_SCALE, perSeized);
 
-            // The value that exactly repays the debt at the discount. The module caps `wanted` here,
+            // The value that exactly repays the debt at the discount. Absorb caps `wanted` here,
             // and the cap is what makes the overshoot below pure rounding rather than overreach.
             uint256 maxWanted = debtValue * FACTOR_SCALE / assetInfo.liquidationFactor;
             console.log("wanted (target health)  ", wanted);
@@ -624,7 +624,7 @@ contract SeizurePrecisionFuzzTest is ProtocolFixture {
         // rest of the test proves nothing.
         assertGt(seizedValue, debtValue, "the unclamped seizure did not exceed the debt");
 
-        // And this is what the guard prevents. The module subtracts the two on the very next line,
+        // And this is what the guard prevents. Absorb subtracts the two on the very next line,
         // to see whether the step drops the account under the minimum debt. Run unclamped, that
         // subtraction panics - shown here rather than asserted in prose.
         vm.expectRevert(stdError.arithmeticError);

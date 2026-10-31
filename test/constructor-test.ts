@@ -1,14 +1,11 @@
-import { deployDefaultLiquidationModule, deployEmptyDexAdapter, ethers, exp, expect, makeProtocol, ONE, ZERO_ADDRESS } from './helpers';
+import { ethers, exp, expect, makeProtocol, ONE, TARGET_HEALTH_FACTOR } from './helpers';
 import {
   AssetListFactory__factory,
   CometExtAssetList__factory,
   CometHarnessExtendedAssetList__factory,
   FaucetToken__factory,
-  LiquidationModule,
   SimplePriceFeed__factory,
 } from '../build/types';
-import type { CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList } from '../build/types';
-import { ConfigurationStruct } from 'build/types/CometWithExtendedAssetList';
 
 describe('constructor', function () {
   it('sets the baseBorrowMin', async function () {
@@ -68,7 +65,6 @@ describe('constructor', function () {
       governor: governor.address,
       pauseGuardian: pauseGuardian.address,
       extensionDelegate: extensionDelegate.address,
-      liquidationModule: '0x0000000000000000000000000000000000000001',
       baseToken: tokens['USDC'].address,
       baseTokenPriceFeed: priceFeeds['USDC'].address,
       supplyKink: exp(8, 17),
@@ -86,6 +82,7 @@ describe('constructor', function () {
       baseMinForRewards: exp(1, 6),
       baseBorrowMin: exp(1, 6),
       targetReserves: 0,
+      targetHealthFactor: TARGET_HEALTH_FACTOR,
       assetConfigs: [{
         asset: tokens['EVIL'].address,
         priceFeed: priceFeeds['EVIL'].address,
@@ -180,101 +177,5 @@ describe('constructor', function () {
         borrowInterestRateSlopeLow: uint64Max + 1n
       })
     ).to.be.rejectedWith('value out-of-bounds'); // ethers.js error
-  });
-
-  context('liquidation module', function () {
-    let CometFactory: CometHarnessExtendedAssetList__factory;
-    let baseConfig: ConfigurationStruct;
-    let liquidationModule: LiquidationModule;
-
-    before(async function () {
-      const [governor, pauseGuardian, multisig, executor, pauser] = await ethers.getSigners();
-
-      const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
-      const baseToken = await FaucetFactory.deploy(exp(1, 6), 'USDC', 6, 'USDC');
-      await baseToken.deployed();
-      const collateralToken = await FaucetFactory.deploy(exp(1, 18), 'COMP', 18, 'COMP');
-      await collateralToken.deployed();
-
-      const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
-      const basePriceFeed = await PriceFeedFactory.deploy(exp(1, 8), 8);
-      await basePriceFeed.deployed();
-      const collateralPriceFeed = await PriceFeedFactory.deploy(exp(100, 8), 8);
-      await collateralPriceFeed.deployed();
-
-      const AssetListFactoryFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
-      const assetListFactory = await AssetListFactoryFactory.deploy();
-      await assetListFactory.deployed();
-
-      const CometExtFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
-      const extensionDelegate = await CometExtFactory.deploy(
-        {
-          name32: ethers.utils.formatBytes32String('Compound Comet'),
-          symbol32: ethers.utils.formatBytes32String('📈BASE'),
-        },
-        assetListFactory.address
-      );
-      await extensionDelegate.deployed();
-
-      // Constructor calls setAssetList on the module, so it must be a real LM (not an EOA)
-      // and assetConfigs must be non-empty (InvalidNumAssets when numAssets == 0).
-      const dexAdapter = await deployEmptyDexAdapter([collateralToken.address]);
-      liquidationModule = await deployDefaultLiquidationModule({
-        dexAdapter: dexAdapter.address,
-        multisig: multisig.address,
-        executors: [executor.address],
-        pausers: [pauser.address],
-      });
-
-      CometFactory = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
-
-      baseConfig = {
-        governor: governor.address,
-        pauseGuardian: pauseGuardian.address,
-        extensionDelegate: extensionDelegate.address,
-        liquidationModule: liquidationModule.address,
-        baseToken: baseToken.address,
-        baseTokenPriceFeed: basePriceFeed.address,
-        supplyKink: exp(0.8, 18),
-        supplyPerYearInterestRateBase: exp(0, 18),
-        supplyPerYearInterestRateSlopeLow: exp(0.05, 18),
-        supplyPerYearInterestRateSlopeHigh: exp(2, 18),
-        borrowKink: exp(0.8, 18),
-        borrowPerYearInterestRateBase: exp(0.005, 18),
-        borrowPerYearInterestRateSlopeLow: exp(0.1, 18),
-        borrowPerYearInterestRateSlopeHigh: exp(3, 18),
-        storeFrontPriceFactor: exp(1, 18),
-        trackingIndexScale: exp(1, 15),
-        baseTrackingSupplySpeed: exp(1, 15),
-        baseTrackingBorrowSpeed: exp(1, 15),
-        baseMinForRewards: exp(1, 6),
-        baseBorrowMin: exp(1, 6),
-        targetReserves: 0,
-        assetConfigs: [{
-          asset: collateralToken.address,
-          priceFeed: collateralPriceFeed.address,
-          decimals: 18,
-          borrowCollateralFactor: exp(0.8, 18),
-          liquidateCollateralFactor: exp(0.85, 18),
-          liquidationFactor: exp(0.9, 18),
-          supplyCap: exp(100000, 18),
-        }],
-      };
-    });
-
-    describe('liquidation module correctly set on construction', function () {
-      it('stores the configured liquidation module address', async function () {
-        const comet = (await CometFactory.deploy(baseConfig)) as unknown as CometWithExtendedAssetList;
-        expect(await comet.liquidationModule()).to.be.equal(liquidationModule.address);
-      });
-    });
-
-    describe('revert when', function () {
-      it('liquidation module is zero address', async function () {
-        await expect(
-          CometFactory.deploy({ ...baseConfig, liquidationModule: ZERO_ADDRESS })
-        ).to.be.revertedWithCustomError(CometFactory, 'ZeroAddress');
-      });
-    });
   });
 });

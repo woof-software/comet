@@ -8,7 +8,7 @@ import { useBlockDelta } from '../helpers/block-clock';
 
 // Covers the full-seizure path on positions whose penalized collateral coverage sits exactly on the
 // debt. Valuing the balance in two truncated steps used to put that coverage below the debt, so the
-// module seized everything and wrote off the shortfall. Valued in one division the balance is still
+// absorb seized everything and wrote off the shortfall. Valued in one division the balance is still
 // taken in full — the coverage equals the debt rather than exceeding it — but nothing is written off,
 // which is what these setups exist to pin down.
 describe('partial liquidation: full seizure from debt closing rounding', function() {

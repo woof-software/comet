@@ -1,5 +1,5 @@
 import {ethers} from 'hardhat';
-import {event, expect, makeConfigurator, prepareFreshLiquidationModule, wait} from './../helpers';
+import {event, expect, makeConfigurator, wait} from './../helpers';
 import {makeMarketAdmin} from './market-updates-helper';
 
 describe('CometProxyAdmin', function() {
@@ -69,7 +69,6 @@ describe('CometProxyAdmin', function() {
     } = await makeMarketAdmin();
 
     const {
-      configurator,
       configuratorProxy,
       cometProxy,
       proxyAdmin,
@@ -77,8 +76,6 @@ describe('CometProxyAdmin', function() {
       governor: governorTimelockSigner,
       marketAdminPermissionCheckerContract
     });
-
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
 
     const abi = [
       'event AssetListCreated(address indexed assetList, tuple(address asset, address priceFeed, uint8 decimals, uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint128 supplyCap)[] assetConfigs)',
@@ -88,9 +85,6 @@ describe('CometProxyAdmin', function() {
 
     // Initialize the contract interface
     const iface = new ethers.utils.Interface(abi);
-
-    const newLiquidationModuleForGovernor = await prepareFreshLiquidationModule(configuratorAsProxy, cometProxy.address);
-    await configuratorAsProxy.connect(governorTimelockSigner).setLiquidationModule(cometProxy.address, newLiquidationModuleForGovernor.address);
 
     const txnForGovernorTimelock = (await wait(
       proxyAdmin
@@ -119,8 +113,6 @@ describe('CometProxyAdmin', function() {
     expect(await proxyAdmin.marketAdminPermissionChecker()).to.be.equal(marketAdminPermissionCheckerContract.address);
     expect(await marketAdminPermissionCheckerContract.marketAdmin()).to.be.equal(marketUpdateTimelockSigner.address);
 
-    const newLiquidationModuleForMarketAdmin = await prepareFreshLiquidationModule(configuratorAsProxy, cometProxy.address);
-    await configuratorAsProxy.connect(governorTimelockSigner).setLiquidationModule(cometProxy.address, newLiquidationModuleForMarketAdmin.address);
 
     const txnForMarketAdmin = (await wait(
       proxyAdmin
@@ -155,7 +147,6 @@ describe('CometProxyAdmin', function() {
     } = await makeMarketAdmin();
 
     const {
-      configurator,
       configuratorProxy,
       cometProxy,
       proxyAdmin,
@@ -163,8 +154,6 @@ describe('CometProxyAdmin', function() {
       governor: governorTimelockSigner,
       marketAdminPermissionCheckerContract,
     });
-
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
 
     const functionAbi = new ethers.utils.Interface(['function getReserves()']);
     const calldata = functionAbi.encodeFunctionData('getReserves', []);
@@ -177,9 +166,6 @@ describe('CometProxyAdmin', function() {
 
     // Initialize the contract interface
     const iface = new ethers.utils.Interface(abiToCheck);
-
-    const newLiquidationModuleForGovernor = await prepareFreshLiquidationModule(configuratorAsProxy, cometProxy.address);
-    await configuratorAsProxy.connect(governorTimelockSigner).setLiquidationModule(cometProxy.address, newLiquidationModuleForGovernor.address);
 
     const txnForGovernorTimelock = (await wait(
       proxyAdmin
@@ -212,8 +198,6 @@ describe('CometProxyAdmin', function() {
     expect(await proxyAdmin.marketAdminPermissionChecker()).to.be.equal(marketAdminPermissionCheckerContract.address);
     expect(await marketAdminPermissionCheckerContract.marketAdmin()).to.be.equal(marketUpdateTimelockSigner.address);
 
-    const newLiquidationModuleForMarketAdmin = await prepareFreshLiquidationModule(configuratorAsProxy, cometProxy.address);
-    await configuratorAsProxy.connect(governorTimelockSigner).setLiquidationModule(cometProxy.address, newLiquidationModuleForMarketAdmin.address);
 
     const txnForMarketAdmin = (await wait(
       proxyAdmin
@@ -299,17 +283,12 @@ describe('CometProxyAdmin', function() {
     const { governorTimelockSigner } = await makeMarketAdmin();
 
     const {
-      configurator,
       configuratorProxy,
       cometProxy,
       proxyAdmin,
     } = await makeConfigurator({
       governor: governorTimelockSigner,
     });
-
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-    const newLiquidationModule = await prepareFreshLiquidationModule(configuratorAsProxy, cometProxy.address);
-    await configuratorAsProxy.connect(governorTimelockSigner).setLiquidationModule(cometProxy.address, newLiquidationModule.address);
 
     const oldCometImplementation = await proxyAdmin.getProxyImplementation(
       cometProxy.address
@@ -333,7 +312,6 @@ describe('CometProxyAdmin', function() {
     } = await makeMarketAdmin();
 
     const {
-      configurator,
       configuratorProxy,
       cometProxy,
       proxyAdmin,
@@ -341,10 +319,6 @@ describe('CometProxyAdmin', function() {
       governor: governorTimelockSigner,
       marketAdminPermissionCheckerContract
     });
-
-    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-    const newLiquidationModule = await prepareFreshLiquidationModule(configuratorAsProxy, cometProxy.address);
-    await configuratorAsProxy.connect(governorTimelockSigner).setLiquidationModule(cometProxy.address, newLiquidationModule.address);
 
     expect(await proxyAdmin.marketAdminPermissionChecker()).to.be.equal(marketAdminPermissionCheckerContract.address);
     expect(await marketAdminPermissionCheckerContract.marketAdmin()).to.be.equal(marketUpdateTimelockSigner.address);

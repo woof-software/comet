@@ -12,7 +12,7 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
  * @title Account state after liquidation
  * @notice What the absorb leaves behind: whether the debt is healthy again, and whether a shortfall
  *         reached reserves only when it had to. Health and value are read from balances and price
- *         feeds, never from the module, so the code is not compared against itself.
+ *         feeds, never from the liquidation code, so the code is not compared against itself.
  *
  *         Each test builds its own position end to end. The repetition is deliberate: a position is
  *         the thing under test, and a shared builder hides the very bounds a reader has to check.
@@ -92,7 +92,7 @@ contract AccountStateFuzzTest is ProtocolFixture {
             _supplyAndBorrow(i, supply, borrow);
 
             collateralPriceFeeds[i].setRoundData(0, int256(collateralPrice), 0, 0, 0);
-            assertTrue(liquidationModule.isLiquidatable(borrower), "the position built is not liquidatable");
+            assertTrue(comet.isLiquidatable(borrower), "the position built is not liquidatable");
 
             address[] memory accounts = new address[](1);
             accounts[0] = borrower;
@@ -141,7 +141,7 @@ contract AccountStateFuzzTest is ProtocolFixture {
             _supplyAndBorrow(i, supply, borrow);
 
             collateralPriceFeeds[i].setRoundData(0, int256(collateralPrice), 0, 0, 0);
-            if (!liquidationModule.isLiquidatable(borrower)) {
+            if (!comet.isLiquidatable(borrower)) {
                 vm.revertToState(snapshot);
                 continue;
             }
@@ -203,7 +203,7 @@ contract AccountStateFuzzTest is ProtocolFixture {
             _supplyAndBorrow(i, supply, minDebt);
 
             collateralPriceFeeds[i].setRoundData(0, int256(collateralPrice), 0, 0, 0);
-            if (!liquidationModule.isLiquidatable(borrower)) {
+            if (!comet.isLiquidatable(borrower)) {
                 vm.revertToState(snapshot);
                 continue;
             }

@@ -1,5 +1,5 @@
-import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, ceilDiv, toBigInt, presentValue, CollateralState, makeCollateralStates, seedMarketActivity, deployEmptyDexAdapter, deployDefaultLiquidationModuleWithComet, DeployLiquidationModuleOpts } from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, DexLiquidationModule, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
+import { ethers, expect, exp, default24Assets, makeConfigurator, mulPrice, mulFactor, factorScale, ceilDiv, toBigInt, presentValue, CollateralState, makeCollateralStates, seedMarketActivity } from '../helpers';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -15,7 +15,6 @@ describe('absorb: general logic', function () {
   let cometProxyAdmin: CometProxyAdmin;
   let configuratorProxyAddress: string;
   let cometProxyAddress: string;
-  let liquidationModule: DexLiquidationModule;
 
   const initialBaseFunding = exp(1, 8) * 10_000n;
   const baseBorrowMin = exp(10, 6);
@@ -32,10 +31,7 @@ describe('absorb: general logic', function () {
   let alice: SignerWithAddress;
   let absorber: SignerWithAddress;
   let governor: SignerWithAddress;
-  let pauser: SignerWithAddress;
-  let executor: SignerWithAddress;
-
-  let updateOpts: DeployLiquidationModuleOpts;
+  let pauseGuardian: SignerWithAddress;
 
   let snapshot: SnapshotRestorer;
   let baseSnapshot: SnapshotRestorer;
@@ -56,7 +52,6 @@ describe('absorb: general logic', function () {
     configurator = protocol.configurator.attach(configuratorProxyAddress);
     comet = protocol.comet.attach(cometProxyAddress);
     cometProxyAdmin = protocol.proxyAdmin;
-    liquidationModule = protocol.defaultLiquidationModule;
 
     for (let asset in protocol.tokens) {
       if (asset === 'USDC') continue;
@@ -69,18 +64,7 @@ describe('absorb: general logic', function () {
     [alice, absorber] = protocol.users;
     const [bob, dave] = protocol.users.slice(2);
     governor = protocol.governor;
-    pauser = protocol.pausers[0];
-    executor = protocol.executors[0];
-
-    // The module's initiateModule calls dexAdapter.initiateAdapter, so a real (fresh) adapter is
-    // required even though the DEX route itself is not exercised on this path.
-    const updateDexAdapter = await deployEmptyDexAdapter(Object.values(tokens).map(t => t.address));
-    updateOpts = {
-      multisig: protocol.multisig.address,
-      executors: protocol.executors.map(e => e.address),
-      pausers: protocol.pausers.map(p => p.address),
-      dexAdapter: updateDexAdapter.address
-    };
+    pauseGuardian = protocol.pauseGuardian;
 
     const allocateAmount = exp(1_000_000, 18);
     for (const token of Object.values(protocol.tokens)) {
@@ -96,28 +80,20 @@ describe('absorb: general logic', function () {
     baseSnapshot = await takeSnapshot();
   });
 
-  function runAbsorbTests({ partialLiquidationEnabled, viaLiquidationModule }: { 
-    partialLiquidationEnabled: boolean;
-    viaLiquidationModule: boolean; 
-  }) {
-    describe(`partialLiquidationEnabled = ${partialLiquidationEnabled} && viaLiquidationModule = ${viaLiquidationModule}`, function() {
+  function runAbsorbTests({ partialLiquidationEnabled }: { partialLiquidationEnabled: boolean }) {
+    describe(`partialLiquidationEnabled = ${partialLiquidationEnabled}`, function() {
       before(async function() {
-        // Reset to the clean protocol baseline so state (and the canonical
-        // liquidationModule reference) from the previous run does not leak in.
+        // Reset to the clean protocol baseline so state from the previous run does not leak in.
         await baseSnapshot.restore();
 
-        // The module defaults to partialLiquidationEnabled = true; toggling to the
-        // value it already holds reverts with LiquidationModeAlreadySet.
-        if ((await liquidationModule.partialLiquidationEnabled()) !== partialLiquidationEnabled) {
-          await liquidationModule.connect(pauser).liquidationModeToggle(partialLiquidationEnabled);
-        }
-
-        if (viaLiquidationModule) {
-          await liquidationModule.connect(pauser).setDexRoutePaused(true);
+        // Partial liquidation starts unpaused; setting the pause flag to the
+        // value it already holds reverts with OffsetStatusAlreadySet.
+        if ((await comet.isPartialLiquidationPaused()) === partialLiquidationEnabled) {
+          await comet.connect(pauseGuardian).pausePartialLiquidation(!partialLiquidationEnabled);
         }
 
         // sanity check
-        expect(await liquidationModule.partialLiquidationEnabled()).to.be.equal(partialLiquidationEnabled);
+        expect(await comet.isPartialLiquidationPaused()).to.be.equal(!partialLiquidationEnabled);
 
         snapshot = await takeSnapshot();
       });
@@ -168,9 +144,7 @@ describe('absorb: general logic', function () {
         });
     
         it('absorb is successful', async () => {
-          absorbTx = viaLiquidationModule
-            ? await liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -315,9 +289,7 @@ describe('absorb: general logic', function () {
         });
     
         it('absorb is successful', async () => {
-          absorbTx = viaLiquidationModule
-            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
-            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -462,9 +434,7 @@ describe('absorb: general logic', function () {
         });
     
         it('absorb is successful', async () => {
-          absorbTx = viaLiquidationModule
-            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
-            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -614,9 +584,7 @@ describe('absorb: general logic', function () {
         });
     
         it('absorb is successful', async () => {
-          absorbTx = viaLiquidationModule
-            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
-            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -792,9 +760,7 @@ describe('absorb: general logic', function () {
         });
     
         it('absorb is successful', async () => {
-          absorbTx = viaLiquidationModule
-            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
-            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -969,9 +935,7 @@ describe('absorb: general logic', function () {
         });
     
         it('absorb is successful', async () => {
-          absorbTx = viaLiquidationModule
-            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
-            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -1149,9 +1113,7 @@ describe('absorb: general logic', function () {
         });
     
         it('absorb is successful', async () => {
-          absorbTx = viaLiquidationModule
-            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
-            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -1334,9 +1296,7 @@ describe('absorb: general logic', function () {
         });
     
         it('absorb is successful', async () => {
-          absorbTx = viaLiquidationModule
-            ? await liquidationModule.connect(executor)['liquidate(address,address,bytes[])'](absorber.address, alice.address, [])
-            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -1536,9 +1496,7 @@ describe('absorb: general logic', function () {
         });
     
         it('absorb is successful', async () => {
-          absorbTx = viaLiquidationModule
-            ? await liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-            : await comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          absorbTx = await comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(absorbTx).to.not.be.reverted;
         });
     
@@ -1729,9 +1687,7 @@ describe('absorb: general logic', function () {
         });
     
         it('absorb is successful', async () => {
-          viaLiquidationModule 
-            ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-            : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+          liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
           await expect(liquidateTx).to.not.be.reverted;
         });
     
@@ -1806,9 +1762,7 @@ describe('absorb: general logic', function () {
           });
     
           it('absorb reverts because base token price feed returns bad price', async () => {
-            viaLiquidationModule 
-              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
 
             await expect(liquidateTx).to.be.revertedWithCustomError(comet, 'BadPrice');
           });
@@ -1820,7 +1774,6 @@ describe('absorb: general logic', function () {
         context('base token price feed reverts during absorb', function () {
           let wasLiquidatable: boolean;
           let liquidateTx: Promise<ContractTransaction>;
-          let updatedLiquidationModule: DexLiquidationModule;
           const collateralKey = 'COMP';
     
           before(async function() {
@@ -1834,8 +1787,6 @@ describe('absorb: general logic', function () {
             wasLiquidatable = await comet.isLiquidatable(alice.address);
     
             await configurator.setBaseTokenPriceFeed(cometProxyAddress, priceFeedWithRevert.address);
-            updatedLiquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, cometProxyAddress);
-            await configurator.connect(governor).setLiquidationModule(cometProxyAddress, updatedLiquidationModule.address);
             await cometProxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
           });
     
@@ -1851,11 +1802,7 @@ describe('absorb: general logic', function () {
           });
     
           it('absorb reverts because base token price feed reverts', async () => {
-            viaLiquidationModule 
-              // The market now points at the freshly deployed module, and only that module may take Comet's
-              // operations lock, so the liquidation has to be driven through it.
-              ? liquidateTx = updatedLiquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
 
             await expect(liquidateTx).to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
           });
@@ -1867,7 +1814,6 @@ describe('absorb: general logic', function () {
         context('BCF, LCF and LF > 0: reverting collateral price feed blocks absorb', function () {
           let wasLiquidatable: boolean;
           let liquidateTx: Promise<ContractTransaction>;
-          let updatedLiquidationModule: DexLiquidationModule;
           const collateralKey = 'COMP';
 
           before(async function() {
@@ -1882,8 +1828,6 @@ describe('absorb: general logic', function () {
 
             await configurator.updateAssetPriceFeed(cometProxyAddress, tokens[collateralKey].address, priceFeedWithRevert.address);
 
-            updatedLiquidationModule = await deployDefaultLiquidationModuleWithComet(updateOpts, cometProxyAddress);
-            await configurator.connect(governor).setLiquidationModule(cometProxyAddress, updatedLiquidationModule.address);
             await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configurator.address, cometProxyAddress);
           });
     
@@ -1898,9 +1842,7 @@ describe('absorb: general logic', function () {
           });
     
           it('absorb reverts because the collateral price feed reverts', async () => {
-            viaLiquidationModule
-              ? liquidateTx = updatedLiquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
 
             await expect(liquidateTx).to.be.revertedWithCustomError(priceFeedWithRevert, 'Reverted');
           });
@@ -1941,9 +1883,7 @@ describe('absorb: general logic', function () {
           });
     
           it('absorb reverts because the collateral price feed is zero', async () => {
-            viaLiquidationModule 
-              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
 
             await expect(liquidateTx).to.be.revertedWithCustomError(comet, 'BadPrice');
           });
@@ -1969,9 +1909,7 @@ describe('absorb: general logic', function () {
           // Contract computes uint256(-presentValue(positive_principal)) before the principal > 0
           // guard fires, which overflows in Solidity 0.8+. Absorb still reverts — just with panic.
           it('absorb reverts because alice has a positive principal', async () => {
-            viaLiquidationModule 
-              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
 
             await expect(liquidateTx).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
           });
@@ -1991,9 +1929,7 @@ describe('absorb: general logic', function () {
           });
     
           it('absorb reverts because alice has zero principal', async () => {
-            viaLiquidationModule 
-              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
 
             await expect(liquidateTx).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
           });
@@ -2029,9 +1965,7 @@ describe('absorb: general logic', function () {
           });
     
           it('absorb reverts because alice has debt but is not liquidatable', async () => {
-            viaLiquidationModule 
-              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
 
             await expect(liquidateTx).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
           });
@@ -2070,9 +2004,7 @@ describe('absorb: general logic', function () {
           });
     
           it('absorb reverts because alice is not liquidatable', async () => {
-            viaLiquidationModule
-              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
 
             await expect(liquidateTx).to.be.revertedWithCustomError(comet, 'NotLiquidatable');
           });
@@ -2094,9 +2026,7 @@ describe('absorb: general logic', function () {
           });
     
           it('absorb reverts because liquidation is on pause before liquidatability matters', async () => {
-            viaLiquidationModule 
-              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
             await expect(liquidateTx).to.be.revertedWithCustomError(comet, 'Paused');
           });
         });
@@ -2123,9 +2053,7 @@ describe('absorb: general logic', function () {
           });
     
           it('absorb reverts because liquidation is on pause', async () => {
-            viaLiquidationModule 
-              ? liquidateTx = liquidationModule.connect(executor).liquidate(absorber.address, alice.address, [])
-              : liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
+            liquidateTx = comet.connect(absorber).absorb(absorber.address, [alice.address]);
             await expect(liquidateTx).to.be.revertedWithCustomError(comet, 'Paused');
           });
         });
@@ -2137,7 +2065,6 @@ describe('absorb: general logic', function () {
                              TESTS SETUP
   //////////////////////////////////////////////////////////////*/
 
-  runAbsorbTests({ partialLiquidationEnabled: false, viaLiquidationModule: false }); // full debt close case
-  runAbsorbTests({ partialLiquidationEnabled: true, viaLiquidationModule: false });
-  runAbsorbTests({ partialLiquidationEnabled: true, viaLiquidationModule: true}); // entry point on the liquidation module, not comet
+  runAbsorbTests({ partialLiquidationEnabled: false }); // full debt close case
+  runAbsorbTests({ partialLiquidationEnabled: true });
 });

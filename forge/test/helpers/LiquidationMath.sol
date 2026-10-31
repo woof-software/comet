@@ -12,7 +12,7 @@ library LiquidationMath {
      *         priced and weighted by its liquidate collateral factor in a single division. Carries the
      *         factors' 1e18.
      * @dev The liquidate factor, not the borrow factor: this is the value a liquidation is measured
-     *      against, and the same value the seizure planner works from.
+     *      against, and the same value absorb works from.
      */
     function weightedCollateral(CometInterface comet, address account) internal view returns (uint256 weighted) {
         for (uint8 i; i < comet.numAssets(); ++i) {

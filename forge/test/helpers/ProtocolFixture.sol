@@ -17,19 +17,14 @@ import { TransparentUpgradeableProxy } from "@comet-contracts/vendor/proxy/trans
 import { MarketAdminPermissionChecker } from "@comet-contracts/marketupdates/MarketAdminPermissionChecker.sol";
 import { MarketAdminPermissionCheckerInterface } from "@comet-contracts/marketupdates/MarketAdminPermissionCheckerInterface.sol";
 
-import { OneInchV6Adapter } from "@comet-contracts/dex-adapters/core/OneInchV6Adapter.sol";
-import { ICoreDexAdapter } from "@comet-contracts/interfaces/dex-adapters/ICoreDexAdapter.sol";
-import { IUniswapAdapter } from "@comet-contracts/interfaces/dex-adapters/IUniswapAdapter.sol";
-import { DexLiquidationModule } from "@comet-contracts/liquidation-module/DexLiquidationModule.sol";
-
 import { FaucetToken } from "@comet-contracts/test/FaucetToken.sol";
 import { SimplePriceFeed } from "@comet-contracts/test/SimplePriceFeed.sol";
 
 /**
  * @title Compound protocol fixture
  * @notice Deploys the whole protocol from scratch — mock tokens, price feeds, the Comet proxy and
- *         its admin, the Configurator, the market admin permission checker and the liquidation
- *         module — so fuzz tests get a live protocol with no fork and no deployment scripts.
+ *         its admin, the Configurator and the market admin permission checker — so fuzz tests get
+ *         a live protocol with no fork and no deployment scripts.
  *         Inherit this contract and call `prepareFixture()` from `setUp()`.
  *
  *         The market mirrors `test/helpers/default-assets.ts`: USDC as the base token and the
@@ -52,26 +47,14 @@ abstract contract ProtocolFixture is Test {
     uint8 internal constant PRICE_FEED_DECIMALS = 8;
     uint256 internal constant TARGET_HF = 1.05e18;
 
-    /// Incentive the executor earns on the DEX liquidation route.
-    uint16 internal constant INCENTIVE_BPS = 500;
-    /// The DEX adapter refuses a zero router and a zero slippage, but nothing here ever swaps:
-    /// the routes are left unconfigured, so a liquidation falls back to sweeping collateral to Comet.
-    uint16 internal constant DEX_SLIPPAGE_BPS = 500;
-    address internal constant DEX_ROUTER = 0x111111125421cA6dc452d289314280a0f8842A65;
-
     /*//////////////////////////////////////////////////////////////
                                  ACTORS
     //////////////////////////////////////////////////////////////*/
 
-    address internal dao;
     /// Governor of Comet, the Configurator and the ProxyAdmin.
     address internal timelock = makeAddr("timelock");
     address internal pauseGuardian = makeAddr("pauseGuardian");
     address internal marketAdmin = makeAddr("marketAdmin");
-    /// Liquidation module roles. Kept apart from the DAO, which already holds the pauser role.
-    address internal multisig = makeAddr("multisig");
-    address internal executor = makeAddr("executor");
-    address internal pauser = makeAddr("pauser");
     // Users
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
@@ -92,9 +75,6 @@ abstract contract ProtocolFixture is Test {
     CometExtAssetList internal extensionDelegate;
     AssetListFactory internal assetListFactory;
     MarketAdminPermissionChecker internal permissionChecker;
-    /// The module the live market absorbs through, together with the adapter it swaps through.
-    DexLiquidationModule internal liquidationModule;
-    OneInchV6Adapter internal dexAdapter;
 
     /*//////////////////////////////////////////////////////////////
                                  MARKET
@@ -107,8 +87,6 @@ abstract contract ProtocolFixture is Test {
     /// Collateral in market order: `collaterals[i]` is the asset at Comet asset index `i`.
     FaucetToken[] internal collaterals;
     SimplePriceFeed[] internal collateralPriceFeeds;
-    /// Set to the WETH mock, which the DEX adapter treats as native ETH.
-    address internal weth;
 
     /**
      * @notice Deploys the whole market. Call this from `setUp()`.
@@ -116,15 +94,8 @@ abstract contract ProtocolFixture is Test {
     function prepareFixture() internal {
         deployAssets();
         deployExtensionDelegate();
-
-        // A Comet binds its liquidation module for good in the constructor, so the throwaway
-        // implementation the proxy is born with needs a throwaway module of its own. The module the
-        // market actually runs on is deployed below and reaches the proxy through the Configurator.
-        deployMarketContracts(buildCometConfiguration(deployLiquidationModule()));
-
-        liquidationModule = DexLiquidationModule(deployLiquidationModule());
-        dao = liquidationModule.DAO();
-        setupConfigurator(buildCometConfiguration(address(liquidationModule)));
+        deployMarketContracts(buildCometConfiguration());
+        setupConfigurator(buildCometConfiguration());
         setupMarketAdminPermissionChecker();
         initializeMarket();
     }
@@ -148,8 +119,6 @@ abstract contract ProtocolFixture is Test {
                 collaterals.push(token);
                 collateralPriceFeeds.push(priceFeed);
             }
-
-            if (keccak256(bytes(spec.symbol)) == keccak256("WETH")) weth = address(token);
         }
     }
 
@@ -161,7 +130,7 @@ abstract contract ProtocolFixture is Test {
         );
     }
 
-    function buildCometConfiguration(address liquidationModule_)
+    function buildCometConfiguration()
         internal
         view
         virtual
@@ -206,42 +175,9 @@ abstract contract ProtocolFixture is Test {
             baseMinForRewards: baseUnit,
             baseBorrowMin: baseUnit,
             targetReserves: 0,
-            assetConfigs: assetConfigs,
-            liquidationModule: liquidationModule_
+            targetHealthFactor: uint64(TARGET_HF),
+            assetConfigs: assetConfigs
         });
-    }
-
-    /**
-     * @notice Deploys a liquidation module and the DEX adapter behind it.
-     * @dev The adapter only accepts an asset list it has exactly one route per collateral for, so the
-     *      routes are built from the asset table. They stay unconfigured: no route means a liquidation
-     *      sweeps the collateral to Comet instead of swapping it. A module accepts one asset list and
-     *      one Comet in its lifetime, which is why every implementation needs its own module.
-     */
-    function deployLiquidationModule() internal returns (address) {
-        IUniswapAdapter.RouteConfig[] memory routes = new IUniswapAdapter.RouteConfig[](collaterals.length);
-        for (uint256 i; i < collaterals.length; ++i) {
-            routes[i].collateral = address(collaterals[i]);
-        }
-
-        OneInchV6Adapter adapter = new OneInchV6Adapter(
-            DEX_ROUTER,
-            DEX_ROUTER,
-            weth,
-            DEX_SLIPPAGE_BPS,
-            routes,
-            new ICoreDexAdapter.CollateralSlippage[](0)
-        );
-        dexAdapter = adapter;
-
-        // The module refuses to start without an executor and a pauser, and refuses to grant the
-        // same role twice.
-        address[] memory executors = new address[](1);
-        executors[0] = executor;
-        address[] memory pausers = new address[](1);
-        pausers[0] = pauser;
-
-        return address(new DexLiquidationModule(adapter, multisig, executors, pausers, INCENTIVE_BPS));
     }
 
     function deployMarketContracts(CometConfiguration.Configuration memory config) internal {

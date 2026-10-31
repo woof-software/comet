@@ -1,5 +1,5 @@
-import { ethers, expect, exp, presentValue, mulPrice, mulFactor, mulDiv, ceilDiv, toBigInt, factorScale, wantedCollateralValue, TARGET_HEALTH_FACTOR, default24Assets, CollateralState, makeCollateralStates, makeConfigurator, principalValue, deployDefaultLiquidationModuleWithComet, seedMarketActivity, DeployLiquidationModuleOpts, deployEmptyDexAdapter} from '../helpers';
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, DexLiquidationModule, FaucetToken, SimplePriceFeed } from 'build/types';
+import { ethers, expect, exp, presentValue, mulPrice, mulFactor, mulDiv, ceilDiv, toBigInt, factorScale, wantedCollateralValue, TARGET_HEALTH_FACTOR, default24Assets, CollateralState, makeCollateralStates, makeConfigurator, principalValue, seedMarketActivity} from '../helpers';
+import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from '../helpers/snapshot';
@@ -20,9 +20,6 @@ describe('absorb logic with delisted collaterals', function() {
   let cometProxyAdmin: CometProxyAdmin;
   let configuratorProxyAddress: string;
   let cometProxyAddress: string;
-  let liquidationModule: DexLiquidationModule;
-  let liquidationModuleOpts: DeployLiquidationModuleOpts;
-  let emptyDexAdapterAddress: string;
 
   const baseTokenPrice = exp(1, 8);
   const initialBaseFunding = baseTokenPrice * 10_000n;
@@ -67,18 +64,6 @@ describe('absorb logic with delisted collaterals', function() {
 
     pauseGuardian = protocol.pauseGuardian;
     governor = protocol.governor;
-
-    liquidationModule = protocol.defaultLiquidationModule;
-    ///turn off DEX liquidation to test pure absorbtion mechanics
-    await liquidationModule.connect(protocol.pausers[0]).setDexRoutePaused(true);
-
-    emptyDexAdapterAddress = (await deployEmptyDexAdapter(Object.entries(protocol.tokens).filter(([symbol]) => symbol !== protocol.base).map(([, token]) => {return token.address;}))).address;
-    liquidationModuleOpts = {
-      multisig: protocol.multisig.address,
-      executors: [protocol.executors[0].address],
-      pausers: [pauseGuardian.address],
-      dexAdapter: emptyDexAdapterAddress
-    } as DeployLiquidationModuleOpts;
 
     for (let asset in protocol.tokens) {
       if (asset === 'USDC') continue;
@@ -128,7 +113,6 @@ describe('absorb logic with delisted collaterals', function() {
     let debtRemainingValueAfterSeize: bigint;
     let newPrincipal: bigint;
     let assetInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -139,10 +123,8 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Governance soft-delists COMP (BCF -> 0) and rewires a fresh liquidation module.
+      // Governance soft-delists COMP (BCF -> 0).
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       // COMP declines to $83; liquidation value ($83 * 0.85 = $70.55) still exceeds the $70 debt.
@@ -160,11 +142,6 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before soft-delisting, alice was not liquidatable', () => {
       expect(liquidatableBefore).to.be.false;
-    });
-
-    it('sanity check: after soft-delisting, comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
     });
 
     it('alice is not borrow-collateralized after COMP borrow collateral factor is zeroed', () => {
@@ -338,7 +315,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -349,12 +325,9 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Governance soft-delists COMP (BCF -> 0), accelerates borrow accrual for the test,
-      // and rewires a fresh liquidation module.
+      // Governance soft-delists COMP (BCF -> 0) and accelerates borrow accrual for the test.
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       // COMP declines to $83; liquidation value ($83 * 0.85 = $70.55) still exceeds the $70 debt.
@@ -363,7 +336,7 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedAfterSoftDelist = await comet.isBorrowCollateralized(alice.address);
       liquidatableAfterSoftDelist = await comet.isLiquidatable(alice.address);
 
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
     });
 
     after(async () => await snapshot.restore());
@@ -374,11 +347,6 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before soft-delisting, alice was not liquidatable', () => {
       expect(liquidatableBefore).to.be.false;
-    });
-
-    it('sanity check: after soft-delisting, comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
     });
 
     it('alice is not borrow-collateralized after COMP borrow collateral factor is zeroed', () => {
@@ -519,8 +487,10 @@ describe('absorb logic with delisted collaterals', function() {
         - presentValue(totalSupplyBaseBefore, baseSupplyIndexBefore, baseBorrowIndexBefore);
       const borrowAccrual = -presentValue(-totalBorrowBaseBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex)
         + presentValue(-totalBorrowBaseBefore, baseSupplyIndexBefore, baseBorrowIndexBefore);
-      // The seized value is priced in the base asset; absorb rounds the repayment up to a whole base unit.
-      const repaidBaseAmount = ceilDiv(collateralsState[collateralKey].seizedValue * baseScale, baseTokenPrice);
+      // The debt is closed in full, so the repayment is the borrow value of the principal absorb removed,
+      // valued over the market total: rounding alice's debt on its own can land a wei away from it.
+      const repaidBaseAmount = -presentValue(-totalBorrowBaseBefore, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex)
+        + presentValue(-(totalBorrowBaseBefore + principalBefore), totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
 
       expect(await comet.getReserves()).to.be.equal(baseReservesBefore - (supplyAccrual - borrowAccrual + repaidBaseAmount));
     });
@@ -548,7 +518,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -561,11 +530,8 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Governance soft-delists COMP (BCF -> 0), accelerates borrow accrual for the test,
-      // and rewires a fresh liquidation module.
+      // Governance soft-delists COMP (BCF -> 0) and accelerates borrow accrual for the test.
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
@@ -582,11 +548,6 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before soft-delisting, alice was not liquidatable', () => {
       expect(liquidatableBefore).to.be.false;
-    });
-
-    it('sanity check: after soft-delisting, comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
     });
 
     it('alice is not borrow-collateralized after COMP borrow collateral factor is zeroed', () => {
@@ -798,7 +759,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -812,13 +772,11 @@ describe('absorb logic with delisted collaterals', function() {
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
       // Governance soft-delists COMP (BCF -> 0), accelerates borrow accrual for the test,
-      // rewires a fresh liquidation module, and disables partial liquidation mode.
+      // and disables partial liquidation mode.
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -834,11 +792,6 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before soft-delisting, alice was not liquidatable', () => {
       expect(liquidatableBefore).to.be.false;
-    });
-
-    it('sanity check: after soft-delisting, comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
     });
 
     it('alice is not borrow-collateralized after COMP borrow collateral factor is zeroed', () => {
@@ -1042,7 +995,6 @@ describe('absorb logic with delisted collaterals', function() {
     let newPrincipal: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -1055,12 +1007,9 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Governance soft-delists WETH (BCF -> 0), accelerates borrow accrual for the test,
-      // and rewires a fresh liquidation module.
+      // Governance soft-delists WETH (BCF -> 0) and accelerates borrow accrual for the test.
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
@@ -1077,11 +1026,6 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before soft-delisting, alice was not liquidatable', () => {
       expect(liquidatableBefore).to.be.false;
-    });
-
-    it('sanity check: after soft-delisting, comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
     });
 
     it('alice is not borrow-collateralized after WETH borrow collateral factor is zeroed', () => {
@@ -1305,7 +1249,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowCollateralizedAfterSoftDelist: boolean;
@@ -1318,14 +1261,12 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Governance soft-delists WETH (BCF -> 0), accelerates borrow accrual for the test, rewires a
-      // fresh liquidation module, and disables partial liquidation mode.
+      // Governance soft-delists WETH (BCF -> 0), accelerates borrow accrual for the test, and
+      // disables partial liquidation mode.
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       await priceFeeds[collateralConfigs[0].symbol].connect(alice).setRoundData(0, droppedCompPrice, 0, 0, 0);
       await comet.accrueAccount(alice.address);
@@ -1341,11 +1282,6 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('sanity check: before soft-delisting, alice was not liquidatable', () => {
       expect(liquidatableBefore).to.be.false;
-    });
-
-    it('sanity check: after soft-delisting, comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
     });
 
     it('alice is not borrow-collateralized after WETH borrow collateral factor is zeroed', () => {
@@ -1520,7 +1456,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -1533,21 +1468,13 @@ describe('absorb logic with delisted collaterals', function() {
       borrowBalanceBeforeDelist = (await comet.borrowBalanceOf(alice.address)).toBigInt();
       compInfoBeforeDelist = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
 
-      // Governance fully delists COMP for collateralization purposes (BCF -> 0, LCF -> 0),
-      // then rewires a fresh liquidation module.
+      // Governance fully delists COMP for collateralization purposes (BCF -> 0, LCF -> 0).
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before delisting, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -1691,7 +1618,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -1712,17 +1638,10 @@ describe('absorb logic with delisted collaterals', function() {
 
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before delisting, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -1905,7 +1824,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -1926,18 +1844,11 @@ describe('absorb logic with delisted collaterals', function() {
 
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before delisting, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -2100,7 +2011,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -2121,17 +2031,10 @@ describe('absorb logic with delisted collaterals', function() {
 
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before delisting, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -2291,7 +2194,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -2312,17 +2214,10 @@ describe('absorb logic with delisted collaterals', function() {
 
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before delisting, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -2500,7 +2395,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -2521,18 +2415,11 @@ describe('absorb logic with delisted collaterals', function() {
 
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before delisting, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -2693,7 +2580,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -2714,17 +2600,10 @@ describe('absorb logic with delisted collaterals', function() {
 
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[1].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before delisting, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -2881,7 +2760,6 @@ describe('absorb logic with delisted collaterals', function() {
     let cometBaseTokenBalanceBefore: bigint;
     let assetsInBefore: number;
     let reservedBefore: number;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -2898,17 +2776,10 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.connect(governor).updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before delisting, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -3033,7 +2904,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
     let borrowBalanceBeforeDelist: bigint;
@@ -3056,17 +2926,10 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.connect(governor).updateAssetLiquidationFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before delisting, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -3257,7 +3120,6 @@ describe('absorb logic with delisted collaterals', function() {
     let assetsInBefore: number;
     let reservedBefore: number;
     let principalBefore: bigint;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -3266,10 +3128,8 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Accelerate borrow accrual for the test and rewire a fresh liquidation module.
+      // Accelerate borrow accrual for the test.
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       // Governance deactivates COMP (its factors stay normal); COMP then declines to $83.
@@ -3280,11 +3140,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -3465,7 +3320,6 @@ describe('absorb logic with delisted collaterals', function() {
     let assetsInBefore: number;
     let reservedBefore: number;
     let principalBefore: bigint;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -3474,12 +3328,10 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Accelerate borrow accrual, rewire a fresh liquidation module, and disable partial liquidation.
+      // Accelerate borrow accrual and disable partial liquidation.
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       // Governance deactivates COMP (its factors stay normal); COMP then declines to $83.
       const compInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
@@ -3489,11 +3341,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -3655,7 +3502,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -3664,12 +3510,10 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Accelerate borrow accrual, rewire a fresh liquidation module, and disable partial liquidation.
+      // Accelerate borrow accrual and disable partial liquidation.
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       // Governance deactivates COMP (its factors stay normal); COMP then declines to $83.
       assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
@@ -3679,11 +3523,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -3841,7 +3680,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -3852,10 +3690,8 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Accelerate borrow accrual for the test and rewire a fresh liquidation module.
+      // Accelerate borrow accrual for the test.
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       // Governance deactivates COMP (its factors stay normal); COMP then declines to $83.
@@ -3866,11 +3702,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -4109,7 +3940,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -4120,12 +3950,10 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Accelerate borrow accrual, rewire a fresh liquidation module, and disable partial liquidation.
+      // Accelerate borrow accrual and disable partial liquidation.
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       // Governance deactivates COMP (its factors stay normal); COMP then declines to $83.
       compInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
@@ -4135,11 +3963,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -4334,7 +4157,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -4345,12 +4167,10 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Accelerate borrow accrual, rewire a fresh liquidation module, and disable partial liquidation.
+      // Accelerate borrow accrual and disable partial liquidation.
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       // Governance deactivates COMP (its factors stay normal); COMP then declines to $83.
       compInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
@@ -4361,11 +4181,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -4545,7 +4360,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -4556,10 +4370,8 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Accelerate borrow accrual for the test and rewire a fresh liquidation module.
+      // Accelerate borrow accrual for the test.
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       // Governance deactivates WETH (its factors stay normal); COMP then declines to $83.
@@ -4571,11 +4383,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -4815,7 +4622,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -4826,12 +4632,10 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Accelerate borrow accrual, rewire a fresh liquidation module, and disable partial liquidation.
+      // Accelerate borrow accrual and disable partial liquidation.
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       // Governance deactivates WETH (its factors stay normal); COMP then declines to $83.
       compInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
@@ -4842,11 +4646,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -5041,7 +4840,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -5052,12 +4850,10 @@ describe('absorb logic with delisted collaterals', function() {
       borrowCollateralizedBefore = await comet.isBorrowCollateralized(alice.address);
       liquidatableBefore = await comet.isLiquidatable(alice.address);
 
-      // Accelerate borrow accrual, rewire a fresh liquidation module, and disable partial liquidation.
+      // Accelerate borrow accrual and disable partial liquidation.
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       // Governance deactivates WETH (its factors stay normal); COMP then declines to $83.
       compInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
@@ -5068,11 +4864,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -5250,7 +5041,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -5260,10 +5050,8 @@ describe('absorb logic with delisted collaterals', function() {
 
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       await comet.connect(pauseGuardian).deactivateCollateral(assetInfo.offset);
@@ -5272,11 +5060,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -5298,7 +5081,7 @@ describe('absorb logic with delisted collaterals', function() {
 
     it('absorb reverts while alice is not liquidatable', async () => {
       await expect(comet.connect(absorber).absorb(absorber.address, [alice.address]))
-        .to.be.revertedWithCustomError(newLiquidationModule, 'NotLiquidatable');
+        .to.be.revertedWithCustomError(comet, 'NotLiquidatable');
     });
 
     it('time passes until alice becomes liquidatable', async () => {
@@ -5446,7 +5229,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -5457,10 +5239,8 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
       await comet.connect(pauseGuardian).deactivateCollateral(assetInfo.offset);
@@ -5469,11 +5249,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -5618,7 +5393,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -5628,8 +5402,6 @@ describe('absorb logic with delisted collaterals', function() {
 
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
@@ -5639,11 +5411,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -5795,7 +5562,6 @@ describe('absorb logic with delisted collaterals', function() {
     let principalBefore: bigint;
     let assetInfo: AssetInfoStructOutput;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: DexLiquidationModule;
     let borrowCollateralizedBefore: boolean;
     let liquidatableBefore: boolean;
 
@@ -5806,8 +5572,6 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralKey].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       assetInfo = await comet.getAssetInfoByAddress(tokens[collateralKey].address);
@@ -5817,11 +5581,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -5973,7 +5732,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: DexLiquidationModule;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
     let borrowCollateralizedBefore: boolean;
@@ -5986,10 +5744,8 @@ describe('absorb logic with delisted collaterals', function() {
 
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       compInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
       wethInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
@@ -5999,11 +5755,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -6163,7 +5914,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: DexLiquidationModule;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
     let borrowCollateralizedBefore: boolean;
@@ -6177,10 +5927,8 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
-      await newLiquidationModule.connect(pauseGuardian).liquidationModeToggle(false);
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
 
       compInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
       wethInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[1].symbol].address);
@@ -6190,11 +5938,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -6356,7 +6099,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: DexLiquidationModule;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
     let borrowCollateralizedBefore: boolean;
@@ -6369,8 +6111,6 @@ describe('absorb logic with delisted collaterals', function() {
 
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       compInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
@@ -6381,11 +6121,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
@@ -6541,7 +6276,6 @@ describe('absorb logic with delisted collaterals', function() {
     let reservedBefore: number;
     let principalBefore: bigint;
     let collateralsState: Record<string, CollateralState>;
-    let newLiquidationModule: DexLiquidationModule;
     let compInfo: AssetInfoStructOutput;
     let wethInfo: AssetInfoStructOutput;
     let borrowCollateralizedBefore: boolean;
@@ -6555,8 +6289,6 @@ describe('absorb logic with delisted collaterals', function() {
       await configurator.connect(governor).setBorrowPerYearInterestRateBase(cometProxyAddress, acceleratedBorrowRate);
       await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
       await configurator.connect(governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, tokens[collateralConfigs[0].symbol].address, 0);
-      newLiquidationModule = await deployDefaultLiquidationModuleWithComet(liquidationModuleOpts, cometProxyAddress);
-      await configurator.connect(governor).setLiquidationModule(cometProxyAddress, newLiquidationModule.address);
       await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configuratorProxyAddress, cometProxyAddress);
 
       compInfo = await comet.getAssetInfoByAddress(tokens[collateralConfigs[0].symbol].address);
@@ -6567,11 +6299,6 @@ describe('absorb logic with delisted collaterals', function() {
     });
 
     after(async () => await snapshot.restore());
-
-    it('sanity check: comet and the new liquidation module are in sync', async () => {
-      expect(await comet.liquidationModule()).to.equal(newLiquidationModule.address);
-      expect(await comet.assetList()).to.equal(await newLiquidationModule.assetList());
-    });
 
     it('sanity check: before deactivation, alice was borrow-collateralized', () => {
       expect(borrowCollateralizedBefore).to.be.true;
