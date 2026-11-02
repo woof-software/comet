@@ -85,6 +85,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CONTRACTS_ARCHIVE_TOKEN }}
         run: |
+          # Secret pasted with a trailing newline breaks the push URL
+          GH_TOKEN=$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')
+          export GH_TOKEN
           cd plugins/import/contracts-archive
           branch="archive-sync/${{ github.run_id }}"
           git config user.name "github-actions[bot]"
