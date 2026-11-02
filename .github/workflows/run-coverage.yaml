@@ -1,7 +1,7 @@
 name: Run Coverage
 on:
-  push:
   workflow_dispatch:
+  pull_request:
 jobs:
   run-coverage:
     name: Run coverage
