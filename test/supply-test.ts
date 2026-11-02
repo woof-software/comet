@@ -104,9 +104,9 @@ describe('supply', function () {
       });
 
       it('no collateral tokens on the comet', async () => {
-        Object.values(collaterals).forEach(async (collateral) => {
+        for (const collateral of Object.values(collaterals)) {
           expect(await collateral.balanceOf(comet.address)).to.equal(0);
-        });
+        }
       });
 
       it('default supply index', async () => {
