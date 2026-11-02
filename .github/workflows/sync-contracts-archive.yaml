@@ -77,6 +77,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CONTRACTS_ARCHIVE_TOKEN }}
         run: |
+          # Secret pasted with a trailing newline breaks the push URL
+          GH_TOKEN=$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')
+          export GH_TOKEN
           cd plugins/import/contracts-archive
           branch="archive-sync/${{ github.run_id }}"
           git config user.name "github-actions[bot]"
@@ -85,7 +88,8 @@ jobs:
           git add .
           count=$(git diff --cached --name-only | wc -l)
           git commit -m "chore: archive $count contract(s) from comet-markets run ${{ github.run_id }}"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/woof-software/comet-contracts-archive.git" "HEAD:refs/heads/$branch"
+          # Drop the GITHUB_TOKEN auth header persisted by actions/checkout so the URL token is used
+          git -c http.https://github.com/.extraheader= push "https://x-access-token:${GH_TOKEN}@github.com/woof-software/comet-contracts-archive.git" "HEAD:refs/heads/$branch"
           gh pr create \
             --repo woof-software/comet-contracts-archive \
             --base develop \
