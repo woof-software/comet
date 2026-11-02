@@ -3,6 +3,9 @@ import { DeploymentManager } from '../../plugins/deployment_manager';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { setNextBaseFeeToZero } from './hreUtils';
 
+// LayerZero V2 EndpointV2: same address on mainnet, Mantle and Polygon
+export const LZ_ENDPOINT = '0x1a44076050125825900e736c501f859c50fE728c';
+
 const endpointInterface = new ethers.utils.Interface([
   'event PacketSent(bytes encodedPayload, bytes options, address sendLibrary)',
   'event PacketDelivered((uint32 srcEid, bytes32 sender, uint64 nonce) origin, address receiver)',

@@ -8,6 +8,8 @@ import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog } from './index';
 import { fetchBridgeReceiverProposals } from './bridgeReceiverProposals';
 import { DEPOSIT_FOR_BURN_SIGNATURE, simulateCCTPL2ToL1Transfer } from './cctpL2ToL1Transfer';
+import { LZ_ENDPOINT, simulateLayerZeroOFTDelivery } from './layerZeroOFTL2ToL1Transfer';
+import { simulatePolygonPoSWithdrawals } from './polygonPoSL2ToL1Transfer';
 
 type BridgeERC20Data = {
   syncData: string;
@@ -169,7 +171,7 @@ export default async function relayPolygonMessage(
         event => event.address === bridgeReceiver.address
       );
       const { args: { id, eta } } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
-      
+
       openBridgedProposals.push({ id, eta });
       if (tenderlyLogs) {
         const signer = await bridgeDeploymentManager.getSigner();
@@ -213,4 +215,22 @@ export async function simulateL2ToL1TokenBridging(
       }
     }
   }
+
+  await simulatePolygonPoSWithdrawals(governanceDeploymentManager, bridgeDeploymentManager, l2StartingBlockNumber, proposalIds);
+}
+
+export async function simulateL2ToL1OFTBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber: number,
+  tenderlyLogs?: any[]
+) {
+  await simulateLayerZeroOFTDelivery(
+    governanceDeploymentManager,
+    bridgeDeploymentManager,
+    l2StartingBlockNumber,
+    LZ_ENDPOINT,
+    LZ_ENDPOINT,
+    tenderlyLogs
+  );
 }
