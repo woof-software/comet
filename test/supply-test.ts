@@ -1,5 +1,5 @@
 import { ethers, expect, exp, makeProtocol, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS, presentValueSupply } from './helpers';
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometExtAssetList, CometHarnessInterfaceExtendedAssetList } from '../build/types';
+import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { TotalsCollateralStruct } from 'build/types/CometHarnessInterfaceExtendedAssetList';
@@ -291,16 +291,13 @@ describe('supply', function () {
       it('should allow 2nd deposit from alice: emits Transfer event for existing supply', async () => {
         const snapshot: SnapshotRestorer = await takeSnapshot();
 
-        const lastUpdated = (await comet.totalsBasic()).lastAccrualTime;
-
         await baseToken.connect(alice).approve(comet.address, SUPPLIED_AMOUNT_ALICE);
-        await expect(comet.connect(alice).supply(baseToken.address, SUPPLIED_AMOUNT_ALICE))
+        const stateBefore = await getSupplyStateBefore(comet, alice.address);
+        const supplyTx = await comet.connect(alice).supply(baseToken.address, SUPPLIED_AMOUNT_ALICE);
+
+        await expect(supplyTx)
           .to.emit(comet, 'Transfer')
-          .withArgs(
-            ethers.constants.AddressZero,
-            alice.address,
-            await getPrincipalChange(comet, lastUpdated, 0, alice.address, BigNumber.from(SUPPLIED_AMOUNT_ALICE))
-          );
+          .withArgs(ZERO_ADDRESS, alice.address, await getSupplyTransferAmount(stateBefore, SUPPLIED_AMOUNT_ALICE, supplyTx));
 
         await snapshot.restore();
       });
@@ -405,16 +402,13 @@ describe('supply', function () {
       it('should allow deposit from bob (new user): emits Transfer event for existing supply', async () => {
         const snapshot: SnapshotRestorer = await takeSnapshot();
 
-        const lastUpdated = (await comet.totalsBasic()).lastAccrualTime;
-
         await baseToken.connect(bob).approve(comet.address, SUPPLIED_AMOUNT_BOB);
-        await expect(comet.connect(bob).supply(baseToken.address, SUPPLIED_AMOUNT_BOB))
+        const stateBefore = await getSupplyStateBefore(comet, bob.address);
+        const supplyTx = await comet.connect(bob).supply(baseToken.address, SUPPLIED_AMOUNT_BOB);
+
+        await expect(supplyTx)
           .to.emit(comet, 'Transfer')
-          .withArgs(
-            ethers.constants.AddressZero,
-            bob.address,
-            await getPrincipalChange(comet, lastUpdated, 0, bob.address, BigNumber.from(SUPPLIED_AMOUNT_BOB))
-          );
+          .withArgs(ZERO_ADDRESS, bob.address, await getSupplyTransferAmount(stateBefore, SUPPLIED_AMOUNT_BOB, supplyTx));
 
         await snapshot.restore();
       });
@@ -2376,29 +2370,46 @@ describe('supply', function () {
   });
 });
 
-async function getPrincipalChange(
-  comet: CometHarnessInterfaceExtendedAssetList,
-  lastUpdated: number,
-  utilization: number,
-  user: string,
-  amount: BigNumber
-): Promise<BigNumber> {
-  const cometExtension: CometExtAssetList = (await ethers.getContractAt('CometExtAssetList', comet.address)) as CometExtAssetList;
-  const curTime = (await ethers.provider.getBlock('latest')).timestamp;
+type SupplyStateBefore = {
+  principal: BigNumber;
+  baseSupplyIndex: BigNumber;
+  lastAccrualTime: number;
+  supplyRate: BigNumber;
+};
 
-  const timeElapsed = curTime - lastUpdated;
+/**
+ * Reads the state that `supplyBase` works from. Call it right before sending the supply tx.
+ */
+async function getSupplyStateBefore(comet: CometHarnessInterfaceExtendedAssetList, user: string): Promise<SupplyStateBefore> {
+  const totals = await comet.totalsBasic();
+  return {
+    principal: (await comet.userBasic(user)).principal,
+    baseSupplyIndex: totals.baseSupplyIndex,
+    lastAccrualTime: totals.lastAccrualTime,
+    supplyRate: await comet.getSupplyRate(await comet.getUtilization()),
+  };
+}
 
-  const prevIndex = (await cometExtension.totalsBasic()).baseSupplyIndex;
-  const accruedIndex = prevIndex.add(
-    prevIndex
-      .mul(await comet.getSupplyRate(utilization))
-      .mul(timeElapsed)
-      .div(exp(1, 18))
-  );
+/**
+ * Expected value of the `Transfer(0, user, value)` mint emitted by a base supply from a user with principal >= 0.
+ * Mirrors `CometWithExtendedAssetList.supplyBase`: accrue the index up to the supply block, take the principal
+ * delta at that index, and emit it as a present value.
+ */
+async function getSupplyTransferAmount(
+  stateBefore: SupplyStateBefore,
+  amount: bigint | BigNumber,
+  supplyTx: ContractTransaction
+): Promise<bigint> {
+  const INDEX_SCALE = exp(1, 15);
+  const supplyTime = (await ethers.provider.getBlock((await supplyTx.wait()).blockNumber)).timestamp;
+  const timeElapsed = BigInt(supplyTime - stateBefore.lastAccrualTime);
 
-  const oldPrincipal = (await comet.userBasic(user)).principal;
-  const oldBalance = oldPrincipal.mul(accruedIndex).div(1e15);
-  const newPrincipal = oldBalance.add(amount).mul(1e15).div(accruedIndex);
+  const indexBefore = stateBefore.baseSupplyIndex.toBigInt();
+  const index = indexBefore + (indexBefore * stateBefore.supplyRate.toBigInt() * timeElapsed) / exp(1, 18);
 
-  return newPrincipal.sub(oldPrincipal);
+  const principalBefore = stateBefore.principal.toBigInt();
+  const balanceAfter = presentValueSupply(index, principalBefore) + BigInt(amount.toString());
+  const principalAfter = (balanceAfter * INDEX_SCALE) / index;
+
+  return presentValueSupply(index, principalAfter - principalBefore);
 }
