@@ -1227,6 +1227,8 @@ describe('extended pause functionality', function () {
 
   describe('lenders withdraw and transfer pauses are independent', function () {
     const SUPPLY_AMOUNT = exp(100, 6);
+    const DEFAULT_BASE_SUPPLY = exp(1000, 6);
+    const DEFAULT_COLLATERAL_SUPPLY = exp(1, 18);
 
     let comet: CometHarnessInterfaceExtendedAssetList;
     let baseToken: FaucetToken;
@@ -1297,7 +1299,7 @@ describe('extended pause functionality', function () {
       baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
 
       for (const { account, amount } of [
-        { account: carol, amount: exp(1000, 6) },
+        { account: carol, amount: DEFAULT_BASE_SUPPLY },
         { account: alice, amount: SUPPLY_AMOUNT },
       ]) {
         await baseToken.allocateTo(account.address, amount);
@@ -1305,9 +1307,9 @@ describe('extended pause functionality', function () {
         await comet.connect(account).supply(baseToken.address, amount);
       }
 
-      await weth.allocateTo(alice.address, exp(1, 18));
-      await weth.connect(alice).approve(comet.address, exp(1, 18));
-      await comet.connect(alice).supply(weth.address, exp(1, 18));
+      await weth.allocateTo(alice.address, DEFAULT_COLLATERAL_SUPPLY);
+      await weth.connect(alice).approve(comet.address, DEFAULT_COLLATERAL_SUPPLY);
+      await comet.connect(alice).supply(weth.address, DEFAULT_COLLATERAL_SUPPLY);
       await comet.connect(alice).allow(eve.address, true);
 
       lendersPauseSnapshot = await takeSnapshot();

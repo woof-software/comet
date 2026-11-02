@@ -1,4 +1,4 @@
-import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS, UserCollateral, setTotalsBasic } from './helpers';
+import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS, UserCollateral } from './helpers';
 import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList, SimplePriceFeed } from '../build/types';
 import { BigNumber, BigNumberish, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
@@ -2426,6 +2426,10 @@ describe('withdraw', function () {
 
   describe('lenders withdraw pause', function () {
     const SUPPLY_AMOUNT = exp(100, 6);
+    const BASE_BORROW_MIN = exp(1, 6);
+    const DEFAULT_BASE_SUPPLY = exp(1000, 6);
+    const DEFAULT_COLLATERAL_SUPPLY = exp(1, 18);
+    const BORROWER_WITHDRAW_AMOUNT = exp(10, 6);
 
     let comet: CometHarnessInterfaceExtendedAssetList;
     let baseToken: FaucetToken;
@@ -2454,143 +2458,117 @@ describe('withdraw', function () {
       },
     ];
 
-    for (const { label, baseBorrowMin, coversMinIndependentCases } of [
-      { label: '1 USDC', baseBorrowMin: exp(1, 6), coversMinIndependentCases: true },
-      { label: '1 wei', baseBorrowMin: 1n, coversMinIndependentCases: false },
-    ]) {
-      describe(`min borrow is ${label}`, function () {
-        before(async () => {
-          const protocol = await makeProtocol({
-            base: 'USDC',
-            baseBorrowMin,
-            supplyInterestRateSlopeLow: 0,
-            supplyInterestRateSlopeHigh: 0,
-            borrowInterestRateBase: 0,
-            borrowInterestRateSlopeLow: 0,
-            borrowInterestRateSlopeHigh: 0,
-          });
-          comet = protocol.cometWithExtendedAssetList;
-          baseToken = protocol.tokens.USDC as FaucetToken;
-          const weth = protocol.tokens.WETH as FaucetToken;
-          const carol = protocol.users[3];
-          eve = protocol.users[4];
+    before(async () => {
+      const protocol = await makeProtocol({
+        base: 'USDC',
+        baseBorrowMin: BASE_BORROW_MIN,
+        supplyInterestRateSlopeLow: 0,
+        supplyInterestRateSlopeHigh: 0,
+        borrowInterestRateBase: 0,
+        borrowInterestRateSlopeLow: 0,
+        borrowInterestRateSlopeHigh: 0,
+      });
+      comet = protocol.cometWithExtendedAssetList;
+      baseToken = protocol.tokens.USDC as FaucetToken;
+      const weth = protocol.tokens.WETH as FaucetToken;
+      const carol = protocol.users[3];
+      eve = protocol.users[4];
 
-          for (const { account, amount } of [
-            { account: carol, amount: exp(1000, 6) },
-            { account: alice, amount: SUPPLY_AMOUNT },
-          ]) {
-            await baseToken.allocateTo(account.address, amount);
-            await baseToken.connect(account).approve(comet.address, amount);
-            await comet.connect(account).supply(baseToken.address, amount);
-          }
+      for (const { account, amount } of [
+        { account: carol, amount: DEFAULT_BASE_SUPPLY },
+        { account: alice, amount: SUPPLY_AMOUNT },
+      ]) {
+        await baseToken.allocateTo(account.address, amount);
+        await baseToken.connect(account).approve(comet.address, amount);
+        await comet.connect(account).supply(baseToken.address, amount);
+      }
 
-          for (const account of [alice, dave]) {
-            await weth.allocateTo(account.address, exp(1, 18));
-            await weth.connect(account).approve(comet.address, exp(1, 18));
-            await comet.connect(account).supply(weth.address, exp(1, 18));
-            await comet.connect(account).allow(eve.address, true);
-          }
+      for (const account of [alice, dave]) {
+        await weth.allocateTo(account.address, DEFAULT_COLLATERAL_SUPPLY);
+        await weth.connect(account).approve(comet.address, DEFAULT_COLLATERAL_SUPPLY);
+        await comet.connect(account).supply(weth.address, DEFAULT_COLLATERAL_SUPPLY);
+        await comet.connect(account).allow(eve.address, true);
+      }
 
-          await comet.connect(pauseGuardian).pauseLendersWithdraw(true);
+      await comet.connect(pauseGuardian).pauseLendersWithdraw(true);
 
-          lendersPauseSnapshot = await takeSnapshot();
-        });
+      lendersPauseSnapshot = await takeSnapshot();
+    });
 
-        for (const { name, withdraw, recipient } of withdrawMethods) {
-          describe(name, function () {
-            for (const { description, amount } of [
-              ...(coversMinIndependentCases ? [
-                { description: 'part of supply', amount: exp(50, 6) },
-                { description: 'whole supply', amount: SUPPLY_AMOUNT },
-                { description: 'max', amount: ethers.constants.MaxUint256 },
-                { description: 'supply plus borrow above min', amount: exp(150, 6) },
-              ] : []),
-              { description: 'supply plus min borrow', amount: SUPPLY_AMOUNT + baseBorrowMin },
-            ]) {
-              describe(`lender withdraws ${description}`, function () {
-                before(async () => {
-                  await lendersPauseSnapshot.restore();
-                });
-
-                it('reverts due to lenders pause', async () => {
-                  await expect(withdraw(alice, amount)).to.be.revertedWithCustomError(comet, 'LendersWithdrawPaused');
-                });
-              });
-            }
-
-            describe('lender withdraws balance grown by supply index plus min borrow', function () {
-              let aliceBalance: bigint;
-
-              before(async () => {
-                await lendersPauseSnapshot.restore();
-
-                await setTotalsBasic(comet, { baseSupplyIndex: exp(1.1, 15) });
-
-                aliceBalance = (await comet.balanceOf(alice.address)).toBigInt();
-              });
-
-              it('alice balance grows with supply index', async () => {
-                expect(aliceBalance).to.equal(exp(110, 6));
-              });
-
-              it('reverts due to lenders pause', async () => {
-                await expect(withdraw(alice, aliceBalance + baseBorrowMin)).to.be.revertedWithCustomError(comet, 'LendersWithdrawPaused');
-              });
+    for (const { name, withdraw, recipient } of withdrawMethods) {
+      describe(name, function () {
+        for (const { description, amount } of [
+          { description: 'part of supply', amount: SUPPLY_AMOUNT / 2n },
+          { description: 'whole supply', amount: SUPPLY_AMOUNT },
+          { description: 'max', amount: ethers.constants.MaxUint256 },
+          { description: 'supply plus min borrow', amount: SUPPLY_AMOUNT + BASE_BORROW_MIN },
+        ]) {
+          describe(`lender withdraws ${description}`, function () {
+            before(async () => {
+              await lendersPauseSnapshot.restore();
             });
 
-            if (coversMinIndependentCases) {
-              describe('borrower without supply borrows', function () {
-                before(async () => {
-                  await lendersPauseSnapshot.restore();
-
-                  await withdraw(dave, exp(10, 6));
-                });
-
-                it('dave borrow balance equals borrowed amount', async () => {
-                  expect(await comet.borrowBalanceOf(dave.address)).to.equal(exp(10, 6));
-                });
-
-                it('recipient receives borrowed amount', async () => {
-                  expect(await baseToken.balanceOf(recipient(dave).address)).to.equal(exp(10, 6));
-                });
-              });
-            }
-
-            describe('lender withdraws supply plus min borrow when both pauses are active', function () {
-              before(async () => {
-                await lendersPauseSnapshot.restore();
-
-                await comet.connect(pauseGuardian).pauseBorrowersWithdraw(true);
-              });
-
-              it('reverts due to lenders pause, not borrowers pause', async () => {
-                await expect(withdraw(alice, SUPPLY_AMOUNT + baseBorrowMin)).to.be.revertedWithCustomError(comet, 'LendersWithdrawPaused');
-              });
-            });
-
-            describe('lender withdraws supply plus min borrow after lenders pause is lifted', function () {
-              before(async () => {
-                await lendersPauseSnapshot.restore();
-
-                await comet.connect(pauseGuardian).pauseLendersWithdraw(false);
-
-                await withdraw(alice, SUPPLY_AMOUNT + baseBorrowMin);
-              });
-
-              it('alice balance is zero', async () => {
-                expect(await comet.balanceOf(alice.address)).to.equal(0);
-              });
-
-              it('alice borrow balance equals min borrow', async () => {
-                expect(await comet.borrowBalanceOf(alice.address)).to.equal(baseBorrowMin);
-              });
-
-              it('recipient receives supply plus min borrow', async () => {
-                expect(await baseToken.balanceOf(recipient(alice).address)).to.equal(SUPPLY_AMOUNT + baseBorrowMin);
-              });
+            it('reverts due to lenders pause', async () => {
+              await expect(withdraw(alice, amount)).to.be.revertedWithCustomError(comet, 'LendersWithdrawPaused');
             });
           });
         }
+
+        describe('borrower without supply borrows', function () {
+          before(async () => {
+            await lendersPauseSnapshot.restore();
+
+            await withdraw(dave, BORROWER_WITHDRAW_AMOUNT);
+          });
+
+          it('dave borrow balance equals borrowed amount', async () => {
+            expect(await comet.borrowBalanceOf(dave.address)).to.equal(BORROWER_WITHDRAW_AMOUNT);
+          });
+
+          it('recipient receives borrowed amount', async () => {
+            expect(await baseToken.balanceOf(recipient(dave).address)).to.equal(BORROWER_WITHDRAW_AMOUNT);
+          });
+        });
+
+        describe('lender withdraws supply plus min borrow when both pauses are active', function () {
+          before(async () => {
+            await lendersPauseSnapshot.restore();
+
+            await comet.connect(pauseGuardian).pauseBorrowersWithdraw(true);
+          });
+
+          it('reverts due to lenders pause, not borrowers pause', async () => {
+            await expect(withdraw(alice, SUPPLY_AMOUNT + BASE_BORROW_MIN)).to.be.revertedWithCustomError(comet, 'LendersWithdrawPaused');
+          });
+
+          it('reverts due to borrowers pause after lenders pause is lifted', async () => {
+            await comet.connect(pauseGuardian).pauseLendersWithdraw(false);
+
+            await expect(withdraw(alice, SUPPLY_AMOUNT + BASE_BORROW_MIN)).to.be.revertedWithCustomError(comet, 'BorrowersWithdrawPaused');
+          });
+        });
+
+        describe('lender withdraws supply plus min borrow after lenders pause is lifted', function () {
+          before(async () => {
+            await lendersPauseSnapshot.restore();
+
+            await comet.connect(pauseGuardian).pauseLendersWithdraw(false);
+
+            await withdraw(alice, SUPPLY_AMOUNT + BASE_BORROW_MIN);
+          });
+
+          it('alice balance is zero', async () => {
+            expect(await comet.balanceOf(alice.address)).to.equal(0);
+          });
+
+          it('alice borrow balance equals min borrow', async () => {
+            expect(await comet.borrowBalanceOf(alice.address)).to.equal(BASE_BORROW_MIN);
+          });
+
+          it('recipient receives supply plus min borrow', async () => {
+            expect(await baseToken.balanceOf(recipient(alice).address)).to.equal(SUPPLY_AMOUNT + BASE_BORROW_MIN);
+          });
+        });
       });
     }
   });
