@@ -7,7 +7,7 @@ import { exp, proposal } from '../../../../src/deploy';
 const USDCE_AMOUNT = exp(470_000, 6);
 const USDT_AMOUNT = exp(65_000, 6);
 
-// 1-of-2 Safe owned by the Timelock and the operator, same address on Polygon and Mainnet
+// Safe with the local Timelock as its only owner (1/1), same address on Polygon and Mainnet
 const SAFE = '0xD28d21422f5fA74E3d4414626c774bDA274b7Ca9';
 // Contract that pulls the USDC reserves from the Safe to the Mainnet Timelock once
 const RESERVES_TRANSFER_CONTRACT = '0x6472d31e775B6a736fB3fB00208B470C5Db14fCF';
@@ -35,7 +35,7 @@ const encodeSafeOwnerExec = (owner: string, to: string, data: string) =>
     [to, 0, data, 0, 0, 0, 0, constants.AddressZero, constants.AddressZero, utils.hexConcat([utils.hexZeroPad(owner, 32), constants.HashZero, '0x01'])]
   );
 
-const formatAmount =(amount: BigNumber | bigint, decimals = 6) =>
+const formatAmount = (amount: BigNumber | bigint, decimals = 6) =>
   Number(utils.formatUnits(amount, decimals)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default migration('1791206401_withdraw_reserves', {
@@ -154,7 +154,7 @@ The proposal does not withdraw all reserves. Both markets still have open borrow
 
 ## USDC.e path
 
-USDC.e is not a LayerZero OFT, so it is withdrawn to the Safe [${SAFE}](https://polygonscan.com/address/${SAFE}). The Safe has the same address on Polygon and Mainnet, and on each chain its owners are the local Compound Timelock and the operator, with a threshold of 1.
+USDC.e is not a LayerZero OFT, so it is withdrawn to the Safe [${SAFE}](https://polygonscan.com/address/${SAFE}). The Safe has the same address on Polygon and Mainnet, and on each chain its only owner is the local Compound Timelock, with a threshold of 1, so only governance can move funds out of it.
 
 This proposal has the Mainnet Safe approve the transfer contract [${RESERVES_TRANSFER_CONTRACT}](https://etherscan.io/address/${RESERVES_TRANSFER_CONTRACT}) to spend 470,000 USDC. The contract has no owner and holds only constants: the USDC address, the Safe address, the Mainnet Timelock address and the amount.
 
