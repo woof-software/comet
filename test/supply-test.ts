@@ -2289,12 +2289,18 @@ describe('supply', function () {
         await cometWith24Collaterals.connect(governor).activateCollateral(assetIndex);
 
         const supplyToken = tokensWith24Collaterals[`ASSET${assetIndex}`];
+        const aliceCollateralBefore = (await cometWith24Collaterals.userCollateral(alice.address, supplyToken.address)).balance;
+        const bobCollateralBefore = (await cometWith24Collaterals.userCollateral(bob.address, supplyToken.address)).balance;
 
         await expect(
           cometWith24Collaterals.connect(bob).supplyTo(alice.address, supplyToken.address, collateralTokenSupplyAmount)
         ).to.not.be.reverted;
 
-        expect((await cometWith24Collaterals.userCollateral(bob.address, supplyToken.address)).balance).to.be.equal(bobUserCollateralBefore.balance);
+        // the recipient (alice) is credited, the sender (bob) is not
+        expect((await cometWith24Collaterals.userCollateral(alice.address, supplyToken.address)).balance)
+          .to.be.equal(BigNumber.from(aliceCollateralBefore).add(collateralTokenSupplyAmount));
+        expect((await cometWith24Collaterals.userCollateral(bob.address, supplyToken.address)).balance)
+          .to.be.equal(bobCollateralBefore);
       });
     }
   });
