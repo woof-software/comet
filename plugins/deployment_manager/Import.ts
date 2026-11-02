@@ -1,10 +1,12 @@
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 import { Address, BuildFile } from './Types';
-import { getBuildFile, storeBuildFile } from './ContractMap';
+import { getArchivedBuildFile, getBuildFile, storeBuildFile } from './ContractMap';
 import { Cache } from './Cache';
-import { loadContract } from '../import/import';
+import { loadContract, trace } from '../import/import';
 
-const DEFAULT_RETRIES = 7;
+// Outer safety net for when every source step in loadContract fails transiently at
+// once; a definitive "not verified" (checked below) skips this entirely.
+const DEFAULT_RETRIES = 3;
 const DEFAULT_RETRY_DELAY = 10_000;
 
 /**
@@ -23,33 +25,16 @@ export async function fetchAndCacheContract(
   return buildFile;
 }
 
-const blockScoutNetworks = ['mainnet', 'unichain', 'scroll', 'optimism', 'base', 'arbitrum', 'ronin'];
-
-// Wrapper for pulling contract data from Etherscan
+// Wrapper for pulling contract data from the live source waterfall (loadContract)
 export async function importContract(
   network: string,
   address: Address,
   retries: number = DEFAULT_RETRIES,
   retryDelay: number = DEFAULT_RETRY_DELAY
 ): Promise<BuildFile> {
-  if(blockScoutNetworks.includes(network)) {
-    try {
-      console.log(`Importing ${address} from ${network} blockscout`);
-      return (await loadContract('blockscout', network, address)) as BuildFile;
-    } catch (e) {
-      if (retries === 0 || (e.message && e.message.includes('Contract source code not verified'))) {
-        throw e;
-      }
-  
-      console.warn(`Import failed for ${network}@${address} (${e.message}), retrying in ${retryDelay / 1000}s; ${retries} retries left`);
-  
-      await new Promise(ok => setTimeout(ok, retryDelay));
-      return importContract(network, address, retries - 1, retryDelay * 2 > 10000 ? 10000 : retryDelay * 2);
-    }
-  }
-
   try {
-    return (await loadContract('etherscan', network, address)) as BuildFile;
+    console.log(`Importing ${address} from ${network}`);
+    return (await loadContract(network, address)) as BuildFile;
   } catch (e) {
     if (retries === 0 || (e.message && e.message.includes('Contract source code not verified'))) {
       throw e;
@@ -62,7 +47,8 @@ export async function importContract(
   }
 }
 
-// Reads a contract if exists in cache, otherwise attempts to import contract by address
+// Reads a contract if it exists in the local cache or the contracts archive, otherwise
+// attempts to import it live by address
 export async function fetchContract(
   cache: Cache,
   network: string,
@@ -71,12 +57,19 @@ export async function fetchContract(
   importRetryDelay = DEFAULT_RETRY_DELAY,
   force = false
 ): Promise<BuildFile> {
-  const cachedBuildFile = !force && await getBuildFile(cache, network, address);
-  if (cachedBuildFile) {
-    return cachedBuildFile;
-  } else {
-    return importContract(network, address, importRetries, importRetryDelay);
+  if (!force) {
+    const cachedBuildFile = await getBuildFile(cache, network, address);
+    if (cachedBuildFile) {
+      trace(network, address, 'resolved via local cache');
+      return cachedBuildFile;
+    }
+    const archivedBuildFile = await getArchivedBuildFile(network, address);
+    if (archivedBuildFile) {
+      trace(network, address, 'resolved via contracts archive');
+      return archivedBuildFile;
+    }
   }
+  return importContract(network, address, importRetries, importRetryDelay);
 }
 
 // Reads a contract if exists in cache, otherwise attempts to load contract by artifact

@@ -2,10 +2,17 @@ import { DeploymentManager } from '../../plugins/deployment_manager';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { executeBridgedProposal } from './bridgeProposal';
 import { setNextBaseFeeToZero } from './hreUtils';
-import { Contract, ethers } from 'ethers';
+import { BigNumber, Contract, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog } from './index';
+import { fetchBridgeReceiverProposals } from './bridgeReceiverProposals';
+import { DEPOSIT_FOR_BURN_SIGNATURE, simulateCCTPL2ToL1Transfer } from './cctpL2ToL1Transfer';
+import { simulateLayerZeroOFTDelivery } from './layerZeroOFTL2ToL1Transfer';
+import { simulatePolygonPoSWithdrawals } from './polygonPoSL2ToL1Transfer';
+
+// Same address on both Polygon and mainnet
+const LZ_ENDPOINT = '0x1a44076050125825900e736c501f859c50fE728c';
 
 type BridgeERC20Data = {
   syncData: string;
@@ -167,7 +174,7 @@ export default async function relayPolygonMessage(
         event => event.address === bridgeReceiver.address
       );
       const { args: { id, eta } } = bridgeReceiver.interface.parseLog(proposalCreatedEvent);
-      
+
       openBridgedProposals.push({ id, eta });
       if (tenderlyLogs) {
         const signer = await bridgeDeploymentManager.getSigner();
@@ -188,4 +195,45 @@ export default async function relayPolygonMessage(
   }
 
   return openBridgedProposals;
+}
+
+export async function simulateL2ToL1TokenBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber?: number,
+  tenderlyLogs?: any[],
+  proposalIds?: BigNumber[]
+) {
+  if (tenderlyLogs) {
+    return;
+  }
+  console.log('Simulating L2→L1 token bridging for any executed Polygon proposals...');
+
+  const { events } = await fetchBridgeReceiverProposals(bridgeDeploymentManager, l2StartingBlockNumber, proposalIds);
+
+  for (const { signatures, calldatas } of events) {
+    for (let i = 0; i < signatures.length; i++) {
+      if (signatures[i] === DEPOSIT_FOR_BURN_SIGNATURE) {
+        await simulateCCTPL2ToL1Transfer(governanceDeploymentManager, bridgeDeploymentManager, calldatas[i]);
+      }
+    }
+  }
+
+  await simulatePolygonPoSWithdrawals(governanceDeploymentManager, bridgeDeploymentManager, l2StartingBlockNumber, proposalIds);
+}
+
+export async function simulateL2ToL1OFTBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber: number,
+  tenderlyLogs?: any[]
+) {
+  await simulateLayerZeroOFTDelivery(
+    governanceDeploymentManager,
+    bridgeDeploymentManager,
+    l2StartingBlockNumber,
+    LZ_ENDPOINT,
+    LZ_ENDPOINT,
+    tenderlyLogs
+  );
 }
