@@ -23,14 +23,16 @@ const FACTOR_SCALE = exp(1, 18);
  * @param remainingDebt the debt value still to be covered, at the current price of the base asset
  * @param totalCollateralizedValue the account's collateral weighted by liquidateCollateralFactor
  * @param assetInfo the collateral being seized
+ * @param targetHealthFactor the target the market is configured with
  */
 export function wantedCollateralValue(
   remainingDebt: bigint | BigNumber,
   totalCollateralizedValue: bigint | BigNumber,
-  assetInfo: AssetInfoStructOutput
+  assetInfo: AssetInfoStructOutput,
+  targetHealthFactor: bigint = TARGET_HEALTH_FACTOR,
 ): bigint {
   return ceilDiv(
-    (toBigInt(remainingDebt) * TARGET_HEALTH_FACTOR - toBigInt(totalCollateralizedValue) * FACTOR_SCALE) * FACTOR_SCALE,
-    toBigInt(assetInfo.liquidationFactor) * TARGET_HEALTH_FACTOR - toBigInt(assetInfo.liquidateCollateralFactor) * FACTOR_SCALE,
+    (toBigInt(remainingDebt) * targetHealthFactor - toBigInt(totalCollateralizedValue) * FACTOR_SCALE) * FACTOR_SCALE,
+    toBigInt(assetInfo.liquidationFactor) * targetHealthFactor - toBigInt(assetInfo.liquidateCollateralFactor) * FACTOR_SCALE,
   );
 }

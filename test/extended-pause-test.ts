@@ -1224,4 +1224,68 @@ describe('extended pause functionality', function () {
       });
     });
   });
+
+  describe('partial liquidation pause function', function () {
+    describe('pausePartialLiquidation', function () {
+      describe('happy cases', function () {
+        let pausePartialLiquidationTx: ContractTransaction;
+
+        it('partial liquidation is not paused by default', async function () {
+          expect(await comet.isPartialLiquidationPaused()).to.be.false;
+        });
+
+        it('allows governor to call pausePartialLiquidation', async function () {
+          pausePartialLiquidationTx = await cometExt.connect(governor).pausePartialLiquidation(true);
+          await expect(pausePartialLiquidationTx).to.not.be.reverted;
+        });
+
+        it('emits PartialLiquidationPauseAction event when pausing by governor', async function () {
+          await expect(pausePartialLiquidationTx)
+            .to.emit(cometExt, 'PartialLiquidationPauseAction')
+            .withArgs(true);
+        });
+
+        it('changes state when called by governor', async function () {
+          expect(await comet.isPartialLiquidationPaused()).to.be.true;
+        });
+
+        it('does not change the other extended pause flags', async function () {
+          expect(await Promise.all([
+            comet.isLendersWithdrawPaused(),
+            comet.isBorrowersWithdrawPaused(),
+            comet.isCollateralWithdrawPaused(),
+            comet.isCollateralSupplyPaused(),
+            comet.isBaseSupplyPaused(),
+            comet.isLendersTransferPaused(),
+            comet.isBorrowersTransferPaused(),
+            comet.isCollateralTransferPaused(),
+          ])).to.not.include(true);
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pausePartialLiquidation(false))
+            .to.emit(cometExt, 'PartialLiquidationPauseAction')
+            .withArgs(false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isPartialLiquidationPaused()).to.be.false;
+        });
+      });
+
+      describe('revert cases', function () {
+        it('reverts when called by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pausePartialLiquidation(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('reverts duplicate status setting', async function () {
+          await expect(
+            cometExt.connect(governor).pausePartialLiquidation(false)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+      });
+    });
+  });
 });

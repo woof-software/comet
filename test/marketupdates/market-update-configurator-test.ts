@@ -1,4 +1,4 @@
-import { expect, makeConfigurator, event, wait } from './../helpers';
+import { expect, exp, makeConfigurator, event, wait } from './../helpers';
 import { makeMarketAdmin } from './market-updates-helper';
 
 describe('Configurator', function() {
@@ -103,6 +103,45 @@ describe('Configurator', function() {
       (await configuratorAsProxy.getConfiguration(cometProxy.address))
         .borrowKink
     ).to.be.equal(newBorrowKink);
+  });
+
+  it('market admin can set targetHealthFactor, other users cannot', async () => {
+    const {
+      governorTimelockSigner,
+      marketUpdateTimelockSigner,
+      marketAdminPermissionCheckerContract
+    } = await makeMarketAdmin();
+
+    const {
+      configurator,
+      configuratorProxy,
+      cometProxy,
+      users: [alice],
+    } = await makeConfigurator({
+      governor: governorTimelockSigner,
+      marketAdminPermissionCheckerContract: marketAdminPermissionCheckerContract
+    });
+
+    const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+
+    await marketAdminPermissionCheckerContract
+      .connect(governorTimelockSigner)
+      .setMarketAdmin(marketUpdateTimelockSigner.address);
+
+    await configuratorAsProxy
+      .connect(marketUpdateTimelockSigner)
+      .setTargetHealthFactor(cometProxy.address, exp(1.2, 18));
+
+    expect(
+      (await configuratorAsProxy.getConfiguration(cometProxy.address))
+        .targetHealthFactor
+    ).to.be.equal(exp(1.2, 18));
+
+    await expect(
+      configuratorAsProxy
+        .connect(alice)
+        .setTargetHealthFactor(cometProxy.address, exp(1.1, 18))
+    ).to.be.revertedWithCustomError(marketAdminPermissionCheckerContract, 'Unauthorized');
   });
 
   it('market admin cannot call NON market update functions', async () => {

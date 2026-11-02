@@ -15,6 +15,20 @@ describe('constructor', function () {
     expect(await comet.baseBorrowMin()).to.eq(exp(100, 6));
   });
 
+  it('sets the targetHealthFactor', async function () {
+    const { comet } = await makeProtocol({ targetHealthFactor: exp(1.2, 18) });
+    expect(await comet.targetHealthFactor()).to.eq(exp(1.2, 18));
+  });
+
+  it('allows a targetHealthFactor equal to the minimum', async function () {
+    const { comet } = await makeProtocol({ targetHealthFactor: ONE });
+    expect(await comet.targetHealthFactor()).to.eq(ONE);
+  });
+
+  it('reverts if the targetHealthFactor is below the minimum', async function () {
+    await expect(makeProtocol({ targetHealthFactor: ONE - 1n })).to.be.revertedWith("custom error 'BadHealthFactor()'");
+  });
+
   it('verifies asset scales', async function () {
     const [governor, pauseGuardian] = await ethers.getSigners();
 
