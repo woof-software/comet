@@ -140,7 +140,7 @@ export async function createRandomWallet() {
 
   await gov.sendTransaction({
     to: random.address,
-    value: ethers.utils.parseEther('100.0'), // Sending 1 Ether to cover gas fees
+    value: ethers.utils.parseEther('10000.0'), // coverage sends txs with a huge gas limit, so the upfront cost is ~1650 ETH
   });
   return random.connect(gov.provider);
 }
