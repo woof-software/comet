@@ -213,8 +213,9 @@ function translateVnetRpcCall(
       return null;
     case 'hardhat_setBalance':
       return { method: 'tenderly_setBalance', params: [[params[0]], params[1]] };
+    // Hardhat takes the slot as a quantity (no leading zeros); Tenderly rejects anything but a 32-byte slot
     case 'hardhat_setStorageAt':
-      return { method: 'tenderly_setStorageAt', params };
+      return { method: 'tenderly_setStorageAt', params: [params[0], ethers.utils.hexZeroPad(params[1], 32), params[2]] };
     case 'hardhat_mine':
       return { method: 'evm_increaseBlocks', params: [params[0]] };
     default:

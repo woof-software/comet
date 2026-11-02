@@ -81,7 +81,8 @@ async function buildReceiptProof(bridgeDeploymentManager: DeploymentManager, raw
   };
 }
 
-// L1: writes a checkpoint covering only the burn block (so the block proof is empty); needs validator signatures otherwise
+// L1: writes a checkpoint covering only the burn block (so the block proof is empty); needs validator signatures otherwise.
+// RootChainManager.exit reads only its root and start block.
 async function writeCheckpoint(
   governanceDeploymentManager: DeploymentManager,
   rootChain: Contract,
@@ -96,10 +97,8 @@ async function writeCheckpoint(
     ['uint256', 'uint256', 'bytes32', 'bytes32'],
     [proof.blockNumber, proof.blockTime, proof.transactionsRoot, proof.receiptsRoot]
   );
-  const { timestamp: createdAt } = await governanceDeploymentManager.hre.ethers.provider.getBlock('latest');
-
-  // HeaderBlock fields in storage order: root, start, end, createdAt
-  const checkpointFields = [checkpointRoot, proof.blockNumber, proof.blockNumber, createdAt];
+  // HeaderBlock fields in storage order: root, start
+  const checkpointFields = [checkpointRoot, proof.blockNumber];
   const headerSlot = BigNumber.from(
     utils.keccak256(utils.defaultAbiCoder.encode(['uint256', 'uint256'], [headerNumber, HEADER_BLOCKS_SLOT]))
   );

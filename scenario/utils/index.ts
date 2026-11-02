@@ -1269,8 +1269,12 @@ export async function tenderlyVnetExecute(
     await governanceVnetProvider.send('evm_mine', []);
   }
 
-  console.log('Updating CCIP prices...');
-  await updateCCIPStats(governanceVnetDm);
+  // Only CCIP sends (to Ronin) need fresh prices; skipping saves the CommitStore setCode pair on the vnet
+  const roninAsATarget = [marketDm, ...governanceDm.bridgedDeploymentManagers.values()].some(dm => dm.network === 'ronin');
+  if (roninAsATarget) {
+    console.log('Updating CCIP prices...');
+    await updateCCIPStats(governanceVnetDm);
+  }
 
   console.log(`Executing proposal ${proposalId.toString()}...`);
   const executeTx = await vnetGovernor.connect(proposerSigner)['execute(uint256)'](proposalId, { gasLimit: 30_000_000 });
