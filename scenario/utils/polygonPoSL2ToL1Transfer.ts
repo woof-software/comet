@@ -109,6 +109,8 @@ async function writeCheckpoint(
       utils.hexZeroPad(BigNumber.from(checkpointFields[fieldIndex]).toHexString(), 32),
     ]);
   }
+  // Tenderly's explorer replays a tx without the state override from the block right before it
+  await governanceDeploymentManager.hre.network.provider.send('evm_mine', []);
 
   return headerNumber;
 }
