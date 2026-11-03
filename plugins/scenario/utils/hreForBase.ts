@@ -139,7 +139,7 @@ export async function forkedHreForBase(base: ForkSpec): Promise<HardhatRuntimeEn
 
   if (providerUrl) {
     console.log(`Forking from network: ${base.network}`);
-    console.log(`At block number: ${await getBlockNumberWithRetry(provider) - (getBlockRollback(base) || 0)}`);
+    console.log(`At block number: ${(await getBlockNumberWithRetry(provider)) - (getBlockRollback(base) || 0)}`);
   }
 
   // noNetwork otherwise
