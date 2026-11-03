@@ -91,17 +91,6 @@ jobs:
         with:
           submodules: recursive
 
-      # The spider reads contracts from the archive before fetching them live, so the latest
-      # archive means fewer explorer calls (and fewer rate-limit failures). Only an optimisation:
-      # if it fails, the spider still runs against the archive commit comet points to.
-      # The submodule checkout has no remote-tracking branches, so the fetch lands in FETCH_HEAD.
-      - name: Update archive to latest develop
-        continue-on-error: true
-        run: |
-          cd plugins/import/contracts-archive
-          git fetch origin develop
-          git checkout FETCH_HEAD
-
       - uses: actions/setup-node@v4
         with:
           node-version: '18'
@@ -148,14 +137,18 @@ jobs:
     name: Open archive PR
     runs-on: ubuntu-latest
     steps:
+      # The archive submodule URL is SSH (git@github.com:...); only actions/checkout knows how to
+      # clone it over HTTPS with the job token, so the submodules must be cloned here
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       # Compare against the latest archive, not the commit comet points to: that one is behind
-      # after every sync, so the PR would re-add already archived files and conflict with develop
+      # after every sync, so the PR would re-add already archived files and conflict with develop.
+      # The submodule checkout has no remote-tracking branches, so the fetch lands in FETCH_HEAD.
       - name: Check out latest archive develop
         run: |
-          git submodule update --init plugins/import/contracts-archive
           cd plugins/import/contracts-archive
           git fetch origin develop
           git checkout FETCH_HEAD
