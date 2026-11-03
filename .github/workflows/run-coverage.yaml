@@ -25,3 +25,4 @@ jobs:
         uses: coverallsapp/github-action@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          git-commit: ${{ github.event.pull_request.head.sha || github.sha }}
