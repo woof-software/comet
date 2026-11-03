@@ -92,12 +92,15 @@ jobs:
           submodules: recursive
 
       # The spider reads contracts from the archive before fetching them live, so the latest
-      # archive means fewer explorer calls (and fewer rate-limit failures)
+      # archive means fewer explorer calls (and fewer rate-limit failures). Only an optimisation:
+      # if it fails, the spider still runs against the archive commit comet points to.
+      # The submodule checkout has no remote-tracking branches, so the fetch lands in FETCH_HEAD.
       - name: Update archive to latest develop
+        continue-on-error: true
         run: |
           cd plugins/import/contracts-archive
           git fetch origin develop
-          git checkout origin/develop
+          git checkout FETCH_HEAD
 
       - uses: actions/setup-node@v4
         with:
@@ -155,7 +158,7 @@ jobs:
           git submodule update --init plugins/import/contracts-archive
           cd plugins/import/contracts-archive
           git fetch origin develop
-          git checkout origin/develop
+          git checkout FETCH_HEAD
 
       - name: Download spidered contracts
         uses: actions/download-artifact@v4
