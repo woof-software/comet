@@ -504,14 +504,14 @@ scenario(
 );
 
 /**
- * @notice Verifies that supply interest accrual is capped by available reserves when there are no borrows
+ * @notice Verifies that supply interest stops accruing once reserves are exhausted when there are no borrows
  * @dev In a new market with lenders but no borrowers, lenders earn the base supply rate funded from reserves.
- *      Without this safeguard, totalSupply() could exceed the actual token balance, causing illiquidity.
- *      Once reserves are exhausted (totalSupply >= balance), the supply index stops growing
- *      to ensure lenders can always withdraw their entitled amounts.
+ *      Once reserves are exhausted (totalSupply >= balance), getSupplyRate() cuts the rate off and the
+ *      supply index stops growing. The cut-off is checked at accrual time, so the accrual that crosses
+ *      the balance is not capped and totalSupply() can overshoot it by that accrual's interest.
  */
 scenario(
-  'Comet#interestRate > supply interest does not exceed reserves without borrows',
+  'Comet#interestRate > supply interest stops once reserves are exhausted without borrows',
   {
     filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
     upgrade: {
@@ -556,8 +556,9 @@ scenario(
     // When totalSupply() reaches balance, interest stops accruing
     // We need to find time such that: initialSupply * (1 + rate*time) >= balance
     // Simplification: time = reserves / (supply * rate)
-    const totalSupplyBase = (await comet.totalsBasic()).totalSupplyBase.toBigInt();
-    const expectedTimeToExhaustReserves = (initialReserves * BigInt(exp(1, 18))) / 
+    const totalsBeforeSkip = await comet.totalsBasic();
+    const totalSupplyBase = totalsBeforeSkip.totalSupplyBase.toBigInt();
+    const expectedTimeToExhaustReserves = (initialReserves * BigInt(exp(1, 18))) /
       (totalSupplyBase * supplyPerSecondInterestRateBase.toBigInt());
 
     // Skip time significantly past when reserves should be exhausted
@@ -568,20 +569,22 @@ scenario(
     // Trigger accrue
     await comet.accrueAccount(ethers.constants.AddressZero);
 
-    // After reserves are exhausted, totalSupply() should approximately equal the base token balance
+    // After reserves are exhausted, totalSupply() has reached the base token balance.
+    // A single accrual is not capped, so it overshoots by the interest of the time past exhaustion
     const totalSupply = await comet.totalSupply();
     const cometBalance = await baseToken.balanceOf(comet.address);
+    expect(totalSupply.toBigInt()).to.be.greaterThanOrEqual(cometBalance);
 
-    // totalSupply should be approximately equal to or less than balance (within rounding)
-    expect(totalSupply.toBigInt()).to.be.approximately(cometBalance, 10000000);
-
-    // Get the supply index after reserves exhaustion
+    // The whole elapsed time accrued at the base rate: the cut-off only applies from the next accrual
+    // accruedIndex = prevIndex + prevIndex * supplyRate * timeElapsed / 1e18
     const totalsAfterExhaustion = await comet.totalsBasic();
     const indexAfterExhaustion = totalsAfterExhaustion.baseSupplyIndex;
-
-    const baseBalance = await baseToken.balanceOf(comet.address);
-    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
-    expect(indexAfterExhaustion).to.equal(baseBalance * baseIndexScale / totalSupplyBase);
+    const timeElapsed = totalsAfterExhaustion.lastAccrualTime - totalsBeforeSkip.lastAccrualTime;
+    expect(indexAfterExhaustion).to.equal(
+      totalsBeforeSkip.baseSupplyIndex.add(
+        totalsBeforeSkip.baseSupplyIndex.mul(supplyPerSecondInterestRateBase).mul(timeElapsed).div(exp(1, 18))
+      )
+    );
 
     // Skip more time
     await ethers.provider.send('evm_increaseTime', [3600]); // 1 more hour
@@ -597,8 +600,8 @@ scenario(
     // Supply index should NOT have grown further (reserves exhausted)
     expect(finalSupplyIndex.toBigInt()).to.equal(indexAfterExhaustion.toBigInt());
 
-    // Supply rate should now be the base rate
+    // Supply rate is cut off while present value meets the token balance
     const supplyRateNow = await comet.getSupplyRate(0);
-    expect(supplyRateNow.toBigInt()).to.equal((await comet.supplyPerSecondInterestRateBase()).toBigInt());
+    expect(supplyRateNow.toBigInt()).to.equal(0n);
   }
 );

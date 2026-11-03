@@ -207,8 +207,10 @@ scenario(
   }
 );
 
+// Absorb seizes only the collateral it needs, so the excess stays with the user as collateral
+// instead of being minted to them as a base supply
 scenario(
-  'Comet#liquidation > user can end up with a minted supply',
+  'Comet#liquidation > user keeps excess collateral instead of a minted supply',
   {
     filter: async (ctx) => !matchesDeployment(ctx, [
       { network: 'base', deployment: 'usds' },
@@ -238,10 +240,13 @@ scenario(
     );
 
     const ab0 = await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
-    expect(ab0.events?.[2]?.event).to.be.equal('Transfer');
+    expect(ab0.events?.map(e => e.event)).to.not.include('Transfer');
 
     const baseBalance = await albert.getCometBaseBalance();
-    expect(Number(baseBalance)).to.be.greaterThan(0);
+    expect(baseBalance).to.be.lessThanOrEqual(0n);
+
+    const { asset: asset0 } = await comet.getAssetInfo(0);
+    expect(await albert.getCometCollateralBalance(asset0)).to.be.greaterThan(0n);
   }
 );
 
