@@ -3,3 +3,4 @@ plugins/deployment_manager/test/SolcList.json
 plugins/import/contracts-archive/
 scripts/build-spec.js
 scripts/exportNetworkConfigs.js
+*.sh

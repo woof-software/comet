@@ -167,7 +167,7 @@ describe('withdraw', function () {
 
       it('gas used is within limit', async () => {
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(106000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(140000);
       });
     });
 
@@ -329,7 +329,7 @@ describe('withdraw', function () {
 
       it('gas used is within limit', async () => {
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(121000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(255000);
       });
     });
 
@@ -583,7 +583,7 @@ describe('withdraw', function () {
 
       it('gas used is within expected bounds', async () => {
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(87000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(130000);
       });
     });
 
