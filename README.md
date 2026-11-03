@@ -90,31 +90,15 @@ An example deployment command looks like:
 
 ## Liquidation
 
-Liquidation of under-collateralized accounts is handled by a dedicated **Liquidation Module**, not by the core market. The module reads an account's position from Comet, computes a per-collateral **seizure plan**, and either absorbs the collateral into the protocol (the permissionless default route) or sells it for the base asset through a DEX adapter (the executor route).
+Liquidation of under-collateralized accounts is handled by the market itself. The permissionless `absorb()` seizes just enough collateral to bring each account back to the market's **target health factor**, closes the debt outright when the remainder would fall below `baseBorrowMin` or partial liquidation is paused, and writes off any debt the collateral cannot cover. Seized collateral stays in the protocol and is sold back at a discount through `buyCollateral`.
 
-📖 **Full documentation: [liquidation.md](docs/liquidation.md)** — an end-to-end guide covering the health factor and collateral valuation, why accounts become liquidatable, the seizure calculation (partial, full-close, min-debt, and bad-debt cases), the default and DEX liquidation routes, liquidator incentives, emitted events, and the integration interfaces.
+📖 **Full documentation: [liquidation.md](docs/liquidation.md)** — an end-to-end guide covering the health factor and collateral valuation, why accounts become liquidatable, the seizure calculation (partial, full-close, min-debt, and bad-debt cases), settlement, liquidator incentives, emitted events, and the integration interfaces.
 
-**[LiquidationModule.sol](contracts/liquidation-module/LiquidationModule.sol)** - Deployed module. Adds the executor-gated DEX liquidation route (`liquidate`) on top of the default logic, routing seized collateral through a DEX adapter and paying the executor an incentive out of the surplus.
+**[CometWithExtendedAssetList.sol](contracts/CometWithExtendedAssetList.sol)** - Implements `absorb` and `isLiquidatable`. The target health factor is an immutable taken from the market's configuration; the constructor rejects values below `1e18`.
 
-**[LiquidationModuleForComet.sol](contracts/liquidation-module/LiquidationModuleForComet.sol)** - Variant of `LiquidationModule` used when attaching the module to an already-deployed Comet market.
+**[CometExt.sol](contracts/CometExt.sol)** - Implements `pausePartialLiquidation` alongside the other extended pause switches. While partial liquidation is paused, `absorb` closes each account's debt in full.
 
-**[CoreLiquidationModule.sol](contracts/liquidation-module/CoreLiquidationModule.sol)** - Default liquidation logic: `absorb`, `isLiquidatable`, and the orchestration that applies a seizure plan through Comet's liquidation hooks. Both routes converge here.
-
-**[SeizureCalculations.sol](contracts/liquidation-module/SeizureCalculations.sol)** - Collateral valuation and the seizure-plan math, including the health-factor targeting used by partial liquidation.
-
-**[LiquidationAccessControl.sol](contracts/liquidation-module/LiquidationAccessControl.sol)** - Role-based access control (executor, multisig, pauser, DAO) and the DEX-pause and liquidation-mode switches.
-
-**[LiquidationSeizureView.sol](contracts/liquidation-module/LiquidationSeizureView.sol)** - Read-only helper bound to a module that projects the seizure plan to a future timestamp for off-chain callers.
-
-## DEX adapter contracts
-
-DEX adapters swap the collateral seized during a DEX-route liquidation into the Comet base asset. Each adapter is bound 1:1 to a Comet market and is callable only by that market's liquidation module. Every swap tries a core router first and falls back to a redundant router, enforcing an oracle-derived minimum output with a configurable slippage.
-
-**[CoreDexAdapter.sol](contracts/dex-adapters/CoreDexAdapter.sol)** - Abstract base adapter that inherits `ICoreDexAdapter.sol`. Implements a `swap` function with virtual `_coreSwap` and `_redundantSwap` routines. Configuration is immutable, so changing it requires deploying a new adapter and pointing the liquidation module at it.
-
-**[UniswapAdapter.sol](contracts/dex-adapters/redundant/UniswapAdapter.sol)** - Abstract adapter that inherits `CoreDexAdapter.sol` and implements the redundant (fallback) swap through the Uniswap V4 Universal Router.
-
-**[OneInchV6Adapter.sol](contracts/dex-adapters/core/OneInchV6Adapter.sol)** - Concrete adapter (`OneInchV6CoreAdapter`) that inherits `UniswapAdapter.sol` and implements the core swap through the 1inch V6 aggregation router. Uniswap V4 remains the redundant path.
+**[Configurator.sol](contracts/Configurator.sol)** - `setTargetHealthFactor` sets the target in a market's configuration. It takes effect with the next implementation deployed through `CometProxyAdmin.deployAndUpgradeTo`.
 
 ## Vendor contracts
 
@@ -181,7 +165,7 @@ See the [GitHub workflow](.github/workflows/run-forge-tests.yaml) for an example
 
 ### Run fuzz tests
 
-Property tests for the liquidation module, under `forge/test/fuzzing`. They deploy the whole protocol
+Property tests for liquidation in Comet, under `forge/test/fuzzing`. They deploy the whole protocol
 from scratch — no fork and no deployment scripts — so nothing beyond `forge` is needed.
 
 ```

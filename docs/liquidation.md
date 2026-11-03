@@ -2,7 +2,7 @@
 
 How under-collateralized positions are wound down in the Comet protocol — the roles involved, the contracts that do the work, and the math behind each path.
 
-> Reference contracts: [`CometWithExtendedAssetList`](../contracts/CometWithExtendedAssetList.sol), [`liquidation-module/`](../contracts/liquidation-module/), [`dex-adapters/`](../contracts/dex-adapters/).
+> Reference contracts: [`CometWithExtendedAssetList`](../contracts/CometWithExtendedAssetList.sol), [`CometExt`](../contracts/CometExt.sol), [`Configurator`](../contracts/Configurator.sol).
 
 ---
 
@@ -13,11 +13,10 @@ How under-collateralized positions are wound down in the Comet protocol — the 
 3. [Mechanism of Liquidation](#3-mechanism-of-liquidation)
 4. [Structure of the Protocol](#4-structure-of-the-protocol)
 5. [Seizure Calculation](#5-seizure-calculation)
-6. [Default Liquidation](#6-default-liquidation)
-7. [DEX Liquidation](#7-dex-liquidation)
-8. [Benefits for Liquidators](#8-benefits-for-liquidators)
-9. [Events](#9-events)
-10. [Interfaces](#10-interfaces)
+6. [Settlement](#6-settlement)
+7. [Benefits for Liquidators](#7-benefits-for-liquidators)
+8. [Events](#8-events)
+9. [Interfaces](#9-interfaces)
 
 <!-- More chapters are added here as they are written. -->
 
@@ -31,17 +30,18 @@ That buffer is not permanent. Collateral prices fall, and borrow balances grow o
 
 **Liquidation is the mechanism that closes that gap before it becomes a loss.** When a position crosses the liquidation threshold, its collateral is seized and used to repay its debt, restoring the account to a safe state (or, in the worst case, capping the protocol's loss as early as possible). This is what keeps the base asset fully backed and lenders able to withdraw.
 
-In Comet, this work is not done inside the core market contract. It lives in a dedicated **Liquidation Module**, which reads the account's position from the market, decides how much of which collateral to seize, and writes the result back through the market's liquidation hooks.
+In Comet, this work is done by the core market contract itself. Its permissionless **`absorb()`** checks whether an account is liquidatable, decides how much of which collateral to seize, and writes the result straight into the market's balances — in one call, with no other contract involved.
 
 ### Who and what is involved
 
 | Actor / Component | Role |
 |---|---|
 | **Borrower** | Supplies collateral and borrows the base asset. Their position is what gets liquidated when it becomes unhealthy. |
-| **Market** (`CometWithExtendedAssetList`) | Holds all balances and prices. Knows each account's debt and collateral, and exposes the hooks the module calls to move value. |
-| **Liquidation Module** | The brain of the operation. Checks whether an account is liquidatable, computes the **seizure plan** (which collateral to take, and how much), and instructs the market to seize collateral and reduce debt. |
+| **Market** (`CometWithExtendedAssetList`) | Holds all balances and prices. Its `absorb()` checks whether an account is liquidatable, computes **which collateral to take and how much**, and updates the borrower's collateral and debt. |
+| **Absorber** | Whoever calls `absorb()` — anyone can. Earns liquidator points, and profits by buying the absorbed collateral back at a discount ([Chapter 7](#7-benefits-for-liquidators)). |
+| **Governance** | Sets the market's **target health factor** and can **pause partial liquidation** ([Chapter 4](#4-structure-of-the-protocol)). |
 
-The diagram below shows the core idea, without the DEX adapter or the routing details (those come in later chapters):
+The diagram below shows the core idea:
 
 ```mermaid
 flowchart TD
@@ -58,16 +58,16 @@ flowchart TD
     Price{{"Price falls / interest accrues<br/>→ debt too large for the collateral"}}
     Debt -.-> Price
 
-    Module["Liquidation Module"]
-    Price ==>|"3 · position becomes<br/>under-collateralized"| Module
+    Absorb["Comet.absorb()"]
+    Price ==>|"3 · position becomes<br/>under-collateralized"| Absorb
 
-    Module ==>|"4 · seizes collateral<br/>(the seizure plan)"| Collateral
-    Module ==>|"5 · repays the debt"| Debt
+    Absorb ==>|"4 · seizes collateral"| Collateral
+    Absorb ==>|"5 · repays the debt"| Debt
 ```
 
-**In words:** a borrower supplies collateral and borrows against it *(steps 1–2)*. Later, a price move or accrued interest pushes the debt past what the collateral can safely support *(step 3)*. The Liquidation Module then seizes just enough collateral and uses its value to pay down the debt *(steps 4–5)* — bringing the account back to health, or closing it out entirely when the collateral no longer covers what is owed.
+**In words:** a borrower supplies collateral and borrows against it *(steps 1–2)*. Later, a price move or accrued interest pushes the debt past what the collateral can safely support *(step 3)*. Anyone can then call `absorb()`, which seizes just enough collateral and uses its value to pay down the debt *(steps 4–5)* — bringing the account back to health, or closing it out entirely when the collateral no longer covers what is owed.
 
-The chapters that follow break down *when* an account becomes liquidatable, *how much* collateral the module decides to seize, and the different *paths* a liquidation can take.
+The chapters that follow break down *when* an account becomes liquidatable, *how much* collateral `absorb()` decides to seize, and the different *paths* a liquidation can take.
 
 <div align="right"><a href="#table-of-contents">⬆ Back to Table of Contents</a></div>
 
@@ -75,7 +75,7 @@ The chapters that follow break down *when* an account becomes liquidatable, *how
 
 ## 2. Collateral Value and Health Factor
 
-To decide whether an account can be liquidated, the module needs a single question answered: **is the account's collateral still worth enough to back its debt?** Answering it means putting a number on the collateral and a number on the debt, and comparing them. This chapter builds those two numbers up from the pieces the protocol stores, then combines them into the **health factor** — the one value that tells us, at a glance, how safe or unsafe a position is.
+To decide whether an account can be liquidated, the market needs a single question answered: **is the account's collateral still worth enough to back its debt?** Answering it means putting a number on the collateral and a number on the debt, and comparing them. This chapter builds those two numbers up from the pieces the protocol stores, then combines them into the **health factor** — the one value that tells us, at a glance, how safe or unsafe a position is.
 
 ### 2.1 The ingredients: prices and factors
 
@@ -97,7 +97,7 @@ Comet defines three factors per asset, and it is important not to confuse them �
 
 ### 2.2 The collateral value formula
 
-For a **single** collateral asset, the module computes a raw USD value and then weights it by the liquidation factor. In Comet's fixed-point math (`SeizureCalculations._getLiquidity`):
+For a **single** collateral asset, Comet computes a raw USD value and then weights it by the liquidation factor. In Comet's fixed-point math (`_getLiquidity`):
 
 ```ts
 // Raw USD value of the holding, carried at the 1e8 price scale.
@@ -116,7 +116,7 @@ collateralValue_i = balance_i × price_i / scale_i
 weightedValue_i   = collateralValue_i × liquidateCollateralFactor_i / 1e18
 ```
 
-An account can hold several collaterals at once, so the module loops over every asset the account has (`assetsIn` tracks which ones) and sums the weighted values. This sum is the account's **liquidity** — the total collateral value that counts against its debt:
+An account can hold several collaterals at once, so Comet loops over every asset the account has (`assetsIn` tracks which ones) and sums the weighted values. This sum is the account's **liquidity** — the total collateral value that counts against its debt:
 
 ```ts
 liquidity = Σ  ( balance_i × price_i / scale_i ) × liquidateCollateralFactor_i / 1e18
@@ -154,12 +154,12 @@ The health factor is a **1e18-scaled** number, so `1.0` is stored as `1e18`. Rea
 This is exactly the test `isLiquidatable` performs, just arranged to avoid a division. Instead of computing the ratio, it compares the two values directly:
 
 ```ts
-// CoreLiquidationModule.isLiquidatable — debt is negative, liquidity is positive.
+// Comet.isLiquidatable — debt is negative, liquidity is positive.
 // debt + liquidity < 0   ⇔   liquidity < debtValue   ⇔   HF < 1
 return debt + liquidity < 0n;
 ```
 
-There is one more health-factor value to know about, used later by **partial** liquidation: `TARGET_HEALTH_FACTOR = 1.05e18`. When the module only partially liquidates an account, it seizes *just enough* collateral to lift the health factor back up to `1.05` - a small margin above the `1.0` threshold, so a tiny further price move doesn't immediately push the account underwater again. The seizure chapter covers how that target drives the amount seized.
+There is one more health-factor value to know about, used later by **partial** liquidation: the market's **`targetHealthFactor`**. When `absorb()` only partially liquidates an account, it seizes *just enough* collateral to lift the health factor back up to that target - a small margin above the `1.0` threshold, so a tiny further price move doesn't immediately push the account underwater again. Each market sets its own target, never below `1.0` ([Chapter 4](#4-structure-of-the-protocol)); the examples in this document use `1.05e18`. The seizure chapter covers how that target drives the amount seized.
 
 ### 2.4 Worked example
 
@@ -233,7 +233,7 @@ const liquidatable = weightedValue < debtValue;                          // true
 - The **debt** is valued the same way from the borrow's `presentValue` (interest included) and the base asset's price.
 - The **health factor** is `liquidity / debtValue`, carried at `1e18`. **`HF ≥ 1` is safe; `HF < 1` is liquidatable** — and that is precisely what `isLiquidatable` checks.
 - Don't confuse the three factors: **borrowCollateralFactor** gates borrowing, **liquidateCollateralFactor** decides liquidation, **liquidationFactor** prices the seizure (next chapters).
-- Partial liquidation later aims for **`TARGET_HEALTH_FACTOR = 1.05`**, restoring a small safety margin rather than stopping exactly at `1.0`.
+- Partial liquidation later aims for the market's **`targetHealthFactor`** (`1.05` in the examples), restoring a small safety margin rather than stopping exactly at `1.0`.
 
 <div align="right"><a href="#table-of-contents">⬆ Back to Table of Contents</a></div>
 
@@ -300,18 +300,18 @@ In every case the cause is different, but the test the protocol runs is identica
 
 `isLiquidatable` is the single source of truth for whether an account can be liquidated. It answers the question with the exact math from Chapter 2, arranged into four steps.
 
-Before the check runs in a live liquidation, the keeper's entry point calls **`comet.accrueAccount(account)`** first. Accrual advances the borrow index up to the current block, so the borrow balance the check reads is fully up to date — this is what makes trigger **3** (accrued interest) visible the instant it crosses the line. (Called as a plain read-only view, `isLiquidatable` uses the last stored index instead, which is at most one block stale.)
+In a live liquidation, **`absorb()`** accrues first (`accrueInternal`). Accrual advances the borrow index up to the current block, so the borrow balance the check reads is fully up to date — this is what makes trigger **3** (accrued interest) visible the instant it crosses the line. `absorb()` then runs the same comparison for each account before seizing anything ([Chapter 5](#5-seizure-calculation)). (Called as a plain read-only view, `isLiquidatable` uses the stored index instead, as of the market's last accrual.)
 
 The steps:
 
 1. **Read the account.** Load `principal` (its base position) and `assetsIn` (which collaterals it holds).
 2. **Short-circuit suppliers.** If `principal >= 0` the account has no debt and can never be liquidated — return `false` immediately, before touching any price feed.
 3. **Value the debt.** Take `presentValue(principal)` (the borrow balance *with* accrued interest) and convert it to USD at the base price. It is negative, because a borrow is a negative position.
-4. **Value the weighted collateral and compare.** Sum every collateral's value weighted by its `liquidateCollateralFactor` (the `getLiquidity` loop from Chapter 2), then check whether it still covers the debt.
+4. **Value the weighted collateral and compare.** Sum every collateral's value weighted by its `liquidateCollateralFactor` (the `_getLiquidity` loop from Chapter 2), then check whether it still covers the debt.
 
 ```ts
 function isLiquidatable(account: string): boolean {
-  const accountUser = comet.userBasic(account);        // principal + assetsIn
+  const accountUser = userBasic[account];              // principal + assetsIn
 
   // Step 2 — a supplier (principal ≥ 0) has no debt, so it is never liquidatable.
   //          Returns before any price lookup.
@@ -320,15 +320,15 @@ function isLiquidatable(account: string): boolean {
   // Step 3 — debt value at the 1e8 price scale. presentValue() applies the latest borrow
   //          index, so accrued interest is already baked in. Negative, because it's a borrow.
   const debt = signedMulPrice(
-    comet.presentValue(accountUser.principal),
-    getPrice(comet.baseTokenPriceFeed()),
+    presentValue(accountUser.principal),
+    getPrice(baseTokenPriceFeed),
     baseScale,
   );
 
   // Step 4 — LCF-weighted collateral value (the liquidation threshold), summed over
   //          every asset in assetsIn. Assets with liquidateCollateralFactor == 0 are
   //          skipped, so a deactivated collateral (trigger 4) contributes nothing.
-  const { liquidity } = getLiquidity(accountUser, account, /* liquidation */ true);
+  const { liquidity } = _getLiquidity(accountUser, account);
 
   // debt is negative and liquidity is positive. Their sum is < 0 exactly when the
   // weighted collateral can no longer cover the debt — i.e. HF < 1.
@@ -340,14 +340,14 @@ The final line is the whole decision. Written out, `debt + liquidity < 0` is the
 
 Two behaviours from the triggers above show up directly in this code:
 
-- **Deactivated collateral (trigger 4)** contributes nothing because `getLiquidity` skips any asset whose `liquidateCollateralFactor` is `0` — it never even fetches its price. That both makes the account easier to liquidate *and* prevents a broken oracle on a dead asset from blocking the check.
+- **Deactivated collateral (trigger 4)** contributes nothing because `_getLiquidity` skips any asset whose `liquidateCollateralFactor` is `0` — it never even fetches its price. That both makes the account easier to liquidate *and* prevents a broken oracle on a dead asset from blocking the check.
 - **Accrued interest (trigger 3)** needs no special handling here: it lives entirely inside `presentValue(principal)`, which is why accruing first is all that's required to see it.
 
 ### 3.3 In short
 
 - A position is liquidatable the instant **weighted collateral < debt** — equivalently, **health factor < 1**.
 - Four independent triggers can cross that line: **collateral price ↓**, **base price ↑**, **accrued interest ↑ debt**, or **collateral deactivation** (factor → 0).
-- `isLiquidatable` is the one function that decides it: **accrue → value the debt (`presentValue`) → sum weighted collateral (`getLiquidity`) → compare**.
+- `isLiquidatable` is the one function that decides it: **accrue → value the debt (`presentValue`) → sum weighted collateral (`_getLiquidity`) → compare**.
 - Suppliers short-circuit to `false`; deactivated collaterals drop out of the sum; interest is already inside `presentValue`. The verdict is the single signed comparison `debt + liquidity < 0`.
 
 <div align="right"><a href="#table-of-contents">⬆ Back to Table of Contents</a></div>
@@ -356,135 +356,65 @@ Two behaviours from the triggers above show up directly in this code:
 
 ## 4. Structure of the Protocol
 
-Once an account *is* liquidatable, there is more than one way to actually liquidate it. Before diving into what each route does internally, it helps to see the **entry points** and how a call is routed. The scheme below shows just the first couple of steps — how a liquidation call reaches either the default logic or the DEX path — and stops there.
+Once an account *is* liquidatable, there is exactly one way to liquidate it: **`Comet.absorb()`**. Before diving into the seizure math, it helps to see what that call runs through, and the two settings that shape every liquidation — where they live and who can change them.
 
 ```mermaid
 flowchart TD
     Caller([Liquidation caller])
 
     subgraph Comet["Comet market"]
-        Absorb["absorb()<br/><i>permissionless</i>"]
+        Absorb["absorb(absorber, accounts)<br/><i>permissionless</i>"]
+        Accrue["accrueInternal()<br/>once per call"]
+        Internal["absorbInternal(absorber, account)<br/>once per account"]
+        Liq["_getLiquidity<br/>LCF-weighted collateral + cached prices"]
+        Close["_processDebtClosing<br/>close the remaining debt"]
+        Points["liquidatorPoints[absorber]"]
     end
 
-    subgraph Module["Liquidation Module"]
-        Liquidate["liquidate()<br/><i>requires EXECUTOR_ROLE</i>"]
-        Branch{"DEX route<br/>paused?"}
-        Default["Default liquidation<br/>(CoreLiquidationModule._liquidate)"]
-        Dex["DEX liquidation<br/>(_dexLiquidate → DEX adapter)"]
-    end
-
-    Caller -->|"way 1"| Absorb
-    Caller -->|"way 2"| Liquidate
-
-    Absorb ==>|"always the default path"| Default
-    Liquidate --> Branch
-    Branch -->|"yes → paused"| Default
-    Branch -->|"no"| Dex
+    Caller --> Absorb
+    Absorb --> Accrue --> Internal
+    Internal --> Liq
+    Internal --> Close
+    Absorb -->|"after the last account"| Points
 ```
 
-### The two ways in
+### The entry point
 
-A liquidation can be started through **two different functions**, and which one you call determines both who is allowed to call it and which route the liquidation takes.
-
-| Entry point | Lives on | Who can call | Route it leads to |
+| Entry point | Lives on | Who can call | What it does |
 |---|---|---|---|
-| **`absorb()`** | Comet market | Anyone (permissionless) | Always the **default** liquidation logic |
-| **`liquidate()`** | Liquidation Module | Only holders of `EXECUTOR_ROLE` | **DEX** liquidation, or **default** when the DEX route is paused |
+| **`absorb(absorber, accounts)`** | Comet market | Anyone (permissionless) | Liquidates every account in `accounts`, crediting `absorber` |
 
-**Way 1 — `Comet.absorb()` (permissionless).** This is the classic Comet path. Anyone can call it; the market accrues interest and then hands each account off to the Liquidation Module's `absorb()`, which runs the **default** liquidation logic in `CoreLiquidationModule`. This route **never** touches the DEX adapter — it is the plain, always-available way to wind down an account, open to any caller who wants the absorb incentive.
+`absorb()` does four things, in order:
 
-**Way 2 — `LiquidationModule.liquidate()` (executors only).** This is the newer, DEX-aware path, and it is gated by the `EXECUTOR_ROLE`. After accruing the account, it makes one routing decision based on a single switch, `dexRoutePaused`:
+1. **Checks the pause.** It reverts with `Paused` while absorb is paused (the `absorbPaused` flag of the market's coarse `pause(...)`).
+2. **Accrues once.** `accrueInternal()` brings the interest indices up to the current block, so every account in the batch is valued at the same, current state.
+3. **Absorbs each account.** It runs `absorbInternal` for each account in turn. One call can absorb many accounts; if any of them is not liquidatable, the whole call reverts with `NotLiquidatable`.
+4. **Records the absorber's points.** `liquidatorPoints[absorber]` is updated once for the call ([Chapter 7](#7-benefits-for-liquidators)).
 
-- **DEX route paused** → it falls back to the **same default logic** as way 1 (`_liquidate`). This is the safety valve: if the DEX path is turned off, executor liquidations keep working, just without the DEX.
-- **DEX route active** → it proceeds to the **DEX liquidation** path (`_dexLiquidate`), which routes seized collateral through the **DEX adapter**.
+`absorbInternal` is where an account is actually liquidated: it re-checks that the account is liquidatable, decides each seizure ([Chapter 5](#5-seizure-calculation)), and writes it ([Chapter 6](#6-settlement)). It leans on two internal helpers:
+
+- **`_getLiquidity`** — the LCF-weighted collateral sum from [Chapter 2](#2-collateral-value-and-health-factor). It also caches every collateral price it reads, so the seizure loop does not query those feeds again.
+- **`_processDebtClosing`** — sizes a seizure that closes the remaining debt outright. Full-close mode and the min-debt case both use it.
+
+### The two settings
+
+| Setting | Stored as | Who can change it | How |
+|---|---|---|---|
+| **Target health factor** | `targetHealthFactor`, an immutable of the Comet implementation, taken from `Configuration.targetHealthFactor` | Governor or market admin | `Configurator.setTargetHealthFactor(cometProxy, value)`, then a new implementation via `CometProxyAdmin.deployAndUpgradeTo` |
+| **Partial liquidation pause** | Bit 8 of `extendedPauseFlags`, in Comet's storage | Governor or pause guardian | `Comet.pausePartialLiquidation(bool)`; read with `isPartialLiquidationPaused()` |
+
+**Target health factor.** Partial liquidation lifts an account back to this value ([Chapter 5](#5-seizure-calculation)). Because it is an immutable, a new value only takes effect once a new implementation is deployed from the updated configuration. The Comet constructor rejects anything below `MIN_TARGET_HEALTH_FACTOR = 1e18` with `BadHealthFactor`: a target below `1.0` would leave the account liquidatable right after it was liquidated. A configuration that has never been given a target reads `0`, so such a market cannot be redeployed until `setTargetHealthFactor` is called. There is no upper bound — the higher the target, the more each partial liquidation takes, up to the whole debt.
+
+**Partial liquidation pause.** Unpaused by default. While paused, `absorb()` ignores the target and closes each account's debt in full. Like the other extended pause flags, it lives in Comet's storage, so it survives an upgrade of the implementation. Setting it to the value it already holds reverts with `OffsetStatusAlreadySet`.
 
 ### How the pieces map to contracts
 
-The routing above is spread across three contracts, each with a clear responsibility:
+- **Comet market** (`CometWithExtendedAssetList`) — `absorb`, `absorbInternal`, `isLiquidatable`, `isPartialLiquidationPaused`, the `targetHealthFactor` immutable, and every balance a liquidation changes.
+- **Extension** (`CometExt`, deployed as `CometExtAssetList`) — `pausePartialLiquidation`, next to the other extended pause switches. It is reached through Comet's fallback, so it writes Comet's own storage.
+- **Configurator** — `setTargetHealthFactor`, and the `Configuration` record each new implementation is built from.
+- **Asset list** (`AssetList`) — each collateral's factors and price feed (`getAssetInfo`). Its constructor enforces the ordering the seizure math relies on: a non-zero `borrowCollateralFactor` must be below `liquidateCollateralFactor`, and a non-zero `liquidateCollateralFactor` below `liquidationFactor`.
 
-- **Comet market** (`CometWithExtendedAssetList`) — owns `absorb()`, the permissionless entry point, and holds all balances. It calls into the module but never decides *how* to liquidate.
-- **Liquidation Module** (`LiquidationModule`, extending `CoreLiquidationModule`) — owns `liquidate()`, the role-gated entry point, and holds the `dexRoutePaused` switch that chooses between the two routes. The **default** logic (`_liquidate`) it inherits from `CoreLiquidationModule`; the **DEX** logic (`_dexLiquidate`) it adds itself.
-- **DEX adapter** — only ever reached from the DEX route. It is entirely absent from way 1 and from the paused branch of way 2.
-
-Notice that **both routes converge on the same "default liquidation" box.** Whether you arrive via `absorb()` or via a paused `liquidate()`, you end up in the identical `CoreLiquidationModule._liquidate` logic. The DEX path is the *only* thing that is conditional — everything else routes to the same default core.
-
-### Inside the Liquidation Module
-
-The Liquidation Module is not one flat contract — it is assembled from several smaller ones, each owning a single concern. The scheme below puts the deployed `LiquidationModule` at the centre and shows what it is built from (solid arrows = *inherits*) and what it talks to at runtime (dashed arrows = *calls / uses*).
-
-```mermaid
-flowchart TD
-    LM["<b>LiquidationModule</b><br/>DEX route + executor entry point"]
-
-    Core["CoreLiquidationModule<br/>default liquidation logic"]
-    AC["LiquidationAccessControl<br/>roles + pause switches"]
-    Seiz["SeizureCalculations<br/>seizure-plan math"]
-    Math["CometMath<br/>fixed-point helpers"]
-    RG["ReentrancyGuard · OZ"]
-    OZAC["AccessControl · OZ"]
-
-    Comet["Comet market<br/>ICometInterface"]
-    Dex["DEX adapter<br/>ICoreDexAdapter"]
-    View["LiquidationSeizureView<br/>read-only planning"]
-    ForComet["LiquidationModuleForComet<br/>variant for an existing Comet"]
-
-    LM ==>|inherits| Core
-    Core ==>|inherits| AC
-    Core ==>|inherits| Seiz
-    Core ==>|inherits| RG
-    AC ==>|inherits| OZAC
-    Seiz ==>|inherits| Math
-
-    LM -.->|"reads state / calls hooks"| Comet
-    LM -.->|"DEX route delegates swaps"| Dex
-    View -.->|"binds to & mirrors"| LM
-    ForComet -.->|"extends"| LM
-```
-
-Which contract holds which logic:
-
-- **`LiquidationModule`** — the deployed module. Adds the **DEX route** (`liquidate`, `_dexLiquidate`), holds the `dexAdapter` reference and the executor incentive. Everything below it is inherited.
-- **`CoreLiquidationModule`** — the **default liquidation logic**: `absorb` (the Comet entry point), `_liquidate`, `isLiquidatable`, and the orchestration that turns a seizure plan into Comet hook calls.
-- **`LiquidationAccessControl`** — the **roles and switches**: `EXECUTOR_ROLE`, `MULTISIG_ROLE`, `PAUSER_ROLE`, the `DAO`, plus the `dexRoutePaused` and `partialLiquidationEnabled` toggles.
-- **`SeizureCalculations`** — the **seizure-plan math**: `_computeSeizurePlan`, `_getLiquidity` (the weighted-collateral sum from Chapter 2) and `getPrice`.
-- **`CometMath`** — the shared **fixed-point helpers** (`mulPrice`, `mulFactor`, `divPrice`, …).
-- **`ReentrancyGuard` / `AccessControl`** — standard OpenZeppelin building blocks.
-- **`LiquidationSeizureView`** — a separate **read-only** contract bound to a module; it mirrors the seizure math with projected accrual (`seizurePlanAt`) for off-chain callers, and is not part of the module's own call path.
-- **`LiquidationModuleForComet`** — a thin **variant** of `LiquidationModule` used when attaching to an already-deployed Comet.
-
-### Inside the DEX adapter
-
-The DEX adapter has the same shape: a small inheritance chain where the base contract orchestrates and each layer plugs in one swap route. The deployed adapter is `OneInchV6Adapter`; the layers beneath it are abstract.
-
-```mermaid
-flowchart TD
-    Adapter["<b>OneInchV6Adapter</b><br/>core swap = 1inch v6"]
-    Uni["UniswapAdapter<br/>redundant swap = Uniswap"]
-    CoreA["CoreDexAdapter<br/>swap() orchestration + slippage math"]
-
-    Module["Liquidation Module<br/>only authorized caller"]
-    Comet["Comet market<br/>prices + asset config"]
-    CoreRouter["1inch v6 router · external"]
-    RedRouter["Uniswap router · external"]
-
-    Adapter ==>|inherits| Uni
-    Uni ==>|inherits| CoreA
-
-    Module -.->|"swap()"| Adapter
-    CoreA -.->|"reads prices / config"| Comet
-    Adapter -.->|"core swap"| CoreRouter
-    Uni -.->|"fallback swap"| RedRouter
-```
-
-Which contract holds which logic:
-
-- **`CoreDexAdapter`** — the **base orchestration**: the `swap()` entry point (core-then-redundant fallback), the minimum-output / slippage math (`calculateMinAmountOut`), router configuration, and the `onlyModule` binding. It declares the two swap routines as abstract.
-- **`UniswapAdapter`** — implements the **redundant (fallback) route**, `_redundantSwap`, over a Uniswap router.
-- **`OneInchV6Adapter`** — the **deployed adapter**; implements the **core (primary) route**, `_coreSwap`, over the 1inch v6 router. Being the concrete leaf, it carries both routes.
-- **Liquidation Module** — the adapter's only permitted caller (`onlyModule`); it hands over seized collateral for each swap.
-- **Comet market** — the adapter's source of **prices and asset config** used to size each swap's minimum output.
-
-*How* the default liquidation computes a seizure plan, and *how* a swap actually executes and settles, are left to the chapters that follow — here we have only mapped the contracts and how a call is routed.
+*How* `absorbInternal` decides each seizure, and *how* it writes it, are left to the two chapters that follow — here we have only mapped the entry point, the settings, and where they live.
 
 <div align="right"><a href="#table-of-contents">⬆ Back to Table of Contents</a></div>
 
@@ -492,21 +422,21 @@ Which contract holds which logic:
 
 ## 5. Seizure Calculation
 
-Both liquidation routes — the default absorb and the DEX path — begin at the **same** first step. Before either one moves a single token, it asks one question: **how much of which collateral should be seized, and how much debt does that clear?** The answer is a *seizure plan*, and it is produced by one function, `_computeSeizurePlan`. The DEX route later sells the planned collateral; the default route absorbs it into the protocol — but the plan itself is identical. This chapter is that plan.
+Before `absorb()` moves a single token, it asks one question for each collateral: **how much should be seized, and how much debt does that clear?** There is no separate planning step — `absorbInternal` answers the question for one collateral, writes the seizure, and only then moves on to the next. This chapter is the decision; [Chapter 6](#6-settlement) is the write.
 
-### 5.1 What the plan works with
+### 5.1 What the loop works with
 
-The function walks the account's collaterals one by one and, for each, decides how much to take. It keeps a few running values:
+`absorbInternal` walks the account's collaterals one by one and, for each, decides how much to take. It keeps a few running values:
 
 | Value | What it is |
 |---|---|
-| **`debtRemaining`** | The debt still left to cover, in USD (`1e8` price scale). Starts at the account's full debt value and shrinks as collateral is seized. |
-| **`totalCollateralized`** | The account's collateral value weighted by **`liquidateCollateralFactor`** (LCF) — the same liquidation threshold [Chapter 2](#2-collateral-value-and-health-factor) measures health against. This is the number the target-health-factor math works on. |
-| **`minDebt`** | `baseBorrowMin` valued in USD — the smallest borrow the market allows to exist. Residual debt is never left below this. |
+| **`debtRemaining`** (`debtRemainingValue`) | The debt still left to cover, in USD (`1e8` price scale). Starts at the account's full debt value and shrinks as collateral is seized. |
+| **`totalCollateralized`** (`totalCollateralizedValue`) | The account's collateral value weighted by **`liquidateCollateralFactor`** (LCF) — the same liquidation threshold [Chapter 2](#2-collateral-value-and-health-factor) measures health against. This is the number the target-health-factor math works on. |
+| **`minDebt`** (`minDebtValue`) | `baseBorrowMin` valued in USD — the smallest borrow the market allows to exist. Residual debt is never left below this. |
 | **`wantedCollateralValue`** (`S`) | For one asset: the **raw** USD value of collateral we want to seize (before any penalty). |
 | **`seizedValue`** | How much **debt** that seizure clears = `S × liquidationFactor` (LF). Because `LF < 1`, clearing `$D` of debt requires seizing `$D / LF` of collateral — the difference is the liquidation penalty. |
 
-> **One ruler, used twice.** The *liquidatable* check and the seizure are measured with the same **LCF**-weighted value. The check asks whether health fell below `1.0`; the seizure lifts it back to `TARGET_HEALTH_FACTOR = 1.05`, a 5% margin so a small further price move does not immediately make the account liquidatable again. `borrowCollateralFactor` plays no part in it — that factor gates *opening* a borrow, not liquidating one.
+> **One ruler, used twice.** The *liquidatable* check and the seizure are measured with the same **LCF**-weighted value. The check asks whether health fell below `1.0`; the seizure lifts it back to the market's `targetHealthFactor` — `1.05` in the examples, a 5% margin so a small further price move does not immediately make the account liquidatable again. `borrowCollateralFactor` plays no part in it — that factor gates *opening* a borrow, not liquidating one.
 >
 > A consequence worth stating plainly: after a partial liquidation the borrower is out of liquidation range but usually still **below their borrow limit**, since `BCF < LCF`. They are safe to be left alone; they cannot borrow again until they add collateral or repay.
 
@@ -514,27 +444,33 @@ At the end, whatever debt is left becomes the account's **new balance**, and `ba
 
 ### 5.2 The decision scheme
 
-**Before the loop**, the function confirms the account is really liquidatable and gathers the running values it will need:
+**Before the loop**, `absorbInternal` confirms the account is really liquidatable and gathers the running values it will need:
 
 ```mermaid
 flowchart TD
-    A1["read account:<br/>principal, assetsIn"] --> A2{"still liquidatable?"}
-    A2 -->|no| R["revert"]
-    A2 -->|yes| A3["collect &amp; cache:<br/>• debtRemaining — debt value<br/>• totalCollateralized — LCF threshold value<br/>• minDebt<br/>• collateral prices"]
+    A1["read account:<br/>principal, assetsIn"] --> A2{"principal > 0?<br/>(a supplier)"}
+    A2 -->|yes| R["revert NotLiquidatable"]
+    A2 -->|no| A3["collect &amp; cache:<br/>• totalCollateralized — LCF threshold value<br/>• collateral prices<br/>• debtRemaining — debt value"]
+    A3 --> A4{"debtRemaining ≤<br/>totalCollateralized?"}
+    A4 -->|yes| R
+    A4 -->|no| A5["minDebt = baseBorrowMin value<br/>→ start the loop"]
 ```
 
-**Then it loops** over the account's collaterals in index order (skipping any with `liquidationFactor == 0`), taking one asset per pass from top to bottom. Because the entry check and the target use the same number, the first pass can never find the target already met: the account was let in precisely because `debtRemaining > totalCollateralized`, so `1.05 × debtRemaining` is larger still.
+**Then it loops** over the account's collaterals in index order, taking one asset per pass. It skips assets the account does not hold and any with `liquidationFactor == 0`, and stops as soon as `debtRemaining` reaches `0`. Because the entry check and the target use the same number, the first pass can never find the target already met: the account was let in precisely because `debtRemaining > totalCollateralized`, and since the target is at least `1`, `targetHF × debtRemaining` is larger still.
 
 ```mermaid
 flowchart TD
-    L["next collateral"] --> D1{"close-all mode?<br/>partial off, or debt ≤ minDebt"}
+    L["next collateral"] --> D1{"close-all mode?<br/>partial paused, or debt ≤ minDebt"}
     D1 -->|yes| C["seize enough to<br/>clear the debt"]
-    D1 -->|no| D2{"target HF 1.05<br/>reached?"}
+    D1 -->|no| D2{"target HF<br/>reached?"}
     D2 -->|yes| STOP["stop — partial done"]
     D2 -->|no| SZ["seize S toward target<br/>partial, or all if too small"]
-    C --> UP["update debtRemaining<br/>&amp; threshold value"]
-    SZ --> UP
+    SZ --> MG{"debt left<br/>≤ minDebt?"}
+    MG -->|yes| C
+    MG -->|no| UP
+    C --> UP["write the seizure, update<br/>debtRemaining &amp; threshold value"]
     UP --> L
+    L -->|"no collateral left"| END
     STOP --> END{"debt left,<br/>no collateral?"}
     END -->|yes| BAD["bad debt — write off"]
     END -->|no| OK["done — healthy residual"]
@@ -542,10 +478,10 @@ flowchart TD
 
 The four cases these two steps produce:
 
-- **Full-close mode** — reached through the `Mode` branch when **partial liquidation is disabled**. Every asset goes straight to "close remaining debt": the account is fully liquidated until all debt is gone.
-- **Partial liquidation** — the `Target` / `S` / `Partial` path. Seize only enough to lift health back to `1.05`, then stop, leaving the borrower with a smaller, healthy debt.
-- **Min-debt** — reached through the same `Mode` branch when `debtRemaining ≤ minDebt`, or through the `MinGuard` after a partial step. Rather than leave a dust debt below `baseBorrowMin`, the module closes the **whole** remaining debt.
-- **Bad debt** — the `Post` check: all collateral is gone (`totalCollateralized == 0`) but debt remains. The shortfall is written off — the protocol takes the loss.
+- **Full-close mode** — taken on every pass while **partial liquidation is paused**. Every asset goes straight to "clear the debt": the account is fully liquidated until all debt is gone.
+- **Partial liquidation** — the "seize S toward target" path. Seize only enough to lift health back to the target, then stop, leaving the borrower with a smaller, healthy debt.
+- **Min-debt** — taken when `debtRemaining ≤ minDebt` at the start of a pass, or when a partial seizure would leave the debt at or below it. Rather than leave a dust debt below `baseBorrowMin`, `absorb()` closes the **whole** remaining debt.
+- **Bad debt** — the final check: all collateral is gone (`totalCollateralized == 0`) but debt remains. The shortfall is written off — the protocol takes the loss.
 
 ### 5.3 The wanted-collateral-value formula
 
@@ -557,7 +493,7 @@ The heart of partial liquidation is deciding how much collateral value `S` to se
 So the health factor *after* seizing `S` is:
 
 ```ts
-// targetHF is what we solve for S to achieve (= 1.05)
+// targetHF is the market's targetHealthFactor; S is the seizure that reaches it
 targetHF = (totalCollateralized − S × LCF) / (debtRemaining − S × LF)
 ```
 
@@ -567,15 +503,15 @@ Solving that for `S` gives the formula the contract uses:
 //        targetHF · debtRemaining − totalCollateralized
 //  S  =  ───────────────────────────────────────────────
 //              targetHF · LF − LCF
-S = (TARGET_HEALTH_FACTOR * debtRemaining - totalCollateralized)
-  / (TARGET_HEALTH_FACTOR * liquidationFactor - liquidateCollateralFactor);
+S = (targetHealthFactor * debtRemaining - totalCollateralized)
+  / (targetHealthFactor * liquidationFactor - liquidateCollateralFactor);
 
 // Never seize more than what clears the whole debt: S · LF ≤ debtRemaining.
 const maxWanted = debtRemaining / liquidationFactor;
 if (S > maxWanted) S = maxWanted;
 ```
 
-A word on **why the denominator is always positive** (so `S` is well-defined and positive): the Configurator enforces `LF > LCF`, and `targetHF ≥ 1`, therefore `targetHF · LF ≥ LF > LCF`. The denominator can never be zero or negative.
+A word on **why the denominator is always positive** (so `S` is well-defined and positive): the asset list enforces `LF > LCF` when the market is deployed, and the Comet constructor enforces `targetHF ≥ 1` (`MIN_TARGET_HEALTH_FACTOR`), therefore `targetHF · LF ≥ LF > LCF`. The denominator can never be zero or negative.
 
 Two things follow from `LCF` sitting in that denominator rather than `BCF`. The gap `LF − LCF` is narrower than `LF − BCF`, so the same shortfall asks for more collateral per unit of gap — but the numerator shrinks by more, because `totalCollateralized` is now the larger, LCF-weighted number. On every position that is not already past saving the net effect is a **smaller** seizure. And on an asset configured with `LCF` close to `LF` the denominator gets small, which is what makes the `maxWanted` cap above load-bearing rather than decorative.
 
@@ -586,7 +522,9 @@ seizedAmount = S / price;   // collateral units to take
 seizedValue  = S * LF;      // debt cleared by this seizure
 ```
 
-**Worked example (one collateral).** Same market shape as Chapter 2:
+The contract rounds each of these steps **up** — `S` with a ceiling division, `seizedAmount` to the next whole collateral unit, and `seizedValue` recomputed from that amount — so a partial seizure never leaves the account short of the target. `seizedValue` is then capped at `debtRemaining`, since one whole unit of collateral can be worth more than what is left owing.
+
+**Worked example (one collateral).** Same market shape as Chapter 2, with `targetHealthFactor = 1.05`:
 
 | Parameter | Value |
 |---|---|
@@ -624,10 +562,10 @@ The borrower is left holding **≈ 4.42 WETH** and owing **≈ $7,158** — a he
 
 All examples reuse the WETH market above (`$2,000`, LCF `0.85`, LF `0.90`, `baseBorrowMin = $1,000`).
 
-**Full-close mode (partial disabled).** With `partialLiquidationEnabled == false`, health factors are ignored — every account is taken all the way to zero debt.
+**Full-close mode (partial liquidation paused).** While `isPartialLiquidationPaused()` is `true`, health factors are ignored — every account is taken all the way to zero debt.
 
 ```
-Holding 10 WETH ($20,000), debt $9,000, partial DISABLED.
+Holding 10 WETH ($20,000), debt $9,000, partial PAUSED.
   → close the whole $9,000:
     seize = (9,000 / 0.90) / 2,000 = 5 WETH   (raw value $10,000)
     debt cleared = $9,000  →  debt $0
@@ -637,7 +575,7 @@ Holding 10 WETH ($20,000), debt $9,000, partial DISABLED.
 
 **Partial liquidation.** The `$17,200` example in [§5.3](#53-the-wanted-collateral-value-formula): seize ≈ 5.58 WETH to restore health to `1.05`, leaving the borrower with ≈ 4.42 WETH and ≈ $7,158 of debt.
 
-**Min-debt.** Residual debt is never left below `baseBorrowMin`. If a partial step *would* leave dust, the module closes the whole debt instead.
+**Min-debt.** Residual debt is never left below `baseBorrowMin`. If a partial step *would* leave dust, `absorb()` closes the whole debt instead.
 
 ```
 Holding 1 WETH ($2,000), debt $1,750  (LCF threshold $1,700 → liquidatable).
@@ -662,7 +600,7 @@ Holding 1 WETH ($2,000), debt $2,500  (LCF threshold $1,700 → liquidatable).
 
 ### 5.5 Multiple collaterals: a three-asset walkthrough
 
-With several collaterals the function loops in index order, seizing each asset in turn until the target is reached. This example shows all three loop behaviours in one pass — *seize all*, *seize partial*, and *stop*.
+With several collaterals `absorbInternal` loops in index order, seizing each asset in turn until the target is reached. This example shows all three loop behaviours in one pass — *seize all*, *seize partial*, and *stop*.
 
 | Asset | Holding | Value | LCF | LF |
 |---|---|---|---|---|
@@ -697,91 +635,93 @@ Asset 2 — LINK:
   target reached? 1.05·6,842 = 7,184 ≤ 7,184 ?  yes  →  STOP
 ```
 
-**Result:** the plan seizes **all 0.2 WBTC** and **≈ 0.42 of the 3 WETH**, and never touches LINK. The debt drops from `$13,000` to `≈ $6,842`, and health is restored to exactly `7,184 / 6,842 = 1.05`. The borrower keeps **≈ 2.58 WETH + 400 LINK** and owes **≈ $6,842** — healthy again.
+**Result:** `absorb()` seizes **all 0.2 WBTC** and **≈ 0.42 of the 3 WETH**, and never touches LINK. The debt drops from `$13,000` to `≈ $6,842`, and health is restored to exactly `7,184 / 6,842 = 1.05`. The borrower keeps **≈ 2.58 WETH + 400 LINK** and owes **≈ $6,842** — healthy again.
 
 ### 5.6 Summary
 
-- Both routes share one first step: `_computeSeizurePlan` decides **which collateral to seize and how much debt it clears**, before any settlement happens.
-- It tracks `debtRemaining`, `totalCollateralized` (LCF-weighted **liquidation threshold value**), and `minDebt`, walking the account's collaterals in order.
-- Partial liquidation restores the **same health factor Chapter 2 defines** to `TARGET_HEALTH_FACTOR = 1.05` — a 5% margin over the liquidation line — using `S = (targetHF·debt − totalCollateralized) / (targetHF·LF − LCF)`, capped at `debt / LF`.
+- `absorbInternal` decides **which collateral to seize and how much debt it clears** one collateral at a time, writing each seizure before it moves on — there is no separate plan.
+- It tracks `debtRemaining`, `totalCollateralized` (LCF-weighted **liquidation threshold value**), and `minDebt`, walking the account's collaterals in index order.
+- Partial liquidation restores the **same health factor Chapter 2 defines** to the market's `targetHealthFactor` (`1.05` in the examples) using `S = (targetHF·debt − totalCollateralized) / (targetHF·LF − LCF)`, capped at `debt / LF` and rounded up.
 - `borrowCollateralFactor` is not part of any of this. The borrower ends up above the liquidation line but typically below their borrow limit.
-- Four outcomes: **full-close** (partial disabled), **partial** (reach `1.05` and stop), **min-debt** (never leave dust below `baseBorrowMin` — close it all), and **bad debt** (collateral exhausted — write off the shortfall).
+- Four outcomes: **full-close** (partial liquidation paused), **partial** (reach the target and stop), **min-debt** (never leave dust below `baseBorrowMin` — close it all), and **bad debt** (collateral exhausted — write off the shortfall).
 - Seizing `$S` of collateral clears `$S × LF` of debt; the `1/LF − 1` gap is the liquidation penalty.
 
 <div align="right"><a href="#table-of-contents">⬆ Back to Table of Contents</a></div>
 
 ---
 
-## 6. Default Liquidation
+## 6. Settlement
 
-The seizure plan from [Chapter 5](#5-seizure-calculation) only *decides* what to take — it doesn't move anything yet. **Default liquidation** is the settlement step that writes that plan into the market's storage: it reduces the borrower's collateral, reduces the borrower's debt, and records both. This is the route reached by the permissionless `absorb()` and by an executor's `liquidate()` when the DEX path is paused ([Chapter 4](#4-structure-of-the-protocol)).
+[Chapter 5](#5-seizure-calculation) decided what to take from each collateral. **Settlement** writes it into the market's storage: it reduces the borrower's collateral as each seizure is decided, then sets the borrower's new debt once, at the end. Both happen inside `absorbInternal`, in the same call.
 
-It is deliberately simple. The plan already contains every number; the module just applies them, one collateral at a time, and then settles the debt once.
+It is deliberately simple. Every number is already known when a write happens; settlement just applies it.
 
 ### 6.1 The two writes
 
-Default settlement lives in `CoreLiquidationModule._liquidate`. After getting the plan, it does exactly two kinds of write — a **collateral** write per seized asset, then a **single debt** write:
+`absorbInternal` does exactly two kinds of write — a **collateral** write per seized asset, inside the loop, then a **single debt** write after it:
 
 ```ts
-function _liquidate(absorber: string, account: string) {
-  // From Chapter 5: per-asset seizures + the account's resulting debt.
-  const { plan, newBalance, basePaidOut, basePaidOutValue } = computeSeizurePlan(account);
-
-  // 1 — apply each collateral seizure through the Comet hook.
-  for (const s of plan) {
-    if (s.seizedAmount === 0n) continue;
-    comet.updateCollateral(absorber, account, s.index, s.seizedAmount, s.wantedCollateralValue);
-  }
-
-  // 2 — apply the new debt / principal once, at the end.
-  comet.updateDebtAndPrincipal(absorber, account, newBalance, basePaidOut, basePaidOutValue);
+// 1 — inside the per-collateral loop, right after the seizure is sized (Chapter 5).
+if (seizedAmount != 0n) {
+  emit AbsorbCollateral(absorber, account, asset, seizedAmount, wantedCollateralValue);
+  userCollateral[account][asset].balance   -= seizedAmount;
+  totalsCollateral[asset].totalSupplyAsset -= seizedAmount;
+  updateAssetsIn(account, asset, balanceBefore, userCollateral[account][asset].balance);
 }
+
+// 2 — once, after the loop: settle the account's base position to newBalance (§6.3).
+const newPrincipal = principalValue(newBalance);
+updateBasePrincipal(account, accountUser, newPrincipal);
+totalBorrowBase -= newPrincipal - oldPrincipal;
+emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
 ```
 
-Both calls are **hooks on the Comet market** — the module computes, but only Comet touches balances. And both emit their events (`AbsorbCollateral`, `AbsorbDebt`) **from Comet itself**, so anyone watching the market sees every seizure and every debt change on one address, regardless of which liquidation route produced it.
+Both writes emit their events (`AbsorbCollateral`, `AbsorbDebt`) from the Comet market, so anyone watching the market sees every seizure and every debt change on one address.
 
 ```mermaid
 flowchart TD
-    Plan["seizure plan (Chapter 5):<br/>per-asset seizedAmount + newBalance"] --> Loop["for each seized collateral"]
-    Loop --> UC["updateCollateral<br/>• borrower balance −= seizedAmount<br/>• total supply −= seizedAmount<br/>• clear assetsIn bit if now 0<br/>• emit AbsorbCollateral"]
+    Loop["for each collateral"] --> Size["size the seizure<br/>(Chapter 5)"]
+    Size --> UC["write it<br/>• borrower balance −= seizedAmount<br/>• total supply −= seizedAmount<br/>• clear assetsIn bit if now 0<br/>• emit AbsorbCollateral"]
     UC --> Loop
-    Loop -->|"all collaterals done"| UD["updateDebtAndPrincipal<br/>• newPrincipal = principalValue(newBalance)<br/>• write principal, adjust totalBorrowBase<br/>• emit AbsorbDebt"]
+    Loop -->|"all collaterals done"| UD["settle the debt<br/>• reload the account<br/>• newPrincipal = principalValue(newBalance)<br/>• write principal, adjust totalBorrowBase<br/>• emit AbsorbDebt"]
 ```
 
 ### 6.2 Updating each collateral
 
-For every asset in the plan, `updateCollateral` moves the seized amount **out of the borrower and into the protocol**:
-
-```ts
-// Comet._updateCollateral
-userCollateral[account][asset].balance      -= seizedAmount;  // borrower holds less
-totalsCollateral[asset].totalSupplyAsset    -= seizedAmount;  // market tracks less user supply
-updateAssetsIn(account, asset, before, before - seizedAmount); // drop the assetsIn flag if it hit 0
-emit AbsorbCollateral(absorber, account, asset, seizedAmount, usdValue);
-```
-
-Three things happen, and one thing deliberately does **not**:
+For every seized asset, the collateral write moves the seized amount **out of the borrower and into the protocol**:
 
 - The borrower's balance of that collateral drops by `seizedAmount`.
-- The market's `totalSupplyAsset` for that collateral drops by the same amount — the seized tokens are no longer counted as *user* supply. They stay inside the Comet contract as **protocol-owned collateral** (protocol reserves), later resold to the public via `buyCollateral`.
+- The market's `totalSupplyAsset` for that collateral drops by the same amount — the seized tokens are no longer counted as *user* supply. They stay inside the Comet contract as **protocol-owned collateral** (protocol reserves), later resold to the public via `buyCollateral` ([Chapter 7](#7-benefits-for-liquidators)).
 - If the seizure empties the borrower's balance of that asset, its `assetsIn` bit is cleared so the account stops being scanned for it.
-- **No token transfer leaves Comet.** This is the one real difference from the DEX route: default liquidation absorbs the collateral into the protocol rather than sending it out to be swapped. (The DEX route uses `updateAndSeizeCollateral`, which does transfer the collateral out — covered in a later chapter.)
+- **No token transfer leaves Comet.** The collateral changes owner inside the market's books; nothing is sent anywhere until someone buys it.
 
-The `usdValue` passed here is the plan's `wantedCollateralValue` — the raw USD value of the seized collateral — and it is only used for the event, not for any balance math.
+Right after the write, the loop's running values move with it: `totalCollateralized` drops by the seized amount's LCF-weighted value, and `debtRemaining` drops by `seizedValue`. The next pass works from those.
+
+The `usdValue` in the event is `wantedCollateralValue` — the raw USD value of the seized collateral — and it is only used for reporting, not for any balance math.
 
 ### 6.3 Updating debt and principal
 
-After every collateral is written, a single `updateDebtAndPrincipal` settles the borrower's base position to the plan's `newBalance` (the residual debt — negative, or `0` when fully closed or written off):
+After the loop, whatever debt is left becomes the borrower's new balance. It is converted from USD back to base units (rounding the debt down), or set to `0` when the collateral ran out first — the bad-debt case. `basePaidOut` is the difference from the old balance, the base the protocol effectively injected to clear the debt:
 
 ```ts
-// Comet.updateDebtAndPrincipal
-const oldPrincipal = userBasic[account].principal;
-const newPrincipal = principalValue(newBalance);   // present value → stored principal
+let newBalance = -divPrice(debtRemaining, basePrice, baseScale);
+if (newBalance < 0n && totalCollateralized == 0n) newBalance = 0n; // bad debt: write off
+const basePaidOut = newBalance - oldBalance;
+```
+
+A single debt write then settles the base position:
+
+```ts
+accountUser = userBasic[account];                     // reload — see below
+const oldPrincipal = accountUser.principal;
+const newPrincipal = principalValue(newBalance);      // present value → stored principal
 
 updateBasePrincipal(account, accountUser, newPrincipal); // write the new principal
-totalBorrowBase -= newPrincipal - oldPrincipal;          // shrink the global borrow total
-emit AbsorbDebt(absorber, account, basePaidOut, basePaidOutValue);
+totalBorrowBase -= newPrincipal - oldPrincipal;           // shrink the global borrow total
+emit AbsorbDebt(absorber, account, basePaidOut, basePaidOut * basePrice / baseScale);
 ```
+
+The account is read from storage **again** before the write. The collateral writes in the loop changed its `assetsIn` bits in storage, and `updateBasePrincipal` writes the whole account record back — so working from the copy read at the start of `absorbInternal` would put the old bits back.
 
 The one piece of math worth pausing on is `principalValue(newBalance)`. Chapter 3 turned stored *principal* into a present-value balance by **multiplying** by the borrow index. This is the exact inverse: it turns the target present-value balance back into a stored *principal* by **dividing out** the current borrow index, so that interest keeps accruing correctly on the reduced debt going forward.
 
@@ -790,20 +730,20 @@ The one piece of math worth pausing on is `principalValue(newBalance)`. Chapter 
 newPrincipal ≈ newBalance × BASE_INDEX_SCALE / baseBorrowIndex
 ```
 
-Because the debt shrank, `newPrincipal` is closer to zero than `oldPrincipal`, so `newPrincipal − oldPrincipal` is positive and `totalBorrowBase` decreases by exactly the amount of borrow removed. `basePaidOut` — the base value the protocol effectively injected to clear that debt — is reported in the `AbsorbDebt` event but is not itself a balance write here.
+Because the debt shrank, `newPrincipal` is closer to zero than `oldPrincipal`, so `newPrincipal − oldPrincipal` is positive and `totalBorrowBase` decreases by exactly the amount of borrow removed. `basePaidOut` is reported in the `AbsorbDebt` event but is not itself a balance write here.
 
 ### 6.4 A worked example
 
-Take the single-collateral partial from [§5.3](#53-the-wanted-collateral-value-formula): the borrower held **10 WETH** and owed **$17,200**; the plan seized **≈ 5.58 WETH** and left a residual debt of **≈ $7,158**. Default settlement writes that as:
+Take the single-collateral partial from [§5.3](#53-the-wanted-collateral-value-formula): the borrower held **10 WETH** and owed **$17,200**; `absorb()` seized **≈ 5.58 WETH** and left a residual debt of **≈ $7,158**. Settlement writes that as:
 
 ```
-updateCollateral (WETH):
+collateral write (WETH), inside the loop:
   borrower WETH balance   10  →  ≈ 4.42
   WETH totalSupplyAsset       −≈ 5.58        (those 5.58 WETH now protocol-owned)
   assetsIn WETH bit           unchanged      (balance still > 0)
   emit AbsorbCollateral(... seized ≈ 5.58 WETH, usdValue ≈ $11,158)
 
-updateDebtAndPrincipal:
+debt write, after the loop:
   newBalance      ≈ −$7,158   →  newPrincipal (present value ÷ borrow index)
   totalBorrowBase −= (newPrincipal − oldPrincipal)   (global borrow shrinks by ≈ $10,042)
   emit AbsorbDebt(... basePaidOut ≈ $10,042)
@@ -813,193 +753,29 @@ The borrower walks away holding ≈ 4.42 WETH and owing ≈ $7,158 — a healthy
 
 ### 6.5 Summary
 
-- Default liquidation is pure **settlement**: it applies the Chapter 5 plan and moves no decision logic of its own.
-- It performs **one `updateCollateral` per seized asset** (reduce borrower balance + total supply, clear the `assetsIn` bit if emptied) and **one `updateDebtAndPrincipal`** at the end.
-- Seized collateral **stays in the protocol** (no transfer out) — the defining contrast with the DEX route.
+- Settlement is pure bookkeeping: it applies the decisions of Chapter 5 and moves no decision logic of its own.
+- It performs **one collateral write per seized asset**, inside the loop (reduce borrower balance + total supply, clear the `assetsIn` bit if emptied), and **one debt write** at the end.
+- Seized collateral **stays in the protocol** (no transfer out) until someone buys it.
+- The account is **reloaded** before the debt write, because the loop changed its `assetsIn` bits in storage.
 - `principalValue(newBalance)` converts the target balance back to stored principal by **dividing out the borrow index** — the inverse of Chapter 3's `presentValue`.
-- Both writes emit their events (`AbsorbCollateral`, `AbsorbDebt`) **from Comet**, so every liquidation is observable on the market address no matter which route ran.
+- Both writes emit their events (`AbsorbCollateral`, `AbsorbDebt`) **from Comet**, so every liquidation is observable on the market address.
 
 <div align="right"><a href="#table-of-contents">⬆ Back to Table of Contents</a></div>
 
 ---
 
-## 7. DEX Liquidation
+## 7. Benefits for Liquidators
 
-Default liquidation ([Chapter 6](#6-default-liquidation)) parks the seized collateral in the protocol and lets the protocol's reserves cover the debt. **DEX liquidation** does something more self-contained: in the *same transaction* it **sells** the seized collateral for the base asset, uses the proceeds to cover the debt, and pays the executor a cut of whatever is left over. Nothing has to sit in reserves waiting to be resold.
+Liquidation is not charity — it only happens because it is **profitable** for whoever performs it. The protocol pays that profit out of the liquidation penalty (the `1/LF − 1` gap from [Chapter 5](#5-seizure-calculation)): the borrower's collateral is valued at a discount, and that discount is the liquidator's income.
 
-This is the executor-only route from [Chapter 4](#4-structure-of-the-protocol) (`liquidate()`, `EXECUTOR_ROLE`, only when the DEX path isn't paused). The seizure plan is the *same* one from [Chapter 5](#5-seizure-calculation) — what changes is the settlement: collateral is swapped, not absorbed. The selling is delegated to the **DEX adapter**, which tries **1inch first** and falls back to **Uniswap**, and if both fail, sweeps the collateral back to Comet to be absorbed instead.
+It is paid out in two public steps. First, **`absorb()`** moves the underwater account's collateral into the protocol's reserves ([Chapter 6](#6-settlement)) — the caller earns *liquidator points*, not tokens ([§7.2](#72-liquidator-points)). Then, separately, **anyone** can buy that collateral back from the protocol at a **discount to market** via `buyCollateral`. That discount is the real income.
 
-### 7.1 What the module does
-
-`LiquidationModule._dexLiquidate` orchestrates the whole thing. It walks the plan, and for each collateral it seizes the tokens, forwards them to the adapter, and asks the adapter to swap. Once every collateral is handled, it closes the debt and settles the base.
-
-```mermaid
-flowchart TD
-    P["seizure plan (Chapter 5)"] --> F["for each seized collateral"]
-    F --> S1["Comet seizes it →<br/>sends tokens to the module"]
-    S1 --> S2["module forwards tokens<br/>to the DEX adapter"]
-    S2 --> S3["adapter swaps → base<br/>(or sweeps back to Comet)"]
-    S3 --> F
-    F -->|"all collaterals done"| D["close the debt in Comet<br/>(updateDebtAndPrincipal)"]
-    D --> M["settle base:<br/>cover the debt to Comet,<br/>pay executor from the surplus"]
-```
-
-In code, the per-collateral loop:
-
-```ts
-const baseBefore = baseToken.balanceOf(module);
-let unswappedSeizedValue = 0n;
-
-for (let i = 0; i < plan.length; i++) {
-  const s = plan[i];
-  if (s.seizedAmount === 0n) continue;
-
-  // Comet reduces the borrower's balance, emits AbsorbCollateral, and (unlike the default
-  // route) transfers the seized tokens out to the module.
-  comet.updateAndSeizeCollateral(absorber, account, s.index, s.seizedAmount, s.wantedCollateralValue);
-
-  // Module hands the tokens to the adapter and asks it to swap them into base.
-  transfer(s.asset, dexAdapter, s.seizedAmount);
-
-  // false = the swap failed and the adapter swept this collateral back to Comet, so its value
-  // was covered in-kind and must NOT be expected back as base.
-  if (!dexAdapter.swap(s.asset, s.seizedAmount, swapData[i])) {
-    unswappedSeizedValue += s.seizedValue;
-  }
-}
-
-// Debt is closed regardless — the adapter already enforced slippage on every swap.
-comet.updateDebtAndPrincipal(absorber, account, newBalance, basePaidOut, basePaidOutValue);
-```
-
-The executor supplies one `swapData` entry per planned collateral (the off-chain 1inch calldata), aligned to the plan's order — hence the `swapData.length === plan.length` check. The single real difference from the default route is `updateAndSeizeCollateral` instead of `updateCollateral`: it **transfers the collateral out** to the module so it can be sold, rather than leaving it in the protocol.
-
-### 7.2 How the adapter swaps: 1inch → Uniswap → sweep
-
-Each `dexAdapter.swap(...)` call tries up to two venues and has a guaranteed fallback, so a single failing swap never blocks the whole liquidation.
-
-```mermaid
-flowchart TD
-    IN["swap(collateral, amount, swapData)"] --> C{"1inch core swap<br/>(executor's calldata)"}
-    C -->|"success"| CHK{"base out ≥ minAmountOut?"}
-    C -->|"fail / no calldata"| U{"Uniswap V4<br/>preconfigured route"}
-    U -->|"success"| CHK
-    U -->|"fail / no route"| SW["sweep collateral to Comet<br/>→ absorbed · return false"]
-    CHK -->|"yes"| OK["send base to module · return true"]
-    CHK -->|"no"| REV["revert SwapSlippageExceeded"]
-```
-
-Step by step:
-
-1. **Minimum output.** First the adapter prices the swap from the oracle and applies the slippage tolerance: `minAmountOut = oracle value of the collateral in base × (1 − slippageBps)`. A per-collateral slippage override is used when set, otherwise the global one.
-2. **1inch (core).** If the executor supplied calldata, the adapter validates it against the request — source/destination tokens, receiver is the adapter, exact `amountIn`, and `minReturnAmount ≥ minAmountOut` — then calls the 1inch V6 router. If the call reverts, the leftover allowance is cleared so the fallback starts clean.
-3. **Uniswap (redundant).** If the core swap didn't succeed (it failed, or no calldata was given), the adapter falls back to its **preconfigured Uniswap V4 route** for that collateral. If there is no route, or the router call reverts, the adapter **sweeps the collateral to Comet** and returns `false`.
-4. **Final slippage guard.** On a successful swap the adapter re-checks the base actually received against `minAmountOut` and reverts `SwapSlippageExceeded` if short; otherwise it sends the base to the module and returns `true`.
-
-The important property: a `false` return is *not* an error — it means "this collateral couldn't be sold, so I gave it back to Comet to absorb." The module handles that case in its settlement, which is next.
-
-### 7.3 Settling the base
-
-After the loop the module holds however much base the swaps produced. It has to (a) give Comet enough base to back the debt it just closed, (b) not expect base for any collateral that was swept back, and (c) pay the executor for the service — but only out of genuine surplus.
-
-```ts
-const baseReceived = baseToken.balanceOf(module) - baseBefore;
-
-// Collateral that was swept back to Comet already covered its share in-kind, so subtract its
-// base-equivalent from what the module must hand over.
-const unswappedBaseAmount = divPrice(unswappedSeizedValue, basePrice, baseScale);
-const baseRequired = basePaidOut > unswappedBaseAmount ? basePaidOut - unswappedBaseAmount : 0n;
-
-let incentive = 0n;
-let baseForComet;
-
-if (baseReceived + BASE_ROUNDING_DUST < baseRequired) {
-  // Even the sale proceeds fall short of the debt → bad debt. No incentive; Comet gets it all.
-  baseForComet = baseReceived;
-  emit BadDebtLiquidate(absorber, account, executor, baseReceived);
-} else {
-  // Normal case: the executor earns incentiveBps of the surplus above what the debt needed.
-  const surplus = baseReceived > baseRequired ? baseReceived - baseRequired : 0n;
-  incentive = surplus * incentiveBps / BPS;
-  baseForComet = baseReceived - incentive;
-}
-
-if (baseForComet > 0n) transfer(baseToken, comet, baseForComet);
-if (incentive   > 0n) transfer(baseToken, executor, incentive);
-```
-
-The pieces:
-
-- **`baseRequired`** is the base the module must actually deliver: the debt it closed (`basePaidOut`) minus the value of any swept-back collateral (which Comet already got in-kind). The `BASE_ROUNDING_DUST` (1 wei) tolerance absorbs a rounding mismatch — `basePaidOut` rounds up while `unswappedBaseAmount` rounds down — so a debt covered right down to the wei isn't misreported as bad debt.
-- **Incentive** is taken *only from the surplus* — the base left after the debt is covered — never from the debt itself, and it's capped at `MAX_INCENTIVE = 10%`. Everything except the incentive goes to Comet (covering the debt and adding the rest to reserves).
-- **Bad debt** is when even the sale proceeds can't cover `baseRequired`: no incentive is paid, all proceeds go to Comet, and `BadDebtLiquidate` is emitted.
-
-**Worked example (normal case).** Reuse the §5.3 plan: the seizure cleared **≈ $12,786** of debt by taking **≈ 7.10 WETH** (raw value ≈ $14,207). Every collateral swapped (nothing swept), and the sale of that WETH returns, after slippage/fees, **≈ $13,800** of base. With `incentiveBps = 5%`:
-
-```
-baseRequired = basePaidOut − unswappedBaseAmount = 12,786 − 0 = $12,786
-baseReceived = $13,800   (≥ baseRequired, so not bad debt)
-surplus      = 13,800 − 12,786 = $1,014
-incentive    = 1,014 × 5% ≈ $51            → to the executor
-baseForComet = 13,800 − 51 ≈ $13,749       → to Comet (covers the $12,786 debt, ~$963 to reserves)
-```
-
-**Worked example (bad debt).** If instead the sale returned only **$1,800** against a `baseRequired` of **$2,500**:
-
-```
-baseReceived $1,800  +  dust  <  baseRequired $2,500   →  bad debt
-incentive    = 0
-baseForComet = $1,800   → all to Comet
-emit BadDebtLiquidate(... $1,800)
-```
-
-### 7.4 Summary
-
-- DEX liquidation runs the **same seizure plan** as default, but **sells** the collateral for base in-transaction instead of absorbing it — via `updateAndSeizeCollateral`, which transfers the tokens out to the module.
-- The module loops **seize → forward to adapter → swap**, then closes the debt once and settles the base.
-- The adapter tries **1inch (core, executor calldata) → Uniswap V4 (redundant, preconfigured route) → sweep to Comet**. A swept collateral returns `false` and is simply absorbed instead of sold — never a hard failure.
-- Every swap is bounded by an **oracle-derived `minAmountOut`** (slippage tolerance), enforced by both the router and a final adapter check.
-- Settlement pays Comet **`baseRequired`** (closed debt minus in-kind swept value) and pays the executor **`incentiveBps` of the surplus only** (max 10%). If proceeds fall short, it's **bad debt**: no incentive, all proceeds to Comet, `BadDebtLiquidate` emitted.
-
-<div align="right"><a href="#table-of-contents">⬆ Back to Table of Contents</a></div>
-
----
-
-## 8. Benefits for Liquidators
-
-Liquidation is not charity — it only happens because it is **profitable** for whoever performs it. The protocol pays that profit out of the liquidation penalty (the `1/LF − 1` gap from [Chapter 5](#5-seizure-calculation)): the borrower's collateral is valued at a discount, and that discount is the liquidator's income. The two routes pay it out in two different ways.
-
-| Route | Who earns | How they earn | Capital needed |
+| Step | Who | What they get | Capital needed |
 |---|---|---|---|
-| **DEX** (`liquidate`) | Executor (keeper) | A cut of the swap **surplus**, in base, atomically | None — collateral is sold in the same tx |
-| **Default** (`absorb` + `buyCollateral`) | Anyone | The **discount** on collateral bought from the protocol | Base to buy the collateral |
+| **`absorb`** | Anyone | Liquidator points | Only gas |
+| **`buyCollateral`** | Anyone | The **discount** on collateral bought from the protocol | Base to buy the collateral |
 
-### 8.1 DEX route: a cut of the surplus
-
-This is the most direct income. As shown in [§7.3](#73-settling-the-base), after the executor's swaps cover the debt, the base left over is **surplus**, and the executor keeps a configured fraction of it:
-
-```ts
-surplus   = baseReceived - baseRequired;          // base left after the debt is covered
-incentive = surplus * incentiveBps / BPS;         // the executor's income (BPS = 10_000)
-```
-
-Two properties make this attractive:
-
-- **It is atomic and capital-free.** The collateral is seized and sold inside the same transaction, so the executor never has to front any money — they only need to supply good swap calldata and pay gas.
-- **It is bounded.** `incentiveBps` is set by governance and capped at `MAX_INCENTIVE = 1_000` (10%). It is taken **only from the surplus**, never from the debt, so paying the executor can never create bad debt.
-
-**Example.** From the §7.3 walkthrough: the swaps returned `$13,800` of base against a `baseRequired` of `$12,786`, with `incentiveBps = 5%`:
-
-```
-surplus   = 13,800 − 12,786 = $1,014
-incentive = 1,014 × 5%      ≈ $51        → paid to the executor in base, same transaction
-```
-
-The executor walks away with ≈ $51 for the service, and the remaining surplus (≈ $963) is added to Comet's reserves. If the sale had fallen short of `baseRequired`, it would be bad debt — the executor earns nothing, but also loses nothing beyond gas.
-
-### 8.2 Default route: buying collateral at a discount
-
-The permissionless route splits the profit into two public steps. First, **`absorb()`** moves the underwater account's collateral into the protocol's reserves (Chapter 6) — the caller earns *liquidator points*, not tokens (more on those below). Then, separately, **anyone** can buy that collateral back from the protocol at a **discount to market** via `buyCollateral`. That discount is the real income.
+### 7.1 Buying collateral at a discount
 
 The discount is derived from the collateral's `liquidationFactor` and the market's `storeFrontPriceFactor`:
 
@@ -1028,152 +804,114 @@ Spend $19,000 of base:
 
 Two conditions gate this: `buyCollateral` only sells while the protocol's reserves are **below `targetReserves`** (it sells collateral to rebuild base), and riskier assets (lower `liquidationFactor`) carry a **bigger discount** — the protocol pays more to offload what is harder to sell.
 
-**Liquidator points.** The `absorb()` caller also accrues on-chain `liquidatorPoints` — `numAbsorbs`, `numAbsorbed`, and `approxSpend` (a gas-cost estimate). These are *not* direct income; the code itself notes they are "an imperfect tool for governance" — a record governance can use to reward absorbers. The dependable profit in this route is the `buyCollateral` discount, and in practice one bot does both steps: absorb the account, then buy its collateral.
+### 7.2 Liquidator points
 
-### 8.3 Summary
+The `absorb()` caller accrues on-chain `liquidatorPoints`, once per call:
 
-- Both routes pay the liquidator out of the **liquidation penalty** — the discount at which the borrower's collateral is valued.
-- **DEX route:** the executor earns `incentive = surplus × incentiveBps / BPS`, in base, **atomically and capital-free**, taken only from surplus and capped at 10%. Bad debt pays nothing (but costs nothing beyond gas).
-- **Default route:** profit comes from `buyCollateral` at `discountedPrice = marketPrice × (1 − storeFrontPriceFactor × (1 − liquidationFactor))` — bigger discount for riskier collateral — and requires base capital and an available reserves shortfall. The `absorb()` caller separately earns governance-facing liquidator points.
-- Either way, the incentive is designed so the liquidator's gain **cannot** come at the expense of the debt being covered — it is only ever paid from surplus or from a discount the protocol chooses to offer.
+| Field | Grows by |
+|---|---|
+| `numAbsorbs` | `1` per `absorb()` call |
+| `numAbsorbed` | the number of accounts in the call |
+| `approxSpend` | the call's gas used × `block.basefee` — an estimate of what the absorber spent |
+
+These are *not* direct income; the code itself notes they are "an imperfect tool for governance" — a record governance can use to reward absorbers. The dependable profit is the `buyCollateral` discount, and in practice one bot does both steps: absorb the account, then buy its collateral.
+
+### 7.3 Summary
+
+- The liquidator is paid out of the **liquidation penalty** — the discount at which the borrower's collateral is valued.
+- Profit comes from `buyCollateral` at `discountedPrice = marketPrice × (1 − storeFrontPriceFactor × (1 − liquidationFactor))` — a bigger discount for riskier collateral — and requires base capital and a reserves shortfall below `targetReserves`.
+- The `absorb()` caller separately earns governance-facing **liquidator points**.
+- The incentive never comes at the expense of the debt being covered — it is only ever paid from a discount the protocol chooses to offer.
 
 <div align="right"><a href="#table-of-contents">⬆ Back to Table of Contents</a></div>
 
 ---
 
-## 9. Events
+## 8. Events
 
-Every liquidation leaves a complete on-chain trail. If you index the market you can reconstruct exactly what was seized, how much debt was cleared, what a swap returned, and what the executor earned — all from events. This chapter lists each one, **where it is emitted**, **what it carries**, and **how those values were computed** (with pointers back to the chapter that derived them).
+Every liquidation leaves a complete on-chain trail. If you index the market you can reconstruct exactly what was seized and how much debt was cleared — all from events. This chapter lists each one, **where it is emitted**, **what it carries**, and **how those values were computed** (with pointers back to the chapter that derived them).
 
-A deliberate design point: the two core liquidation events, `AbsorbCollateral` and `AbsorbDebt`, are emitted by **Comet itself** for *both* routes ([Chapter 6](#6-default-liquidation)). Whoever watches the market sees every seizure on one address, no matter whether it came through `absorb()` or `liquidate()`.
+All of them are emitted by the **Comet market** address — including the one raised by the extension, which runs in Comet's context through the fallback.
 
-### 9.1 Liquidation lifecycle events
+### 8.1 Liquidation lifecycle events
 
-| Event | Emitted by | Route(s) | Fires |
-|---|---|---|---|
-| `AbsorbCollateral` | Comet | both | once per seized collateral |
-| `AbsorbDebt` | Comet | both | once per liquidation |
-| `Swap` | DEX adapter | DEX | once per successful swap |
-| `RedundantSwapFailed` | DEX adapter | DEX | when a collateral can't be sold and is swept to Comet |
-| `DexLiquidate` | Liquidation Module | DEX | once, at the end of a DEX liquidation |
-| `BadDebtLiquidate` | Liquidation Module | DEX | additionally, when swap proceeds can't cover the debt |
-| `BuyCollateral` | Comet | default (after) | when someone buys absorbed collateral |
+| Event | Emitted by | Fires |
+|---|---|---|
+| `AbsorbCollateral` | Comet | once per seized collateral |
+| `AbsorbDebt` | Comet | once per absorbed account |
+| `BuyCollateral` | Comet | when someone buys absorbed collateral (a separate transaction) |
 
 **`AbsorbCollateral(address indexed absorber, address indexed borrower, address indexed asset, uint collateralAbsorbed, uint usdValue)`**
-- `collateralAbsorbed` — the seized amount in the token's own units = the plan's `seizedAmount` ([Chapter 5](#5-seizure-calculation)).
-- `usdValue` — the raw USD value of that collateral = the plan's `wantedCollateralValue` (`1e8` price scale). Used only for reporting, not for any balance math.
+- `collateralAbsorbed` — the seized amount in the token's own units = `seizedAmount` ([Chapter 5](#5-seizure-calculation)).
+- `usdValue` — the raw USD value of that collateral = `wantedCollateralValue` (`1e8` price scale). Used only for reporting, not for any balance math.
 
 **`AbsorbDebt(address indexed absorber, address indexed borrower, uint basePaidOut, uint usdValue)`**
-- `basePaidOut` — base-asset units of debt cleared = `newBalance − oldBalance` ([Chapters 5–6](#6-default-liquidation)).
-- `usdValue` — that amount valued in USD = `basePaidOut × basePrice / baseScale` (the plan's `basePaidOutValue`).
+- `basePaidOut` — base-asset units of debt cleared = `newBalance − oldBalance` ([Chapter 6](#6-settlement)).
+- `usdValue` — that amount valued in USD = `basePaidOut × basePrice / baseScale`.
 
-**`Swap(address collateral, uint amountIn, uint amountOut)`**
-- `amountIn` — the collateral sold = the seizure's `seizedAmount`.
-- `amountOut` — base actually received from the venue, guaranteed `≥ minAmountOut` (the oracle-derived slippage floor from [§7.2](#72-how-the-adapter-swaps-1inch--uniswap--sweep)).
+**`BuyCollateral(address indexed buyer, address indexed asset, uint baseAmount, uint collateralAmount)`** — the follow-up to an absorb: `baseAmount` of base paid in, `collateralAmount` received at the discounted quote (`quoteCollateral`, [Chapter 7](#7-benefits-for-liquidators)).
 
-**`RedundantSwapFailed(address collateral, uint amountIn)`** — emitted when neither 1inch nor Uniswap could sell `amountIn` of `collateral`, so it was swept back to Comet to be absorbed instead. In the settlement its value is subtracted from `baseRequired` ([§7.3](#73-settling-the-base)).
-
-**`DexLiquidate(address indexed absorber, address indexed account, address indexed executor, uint baseReceived, uint baseRepaid, uint incentive)`**
-- `baseReceived` — total base realized from all swaps = `moduleBaseBalanceAfter − baseBefore`.
-- `baseRepaid` — base sent to Comet = `baseReceived − incentive` (covers the debt, with any remainder going to reserves).
-- `incentive` — the executor's cut = `surplus × incentiveBps / BPS` ([Chapters 7–8](#8-benefits-for-liquidators)).
-
-**`BadDebtLiquidate(address indexed absorber, address indexed account, address indexed executor, uint baseReceived)`** — emitted *in addition to* `DexLiquidate` when `baseReceived + dust < baseRequired`. `incentive` is `0`, and all `baseReceived` goes to Comet.
-
-**`BuyCollateral(address indexed buyer, address indexed asset, uint baseAmount, uint collateralAmount)`** — the follow-up to a default absorb: `baseAmount` of base paid in, `collateralAmount` received at the discounted quote (`quoteCollateral`, [Chapter 8](#8-benefits-for-liquidators)).
-
-### 9.2 The order events fire
-
-**Default route (`absorb`):**
+### 8.2 The order events fire
 
 ```
-per seized collateral:  AbsorbCollateral
-once at the end:        AbsorbDebt
-(later, a separate tx:) BuyCollateral   — when a liquidator buys the absorbed collateral
+per absorbed account, in the order given to absorb():
+  per seized collateral:  AbsorbCollateral
+  once for the account:   AbsorbDebt
+(later, a separate tx:)   BuyCollateral   — when a liquidator buys the absorbed collateral
 ```
 
-**DEX route (`liquidate`):**
+So absorbing one account that holds two seized collaterals emits, in order: `AbsorbCollateral`, `AbsorbCollateral`, `AbsorbDebt`. An account whose collateral is all non-seizable (`liquidationFactor == 0`) emits only `AbsorbDebt`.
 
-```
-per seized collateral:  AbsorbCollateral         (Comet seizes + transfers out)
-                        Swap            OR RedundantSwapFailed
-once at the end:        AbsorbDebt               (debt closed)
-                        BadDebtLiquidate         (only if proceeds fell short)
-                        DexLiquidate             (always — final settlement summary)
-```
+### 8.3 Configuration and governance events
 
-So a healthy DEX liquidation of a two-collateral account emits, in order: `AbsorbCollateral`, `Swap`, `AbsorbCollateral`, `Swap`, `AbsorbDebt`, `DexLiquidate`.
-
-### 9.3 Configuration and governance events
-
-These don't accompany a liquidation; they record parameter and role changes worth monitoring:
+These don't accompany a liquidation; they record parameter changes worth monitoring:
 
 | Event | Emitted by | Meaning |
 |---|---|---|
-| `IncentiveBpsUpdated(old, new)` | Liquidation Module | executor incentive changed |
-| `SlippageSet(collateral, oldBps, newBps)` | DEX adapter | global (`collateral == 0`) or per-collateral slippage changed |
-| `DexPausedSet(bool paused)` | Access control | DEX route paused/unpaused (paused ⇒ everything falls back to default) |
-| `LiquidationModeToggled(bool partialEnabled)` | Access control | partial vs full-close mode switched |
-
-Role changes (executor / pauser / multisig / DAO) surface through the standard OpenZeppelin `AccessControl` events (`RoleGranted`, `RoleRevoked`).
+| `SetTargetHealthFactor(cometProxy, oldHealthFactor, newHealthFactor)` | Configurator | target health factor changed in the market's configuration; takes effect with the next deployed implementation |
+| `PartialLiquidationPauseAction(bool partialLiquidationPaused)` | Comet (via the extension) | partial liquidation paused/unpaused (paused ⇒ every absorb closes the debt in full) |
+| `PauseAction(..., bool absorbPaused, ...)` | Comet | the coarse pause flags changed, including `absorbPaused`, which stops `absorb()` altogether |
 
 <div align="right"><a href="#table-of-contents">⬆ Back to Table of Contents</a></div>
 
 ---
 
-## 10. Interfaces
+## 9. Interfaces
 
-The liquidation system is defined by a set of Solidity interfaces, and they follow one consistent pattern: **functions, events, and errors each live in their own interface**, and the "real" interfaces aggregate them. This matters for integrators — if you only want to *decode events* for an indexer, you import just the `…Events` interface; if you only want to *decode reverts*, you import just the `…Errors` interface; you never have to pull in the full function surface to do either.
+Liquidation has no interfaces of its own: everything it exposes sits on the market's existing surfaces, split the same way as the rest of Comet — the main contract's functions, events and errors in `CometMainInterface`, the extension's in `CometExtInterface`, and the target health factor's setter on the Configurator.
 
-### 10.1 The module interfaces
-
-```mermaid
-flowchart TD
-    Core["<b>ICoreLiquidationModule</b><br/>absorb · isLiquidatable<br/>seizurePlan · setAssetList<br/>initiateModule<br/>+ …Errors"]
-    Mod["<b>ILiquidationModule</b><br/>liquidate(swapData)<br/>+ …Errors + …Events"]
-    View["<b>ILiquidationModuleView</b><br/>comet · assetList · baseScale<br/>numAssets · partialLiquidationEnabled"]
-    AC["<b>Access control</b><br/>…AccessControlErrors<br/>…AccessControlEvents"]
-    Core ~~~ Mod ~~~ View ~~~ AC
-```
-
-- **`ICoreLiquidationModule`** (aggregates `ICoreLiquidationModuleErrors`) — the core surface **Comet** talks to: `absorb`, the `isLiquidatable` / `seizurePlan` reads, and the one-time `setAssetList` / `initiateModule` wiring. Also declares the `Seizure` struct that the plan is made of.
-- **`ILiquidationModule`** (aggregates `ILiquidationModuleErrors` + `ILiquidationModuleEvents`) — adds the executor entry point `liquidate(absorber, account, swapData)`. The deployed module implements *both* this and `ICoreLiquidationModule`.
-- **`ILiquidationModuleView`** — a read-only surface (`comet`, `assetList`, `baseScale`, `numAssets`, `partialLiquidationEnabled`). This is what `LiquidationSeizureView` binds to so it can mirror the seizure math off-chain.
-- **`ILiquidationAccessControlEvents` / `…Errors`** — role and pause-switch events (`DexPausedSet`, `LiquidationModeToggled`, …) and their revert reasons.
-
-### 10.2 The DEX adapter interfaces
+### 9.1 The market interfaces
 
 ```mermaid
 flowchart TD
-    DCore["<b>ICoreDexAdapter</b><br/>swap · initiateAdapter<br/>setAssetList · setSlippageBps<br/>+ …Errors + …Events"]
-    Uni["<b>IUniswapAdapter</b><br/>redundant-route config types<br/>+ …Errors"]
-    OneInch["<b>IOneInchV6AdapterErrors</b><br/>1inch calldata revert reasons"]
-    DCore ~~~ Uni ~~~ OneInch
+    Main["<b>CometMainInterface</b><br/>absorb · isLiquidatable<br/>targetHealthFactor<br/>quoteCollateral · buyCollateral<br/>+ events + errors"]
+    Ext["<b>CometExtInterface</b><br/>pausePartialLiquidation<br/>+ events + errors"]
+    Cfg["<b>Configurator</b><br/>setTargetHealthFactor<br/>SetTargetHealthFactor"]
+    Main ~~~ Ext ~~~ Cfg
 ```
 
-- **`ICoreDexAdapter`** (aggregates `ICoreDexAdapterErrors` + `ICoreDexAdapterEvents`) — the surface the **module** calls: `swap`, the `initiateAdapter` / `setAssetList` wiring, and `setSlippageBps`. Declares the `CollateralSlippage` struct.
-- **`IUniswapAdapter`** (aggregates `IUniswapAdapterErrors`) — the redundant-route configuration types (`RouteConfig`, `RouteKind`, single vs multi-hop path shapes) needed to build and validate Uniswap routes.
-- **`IOneInchV6AdapterErrors`** — the extra revert reasons the 1inch adapter adds for calldata validation (`InvalidSelector`, `InvalidTokens`, …).
+- **`CometMainInterface`** — the liquidation functions `absorb`, `isLiquidatable` and `targetHealthFactor`, the follow-up `quoteCollateral` / `buyCollateral`, and `getReserves` / `targetReserves` that gate it. Events `AbsorbCollateral`, `AbsorbDebt`, `BuyCollateral`, `PauseAction`; errors `NotLiquidatable`, `Paused`, `BadPrice`, `BadHealthFactor`. The `liquidatorPoints` getter comes with it from Comet's storage layout.
+- **`CometExtInterface`** — `pausePartialLiquidation` and the `PartialLiquidationPauseAction` event, with the errors `OnlyPauseGuardianOrGovernor` and `OffsetStatusAlreadySet`.
+- **`isPartialLiquidationPaused()`** — public on `CometWithExtendedAssetList`, next to the other extended-pause getters. Like them, it is not declared in either interface, so read it with the implementation's ABI.
+- **`ICometData`** — the shared structs (`UserBasic`, `AssetInfo`, …) the functions above return.
 
-### 10.3 The market interfaces the module depends on
+### 9.2 Configuration and dependencies
 
-The module doesn't hold balances — it reads the market and writes back through hooks. Those come from Comet-side interfaces:
-
-- **`ICometInterface` / `ICometData`** — reads: `userBasic`, `userCollateral`, `presentValue`, price feeds, `baseBorrowMin`, and the like — everything the liquidatable check and seizure plan need.
-- **`ICometLiquidationInterface`** — the write hooks the module calls: `updateCollateral`, `updateAndSeizeCollateral`, and `updateDebtAndPrincipal` (Chapters 6–7).
+- **`Configurator`** — `setTargetHealthFactor(cometProxy, newTargetHealthFactor)` and the `SetTargetHealthFactor` event. The value lives in `CometConfiguration.Configuration.targetHealthFactor` (a `uint64`), read back with `getConfiguration(cometProxy)`.
+- **`CometProxyAdmin`** — `deployAndUpgradeTo(configurator, cometProxy)` deploys an implementation from the current configuration, which is how a new target reaches the market.
 - **`IAssetList`** — per-asset config (`getAssetInfo`), and **`IPriceFeed`** — the Chainlink-style `latestRoundData` used by `getPrice`.
 
-### 10.4 Which interface for which integration
+### 9.3 Which interface for which integration
 
 | You want to… | Use |
 |---|---|
-| **Index / decode liquidation events** | `ILiquidationModuleEvents`, `ICoreDexAdapterEvents` + Comet's `AbsorbCollateral` / `AbsorbDebt` / `BuyCollateral` |
-| **Decode reverts** | the `…Errors` interfaces (`ICoreLiquidationModuleErrors`, `ILiquidationModuleErrors`, `ICoreDexAdapterErrors`, `IUniswapAdapterErrors`, `IOneInchV6AdapterErrors`) |
-| **Check if an account is liquidatable** | `ICoreLiquidationModule.isLiquidatable` |
-| **Preview what would be seized** | `ICoreLiquidationModule.seizurePlan` (now) or `LiquidationSeizureView.seizurePlanAt` (projected to a future timestamp) |
-| **Run a keeper DEX liquidation** | `ILiquidationModule.liquidate(absorber, account, swapData)` — build one 1inch calldata per planned collateral, in plan order |
+| **Index / decode liquidation events** | `CometMainInterface`: `AbsorbCollateral` / `AbsorbDebt` / `BuyCollateral` |
+| **Decode reverts** | the errors in `CometMainInterface` (`NotLiquidatable`, `Paused`, `BadPrice`, …) and `CometExtInterface` |
+| **Check if an account is liquidatable** | `Comet.isLiquidatable` |
+| **Preview what would be seized** | there is no on-chain preview — apply [Chapter 5](#5-seizure-calculation) off-chain, or simulate `absorb` on a fork |
 | **Run a permissionless absorb** | `Comet.absorb(absorber, accounts[])` |
 | **Buy absorbed collateral at a discount** | `Comet.quoteCollateral` then `Comet.buyCollateral` |
-| **Build / deploy a new DEX adapter** | implement `ICoreDexAdapter`; configure routes via `IUniswapAdapter` types |
+| **Read or change the target health factor** | `Comet.targetHealthFactor()`; `Configurator.setTargetHealthFactor` + `CometProxyAdmin.deployAndUpgradeTo` |
+| **Pause or resume partial liquidation** | `Comet.pausePartialLiquidation(bool)`; read with `isPartialLiquidationPaused()` |
 
 <div align="right"><a href="#table-of-contents">⬆ Back to Table of Contents</a></div>
