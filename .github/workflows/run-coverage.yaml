@@ -9,6 +9,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # On PRs this checks out GitHub's merge commit; depth 2 also fetches its parent, the PR head,
+          # which the Coveralls step reads via `git-commit`
+          fetch-depth: 2
 
       - uses: actions/setup-node@v4
         with:
