@@ -14,7 +14,12 @@ import { tempDir } from './TestHelpers';
 describe('Deployment verification strategies', () => {
   for (const via of ['artifacts', 'buildfile'] as const) {
     for (const strategy of ['none', 'eager', 'lazy'] as const) {
-      it(`applies ${strategy} verification when deploying via ${via}`, async () => {
+      const name = {
+        none: `does not verify or queue verification when deploying via ${via} with strategy none`,
+        eager: `verifies immediately without queuing when deploying via ${via} with strategy eager`,
+        lazy: `queues verification without verifying immediately when deploying via ${via} with strategy lazy`,
+      }[strategy];
+      it(name, async () => {
         const dir = await fs.mkdtemp(tempDir());
         const originalVerify = verification.verifyContract;
         const verified: verification.VerifyArgs[] = [];

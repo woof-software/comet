@@ -23,7 +23,13 @@ describe('DeploymentManager conditional cloning', () => {
   });
 
   for (const state of ['missing', 'existing', 'forced', 'zero address'] as const) {
-    it(`handles alias state '${state}' with the intended import and deployment counts`, async () => {
+    const name = {
+      missing: 'imports and deploys a clone when the alias is missing',
+      existing: 'reuses an existing alias without importing or deploying a clone',
+      forced: 'imports and deploys a new clone when replacement is forced',
+      'zero address': 'imports and deploys a clone when the alias points to the zero address',
+    }[state];
+    it(name, async () => {
       const manager = new DeploymentManager('test-network', 'test-deployment', hre, {
         baseDir: dir, writeCacheToDisk: true, verificationStrategy: 'none',
       });

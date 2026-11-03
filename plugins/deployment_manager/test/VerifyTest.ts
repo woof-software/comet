@@ -115,7 +115,10 @@ describe('Verify', () => {
     });
 
     for (const raise of [false, true]) {
-      it(`handles a general verification error with raise=${raise} without retrying`, async () => {
+      const name = raise
+        ? 'throws a general verification error without retrying when raise is enabled'
+        : 'returns false without retrying a general verification error when raise is disabled';
+      it(name, async () => {
         const failure = new Error('Explorer unavailable');
         outcome = async () => { throw failure; };
 
@@ -158,7 +161,10 @@ describe('Verify', () => {
       });
 
       for (const raise of [false, true]) {
-        it(`stops after exhausting bytecode retries with raise=${raise}`, async () => {
+        const name = raise
+          ? 'throws the final bytecode error after exhausting retries when raise is enabled'
+          : 'returns false after exhausting bytecode retries when raise is disabled';
+        it(name, async () => {
           const failure = new Error('Contract does not have bytecode');
           outcome = async () => { throw failure; };
 

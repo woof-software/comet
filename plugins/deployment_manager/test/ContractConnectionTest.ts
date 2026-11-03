@@ -136,7 +136,10 @@ describe('DeploymentManager contract connections', () => {
   });
 
   for (const present of [true, false]) {
-    it(`retrieves a source deployment alias with present=${present} without importing or deploying`, async () => {
+    const name = present
+      ? 'retrieves an existing source alias without importing or deploying'
+      : 'reports a missing source alias without importing, deploying or saving a local alias';
+    it(name, async () => {
       const source = new DeploymentManager('source-network', 'source-market', manager.hre, {
         baseDir: dir, writeCacheToDisk: true,
       });

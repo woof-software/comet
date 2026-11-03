@@ -106,7 +106,10 @@ describe('DeploymentManager deployment scripts', () => {
   });
 
   for (const restart of [false, true]) {
-    it(`recovers a partially completed script with saved roots and restart=${restart}`, async () => {
+    const name = restart
+      ? 'recovers a partially completed script from saved roots in a fresh manager'
+      : 'recovers a partially completed script from saved roots in the same manager';
+    it(name, async () => {
       await assert.rejects(manager.runDeployScript({ failAfterFirst: true, saveRoots: true }),
         /Injected deployment script failure/);
       const saved = await getAliases(manager.cache);
