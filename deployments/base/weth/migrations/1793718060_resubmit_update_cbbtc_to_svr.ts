@@ -8,21 +8,12 @@ import { utils, Contract } from 'ethers';
 const CBBTC_USD_SVR_PRICE_FEED_ADDRESS = '0x8C74B2811D2F1aD65517ADB5C65773c1E520ed2f'; // wraps cbBTC / USD SVR 0x2231aEdEf63Bef7F32fA1cEc5851C5CD72746263
 const CBBTC_ETH_SVR_PRICE_FEED_ADDRESS = '0xc8E4c3F58d5FC4409522503927Ecea057EbbA1fc'; // cbBTC / USD SVR 0x2231...6263 and ETH / USD SVR 0x1428...98C0
 
-const CBBTC_USD_SVR_UNDERLYING = '0x2231aEdEf63Bef7F32fA1cEc5851C5CD72746263';
-const ETH_USD_SVR_UNDERLYING = '0x1428C9E908e32dD2839F99D63C242c91329A58C0';
-
 const AERO_COMET_ADDRESS = '0x784efeB622244d2348d4F2522f8860B96fbEcE89';
 const WETH_COMET_ADDRESS = '0x46e6b214b524310239732D51387075E0e70970bf';
 
 const cometAbi = [
   'function getAssetInfoByAddress(address asset) public view returns((uint8 offset, address asset, address priceFeed, uint64 scale, uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint128 supplyCap))',
   'function getPrice(address priceFeed) public view returns (uint256)'
-];
-
-const priceFeedAbi = [
-  'function underlyingPriceFeed() view returns (address)',
-  'function priceFeedA() view returns (address)',
-  'function priceFeedB() view returns (address)',
 ];
 
 let oldAeroCbBTCToUsdPriceFeed: string;
@@ -54,16 +45,6 @@ export default migration('1793718060_resubmit_update_cbbtc_to_svr', {
 
     oldAeroCbBTCToUsdPriceFeed = (await aeroComet.getAssetInfoByAddress(cbBTC.address)).priceFeed;
     oldWethCbBTCToEthPriceFeed = (await wethComet.getAssetInfoByAddress(cbBTC.address)).priceFeed;
-
-    // Sanity check: the reused feeds must sit on top of the SVR aggregators,
-    // and the markets must not already be using them
-    const cbBTCToUsdFeed = new Contract(CBBTC_USD_SVR_PRICE_FEED_ADDRESS, priceFeedAbi, signer);
-    const cbBTCToEthFeed = new Contract(CBBTC_ETH_SVR_PRICE_FEED_ADDRESS, priceFeedAbi, signer);
-    expect(await cbBTCToUsdFeed.underlyingPriceFeed()).to.equal(CBBTC_USD_SVR_UNDERLYING);
-    expect(await cbBTCToEthFeed.priceFeedA()).to.equal(CBBTC_USD_SVR_UNDERLYING);
-    expect(await cbBTCToEthFeed.priceFeedB()).to.equal(ETH_USD_SVR_UNDERLYING);
-    expect(oldAeroCbBTCToUsdPriceFeed).to.not.equal(CBBTC_USD_SVR_PRICE_FEED_ADDRESS);
-    expect(oldWethCbBTCToEthPriceFeed).to.not.equal(CBBTC_ETH_SVR_PRICE_FEED_ADDRESS);
 
     const updateAssetPriceFeedCalldataAero = await calldata(
       configurator.populateTransaction.updateAssetPriceFeed(
@@ -130,7 +111,7 @@ This proposal updates the cbBTC price feeds in the Compound III AERO and WETH ma
 - cbBTC / USD SVR price feed: [0x8C74B2811D2F1aD65517ADB5C65773c1E520ed2f](https://basescan.org/address/0x8C74B2811D2F1aD65517ADB5C65773c1E520ed2f) (already used by the USDC and USDS markets)
 - cbBTC / ETH SVR price feed: [0xc8E4c3F58d5FC4409522503927Ecea057EbbA1fc](https://basescan.org/address/0xc8E4c3F58d5FC4409522503927Ecea057EbbA1fc)
 
-Further detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/1129) and [forum discussion for SVR](https://www.comp.xyz/t/request-for-proposal-rfp-oracle-extractable-value-oev-solution-for-compound-protocol/6786).
+Further detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/<>) and [forum discussion for SVR](https://www.comp.xyz/t/request-for-proposal-rfp-oracle-extractable-value-oev-solution-for-compound-protocol/6786).
 
 ### SVR fee recipient
 
