@@ -6,8 +6,9 @@ import "../../contracts/CometWithExtendedAssetList.sol";
 import "../../contracts/CometConfiguration.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
+import { AssetListDeployer } from "./helpers/AssetListDeployer.sol";
 
-contract OnChainLiquidatorTest is Test {
+contract OnChainLiquidatorTest is Test, AssetListDeployer {
     CometWithExtendedAssetList public comet;
     OnChainLiquidator public liquidator;
 
@@ -32,7 +33,7 @@ contract OnChainLiquidatorTest is Test {
     address public constant WST_ETH_WHALE = 0x10CD5fbe1b404B7E19Ef964B63939907bdaf42E2;
 
     function setUp() public {
-        vm.createSelectFork(vm.envString("MAINNET_QUICKNODE_LINK"));
+        vm.createSelectFork("mainnet");
 
         // XXX replace with deployed feeds after mainnet/WETH launch
         SimplePriceFeed wethPriceFeed = new SimplePriceFeed(1e8, 8);
@@ -91,7 +92,7 @@ contract OnChainLiquidatorTest is Test {
                 baseMinForRewards: 1000000e6,
                 baseBorrowMin: 100e6,
                 targetReserves: 5000000e6,
-                assetConfigs: assetConfigs
+                assetList: address(deployAssetList(assetConfigs, makeAddr("proxyAdmin"), makeAddr("configurator")))
             }
         ));
 

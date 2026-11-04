@@ -22,15 +22,10 @@ import { ProposalState, OpenProposal } from '../context/Gov';
 import { debug } from '../../plugins/deployment_manager/Utils';
 import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
-import {
-  mineBlocks,
-  setEtherBalance,
-  setNextBaseFeeToZero,
-  setNextBlockTimestamp,
-} from './hreUtils';
+import { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
-import { getOrCreateVirtualTestnet } from './tenderlyVnet';
-import { BaseBridgeReceiver, CometInterface } from '../../build/types';
+import { getOrCreateVirtualTestnet, getTenderlyCreds } from './tenderlyVnet';
+import { AssetList, BaseBridgeReceiver, CometInterface, CometProxyAdmin, Configurator, FaucetToken } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
@@ -42,6 +37,7 @@ export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
 import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
 export * from './hreUtils';
+export * from './versionControl';
 
 /** Convert a per-year interest factor to per-second (Comet constructor truncation). */
 export function perSecond(perYear: BigNumber): BigNumber {
@@ -163,7 +159,7 @@ export function expectRevertCustom(
 }
 
 export function expectRevertMatches(
-  tx: Promise<ContractReceipt>,
+  tx: Promise<ContractReceipt | ContractTransaction>,
   patterns: RegExp[]
 ) {
   return tx
@@ -241,6 +237,20 @@ export function getExpectedBaseBalance(
   const principalValue = (balance * baseIndexScale) / borrowOrSupplyIndex;
   const baseBalanceOf = (principalValue * borrowOrSupplyIndex) / baseIndexScale;
   return baseBalanceOf;
+}
+
+// A supplier's balance at a given supply index, computed from their stored principal.
+// Read the principal before a transaction and apply the index from after it: the transaction
+// accrues interest before it moves any funds, so a balance read beforehand misses the interest
+// earned in the block the transaction lands in.
+export function presentValueSupply(principal: bigint, baseSupplyIndex: bigint, baseIndexScale: bigint): bigint {
+  return (principal * baseSupplyIndex) / baseIndexScale;
+}
+
+// A borrower's debt at a given borrow index, computed from their stored (negative) principal.
+// Same idea as presentValueSupply: read the principal before a transaction, apply the index from after it.
+export function presentValueBorrow(principal: bigint, baseBorrowIndex: bigint, baseIndexScale: bigint): bigint {
+  return (-principal * baseBorrowIndex) / baseIndexScale;
 }
 
 export function getInterest(balance: bigint, rate: bigint, seconds: bigint) {
@@ -394,6 +404,34 @@ export async function isValidAssetIndex(
   return true;
 }
 
+export async function isAssetDelisted(
+  ctx: CometContext,
+  assetNum: number
+): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const assetInfo = await comet.getAssetInfo(assetNum);
+  return assetInfo.borrowCollateralFactor.toBigInt() === 0n;
+}
+
+/// Finds the index of the first collateral asset that can back a borrow in the bulker scenarios.
+/// The wrapped native token is skipped, since it is supplied and withdrawn through the native token actions,
+/// and so are delisted assets, which have a zero borrow collateral factor. Returns -1 if there is none.
+export async function getBulkerCollateralIndex(ctx: CometContext): Promise<number> {
+  const bulker = await ctx.getBulker();
+  if (bulker == null) return -1;
+
+  const comet = await ctx.getComet();
+  const wrappedNativeToken = (await bulker.wrappedNativeToken()).toLowerCase();
+  const numAssets = await comet.numAssets();
+  for (let i = 0; i < numAssets; i++) {
+    const { asset } = await comet.getAssetInfo(i);
+    if (asset.toLowerCase() === wrappedNativeToken) continue;
+    if (await isAssetDelisted(ctx, i)) continue;
+    return i;
+  }
+  return -1;
+}
+
 export async function isTriviallySourceable(
   ctx: CometContext,
   assetNum: number,
@@ -464,8 +502,39 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
   return true;
 }
 
+export async function usesAssetList(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  return await comet.maxAssets() === MAX_ASSETS;
+}
+
 export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
+}
+
+/**
+ * @notice Checks if the market is fresh (no supplies and no borrows)
+ * @dev A fresh market has totalSupplyBase == 0 and totalBorrowBase == 0
+ *      This is used to filter scenarios that should only run on new/empty markets
+ */
+export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const totals = await comet.totalsBasic();
+    return totals.totalSupplyBase.isZero() && totals.totalBorrowBase.isZero();
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * @notice Deploys an ERC20 token that is not listed in the market, for scenarios that expect Comet to reject it
+ */
+export async function deployUnsupportedAsset(ctx: CometContext): Promise<FaucetToken> {
+  return await ctx.world.deploymentManager.deploy(
+    'unsupportedAsset',
+    'test/FaucetToken.sol',
+    [0, 'Unsupported Asset', 18, 'UNSUPPORTED']
+  ) as FaucetToken;
 }
 
 export async function fetchLogs(
@@ -552,7 +621,7 @@ export async function updateCCIPStats(
     },
     {
       network: 'ronin',
-      commitStore: '0x28c66d9693b2634b2f3b170f6d9584eec2f72ff0',
+      commitStore: '0xd154a8ce39b93098f3C55FFD94418deF75B33627',
       priceRegistry: '0xefCEa3CFA330adcDdeCe99219C57fd45cd166ac1'
     }
   ];
@@ -1064,12 +1133,9 @@ async function simulateBundle(
 ): Promise<any> {
   const rollingStateChanges = {};
   const results = [];
+  const { account: username, project, accessKey } = getTenderlyCreds();
 
   for (const sim of simulations) {
-    const project = 'comet';
-    const username = process.env.TENDERLY_USERNAME || '';
-    const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
-
     // Merge rolling state changes with simulation's own state_objects
     const stateObjects = sim.state_objects
       ? { ...rollingStateChanges, ...sim.state_objects }
@@ -1121,14 +1187,11 @@ async function simulateBundle(
 
     results.push(simResult);
   }
-
   return results;
 }
 
 async function shareSimulation(dm: DeploymentManager, simulationId: string) {
-  const project = 'comet';
-  const username = process.env.TENDERLY_USERNAME || '';
-  const accessKey = process.env.TENDERLY_ACCESS_KEY || '';
+  const { account: username, project, accessKey } = getTenderlyCreds();
 
   return axios.post(
     `https://api.tenderly.co/api/v1/account/${username}/project/${project}/simulations/${simulationId}/share`,
@@ -1193,9 +1256,6 @@ export async function tenderlyVnetExecute(
   const governanceVnet = await getOrCreateVirtualTestnet(governanceDm);
   console.log(`Virtual TestNet ready for ${governanceDm.network}`);
   console.log(`  Public RPC: ${governanceVnet.publicRpcUrl}`);
-  if (governanceVnet.dashboardUrl) {
-    console.log(`  Dashboard:  ${governanceVnet.dashboardUrl}`);
-  }
 
   const governanceVnetEnv = await vnetHreForBase(governanceDm.network, governanceVnet.adminRpcUrl);
   const governanceVnetDm = new DeploymentManager(governanceDm.network, governanceDm.deployment, governanceVnetEnv, {
@@ -1249,8 +1309,12 @@ export async function tenderlyVnetExecute(
     await governanceVnetProvider.send('evm_mine', []);
   }
 
-  console.log('Updating CCIP prices...');
-  await updateCCIPStats(governanceVnetDm);
+  // Only CCIP sends (to Ronin) need fresh prices; skipping saves the CommitStore setCode pair on the vnet
+  const roninAsATarget = [marketDm, ...governanceDm.bridgedDeploymentManagers.values()].some(dm => dm.network === 'ronin');
+  if (roninAsATarget) {
+    console.log('Updating CCIP prices...');
+    await updateCCIPStats(governanceVnetDm);
+  }
 
   console.log(`Executing proposal ${proposalId.toString()}...`);
   const executeTx = await vnetGovernor.connect(proposerSigner)['execute(uint256)'](proposalId, { gasLimit: 30_000_000 });
@@ -1258,9 +1322,6 @@ export async function tenderlyVnetExecute(
 
   console.log(`\n >>> PROPOSAL EXECUTED ${proposalId.toString()} \n`);
   console.log(`Public RPC: ${governanceVnet.publicRpcUrl}`);
-  if (governanceVnet.dashboardUrl) {
-    console.log(`Dashboard:  ${governanceVnet.dashboardUrl}`);
-  }
 
   // Collect every L2 this proposal touches: marketDm plus whatever the migration registered via
   // addBridgedDeploymentManager() (multichain proposals)
@@ -1284,9 +1345,6 @@ export async function tenderlyVnetExecute(
       const l2Vnet = await getOrCreateVirtualTestnet(l2Dm);
       console.log(`\nVirtual TestNet ready for ${l2Dm.network}`);
       console.log(`  Public RPC: ${l2Vnet.publicRpcUrl}`);
-      if (l2Vnet.dashboardUrl) {
-        console.log(`  Dashboard:  ${l2Vnet.dashboardUrl}`);
-      }
 
       const l2VnetEnv = await vnetHreForBase(l2Dm.network, l2Vnet.adminRpcUrl);
       const l2VnetDm = new DeploymentManager(l2Dm.network, l2Dm.deployment, l2VnetEnv, {
@@ -1300,9 +1358,6 @@ export async function tenderlyVnetExecute(
 
       console.log(`\n >>> PROPOSAL RELAYED to ${l2Dm.network} \n`);
       console.log(`Public RPC: ${l2Vnet.publicRpcUrl}`);
-      if (l2Vnet.dashboardUrl) {
-        console.log(`Dashboard:  ${l2Vnet.dashboardUrl}`);
-      }
     } catch (e) {
       console.log(`\n >>> FAILED to relay to ${l2Dm.network}: ${e.message} \n`);
     }
@@ -1381,11 +1436,16 @@ function loadCachedBytecodes() {
 export async function executeOpenProposal(
   dm: DeploymentManager,
   { id, startBlock, endBlock }: OpenProposal
-) {
+): Promise<boolean> {
   const governor = await dm.getContractOrThrow('governor');
   const blockNow = await dm.hre.ethers.provider.getBlockNumber();
+  // Late quorum can extend voting past the endBlock recorded at creation; prefer the live deadline.
+  // GovernorBravo (e.g. the development clone) has no proposalDeadline, so fall back to endBlock.
+  const deadline = await governor.proposalDeadline(id)
+    .then((d) => d.toNumber())
+    .catch(() => endBlock.toNumber());
   const blocksUntilEnd =
-    endBlock.toNumber() - Math.max(startBlock.toNumber(), blockNow) + 1;
+    deadline - Math.max(startBlock.toNumber(), blockNow) + 1;
 
   if (blocksUntilEnd > 0) {
     await mineBlocks(dm, blocksUntilEnd);
@@ -1397,6 +1457,7 @@ export async function executeOpenProposal(
   }
 
   // Execute proposal (maybe, w/ gas limit so we see if exec reverts, not a gas estimation error)
+  let executed = false;
   if ((await governor.state(id)) == ProposalState.Queued) {
     const block = await dm.hre.ethers.provider.getBlock('latest');
     const eta = await (async () => {
@@ -1423,12 +1484,15 @@ export async function executeOpenProposal(
     if (receipt.gasUsed.toNumber() >= 16_777_215) {
       throw new Error('Execution may have failed due to hitting gas limit');
     }
+    executed = true;
   }
 
   await redeployRenzoOracle(dm);
 
   // mine a block
   await dm.hre.ethers.provider.send('evm_mine', []);
+
+  return executed;
 }
 
 async function testnetPropose(
@@ -1751,6 +1815,27 @@ export async function createCrossChainProposal(
   );
 }
 
+// Runs the actions as one governance proposal: the governor executes it on mainnet, and on an L2 it is relayed to the
+// bridge receiver, whose timelock governs the market there
+export async function executeProposal(
+  context: CometContext,
+  bridgeReceiver: BaseBridgeReceiver,
+  targets: string[],
+  signatures: string[],
+  calldatas: string[]
+) {
+  const values = targets.map(() => 0);
+  if (isBridgedDeployment(context)) {
+    const l2ProposalData = utils.defaultAbiCoder.encode(
+      ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
+      [targets, values, signatures, calldatas]
+    );
+    await createCrossChainProposal(context, l2ProposalData, bridgeReceiver);
+  } else {
+    await context.fastGovernanceExecute(targets, values, signatures, calldatas);
+  }
+}
+
 export async function executeOpenProposalAndRelay(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
@@ -1758,7 +1843,13 @@ export async function executeOpenProposalAndRelay(
 ) {
   const startingBlockNumber =
     await governanceDeploymentManager.hre.ethers.provider.getBlockNumber();
-  await executeOpenProposal(governanceDeploymentManager, openProposal);
+  const executed = await executeOpenProposal(governanceDeploymentManager, openProposal);
+  if (!executed) {
+    const governor = await governanceDeploymentManager.getContractOrThrow('governor');
+    const state = await governor.state(openProposal.id);
+    console.log(`Proposal ${openProposal.id} not executed on ${governanceDeploymentManager.network} (state ${ProposalState[state]}), skipping relay`);
+    return;
+  }
 
   console.log(`Executed proposal ${openProposal.id} on ${governanceDeploymentManager.network}, checking if relay to ${bridgeDeploymentManager.network} is needed...`);
 
@@ -1877,4 +1968,165 @@ export async function supportsMarketAdminPermissionChecker(ctx: CometContext): P
   } catch (e) {
     return false;
   }
+}
+
+/**
+ * Check if Comet supports extended pause functionality
+ * @param ctx The Comet context
+ * @returns true if Comet supports extended pause functions, false otherwise
+ */
+export async function supportsExtendedPause(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    // Get the function selector for isLendersWithdrawPaused()
+    // This function only exists in CometWithExtendedAssetList
+    const iface = new ethers.utils.Interface([
+      'function isLendersWithdrawPaused() external view returns (bool)'
+    ]);
+    const functionSelector = iface.getSighash('isLendersWithdrawPaused');
+    
+    // Try to call the function using a low-level static call
+    // If the function doesn't exist, this will revert
+    const result = await ethers.provider.call({
+      to: comet.address,
+      data: functionSelector
+    });
+    
+    // If the call succeeds (doesn't revert), the function exists
+    // Decode the result to verify it's a valid bool response
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    // If the call reverts or fails, extended pause is not supported
+    return false;
+  }
+}
+
+// returns indices of collaterals that have a supply cap and all collateral factors above zero.
+// pass `amount` to get only the first N of them, omit it to get all.
+export async function getUsableCollateralIndices(ctx: CometContext, amount?: number): Promise<number[]> {
+  const comet = await ctx.getComet();
+  const numAssets = await comet.numAssets();
+  const indices: number[] = [];
+
+  for (let i = 0; i < numAssets; i++) {
+    if (amount !== undefined && indices.length >= amount) break;
+
+    const info = await comet.getAssetInfo(i);
+
+    // We skip assets with a supply cap of 0
+    if (info.supplyCap.isZero()) continue;
+
+    // We skip assets with a borrow collateral factor, liquidate collateral factor, or liquidation factor of 0
+    if (info.borrowCollateralFactor.isZero() || info.liquidateCollateralFactor.isZero() || info.liquidationFactor.isZero()) continue;
+    
+    indices.push(i);
+  }
+  return indices;
+}
+
+// returns asset of collateral, supply amount, and borrow amount
+// borrow amount is 1.5 times the market's minimum borrow, or $100 of base when that minimum is worth less than $10.
+export async function getMinimumBorrowAmounts(context: CometContext, collateralIndex: number) {
+  const comet = await context.getComet();
+  const baseScale = (await comet.baseScale()).toBigInt();
+  const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+  const priceScale = (await comet.priceScale()).toBigInt();
+  const factorScale = (await comet.factorScale()).toBigInt();
+
+  // baseBorrowMin is an amount of the base token, not USD. Some markets set it to almost nothing (1 wei of USDC),
+  // which makes a meaningless borrow, so below $10 borrow $100 worth of base instead.
+  const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+  const baseBorrowMinUsd = (baseBorrowMin * basePrice) / baseScale;
+  const borrowAmount = baseBorrowMinUsd < 10n * priceScale
+    ? (100n * priceScale * baseScale) / basePrice
+    : (baseBorrowMin * 3n) / 2n;
+
+  const {
+    asset: collateralAddress,
+    priceFeed: collateralPriceFeed,
+    scale: collateralScaleBN,
+    borrowCollateralFactor
+  } = await comet.getAssetInfo(collateralIndex);
+  const collateralAsset = context.getAssetByAddress(collateralAddress);
+  const collateralScale = collateralScaleBN.toBigInt();
+  const collateralPrice = (await comet.getPrice(collateralPriceFeed)).toBigInt();
+
+  let supplyAmount = (borrowAmount * basePrice * collateralScale) / (baseScale * collateralPrice);
+  supplyAmount = (supplyAmount * factorScale) / borrowCollateralFactor.toBigInt();
+  supplyAmount = (supplyAmount * 11n) / 10n;
+
+  return { collateralAsset, supplyAmount, borrowAmount };
+}
+
+// TEMP SOLUTION: remove as soon as the real asset list migration is prepared or executed on chain.
+// Moves a live market from the V1 Configurator to the asset list, the same steps as the migration scenario but called
+// directly by the governor instead of through proposals: the Configurator is upgraded through the intermediate
+// version that migrates the asset configs, an asset list factory and an asset list are deployed, and the Comet is
+// rebuilt on the list. The new contracts are deployed under the aliases deployComet reads, so that a following
+// deployComet finds them and does not roll the Configurator back to the old implementation
+export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAddress) {
+  const dm = ctx.world.deploymentManager;
+  const ethers = dm.hre.ethers;
+  const comet = await ctx.getComet();
+  const configurator = (await ethers.getContractAt('Configurator', (await ctx.getConfigurator()).address, admin)) as Configurator;
+  const proxyAdmin = (await ethers.getContractAt('CometProxyAdmin', (await ctx.getCometAdmin()).address, admin)) as CometProxyAdmin;
+
+  // A Configurator that stores the market admin permission checker has its own storage layout, so its own versions
+  const withMarketAdmin = await supportsMarketAdminPermissionChecker(ctx);
+  const configuratorIntermediate = await dm.deploy(
+    'test:configuratorIntermediate',
+    withMarketAdmin ? 'migration/ConfiguratorIntermediateOptimism.sol' : 'migration/ConfiguratorIntermediate.sol',
+    [],
+    true
+  );
+  const configuratorImplementation = await dm.deploy(
+    'configurator:implementation',
+    withMarketAdmin ? 'marketupdates/ConfiguratorOptimism.sol' : 'Configurator.sol',
+    [],
+    true
+  );
+  const assetListFactory = await dm.deploy('assetListFactory', 'test/assetList/AssetListFactory.sol', [], true);
+  const cometFactory = await dm.deploy('cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], true);
+
+  // The Configurator proxy is upgraded by its own admin, read from the EIP-1967 admin slot
+  const adminSlot = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
+  const configuratorAdmin = proxyAdmin.attach(
+    utils.getAddress('0x' + (await ethers.provider.getStorageAt(configurator.address, adminSlot)).slice(26))
+  );
+  const intermediate = await ethers.getContractAt('ConfiguratorIntermediate', configurator.address, admin);
+
+  await (await configuratorAdmin.upgrade(configurator.address, configuratorIntermediate.address)).wait();
+  await (await intermediate.migrateAssetConfig([comet.address])).wait();
+  await (await configuratorAdmin.upgrade(configurator.address, configuratorImplementation.address)).wait();
+  await (await configurator.setAssetListFactory(comet.address, assetListFactory.address)).wait();
+
+  // The list is built from the immutable part of the migrated configs, and its proxy keeps the factors and caps
+  const assetListImplementation = (await dm.deploy(
+    'assetList:implementation',
+    'AssetList.sol',
+    [await configurator.getImmutableAssetConfig(comet.address)],
+    true
+  )) as AssetList;
+  const assetListProxy = await dm.deploy(
+    'assetList',
+    'vendor/proxy/transparent/TransparentUpgradeableProxy.sol',
+    [
+      assetListImplementation.address,
+      proxyAdmin.address,
+      assetListImplementation.interface.encodeFunctionData('initialize', [
+        await configurator.getStorageAssetConfig(comet.address),
+        configurator.address,
+      ]),
+    ],
+    true
+  );
+
+  await (await configurator.updateAssetList(comet.address, assetListProxy.address)).wait();
+  await (await configurator.setFactory(comet.address, cometFactory.address)).wait();
+  await (await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address)).wait();
 }

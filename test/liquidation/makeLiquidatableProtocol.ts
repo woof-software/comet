@@ -10,26 +10,21 @@ import {
 import {
   BALANCER_VAULT,
   COMP,
-  COMP_USDC_PRICE_FEED,
   COMP_WHALE,
   DAI,
   DAI_WHALE,
   LINK,
-  LINK_USDC_PRICE_FEED,
   LINK_WHALE,
   ST_ETH,
   UNISWAP_ROUTER,
   UNI,
-  UNI_USDC_PRICE_FEED,
   UNI_WHALE,
   USDC,
   USDC_USD_PRICE_FEED,
   USDC_WHALE,
   WBTC,
-  WBTC_USDC_PRICE_FEED,
   WBTC_WHALE,
   WETH9,
-  ETH_USDC_PRICE_FEED,
   WETH_WHALE,
   WST_ETH,
   UNISWAP_V3_FACTORY,
@@ -80,53 +75,7 @@ export async function makeProtocol() {
     baseMinForRewards: exp(1, 6),
     baseBorrowMin: exp(1, 6),
     targetReserves: exp(5_000_000, 6),
-    assetConfigs: [
-      {
-        asset: COMP,
-        priceFeed: COMP_USDC_PRICE_FEED,
-        decimals: 18,
-        borrowCollateralFactor: 999999999999999999n,
-        liquidateCollateralFactor: exp(1, 18),
-        liquidationFactor: exp(0.9, 18),
-        supplyCap: exp(1000000, 18)
-      },
-      {
-        asset: WBTC,
-        priceFeed: WBTC_USDC_PRICE_FEED,
-        decimals: 8,
-        borrowCollateralFactor: 999999999999999999n,
-        liquidateCollateralFactor: exp(1, 18),
-        liquidationFactor: exp(0.9, 18),
-        supplyCap: exp(1000, 8)
-      },
-      {
-        asset: WETH9,
-        priceFeed: ETH_USDC_PRICE_FEED,
-        decimals: 18,
-        borrowCollateralFactor: 999999999999999999n,
-        liquidateCollateralFactor: exp(1, 18),
-        liquidationFactor: exp(0.9, 18),
-        supplyCap: exp(1000000, 18)
-      },
-      {
-        asset: LINK,
-        priceFeed: LINK_USDC_PRICE_FEED,
-        decimals: 18,
-        borrowCollateralFactor: 999999999999999999n,
-        liquidateCollateralFactor: exp(1, 18),
-        liquidationFactor: exp(0.9, 18),
-        supplyCap: exp(1000000, 18)
-      },
-      {
-        asset: UNI,
-        priceFeed: UNI_USDC_PRICE_FEED,
-        decimals: 18,
-        borrowCollateralFactor: 999999999999999999n,
-        liquidateCollateralFactor: exp(1, 18),
-        liquidationFactor: exp(0.9, 18),
-        supplyCap: exp(1000000, 18)
-      },
-    ]
+    assetList: '0x0000000000000000000000000000000000000000',
   };
 
   const comet = await CometFactory.deploy(config);

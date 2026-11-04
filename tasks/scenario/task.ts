@@ -25,7 +25,7 @@ export function getBasesFromTaskArgs(givenBases: string | undefined, env: Hardha
 
 task('scenario', 'Runs scenario tests')
   .addOptionalParam('bases', 'Bases to run on [defaults to all]')
-  .addOptionalParam('glob', 'Scenario files glob [default: scenario/**.ts]')
+  .addOptionalParam('glob', 'Scenario files glob [default: scenario/**/*.ts]')
   .addOptionalParam('output', 'Path to write the JSON report [default: scenario-results.json]')
   .addFlag('spider', 'run spider persistently before scenarios')
   .setAction(async (taskArgs, env: HardhatRuntimeEnvironment) => {

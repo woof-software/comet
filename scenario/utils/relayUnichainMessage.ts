@@ -5,6 +5,11 @@ import { BigNumber, ethers, utils } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import { fetchBridgeReceiverProposals } from './bridgeReceiverProposals';
+import { DEPOSIT_FOR_BURN_SIGNATURE, simulateCCTPL2ToL1Transfer } from './cctpL2ToL1Transfer';
+import { BRIDGE_ETH_TO_SIGNATURE, simulateOpStackBridgeETHTo } from './opStackL2ToL1Transfer';
+
+const UNICHAIN_L1_PORTAL = '0x0bd48f6B86a26D3a217d0Fa6FfE2B491B956A7a2';
 
 export async function relayUnichainMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -239,8 +244,8 @@ export async function relayUnichainCCTPMint(
     // msgDestinationDomain, skip won't use
 
     start = end;
-    end = start + length.uint64;
-    // msgNonce, skip won't use
+    end = start + length.bytes32;
+    // msgNonce (bytes32 in MessageTransmitterV2 — was uint64 in CCTP V1), skip won't use
 
     start = end;
     end = start + length.bytes32;
@@ -253,6 +258,14 @@ export async function relayUnichainCCTPMint(
     start = end;
     end = start + length.bytes32;
     // msgDestination, skip won't use
+
+    start = end;
+    end = start + length.uint32;
+    // minFinalityThreshold (CCTP V2 only), skip won't use
+
+    start = end;
+    end = start + length.uint32;
+    // finalityThresholdExecuted (CCTP V2 only), skip won't use
 
     start = end;
     end = start + length.uint32;
@@ -317,6 +330,39 @@ export async function relayUnichainCCTPMint(
       await (
         await localTokenMessengerSigner.sendTransaction(transactionRequest)
       ).wait();
+    }
+  }
+}
+
+export async function simulateL2ToL1TokenBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber: number,
+  tenderlyLogs?: any[]
+) {
+  if (tenderlyLogs) {
+    return;
+  }
+  console.log('Simulating L2→L1 token bridging for any executed Unichain proposals...');
+
+  const unichainL1CrossDomainMessenger = await governanceDeploymentManager.getContractOrThrow('unichainL1CrossDomainMessenger');
+  const unichainL1StandardBridge = await governanceDeploymentManager.getContractOrThrow('unichainL1StandardBridge');
+
+  const { events } = await fetchBridgeReceiverProposals(bridgeDeploymentManager, l2StartingBlockNumber);
+
+  for (const { signatures, calldatas, values } of events) {
+    for (let i = 0; i < signatures.length; i++) {
+      if (signatures[i] === BRIDGE_ETH_TO_SIGNATURE) {
+        await simulateOpStackBridgeETHTo(governanceDeploymentManager, bridgeDeploymentManager, calldatas[i], values[i], {
+          networkLabel: 'Unichain',
+          l1Portal: UNICHAIN_L1_PORTAL,
+          l1CrossDomainMessenger: unichainL1CrossDomainMessenger,
+          l1StandardBridge: unichainL1StandardBridge,
+        });
+      }
+      if (signatures[i] === DEPOSIT_FOR_BURN_SIGNATURE) {
+        await simulateCCTPL2ToL1Transfer(governanceDeploymentManager, bridgeDeploymentManager, calldatas[i]);
+      }
     }
   }
 }

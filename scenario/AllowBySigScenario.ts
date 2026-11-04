@@ -4,7 +4,7 @@
 // - Operator actions on behalf of the owner (supplyFrom, withdrawFrom, transferAssetFrom)
 
 import { CometContext, scenario } from './context/CometContext';
-import { expectApproximately, expectRevertCustom, isTriviallySourceable, isValidAssetIndex } from './utils';
+import { expectRevertCustom, getExpectedBaseBalance, isTriviallySourceable, isValidAssetIndex } from './utils';
 import { expect } from 'chai';
 import { constants, ethers, Signature } from 'ethers';
 import CometActor, { types as AUTHORIZATION_TYPES } from './context/CometActor';
@@ -758,29 +758,35 @@ scenario(
 
 scenario(
   'Comet#allowBySig > authorized manager can supplyFrom base on behalf of owner',
-  {
-    tokenBalances: {
-      albert: { $base: 100 }, // in units of asset, not wei
-    },
-  },
+  {},
   async ({ comet, actors }, context, world) => {
     const { albert, betty } = actors;
-    const baseAssetAddress = await comet.baseToken();
-    const baseAsset = context.getAssetByAddress(baseAssetAddress);
-    const scale = (await comet.baseScale()).toBigInt();
-    const toSupply = 100n * scale;
+    const baseAsset = context.getAssetByAddress(await comet.baseToken());
+    const baseScale = (await comet.baseScale()).toBigInt();
+    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
+    const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+    const priceScale = (await comet.priceScale()).toBigInt();
 
-    expect(await baseAsset.balanceOf(albert.address)).to.be.equal(toSupply);
-    expect(await comet.balanceOf(betty.address)).to.be.equal(0n);
+    // Supply $100 worth of base, whatever the base token and its price
+    const toSupply = (100n * priceScale * baseScale) / basePrice;
+    await context.sourceTokens(toSupply, baseAsset.address, albert.address);
 
     await baseAsset.approve(albert, comet.address);
     await authorizeManagerBySig(context, albert, betty, world);
 
+    const albertBalanceBefore = await baseAsset.balanceOf(albert.address);
+    const bettyBalanceBefore = (await comet.balanceOf(betty.address)).toBigInt();
+    expect(bettyBalanceBefore).to.be.equal(0n);
+
     // Betty supplies Albert's base into Betty's own account
     const txn = await betty.supplyAssetFrom({ src: albert.address, dst: betty.address, asset: baseAsset.address, amount: toSupply });
 
-    expect(await baseAsset.balanceOf(albert.address)).to.be.equal(0n);
-    expectApproximately(await betty.getCometBaseBalance(), toSupply, scale / 1_000_000n);
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+
+    expect(await baseAsset.balanceOf(albert.address)).to.be.equal(albertBalanceBefore - toSupply);
+    // Betty had nothing supplied, so her balance is the supplied amount after Comet stores it as a principal
+    // and reads it back, both rounded down, which can lose a couple of wei
+    expect(await comet.balanceOf(betty.address)).to.be.equal(getExpectedBaseBalance(bettyBalanceBefore + toSupply, baseIndexScale, baseSupplyIndex));
 
     return txn; // return txn to measure gas
   }

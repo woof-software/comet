@@ -1,4 +1,7 @@
+import { SignerWithAddress } from 'test/helpers';
 import { DeploymentManager } from '../../plugins/deployment_manager';
+import { World } from '../../plugins/scenario';
+import CometActor from '../context/CometActor';
 
 export async function setNextBaseFeeToZero(dm: DeploymentManager) {
   await dm.hre.network.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x0']);
@@ -18,4 +21,11 @@ export async function mineBlocks(dm: DeploymentManager, blocks: number) {
 
 export async function setNextBlockTimestamp(dm: DeploymentManager, timestamp: number) {
   await dm.hre.ethers.provider.send('evm_setNextBlockTimestamp', [timestamp]);
+}
+
+export async function fundAccount(world: World, account: CometActor | SignerWithAddress) {
+  await world.deploymentManager.hre.network.provider.send('hardhat_setBalance', [
+    account.address,
+    world.deploymentManager.hre.ethers.utils.hexStripZeros(world.deploymentManager.hre.ethers.utils.parseEther('100').toHexString()),
+  ]);
 }

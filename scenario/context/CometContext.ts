@@ -29,13 +29,24 @@ import {
   BaseBulker,
   BaseBridgeReceiver,
   ERC20,
-  CometExtAssetList,
+  CometExt,
+  AssetList,
+  CometWithExtendedAssetList,
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { ProtocolConfiguration, deployComet, COMP_WHALES, WHALES } from '../../src/deploy';
 import { AddressLike, getAddressFromNumber, resolveAddress } from './Address';
-import { fastGovernanceExecute, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
+import {
+  fastGovernanceExecute,
+  isAssetListMigrationRequired,
+  max,
+  migrateToAssetList,
+  mineBlocks,
+  setEtherBalance,
+  setNextBaseFeeToZero,
+  setNextBlockTimestamp,
+} from '../utils';
 import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
 import { Requirements } from '../constraints/Requirements';
 
@@ -60,7 +71,8 @@ export interface CometProperties {
   rewards: CometRewards;
   bulker: BaseBulker;
   bridgeReceiver: BaseBridgeReceiver;
-  cometExt?: CometExtAssetList;
+  cometExt?: CometExt;
+  assetList?: AssetList;
 }
 
 export class CometContext {
@@ -106,6 +118,18 @@ export class CometContext {
 
   async getConfigurator(): Promise<Configurator> {
     return this.world.deploymentManager.contract('configurator');
+  }
+
+  // The asset list the Comet reads its collateral from, or undefined for a Comet that has no asset list
+  async getAssetList(): Promise<AssetList | undefined> {
+    const ethers = this.world.deploymentManager.hre.ethers;
+    const comet = await this.getComet();
+    try {
+      const extendedComet = await ethers.getContractAt('CometWithExtendedAssetList', comet.address) as CometWithExtendedAssetList;
+      return await ethers.getContractAt('AssetList', await extendedComet.assetList()) as AssetList;
+    } catch {
+      return undefined;
+    }
   }
 
   async getTimelock(): Promise<SimpleTimelock> {
@@ -155,6 +179,13 @@ export class CometContext {
 
     const currentComet = await this.getComet();
     const admin = await world.impersonateAddress(await currentComet.governor(), { value: 20n ** 18n });
+
+    // TEMP SOLUTION: remove as soon as the real asset list migration is prepared or executed on chain.
+    // deployComet expects a market already on the asset list Configurator, so a market that still runs the V1
+    // Configurator is migrated first
+    if (await isAssetListMigrationRequired(this)) {
+      await migrateToAssetList(this, admin);
+    }
 
     const deploySpec = { cometMain: true, cometExt: true };
     const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, admin);
@@ -354,7 +385,15 @@ async function getActors(context: CometContext): Promise<{ [name: string]: Comet
     adminSigner = await world.impersonateAddress(adminAddress);
     // Fund the impersonated governor for gas (single setBalance RPC, no block mined),
     // so scenarios don't need to zero the base fee on every admin tx.
-    await setEtherBalance(world.deploymentManager, adminAddress, 10n ** 18n);
+    // only if admin already does not have sufficient balance; sized to the fork's fee level,
+    // since 1 native unit can't cover a Comet redeploy on high-gwei chains (e.g. Polygon)
+    const provider = world.deploymentManager.hre.ethers.provider;
+    const { maxFeePerGas, gasPrice } = await provider.getFeeData();
+    const minBalance = max(10n ** 18n, (maxFeePerGas ?? gasPrice).mul(20_000_000).toBigInt());
+    const currentBalance = await provider.getBalance(adminAddress);
+    if (currentBalance.lt(minBalance)) {
+      await setEtherBalance(world.deploymentManager, adminAddress, minBalance);
+    }
   }
   const pauseGuardianSigner = useLocalPauseGuardianSigner ? localPauseGuardianSigner : await world.impersonateAddress(pauseGuardianAddress);
 
@@ -398,7 +437,6 @@ async function getInitialContext(world: World): Promise<CometContext> {
 
 async function getContextProperties(context: CometContext): Promise<CometProperties> {
   const comet = await context.getComet();
-  const cometExt = await context.world.deploymentManager.hre.ethers.getContractAt('CometExtAssetList', comet.address) as CometExtAssetList;
   
   return {
     actors: context.actors,
@@ -406,12 +444,12 @@ async function getContextProperties(context: CometContext): Promise<CometPropert
     comet,
     configurator: await context.getConfigurator(),
     proxyAdmin: await context.getCometAdmin(),
+    assetList: await context.getAssetList(),
     timelock: await context.getTimelock(),
     governor: await context.getGovernor(),
     rewards: await context.getRewards(),
     bulker: await context.getBulker(),
     bridgeReceiver: await context.getBridgeReceiver(),
-    cometExt
   };
 }
 

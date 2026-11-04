@@ -5,6 +5,10 @@ import { BigNumber, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import { LZ_ENDPOINT, simulateLayerZeroOFTDelivery } from './layerZeroOFTL2ToL1Transfer';
+
+// USDe on Mantle bridges via LayerZero OFT, not the OP-Stack standard bridge (native mint/burn OFT on
+// Mantle, OFT Adapter locking the canonical ERC20 on mainnet).
 
 export default async function relayMantleMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -162,4 +166,20 @@ export default async function relayMantleMessage(
   }
 
   return openBridgedProposals;
+}
+
+export async function simulateL2ToL1TokenBridging(
+  governanceDeploymentManager: DeploymentManager,
+  bridgeDeploymentManager: DeploymentManager,
+  l2StartingBlockNumber: number,
+  tenderlyLogs?: any[]
+) {
+  await simulateLayerZeroOFTDelivery(
+    governanceDeploymentManager,
+    bridgeDeploymentManager,
+    l2StartingBlockNumber,
+    LZ_ENDPOINT,
+    LZ_ENDPOINT,
+    tenderlyLogs
+  );
 }
