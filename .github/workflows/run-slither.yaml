@@ -6,28 +6,70 @@ jobs:
   slither-analyzer:
     name: Slither analyzer
     runs-on: ubuntu-latest
+    # Needed to upload the SARIF report to code scanning
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.4.0
 
       - uses: actions/setup-node@v4
         with:
+          cache: 'yarn'
           node-version: '18'
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5.6.0
         with:
-          python-version: '3.x'
+          python-version: '3.12'
 
       - name: Install packages
-        run: pip install slither-analyzer solc-select
+        run: |
+          yarn install --non-interactive --frozen-lockfile
+          pip install slither-analyzer==0.11.5
 
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: v1.8.6
+      # Slither reads Hardhat's build output, so it analyzes the contracts exactly as they are built
+      # (solc 0.8.15, via-IR). Hardhat downloads the compiler itself, no solc-select needed.
+      - name: Compile
+        run: yarn build
 
-      - name: Switch to solidity version
-        run: solc-select install 0.8.15;solc-select use 0.8.15
-
+      # A selector in the implementation that matches one in its proxy makes that function unreachable
+      # (or calls the proxy's function instead). Fails on a clash, and on any Slither error.
       - name: Function clash analysis
-        run: yarn slither:fn-clashes &> tmp_res; cat tmp_res | grep 'Function id collision found' && exit 1 || exit 0
+        run: |
+          check() {
+            rm -f clash.json
+            slither-check-upgradeability . "$1" --proxy-name "$2" \
+              --compile-force-framework hardhat --hardhat-ignore-compile --json clash.json > /dev/null
+            jq -e '.success' clash.json > /dev/null || { jq -r '.error' clash.json; exit 1; }
+            clashes=$(jq -r '.results.detectors[]? | select(.check == "function-id-collision" or .check == "function-shadowing") | .description' clash.json)
+            if [ -n "$clashes" ]; then echo "$clashes"; exit 1; fi
+            echo "$1 / $2: no function clashes"
+          }
+          check Configurator ConfiguratorProxy
+          check CometWithExtendedAssetList TransparentUpgradeableProxy
+
+      # Full detector run; settings (skipped paths, detectors, severities) are in slither.config.json.
+      # Findings don't fail the job: new ones are flagged on the PR by code scanning.
+      - name: Run Slither
+        run: >-
+          slither . --hardhat-ignore-compile
+          --sarif slither.sarif
+          --checklist
+          --markdown-root ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.event.pull_request.head.sha || github.sha }}/
+          > slither.md
+
+      # Full list of findings, with links to the code, on the run's Summary page
+      - name: Write findings to job summary
+        if: always()
+        run: |
+          {
+            echo "## Slither findings"
+            cat slither.md 2>/dev/null || echo "No report: the Slither step failed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload findings to GitHub Advanced Security Dashboard
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4.39.1
+        with:
+          sarif_file: slither.sarif
