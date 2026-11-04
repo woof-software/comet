@@ -101,7 +101,7 @@ export default migration('1793718060_resubmit_update_cbbtc_to_svr', {
       },
     ];
 
-    const description = `# [Resubmission] Update cbBTC price feeds in AERO and WETH markets on Base to SVR
+    const description = `# Update cbBTC price feeds in cAEROv3 and cWETHv3 on Base to SVR
 
 ## Proposal summary
 
@@ -119,7 +119,7 @@ SVR generates revenue from liquidators and Compound DAO will receive that revenu
 
 ## Proposal Actions
 
-The first action updates the cbBTC price feeds in the AERO and WETH markets.`;
+The first action sends a message to the Base network to update the cbBTC price feeds in the AERO and WETH markets to the SVR price feeds and to deploy and upgrade both Comets to new implementations.`;
 
     const txn = await govDeploymentManager.retry(async () =>
       trace(
