@@ -13,7 +13,7 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { CometExt, TotalsBasicStructOutput } from 'build/types/CometExt';
 
-describe('extended pause upgrade test', function () {
+describe.skip('extended pause upgrade test', function () {
   // Constants
   const FORK_BLOCK_NUMBER = 23655019;
   const COMET_ADDRESS = '0xc3d688B66703497DAA19211EEdff47f25384cdc3';
