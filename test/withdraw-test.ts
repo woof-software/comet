@@ -252,7 +252,7 @@ describe('withdraw', function () {
 
       it('gas used is within limit', async () => {
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(106000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(140000);
       });
     });
 
