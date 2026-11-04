@@ -111,7 +111,7 @@ This proposal updates the cbBTC price feeds in the Compound III AERO and WETH ma
 - cbBTC / USD SVR price feed: [0x8C74B2811D2F1aD65517ADB5C65773c1E520ed2f](https://basescan.org/address/0x8C74B2811D2F1aD65517ADB5C65773c1E520ed2f) (already used by the USDC and USDS markets)
 - cbBTC / ETH SVR price feed: [0xc8E4c3F58d5FC4409522503927Ecea057EbbA1fc](https://basescan.org/address/0xc8E4c3F58d5FC4409522503927Ecea057EbbA1fc)
 
-Further detailed information can be found on the corresponding [proposal pull request](https://github.com/compound-finance/comet/pull/<>) and [forum discussion for SVR](https://www.comp.xyz/t/request-for-proposal-rfp-oracle-extractable-value-oev-solution-for-compound-protocol/6786).
+Further detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/34) and [forum discussion for SVR](https://www.comp.xyz/t/request-for-proposal-rfp-oracle-extractable-value-oev-solution-for-compound-protocol/6786).
 
 ### SVR fee recipient
 
