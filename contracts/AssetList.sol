@@ -132,7 +132,7 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
         numAssets = _numAssets;
         configHash = ConfigHash.hashConfig(TYPEHASH, abi.encode(assetConfigs_));
 
-        (asset00_a, priceFeedAddress00) = 0 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[0]);
+        (asset00_a, priceFeedAddress00) = _packAsset(assetConfigs_[0]);
         (asset01_a, priceFeedAddress01) = 1 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[1]);
         (asset02_a, priceFeedAddress02) = 2 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[2]);
         (asset03_a, priceFeedAddress03) = 3 >= _numAssets ? (0, address(0)) : _packAsset(assetConfigs_[3]);
