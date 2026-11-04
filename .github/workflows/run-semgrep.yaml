@@ -39,10 +39,36 @@ jobs:
         with:
           repository: decurity/compound-semgrep-rules
           path: compound
-      # Run security, performance & Compound specific rules
-      - run: semgrep ci --sarif --output=semgrep.sarif
-        env:
-          SEMGREP_RULES: rules/solidity/security rules/solidity/performance compound/solidity
+      # Full scan with security, performance & Compound specific rules. `semgrep ci` would only scan
+      # lines changed by the PR; `scan` reports every finding. Findings are printed in this log and saved
+      # to the SARIF file. The job fails on Semgrep errors (bad rule, crash), not on findings.
+      - name: Run Semgrep
+        run: >-
+          semgrep scan
+          --config rules/solidity/security
+          --config rules/solidity/performance
+          --config compound/solidity
+          --exclude rules
+          --exclude compound
+          --exclude forge
+          --exclude contracts/test
+          --exclude contracts/vendor
+          --exclude contracts/liquidator
+          --exclude contracts/capo
+          --metrics=off
+          --text
+          --text-output=semgrep.txt
+          --sarif-output=semgrep.sarif
+      # Full list of findings on the run's Summary page, in one place
+      - name: Write findings to job summary
+        if: always()
+        run: |
+          {
+            echo "## Semgrep findings"
+            echo '```'
+            cat semgrep.txt 2>/dev/null || echo "No report: the scan step failed"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       # Upload findings to GitHub Advanced Security Dashboard
       - name: Upload findings to GitHub Advanced Security Dashboard
         uses: github/codeql-action/upload-sarif@v4.39.1
