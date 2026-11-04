@@ -85,6 +85,7 @@ interface BlockscoutV2Source {
   optimization_enabled: boolean;
   optimization_runs: number;
   constructor_args: string;
+  creation_bytecode?: string;
 }
 
 interface EtherscanData {
@@ -95,6 +96,7 @@ interface EtherscanData {
   optimized: boolean;
   optimizationRuns: number;
   constructorArgs: string;
+  creationCode?: string;
 }
 
 function paramString(params: { [k: string]: string | number }) {
@@ -217,17 +219,15 @@ async function tryStrategies<T>(strategies: (() => Promise<T>)[]): Promise<T> {
 
 async function getContractCreationCode(network: string, address: string, family: 'blockscout' | 'etherscan') {
   if (family === 'blockscout') {
-    // eth_getCode returns the code already deployed at the address, which reverts when deployed again as if it were
-    // creation code, so it is only the last resort, enough for an import that needs just the ABI
     return tryStrategies([
       () => pullFirstTransactionForContractFromBlockscout(network, address),
       () => scrapeContractCreationCodeFromRPC(network, address),
     ]);
   }
 
-  // Etherscan family: RPC first, then scrape/proxy/txlist rotated across every key.
+  // Etherscan family: scrape/proxy/txlist rotated across every key, then RPC.
   const maxKeyRotations = 12;
-  const strategies = [() => scrapeContractCreationCodeFromRPC(network, address)];
+  const strategies: (() => Promise<string>)[] = [];
   for (let i = 0; i < maxKeyRotations; i++) {
     strategies.push(
       () => scrapeContractCreationCodeFromEtherscanApi(network, address, i),
@@ -235,6 +235,7 @@ async function getContractCreationCode(network: string, address: string, family:
     );
   }
   strategies.push(() => scrapeContractCreationCodeFromEtherscan(network, address));
+  strategies.push(() => scrapeContractCreationCodeFromRPC(network, address));
   return tryStrategies(strategies);
 }
 
@@ -267,6 +268,7 @@ async function getBlockscoutV2ApiData(network: string, address: string): Promise
     optimized: result.optimization_enabled,
     optimizationRuns: result.optimization_runs,
     constructorArgs: result.constructor_args ?? '',
+    creationCode: result.creation_bytecode?.replace(/^0x/, ''),
   };
 }
 
@@ -502,7 +504,7 @@ async function buildContractFromSourceData(
   const contractPath = Object.keys(sources)[0];
   const contractFQN = `${contractPath}:${contract}`;
 
-  let contractCreationCode = await getContractCreationCode(network, address, family);
+  let contractCreationCode = data.creationCode || await getContractCreationCode(network, address, family);
   if (constructorArgs?.length > 0 && contractCreationCode?.endsWith(constructorArgs)) {
     contractCreationCode = contractCreationCode.slice(0, -constructorArgs.length);
   }
