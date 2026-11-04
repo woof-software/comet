@@ -3,6 +3,11 @@ pragma solidity ^0.8.15;
 import "@forge-std/src/Vm.sol";
 import "@comet-contracts/bridges/arbitrum/ArbitrumBridgeReceiver.sol";
 import "@comet-contracts/marketupdates/MarketAdminPermissionChecker.sol";
+import "@comet-contracts/CometWithExtendedAssetList.sol";
+import "@comet-contracts/AssetList.sol";
+import "@comet-contracts/test/assetList/AssetListFactory.sol";
+import "@comet-contracts/test/CometFactoryWithExtendedAssetList.sol";
+import "@comet-contracts/migration/ConfiguratorIntermediateOptimism.sol";
 import "../script/marketupdates/helpers/GovernanceHelper.sol";
 import "../script/marketupdates/helpers/MarketUpdateAddresses.sol";
 import "../script/marketupdates/helpers/ChainAddresses.sol";
@@ -118,6 +123,53 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         return deployedContracts;
     }
 
+    // The live Configurator and Comets predate the asset list, so a market is moved onto it before it is redeployed:
+    // its asset configs are migrated out of the Configuration, then it gets an asset list proxy owned by the new
+    // proxy admin and a factory that builds Comets on that list
+    function moveMarketToAssetList(
+        address configuratorProxy,
+        address cometProxy,
+        MarketUpdateContractsDeployer.DeployedContracts memory deployedContracts
+    ) internal {
+        CometProxyAdminOptimism proxyAdmin = CometProxyAdminOptimism(deployedContracts.newCometProxyAdmin);
+        ConfiguratorOptimism configurator = ConfiguratorOptimism(configuratorProxy);
+        address proxyAdminOwner = proxyAdmin.owner();
+        address governor = configurator.governor();
+        address[] memory comets = new address[](1);
+        comets[0] = cometProxy;
+
+        address intermediate = address(new ConfiguratorIntermediateOptimism());
+        vm.prank(proxyAdminOwner);
+        proxyAdmin.upgrade(TransparentUpgradeableProxy(payable(configuratorProxy)), intermediate);
+        vm.prank(governor);
+        ConfiguratorIntermediateOptimism(configuratorProxy).migrateAssetConfig(comets);
+        vm.prank(proxyAdminOwner);
+        proxyAdmin.upgrade(TransparentUpgradeableProxy(payable(configuratorProxy)), deployedContracts.newConfiguratorImplementation);
+
+        address assetListFactory = address(new AssetListFactory());
+        address cometFactory = address(new CometFactoryWithExtendedAssetList());
+
+        vm.startPrank(governor);
+        configurator.setAssetListFactory(cometProxy, assetListFactory);
+        // The market has no list yet and deployAssetList only redeploys an existing one, so the first implementation
+        // comes straight from the factory
+        address assetListImpl = AssetListFactory(assetListFactory).createAssetList(
+            configurator.getImmutableAssetConfig(cometProxy),
+            address(configurator)
+        );
+        address assetList = address(new TransparentUpgradeableProxy(
+            assetListImpl,
+            address(proxyAdmin),
+            abi.encodeCall(AssetList.initialize, (configurator.getStorageAssetConfig(cometProxy)))
+        ));
+        // setConfiguration sets the list proxy once, for a market that has none yet
+        ConfiguratorOptimism.Configuration memory configuration = configurator.getConfiguration(cometProxy);
+        configuration.assetList = assetList;
+        configurator.setConfiguration(cometProxy, configuration);
+        configurator.setFactory(cometProxy, cometFactory);
+        vm.stopPrank();
+    }
+
     function updateAndVerifySupplyKink(
         Vm vm,
         string memory marketName,
@@ -130,6 +182,8 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         address marketUpdateProposer = deployedContracts.marketUpdateProposer;
         uint256 oldSupplyKinkBeforeGovernorUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         uint256 newSupplyKinkByGovernorTimelock = 300000000000000000;
+
+        moveMarketToAssetList(configuratorProxy, cometProxy, deployedContracts);
 
         assertEq(MarketAdminPermissionChecker(deployedContracts.marketAdminPermissionChecker).marketAdmin(), deployedContracts.marketUpdateTimelock);
 
@@ -193,6 +247,9 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         uint256 newSupplyKinkByGovernorTimelock = 300000000000000000;
 
         assert(oldSupplyKinkBeforeGovernorUpdate != newSupplyKinkByGovernorTimelock);
+
+        // Optimism runs on the contracts already deployed there, which predate the asset list
+        if (chain != ChainAddresses.Chain.OPTIMISM) moveMarketToAssetList(configuratorProxy, cometProxy, deployedContracts);
 
         address[] memory targets = new address[](2);
         uint256[] memory values = new uint256[](2);

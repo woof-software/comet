@@ -7,9 +7,9 @@ import {
 import {
   CometFactoryWithExtendedAssetList__factory,
   CometProxyAdmin__factory,
-  CometProxyAdminOld__factory,
+  CometProxyAdminOptimism__factory,
   Configurator__factory,
-  ConfiguratorOld__factory,
+  ConfiguratorOptimism__factory,
   ConfiguratorProxy__factory,
   MarketAdminPermissionChecker__factory,
   SimpleTimelock,
@@ -97,6 +97,7 @@ describe('MarketUpdateDeployment', function() {
       oldCometProxyAdmin,
       proxyOfComet,
       comet,
+      assetList,
     } = await deployExistingContracts({
       governorTimelock,
       governorTimelockSigner,
@@ -154,8 +155,8 @@ describe('MarketUpdateDeployment', function() {
 
     // 4) Deploy the new CometProxyAdmin
     const ProxyAdmin = (await ethers.getContractFactory(
-      'CometProxyAdmin'
-    )) as CometProxyAdmin__factory;
+      'CometProxyAdminOptimism'
+    )) as CometProxyAdminOptimism__factory;
     const proxyAdminNew = await ProxyAdmin.connect(
       marketUpdateMultiSig
     ).deploy(marketUpdateMultiSig.address);
@@ -167,8 +168,8 @@ describe('MarketUpdateDeployment', function() {
 
     // 6) Deploy the new Configurator's Implementation
     const ConfiguratorFactory = (await ethers.getContractFactory(
-      'Configurator'
-    )) as Configurator__factory;
+      'ConfiguratorOptimism'
+    )) as ConfiguratorOptimism__factory;
     const configuratorNew = await ConfiguratorFactory.connect(
       marketUpdateMultiSig
     ).deploy();
@@ -280,6 +281,20 @@ describe('MarketUpdateDeployment', function() {
       ]
     );
 
+    // The new Configurator keeps the asset configs outside the Configuration. They must match the Comet's
+    // asset list, so that deploying a Comet leaves the asset list as it is
+    for (let i = 0; i < await assetList.numAssets(); i++) {
+      const assetInfo = await assetList.getAssetInfo(i);
+      await configuratorNew.attach(configuratorProxyContract.address).connect(governorTimelockSigner).addAsset(cometBehindProxy.address, {
+        asset: assetInfo.asset,
+        priceFeed: assetInfo.priceFeed,
+        borrowCollateralFactor: assetInfo.borrowCollateralFactor,
+        liquidateCollateralFactor: assetInfo.liquidateCollateralFactor,
+        liquidationFactor: assetInfo.liquidationFactor,
+        supplyCap: assetInfo.supplyCap,
+      });
+    }
+
     // Governor Timelock: Setting new supplyKink in Configurator and deploying Comet
     const newSupplyKinkByGovernorTimelock = 300n;
     const oldSupplyKink = await cometAsProxy.supplyKink();
@@ -359,6 +374,7 @@ describe('MarketUpdateDeployment', function() {
       extensionDelegateAssetList: extensionDelegate,
       base,
       cometWithExtendedAssetList: comet,
+      assetList,
       tokens,
       priceFeeds,
     } = await makeProtocol({
@@ -371,13 +387,14 @@ describe('MarketUpdateDeployment', function() {
       governor,
       pauseGuardian,
       extensionDelegate,
+      assetList,
       tokens,
       base,
       priceFeeds
     );
 
     // Deploy ProxyAdmin
-    const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdminOld')) as CometProxyAdminOld__factory;
+    const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdmin')) as CometProxyAdmin__factory;
     const proxyAdmin = await ProxyAdmin.connect(governorTimelockSigner).deploy(governorTimelockSigner.address);
 
     // Deploy Comet proxy
@@ -393,7 +410,7 @@ describe('MarketUpdateDeployment', function() {
     await cometFactory.deployed();
 
     // Deploy Configurator
-    const ConfiguratorFactory = (await ethers.getContractFactory('ConfiguratorOld')) as ConfiguratorOld__factory;
+    const ConfiguratorFactory = (await ethers.getContractFactory('Configurator')) as Configurator__factory;
     const configurator = await ConfiguratorFactory.deploy();
     await configurator.deployed();
 
@@ -415,6 +432,7 @@ describe('MarketUpdateDeployment', function() {
       proxyOfComet: cometBehindProxy,
       oldCometProxyAdmin: proxyAdmin,
       comet,
+      assetList,
     };
   }
 });

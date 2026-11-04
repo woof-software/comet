@@ -33,14 +33,12 @@ contract CometConfiguration {
         uint104 baseMinForRewards;
         uint104 baseBorrowMin;
         uint104 targetReserves;
-
-        AssetConfig[] assetConfigs;
+        address assetList;
     }
 
     struct AssetConfig {
         address asset;
         address priceFeed;
-        uint8 decimals;
         uint64 borrowCollateralFactor;
         uint64 liquidateCollateralFactor;
         uint64 liquidationFactor;

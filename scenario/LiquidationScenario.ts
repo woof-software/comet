@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { event, expect } from '../test/helpers';
-import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, usesAssetList, isAssetDelisted, supportsExtendedPause } from './utils';
+import { MAX_ASSETS, expectRevertCustom, isValidAssetIndex, timeUntilUnderwater, isTriviallySourceable, isAssetDelisted, servicePatch, fundAccount, servicePatch2 } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -321,21 +321,13 @@ scenario.skip(
  * 2. Delisted asset: Sets liquidateCF to 0 and verifies that the collateral is excluded from liquidity calculations,
  *    causing positions to become liquidatable when their only collateral asset is delisted
  *
- * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
- * the extended asset list feature (CometExtAssetList), as the liquidateCollateralFactor = 0 behavior is specific
- * to that implementation. The test filters deployments using the usesAssetList() utility function to ensure
- * compatibility, and excludes assets that are already delisted.
+ * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and excludes assets that are already delisted.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#liquidation > skips liquidation value of asset ${i} with liquidateCF=0`,
     {
-      filter: async (ctx: CometContext) =>
-        await isValidAssetIndex(ctx, i)
-      && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral)
-      && await usesAssetList(ctx)
-      && !(await isAssetDelisted(ctx, i))
-      && await supportsExtendedPause(ctx),
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && !(await isAssetDelisted(ctx, i)) && await servicePatch(ctx),
       tokenBalances: async (ctx: CometContext) => (
         {
           albert: { $base: '== 0' },
@@ -419,17 +411,14 @@ for (let i = 0; i < MAX_ASSETS; i++) {
  * 2. Delisted asset: Sets liquidationFactor to 0 and verifies that the protocol skips seizing that collateral
  *    during absorption, but still proceeds with debt absorption
  *
- * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
- * the extended asset list feature (CometExtAssetList), as the liquidationFactor = 0 behavior is specific
- * to that implementation. The test filters deployments using the usesAssetList() utility function to ensure
- * compatibility, and excludes assets that are already delisted.
+ * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and excludes assets that are already delisted.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#liquidation > skips absorption of asset ${i} with liquidation factor = 0`,
     {
       filter: async (ctx) => 
-        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsExtendedPause(ctx),
+        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && !(await isAssetDelisted(ctx, i)) && await servicePatch2(ctx),
       tokenBalances: async (ctx) => ({
         albert: { $base: '== 0' },
         $comet: {
@@ -497,11 +486,12 @@ for (let i = 0; i < MAX_ASSETS; i++) {
 
       // Verify account is liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
-      
-      await context.setNextBaseFeeToZero();
-      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
-      await context.setNextBaseFeeToZero();
-      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+
+      await fundAccount(world, admin);
+      await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, asset, 0n);
+      await configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, asset, 0n);
+      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n);
+      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
 
       // Verify liquidationFactor is 0
       expect((await comet.getAssetInfoByAddress(asset)).liquidationFactor).to.equal(0);
@@ -549,10 +539,9 @@ scenario(
       await isValidAssetIndex(ctx, 1) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx, 0).supplyCollateral) &&
       await isTriviallySourceable(ctx, 1, getConfigForScenario(ctx, 1).supplyCollateral) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       !(await isAssetDelisted(ctx, 1)) &&
-      await supportsExtendedPause(ctx),
+      await servicePatch2(ctx),
     tokenBalances: async (ctx) => ({
       albert: { $base: '== 0' },
       $comet: {
@@ -642,14 +631,11 @@ scenario(
     // This simulates a governance action to de-list an asset whose price feed
     // has become unavailable. After this, absorbInternal should skip asset0
     // entirely — not seize it, not call getPrice() on it.
-    await context.setNextBaseFeeToZero();
-    await configurator.connect(admin.signer).updateAssetLiquidationFactor(
-      comet.address, assetInfo0.asset, 0n, { gasPrice: 0 }
-    );
-    await context.setNextBaseFeeToZero();
-    await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(
-      configurator.address, comet.address, { gasPrice: 0 }
-    );
+    await fundAccount(world, admin);
+    await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, assetInfo0.asset, 0n);
+    await configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, assetInfo0.asset, 0n);
+    await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, assetInfo0.asset, 0n);
+    await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
 
     // Verify liquidationFactor for asset0 is now 0
     const updatedAssetInfo0 = await comet.getAssetInfoByAddress(assetInfo0.asset);

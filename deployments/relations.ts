@@ -1,3 +1,4 @@
+import { Contract, constants, utils } from 'ethers';
 import { RelationConfigMap } from '../plugins/deployment_manager/RelationConfig';
 
 const relationConfigMap: RelationConfigMap = {
@@ -20,13 +21,14 @@ const relationConfigMap: RelationConfigMap = {
       'cometExt': {
         field: async (comet) => comet.extensionDelegate(),
       },
-      'assetListFactory': {
-        field: async (cometExt) => {
+      // Markets deployed before the asset list have no assetList getter
+      'assetList': {
+        field: async (comet) => {
           try {
-            return cometExt.assetListFactory();
+            return await comet.assetList();
           }
           catch (e) {
-            return '0x0000000000000000000000000000000000000000';
+            return null;
           }
         },
       },
@@ -128,6 +130,16 @@ const relationConfigMap: RelationConfigMap = {
   'comet:implementation:implementation': {
     artifact: 'contracts/CometExt.sol:CometExt',
   },
+  // Lists deployed before the upgradeable asset list are not proxies, so their implementation slot is empty
+  assetList: {
+    delegates: {
+      field: async (assetList) => {
+        const slot = await assetList.provider.getStorageAt(assetList.address, '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc');
+        const implementation = utils.getAddress('0x' + slot.substring(26));
+        return implementation !== constants.AddressZero ? implementation : null;
+      },
+    },
+  },
   configurator: {
     delegates: {
       field: {
@@ -142,7 +154,27 @@ const relationConfigMap: RelationConfigMap = {
       },
       cometFactory: {
         field: async (configurator, { comet }) => configurator.factory(comet[0].address),
-      }
+      },
+      // Markets deployed before the upgradeable asset list keep the factory as an immutable of the ext delegate;
+      // newer ones register it in the Configurator
+      assetListFactory: {
+        field: async (configurator, { comet }) => {
+          const cometExt = new Contract(await comet[0].extensionDelegate(), ['function assetListFactory() view returns (address)'], configurator.provider);
+          try {
+            return await cometExt.assetListFactory();
+          }
+          catch (e) {
+            const configuratorV2 = new Contract(configurator.address, ['function cometAssetListFactories(address) view returns (address)'], configurator.provider);
+            try {
+              const assetListFactory = await configuratorV2.cometAssetListFactories(comet[0].address);
+              return assetListFactory !== constants.AddressZero ? assetListFactory : null;
+            }
+            catch (e) {
+              return null;
+            }
+          }
+        },
+      },
     }
   },
   cometAdmin: {
