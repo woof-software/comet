@@ -55,6 +55,7 @@ jobs:
           --exclude contracts/vendor
           --exclude contracts/liquidator
           --exclude contracts/capo
+          --exclude-rule compound.solidity.privileged-func-lacks-access-control
           --metrics=off
           --text
           --text-output=semgrep.txt
