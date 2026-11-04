@@ -2,21 +2,21 @@ import { DeploymentManager } from '../../plugins/deployment_manager';
 import { getRoots } from '../../plugins/deployment_manager/Roots';
 import { OpenProposal } from '../context/Gov';
 import { utils } from 'ethers';
-import { forkedHreForBase } from '../../plugins/scenario/utils/hreForBase';
 
 const EXCLUDED_ROOTS = ['comptrollerV2', 'comet', 'configurator', 'rewards', 'bulker', 'cometFactory'];
 
 const CCTP_DOMAIN_TO_NETWORK: Record<number, string> = {
   0: 'mainnet',
-  1: 'avalanche',
   2: 'optimism',
   3: 'arbitrum',
   6: 'base',
   7: 'polygon',
+  10: 'unichain',
 };
 
 const ROOT_TO_NETWORK: Record<string, string> = {
   fxRoot: 'polygon',
+  RootChainManager: 'polygon',
   arbitrumInbox: 'arbitrum',
   arbitrumL1GatewayRouter: 'arbitrum',
   baseL1CrossDomainMessenger: 'base',
@@ -39,18 +39,23 @@ const ROOT_TO_NETWORK: Record<string, string> = {
   roninl1NativeBridge: 'ronin',
 };
 
+// openProposal.signatures[i] is always '' (propose() takes no signatures array),
+// so match depositForBurn by its calldata selector instead.
+const DEPOSIT_FOR_BURN_SIGNATURE = 'depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)';
+const DEPOSIT_FOR_BURN_SELECTOR = utils.id(DEPOSIT_FOR_BURN_SIGNATURE).slice(0, 10);
+
 function parseCCTPNetworks(openProposal: OpenProposal, cctpAddress: string): string[] {
   const networks: string[] = [];
   const cctpLower = cctpAddress.toLowerCase();
 
   for (let i = 0; i < openProposal.targets.length; i++) {
     if (openProposal.targets[i].toLowerCase() !== cctpLower) continue;
-    const sig = openProposal.signatures[i];
-    if (!sig.startsWith('depositForBurn(')) continue;
 
     const calldata = openProposal.calldatas[i];
-    // destinationDomain is the second parameter (uint32) in all depositForBurn variants
-    const decoded = utils.defaultAbiCoder.decode(['uint256', 'uint32'], utils.hexDataSlice(calldata, 0, 64));
+    if (utils.hexDataSlice(calldata, 0, 4) !== DEPOSIT_FOR_BURN_SELECTOR) continue;
+
+    // destinationDomain is the second param (uint32); params start after the selector
+    const decoded = utils.defaultAbiCoder.decode(['uint256', 'uint32'], utils.hexDataSlice(calldata, 4, 68));
     const domain = decoded[1];
     const network = CCTP_DOMAIN_TO_NETWORK[domain];
     if (network) networks.push(network);
@@ -58,7 +63,7 @@ function parseCCTPNetworks(openProposal: OpenProposal, cctpAddress: string): str
   return networks;
 }
 
-export async function getProposalBridgeNetworks(
+export async function getProposalUnderlyingNetworks(
   governanceDeploymentManager: DeploymentManager,
   openProposal: OpenProposal
 ): Promise<string[]> {
@@ -84,71 +89,33 @@ export async function getProposalBridgeNetworks(
   return [...new Set(networks)];
 }
 
-const existingBridgeManagers: Record<string, DeploymentManager> = {};
-
 export async function isBridgeProposal(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
   openProposal: OpenProposal
 ) {
-  const bridgeNetworks = await getProposalBridgeNetworks(governanceDeploymentManager, openProposal);
-  const otherBridgeNetworks = bridgeNetworks.filter(n => n !== bridgeDeploymentManager.network);
-  const bridgeManagers = [bridgeDeploymentManager];
-  if (!existingBridgeManagers[bridgeDeploymentManager.network]) {
-    existingBridgeManagers[bridgeDeploymentManager.network] = bridgeDeploymentManager;
-  }
-  if (!existingBridgeManagers[governanceDeploymentManager.network]) {
-    existingBridgeManagers[governanceDeploymentManager.network] = governanceDeploymentManager;
-  }
-  for(const bridgeNetwork of otherBridgeNetworks) {
-    if (existingBridgeManagers[bridgeNetwork]) {
-      bridgeManagers.push(existingBridgeManagers[bridgeNetwork]);
+  const underlyingNetworks = await getProposalUnderlyingNetworks(governanceDeploymentManager, openProposal);
+  const otherUnderlyingNetworks = underlyingNetworks.filter(n => n !== bridgeDeploymentManager.network);
+
+  // Skip the relay attempt entirely when the proposal doesn't target this network.
+  const bridgeManagers = underlyingNetworks.includes(bridgeDeploymentManager.network)
+    ? [bridgeDeploymentManager]
+    : [];
+
+  // Other L2s are relayed only when the migration registered them (addBridgedDeploymentManager),
+  // so unrelated open proposals don't fork and relay networks the scenario doesn't target.
+  const registeredManagers = [...governanceDeploymentManager.bridgedDeploymentManagers.values()];
+  for (const bridgeNetwork of otherUnderlyingNetworks) {
+    if (bridgeNetwork === governanceDeploymentManager.network) {
+      bridgeManagers.push(governanceDeploymentManager);
       continue;
     }
-    
-    let deploymentToken: string;
-
-    let dm: DeploymentManager;
-    let existingBridgedDm: DeploymentManager | undefined;
-    for (const cachedDm of governanceDeploymentManager.bridgedDeploymentManagers.values()) {
-      if (cachedDm.network === bridgeNetwork) {
-        existingBridgedDm = cachedDm;
-        break;
-      }
-    }
-
-    if (existingBridgedDm) {
-      dm = existingBridgedDm;
+    const dm = registeredManagers.find((m) => m.network === bridgeNetwork);
+    if (dm) {
+      bridgeManagers.push(dm);
     } else {
-      // default deployment token is USDC for all networks except Ronin (WETH) and Mantle (USDE)
-      switch (bridgeNetwork) {
-        case 'arbitrum':
-        case 'polygon':
-        case 'base':
-        case 'linea':
-        case 'optimism':
-        case 'unichain':
-        case 'scroll':
-          deploymentToken = 'usdc';
-          break;
-        case 'mantle':
-          deploymentToken = 'usde';
-          break;
-        case 'ronin':
-          deploymentToken = 'weth';
-          break;
-        default: {
-          const tag = `[${governanceDeploymentManager.network} -> ${bridgeNetwork}]`;
-          throw new Error(`${tag} Unable to determine whether to relay Proposal ${openProposal.id}`);
-        }
-      }
-
-      const hre = await forkedHreForBase({ name: '', network: bridgeNetwork, deployment: '' });
-      dm = await governanceDeploymentManager.addBridgedDeploymentManager(bridgeNetwork, deploymentToken, hre);
+      console.log(`[${governanceDeploymentManager.network} -> ${bridgeNetwork}] Proposal ${openProposal.id} not relayed: network not targeted by this scenario`);
     }
-    
-    existingBridgeManagers[bridgeNetwork] = dm;
-    bridgeManagers.push(dm);
   }
   return bridgeManagers;
 }
