@@ -105,7 +105,7 @@ export default migration('1793718060_resubmit_update_cbbtc_to_svr', {
 
 ## Proposal summary
 
-This proposal is a resubmission of the AERO and WETH part of [proposal 593](https://compound.finance/governance/proposals/593). Proposal 593 was executed on Ethereum mainnet, but only its second action (USDC and USDS markets) took effect on Base. The first action, which updates the cbBTC price feeds in the AERO and WETH markets, was not executed on Base, so these two markets still use the non-SVR cbBTC / USD price feed.
+This proposal is a resubmission of the AERO and WETH part of [proposal 593](https://www.tally.xyz/gov/compound/proposal/593). Proposal 593 was executed on Ethereum mainnet, but only its second action (USDC and USDS markets) took effect on Base. The first action, which updates the cbBTC price feeds in the AERO and WETH markets, was not executed on Base, so these two markets still use the non-SVR cbBTC / USD price feed.
 
 This proposal updates the cbBTC price feeds in the Compound III AERO and WETH markets on Base to use the SVR price feeds. It reuses the price feed contracts deployed for proposal 593:
 - cbBTC / USD SVR price feed: [0x8C74B2811D2F1aD65517ADB5C65773c1E520ed2f](https://basescan.org/address/0x8C74B2811D2F1aD65517ADB5C65773c1E520ed2f) (already used by the USDC and USDS markets)

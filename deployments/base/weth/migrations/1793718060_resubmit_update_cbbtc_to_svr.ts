@@ -101,25 +101,7 @@ export default migration('1793718060_resubmit_update_cbbtc_to_svr', {
       },
     ];
 
-    const description = `# Update cbBTC price feeds in cAEROv3 and cWETHv3 on Base to SVR
-
-## Proposal summary
-
-This proposal is a resubmission of the AERO and WETH part of [proposal 593](https://compound.finance/governance/proposals/593). Proposal 593 was executed on Ethereum mainnet, but only its second action (USDC and USDS markets) took effect on Base. The first action, which updates the cbBTC price feeds in the AERO and WETH markets, was not executed on Base, so these two markets still use the non-SVR cbBTC / USD price feed.
-
-This proposal updates the cbBTC price feeds in the Compound III AERO and WETH markets on Base to use the SVR price feeds. It reuses the price feed contracts deployed for proposal 593:
-- cbBTC / USD SVR price feed: [0x8C74B2811D2F1aD65517ADB5C65773c1E520ed2f](https://basescan.org/address/0x8C74B2811D2F1aD65517ADB5C65773c1E520ed2f) (already used by the USDC and USDS markets)
-- cbBTC / ETH SVR price feed: [0xc8E4c3F58d5FC4409522503927Ecea057EbbA1fc](https://basescan.org/address/0xc8E4c3F58d5FC4409522503927Ecea057EbbA1fc)
-
-Further detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/34) and [forum discussion for SVR](https://www.comp.xyz/t/request-for-proposal-rfp-oracle-extractable-value-oev-solution-for-compound-protocol/6786).
-
-### SVR fee recipient
-
-SVR generates revenue from liquidators and Compound DAO will receive that revenue as part of the protocol fee. The fee recipient for SVR on Base is set to Compound DAO multisig: 0xb3e79c7cac540ca833015e63d96d3032ba0c4129.
-
-## Proposal Actions
-
-The first action sends a message to the Base network to update the cbBTC price feeds in the AERO and WETH markets to the SVR price feeds and to deploy and upgrade both Comets to new implementations.`;
+    const description = `DESCRIPTION`;
 
     const txn = await govDeploymentManager.retry(async () =>
       trace(
