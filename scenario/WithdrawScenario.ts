@@ -19,7 +19,8 @@ import {
   isFreshMarket,
   timeUntilUnderwater,
   rejectsZeroAmounts,
-  UINT256_MAX
+  UINT256_MAX,
+  sourceAndSupply
 } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';
@@ -303,7 +304,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert } = actors;
+      const { albert, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
 
       // Albert borrows against the collateral in this scenario's slot
@@ -317,8 +318,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(amountToWithdraw, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, amountToWithdraw);
 
       const userAssetBalanceBefore = await baseAsset.balanceOf(albert.address);
 
@@ -349,7 +350,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert, betty } = actors;
+      const { albert, betty, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
 
       // Albert borrows against the collateral in this scenario's slot
@@ -363,8 +364,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(amountToWithdraw, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, amountToWithdraw);
 
       const fromUserAssetBalanceBefore = await baseAsset.balanceOf(albert.address);
       const dstUserBorrowBalanceBefore = (await comet.borrowBalanceOf(betty.address)).toBigInt();
@@ -414,8 +415,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(amountToWithdraw, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so betty supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, betty, amountToWithdraw);
 
       await albert.allow(charles, true);
 
@@ -999,7 +1000,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert } = actors;
+      const { albert, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
       const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
 
@@ -1007,8 +1008,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, borrowAmount);
 
       expect(await comet.borrowBalanceOf(albert.address)).to.equal(0n);
       await albert.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
@@ -1034,7 +1035,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert, betty } = actors;
+      const { albert, betty, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
       const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
 
@@ -1042,8 +1043,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, borrowAmount);
 
       expect(await comet.borrowBalanceOf(albert.address)).to.equal(0n);
       await albert.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
@@ -1069,7 +1070,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert, betty } = actors;
+      const { albert, betty, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
       const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
 
@@ -1077,8 +1078,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, borrowAmount);
 
       expect(await comet.borrowBalanceOf(albert.address)).to.equal(0n);
       await albert.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
@@ -1257,9 +1258,11 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
         (await usesAssetList(ctx)) &&
         !(await isAssetDelisted(ctx, offset)) &&
         (await supportsExtendedPause(ctx)),
-      tokenBalances: (ctx: CometContext) => ({
-        albert: { $base: '== 0' },
-        $comet: { $base: getConfigForScenario(ctx, offset).withdrawBase }
+      tokenBalances: {
+        albert: { $base: '== 0' }
+      },
+      cometBalances: (ctx: CometContext) => ({
+        charles: { $base: getConfigForScenario(ctx, offset).withdrawBase }
       })
     },
     async ({ comet, configurator, proxyAdmin, actors }, context, world) => {

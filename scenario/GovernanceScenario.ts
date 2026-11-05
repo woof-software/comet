@@ -92,8 +92,8 @@ scenario('upgrade Comet implementation and call new function', {filter: async (c
 scenario('add new asset',
   {
     filter: async (ctx) => !isBridgedDeployment(ctx),
-    tokenBalances: {
-      $comet: { $base: '>= 1000' },
+    cometBalances: {
+      charles: { $base: '>= 1000' },
     },
     prices: {
       $base: 1

@@ -2111,3 +2111,14 @@ export async function getMinimumBorrowAmounts(context: CometContext, collateralI
 
   return { collateralAsset, supplyAmount, borrowAmount };
 }
+
+/**
+ * @notice Sources the asset to the actor and supplies it to Comet
+ * @dev Comet rejects borrows from a market without supply, so the base for a borrow has to come from a lender
+ */
+export async function sourceAndSupply(context: CometContext, asset: CometAsset, actor: CometActor, amount: bigint) {
+  const comet = await context.getComet();
+  await context.sourceTokens(amount, asset, actor.address);
+  await asset.approve(actor, comet.address);
+  await actor.safeSupplyAsset({ asset: asset.address, amount });
+}
