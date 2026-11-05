@@ -1,5 +1,5 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
-import { ethers, expect, exp, makeProtocol, wait, event, defaultAssets, SnapshotRestorer, takeSnapshot } from './helpers';
+import { ethers, expect, exp, makeProtocol, wait, event, defaultAssets, SnapshotRestorer, takeSnapshot, allocateAndSupply } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, Signature } from 'ethers';
 
@@ -15,6 +15,7 @@ const types = {
 
 describe('allowBySig', function () {
   const baseTokenDecimals = 6;
+  const seedAmount = BigNumber.from(exp(10_000, baseTokenDecimals));
   const supplyAmount = BigNumber.from(exp(100, baseTokenDecimals));
 
   let comet: CometHarnessInterfaceExtendedAssetList;
@@ -25,6 +26,7 @@ describe('allowBySig', function () {
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let charles: SignerWithAddress;
+  let initialLender: SignerWithAddress;
 
   let snapshot: SnapshotRestorer;
   let snapshotWithoutAllow: SnapshotRestorer;
@@ -55,8 +57,6 @@ describe('allowBySig', function () {
           liquidationFactor: exp(0.95, 18),
         },
       }),
-      // Seed base liquidity so borrowing is possible
-      initialLenderSupply: exp(10_000, baseTokenDecimals),
     });
     comet = protocol.cometWithExtendedAssetList;
     baseToken = protocol.tokens.USDC as FaucetToken;
@@ -67,8 +67,11 @@ describe('allowBySig', function () {
     for (const asset in protocol.priceFeeds) {
       priceFeeds[asset] = protocol.priceFeeds[asset];
     }
-    [alice, bob, charles] = protocol.users;
+    [alice, bob, charles, initialLender] = protocol.users;
     pauseGuardian = protocol.pauseGuardian;
+
+    // Borrowing requires at least one lender, so seed the market with an initial supply
+    await allocateAndSupply(comet, baseToken, initialLender, seedAmount.toBigInt());
 
     // Alice supplies some USDC in the initial snapshot
     await baseToken.allocateTo(alice.address, supplyAmount);

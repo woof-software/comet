@@ -178,17 +178,18 @@ describe('constructor', function () {
 
   describe('max supported utilization', function () {
     const uint64Max = 2n ** 64n - 1n;
+    const utilizationBelow100Percent = exp(0.8, 18);
 
     let cometBelowFullUtilization: CometHarnessInterfaceExtendedAssetList;
     let cometAtUint64Max: CometHarnessInterfaceExtendedAssetList;
 
     before(async function () {
-      cometBelowFullUtilization = (await makeProtocol({ maxSupportedUtilization: exp(0.8, 18) })).cometWithExtendedAssetList;
+      cometBelowFullUtilization = (await makeProtocol({ maxSupportedUtilization: utilizationBelow100Percent })).cometWithExtendedAssetList;
       cometAtUint64Max = (await makeProtocol({ maxSupportedUtilization: uint64Max })).cometWithExtendedAssetList;
     });
 
-    it('allows maxSupportedUtilization equal to 80%', async function () {
-      expect(await cometBelowFullUtilization.maxSupportedUtilization()).to.eq(exp(0.8, 18));
+    it('allows maxSupportedUtilization below 100%', async function () {
+      expect(await cometBelowFullUtilization.maxSupportedUtilization()).to.eq(utilizationBelow100Percent);
     });
 
     it('allows maxSupportedUtilization equal to uint64 max', async function () {

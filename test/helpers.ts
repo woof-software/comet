@@ -36,6 +36,7 @@ import {
   AssetListFactory__factory,
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
+  CometWithExtendedAssetList as CometWithExtendedAssetListContract,
   MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
@@ -100,7 +101,6 @@ export type ProtocolOpts = {
   targetReserves?: Numeric;
   maxSupportedUtilization?: Numeric;
   baseTokenBalance?: Numeric;
-  initialLenderSupply?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
 };
 
@@ -318,9 +318,6 @@ export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const DEFAULT_PRICEFEED_DECIMALS = 8;
 export const MAX_ASSETS = 24;
 export const DEFAULT_MAX_SUPPORTED_UTILIZATION = exp(2, 18);
-export const INITIAL_LENDER = ethers.utils.getAddress(
-  ethers.utils.hexDataSlice(ethers.utils.keccak256(ethers.utils.toUtf8Bytes('comet.test.initial-lender')), 12)
-);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;
@@ -369,7 +366,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const baseMinForRewards = dfn(opts.baseMinForRewards, exp(1, assets[base].decimals));
   const baseBorrowMin = dfn(opts.baseBorrowMin, exp(1, assets[base].decimals));
   const targetReserves = dfn(opts.targetReserves, 0);
-  const maxSupportedUtilization = dfn(opts.maxSupportedUtilization, DEFAULT_MAX_SUPPORTED_UTILIZATION);
 
   const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
   const tokens = {};
@@ -418,7 +414,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
-    maxSupportedUtilization,
+    maxSupportedUtilization: dfn(opts.maxSupportedUtilization, DEFAULT_MAX_SUPPORTED_UTILIZATION),
     assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
       if (symbol != base && _i <= 12) {
         acc.push({
@@ -462,11 +458,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     await wait(baseToken.allocateTo(cometWithExtendedAssetList.address, baseTokenBalance));
   }
 
-  const cometInterface = await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address) as CometWithExtendedAssetList;
-  if (opts.initialLenderSupply) {
-    await supplyFromInitialLender(cometInterface, tokens[base], opts.initialLenderSupply);
-  }
-
   return {
     opts,
     governor,
@@ -475,7 +466,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     users,
     base,
     reward,
-    cometWithExtendedAssetList: cometInterface,
+    cometWithExtendedAssetList: await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address) as CometWithExtendedAssetList,
     assetListFactory: assetListFactory,
     tokens,
     unsupportedToken,
@@ -578,7 +569,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     tokens,
     unsupportedToken,
     priceFeeds,
-  } = await makeProtocol({ ...opts, initialLenderSupply: undefined }); // the lender is seeded into the proxy below
+  } = await makeProtocol(opts);
 
   // Deploy ProxyAdmin
   const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdmin')) as CometProxyAdmin__factory;
@@ -610,15 +601,6 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     (await cometWithExtendedAssetList.populateTransaction.initializeStorage()).data,
   );
   await cometProxyWithExtendedAssetList.deployed();
-
-  // Tests borrow through the proxy, so the initial lender has to live in its storage
-  if (opts.initialLenderSupply) {
-    await supplyFromInitialLender(
-      cometWithExtendedAssetList.attach(cometProxyWithExtendedAssetList.address),
-      tokens[base],
-      opts.initialLenderSupply
-    );
-  }
 
   // Deploy CometFactory
   const CometFactoryWithExtendedAssetListFactory = (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')) as CometFactoryWithExtendedAssetList__factory;
@@ -718,20 +700,6 @@ export async function makeBulker(opts: BulkerOpts): Promise<BulkerInfo> {
     bulker,
   };
 }
-
-// Writes the initial lender's position straight into storage, so no accrual happens and block time is untouched
-export async function supplyFromInitialLender(
-  cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList,
-  baseToken: FaucetToken | NonStandardFaucetFeeToken,
-  amount: Numeric
-) {
-  const totals = await cometWithExtendedAssetList.totalsBasic();
-  const principal = principalValue(BigInt(amount), totals.baseSupplyIndex, totals.baseBorrowIndex);
-  await wait(baseToken.allocateTo(cometWithExtendedAssetList.address, amount));
-  await wait(cometWithExtendedAssetList.setBasePrincipal(INITIAL_LENDER, principal));
-  await setTotalsBasic(cometWithExtendedAssetList, { totalSupplyBase: totals.totalSupplyBase.toBigInt() + principal });
-}
-
 export async function bumpTotalsCollateral(cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList, token: FaucetToken | NonStandardFaucetFeeToken, delta: bigint): Promise<TotalsCollateralStructOutput> {
   const t0 = await cometWithExtendedAssetList.totalsCollateral(token.address);
   const t1 = Object.assign({}, t0, { totalSupplyAsset: t0.totalSupplyAsset.toBigInt() + delta });
@@ -748,7 +716,7 @@ export async function bumpBorrow(cometWithExtendedAssetList: CometHarnessInterfa
 }
 
 export async function allocateAndSupply(
-  cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList,
+  cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList | CometWithExtendedAssetListContract,
   token: FaucetToken | NonStandardFaucetFeeToken,
   user: SignerWithAddress,
   amount: bigint
@@ -757,26 +725,6 @@ export async function allocateAndSupply(
   await wait(token.connect(user).approve(cometWithExtendedAssetList.address, amount));
   await wait(cometWithExtendedAssetList.connect(user).supply(token.address, amount));
 }
-
-// Totals, reserves and balances that a reverted operation must leave unchanged
-export async function getMarketState(
-  cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList,
-  token: FaucetToken | NonStandardFaucetFeeToken,
-  accounts: SignerWithAddress[]
-) {
-  return {
-    totalSupply: (await cometWithExtendedAssetList.totalSupply()).toBigInt(),
-    totalBorrow: (await cometWithExtendedAssetList.totalBorrow()).toBigInt(),
-    reserves: (await cometWithExtendedAssetList.getReserves()).toBigInt(),
-    balances: await Promise.all(accounts.map(async (account) => ({
-      supply: (await cometWithExtendedAssetList.balanceOf(account.address)).toBigInt(),
-      borrow: (await cometWithExtendedAssetList.borrowBalanceOf(account.address)).toBigInt(),
-      wallet: (await token.balanceOf(account.address)).toBigInt(),
-    }))),
-  };
-}
-
-export type MarketState = Awaited<ReturnType<typeof getMarketState>>;
 
 export async function setTotalsBasic(cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList, overrides = {}): Promise<TotalsBasicStructOutput> {
   const t0 = await cometWithExtendedAssetList.totalsBasic();

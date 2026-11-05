@@ -1,5 +1,5 @@
 import { CometExt, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
-import { expect, exp, ethers, MAX_ASSETS, presentValue, mulPrice, mulFactor, factorScale, BigNumber, takeSnapshot, SnapshotRestorer, makeConfigurator, updateAssetBorrowCollateralFactor, getLiquidityWithLiquidateCF, updateAssetLiquidateCollateralFactor } from './helpers';
+import { expect, exp, ethers, MAX_ASSETS, presentValue, mulPrice, mulFactor, factorScale, BigNumber, takeSnapshot, SnapshotRestorer, makeConfigurator, updateAssetBorrowCollateralFactor, getLiquidityWithLiquidateCF, updateAssetLiquidateCollateralFactor, allocateAndSupply } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
 describe('isLiquidatable', function () {
@@ -1112,6 +1112,7 @@ describe('isLiquidatable', function () {
     let alice: SignerWithAddress;
     let governor: SignerWithAddress;
     let pauseGuardian: SignerWithAddress;
+    let initialLender: SignerWithAddress;
 
     // Values
     let supplyAmount: bigint;
@@ -1131,10 +1132,7 @@ describe('isLiquidatable', function () {
           },
         ])
       );
-      const protocol = await makeConfigurator({
-        assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals },
-        initialLenderSupply: exp(10_000, 6),
-      });
+      const protocol = await makeConfigurator({ assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals } });
 
       configurator = protocol.configurator;
       configuratorProxyAddress = protocol.configuratorProxy.address;
@@ -1149,6 +1147,7 @@ describe('isLiquidatable', function () {
       alice = protocol.users[0];
       governor = protocol.governor;
       pauseGuardian = protocol.pauseGuardian;
+      initialLender = protocol.users[1];
 
       // Upgrade proxy to extended asset list implementation to support many assets
       const assetListFactory = protocol.assetListFactory;
@@ -1174,6 +1173,9 @@ describe('isLiquidatable', function () {
       // Deploy a price feed that always reverts on latestRoundData
       const PriceFeedWithRevertFactory = (await ethers.getContractFactory('PriceFeedWithRevert')) as PriceFeedWithRevert__factory;
       priceFeedWithRevert = await PriceFeedWithRevertFactory.deploy(100, 8);
+
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet, baseToken, initialLender, exp(10_000, 6));
 
       snapshot = await takeSnapshot();
 
