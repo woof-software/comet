@@ -286,11 +286,6 @@ export const WHALES = {
   ]
 };
 
-// Supplies base on the development market, which otherwise starts without lenders
-export const DEVELOPMENT_INITIAL_LENDER = utils.getAddress(
-  utils.hexDataSlice(utils.keccak256(utils.toUtf8Bytes('comet.development.initial-lender')), 12)
-);
-
 export async function calldata(req: Promise<PopulatedTransaction>): Promise<string> {
   // Splice out the first 4 bytes (function selector) of the tx data
   return '0x' + (await req).data.slice(2 + 8);

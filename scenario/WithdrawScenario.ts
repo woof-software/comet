@@ -17,7 +17,6 @@ import {
   deployUnsupportedAsset,
   supportUtilizationLimit,
   isFreshMarket,
-  withdrawFromInitialLender,
   timeUntilUnderwater,
   rejectsZeroAmounts,
   UINT256_MAX
@@ -1631,10 +1630,6 @@ scenario(
     },
   },
   async ({ comet, actors }, context) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const { albert, betty } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);
@@ -1678,10 +1673,6 @@ scenario(
     filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
   },
   async ({ comet, actors }, context) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const { betty } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);
@@ -1717,10 +1708,6 @@ scenario(
     },
   },
   async ({ comet, actors }, context, world) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const { albert, betty, charles } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);

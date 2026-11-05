@@ -20,7 +20,7 @@ import { DeploymentManager } from '../../plugins/deployment_manager';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { ProposalState, OpenProposal } from '../context/Gov';
 import { debug } from '../../plugins/deployment_manager/Utils';
-import { COMP_WHALES, DEVELOPMENT_INITIAL_LENDER } from '../../src/deploy';
+import { COMP_WHALES } from '../../src/deploy';
 import relayMessage from './relayMessage';
 import { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
@@ -34,7 +34,7 @@ export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestam
 import { readFileSync } from 'fs';
 import path from 'path';
 export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
-import { MAX_ASSETS, SECONDS_PER_YEAR, UINT256_MAX } from './constants';
+import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
 export * from './hreUtils';
 
@@ -542,14 +542,12 @@ export async function supportUtilizationLimit(ctx: CometContext): Promise<boolea
  * @notice Checks if the market is fresh (no supplies and no borrows)
  * @dev A fresh market has totalSupplyBase == 0 and totalBorrowBase == 0
  *      This is used to filter scenarios that should only run on new/empty markets
- *      The supply of the initial lender does not count, scenarios withdraw it with withdrawFromInitialLender
  */
 export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
   try {
     const comet = await ctx.getComet();
     const totals = await comet.totalsBasic();
-    const initialLenderPrincipal = (await comet.userBasic(DEVELOPMENT_INITIAL_LENDER)).principal;
-    return totals.totalSupplyBase.eq(initialLenderPrincipal) && totals.totalBorrowBase.isZero();
+    return totals.totalSupplyBase.isZero() && totals.totalBorrowBase.isZero();
   } catch (error) {
     return false;
   }
@@ -2112,19 +2110,4 @@ export async function getMinimumBorrowAmounts(context: CometContext, collateralI
   supplyAmount = (supplyAmount * 11n) / 10n;
 
   return { collateralAsset, supplyAmount, borrowAmount };
-}
-
-/**
- * @notice Withdraws the whole supply of the initial lender, so the development market has no lenders again
- * @dev The development market is deployed with a supply from the initial lender. Scenarios that need a market
- *      without supplies or borrows call this first. Does nothing on markets without the initial lender.
- */
-export async function withdrawFromInitialLender(context: CometContext) {
-  const { initialLender } = context.actors;
-  if (!initialLender) return;
-
-  const comet = await context.getComet();
-  if ((await comet.balanceOf(initialLender.address)).isZero()) return;
-
-  await initialLender.withdrawAsset({ asset: await comet.baseToken(), amount: UINT256_MAX });
 }

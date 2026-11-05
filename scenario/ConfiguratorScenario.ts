@@ -10,7 +10,6 @@ import {
   isBridgedDeployment,
   supportsConfigurableMaxSupportedUtilization,
   isFreshMarket,
-  withdrawFromInitialLender,
   getUsableCollateralIndices,
   getMinimumBorrowAmounts
 } from './utils';
@@ -3043,10 +3042,6 @@ scenario(
     },
   },
   async ({ comet, configurator, proxyAdmin, actors }, context) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const { albert, betty } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);

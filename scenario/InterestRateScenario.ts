@@ -7,7 +7,6 @@ import {
   supportUtilizationLimit,
   supportsConfigurableMaxSupportedUtilization,
   isFreshMarket,
-  withdrawFromInitialLender,
   getUsableCollateralIndices,
   getMinimumBorrowAmounts,
   matchesDeployment
@@ -255,10 +254,6 @@ scenario(
     filter: async (ctx: CometContext) => await supportUtilizationLimit(ctx) && await isFreshMarket(ctx),
   },
   async ({ comet }, context: CometContext) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const { albert, betty } = context.actors;
     const { asset, scale, borrowCollateralFactor, priceFeed } = await comet.getAssetInfo(0);
     const collateralAsset = context.getAssetByAddress(asset);
@@ -325,10 +320,6 @@ scenario(
     },
   },
   async ({ comet }, context: CometContext) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const ethers = context.world.deploymentManager.hre.ethers;
 
     // Get initial state
@@ -383,10 +374,6 @@ scenario(
     },
   },
   async ({ comet }, context: CometContext) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const ethers = context.world.deploymentManager.hre.ethers;
     const { albert } = context.actors;
 
@@ -449,10 +436,6 @@ scenario(
     },
   },
   async ({ comet }, context: CometContext) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const ethers = context.world.deploymentManager.hre.ethers;
     const { albert } = context.actors;
 
@@ -533,10 +516,6 @@ scenario(
     },
   },
   async ({ comet }, context: CometContext) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const ethers = context.world.deploymentManager.hre.ethers;
     const { albert, betty } = context.actors;
 
@@ -637,10 +616,6 @@ scenario(
     },
   },
   async ({ comet, actors }, context: CometContext, world) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const { albert, betty, charles } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context);

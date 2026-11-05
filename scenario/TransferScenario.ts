@@ -18,7 +18,6 @@ import {
   deployUnsupportedAsset,
   supportUtilizationLimit,
   isFreshMarket,
-  withdrawFromInitialLender,
   rejectsZeroAmounts,
   UINT256_MAX
 } from './utils';
@@ -1609,10 +1608,6 @@ async function hasMaxSupportedUtilizationAbove100(ctx: CometContext): Promise<bo
  * @dev The lender supply is derived from the limit, so the borrow is always the minimum borrow amount
  */
 async function borrowAboveMaxSupportedUtilization(context: CometContext, world: World) {
-  // Only needed on development, where the market is deployed with a supply from the initial lender.
-  // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-  await withdrawFromInitialLender(context);
-
   const comet = await context.getComet();
   const { albert, betty } = context.actors;
   const baseToken = context.getAssetByAddress(await comet.baseToken());
@@ -1706,10 +1701,6 @@ scenario(
     upgrade: ZERO_RATES,
   },
   async ({ comet, actors }, context) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const { albert, betty, charles } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);
@@ -1748,10 +1739,6 @@ scenario(
     upgrade: ZERO_RATES,
   },
   async ({ comet, actors }, context) => {
-    // Only needed on development, where the market is deployed with a supply from the initial lender.
-    // Withdrawing it leaves the market without lenders. On other bases there is no initial lender and this does nothing
-    await withdrawFromInitialLender(context);
-
     const { albert, betty } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);
