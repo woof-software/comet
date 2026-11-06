@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { strict as assert } from 'assert';
 import hre from 'hardhat';
 import nock from 'nock';
 import * as fs from 'fs/promises';
@@ -103,10 +104,11 @@ describe('DeploymentManager', () => {
 
     it('finds an existing signer regardless of address case', async () => {
       const signers = await manager.getSigners();
+      const initialCount = signers.length;
       const address = signers[0].address;
       expect(await manager.getSigner('0x' + address.slice(2).toUpperCase())).to.equal(signers[0]);
       expect(await manager.getSigner(address.toLowerCase())).to.equal(signers[0]);
-      expect(await manager.getSigners()).to.have.length(signers.length);
+      expect(await manager.getSigners()).to.have.length(initialCount);
     });
 
     it('creates a managed signer for a new address and reuses it on the next lookup', async () => {
@@ -369,9 +371,13 @@ describe('DeploymentManager', () => {
         ['molly', '0x0000000000000000000000000000000000000000', []]
       );
       await deploymentManager.putAlias('pet', spot);
-      expect(await (await deploymentManager.contract('pet')).name()).to.equal('spot');
+      const firstPet = await deploymentManager.contract<Dog>('pet');
+      assert.ok(firstPet, 'The pet alias must resolve to a contract');
+      expect(await firstPet.name()).to.equal('spot');
       await deploymentManager.putAlias('pet', molly);
-      expect(await (await deploymentManager.contract('pet')).name()).to.equal('molly');
+      const updatedPet = await deploymentManager.contract<Dog>('pet');
+      assert.ok(updatedPet, 'The updated pet alias must resolve to a contract');
+      expect(await updatedPet.name()).to.equal('molly');
     });
   });
 
@@ -391,6 +397,7 @@ describe('DeploymentManager', () => {
         deploymentManager
       );
 
+      assert.ok(hre.config.deploymentManager, 'Deployment Manager configuration must exist');
       hre.config.deploymentManager.networks = {
         'test-network': {
           'test-deployment': {
@@ -405,7 +412,7 @@ describe('DeploymentManager', () => {
                   alias: '.name',
                 },
                 pups: {
-                  field: async (dog) => (await dog.callStatic.puppers()).map(({ pup }) => pup),
+                  field: async (dog) => (await (dog as Dog).callStatic.puppers()).map(({ pup }) => pup),
                   alias: ['.name'],
                 },
               },
@@ -416,7 +423,7 @@ describe('DeploymentManager', () => {
 
       await deploymentManager.spider({ finn });
 
-      let check = {};
+      let check: Record<string, string> = {};
       for (let [alias, contract] of await deploymentManager.contracts()) {
         // Just make sure these contracts are working, too.
         let name = contract.hasOwnProperty('name') ? await contract.name() : null;
@@ -446,7 +453,9 @@ describe('DeploymentManager', () => {
       await deploymentManager.putAlias('mydog', finn);
       let contracts = await deploymentManager.contracts();
 
-      expect(await contracts.get('mydog').name()).to.eql('finn');
+      const contract = contracts.get('mydog');
+      assert.ok(contract, 'The mydog alias must exist in the contract map');
+      expect(await contract.name()).to.eql('finn');
     });
   });
 
@@ -463,7 +472,8 @@ describe('DeploymentManager', () => {
       );
 
       await deploymentManager.putAlias('mydog', finn);
-      let contract = await deploymentManager.contract('mydog');
+      let contract = await deploymentManager.contract<Dog>('mydog');
+      assert.ok(contract, 'The mydog alias must resolve to a contract');
       expect(await contract.name()).to.eql('finn');
     });
   });
@@ -493,10 +503,10 @@ describe('DeploymentManager', () => {
         baseDir,
       });
 
-      let migration: Migration<null> = {
+      let migration: Migration<{ dog: string }> = {
         name: '1_cool',
         actions: {
-          prepare: async () => null,
+          prepare: async () => ({ dog: 'cool' }),
           enact: async () => { /* */ },
         },
       };

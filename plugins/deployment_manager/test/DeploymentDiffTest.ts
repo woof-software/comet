@@ -15,8 +15,8 @@ describe('DeploymentManager state diff', () => {
   it('labels new and old alias addresses with the intended diff indicators', () => {
     const delta: Delta = { old: state(oldAddress), new: state(newAddress) };
     const output = manager.diffDelta(delta);
-    expect(output).to.include('New addresses');
-    expect(output).to.include('Old addresses');
+    expect(output).to.match(/^\+ New addresses$/m);
+    expect(output).to.match(/^- Old addresses$/m);
     const oldLine = output.split('\n').find(line => line.includes(oldAddress));
     const newLine = output.split('\n').find(line => line.includes(newAddress));
     expect(oldLine).to.be.a('string').and.include('-');
