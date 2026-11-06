@@ -473,8 +473,11 @@ describe('accrue', function () {
         expect(userBasicAfter.principal).to.equal(userBasicBefore.principal);
       });
 
-      it('user tracking index should not change after repay accrue', async function () {
-        expect(userBasicAfter.baseTrackingIndex).to.be.closeTo(userBasicBefore.baseTrackingIndex, 2e8);
+      it('user tracking index is synced to the new global supply tracking index after repay accrue', async function () {
+        // bob is a supplier after the repay, so updateBasePrincipal sets his index to trackingSupplyIndex
+        expect(userBasicAfter.principal).to.be.gt(0);
+        expect(userBasicAfter.baseTrackingIndex).to.be.gt(userBasicBefore.baseTrackingIndex);
+        expect(userBasicAfter.baseTrackingIndex).to.equal(totalsAfter.trackingSupplyIndex);
       });
 
       it('user tracking accrued should not change after repay accrue', async function () {
@@ -590,6 +593,18 @@ describe('accrue', function () {
 
     before(async function () {
       snapshot = await takeSnapshot();
+
+      // Open a borrow so utilization > 0 and the borrow index accrues too (not only the supply index)
+      const lenderSupply = exp(1_000, baseTokenDecimals);
+      await baseToken.connect(alice).allocateTo(alice.address, lenderSupply);
+      await baseToken.connect(alice).approve(comet.address, lenderSupply);
+      await comet.connect(alice).supply(baseToken.address, lenderSupply);
+
+      const collateralAmount = exp(1, 18);
+      await collaterals.WETH.connect(dave).allocateTo(dave.address, collateralAmount);
+      await collaterals.WETH.connect(dave).approve(comet.address, collateralAmount);
+      await comet.connect(dave).supply(collaterals.WETH.address, collateralAmount);
+      await comet.connect(dave).withdraw(baseToken.address, exp(100, baseTokenDecimals));
     });
 
     after(async function () {
@@ -601,6 +616,12 @@ describe('accrue', function () {
       await ethers.provider.send('evm_mine', []);
 
       const totalsBefore = await comet.totalsBasic();
+      // rates the (single) accrual applies: read before it, from the same stored state it uses
+      const supplyRate = await comet.getSupplyRate(await comet.getUtilization());
+      const borrowRate = await comet.getBorrowRate(await comet.getUtilization());
+      expect(totalsBefore.totalBorrowBase).to.be.gt(0);
+      expect(supplyRate).to.be.gt(0);
+      expect(borrowRate).to.be.gt(0);
 
       await ethers.provider.send('evm_setAutomine', [false]);
       await comet.accrueAccount(alice.address);
@@ -612,8 +633,8 @@ describe('accrue', function () {
       const timeElapsed = totalsAfter.lastAccrualTime - totalsBefore.lastAccrualTime;
 
       // If the second call also accrued, indices would be double. Verify single accrual.
-      const supplyRate = await comet.getSupplyRate(await comet.getUtilization());
-      const borrowRate = await comet.getBorrowRate(await comet.getUtilization());
+      expect(totalsAfter.baseSupplyIndex).to.be.gt(totalsBefore.baseSupplyIndex);
+      expect(totalsAfter.baseBorrowIndex).to.be.gt(totalsBefore.baseBorrowIndex);
       const expectedSupplyIndex = totalsBefore.baseSupplyIndex.add(
         totalsBefore.baseSupplyIndex.mul(supplyRate).mul(timeElapsed).div(FACTOR_SCALE)
       );
