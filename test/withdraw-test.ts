@@ -433,6 +433,48 @@ describe('withdraw', function () {
         });
       });
 
+      describe('rounding quirk - withdraw 0 emits Transfer of 1 (harness)', function () {
+        let withdrawTx: ContractTransaction;
+
+        before(async () => {
+          await baseSnapshot.restore();
+
+          // Harness required: withdrawing 0 makes the principal round down by 1 through the integer division in
+          // presentValue/principalValue. These exact values (principal=99999992291226, index=1000000131467072)
+          // trigger it; they can't be reached through normal supply/borrow flows.
+          await comet.setBasePrincipal(alice.address, 99999992291226);
+          await comet.setTotalsBasic(Object.assign({}, await comet.totalsBasic(), {
+            totalSupplyBase: 699999944771920,
+            baseSupplyIndex: 1000000131467072,
+          }));
+
+          withdrawTx = await comet.connect(alice).withdraw(baseToken.address, 0);
+        });
+
+        it('emits exactly 3 events', async () => {
+          const receipt = await withdrawTx.wait();
+          expect(receipt.events.length).to.be.equal(3);
+        });
+
+        it('emits Transfer event with 0 amount (ERC20)', async () => {
+          await expect(withdrawTx)
+            .to.emit(baseToken, 'Transfer')
+            .withArgs(comet.address, alice.address, 0);
+        });
+
+        it('emits Withdraw event with 0 amount', async () => {
+          await expect(withdrawTx)
+            .to.emit(comet, 'Withdraw')
+            .withArgs(alice.address, alice.address, 0);
+        });
+
+        it('emits Transfer burn event with amount 1 (rounding)', async () => {
+          await expect(withdrawTx)
+            .to.emit(comet, 'Transfer')
+            .withArgs(alice.address, ethers.constants.AddressZero, 1);
+        });
+      });
+
       describe('withdraw 0 with collateral only position', function () {
         const COLLATERAL_AMOUNT = exp(1, 18);
 
@@ -688,6 +730,13 @@ describe('withdraw', function () {
         const totalCollateralSupplyAfter = (await comet.totalsCollateral(collateral.address)).totalSupplyAsset;
 
         expect(totalCollateralSupplyBefore.sub(totalCollateralSupplyAfter)).to.equal(COLLATERAL_SUPPLY_AMOUNT);
+      });
+
+      it('gas used is within limit', async () => {
+        // ~102.5k on the service patch (was < 87k before it): withdrawCollateral now accrues the account
+        // (accrueAccountInternal) and checks the collateral withdraw pause flags
+        const receipt = await withdrawTx.wait();
+        expect(Number(receipt.gasUsed)).to.be.lessThan(105000);
       });
 
       it("bob's assetsIn bit is cleared when his collateral balance goes to zero", async () => {

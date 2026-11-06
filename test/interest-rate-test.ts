@@ -2191,4 +2191,75 @@ describe('interest calculation', function () {
       });
     });
   });
+
+  /**
+   * Annual rates checked against values computed by hand from the config (restored from the pre-patch suite).
+   * Unlike the flows above, the expected values don't use the contract's per-second immutables, so a wrong
+   * per-year -> per-second conversion or a swapped slope would fail here.
+   * Each expected value is worked out in the comment next to it.
+   */
+  describe('annual rates against hand-computed values', function () {
+    const SECONDS_PER_YEAR = 31_536_000;
+    // The minimum required precision between the actual and expected annual rate
+    const MINIMUM_PRECISION_WEI = 1e8;
+    const interestRateParams = {
+      supplyKink: exp(0.8, 18),
+      supplyInterestRateBase: exp(0, 18),
+      supplyInterestRateSlopeLow: exp(0.04, 18),
+      supplyInterestRateSlopeHigh: exp(0.4, 18),
+      borrowKink: exp(0.8, 18),
+      borrowInterestRateBase: exp(0.01, 18),
+      borrowInterestRateSlopeLow: exp(0.05, 18),
+      borrowInterestRateSlopeHigh: exp(0.3, 18),
+    };
+
+    let rateComet: CometHarnessInterfaceExtendedAssetList;
+
+    function assertAnnualRate(expectedAnnualRate: bigint, perSecondRate: BigNumber) {
+      expect(perSecondRate.mul(SECONDS_PER_YEAR).sub(expectedAnnualRate).abs()).to.be.lte(MINIMUM_PRECISION_WEI);
+    }
+
+    async function setTotals(overrides: object) {
+      await rateComet.setTotalsBasic(Object.assign({}, await rateComet.totalsBasic(), overrides));
+    }
+
+    before(async () => {
+      rateComet = (await makeProtocol(interestRateParams)).cometWithExtendedAssetList;
+    });
+
+    it('below kink (10% utilization): supply 0.4%, borrow 1.5% a year', async () => {
+      // borrow 25 * 4 / supply 500 * 2 = 100 / 1000 = 10%
+      await setTotals({ baseSupplyIndex: 2e15, baseBorrowIndex: 4e15, totalSupplyBase: 500n, totalBorrowBase: 25n });
+      const utilization = await rateComet.getUtilization();
+      expect(utilization).to.equal(exp(0.1, 18));
+
+      // supply: 0 + 0.04 * 0.1 = 0.004
+      assertAnnualRate(exp(0.004, 18), await rateComet.getSupplyRate(utilization));
+      // borrow: 0.01 + 0.05 * 0.1 = 0.015
+      assertAnnualRate(exp(0.015, 18), await rateComet.getBorrowRate(utilization));
+    });
+
+    it('above kink (90% utilization): supply 7.2%, borrow 8% a year', async () => {
+      // borrow 30 * 3 / supply 50 * 2 = 90 / 100 = 90%
+      await setTotals({ baseSupplyIndex: 2e15, baseBorrowIndex: 3e15, totalSupplyBase: 50n, totalBorrowBase: 30n });
+      const utilization = await rateComet.getUtilization();
+      expect(utilization).to.equal(exp(0.9, 18));
+
+      // supply: 0 + 0.04 * 0.8 + 0.4 * 0.1 = 0.072
+      assertAnnualRate(exp(0.072, 18), await rateComet.getSupplyRate(utilization));
+      // borrow: 0.01 + 0.05 * 0.8 + 0.3 * 0.1 = 0.08
+      assertAnnualRate(exp(0.08, 18), await rateComet.getBorrowRate(utilization));
+    });
+
+    it('0 utilization with no borrows: supply 0, borrow 0 (patch: no borrow interest without borrows)', async () => {
+      await setTotals({ baseSupplyIndex: 2e15, baseBorrowIndex: 3e15, totalSupplyBase: 50n, totalBorrowBase: 0n });
+      const utilization = await rateComet.getUtilization();
+      expect(utilization).to.equal(0);
+
+      // supply: 0 + 0.04 * 0 = 0
+      assertAnnualRate(0n, await rateComet.getSupplyRate(utilization));
+      // borrow: 0, not the 1% base rate: getBorrowRate returns 0 when totalBorrowBase == 0 (pre-patch this was 1%)
+      expect(await rateComet.getBorrowRate(utilization)).to.equal(0);
+    });
+  });
 });
