@@ -270,6 +270,11 @@ describe('supply', function () {
       const SUPPLIED_AMOUNT_BOB: bigint = exp(1e9, baseTokenDecimals);
       let bobBalanceBefore: BigNumber;
 
+      // one deposit per user; the event and accrual steps all check that same tx
+      let lastAccrualBeforeDeposit: number;
+      let depositStateBefore: Awaited<ReturnType<typeof getSupplyStateBefore>>;
+      let depositTx: ContractTransaction;
+
       before(async function () {
         aliceBalanceBefore = await baseToken.balanceOf(alice.address);
         cometBalanceBefore = await baseToken.balanceOf(comet.address);
@@ -303,39 +308,29 @@ describe('supply', function () {
         expect(await comet.totalSupply()).to.be.greaterThan(presentValueSupply(baseSupplyIndex, totalSupplyBase));
       });
 
-      it('should allow 2nd deposit from alice: emits Supply event for existing supply', async () => {
-        const snapshot: SnapshotRestorer = await takeSnapshot();
-
+      it('alice makes a 2nd deposit', async () => {
         await baseToken.connect(alice).approve(comet.address, SUPPLIED_AMOUNT_ALICE);
-        await expect(comet.connect(alice).supply(baseToken.address, SUPPLIED_AMOUNT_ALICE))
+        lastAccrualBeforeDeposit = (await comet.totalsBasic()).lastAccrualTime;
+        depositStateBefore = await getSupplyStateBefore(comet, alice.address);
+        depositTx = await comet.connect(alice).supply(baseToken.address, SUPPLIED_AMOUNT_ALICE);
+      });
+
+      it('2nd deposit from alice: emits Supply event for existing supply', async () => {
+        await expect(depositTx)
           .to.emit(comet, 'Supply')
           .withArgs(alice.address, alice.address, SUPPLIED_AMOUNT_ALICE);
-
-        await snapshot.restore();
       });
 
-      it('should allow 2nd deposit from alice: emits Transfer event for existing supply', async () => {
-        const snapshot: SnapshotRestorer = await takeSnapshot();
-
-        await baseToken.connect(alice).approve(comet.address, SUPPLIED_AMOUNT_ALICE);
-        const stateBefore = await getSupplyStateBefore(comet, alice.address);
-        const supplyTx = await comet.connect(alice).supply(baseToken.address, SUPPLIED_AMOUNT_ALICE);
-
-        await expect(supplyTx)
+      it('2nd deposit from alice: emits Transfer event for existing supply', async () => {
+        await expect(depositTx)
           .to.emit(comet, 'Transfer')
-          .withArgs(ZERO_ADDRESS, alice.address, await getSupplyTransferAmount(stateBefore, SUPPLIED_AMOUNT_ALICE, supplyTx));
-
-        await snapshot.restore();
+          .withArgs(ZERO_ADDRESS, alice.address, await getSupplyTransferAmount(depositStateBefore, SUPPLIED_AMOUNT_ALICE, depositTx));
       });
 
-      it('should allow 2nd deposit from alice: accrues the state', async () => {
-        const lastUpdated = (await comet.totalsBasic()).lastAccrualTime;
-
-        await baseToken.connect(alice).approve(comet.address, SUPPLIED_AMOUNT_ALICE);
-        await comet.connect(alice).supply(baseToken.address, SUPPLIED_AMOUNT_ALICE);
-
-        expect((await comet.totalsBasic()).lastAccrualTime).to.be.greaterThan(lastUpdated);
-        expect((await comet.totalsBasic()).lastAccrualTime).to.equal((await ethers.provider.getBlock('latest')).timestamp);
+      it('2nd deposit from alice: accrues the state', async () => {
+        const depositTime = (await ethers.provider.getBlock((await depositTx.wait()).blockNumber)).timestamp;
+        expect((await comet.totalsBasic()).lastAccrualTime).to.be.greaterThan(lastAccrualBeforeDeposit);
+        expect((await comet.totalsBasic()).lastAccrualTime).to.equal(depositTime);
       });
 
       it('supples from alice the exact balance as in parameter', async () => {
@@ -416,39 +411,29 @@ describe('supply', function () {
         await ethers.provider.send('evm_mine', []);
       });
 
-      it('should allow deposit from bob (new user): emits Supply event for existing supply', async () => {
-        const snapshot: SnapshotRestorer = await takeSnapshot();
-
+      it('bob (new user) deposits', async () => {
         await baseToken.connect(bob).approve(comet.address, SUPPLIED_AMOUNT_BOB);
-        await expect(comet.connect(bob).supply(baseToken.address, SUPPLIED_AMOUNT_BOB))
+        lastAccrualBeforeDeposit = (await comet.totalsBasic()).lastAccrualTime;
+        depositStateBefore = await getSupplyStateBefore(comet, bob.address);
+        depositTx = await comet.connect(bob).supply(baseToken.address, SUPPLIED_AMOUNT_BOB);
+      });
+
+      it('deposit from bob (new user): emits Supply event for existing supply', async () => {
+        await expect(depositTx)
           .to.emit(comet, 'Supply')
           .withArgs(bob.address, bob.address, SUPPLIED_AMOUNT_BOB);
-
-        await snapshot.restore();
       });
 
-      it('should allow deposit from bob (new user): emits Transfer event for existing supply', async () => {
-        const snapshot: SnapshotRestorer = await takeSnapshot();
-
-        await baseToken.connect(bob).approve(comet.address, SUPPLIED_AMOUNT_BOB);
-        const stateBefore = await getSupplyStateBefore(comet, bob.address);
-        const supplyTx = await comet.connect(bob).supply(baseToken.address, SUPPLIED_AMOUNT_BOB);
-
-        await expect(supplyTx)
+      it('deposit from bob (new user): emits Transfer event for existing supply', async () => {
+        await expect(depositTx)
           .to.emit(comet, 'Transfer')
-          .withArgs(ZERO_ADDRESS, bob.address, await getSupplyTransferAmount(stateBefore, SUPPLIED_AMOUNT_BOB, supplyTx));
-
-        await snapshot.restore();
+          .withArgs(ZERO_ADDRESS, bob.address, await getSupplyTransferAmount(depositStateBefore, SUPPLIED_AMOUNT_BOB, depositTx));
       });
 
-      it('should allow deposit from bob (new user): accrues the state', async () => {
-        const lastUpdated = (await comet.totalsBasic()).lastAccrualTime;
-
-        await baseToken.connect(bob).approve(comet.address, SUPPLIED_AMOUNT_BOB);
-        await comet.connect(bob).supply(baseToken.address, SUPPLIED_AMOUNT_BOB);
-
-        expect((await comet.totalsBasic()).lastAccrualTime).to.be.greaterThan(lastUpdated);
-        expect((await comet.totalsBasic()).lastAccrualTime).to.equal((await ethers.provider.getBlock('latest')).timestamp);
+      it('deposit from bob (new user): accrues the state', async () => {
+        const depositTime = (await ethers.provider.getBlock((await depositTx.wait()).blockNumber)).timestamp;
+        expect((await comet.totalsBasic()).lastAccrualTime).to.be.greaterThan(lastAccrualBeforeDeposit);
+        expect((await comet.totalsBasic()).lastAccrualTime).to.equal(depositTime);
       });
 
       it('supples from bob the exact balance as in parameter', async () => {
@@ -1174,43 +1159,61 @@ describe('supply', function () {
     });
 
     describe('repay edge cases', function () {
-      it('repay reverts when supply is paused', async () => {
-        const snapshot = await takeSnapshot();
+      // each case starts from the state the repay flows left (dave holds collateral); the `repay` afterAll restores after
+      let edgeFixture: SnapshotRestorer;
 
-        // Create new borrow
-        await comet.connect(dave).withdraw(baseToken.address, exp(1, baseTokenDecimals));
-        await baseToken.allocateTo(dave.address, exp(1, baseTokenDecimals));
-
-        await comet.connect(pauseGuardian).pause(true, false, false, false, false);
-        expect(await comet.isSupplyPaused()).to.be.true;
-
-        await baseToken.connect(dave).approve(comet.address, exp(1, baseTokenDecimals));
-        await expect(comet.connect(dave).supply(baseToken.address, exp(1, baseTokenDecimals)))
-          .to.be.revertedWithCustomError(comet, 'Paused');
-
-        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
-        await snapshot.restore();
+      before(async function () {
+        edgeFixture = await takeSnapshot();
       });
 
-      it('can withdraw collateral after repaying all debt', async () => {
-        const snapshot = await takeSnapshot();
+      describe('repay while supply is paused', function () {
+        before(async function () {
+          await edgeFixture.restore();
+          // Create new borrow
+          await comet.connect(dave).withdraw(baseToken.address, exp(1, baseTokenDecimals));
+          await baseToken.allocateTo(dave.address, exp(1, baseTokenDecimals));
+          await baseToken.connect(dave).approve(comet.address, exp(1, baseTokenDecimals));
 
-        // Create new borrow
-        await comet.connect(dave).withdraw(baseToken.address, exp(1, baseTokenDecimals));
-        const borrowBalance = await comet.borrowBalanceOf(dave.address);
+          await comet.connect(pauseGuardian).pause(true, false, false, false, false);
+        });
 
-        // Repay all debt
-        await baseToken.allocateTo(dave.address, borrowBalance.mul(2));
-        await baseToken.connect(dave).approve(comet.address, ethers.constants.MaxUint256);
-        await comet.connect(dave).supply(baseToken.address, ethers.constants.MaxUint256);
+        it('supply is paused', async () => {
+          expect(await comet.isSupplyPaused()).to.be.true;
+        });
 
-        // Now dave should be able to withdraw collateral
-        const collateralBalance = (await comet.userCollateral(dave.address, collateral.address)).balance;
-        await expect(comet.connect(dave).withdraw(collateral.address, collateralBalance)).to.not.be.reverted;
+        it('repay reverts with Paused', async () => {
+          await expect(comet.connect(dave).supply(baseToken.address, exp(1, baseTokenDecimals)))
+            .to.be.revertedWithCustomError(comet, 'Paused');
+        });
+      });
 
-        expect((await comet.userCollateral(dave.address, collateral.address)).balance).to.equal(0);
+      describe('withdraw collateral after repaying all debt', function () {
+        let collateralBalance: BigNumber;
 
-        await snapshot.restore();
+        before(async function () {
+          await edgeFixture.restore();
+          // Create new borrow, then repay all of it with MaxUint
+          await comet.connect(dave).withdraw(baseToken.address, exp(1, baseTokenDecimals));
+          const borrowBalance = await comet.borrowBalanceOf(dave.address);
+          await baseToken.allocateTo(dave.address, borrowBalance.mul(2));
+          await baseToken.connect(dave).approve(comet.address, ethers.constants.MaxUint256);
+          await comet.connect(dave).supply(baseToken.address, ethers.constants.MaxUint256);
+
+          collateralBalance = (await comet.userCollateral(dave.address, collateral.address)).balance;
+        });
+
+        it('dave has no debt left', async () => {
+          expect(await comet.borrowBalanceOf(dave.address)).to.equal(0);
+          expect(collateralBalance).to.be.greaterThan(0);
+        });
+
+        it('dave withdraws all of his collateral', async () => {
+          await expect(comet.connect(dave).withdraw(collateral.address, collateralBalance)).to.not.be.reverted;
+        });
+
+        it("dave's collateral balance is 0", async () => {
+          expect((await comet.userCollateral(dave.address, collateral.address)).balance).to.equal(0);
+        });
       });
     });
   });
@@ -1727,8 +1730,10 @@ describe('supply', function () {
         // cross-check against the public views instead of re-deriving it from the stored indices
         const expectedUtilization = (await comet.totalBorrow()).mul(exp(1, 18)).div(await comet.totalSupply());
         expect(await comet.getUtilization()).to.equal(expectedUtilization);
+      });
 
-        // restore state
+      // alice is a borrower in this flow only: put the state back for the flows after it, even if a step failed
+      after(async function () {
         await snapshot.restore();
       });
     });
@@ -2560,9 +2565,11 @@ describe('supply', function () {
   });
 
   describe('deactivated token supplyTo flow', function () {
-    it('allows pause guardian to deactivate a token', async function () {
+    before(async function () {
       await snapshot.restore();
+    });
 
+    it('allows pause guardian to deactivate a token', async function () {
       deactivateCollateralTx = await comet.connect(pauseGuardian).deactivateCollateral(deactivatedCollateralIndex);
       await expect(deactivateCollateralTx).to.not.be.reverted;
     });
@@ -2668,9 +2675,11 @@ describe('supply', function () {
   });
 
   describe('deactivated token supplyFrom flow', function () {
-    it('allows pause guardian to deactivate a token', async function () {
+    before(async function () {
       await snapshot.restore();
+    });
 
+    it('allows pause guardian to deactivate a token', async function () {
       await expect(comet.connect(pauseGuardian).deactivateCollateral(deactivatedCollateralIndex)).to.not.be.reverted;
     });
 
