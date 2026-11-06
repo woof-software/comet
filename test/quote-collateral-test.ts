@@ -180,11 +180,14 @@ describe('quoteCollateral', function () {
       expect(quote).to.equal(expected);
     });
 
-    it('liquidation CF = 0.01% (near-zero like deUSD on USDT market)', async () => {
-      const snapshot = await takeSnapshot();
-      // liquidationFactor = 0.0001 → discount is nearly the full storeFrontPriceFactor
-      // discountFactor = 0.8 * (1 - 0.0001) ≈ 0.79992
-      // assetPriceDiscounted = 200e8 * (1 - 0.79992) ≈ 40.016e8
+    // restored at the start of the next step, so a failing assertion here can't leave LF at 0.0001
+    let liquidationFactorSnapshot: SnapshotRestorer;
+
+    it('liquidationFactor = 0.01% (near-zero like deUSD on USDT market)', async () => {
+      liquidationFactorSnapshot = await takeSnapshot();
+      // liquidationFactor = 0.0001, storeFrontPriceFactor = 0.8 (set by the previous step)
+      // discountFactor = 0.8 * (1 - 0.0001) = 0.79992
+      // assetPriceDiscounted = 200e8 * (1 - 0.79992) = 40.016e8
       await configurator.updateAssetLiquidationFactor(comet.address, collateralToken.address, exp(0.0001, 18));
       await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
 
@@ -195,13 +198,15 @@ describe('quoteCollateral', function () {
       const assetPriceDiscounted = mulFactor(exp(200, 8), factorScale - discountFactor);
       const expected = exp(1, 8) * baseAmount * exp(1, 18) / assetPriceDiscounted / exp(1, 6);
       expect(quote).to.equal(expected);
-      // With essentially ~50% discount, quote should be roughly 2x the no-discount amount
-      expect(quote).to.be.gt(exp(1.99, 18));
-      // Restore liquidation factor for collateral for other tests
-      await snapshot.restore();
+      // ~80% discount: the buyer gets ~5x the no-discount amount (200 / 40.016 = 4.998e18), computed by hand
+      expect(quote).to.equal(4998000799680127948n);
     });
 
     it('100% storeFrontPriceFactor with normal liquidationFactor', async () => {
+      // back to liquidationFactor 0.6 (and storeFrontPriceFactor 0.8) from before the previous step
+      await liquidationFactorSnapshot.restore();
+      expect((await comet.getAssetInfoByAddress(collateralToken.address)).liquidationFactor).to.equal(exp(0.6, 18));
+
       await updateStoreFrontPriceFactor(exp(1, 18));
 
       const baseAmount = exp(200, baseTokenDecimals);
