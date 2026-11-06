@@ -20,7 +20,7 @@ describe('Deploy', () => {
   it('retries a verification failure in standalone Deploy.ts without losing the receiver', async () => {
     // Isolate cache files and shorten deployment retry waits.
     const dir = await fs.mkdtemp(tempDir());
-    const timers = recordTimers(true);
+    const timers = recordTimers({ shortenDeploymentWaits: true });
     let verificationAttempts = 0;
     const failure = new Error('Temporary verification failure');
     // Fail the first verification attempt, allow the next one to succeed.
@@ -36,14 +36,14 @@ describe('Deploy', () => {
       let address: string | undefined;
       try {
         // Deploy a real local contract and verify it immediately.
-        const contract = await deploy('test/Dog.sol', [
+        const contract = await timers.run(() => deploy('test/Dog.sol', [
           'standalone', hre.ethers.constants.AddressZero, [],
         ], runtime, {
           network: 'test-network',
           cache: new Cache('test-network', 'test-deployment', true, dir),
           verificationStrategy: 'eager',
           raiseOnVerificationFailure: true,
-        });
+        }));
         address = contract.address;
       } catch (error) {
         caught = error;

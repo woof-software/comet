@@ -8,6 +8,7 @@ import { verifyContract } from '../Verify';
 import { deployBuild } from '../Deploy';
 import { buildToken, faucetTokenBuildFile, tokenArgs } from './DeployHelpers';
 import { MockAgent, setGlobalDispatcher } from 'undici';
+import { recordTimers } from './TestHelpers';
 
 export function mockVerifySuccess(hre: HardhatRuntimeEnvironment) {
   // We use undici's intercepter to mock the HTTP requests because the Hardhat Etherscan plugin now uses
@@ -133,21 +134,15 @@ describe('Verify', () => {
     }
 
     describe('bytecode propagation retries', () => {
-      let originalSetTimeout: typeof setTimeout;
-      let delays: Array<number | undefined>;
+      let timers: ReturnType<typeof recordTimers>;
+      const verify = (...args: Parameters<typeof verifyContract>) => timers.run(() => verifyContract(...args));
 
       beforeEach(() => {
-        originalSetTimeout = global.setTimeout;
-        delays = [];
-        // Record requested retry delays but run timers immediately.
-        global.setTimeout = ((callback: () => void, delay?: number) => {
-          delays.push(delay);
-          return originalSetTimeout(callback, 0);
-        }) as typeof setTimeout;
+        timers = recordTimers({ immediate: true });
       });
 
       afterEach(() => {
-        global.setTimeout = originalSetTimeout;
+        timers.restore();
       });
 
       it('retries missing bytecode and stops as soon as verification succeeds', async () => {
@@ -155,9 +150,9 @@ describe('Verify', () => {
           if (attempts <= 2) throw new Error('Contract does not have bytecode');
         };
 
-        expect(await verifyContract(args, runtime, true, 3)).to.equal(true);
+        expect(await verify(args, runtime, true, 3)).to.equal(true);
         expect(attempts).to.equal(3);
-        expect(delays).to.eql([5000, 5000]);
+        expect(timers.delays).to.eql([5000, 5000]);
       });
 
       for (const raise of [false, true]) {
@@ -169,13 +164,13 @@ describe('Verify', () => {
           outcome = async () => { throw failure; };
 
           if (raise) {
-            await assert.rejects(verifyContract(args, runtime, raise, 2), (error) => error === failure);
+            await assert.rejects(verify(args, runtime, raise, 2), (error) => error === failure);
           } else {
-            expect(await verifyContract(args, runtime, raise, 2)).to.equal(false);
+            expect(await verify(args, runtime, raise, 2)).to.equal(false);
           }
           // Two retries mean three attempts, with no delay after the last failure.
           expect(attempts).to.equal(3);
-          expect(delays).to.eql([5000, 5000]);
+          expect(timers.delays).to.eql([5000, 5000]);
         });
       }
 
@@ -183,9 +178,9 @@ describe('Verify', () => {
         const failure = new Error('Contract does not have bytecode');
         outcome = async () => { throw failure; };
 
-        await assert.rejects(verifyContract(args, runtime, true, 0), (error) => error === failure);
+        await assert.rejects(verify(args, runtime, true, 0), (error) => error === failure);
         expect(attempts).to.equal(1);
-        expect(delays).to.eql([]);
+        expect(timers.delays).to.eql([]);
       });
     });
   });

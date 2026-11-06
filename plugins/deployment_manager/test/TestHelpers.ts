@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'async_hooks';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -25,17 +26,19 @@ export function flushPromises(): Promise<void> {
   return new Promise(resolve => setImmediate(resolve));
 }
 
-// Observe real timers and always remove test-owned timers, including leaked ones.
-// Integration failure tests can shorten only the deployment retry waits.
-export function recordTimers(shortenDeploymentWaits = false) {
+// Observe and clean up timers created inside run(), leaving other operations untouched.
+export function recordTimers(options: { shortenDeploymentWaits?: boolean, immediate?: boolean } = {}) {
+  const scope = new AsyncLocalStorage<boolean>();
   const originalSetTimeout = global.setTimeout;
   const originalClearTimeout = global.clearTimeout;
   const pending = new Set<ReturnType<typeof setTimeout>>();
   const delays: number[] = [];
 
   global.setTimeout = ((callback: (...args: any[]) => void, delay = 0, ...args: any[]) => {
+    if (!scope.getStore()) return originalSetTimeout(callback, delay, ...args);
     delays.push(delay);
-    const actualDelay = shortenDeploymentWaits && (delay === 500 || delay === 5000) ? 0 : delay;
+    const actualDelay = options.immediate || (options.shortenDeploymentWaits && (delay === 500 || delay === 5000))
+      ? 0 : delay;
     const handle = originalSetTimeout(() => {
       pending.delete(handle);
       callback(...args);
@@ -50,10 +53,12 @@ export function recordTimers(shortenDeploymentWaits = false) {
 
   return {
     delays,
+    run: <T>(action: () => T): T => scope.run(true, action),
     pendingCount: () => pending.size,
     restore: () => {
       for (const handle of pending) originalClearTimeout(handle);
       pending.clear();
+      scope.disable();
       global.setTimeout = originalSetTimeout;
       global.clearTimeout = originalClearTimeout;
     },

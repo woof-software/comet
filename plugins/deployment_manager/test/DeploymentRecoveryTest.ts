@@ -63,7 +63,7 @@ describe('DeploymentManager recovery', () => {
       const originalRead = fsPromises.readFile;
       const originalVerify = verification.verifyContract;
       const originalStore = manager.cache.storeCache;
-      const timers = recordTimers(true);
+      const timers = recordTimers({ shortenDeploymentWaits: true });
       const created: string[] = [];
       const failure = new Error(`Injected ${boundary} failure`);
       let injected = false;
@@ -106,9 +106,9 @@ describe('DeploymentManager recovery', () => {
         let deployed: Dog | undefined;
         let caught: unknown;
         try {
-          deployed = await manager.deploy<Dog, [string, string, string[]]>(
+          deployed = await timers.run(() => manager.deploy<Dog, [string, string, string[]]>(
             'pet', 'test/Dog.sol', ['recoverable', hre.ethers.constants.AddressZero, []], false, 1
-          );
+          ));
         } catch (error) {
           caught = error;
         }
@@ -129,7 +129,13 @@ describe('DeploymentManager recovery', () => {
           expect(created).to.have.length(beforeRerun);
         } else {
           // Either safe recovery or an explicit failure is acceptable; duplicates are not.
-          expect(caught).not.to.equal(undefined);
+          let cause = caught;
+          const seen = new Set<unknown>();
+          while (cause instanceof Error && cause !== failure && !seen.has(cause)) {
+            seen.add(cause);
+            cause = (cause as Error & { cause?: unknown }).cause;
+          }
+          expect(cause, 'the error must preserve the injected failure').to.equal(failure);
           expect(manager.counter).to.equal(0);
           expect((await getAliases(manager.cache)).get('pet')).to.equal(undefined);
         }

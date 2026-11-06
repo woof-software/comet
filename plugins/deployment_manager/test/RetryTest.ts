@@ -12,6 +12,8 @@ describe('DeploymentManager retry behavior', () => {
   beforeEach(() => {
     manager = new DeploymentManager('test-network', 'test-deployment', hre, { baseDir: tempDir() });
     timers = recordTimers();
+    const retry = manager.retry.bind(manager);
+    manager.retry = (action, retries, timeout, wait) => timers.run(() => retry(action, retries, timeout, wait));
     resets = 0;
     manager.resetSignersPendingCounts = async () => { resets++; };
   });
@@ -74,12 +76,15 @@ describe('DeploymentManager retry behavior', () => {
       if (attempts === 1) throw new Error('Retry after reset');
       return 'done';
     }, 1, 1000, 1);
+    const completed = result.then(() => undefined, () => undefined);
     try {
       await flushPromises();
       expect(resets).to.equal(1);
       expect(attempts).to.equal(1);
     } finally {
       reset.resolve();
+      // Drain the operation even if an earlier assertion failed.
+      await completed;
     }
     expect(await result).to.equal('done');
     expect(attempts).to.equal(2);
