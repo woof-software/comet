@@ -399,6 +399,10 @@ describe('transfer', function () {
           borrowInterestRateSlopeHigh: exp(0.3, 18),
         };
         const SUPPLY_AMOUNT:bigint = exp(100, baseTokenDecimals);
+        // Seed reserves keep lenders' value below the comet balance, so the supply-rate cut-off
+        // (0 utilization, lenders' value >= balance) is not reached and alice earns the base rate.
+        const SEED_RESERVES: bigint = exp(1_000, baseTokenDecimals);
+        const WAIT_TIME = 60 * 3600;
 
         let testComet: CometHarnessInterfaceExtendedAssetList;
         let testBaseToken: FaucetToken;
@@ -411,11 +415,14 @@ describe('transfer', function () {
         let bobPrincipalBefore: BigNumber;
 
         let earnedInterest: bigint;
+        let supplyIndexBefore: BigNumber;
+        let supplyRateBefore: BigNumber;
+        let lastAccrualTimeBefore: number;
 
         let transferTx: ContractTransaction;
 
         before(async () => {
-          const protocol = await makeProtocol({ ...interestRateParams, base: 'USDC'});
+          const protocol = await makeProtocol({ ...interestRateParams, base: 'USDC', baseTokenBalance: SEED_RESERVES });
           testComet = protocol.cometWithExtendedAssetList;
           testBaseToken = protocol.tokens.USDC as FaucetToken;
 
@@ -464,25 +471,45 @@ describe('transfer', function () {
           expect((await testComet.totalsBasic()).totalBorrowBase).to.equal(0n);
         });
 
+        it("supply rate is the base rate: no borrows, lenders' value below the comet balance", async () => {
+          expect(await testComet.getUtilization()).to.equal(0);
+          expect(await testComet.totalSupply()).to.be.lessThan(await testBaseToken.balanceOf(testComet.address));
+          supplyRateBefore = await testComet.getSupplyRate(0);
+          expect(supplyRateBefore).to.be.greaterThan(0);
+          expect(supplyRateBefore).to.equal(await testComet.supplyPerSecondInterestRateBase());
+        });
+
         it('wait some time to accrue interest', async () => {
-          await ethers.provider.send('evm_increaseTime', [60 * 3600]);
+          ({ baseSupplyIndex: supplyIndexBefore, lastAccrualTime: lastAccrualTimeBefore } = await testComet.totalsBasic());
+
+          await ethers.provider.send('evm_increaseTime', [WAIT_TIME]);
           await ethers.provider.send('evm_mine', []);
 
           await testComet.accrueAccount(ZERO_ADDRESS);
+        });
+
+        it('supply index accrued at the base rate over the waiting time', async () => {
+          const { baseSupplyIndex, lastAccrualTime } = await testComet.totalsBasic();
+          const expectedIndex = supplyIndexBefore.add(
+            supplyIndexBefore.mul(supplyRateBefore).mul(lastAccrualTime - lastAccrualTimeBefore).div(exp(1, 18))
+          );
+          expect(baseSupplyIndex).to.be.greaterThan(supplyIndexBefore);
+          expect(baseSupplyIndex).to.equal(expectedIndex);
         });
 
         it('alice principal is not changed', async () => {
           expect((await testComet.userBasic(alice.address)).principal).to.equal(newAlicePrincipal);
         });
 
-        it('earned interest is not changed', async () => {
+        it('alice earned interest', async () => {
           const baseSupplyIndex = (await testComet.totalsBasic()).baseSupplyIndex;
           earnedInterest = presentValueSupply(baseSupplyIndex, newAlicePrincipal) - SUPPLY_AMOUNT;
-          expect(earnedInterest).to.equal(0n);
+          expect(earnedInterest).to.be.greaterThan(0n);
         });
 
-        it('alice balanceOf is increased', async () => {
+        it('alice balanceOf is increased by the earned interest', async () => {
           const updatedAliceBalanceOf = await testComet.balanceOf(alice.address);
+          expect(updatedAliceBalanceOf).to.be.greaterThan(newAliceBalanceOf);
           expect(updatedAliceBalanceOf).to.be.approximately(newAliceBalanceOf.add(earnedInterest), 1n); // 1 wei precision
           newAliceBalanceOf = updatedAliceBalanceOf;
         });
@@ -511,6 +538,7 @@ describe('transfer', function () {
         });
 
         it('bob balanceOf becomes supplied amount + earned interest', async () => {
+          expect(await testComet.balanceOf(bob.address)).to.be.greaterThan(SUPPLY_AMOUNT);
           expect(await testComet.balanceOf(bob.address)).to.be.approximately(SUPPLY_AMOUNT + earnedInterest, 1n); // 1 wei precision
         });
       });
