@@ -68,7 +68,7 @@ export const blockscoutTestResult = {
 
 // `mainnet` imports go through Blockscout (see `blockScoutNetworks` in Import.ts), not Etherscan.
 export function mockImportSuccess(address: string) {
-  nock('https://eth.blockscout.com')
+  const sourceRequest = nock('https://eth.blockscout.com')
     .get('/api')
     .query((query) => {
       return (
@@ -98,6 +98,7 @@ export function mockImportSuccess(address: string) {
       message: 'OK',
       result: [{ input: `0x${contractCreationCode}` }],
     });
+  return sourceRequest;
 }
 
 describe('Import', () => {
@@ -121,6 +122,21 @@ describe('Import', () => {
     expect(
       await fetchContract(cache, 'mainnet', '0x0000000000000000000000000000000000000001', 0)
     ).to.equal(fiatTokenBuildFile);
+  });
+
+  it('bypasses an existing cached build file only when force is enabled', async () => {
+    const address = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+    const cache = new Cache('test-network', 'test-deployment');
+    const previous = { ...fiatTokenBuildFile, version: 'cached-version' };
+    await storeBuildFile(cache, 'mainnet', address, previous);
+    const request = mockImportSuccess(address);
+    expect(await fetchContract(cache, 'mainnet', address, 0)).to.equal(previous);
+    expect(request.isDone()).to.equal(false);
+
+    // Force must consume the explorer response even though a cache entry exists.
+    expect(await fetchAndCacheContract(cache, 'mainnet', address, 0, 0, true)).to.eql(fiatTokenBuildFile);
+    expect(request.isDone()).to.equal(true);
+    expect(await getBuildFile(cache, 'mainnet', address)).to.eql(fiatTokenBuildFile);
   });
 
   it('stores in cache', async () => {
