@@ -1322,6 +1322,7 @@ scenario(
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
 
+    let checkedAssets = 0;
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
       if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context, offset).withdrawCollateral))) continue;
@@ -1357,7 +1358,9 @@ scenario(
       const albertBalanceAfter = await comet.collateralBalanceOf(albert.address, collateralAsset.address);
       // Assert balance after withdraw
       expect(albertBalanceAfter).to.equal(albertBalanceBefore.toBigInt() - withdrawCollateral);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1374,6 +1377,7 @@ scenario(
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
 
+    let checkedAssets = 0;
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
       if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context).withdrawCollateral))) continue;
@@ -1428,7 +1432,9 @@ scenario(
 
       expect(albertTokenBalanceBefore).to.equal(albertTokenBalanceAfter);
       expect(bettyTokenBalanceAfter).to.equal(bettyTokenBalanceBefore + withdrawCollateral);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1446,6 +1452,7 @@ scenario(
     // Allow betty to withdraw asset from albert
     await albert.allow(betty, true);
 
+    let checkedAssets = 0;
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
       if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context).withdrawCollateral))) continue;
@@ -1500,7 +1507,9 @@ scenario(
 
       expect(albertTokenBalanceBefore).to.equal(albertTokenBalanceAfter);
       expect(bettyTokenBalanceAfter).to.equal(bettyTokenBalanceBefore + withdrawCollateral);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1575,6 +1584,7 @@ scenario(
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
 
+    let checkedAssets = 0;
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
 
@@ -1604,6 +1614,8 @@ scenario(
       );
       // should change token balance of user
       expect(await collateralAsset.balanceOf(albert.address)).to.equal(userAssetBalanceBefore + amountToWithdraw);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
