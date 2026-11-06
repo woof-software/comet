@@ -1421,7 +1421,7 @@ describe('supply', function () {
         expect(newBalance).to.be.greaterThan(aliceDisplayBalanceBefore);
       });
 
-      it("should change comet's total supply correctly after accrual (no collateral effect on supply)", async () => {
+      it("comet's stored total supply is unchanged after accrual (no collateral effect on supply)", async () => {
         expect((await comet.totalsBasic()).totalSupplyBase).to.equal(totalSupplyBefore);
       });
 
@@ -1437,8 +1437,8 @@ describe('supply', function () {
         //   trackingSupplyIndex += divBaseWei(baseTrackingSupplySpeed * timeElapsed, totalSupplyBase)
         //                        = baseTrackingSupplySpeed * timeElapsed * baseScale / totalSupplyBase
         // baseScale = 1e6 for USDC; trackingSupplyIndex is independent of the interest rate
-        // Example: speed=1e15, elapsed~3600, totalSupplyBase~3e15 (3e9 USDC principal)
-        // → delta = 1e15 * 3600 * 1e6 / 3e15 = 1200
+        // Example: speed=1e15, elapsed~3600, totalSupplyBase~8e15 (~8e9 USDC principal: alice ~7e9 + bob ~1e9)
+        // → delta = 1e15 * 3600 * 1e6 / 8e15 = 450
         const timeElapsed = supplyTimestamp.sub(cometUpdatedTimeBefore);
         const baseScale = exp(1, 6);
         const expectedTrackingSupplyIndex = trackingSupplyIndexBefore.add(
@@ -2538,7 +2538,7 @@ describe('supply', function () {
     for(let i = 1; i <= MAX_ASSETS; i++) {
       const assetIndex = i - 1;
 
-      it(`reverts on deactivated collateral supply with index ${i}`, async function () {
+      it(`reverts on deactivated collateral supply with index ${assetIndex}`, async function () {
         await cometWith24Collaterals.connect(pauseGuardian).deactivateCollateral(assetIndex);
 
         const supplyToken = tokensWith24Collaterals[`ASSET${assetIndex}`];
@@ -2550,7 +2550,7 @@ describe('supply', function () {
         ).to.be.revertedWithCustomError(cometWith24Collaterals, 'CollateralAssetSupplyPaused').withArgs(assetIndex);
       });
 
-      it(`allows to supplyTo re-activated collateral with index ${i}`, async function () {
+      it(`allows to supply re-activated collateral with index ${assetIndex}`, async function () {
         await cometWith24Collaterals.connect(governor).activateCollateral(assetIndex);
 
         const supplyToken = tokensWith24Collaterals[`ASSET${assetIndex}`];
@@ -2630,19 +2630,19 @@ describe('supply', function () {
       expect((await comet.totalsCollateral(collateralToken.address)).totalSupplyAsset).to.be.equal(expectedTotalSupplyAsset);
     });
 
-    it('updates user collateral in comet', async function () {
+    it('credits the recipient (alice) collateral in comet', async function () {
       const expectedAliceUserCollateral = BigNumber.from(aliceUserCollateralBefore.balance).add(collateralTokenSupplyAmount);
       expect((await comet.userCollateral(alice.address, collateralToken.address)).balance).to.be.equal(expectedAliceUserCollateral);
     });
 
-    it('updates user collateral in comet', async function () {
+    it('leaves the sender (bob) collateral unchanged', async function () {
       expect((await comet.userCollateral(bob.address, collateralToken.address)).balance).to.be.equal(bobUserCollateralBefore.balance);
     });
 
     for(let i = 1; i <= MAX_ASSETS; i++) {
       const assetIndex = i - 1;
 
-      it(`reverts on deactivated collateral supplyTo with index ${i}`, async function () {
+      it(`reverts on deactivated collateral supplyTo with index ${assetIndex}`, async function () {
         await cometWith24Collaterals.connect(pauseGuardian).deactivateCollateral(assetIndex);
 
         const supplyToken = tokensWith24Collaterals[`ASSET${assetIndex}`];
@@ -2654,7 +2654,7 @@ describe('supply', function () {
         ).to.be.revertedWithCustomError(cometWith24Collaterals, 'CollateralAssetSupplyPaused').withArgs(assetIndex);
       });
 
-      it(`allows to supplyTo re-activated collateral with index ${i}`, async function () {
+      it(`allows to supplyTo re-activated collateral with index ${assetIndex}`, async function () {
         await cometWith24Collaterals.connect(governor).activateCollateral(assetIndex);
 
         const supplyToken = tokensWith24Collaterals[`ASSET${assetIndex}`];
@@ -2707,19 +2707,19 @@ describe('supply', function () {
       expect((await comet.totalsCollateral(collateralToken.address)).totalSupplyAsset).to.be.equal(expectedTotalSupplyAsset);
     });
 
-    it('updates user collateral in comet', async function () {
+    it('credits the recipient (alice) collateral in comet', async function () {
       const expectedAliceUserCollateral = BigNumber.from(aliceUserCollateralBefore.balance).add(collateralTokenSupplyAmount);
       expect((await comet.userCollateral(alice.address, collateralToken.address)).balance).to.be.equal(expectedAliceUserCollateral);
     });
 
-    it('updates user collateral in comet', async function () {
+    it('leaves the `from` account (bob) collateral unchanged', async function () {
       expect((await comet.userCollateral(bob.address, collateralToken.address)).balance).to.be.equal(bobUserCollateralBefore.balance);
     });
 
     for(let i = 1; i <= MAX_ASSETS; i++) {
       const assetIndex = i - 1;
 
-      it(`reverts on deactivated collateral supplyFrom with index ${i}`, async function () {
+      it(`reverts on deactivated collateral supplyFrom with index ${assetIndex}`, async function () {
         await cometWith24Collaterals.connect(pauseGuardian).deactivateCollateral(assetIndex);
 
         const supplyToken = tokensWith24Collaterals[`ASSET${assetIndex}`];
@@ -2732,7 +2732,7 @@ describe('supply', function () {
         ).to.be.revertedWithCustomError(cometWith24Collaterals, 'CollateralAssetSupplyPaused').withArgs(assetIndex);
       });
 
-      it(`allows to supplyFrom re-activated collateral with index ${i}`, async function () {
+      it(`allows to supplyFrom re-activated collateral with index ${assetIndex}`, async function () {
         await cometWith24Collaterals.connect(governor).activateCollateral(assetIndex);
 
         const supplyToken = tokensWith24Collaterals[`ASSET${assetIndex}`];
