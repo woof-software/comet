@@ -325,6 +325,31 @@ describe('allowBySig', function () {
           1
         )
       ).to.be.revertedWith("custom error 'Unauthorized()'");
+
+      // Alice holds base, collateral and token approvals, so the rescinded permission is the only reason left to revert
+      const collateralAmount = exp(1, 18);
+      await collaterals.WETH.allocateTo(alice.address, 2n * collateralAmount);
+      await collaterals.WETH.connect(alice).approve(comet.address, 2n * collateralAmount);
+      await comet.connect(alice).supply(collaterals.WETH.address, collateralAmount);
+      await baseToken.allocateTo(alice.address, supplyAmount);
+      await baseToken.connect(alice).approve(comet.address, supplyAmount);
+      expect(await comet.balanceOf(alice.address)).to.be.gt(0);
+
+      await expect(
+        comet.connect(bob).supplyFrom(alice.address, bob.address, baseToken.address, supplyAmount)
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
+      await expect(
+        comet.connect(bob).supplyFrom(alice.address, bob.address, collaterals.WETH.address, collateralAmount)
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
+      await expect(
+        comet.connect(bob).transferFrom(alice.address, bob.address, 1)
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
+      await expect(
+        comet.connect(bob).transferAssetFrom(alice.address, bob.address, collaterals.WETH.address, collateralAmount)
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
+      await expect(
+        comet.connect(bob).withdrawFrom(alice.address, bob.address, collaterals.WETH.address, collateralAmount)
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
     });
   });
 
