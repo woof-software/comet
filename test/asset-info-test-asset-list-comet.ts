@@ -1,5 +1,5 @@
 import { AssetList, AssetList__factory, AssetListFactory, AssetListFactory__factory, FaucetToken, FaucetToken__factory, SimplePriceFeed, SimplePriceFeed__factory } from 'build/types';
-import { expect, exp, makeConfigurator, ONE, makeProtocol, ethers } from './helpers';
+import { expect, exp, makeConfigurator, ONE, makeProtocol, ethers, takeSnapshot, SnapshotRestorer } from './helpers';
 import { AssetInfoStructOutput } from 'build/types/AssetList';
 
 describe('asset info', function () {
@@ -397,6 +397,142 @@ describe('asset info', function () {
             liquidateCollateralFactor: exp(0.7, 18) + 1n,
           }])).to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
         });
+      });
+    });
+  });
+
+  /**
+   * The same factor rules, checked through the whole contract chain instead of AssetListFactory alone:
+   *  - deployment: makeConfigurator → CometWithExtendedAssetList constructor → AssetListFactory → AssetList
+   *  - upgrade: Configurator.updateAsset*() (stores the value without validating it) → CometProxyAdmin.deployAndUpgradeTo
+   *    → Configurator.deploy → CometFactoryWithExtendedAssetList → constructor → AssetListFactory → AssetList
+   */
+  describe('factors validation through the full contract chain', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+    const asset = (overrides: { borrowCF?: bigint, liquidateCF?: bigint, liquidationFactor?: bigint } = {}) => ({
+      USDC: {},
+      ASSET1: { borrowCF: BORROW_CF, liquidateCF: LIQUIDATE_CF, liquidationFactor: LIQUIDATION_FACTOR, ...overrides },
+    });
+
+    // any deployed market, only for the custom-error ABI
+    let errorsAbi: Awaited<ReturnType<typeof makeConfigurator>>['cometWithExtendedAssetList'];
+
+    before(async () => {
+      errorsAbi = (await makeConfigurator({ assets: asset() })).cometWithExtendedAssetList;
+    });
+
+    describe('at deployment', function () {
+      it('reverts with BorrowCFTooLarge when borrowCF >= liquidateCF (both > 0)', async () => {
+        await expect(makeConfigurator({ assets: asset({ borrowCF: LIQUIDATE_CF }) }))
+          .to.be.revertedWithCustomError(errorsAbi, 'BorrowCFTooLarge');
+      });
+
+      it('reverts with BorrowCFTooLarge when borrowCF > 0 and liquidateCF = 0', async () => {
+        await expect(makeConfigurator({ assets: asset({ liquidateCF: 0n }) }))
+          .to.be.revertedWithCustomError(errorsAbi, 'BorrowCFTooLarge');
+      });
+
+      it('reverts with LiquidateCFTooLarge when liquidateCF > MAX_COLLATERAL_FACTOR', async () => {
+        await expect(makeConfigurator({ assets: asset({ liquidateCF: ONE + exp(1, 14) }) }))
+          .to.be.revertedWithCustomError(errorsAbi, 'LiquidateCFTooLarge');
+      });
+
+      it('reverts with LiqPenaltyTooHigh when liquidationFactor > MAX_COLLATERAL_FACTOR', async () => {
+        await expect(makeConfigurator({ assets: asset({ liquidationFactor: ONE + exp(1, 14) }) }))
+          .to.be.revertedWithCustomError(errorsAbi, 'LiqPenaltyTooHigh');
+      });
+
+      it('deploys a soft-delisted asset (borrowCF = 0, liquidateCF > 0)', async () => {
+        const { cometWithExtendedAssetList: comet } = await makeConfigurator({ assets: asset({ borrowCF: 0n }) });
+        const info = await comet.getAssetInfo(0);
+        expect(info.borrowCollateralFactor).to.equal(0);
+        expect(info.liquidateCollateralFactor).to.equal(LIQUIDATE_CF);
+      });
+
+      it('deploys a fully delisted asset (borrowCF = 0, liquidateCF = 0, liquidationFactor = 0)', async () => {
+        const { cometWithExtendedAssetList: comet } = await makeConfigurator({
+          assets: asset({ borrowCF: 0n, liquidateCF: 0n, liquidationFactor: 0n }),
+        });
+        const info = await comet.getAssetInfo(0);
+        expect(info.borrowCollateralFactor).to.equal(0);
+        expect(info.liquidateCollateralFactor).to.equal(0);
+        expect(info.liquidationFactor).to.equal(0);
+      });
+    });
+
+    describe('at upgrade (configurator update + deployAndUpgradeTo)', function () {
+      let protocol: Awaited<ReturnType<typeof makeConfigurator>>;
+      let configuratorAsProxy: Awaited<ReturnType<typeof makeConfigurator>>['configurator'];
+      let cometProxyAddress: string;
+      let assetAddress: string;
+      let implementationBefore: string;
+      let upgradeFixture: SnapshotRestorer;
+
+      before(async () => {
+        protocol = await makeConfigurator({ assets: asset() });
+        configuratorAsProxy = protocol.configurator.attach(protocol.configuratorProxy.address);
+        cometProxyAddress = protocol.cometProxyWithExtendedAssetList.address;
+        assetAddress = protocol.tokens['ASSET1'].address;
+        implementationBefore = await protocol.proxyAdmin.getProxyImplementation(cometProxyAddress);
+        upgradeFixture = await takeSnapshot();
+      });
+
+      const upgrade = () => protocol.proxyAdmin.connect(protocol.governor).deployAndUpgradeTo(protocol.configuratorProxy.address, cometProxyAddress);
+      const cometAtProxy = () => protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
+
+      /** The rejected upgrade left the proxy on the old implementation with the old factors. */
+      async function expectUnchanged() {
+        expect(await protocol.proxyAdmin.getProxyImplementation(cometProxyAddress)).to.equal(implementationBefore);
+        const info = await cometAtProxy().getAssetInfoByAddress(assetAddress);
+        expect(info.borrowCollateralFactor).to.equal(BORROW_CF);
+        expect(info.liquidateCollateralFactor).to.equal(LIQUIDATE_CF);
+        expect(info.liquidationFactor).to.equal(LIQUIDATION_FACTOR);
+      }
+
+      it('liquidationFactor > MAX: the configurator stores it, the upgrade reverts with LiqPenaltyTooHigh', async () => {
+        await upgradeFixture.restore();
+        await configuratorAsProxy.connect(protocol.governor).updateAssetLiquidationFactor(cometProxyAddress, assetAddress, ONE + exp(1, 14));
+
+        await expect(upgrade()).to.be.revertedWithCustomError(errorsAbi, 'LiqPenaltyTooHigh');
+        await expectUnchanged();
+      });
+
+      it('borrowCF >= liquidateCF: the upgrade reverts with BorrowCFTooLarge', async () => {
+        await upgradeFixture.restore();
+        await configuratorAsProxy.connect(protocol.governor).updateAssetBorrowCollateralFactor(cometProxyAddress, assetAddress, LIQUIDATE_CF);
+
+        await expect(upgrade()).to.be.revertedWithCustomError(errorsAbi, 'BorrowCFTooLarge');
+        await expectUnchanged();
+      });
+
+      it('liquidateCF = 0 with borrowCF > 0: the upgrade reverts with BorrowCFTooLarge', async () => {
+        await upgradeFixture.restore();
+        await configuratorAsProxy.connect(protocol.governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, assetAddress, 0n);
+
+        await expect(upgrade()).to.be.revertedWithCustomError(errorsAbi, 'BorrowCFTooLarge');
+        await expectUnchanged();
+      });
+
+      it('liquidateCF > MAX: the upgrade reverts with LiquidateCFTooLarge', async () => {
+        await upgradeFixture.restore();
+        await configuratorAsProxy.connect(protocol.governor).updateAssetLiquidateCollateralFactor(cometProxyAddress, assetAddress, ONE + exp(1, 14));
+
+        await expect(upgrade()).to.be.revertedWithCustomError(errorsAbi, 'LiquidateCFTooLarge');
+        await expectUnchanged();
+      });
+
+      it('soft delist (borrowCF = 0): the upgrade succeeds and the proxy reads the new factors', async () => {
+        await upgradeFixture.restore();
+        await configuratorAsProxy.connect(protocol.governor).updateAssetBorrowCollateralFactor(cometProxyAddress, assetAddress, 0n);
+
+        await expect(upgrade()).to.not.be.reverted;
+        expect(await protocol.proxyAdmin.getProxyImplementation(cometProxyAddress)).to.not.equal(implementationBefore);
+        const info = await cometAtProxy().getAssetInfoByAddress(assetAddress);
+        expect(info.borrowCollateralFactor).to.equal(0);
+        expect(info.liquidateCollateralFactor).to.equal(LIQUIDATE_CF);
+        expect(info.liquidationFactor).to.equal(LIQUIDATION_FACTOR);
       });
     });
   });
