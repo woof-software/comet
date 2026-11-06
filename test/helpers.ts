@@ -710,9 +710,9 @@ export async function setTotalsBasic(cometWithExtendedAssetList: CometHarnessInt
   return t1;
 }
 
-export async function updateAssetBorrowCollateralFactor(configurator: Configurator, cometProxyAdmin: CometProxyAdmin, cometAddress: string, assetAddress: string, borrowCF: bigint) {
-  await configurator.updateAssetBorrowCollateralFactor(cometAddress, assetAddress, borrowCF);
-  await cometProxyAdmin.deployAndUpgradeTo(configurator.address, cometAddress);
+export async function updateAssetBorrowCollateralFactor(configurator: Configurator, cometProxyAdmin: CometProxyAdmin, cometAddress: string, assetAddress: string, borrowCF: bigint, governor: SignerWithAddress) {
+  await configurator.connect(governor).updateAssetBorrowCollateralFactor(cometAddress, assetAddress, borrowCF);
+  await cometProxyAdmin.connect(governor).deployAndUpgradeTo(configurator.address, cometAddress);
 }
 
 export async function updateAssetLiquidateCollateralFactor(configurator: Configurator, cometProxyAdmin: CometProxyAdmin, cometAddress: string, assetAddress: string, liquidateCF: bigint, governor: SignerWithAddress) {

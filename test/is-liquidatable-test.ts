@@ -1190,7 +1190,7 @@ describe('isLiquidatable', function () {
       // With positive liquidateCF and ample collateral, not liquidatable
       expect(await comet.isLiquidatable(alice.address)).to.be.false;
 
-      await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n);
+      await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n, governor);
     });
 
     it('liquidity calculation includes collateral with positive liquidateCF', async () => {
@@ -1264,7 +1264,7 @@ describe('isLiquidatable', function () {
       // Zero liquidateCF for three assets: ASSET1, ASSET3, ASSET4
       const zeroLcfSymbols = ['ASSET1', 'ASSET3', 'ASSET4'];
       for (const sym of zeroLcfSymbols) {
-        await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, tokens[sym].address, 0n);
+        await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, tokens[sym].address, 0n, governor);
         await updateAssetLiquidateCollateralFactor(configurator, proxyAdmin, comet.address, tokens[sym].address, 0n, governor);
       }
 
@@ -1306,7 +1306,7 @@ describe('isLiquidatable', function () {
         // Initially not liquidatable with positive liquidateCF
         expect(await comet.isLiquidatable(alice.address)).to.be.false;
 
-        await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, targetToken.address, 0n);
+        await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, targetToken.address, 0n, governor);
 
         // Zero liquidateCF for the target asset (the only supplied asset)
         await updateAssetLiquidateCollateralFactor(configurator, proxyAdmin, comet.address, targetToken.address, 0n, governor);
@@ -1417,7 +1417,7 @@ describe('isLiquidatable', function () {
 
         it('governance sets liquidateCollateralFactor to 0 for the affected asset', async () => {
           // set borrowCF to 0 first, as we have check in AssetList BCF < LCF
-          await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n);
+          await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n, governor);
           await updateAssetLiquidateCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n, governor);
         });
 
@@ -1540,7 +1540,7 @@ describe('isLiquidatable', function () {
 
         it('governance sets liquidateCollateralFactor to 0 for the affected asset', async () => {
           // zero borrowCF first — AssetList validates borrowCF < liquidateCF
-          await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n);
+          await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n, governor);
           await updateAssetLiquidateCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n, governor);
         });
 
