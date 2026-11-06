@@ -1154,9 +1154,10 @@ describe('transfer', function () {
       });
 
       it('alice assetsIn increases and collateral is the only asset', async () => {
-        const assetsInList = await comet.getAssetList(dave.address);
-        expect(assetsInList).to.include(collateral.address);
-        expect((await comet.userBasic(dave.address)).assetsIn).to.equal(1);
+        // alice held no collateral before; the transfer must register the collateral for her
+        expect(await comet.getAssetList(alice.address)).to.deep.equal([collateral.address]);
+        const offset = (await comet.getAssetInfoByAddress(collateral.address)).offset;
+        expect((await comet.userBasic(alice.address)).assetsIn).to.equal(1 << offset);
       });
 
       it('total collateral amount is not changed', async () => {
