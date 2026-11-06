@@ -1,6 +1,6 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { isValidAssetIndex, matchesDeployment, MAX_ASSETS, timeUntilUnderwater } from './utils';
+import { isValidAssetIndex, matchesDeployment, MAX_ASSETS, supportsConfigurableMaxSupportedUtilization, timeUntilUnderwater } from './utils';
 import { ethers, event, exp, wait } from '../test/helpers';
 import CometActor from './context/CometActor';
 import { CometInterface, OnChainLiquidator } from '../build/types';
@@ -789,7 +789,7 @@ scenario(
       upgrade: {
         targetReserves: exp(20_000, 18)
       },
-      filter: async (ctx) => matchesDeployment(ctx, [{ network: 'mainnet' }]) && !matchesDeployment(ctx, [{deployment: 'wsteth'}, {deployment: 'usds'}, {deployment: 'wbtc'}]),
+      filter: async (ctx) => matchesDeployment(ctx, [{ network: 'mainnet' }]) && !matchesDeployment(ctx, [{deployment: 'wsteth'}, {deployment: 'usds'}, {deployment: 'wbtc'}]) && await supportsConfigurableMaxSupportedUtilization(ctx),
       tokenBalances: async (ctx) => (
         {
           $comet: {

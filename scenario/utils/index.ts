@@ -516,9 +516,9 @@ export async function supportUtilizationLimit(ctx: CometContext): Promise<boolea
     const ethers = ctx.world.deploymentManager.hre.ethers;
     
     const iface = new ethers.utils.Interface([
-      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
+      'function maxSupportedUtilization() external view returns (uint64)',
     ]);
-    const functionSelector = iface.getSighash('MAX_SUPPORTED_UTILIZATION');
+    const functionSelector = iface.getSighash('maxSupportedUtilization');
     
     // Try to call the function using a low-level static call
     // If the function doesn't exist, this will revert
@@ -1974,6 +1974,27 @@ export async function supportsMarketAdminPermissionChecker(ctx: CometContext): P
   }
 }
 
+export async function supportsConfigurableMaxSupportedUtilization(ctx: CometContext): Promise<boolean> {
+  try {
+    const configurator = await ctx.getConfigurator();
+    const proxyAdmin = await ctx.getCometAdmin();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+
+    // Fixed signature, since the cached Configurator on forks carries the ABI of the old implementation
+    const iface = new ethers.utils.Interface([
+      'function setMaxSupportedUtilization(address cometProxy, uint64 newMaxSupportedUtilization)'
+    ]);
+    const functionSelector = iface.getSighash('setMaxSupportedUtilization');
+
+    const implementation = await proxyAdmin.getProxyImplementation(configurator.address);
+    const code = await ethers.provider.getCode(implementation);
+
+    return code.includes(functionSelector.slice(2));
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
  * Check if Comet supports extended pause functionality
  * @param ctx The Comet context
@@ -2089,4 +2110,15 @@ export async function getMinimumBorrowAmounts(context: CometContext, collateralI
   supplyAmount = (supplyAmount * 11n) / 10n;
 
   return { collateralAsset, supplyAmount, borrowAmount };
+}
+
+/**
+ * @notice Sources the asset to the actor and supplies it to Comet
+ * @dev Comet rejects borrows from a market without supply, so the base for a borrow has to come from a lender
+ */
+export async function sourceAndSupply(context: CometContext, asset: CometAsset, actor: CometActor, amount: bigint) {
+  const comet = await context.getComet();
+  await context.sourceTokens(amount, asset, actor.address);
+  await asset.approve(actor, comet.address);
+  await actor.safeSupplyAsset({ asset: asset.address, amount });
 }

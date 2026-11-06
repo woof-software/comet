@@ -1,5 +1,7 @@
 import { ethers } from 'hardhat';
-import { defaultAssets, expect, exp, factorScale, fastForward, makeProtocol, makeRewards, objectify, wait, event, getBlock } from './helpers';
+import { defaultAssets, expect, exp, factorScale, fastForward, makeProtocol, makeRewards, objectify, wait, event, getBlock, allocateAndSupply } from './helpers';
+
+const INITIAL_LENDER_SUPPLY = exp(1e6, 6);
 
 describe('CometRewards', () => {
   describe('claim + supply', () => {
@@ -203,16 +205,18 @@ describe('CometRewards', () => {
         cometWithExtendedAssetList: comet,
         governor,
         tokens: { USDC, COMP, WBTC },
-        users: [alice, bob],
+        users: [alice, bob, initialLender],
       } = await makeProtocol({
         baseMinForRewards: exp(10, 6),
         baseTrackingBorrowSpeed: exp(2, 15)
       });
       const { rewards } = await makeRewards({ governor, configs: [[comet, COMP]] });
 
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet, USDC, initialLender, INITIAL_LENDER_SUPPLY);
+
       // allocate and approve transfers
       await COMP.allocateTo(rewards.address, exp(86400 * 2, 18));
-      await USDC.allocateTo(comet.address, exp(1e6, 6));
       await WBTC.allocateTo(alice.address, exp(1, 8));
       await WBTC.connect(alice).approve(comet.address, exp(1, 8));
 
@@ -245,7 +249,7 @@ describe('CometRewards', () => {
         cometWithExtendedAssetList: comet,
         governor,
         tokens: { USDC, COMP, WBTC },
-        users: [alice, bob],
+        users: [alice, bob, initialLender],
       } = await makeProtocol({
         assets: defaultAssets({}, {
           COMP: { decimals: 5 }
@@ -255,9 +259,11 @@ describe('CometRewards', () => {
       });
       const { rewards } = await makeRewards({ governor, configs: [[comet, COMP]] });
 
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet, USDC, initialLender, INITIAL_LENDER_SUPPLY);
+
       // allocate and approve transfers
       await COMP.allocateTo(rewards.address, exp(86400 * 2, 5));
-      await USDC.allocateTo(comet.address, exp(1e6, 6));
       await WBTC.allocateTo(alice.address, exp(1, 8));
       await WBTC.connect(alice).approve(comet.address, exp(1, 8));
 
@@ -280,7 +286,7 @@ describe('CometRewards', () => {
         cometWithExtendedAssetList: comet,
         governor,
         tokens: { USDC, COMP, WBTC },
-        users: [alice, bob],
+        users: [alice, bob, initialLender],
       } = await makeProtocol({
         assets: defaultAssets({}, {
           COMP: { decimals: 6 }
@@ -290,9 +296,11 @@ describe('CometRewards', () => {
       });
       const { rewards } = await makeRewards({ governor, configs: [[comet, COMP]] });
 
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet, USDC, initialLender, INITIAL_LENDER_SUPPLY);
+
       // allocate and approve transfers
       await COMP.allocateTo(rewards.address, exp(86400 * 2, 6));
-      await USDC.allocateTo(comet.address, exp(1e6, 6));
       await WBTC.allocateTo(alice.address, exp(1, 8));
       await WBTC.connect(alice).approve(comet.address, exp(1, 8));
 
@@ -315,16 +323,18 @@ describe('CometRewards', () => {
         cometWithExtendedAssetList: comet,
         governor,
         tokens: { USDC, COMP, WBTC },
-        users: [alice, bob],
+        users: [alice, bob, initialLender],
       } = await makeProtocol({
         baseMinForRewards: exp(10, 6),
         baseTrackingBorrowSpeed: exp(2, 15)
       });
       const { rewards } = await makeRewards({ governor, configs: [[comet, COMP]] });
 
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet, USDC, initialLender, INITIAL_LENDER_SUPPLY);
+
       // allocate and approve transfers
       await COMP.allocateTo(rewards.address, exp(86400 * 2, 18));
-      await USDC.allocateTo(comet.address, exp(1e6, 6));
       await WBTC.allocateTo(alice.address, exp(1, 8));
       await WBTC.connect(alice).approve(comet.address, exp(1, 8));
 
@@ -365,14 +375,16 @@ describe('CometRewards', () => {
         cometWithExtendedAssetList: comet,
         governor,
         tokens: { USDC, COMP, WBTC },
-        users: [alice, bob],
+        users: [alice, bob, initialLender],
       } = await makeProtocol({
         baseMinForRewards: 10e6,
       });
       const { rewards } = await makeRewards({ governor, configs: [[comet, COMP]] });
 
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet, USDC, initialLender, INITIAL_LENDER_SUPPLY);
+
       // allocate and approve transfers
-      await USDC.allocateTo(comet.address, exp(1e6, 6));
       await WBTC.allocateTo(alice.address, exp(1, 8));
       await WBTC.connect(alice).approve(comet.address, exp(1, 8));
 
@@ -1166,7 +1178,7 @@ for (const { multiplier } of TEST_CASES) {
           cometWithExtendedAssetList: comet,
           governor,
           tokens: { USDC, COMP, WBTC },
-          users: [alice, bob]
+          users: [alice, bob, initialLender]
         } = await makeProtocol({
           baseMinForRewards: exp(10, 6),
           baseTrackingBorrowSpeed: exp(2, 15)
@@ -1176,9 +1188,11 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
 
+        // Borrowing requires at least one lender, so seed the market with an initial supply
+        await allocateAndSupply(comet, USDC, initialLender, INITIAL_LENDER_SUPPLY);
+
         // allocate and approve transfers
         await COMP.allocateTo(rewards.address, exp(86400 * 2 * MULTIPLIER, 18));
-        await USDC.allocateTo(comet.address, exp(1e6, 6));
         await WBTC.allocateTo(alice.address, exp(1, 8));
         await WBTC.connect(alice).approve(comet.address, exp(1, 8));
 
@@ -1215,7 +1229,7 @@ for (const { multiplier } of TEST_CASES) {
           cometWithExtendedAssetList: comet,
           governor,
           tokens: { USDC, COMP, WBTC },
-          users: [alice, bob]
+          users: [alice, bob, initialLender]
         } = await makeProtocol({
           assets: defaultAssets(
             {},
@@ -1231,9 +1245,11 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
 
+        // Borrowing requires at least one lender, so seed the market with an initial supply
+        await allocateAndSupply(comet, USDC, initialLender, INITIAL_LENDER_SUPPLY);
+
         // allocate and approve transfers
         await COMP.allocateTo(rewards.address, exp(86400 * 2 * MULTIPLIER, 5));
-        await USDC.allocateTo(comet.address, exp(1e6, 6));
         await WBTC.allocateTo(alice.address, exp(1, 8));
         await WBTC.connect(alice).approve(comet.address, exp(1, 8));
 
@@ -1260,7 +1276,7 @@ for (const { multiplier } of TEST_CASES) {
           cometWithExtendedAssetList: comet,
           governor,
           tokens: { USDC, COMP, WBTC },
-          users: [alice, bob]
+          users: [alice, bob, initialLender]
         } = await makeProtocol({
           assets: defaultAssets(
             {},
@@ -1276,9 +1292,11 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
 
+        // Borrowing requires at least one lender, so seed the market with an initial supply
+        await allocateAndSupply(comet, USDC, initialLender, INITIAL_LENDER_SUPPLY);
+
         // allocate and approve transfers
         await COMP.allocateTo(rewards.address, exp(86400 * 2 * MULTIPLIER, 6));
-        await USDC.allocateTo(comet.address, exp(1e6, 6));
         await WBTC.allocateTo(alice.address, exp(1, 8));
         await WBTC.connect(alice).approve(comet.address, exp(1, 8));
 
@@ -1305,7 +1323,7 @@ for (const { multiplier } of TEST_CASES) {
           cometWithExtendedAssetList: comet,
           governor,
           tokens: { USDC, COMP, WBTC },
-          users: [alice, bob]
+          users: [alice, bob, initialLender]
         } = await makeProtocol({
           baseMinForRewards: exp(10, 6),
           baseTrackingBorrowSpeed: exp(2, 15)
@@ -1315,9 +1333,11 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
 
+        // Borrowing requires at least one lender, so seed the market with an initial supply
+        await allocateAndSupply(comet, USDC, initialLender, INITIAL_LENDER_SUPPLY);
+
         // allocate and approve transfers
         await COMP.allocateTo(rewards.address, exp(86400 * 2 * MULTIPLIER, 18));
-        await USDC.allocateTo(comet.address, exp(1e6, 6));
         await WBTC.allocateTo(alice.address, exp(1, 8));
         await WBTC.connect(alice).approve(comet.address, exp(1, 8));
 
@@ -1362,7 +1382,7 @@ for (const { multiplier } of TEST_CASES) {
           cometWithExtendedAssetList: comet,
           governor,
           tokens: { USDC, COMP, WBTC },
-          users: [alice, bob]
+          users: [alice, bob, initialLender]
         } = await makeProtocol({
           baseMinForRewards: 10e6
         });
@@ -1371,8 +1391,10 @@ for (const { multiplier } of TEST_CASES) {
           configs: [[comet, COMP, MULTIPLIER_FACTOR]]
         });
 
+        // Borrowing requires at least one lender, so seed the market with an initial supply
+        await allocateAndSupply(comet, USDC, initialLender, INITIAL_LENDER_SUPPLY);
+
         // allocate and approve transfers
-        await USDC.allocateTo(comet.address, exp(1e6, 6));
         await WBTC.allocateTo(alice.address, exp(1, 8));
         await WBTC.connect(alice).approve(comet.address, exp(1, 8));
 

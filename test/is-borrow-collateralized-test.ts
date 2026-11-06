@@ -24,7 +24,8 @@ import {
   SnapshotRestorer,
   takeSnapshot,
   updateAssetBorrowCollateralFactor,
-  getLiquidity
+  getLiquidity,
+  allocateAndSupply
 } from './helpers';
 
 describe('isBorrowCollateralized', function () {
@@ -32,6 +33,7 @@ describe('isBorrowCollateralized', function () {
   const ONE_HOUR = 60 * 60;
   const baseTokenDecimals = 6;
   const collateralTokenDecimals = 18;
+  const initialLenderSupply = exp(10_000, baseTokenDecimals);
   // Configurator and protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
   let configurator: Configurator;
@@ -1596,7 +1598,8 @@ describe('isBorrowCollateralized', function () {
             aliceBaseBalanceBefore = await baseToken.balanceOf(alice.address);
             basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
             baseScale = await comet.baseScale();
-            await baseToken.allocateTo(comet.address, WITHDRAW_AMOUNT); // fund comet with base token to allow withdraw
+            // Borrowing requires at least one lender, so seed the market with an initial supply
+            await allocateAndSupply(comet, baseToken, liquidityProvider, initialLenderSupply);
           });
 
           it('alice withdraws 1100 USDC and opens a borrow-backed withdrawal', async () => {
@@ -2333,6 +2336,9 @@ describe('isBorrowCollateralized', function () {
       // Deploy a price feed that always reverts on latestRoundData
       const PriceFeedWithRevertFactory = (await ethers.getContractFactory('PriceFeedWithRevert')) as PriceFeedWithRevert__factory;
       priceFeedWithRevert = await PriceFeedWithRevertFactory.deploy(100, 8);
+
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet, baseToken, liquidityProvider, initialLenderSupply);
 
       snapshot = await takeSnapshot();
 

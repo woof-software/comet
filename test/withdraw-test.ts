@@ -1,4 +1,4 @@
-import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS, UserCollateral } from './helpers';
+import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS, UserCollateral, allocateAndSupply } from './helpers';
 import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList, SimplePriceFeed } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
@@ -90,6 +90,7 @@ describe('withdraw', function () {
       const SUPPLY_AMOUNT = exp(100, 6);
       const BORROW_AMOUNT = exp(80, 6);
       const COLLATERAL_SUPPLY = exp(1, 18);
+      const WITHDRAW_AMOUNT = exp(50, 6); // Stays within the utilization limit, but exceeds the base balance of Comet
 
       it('reverts if withdraw is paused', async () => {
         await comet.connect(pauseGuardian).pause(false, false, true, false, false);
@@ -111,7 +112,7 @@ describe('withdraw', function () {
         await comet.connect(bob).withdraw(baseToken.address, BORROW_AMOUNT);
 
         await expect(
-          comet.connect(alice).withdraw(baseToken.address, SUPPLY_AMOUNT)
+          comet.connect(alice).withdraw(baseToken.address, WITHDRAW_AMOUNT)
         ).to.be.revertedWith('ERC20: transfer amount exceeds balance');
         
         await snapshot.restore();
@@ -286,7 +287,8 @@ describe('withdraw', function () {
         before(async () => {
           await accrualSnapshot.restore();
 
-          await baseToken.allocateTo(comet.address, exp(60, 6));
+          // Third-party lender keeps supply in the market after bob withdraws everything
+          await allocateAndSupply(comet, baseToken, dave, exp(60, 6));
 
           await fastForward(TIME_FORWARD_SECONDS);
           await ethers.provider.send('evm_mine', []);
