@@ -177,7 +177,7 @@ describe('configurator', function() {
       [configuratorProxy.address, cometProxy.address]
     );
 
-    expect(
+    await expect(
       timelock.executeTransactions(
         [proxyAdmin.address],
         [0],

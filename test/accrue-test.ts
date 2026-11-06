@@ -108,7 +108,7 @@ describe('accrue', function () {
     });
 
     it('accruing with no positions should be possible', async function () {
-      expect(await comet.accrueAccount(alice.address)).to.not.be.reverted;
+      await expect(comet.accrueAccount(alice.address)).to.not.be.reverted;
     });
 
     it('utilization should still be 0 after accrue with no borrowers', async function () {
@@ -330,7 +330,7 @@ describe('accrue', function () {
       await collaterals.WETH.connect(bob).approve(comet.address, exp(1, 18));
       await comet.connect(bob).supply(collaterals.WETH.address, exp(1, 18));
 
-      expect(await comet.connect(bob).withdraw(baseToken.address, borrowAmount)).to.not.be.reverted;
+      await expect(comet.connect(bob).withdraw(baseToken.address, borrowAmount)).to.not.be.reverted;
       totalsBefore = await comet.totalsBasic();
       userBasicBefore = await comet.userBasic(bob.address);
 

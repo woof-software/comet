@@ -134,15 +134,15 @@ describe('collateral deactivation functionality', function () {
       });
 
       it('emits CollateralDeactivated event', async function () {
-        expect(deactivateCollateralTx).to.emit(cometExt, 'CollateralDeactivated').withArgs(ASSET_INDEX);
+        await expect(deactivateCollateralTx).to.emit(cometExt, 'CollateralDeactivated').withArgs(ASSET_INDEX);
       });
 
       it('emits CollateralAssetSupplyPauseAction event', async function () {
-        expect(deactivateCollateralTx).to.emit(cometExt, 'CollateralAssetSupplyPauseAction').withArgs(ASSET_INDEX, true);
+        await expect(deactivateCollateralTx).to.emit(cometExt, 'CollateralAssetSupplyPauseAction').withArgs(ASSET_INDEX, true);
       });
 
       it('emits CollateralAssetTransferPauseAction event', async function () {
-        expect(deactivateCollateralTx).to.emit(cometExt, 'CollateralAssetTransferPauseAction').withArgs(ASSET_INDEX, true);
+        await expect(deactivateCollateralTx).to.emit(cometExt, 'CollateralAssetTransferPauseAction').withArgs(ASSET_INDEX, true);
       });
 
       it('sets collateral as deactivated in comet', async function () {
@@ -187,15 +187,15 @@ describe('collateral deactivation functionality', function () {
       });
 
       it('emits CollateralActivated event', async function () {
-        expect(activateCollateralTx).to.emit(cometExt, 'CollateralActivated').withArgs(ASSET_INDEX);
+        await expect(activateCollateralTx).to.emit(cometExt, 'CollateralActivated').withArgs(ASSET_INDEX);
       });
 
       it('emits CollateralAssetSupplyPauseAction event', async function () {
-        expect(activateCollateralTx).to.emit(cometExt, 'CollateralAssetSupplyPauseAction').withArgs(ASSET_INDEX, false);
+        await expect(activateCollateralTx).to.emit(cometExt, 'CollateralAssetSupplyPauseAction').withArgs(ASSET_INDEX, false);
       });
 
       it('emits CollateralAssetTransferPauseAction event', async function () {
-        expect(activateCollateralTx).to.emit(cometExt, 'CollateralAssetTransferPauseAction').withArgs(ASSET_INDEX, false);
+        await expect(activateCollateralTx).to.emit(cometExt, 'CollateralAssetTransferPauseAction').withArgs(ASSET_INDEX, false);
       });
 
       it('sets collateral as activated in comet', async function () {
