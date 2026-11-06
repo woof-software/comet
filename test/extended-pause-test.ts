@@ -1,5 +1,5 @@
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-import { expect, makeProtocol, MAX_ASSETS, takeSnapshot, SnapshotRestorer } from './helpers';
+import { ethers, exp, expect, makeProtocol, MAX_ASSETS, takeSnapshot, SnapshotRestorer } from './helpers';
 import { CometExt, CometHarnessInterfaceExtendedAssetList, FaucetToken } from 'build/types';
 import { ContractTransaction } from 'ethers';
 
@@ -1998,4 +1998,240 @@ describe('extended pause functionality', function () {
       });
     });
   });
+
+  /**
+   * @title What each extended pause leaves working
+   * @notice extended-pause-test checks that each pause blocks its own action and sets only its own flag.
+   *  These flows check the behaviour around it on a market with a lender and a borrower:
+   *  - pauseBaseSupply also blocks repaying a borrow (a repay is a base supply);
+   *  - a lenders pause leaves borrowers working and a borrowers pause leaves lenders working,
+   *    for withdraw and for transfer;
+   *  - a per-asset collateral pause leaves the other collateral working.
+   *
+   *  Setup: alice lends 10,000 USDC, bob borrows 1,000 USDC against 1 WETH, charles holds WETH and WBTC.
+   */
+  describe('extended pause side effects', function () {
+    const USDC_SCALE = exp(1, 6);
+    const LEND_AMOUNT = 10_000n * USDC_SCALE;
+    const BORROW_AMOUNT = 1_000n * USDC_SCALE;
+    const STEP_AMOUNT = 100n * USDC_SCALE;
+
+    let comet: CometHarnessInterfaceExtendedAssetList;
+    let cometExt: CometExt;
+    let usdc: FaucetToken;
+    let weth: FaucetToken;
+    let wbtc: FaucetToken;
+    let wethIndex: number;
+    let alice: SignerWithAddress;
+    let bob: SignerWithAddress;
+    let charles: SignerWithAddress;
+    let pauseGuardian: SignerWithAddress;
+    let fixture: SnapshotRestorer;
+
+    before(async function () {
+      const protocol = await makeProtocol({
+        base: 'USDC',
+        assets: {
+          USDC: { decimals: 6 },
+          WETH: { decimals: 18, initialPrice: 3000, borrowCF: exp(0.8, 18), liquidateCF: exp(0.85, 18), liquidationFactor: exp(0.9, 18) },
+          WBTC: { decimals: 8, initialPrice: 41000, borrowCF: exp(0.7, 18), liquidateCF: exp(0.75, 18), liquidationFactor: exp(0.9, 18) },
+        },
+      });
+      comet = protocol.cometWithExtendedAssetList;
+      cometExt = comet.attach(comet.address) as CometExt;
+      usdc = protocol.tokens.USDC as FaucetToken;
+      weth = protocol.tokens.WETH as FaucetToken;
+      wbtc = protocol.tokens.WBTC as FaucetToken;
+      wethIndex = (await comet.getAssetInfoByAddress(weth.address)).offset;
+      [alice, bob, charles] = protocol.users;
+      pauseGuardian = protocol.pauseGuardian;
+
+      // alice lends; her supply is the cash bob borrows
+      await usdc.allocateTo(alice.address, 2n * LEND_AMOUNT);
+      await usdc.connect(alice).approve(comet.address, ethers.constants.MaxUint256);
+      await comet.connect(alice).supply(usdc.address, LEND_AMOUNT);
+
+      // bob borrows against 1 WETH, and has USDC in his wallet to repay with
+      await weth.allocateTo(bob.address, exp(2, 18));
+      await weth.connect(bob).approve(comet.address, ethers.constants.MaxUint256);
+      await comet.connect(bob).supply(weth.address, exp(1, 18));
+      await comet.connect(bob).withdraw(usdc.address, BORROW_AMOUNT);
+      await usdc.allocateTo(bob.address, BORROW_AMOUNT);
+      await usdc.connect(bob).approve(comet.address, ethers.constants.MaxUint256);
+
+      // charles holds both collaterals, with no borrow
+      await weth.allocateTo(charles.address, exp(2, 18));
+      await wbtc.allocateTo(charles.address, exp(2, 8));
+      await weth.connect(charles).approve(comet.address, ethers.constants.MaxUint256);
+      await wbtc.connect(charles).approve(comet.address, ethers.constants.MaxUint256);
+      await comet.connect(charles).supply(weth.address, exp(1, 18));
+      await comet.connect(charles).supply(wbtc.address, exp(1, 8));
+
+      fixture = await takeSnapshot();
+    });
+
+    after(async function () {
+      await fixture.restore();
+    });
+
+    describe('pauseBaseSupply blocks repaying a borrow', function () {
+      let principalBefore: bigint;
+
+      before(async function () {
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseBaseSupply(true);
+      });
+
+      it('bob has a borrow to repay', async function () {
+        principalBefore = (await comet.userBasic(bob.address)).principal.toBigInt();
+        expect(principalBefore).to.be.lessThan(0n);
+      });
+
+      it('repay with supply reverts with BaseSupplyPaused', async function () {
+        await expect(comet.connect(bob).supply(usdc.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
+      });
+
+      it('repay-all with supply(MaxUint256) reverts with BaseSupplyPaused', async function () {
+        await expect(comet.connect(bob).supply(usdc.address, ethers.constants.MaxUint256))
+          .to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
+      });
+
+      it('repay on bob\'s behalf with supplyTo reverts with BaseSupplyPaused', async function () {
+        await expect(comet.connect(alice).supplyTo(bob.address, usdc.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
+      });
+
+      it('bob\'s borrow principal is unchanged', async function () {
+        expect((await comet.userBasic(bob.address)).principal).to.equal(principalBefore);
+      });
+
+      it('collateral supply still works', async function () {
+        await comet.connect(bob).supply(weth.address, exp(0.5, 18));
+        expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(exp(1.5, 18));
+      });
+
+      it('after unpausing, the repay goes through and lowers the borrow', async function () {
+        await cometExt.connect(pauseGuardian).pauseBaseSupply(false);
+        const borrowBefore = (await comet.borrowBalanceOf(bob.address)).toBigInt();
+        await comet.connect(bob).supply(usdc.address, STEP_AMOUNT);
+        // one block of interest accrues between the read and the repay
+        expect(await comet.borrowBalanceOf(bob.address)).to.be.closeTo(borrowBefore - STEP_AMOUNT, 1000);
+      });
+    });
+
+    describe('pauseLendersWithdraw leaves borrowers working', function () {
+      before(async function () {
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseLendersWithdraw(true);
+      });
+
+      it('alice (lender) cannot withdraw', async function () {
+        await expect(comet.connect(alice).withdraw(usdc.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'LendersWithdrawPaused');
+      });
+
+      it('bob (borrower) can still borrow more', async function () {
+        const borrowBefore = (await comet.borrowBalanceOf(bob.address)).toBigInt();
+        const walletBefore = (await usdc.balanceOf(bob.address)).toBigInt();
+        await comet.connect(bob).withdraw(usdc.address, STEP_AMOUNT);
+        expect(await usdc.balanceOf(bob.address)).to.equal(walletBefore + STEP_AMOUNT);
+        expect(await comet.borrowBalanceOf(bob.address)).to.be.gte(borrowBefore + STEP_AMOUNT);
+      });
+
+      it('bob can still withdraw part of his collateral', async function () {
+        await comet.connect(bob).withdraw(weth.address, exp(0.1, 18));
+        expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(exp(0.9, 18));
+      });
+    });
+
+    describe('pauseBorrowersWithdraw leaves lenders working', function () {
+      before(async function () {
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseBorrowersWithdraw(true);
+      });
+
+      it('bob (borrower) cannot borrow more', async function () {
+        await expect(comet.connect(bob).withdraw(usdc.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'BorrowersWithdrawPaused');
+      });
+
+      it('alice (lender) can still withdraw', async function () {
+        const walletBefore = (await usdc.balanceOf(alice.address)).toBigInt();
+        await comet.connect(alice).withdraw(usdc.address, STEP_AMOUNT);
+        expect(await usdc.balanceOf(alice.address)).to.equal(walletBefore + STEP_AMOUNT);
+      });
+    });
+
+    describe('pauseLendersTransfer leaves borrowers working', function () {
+      before(async function () {
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseLendersTransfer(true);
+      });
+
+      it('alice (lender) cannot transfer base', async function () {
+        await expect(comet.connect(alice).transfer(charles.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'LendersTransferPaused');
+      });
+
+      it('bob (borrower) can still transfer base, which borrows it', async function () {
+        const borrowBefore = (await comet.borrowBalanceOf(bob.address)).toBigInt();
+        await comet.connect(bob).transfer(charles.address, STEP_AMOUNT);
+        expect(await comet.balanceOf(charles.address)).to.be.closeTo(STEP_AMOUNT, 1);
+        expect(await comet.borrowBalanceOf(bob.address)).to.be.gte(borrowBefore + STEP_AMOUNT);
+      });
+    });
+
+    describe('pauseBorrowersTransfer leaves lenders working', function () {
+      before(async function () {
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseBorrowersTransfer(true);
+      });
+
+      it('bob (borrower) cannot transfer base', async function () {
+        await expect(comet.connect(bob).transfer(charles.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'BorrowersTransferPaused');
+      });
+
+      it('alice (lender) can still transfer base', async function () {
+        await comet.connect(alice).transfer(charles.address, STEP_AMOUNT);
+        expect(await comet.balanceOf(charles.address)).to.be.closeTo(STEP_AMOUNT, 1);
+      });
+    });
+
+    describe('per-asset collateral pauses leave the other collateral working', function () {
+      before(async function () {
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseCollateralAssetSupply(wethIndex, true);
+        await cometExt.connect(pauseGuardian).pauseCollateralAssetWithdraw(wethIndex, true);
+        await cometExt.connect(pauseGuardian).pauseCollateralAssetTransfer(wethIndex, true);
+      });
+
+      it('WETH supply, withdraw and transfer revert with the per-asset errors', async function () {
+        await expect(comet.connect(charles).supply(weth.address, exp(0.1, 18)))
+          .to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(wethIndex);
+        await expect(comet.connect(charles).withdraw(weth.address, exp(0.1, 18)))
+          .to.be.revertedWithCustomError(comet, 'CollateralAssetWithdrawPaused').withArgs(wethIndex);
+        await expect(comet.connect(charles).transferAsset(alice.address, weth.address, exp(0.1, 18)))
+          .to.be.revertedWithCustomError(comet, 'CollateralAssetTransferPaused').withArgs(wethIndex);
+      });
+
+      it('WBTC supply still works', async function () {
+        await comet.connect(charles).supply(wbtc.address, exp(0.5, 8));
+        expect(await comet.collateralBalanceOf(charles.address, wbtc.address)).to.equal(exp(1.5, 8));
+      });
+
+      it('WBTC withdraw still works', async function () {
+        await comet.connect(charles).withdraw(wbtc.address, exp(0.5, 8));
+        expect(await comet.collateralBalanceOf(charles.address, wbtc.address)).to.equal(exp(1, 8));
+      });
+
+      it('WBTC transfer still works', async function () {
+        await comet.connect(charles).transferAsset(alice.address, wbtc.address, exp(0.5, 8));
+        expect(await comet.collateralBalanceOf(alice.address, wbtc.address)).to.equal(exp(0.5, 8));
+        expect(await comet.collateralBalanceOf(charles.address, wbtc.address)).to.equal(exp(0.5, 8));
+      });
+    });
+  });
+
 });

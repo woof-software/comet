@@ -2210,4 +2210,117 @@ describe('absorb', function () {
       });
     });
   });
+
+  /**
+   * @title What happens to LF = 0 collateral after an absorb
+   * @notice absorbInternal skips collateral with liquidationFactor == 0 (it stays on the account), but still resets
+   *  the whole `assetsIn` bitmap to 0. The skipped collateral is then orphaned: its balance is still there, but no
+   *  `assetsIn` bit points at it, so isBorrowCollateralized and isLiquidatable ignore it. updateAssetsIn only sets
+   *  the bit when the balance goes from 0 to non-zero, so topping it up does not bring it back; only withdrawing
+   *  all of it and supplying again does. This flow walks that lifecycle.
+   *
+   *  Setup: alice lends 10,000 USDC; WETH $3,000 with LF = 0 (BCF 0.8, LCF 0.85),
+   *  WBTC $41,000 with LF 0.9 (BCF 0.7, LCF 0.75). bob borrows 2,000 against 1 WETH and 0.01 WBTC.
+   */
+  describe('absorb: LF = 0 collateral after the absorb', function () {
+    const USDC_SCALE = exp(1, 6);
+
+    let comet: CometHarnessInterfaceExtendedAssetList;
+    let usdc: FaucetToken;
+    let weth: FaucetToken;
+    let wbtc: FaucetToken;
+    let wethPriceFeed: SimplePriceFeed;
+    let wethIndex: number;
+    let alice: SignerWithAddress;
+    let bob: SignerWithAddress;
+    let charles: SignerWithAddress;
+    let fixture: SnapshotRestorer;
+
+    before(async function () {
+      const protocol = await makeProtocol({
+        base: 'USDC',
+        assets: {
+          USDC: { decimals: 6 },
+          WETH: { decimals: 18, initialPrice: 3000, borrowCF: exp(0.8, 18), liquidateCF: exp(0.85, 18), liquidationFactor: 0n },
+          WBTC: { decimals: 8, initialPrice: 41000, borrowCF: exp(0.7, 18), liquidateCF: exp(0.75, 18), liquidationFactor: exp(0.9, 18) },
+        },
+      });
+      comet = protocol.cometWithExtendedAssetList;
+      usdc = protocol.tokens.USDC as FaucetToken;
+      weth = protocol.tokens.WETH as FaucetToken;
+      wbtc = protocol.tokens.WBTC as FaucetToken;
+      wethPriceFeed = protocol.priceFeeds.WETH;
+      wethIndex = (await comet.getAssetInfoByAddress(weth.address)).offset;
+      [alice, bob, charles] = protocol.users;
+
+      await usdc.allocateTo(alice.address, 10_000n * USDC_SCALE);
+      await usdc.connect(alice).approve(comet.address, ethers.constants.MaxUint256);
+      await comet.connect(alice).supply(usdc.address, 10_000n * USDC_SCALE);
+
+      await weth.allocateTo(bob.address, exp(3, 18));
+      await wbtc.allocateTo(bob.address, exp(0.01, 8));
+      await weth.connect(bob).approve(comet.address, ethers.constants.MaxUint256);
+      await wbtc.connect(bob).approve(comet.address, ethers.constants.MaxUint256);
+      await comet.connect(bob).supply(weth.address, exp(1, 18));
+      await comet.connect(bob).supply(wbtc.address, exp(0.01, 8));
+      await comet.connect(bob).withdraw(usdc.address, 2_000n * USDC_SCALE);
+
+      fixture = await takeSnapshot();
+    });
+
+    after(async function () {
+      await fixture.restore();
+    });
+
+    describe('orphaned collateral lifecycle', function () {
+      before(async function () {
+        await fixture.restore();
+        // WETH to $1,500: liquidation value 1 × 1,500 × 0.85 + 0.01 × 41,000 × 0.75 = 1,582.5 < 2,000
+        await wethPriceFeed.setRoundData(0, exp(1500, 8), 0, 0, 0);
+      });
+
+      it('bob is liquidatable', async function () {
+        expect(await comet.isLiquidatable(bob.address)).to.be.true;
+      });
+
+      it('absorb seizes the WBTC, leaves the LF = 0 WETH on bob\'s account and resets assetsIn', async function () {
+        await comet.connect(charles).absorb(charles.address, [bob.address]);
+        expect(await comet.collateralBalanceOf(bob.address, wbtc.address)).to.equal(0);
+        expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(exp(1, 18));
+        // WBTC is worth 410 × 0.9 = 369 < the 2,000 debt, so nothing is credited back
+        expect((await comet.userBasic(bob.address)).principal).to.equal(0);
+        expect((await comet.userBasic(bob.address)).assetsIn).to.equal(0);
+      });
+
+      it('even after the WETH price recovers, the leftover WETH does not back a borrow', async function () {
+        await wethPriceFeed.setRoundData(0, exp(3000, 8), 0, 0, 0);
+        await expect(comet.connect(bob).withdraw(usdc.address, 100n * USDC_SCALE))
+          .to.be.revertedWithCustomError(comet, 'NotCollateralized');
+      });
+
+      it('topping up the WETH does not put it back into assetsIn', async function () {
+        await comet.connect(bob).supply(weth.address, exp(1, 18));
+        expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(exp(2, 18));
+        expect((await comet.userBasic(bob.address)).assetsIn).to.equal(0);
+        // 2 WETH = $4,800 of borrowing power on paper, but none of it counts
+        await expect(comet.connect(bob).withdraw(usdc.address, 100n * USDC_SCALE))
+          .to.be.revertedWithCustomError(comet, 'NotCollateralized');
+      });
+
+      it('the orphaned WETH can still be withdrawn in full', async function () {
+        const walletBefore = (await weth.balanceOf(bob.address)).toBigInt();
+        await comet.connect(bob).withdraw(weth.address, exp(2, 18));
+        expect(await weth.balanceOf(bob.address)).to.equal(walletBefore + exp(2, 18));
+        expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(0);
+      });
+
+      it('supplying it again from 0 sets the assetsIn bit, and it backs a borrow again', async function () {
+        await comet.connect(bob).supply(weth.address, exp(1, 18));
+        expect((await comet.userBasic(bob.address)).assetsIn).to.equal(1 << wethIndex);
+        await comet.connect(bob).withdraw(usdc.address, 100n * USDC_SCALE);
+        expect(await comet.borrowBalanceOf(bob.address)).to.equal(100n * USDC_SCALE);
+      });
+    });
+  });
+
 });

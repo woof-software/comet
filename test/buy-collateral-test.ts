@@ -9,7 +9,7 @@ import {
   CometProxyAdmin,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
 } from '../build/types';
-import { ethers, expect, exp, makeConfigurator, makeProtocol, ReentryAttack, takeSnapshot, SnapshotRestorer, MAX_ASSETS } from './helpers';
+import { ethers, expect, exp, factorScale, makeConfigurator, makeProtocol, ReentryAttack, takeSnapshot, SnapshotRestorer, MAX_ASSETS } from './helpers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 
@@ -1452,6 +1452,121 @@ describe('buyCollateral', function () {
       });
     });
   });
+
+  /**
+   * @title buyCollateral at the liquidationFactor edges
+   * @notice quoteCollateral applies the store front discount storeFrontPriceFactor × (1 − liquidationFactor), and skips
+   *  it when liquidationFactor == 0. So both edges sell at the oracle price: LF = 1e18 because the discount is 0,
+   *  LF = 0 because it is skipped. quote-collateral-test checks the view; these flows buy through buyCollateral and
+   *  check the buyer gets exactly the quote, with a normal-LF asset as the control that does get a discount.
+   *
+   *  Setup: storeFrontPriceFactor 0.5, targetReserves high enough that collateral is always for sale,
+   *  and 10 units of each collateral held by Comet as collateral reserves.
+   */
+  describe('buyCollateral at liquidationFactor = 0 and 1e18', function () {
+    const USDC_SCALE = exp(1, 6);
+    const BASE_AMOUNT = 1_000n * USDC_SCALE;
+    const STORE_FRONT_PRICE_FACTOR = exp(0.5, 18);
+
+    let comet: CometWithExtendedAssetList;
+    let usdc: FaucetToken;
+    let tokens: Record<string, FaucetToken>;
+    let alice: SignerWithAddress;
+    let fixture: SnapshotRestorer;
+
+    const cases = [
+      { symbol: 'WETH', liquidationFactor: exp(1, 18), discount: false, why: 'LF = 1e18: the discount is 0' },
+      { symbol: 'WBTC', liquidationFactor: 0n, discount: false, why: 'LF = 0: the discount is skipped' },
+      { symbol: 'COMP', liquidationFactor: exp(0.8, 18), discount: true, why: 'LF = 0.8 (control): 0.5 × 0.2 = 10% discount' },
+    ];
+
+    before(async function () {
+      const protocol = await makeProtocol({
+        base: 'USDC',
+        storeFrontPriceFactor: STORE_FRONT_PRICE_FACTOR,
+        targetReserves: exp(1_000_000, 6),
+        assets: {
+          USDC: { decimals: 6 },
+          WETH: { decimals: 18, initialPrice: 3000, borrowCF: exp(0.8, 18), liquidateCF: exp(0.85, 18), liquidationFactor: exp(1, 18) },
+          WBTC: { decimals: 8, initialPrice: 41000, borrowCF: exp(0.7, 18), liquidateCF: exp(0.75, 18), liquidationFactor: 0n },
+          COMP: { decimals: 18, initialPrice: 175, borrowCF: exp(0.6, 18), liquidateCF: exp(0.7, 18), liquidationFactor: exp(0.8, 18) },
+        },
+      });
+      comet = protocol.cometWithExtendedAssetList;
+      tokens = protocol.tokens as Record<string, FaucetToken>;
+      usdc = tokens.USDC;
+      [alice] = protocol.users;
+
+      for (const { symbol } of cases) {
+        const scale = (await comet.getAssetInfoByAddress(tokens[symbol].address)).scale.toBigInt();
+        await tokens[symbol].allocateTo(comet.address, 10n * scale);
+      }
+      await usdc.allocateTo(alice.address, 10n * BASE_AMOUNT);
+      await usdc.connect(alice).approve(comet.address, ethers.constants.MaxUint256);
+
+      fixture = await takeSnapshot();
+    });
+
+    after(async function () {
+      await fixture.restore();
+    });
+
+    for (const { symbol, liquidationFactor, discount, why } of cases) {
+      describe(`${symbol}, ${why}`, function () {
+        let asset: string;
+        let quote: bigint;
+        let oracleQuote: bigint;
+
+        before(async function () {
+          await fixture.restore();
+          asset = tokens[symbol].address;
+        });
+
+        it('has the configured liquidationFactor', async function () {
+          expect((await comet.getAssetInfoByAddress(asset)).liquidationFactor).to.equal(liquidationFactor);
+        });
+
+        it(discount ? 'quotes above the oracle price amount (discounted)' : 'quotes exactly at the oracle price', async function () {
+          const info = await comet.getAssetInfoByAddress(asset);
+          const assetPrice = (await comet.getPrice(info.priceFeed)).toBigInt();
+          const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+          const baseScale = (await comet.baseScale()).toBigInt();
+          const scale = info.scale.toBigInt();
+
+          oracleQuote = basePrice * BASE_AMOUNT * scale / assetPrice / baseScale;
+          quote = (await comet.quoteCollateral(asset, BASE_AMOUNT)).toBigInt();
+
+          if (discount) {
+            const discountFactor = STORE_FRONT_PRICE_FACTOR * (factorScale - liquidationFactor) / factorScale;
+            const discountedPrice = assetPrice * (factorScale - discountFactor) / factorScale;
+            expect(quote).to.equal(basePrice * BASE_AMOUNT * scale / discountedPrice / baseScale);
+            expect(quote).to.be.greaterThan(oracleQuote);
+          } else {
+            expect(quote).to.equal(oracleQuote);
+          }
+        });
+
+        it('buyCollateral sends the buyer exactly the quote and takes the base into reserves', async function () {
+          const reservesBefore = (await comet.getReserves()).toBigInt();
+          const collateralReservesBefore = (await comet.getCollateralReserves(asset)).toBigInt();
+          const walletBefore = (await tokens[symbol].balanceOf(alice.address)).toBigInt();
+
+          await expect(comet.connect(alice).buyCollateral(asset, quote, BASE_AMOUNT, alice.address))
+            .to.emit(comet, 'BuyCollateral').withArgs(alice.address, asset, BASE_AMOUNT, quote);
+
+          expect(await tokens[symbol].balanceOf(alice.address)).to.equal(walletBefore + quote);
+          expect(await comet.getCollateralReserves(asset)).to.equal(collateralReservesBefore - quote);
+          expect(await comet.getReserves()).to.equal(reservesBefore + BASE_AMOUNT);
+        });
+
+        it('a minAmount one above the quote reverts with TooMuchSlippage', async function () {
+          await expect(comet.connect(alice).buyCollateral(asset, quote + 1n, BASE_AMOUNT, alice.address))
+            .to.be.revertedWithCustomError(comet, 'TooMuchSlippage');
+        });
+      });
+    }
+  });
+
 });
 
 
