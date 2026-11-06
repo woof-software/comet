@@ -472,14 +472,6 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       // 3. Borrow base (this will make albert have negative base balance)
       await albert.withdrawAsset({ asset: baseToken, amount: targetBorrowBaseWei });
 
-      // Set up betty's base token supply for forcing accrue
-      // Betty needs base tokens supplied to Comet to be able to withdraw them
-      const bettyBaseAmount = BigInt(getConfigForScenario(context, i).withdrawBase) * baseScale;
-      const baseAsset = context.getAssetByAddress(baseToken);
-      await context.sourceTokens(bettyBaseAmount, baseAsset, betty);
-      await baseAsset.approve(betty, comet.address);
-      await betty.supplyAsset({ asset: baseToken, amount: bettyBaseAmount });
-
       // Ensure account is liquidatable by waiting for time to pass and accruing interest
       const timeBeforeLiquidation = await timeUntilUnderwater({
         comet,
@@ -493,7 +485,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       }
 
       // Force accrue to ensure state is up to date
-      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, i).withdrawBase) / 100n * baseScale });
+      await comet.accrueAccount(albert.address);
 
       // Verify account is liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
@@ -511,11 +503,27 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       // Save balances before absorb
       const userCollateralBefore = (await comet.userCollateral(albert.address, asset)).balance;
       const totalsBefore = (await comet.totalsCollateral(asset)).totalSupplyAsset;
+      // Accrual changes the indexes, not the principals, so these stay exact through the absorb
+      const principalBefore = (await comet.userBasic(albert.address)).principal.toBigInt();
+      expect(principalBefore).to.be.lessThan(0n);
+      const totalsBasicBefore = await comet.totalsBasic();
 
-      await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
+      const receipt = await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
 
+      // The collateral with liquidation factor = 0 is not seized
       expect((await comet.userCollateral(albert.address, asset)).balance).to.equal(userCollateralBefore);
       expect((await comet.totalsCollateral(asset)).totalSupplyAsset).to.equal(totalsBefore);
+      expect(receipt.events.filter(e => e.event === 'AbsorbCollateral')).to.have.length(0);
+
+      // The debt is still absorbed: nothing was seized, so the reserves cover all of it and albert ends at 0
+      const absorbDebt = receipt.events.filter(e => e.event === 'AbsorbDebt' && e.args.borrower === albert.address);
+      expect(absorbDebt).to.have.length(1);
+      expect(absorbDebt[0].args.basePaidOut.toBigInt()).to.be.greaterThan(0n);
+      expect((await comet.userBasic(albert.address)).principal).to.equal(0);
+      expect(await comet.borrowBalanceOf(albert.address)).to.equal(0);
+      const totalsBasicAfter = await comet.totalsBasic();
+      expect(totalsBasicAfter.totalBorrowBase).to.equal(totalsBasicBefore.totalBorrowBase.toBigInt() + principalBefore);
+      expect(totalsBasicAfter.totalSupplyBase).to.equal(totalsBasicBefore.totalSupplyBase);
     }
   );
 }
@@ -614,13 +622,6 @@ scenario(
     expect(await comet.isBorrowCollateralized(albert.address)).to.be.true;
     expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
-    // Set up betty with base tokens so she can force accrue later
-    const bettyBaseAmount = BigInt(getConfigForScenario(context, 1).withdrawBase) * baseScale;
-    const baseAsset = context.getAssetByAddress(baseToken);
-    await context.sourceTokens(bettyBaseAmount, baseAsset, betty);
-    await baseAsset.approve(betty, comet.address);
-    await betty.supplyAsset({ asset: baseToken, amount: bettyBaseAmount });
-
     // ── Step 3: Wait until the position becomes liquidatable via interest accrual ──
     const timeBeforeLiquidation = await timeUntilUnderwater({
       comet,
@@ -634,7 +635,7 @@ scenario(
     }
 
     // Force accrue to ensure state is up to date
-    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, 1).withdrawBase) / 100n * baseScale });
+    await comet.accrueAccount(albert.address);
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
 
@@ -664,9 +665,13 @@ scenario(
     const totalSupply0_before = (await comet.totalsCollateral(assetInfo0.asset)).totalSupplyAsset;
     const collateralBalance1_before = (await comet.userCollateral(albert.address, assetInfo1.asset)).balance;
     const totalSupply1_before = (await comet.totalsCollateral(assetInfo1.asset)).totalSupplyAsset;
+    // Accrual changes the indexes, not the principals, so these stay exact through the absorb
+    const principalBefore = (await comet.userBasic(albert.address)).principal.toBigInt();
+    expect(principalBefore).to.be.lessThan(0n);
+    const totalsBasicBefore = await comet.totalsBasic();
 
     // ── Step 5: Absorb (liquidate) the account ──
-    await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
+    const receipt = await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
 
     // ── Step 6: Verify selective seizure ──
     // Asset0 (liquidationFactor = 0): NOT seized — balance and totals unchanged.
@@ -685,9 +690,22 @@ scenario(
     expect((await comet.totalsCollateral(assetInfo1.asset)).totalSupplyAsset)
       .to.equal(totalSupply1_before.sub(collateralBalance1_before));
 
-    // Debt was absorbed: albert's base balance should be >= 0
-    const baseBalance = await albert.getCometBaseBalance();
-    expect(Number(baseBalance)).to.be.greaterThanOrEqual(0);
+    // Only asset1 was seized, all of it
+    const absorbedCollateral = receipt.events.filter(e => e.event === 'AbsorbCollateral' && e.args.borrower === albert.address);
+    expect(absorbedCollateral).to.have.length(1);
+    expect(absorbedCollateral[0].args.asset).to.equal(assetInfo1.asset);
+    expect(absorbedCollateral[0].args.collateralAbsorbed).to.equal(collateralBalance1_before);
+
+    // Debt was absorbed: the borrow is gone, and any asset1 value above the debt is credited to albert as supply
+    const absorbDebt = receipt.events.filter(e => e.event === 'AbsorbDebt' && e.args.borrower === albert.address);
+    expect(absorbDebt).to.have.length(1);
+    expect(absorbDebt[0].args.basePaidOut.toBigInt()).to.be.greaterThan(0n);
+    const principalAfter = (await comet.userBasic(albert.address)).principal.toBigInt();
+    expect(principalAfter).to.be.gte(0n);
+    expect(await comet.borrowBalanceOf(albert.address)).to.equal(0);
+    const totalsBasicAfter = await comet.totalsBasic();
+    expect(totalsBasicAfter.totalBorrowBase).to.equal(totalsBasicBefore.totalBorrowBase.toBigInt() + principalBefore);
+    expect(totalsBasicAfter.totalSupplyBase).to.equal(totalsBasicBefore.totalSupplyBase.toBigInt() + principalAfter);
   }
 );
 

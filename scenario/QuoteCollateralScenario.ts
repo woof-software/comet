@@ -63,12 +63,13 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       assetInfo = await comet.getAssetInfoByAddress(asset);
       expect(assetInfo.liquidationFactor).to.equal(0);
 
-      // Second quote without discount
+      // Second quote without discount. The upgrade mined new blocks, so the prices are read again
       const quoteAmountWithoutDiscount = (await comet.quoteCollateral(asset, QUOTE_AMOUNT)).toBigInt();
-      // When liquidationFactor = 0, no discount is applied, so use assetPrice directly
-      const expectedQuoteWithoutDiscount = (basePrice * QUOTE_AMOUNT * assetInfo.scale.toBigInt()) / assetPrice / baseScale;
-      // Verify quote calculation
-      expect(quoteAmountWithoutDiscount).to.be.closeTo(expectedQuoteWithoutDiscount, BigInt(1e18));
+      const assetPriceAfter = (await comet.getPrice(assetInfo.priceFeed)).toBigInt();
+      const basePriceAfter = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+      // When liquidationFactor = 0, no discount is applied, so the quote uses the oracle price directly (same formula as the contract)
+      const expectedQuoteWithoutDiscount = (basePriceAfter * QUOTE_AMOUNT * assetInfo.scale.toBigInt()) / assetPriceAfter / baseScale;
+      expect(quoteAmountWithoutDiscount).to.equal(expectedQuoteWithoutDiscount);
     }
   );
 }
