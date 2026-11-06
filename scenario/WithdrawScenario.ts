@@ -76,7 +76,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       const dstUserCollateralBalanceBefore = await betty.getCometCollateralBalance(assetAddress);
       const dstUserAssetBalanceBefore = await collateralAsset.balanceOf(betty.address);
 
-      // Albert withdraws 100 units of collateral from Comet
+      // Albert withdraws the configured amount of collateral from Comet to Betty
       const txn = await comet
         .connect(albert.signer)
         .withdrawTo(betty.address, collateralAsset.address, amountToWithdraw)
@@ -259,7 +259,7 @@ scenario(
 
     const amountToWithdraw = fromUserBaseBalanceBefore / 2n;
 
-    // Betty withdraws supplied units of base from Albert
+    // Charles withdraws half of Albert's supplied base to Betty
     await comet.connect(charles.signer).withdrawFrom(albert.address, betty.address, baseAsset.address, amountToWithdraw);
 
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
@@ -1164,7 +1164,7 @@ scenario(
     const collateralIndices = await getUsableCollateralIndices(context);
 
     // A protocol holding no base would make the borrow a single wei, far under the market's minimum borrow,
-    // and it would revert for that reason instead. Give it 1000 base tokens first so the borrow is a real one.
+    // and it would revert for that reason instead. Give it 100 base tokens first so the borrow is a real one.
     if ((await baseAsset.balanceOf(comet.address)) === 0n) {
       await context.sourceTokens(100n * baseScale, baseAsset.address, comet.address);
     }
@@ -1221,8 +1221,9 @@ scenario(
  * of collateral (e.g., during absorption when trying to getPrice() for a delisted asset).
  *
  * @dev The solution was to set the asset's borrowCollateralFactor to 0 for delisted collateral. For isBorrowCollateralized,
- * when borrowCollateralFactor = 0, the contract skips that asset in the liquidity calculation (see CometWithExtendedAssetList.sol
- * lines 402-405), effectively excluding it from contributing to the user's collateralization. This prevents the protocol
+ * when borrowCollateralFactor = 0, the contract skips that asset in the liquidity calculation (see the
+ * borrowCollateralFactor == 0 check in CometWithExtendedAssetList.isBorrowCollateralized), effectively excluding it from
+ * contributing to the user's collateralization. This prevents the protocol
  * from calling getPrice() on unavailable price feeds.
  *
  * @dev This scenario tests isBorrowCollateralized behavior in two phases:
@@ -1518,7 +1519,7 @@ scenario('Comet#withdraw > reverts on unregistered asset', {}, async ({ comet, a
 
   await expect(
     comet.connect(albert.signer).withdraw(unregisteredAsset.address, collateralAmount)
-  ).to.be.revertedWithPanic(0x11); // everted with panic code 0x11 - arithmetic operation underflowed
+  ).to.be.revertedWithPanic(0x11); // reverted with panic code 0x11 - arithmetic operation underflowed
 });
 
 scenario('Comet#withdrawTo > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
@@ -1536,7 +1537,7 @@ scenario('Comet#withdrawTo > reverts on unregistered asset', {}, async ({ comet,
 
   await expect(
     comet.connect(albert.signer).withdrawTo(betty.address, unregisteredAsset.address, collateralAmount)
-  ).to.be.revertedWithPanic(0x11); // everted with panic code 0x11 - arithmetic operation underflowed
+  ).to.be.revertedWithPanic(0x11); // reverted with panic code 0x11 - arithmetic operation underflowed
 });
 
 scenario('Comet#withdrawFrom > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
@@ -1558,7 +1559,7 @@ scenario('Comet#withdrawFrom > reverts on unregistered asset', {}, async ({ come
 
   await expect(
     comet.connect(betty.signer).withdrawFrom(albert.address, betty.address, unregisteredAsset.address, collateralAmount)
-  ).to.be.revertedWithPanic(0x11); // everted with panic code 0x11 - arithmetic operation underflowed
+  ).to.be.revertedWithPanic(0x11); // reverted with panic code 0x11 - arithmetic operation underflowed
 });
 
 scenario(

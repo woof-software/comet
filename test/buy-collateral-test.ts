@@ -405,9 +405,10 @@ describe('buyCollateral', function () {
     //   3. ASSET1 price drops to $0.70
     //      collateral value = 1000×$0.70 = $700; 700×0.85(liqCF) = 595 < 700 borrow → liquidatable
     //   4. absorb: deltaBalance = 1000×0.70×0.8(liqFactor) = 560 < 700 → bad debt = 140
-    //   5. After absorb:
-    //      balance(base) ≈ 300, totalSupplyBase ≈ 1000, totalBorrowBase = 0
-    //      reserves = 300 − 1000 + 0 = −700 (negative) ✓
+    //   5. After absorb (this flow inherits state from the previous flow, where alice paid 50 base
+    //      for collateral, so the comet already held 50 base before step 1):
+    //      balance(base) ≈ 350, totalSupplyBase ≈ 1000, totalBorrowBase = 0
+    //      reserves = 350 − 1000 + 0 ≈ −650 (negative) ✓
     //      collateralReserves(ASSET1) = (100e18 pre-alloc + 1000e18 seized) − 0 = 1100e18
 
     const BUY_AMOUNT = exp(200, 6);
@@ -485,12 +486,12 @@ describe('buyCollateral', function () {
 
     it('protocol reserves increase by exactly BUY_AMOUNT', async () => {
       // buyCollateral does not call accrueInternal; post-absorb utilization = 0 → no index change
-      // reservesAfterBuy = reservesAfterAbsorb + BUY_AMOUNT ≈ −700e6 + 200e6 = −500e6
+      // reservesAfterBuy = reservesAfterAbsorb + BUY_AMOUNT ≈ −650e6 + 200e6 = −450e6
       expect(await comet.getReserves()).to.be.equal(reservesAfterAbsorb.add(BUY_AMOUNT));
     });
 
     it('protocol reserves remain negative after purchase', async () => {
-      // BUY_AMOUNT(200e6) < |reservesAfterAbsorb|(≈700e6) → sum still negative
+      // BUY_AMOUNT(200e6) < |reservesAfterAbsorb|(≈650e6) → sum still negative
       expect(await comet.getReserves()).to.be.lt(0);
     });
 

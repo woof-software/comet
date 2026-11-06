@@ -508,7 +508,7 @@ describe('reserves', function () {
           await baseToken.connect(alice).approve(comet.address, reserves);
           await comet.connect(alice).supply(baseToken.address, reserves);
 
-          // Charlie supplies just enough WETH to borrow the whole balance, with 1 base unit of headroom for rounding
+          // Charlie supplies just enough WETH to borrow the whole balance, with 1 USDC of headroom for rounding
           const currentBalance = await baseToken.balanceOf(comet.address);
           const wethInfo = await comet.getAssetInfoByAddress(collaterals.WETH.address);
           const wethPrice = await comet.getPrice(wethInfo.priceFeed);
@@ -585,7 +585,7 @@ describe('reserves', function () {
           const priceWETH = await comet.getPrice((await comet.getAssetInfoByAddress(collaterals.WETH.address)).priceFeed);
           const priceBase = await comet.getPrice(await comet.baseTokenPriceFeed());
 
-          const amountToPay = availableCollateral.mul(priceWETH).div(priceBase).div(exp(1, 12)); // adjust for price feed decimals
+          const amountToPay = availableCollateral.mul(priceWETH).div(priceBase).div(exp(1, 12)); // adjust for token decimals (WETH 18 -> USDC 6)
           await baseToken.connect(dave).allocateTo(dave.address, amountToPay);
           await baseToken.connect(dave).approve(comet.address, amountToPay);
 

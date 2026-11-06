@@ -773,7 +773,8 @@ describe('withdraw', function () {
       it('baseBorrowIndex accrues correctly during collateral withdrawal', async () => {
         // baseBorrowIndex += mulFactor(baseBorrowIndex, borrowRate * timeElapsed)
         //                  = baseBorrowIndex + baseBorrowIndex * borrowRate * timeElapsed / 1e18
-        // With no borrows, getBorrowRate returns 0 and the borrow index is unchanged
+        // With no borrows (totalBorrowBase == 0), getBorrowRate returns 0 despite the non-zero base rate,
+        // so the borrow index is unchanged
         const timeElapsed = withdrawTimestamp.sub(cometUpdatedTimeBefore);
         const expectedBaseBorrowIndex = cometBorrowIndexBefore.add(
           cometBorrowIndexBefore.mul(borrowRateBefore).mul(timeElapsed).div(exp(1, 18))
@@ -984,7 +985,7 @@ describe('withdraw', function () {
         expect((await comet.userCollateral(alice.address, collaterals['COMP'].address)).balance).to.equal(balanceBefore);
       });
 
-      it('multiple consecutive withdraws in same block', async () => {
+      it('multiple consecutive withdraws in separate blocks', async () => {
         await baseSnapshot.restore();
 
         await baseToken.connect(bob).approve(comet.address, SUPPLY_AMOUNT);
@@ -1233,7 +1234,7 @@ describe('withdraw', function () {
       await baseSnapshot.restore();
     });
 
-    it('withdraws to sender by default', async () => {
+    it('withdraw() sends tokens to the sender', async () => {
       await baseToken.connect(bob).approve(comet.address, SUPPLY_AMOUNT);
       await comet.connect(bob).supply(baseToken.address, SUPPLY_AMOUNT);
 
@@ -2083,7 +2084,7 @@ describe('withdraw', function () {
       ).to.be.revertedWithCustomError(comet, 'TokenIsDeactivated').withArgs(collateralToken.address);
     });
 
-    it('should not revert when withdrawing base token if base token is lending and user has deactivated collateral', async function() {
+    it('should not revert when withdrawing base token if the user is a base lender and has deactivated collateral', async function() {
       const bobBaseBalanceBefore = await comet.balanceOf(bob.address);
 
       expect((await comet.userBasic(bob.address)).principal).to.be.greaterThanOrEqual(0);
@@ -2205,7 +2206,7 @@ describe('withdraw', function () {
       ).to.be.revertedWithCustomError(comet, 'TokenIsDeactivated').withArgs(collateralToken.address);
     });
 
-    it('should not revert when withdrawing base token if base token is lending and user has deactivated collateral', async function() {
+    it('should not revert when withdrawing base token if the user is a base lender and has deactivated collateral', async function() {
       const bobBaseBalanceBefore = await comet.balanceOf(bob.address);
 
       expect((await comet.userBasic(bob.address)).principal).to.be.greaterThanOrEqual(0);
@@ -2330,7 +2331,7 @@ describe('withdraw', function () {
       ).to.be.revertedWithCustomError(comet, 'TokenIsDeactivated').withArgs(collateralToken.address);
     });
 
-    it('should not revert when withdrawing base token if base token is lending and user has deactivated collateral', async function() {
+    it('should not revert when withdrawing base token if the user is a base lender and has deactivated collateral', async function() {
       const bobBaseBalanceBefore = await comet.balanceOf(bob.address);
 
       expect((await comet.userBasic(bob.address)).principal).to.be.greaterThanOrEqual(0);

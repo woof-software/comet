@@ -136,7 +136,7 @@ describe('transfer', function () {
       });
 
       // In case when user has no collateral supplied and lend position
-      // transfering will revert with BorrowTooSmall, as amount to transfer is greater than
+      // transferring will revert with BorrowTooSmall, as amount to transfer is greater than
       // user's balance, he'll become a borrower and his balance will be negative on 1 wei
       // which is less than baseBorrowMin
       it('exceeds balance (no collateral supplied & newSrcBalance < baseBorrowMin)', async () => {
@@ -150,7 +150,7 @@ describe('transfer', function () {
       });
 
       // In case when user has no collateral supplied and lend position
-      // transfering will revert with NotCollateralized, as amount to transfer is greater than
+      // transferring will revert with NotCollateralized, as amount to transfer is greater than
       // user's balance, he'll become a borrower and his amount to borrow will be >= to baseBorrowMin
       // which will trigger NotCollateralized
       it('exceeds balance (no collateral supplied & newSrcBalance >= baseBorrowMin)', async () => {
@@ -237,7 +237,7 @@ describe('transfer', function () {
         expect((await comet.totalsBasic()).lastAccrualTime).to.equal((await ethers.provider.getBlock('latest')).timestamp);
       });
 
-      it('alice princiapal decreased by transfer amount', async () => {
+      it('alice principal decreased by transfer amount', async () => {
         const alicePrincipalAfter = (await comet.userBasic(alice.address)).principal.toBigInt();
         expect(alicePrincipalAfter).to.equal(alicePrincipalBefore - TRANSFER_AMOUNT);
       });
@@ -304,11 +304,11 @@ describe('transfer', function () {
           baseSupplyIndex = totalsBasic.baseSupplyIndex.toBigInt();
         });
 
-        it('alice has principal equal to supplied amount', async () => {
+        it('alice has principal equal to the amount left after the first transfer', async () => {
           expect(alicePrincipalBefore).to.equal(TRANSFER_AMOUNT);
         });
 
-        it('bob has 0 principal', async () => {
+        it('bob has principal equal to the first transfer amount', async () => {
           expect(bobPrincipalBefore).to.equal(TRANSFER_AMOUNT);
         });
 
@@ -341,7 +341,7 @@ describe('transfer', function () {
           await expect(transferTx).to.not.be.reverted;
         });
 
-        it('alice princiapal becomes 0', async () => {
+        it('alice principal becomes 0', async () => {
           expect((await comet.userBasic(alice.address)).principal).to.equal(0n);
         });
 
@@ -520,7 +520,7 @@ describe('transfer', function () {
           expect(await testComet.borrowBalanceOf(bob.address)).to.equal(0n);
         });
 
-        it('trasnfer is successful', async () => {
+        it('transfer is successful', async () => {
           transferTx = await testComet.connect(alice).transfer(bob.address, ethers.constants.MaxUint256);
           await expect(transferTx).to.not.be.reverted;
         });
@@ -858,7 +858,7 @@ describe('transfer', function () {
         );
       });
 
-      it('should accrue state during collateral supply', async () => {
+      it('should accrue state during collateral transfer', async () => {
         const lastUpdated = (await comet.totalsBasic()).lastAccrualTime;
 
         expect(lastUpdated - cometUpdatedTimeBefore).to.be.approximately(SKIP_TIME, 2); // 2 seconds tolerance
@@ -927,13 +927,13 @@ describe('transfer', function () {
         expect(newSupply).to.be.equal(totalSupplyBefore);
       });
 
-      it('trackingSupplyIndex grows correctly during collateral supply accrual', async () => {
+      it('trackingSupplyIndex grows correctly during collateral transfer accrual', async () => {
         // accrueInternal() updates trackingSupplyIndex when totalSupplyBase >= baseMinForRewards:
         //   trackingSupplyIndex += divBaseWei(baseTrackingSupplySpeed * timeElapsed, totalSupplyBase)
         //                        = baseTrackingSupplySpeed * timeElapsed * baseScale / totalSupplyBase
         // baseScale = 1e6 for USDC; trackingSupplyIndex is independent of the interest rate
-        // Example: speed=1e15, elapsed~3600, totalSupplyBase~3e15 (3e9 USDC principal)
-        // → delta = 1e15 * 3600 * 1e6 / 3e15 = 1200
+        // Example: speed=1e15, elapsed~3600, totalSupplyBase=1e8 (100 USDC principal)
+        // → delta = 1e15 * 3600 * 1e6 / 1e8 = 3.6e16
         const timeElapsed = transferTimestamp.sub(cometUpdatedTimeBefore);
         const baseScale = exp(1, 6);
         const expectedTrackingSupplyIndex = trackingSupplyIndexBefore.add(
@@ -951,7 +951,7 @@ describe('transfer', function () {
         expect((await comet.totalsBasic()).trackingBorrowIndex).to.equal(trackingBorrowIndexBefore);
       });
 
-      it('baseSupplyIndex accrues correctly during collateral supply', async () => {
+      it('baseSupplyIndex accrues correctly during collateral transfer', async () => {
         // baseSupplyIndex += mulFactor(baseSupplyIndex, supplyRate * timeElapsed)
         //                  = baseSupplyIndex + baseSupplyIndex * supplyRate * timeElapsed / 1e18
         // With utilization = 0 (no borrows), supplyRate = 0 and the index is unchanged
@@ -962,10 +962,11 @@ describe('transfer', function () {
         expect((await comet.totalsBasic()).baseSupplyIndex).to.equal(expectedBaseSupplyIndex);
       });
 
-      it('baseBorrowIndex accrues correctly during collateral supply', async () => {
+      it('baseBorrowIndex accrues correctly during collateral transfer', async () => {
         // baseBorrowIndex += mulFactor(baseBorrowIndex, borrowRate * timeElapsed)
         //                  = baseBorrowIndex + baseBorrowIndex * borrowRate * timeElapsed / 1e18
-        // With no borrows, getBorrowRate returns 0 and the borrow index is unchanged
+        // With no borrows (totalBorrowBase == 0), getBorrowRate returns 0 despite the non-zero base rate,
+        // so the borrow index is unchanged
         const timeElapsed = transferTimestamp.sub(cometUpdatedTimeBefore);
         const expectedBaseBorrowIndex = cometBorrowIndexBefore.add(
           cometBorrowIndexBefore.mul(borrowRateBefore).mul(timeElapsed).div(exp(1, 18))
@@ -973,7 +974,7 @@ describe('transfer', function () {
         expect((await comet.totalsBasic()).baseBorrowIndex).to.equal(expectedBaseBorrowIndex);
       });
 
-      it('alice baseTrackingAccrued increases via supply tracking during collateral supply', async () => {
+      it('alice baseTrackingAccrued increases via supply tracking during collateral transfer', async () => {
         // accrueAccountInternal(alice) calls updateBasePrincipal, accumulating rewards since her last sync.
         // alice.principal >= 0 so supply tracking applies:
         //   indexDelta = trackingSupplyIndex_new - alice.baseTrackingIndex_before
@@ -994,8 +995,8 @@ describe('transfer', function () {
         expect((await comet.userBasic(alice.address)).baseTrackingAccrued).to.equal(expectedAccrued);
       });
 
-      it('utilization is zero after collateral supply when there are no borrows', async () => {
-        // Supplying collateral does not change totalSupplyBase or totalBorrowBase (principals unchanged)
+      it('utilization is zero after collateral transfer when there are no borrows', async () => {
+        // Transferring collateral does not change totalSupplyBase or totalBorrowBase (principals unchanged)
         // With totalBorrowBase = 0, getUtilization() returns 0
         expect(await comet.getUtilization()).to.equal(0);
         expect(await comet.getUtilization()).to.equal(utilizationBefore);
@@ -1047,8 +1048,8 @@ describe('transfer', function () {
 
       let cometUpdatedTimeBefore: number;
 
-      // Dave already has base balance (SUPPLY_AMOUNT) from previous "transfer max base balance" describe.
-      // Make Dave a borrower by withdrawing base asset
+      // Dave has no base balance, only the collateral received in the previous describe.
+      // Make Dave a borrower (20 USDC) by withdrawing base asset
       before(async () => {
         await comet.connect(dave).withdraw(baseToken.address, BORROW_AMOUNT);
         // Accrue state before transfer
@@ -1165,7 +1166,7 @@ describe('transfer', function () {
       it('baseSupplyIndex grows when supply rate is non-zero', async () => {
         // baseSupplyIndex += mulFactor(baseSupplyIndex, supplyRate * timeElapsed)
         //                  = baseSupplyIndex + baseSupplyIndex * supplyRate * timeElapsed / 1e18
-        // supplyRate > 0 because utilization > 0 (alice's 400 USDC borrow)
+        // supplyRate > 0 because utilization > 0 (dave's 20 USDC borrow)
         // Unlike the zero-borrow case above, this index now actually grows
         const timeElapsed = transferTimestamp - cometUpdatedTimeBefore;
         const expectedIndex = cometSupplyIndexBefore.add(
@@ -1207,11 +1208,11 @@ describe('transfer', function () {
         expect((await comet.totalsBasic()).trackingSupplyIndex).to.equal(expectedIndex);
       });
 
-      it('alice baseTrackingAccrued accumulates borrow rewards via trackingBorrowIndex', async () => {
-        // alice.principal < 0 (net borrower), so updateBasePrincipal uses borrow tracking:
-        //   indexDelta = trackingBorrowIndex_new - alice.baseTrackingIndex_before
+      it('dave baseTrackingAccrued accumulates borrow rewards via trackingBorrowIndex', async () => {
+        // dave.principal < 0 (net borrower), so updateBasePrincipal uses borrow tracking:
+        //   indexDelta = trackingBorrowIndex_new - dave.baseTrackingIndex_before
         //   baseTrackingAccrued += |principal| * indexDelta / trackingIndexScale / accrualDescaleFactor
-        // alice.baseTrackingIndex was set to trackingBorrowIndex at withdrawal time (same block as capture),
+        // dave.baseTrackingIndex was set to trackingBorrowIndex at withdrawal time (same block as capture),
         // so indexDelta = trackingBorrowIndex_new - trackingBorrowIndexBefore
         // accrualDescaleFactor = baseScale / BASE_ACCRUAL_SCALE = 1e6 / 1e6 = 1 for USDC
         const timeElapsed = transferTimestamp - cometUpdatedTimeBefore;
@@ -1219,7 +1220,7 @@ describe('transfer', function () {
         const trackingBorrowIndexNew = trackingBorrowIndexBefore.add(
           baseTrackingBorrowSpeedVal.mul(timeElapsed).mul(baseScale).div(totalBorrowBefore)
         );
-        // indexDelta spans from alice's last synced borrow tracking index to the new global value
+        // indexDelta spans from dave's last synced borrow tracking index to the new global value
         const indexDelta = trackingBorrowIndexNew.sub(daveBaseTrackingIndexBefore);
         // accrualDescaleFactor = 1 for USDC (baseScale / BASE_ACCRUAL_SCALE = 1e6 / 1e6)
         const expectedAccrued = daveBaseTrackingAccruedBefore.add(
@@ -1228,13 +1229,13 @@ describe('transfer', function () {
         expect((await comet.userBasic(dave.address)).baseTrackingAccrued).to.equal(expectedAccrued);
       });
 
-      it('utilization is greater than zero after collateral supply accrual', async () => {
-        // Active borrow (alice's 400 USDC net position) keeps utilization above zero.
-        // Supplying collateral does not change totalSupplyBase or totalBorrowBase principals.
+      it('utilization is greater than zero after collateral transfer accrual', async () => {
+        // Active borrow (dave's 20 USDC net position) keeps utilization above zero.
+        // Transferring collateral does not change totalSupplyBase or totalBorrowBase principals.
         expect(await comet.getUtilization()).to.be.greaterThan(0);
       });
 
-      it('utilization after supply collateral matches exact calculation from accrued indices', async () => {
+      it('utilization after collateral transfer matches exact calculation from accrued indices', async () => {
         // getUtilization() = presentValue(borrow) * FACTOR_SCALE / presentValue(supply)
         // = totalBorrowBase * baseBorrowIndex_new / 1e15 * 1e18 / (totalSupplyBase * baseSupplyIndex_new / 1e15)
         const totals = await comet.totalsBasic();
@@ -1908,8 +1909,8 @@ describe('transfer', function () {
      *  While a collateral is deactivated, `transferAsset` of that collateral reverts
      *  with `CollateralAssetTransferPaused(index)`, and a base `transfer` from a
      *  borrower holding that collateral reverts with
-     *  `TokenIsDeactivated(collateralToken)` because the collateral no longer counts
-     *  in `isBorrowCollateralized`. After reactivation, both `transferAsset` and
+     *  `TokenIsDeactivated(collateralToken)`, which `isBorrowCollateralized` throws
+     *  when it meets a deactivated asset in `assetsIn`. After reactivation, both `transferAsset` and
      *  borrower base `transfer` work again and update `userCollateral` / `userBasic`
      *  as usual. The MAX_ASSETS loop asserts the same deactivate-revert /
      *  reactivate-succeed behavior for every asset index in a full
@@ -1946,7 +1947,7 @@ describe('transfer', function () {
       daveCollateralBefore = await comet.userCollateral(dave.address, collateralToken.address);
       daveBasicBefore = await comet.userBasic(dave.address);
 
-      // Allow alice to act on behalf of bob for transferFrom calls
+      // Allow alice to act on behalf of dave (comet) and bob (cometWith24Collaterals) for transferFrom calls
       await comet.connect(dave).allow(alice.address, true);
       await cometWith24Collaterals.connect(bob).allow(alice.address, true);
 
@@ -2010,7 +2011,7 @@ describe('transfer', function () {
         await assetToken.connect(dave).approve(cometWith24Collaterals.address, collateralTokenSupplyAmount);
         await cometWith24Collaterals.connect(dave).supply(assetToken.address, collateralTokenSupplyAmount);
 
-        // Pause specific collateral asset transfer at index assetIndex
+        // Deactivate collateral at index assetIndex (this also pauses its transfers)
         await cometWith24Collaterals.connect(pauseGuardian).deactivateCollateral(assetIndex);
 
         await expect(
@@ -2095,7 +2096,7 @@ describe('transfer', function () {
 
         await cometWith24Collaterals.connect(dave).allow(alice.address, true);
 
-        // Pause specific collateral asset transfer at index assetIndex
+        // Deactivate collateral at index assetIndex (this also pauses its transfers)
         await cometWith24Collaterals.connect(pauseGuardian).deactivateCollateral(assetIndex);
 
         await expect(

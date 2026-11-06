@@ -39,7 +39,7 @@ describe('extended pause upgrade test', function () {
   let originalImpl: string;
   let newImpl: string;
 
-  // Extension delegate storage snapshot
+  // Extension delegate immutables and constants snapshot
   let assetListFactoryBefore: string;
   let maxAssetsBefore: number;
   let versionBefore: string;
@@ -154,7 +154,7 @@ describe('extended pause upgrade test', function () {
 
     cometExt = await ethers.getContractAt('CometExtAssetList', COMET_ADDRESS) as CometExtAssetList;
 
-    // Extension delegate storage snapshot
+    // Extension delegate immutables and constants snapshot
     assetListFactoryBefore = await cometExt.assetListFactory();
     maxAssetsBefore = await cometExt.maxAssets();
     versionBefore = await cometExt.version();
@@ -175,7 +175,7 @@ describe('extended pause upgrade test', function () {
     // Totals basic snapshot
     totalsBasicBefore = await cometExt.totalsBasic();
 
-    // Impersonate governor
+    // Impersonate pause guardian
     await impersonateAccount(pauseGuardianBefore);
     pauseGuardian = await ethers.getSigner(pauseGuardianBefore);
     await setBalance(pauseGuardianBefore, ethers.utils.parseEther('10000'));
@@ -194,7 +194,7 @@ describe('extended pause upgrade test', function () {
     expect(await proxyAdmin.getProxyImplementation(COMET_ADDRESS)).to.equal(newImpl);
   });
 
-  it('should save comet extension storage safely after upgrade', async function () {
+  it('should keep comet extension immutables and constants after upgrade', async function () {
     expect(await cometExt.assetListFactory()).to.equal(assetListFactoryBefore);
     expect(await cometExt.maxAssets()).to.equal(maxAssetsBefore);
     expect(await cometExt.version()).to.equal(versionBefore);
@@ -206,7 +206,7 @@ describe('extended pause upgrade test', function () {
     expect(await cometExt.priceScale()).to.equal(priceScaleBefore);
   });
 
-  it('should save comet storage safely after upgrade', async function () {
+  it('should keep comet immutables and totalsBasic storage after upgrade', async function () {
     expect(await comet.governor()).to.equal(governorBefore);
     expect(await comet.pauseGuardian()).to.equal(pauseGuardianBefore);
     expect(await comet.baseToken()).to.equal(baseTokenBefore);
@@ -251,7 +251,7 @@ describe('extended pause upgrade test', function () {
     expect(await comet.isCollateralDeactivated(0)).to.be.true;
   });
 
-  it('should update deactivated collaterals flag in comet storage', async function () {
+  it('should set bit 0 of deactivatedCollaterals bitmap after deactivation', async function () {
     expect(await comet.deactivatedCollaterals()).to.equal(1);
   });
 
@@ -268,7 +268,7 @@ describe('extended pause upgrade test', function () {
     expect(await comet.isCollateralDeactivated(0)).to.be.false;
   });
 
-  it('should update deactivated collaterals flag in comet storage', async function () {
+  it('should clear bit 0 of deactivatedCollaterals bitmap after activation', async function () {
     expect(await comet.deactivatedCollaterals()).to.equal(0);
   });
 

@@ -89,9 +89,11 @@ import { ContractTransaction } from 'ethers';
  *           marks the asset as deactivated in `Comet` (`isCollateralDeactivated` is `true`).
  *         - `activateCollateral(assetIndex)` is callable by the `governor` and clears the
  *           deactivated flag (`isCollateralDeactivated` is `false`).
- *     - This proves that the deactivation / activation bitmaps and pause flags scale across
- *       the entire configured collateral set, including those whose bits are stored in both
- *       `assetsIn` and `_reserved` segments on the core contract side.
+ *     - Each index is also checked to revert on a repeated call (`CollateralIsDeactivated`
+ *       on double deactivation, `CollateralIsActivated` on double activation).
+ *     - These steps only check `isCollateralDeactivated`, i.e. that every bit of the
+ *       separate `uint24 deactivatedCollaterals` bitmap can be set and cleared; pause
+ *       flags are not checked per index here.
  *
  *  Together, these tests ensure that after the wUSDM and deUSD incident:
  *  - the protocol has a robust, low-latency mechanism to quarantine risky collateral
@@ -234,14 +236,14 @@ describe('collateral deactivation functionality', function () {
       for (let i = 1; i <= MAX_ASSETS; i++) {
         let assetIndex = i - 1;
 
-        it(`allows to deactivate for asset ${i}`, async function () {
+        it(`allows to deactivate asset at index ${assetIndex}`, async function () {
           await cometExt.connect(pauseGuardian).deactivateCollateral(assetIndex);
               
-          // Verify that the collateral at index i is deactivated
+          // Verify that the collateral at assetIndex is deactivated
           expect(await comet.isCollateralDeactivated(assetIndex)).to.be.true;
         });
 
-        it('reverts on double deactivation', async function () {
+        it(`reverts on double deactivation of asset at index ${assetIndex}`, async function () {
           await expect(cometExt.connect(pauseGuardian).deactivateCollateral(assetIndex))
             .to.be.revertedWithCustomError(cometExt, 'CollateralIsDeactivated')
             .withArgs(assetIndex);
@@ -253,14 +255,14 @@ describe('collateral deactivation functionality', function () {
       for (let i = 1; i <= MAX_ASSETS; i++) {
         let assetIndex = i - 1;
         
-        it(`allows to activate for asset ${i}`, async function () {                
+        it(`allows to activate asset at index ${assetIndex}`, async function () {                
           await cometExt.connect(governor).activateCollateral(assetIndex);
                 
-          // Verify that the collateral at index i is activated
+          // Verify that the collateral at assetIndex is activated
           expect(await comet.isCollateralDeactivated(assetIndex)).to.be.false;
         });
 
-        it('reverts on double activation', async function () {
+        it(`reverts on double activation of asset at index ${assetIndex}`, async function () {
           await expect(cometExt.connect(governor).activateCollateral(assetIndex))
             .to.be.revertedWithCustomError(cometExt, 'CollateralIsActivated')
             .withArgs(assetIndex);

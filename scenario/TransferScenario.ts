@@ -287,7 +287,7 @@ scenario(
     const oldAlbertPrincipal = (await comet.userBasic(albert.address)).principal.toBigInt();
     const oldBettyPrincipal = (await comet.userBasic(betty.address)).principal.toBigInt();
 
-    // Albert transfers 50 units of collateral to Betty
+    // Albert transfers 50 units of base to Betty
     const amountToTransfer = 50n * (await comet.baseScale()).toBigInt();
     const txn = await comet
       .connect(albert.signer)
@@ -313,7 +313,7 @@ scenario(
 // One scenario per collateral slot; each runs only when that slot holds a usable collateral on the current market
 for (let offset = 0; offset < MAX_ASSETS; offset++) {
   scenario(
-    `Comet#transfer > partial withdraw / borrow base to partial repay / supply, collateral asset ${offset}`,
+    `Comet#transfer > full withdraw / borrow base to full repay / supply, collateral asset ${offset}`,
     {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
@@ -703,7 +703,7 @@ scenario('Comet#transferAsset > disallows self-transfer of collateral', {}, asyn
   ).to.be.revertedWithCustomError(comet, 'NoSelfTransfer');
 });
 
-scenario('Comet#transferFrom > disallows self-transfer of base', {}, async ({ comet, actors }) => {
+scenario('Comet#transferAssetFrom > disallows self-transfer of base', {}, async ({ comet, actors }) => {
   const { albert, betty } = actors;
 
   const baseToken = await comet.baseToken();
@@ -1402,7 +1402,7 @@ scenario('Comet#transferAsset > reverts on unregistered asset', {}, async ({ act
 
   await expect(
     comet.connect(albert.signer).transferAsset(betty.address, unregisteredAsset.address, collateralAmount)
-  ).to.be.revertedWithPanic(0x11); // everted with panic code 0x11 - arithmetic operation underflowed
+  ).to.be.revertedWithPanic(0x11); // reverted with panic code 0x11 - arithmetic operation underflowed
 });
 
 scenario('Comet#transferAssetFrom > reverts on unregistered asset', {}, async ({ actors, comet }, context) => {
@@ -1426,7 +1426,7 @@ scenario('Comet#transferAssetFrom > reverts on unregistered asset', {}, async ({
     comet
       .connect(betty.signer)
       .transferAssetFrom(albert.address, betty.address, unregisteredAsset.address, collateralAmount)
-  ).to.be.revertedWithPanic(0x11); // everted with panic code 0x11 - arithmetic operation underflowed
+  ).to.be.revertedWithPanic(0x11); // reverted with panic code 0x11 - arithmetic operation underflowed
 });
 
 /*//////////////////////////////////////////////////////////////
@@ -1434,7 +1434,7 @@ scenario('Comet#transferAssetFrom > reverts on unregistered asset', {}, async ({
 //////////////////////////////////////////////////////////////*/
 
 scenario(
-  'Comet#transferFrom > reverts when collateral asset is deactivated and allows to transfer when activated',
+  'Comet#transferAssetFrom > reverts when collateral asset is deactivated and allows to transfer when activated',
   {
     filter: async (ctx: CometContext) => {
       return (await usesAssetList(ctx)) && (await supportsExtendedPause(ctx));
@@ -1443,7 +1443,7 @@ scenario(
   async ({ comet, actors }, context, world) => {
     const { admin, albert, betty, charles, pauseGuardian } = actors;
 
-    // Fund pause guardian account for gas fees
+    // Fund admin and pause guardian accounts for gas fees
     await fundAccount(world, admin);
     await fundAccount(world, pauseGuardian);
 
@@ -1505,7 +1505,7 @@ scenario(
 );
 
 scenario(
-  'Comet#transfer > reverts when collateral asset is deactivated and allows to transfer when activated',
+  'Comet#transferAsset > reverts when collateral asset is deactivated and allows to transfer when activated',
   {
     filter: async (ctx: CometContext) => {
       return (await usesAssetList(ctx)) && (await supportsExtendedPause(ctx));
@@ -1514,7 +1514,7 @@ scenario(
   async ({ comet, actors }, context, world) => {
     const { admin, albert, betty, pauseGuardian } = actors;
 
-    // Fund pause guardian account for gas fees
+    // Fund admin and pause guardian accounts for gas fees
     await fundAccount(world, admin);
     await fundAccount(world, pauseGuardian);
 

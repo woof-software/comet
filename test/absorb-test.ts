@@ -1226,7 +1226,7 @@ describe('absorb', function () {
    * while calculating the USD value of seized collateral, freezing liquidations.
    *
    * This suite covers four (LCF, LF) combinations and how each affects absorption:
-   *   1. LCF > 0, LF > 0  - active collateral: price fetched, collateral seized at full USD value.
+   *   1. LCF > 0, LF > 0  - active collateral: price fetched, collateral seized and credited at value × LF.
    *   2. LCF > 0, LF = 0  - soft de-list: price still fetched (isLiquidatable counts it), but
    *                          absorbInternal skips seizure; full debt absorbed by reserves.
    *   3. LCF = 0, LF > 0  - worthless seizure: price fetch skipped (assetPrices[i] = 0), collateral
@@ -1469,7 +1469,7 @@ describe('absorb', function () {
         expect((await comet.userCollateral(alice.address, compToken.address)).balance).to.equal(0);
       });
 
-      it('reset user assetsIn to 0', async () => {
+      it('resets user assetsIn to 0', async () => {
         expect((await comet.userBasic(alice.address)).assetsIn).to.equal(0);
         expect((await comet.userBasic(alice.address))._reserved).to.equal(0);
       });
@@ -1631,7 +1631,7 @@ describe('absorb', function () {
        *    - User collateral balance remains unchanged (same as before absorption)
        *    - totalsCollateral.totalSupplyAsset remains unchanged
        *    - User principal is still updated (debt is absorbed, but no collateral value is applied)
-       *    - AbsorbDebt event is still emitted (debt absorption occurs, but with 0 base paid out)
+       *    - AbsorbDebt event is still emitted (basePaidOut is the full debt, covered by reserves)
        *    - Total borrow base is still reduced (debt is repaid)
        *    - Transfer event is NOT emitted (since new principal becomes 0)
        */
@@ -1711,7 +1711,7 @@ describe('absorb', function () {
       });
     });
 
-    describe('asset abosorbs with zero value when liquidateCF > 0 and liquidationF is positive', function () {
+    describe('asset absorbs with zero value when liquidateCF = 0 and liquidationF is positive', function () {
       /*
        * the collateral is still seizable but treated as worthless.
        *
@@ -1915,7 +1915,7 @@ describe('absorb', function () {
         expect(await comet.isLiquidatable(alice.address)).to.be.true;
       });
 
-      it('absorbs is successful', async () => {
+      it('absorb is successful', async () => {
         liquidationTx = await comet.connect(bob).absorb(bob.address, [alice.address]);
         await expect(liquidationTx).to.not.be.reverted;
       });
@@ -2161,7 +2161,7 @@ describe('absorb', function () {
         await priceFeedWithRevert.deployed();
       });
 
-      it('alice is liquidable', async () => {
+      it('alice is liquidatable', async () => {
         expect(await comet.isLiquidatable(alice.address)).to.be.true;
       });
 

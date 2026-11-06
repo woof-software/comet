@@ -2242,7 +2242,7 @@ describe('isBorrowCollateralized', function () {
    * Flow tested:
    * The `isBorrowCollateralized` function iterates through a user's collateral assets to calculate their total liquidity.
    * When an asset's `borrowCollateralFactor` is set to 0, the contract skips that asset in the liquidity calculation
-   * (see CometWithExtendedAssetList.sol lines 402-405), effectively excluding it from contributing to the user's
+   * (see the `borrowCollateralFactor == 0` check in CometWithExtendedAssetList.isBorrowCollateralized), effectively excluding it from contributing to the user's
    * collateralization. This prevents the protocol from calling `getPrice()` on unavailable price feeds.
    *
    * Test scenarios:
@@ -2394,9 +2394,9 @@ describe('isBorrowCollateralized', function () {
       }
 
       // Borrow base against the collateral
-      // With 5 assets at price 200, borrowCF 0.9: each asset contributes ~180 USDC liquidity
-      // Total liquidity: 5 * 180 = 900 USDC. Borrow 400 to stay well collateralized initially.
-      // After zeroing 3 assets, only 2 contribute (360 total) < 400 borrowed, so undercollateralized.
+      // With 5 assets at price 200, borrowCF 0.75: each asset contributes 150 USDC liquidity
+      // Total liquidity: 5 * 150 = 750 USDC. Borrow 400 to stay well collateralized initially.
+      // After zeroing 3 assets, only 2 contribute (300 total) < 400 borrowed, so undercollateralized.
       const borrowAmount = exp(400, 6);
       await baseToken.allocateTo(comet.address, borrowAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
@@ -2423,8 +2423,8 @@ describe('isBorrowCollateralized', function () {
         expect(liquidityByAsset[sym].gt(0)).to.be.true;
       }
 
-      // With only two assets contributing (price 200, borrowCF 0.9),
-      // each contributes ~180 USDC liquidity, total ~360 USDC vs 400 borrowed
+      // With only two assets contributing (price 200, borrowCF 0.75),
+      // each contributes 150 USDC liquidity, total 300 USDC vs 400 borrowed
       // Position should be undercollateralized
       expect(await comet.isBorrowCollateralized(alice.address)).to.be.false;
 
@@ -2440,7 +2440,7 @@ describe('isBorrowCollateralized', function () {
         await targetToken.connect(alice).approve(comet.address, supplyAmount);
         await comet.connect(alice).supply(targetToken.address, supplyAmount);
 
-        // Borrow an amount collateralized by the single supplied asset (~180 USDC liquidity)
+        // Borrow an amount collateralized by the single supplied asset (200 * 0.75 = 150 USDC liquidity)
         const borrowAmount = exp(150, 6);
         await baseToken.allocateTo(comet.address, borrowAmount);
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
@@ -2448,7 +2448,7 @@ describe('isBorrowCollateralized', function () {
         // Initially collateralized with single asset active
         expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
 
-        // Zero borrowCF for target asset (last one)
+        // Zero borrowCF for the target asset (the only supplied asset)
         await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, targetToken.address, 0n);
 
         // Verify target asset liquidity is zero
@@ -2466,7 +2466,9 @@ describe('isBorrowCollateralized', function () {
       /*
        * Tests three resolution paths for price-feed paralysis in isBorrowCollateralized: restoring
        * the original feed, setting borrowCF to 0, and deactivating the collateral via the pause
-       * guardian. Each path proves that the Reverted error from a broken feed can be unblocked.
+       * guardian. Each path removes the external Reverted error from the broken feed: restoring the
+       * feed or zeroing borrowCF lets isBorrowCollateralized return normally, while deactivation makes
+       * it revert with the protocol-controlled TokenIsDeactivated error instead.
        */
       describe('revert on price feed side', function () {
         let originalPriceFeed: string;
