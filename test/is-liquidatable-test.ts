@@ -1211,8 +1211,6 @@ describe('isLiquidatable', function () {
 
     it('position becomes liquidatable when liquidateCF is set to 0', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
-
-      await snapshot.restore();
     });
 
     it('liquidateCF can be restored back', async function () {
@@ -1224,6 +1222,10 @@ describe('isLiquidatable', function () {
     });
 
     it('position is not liquidatable when liquidateCF is restored back', async function () {
+      // the same position is still open: alice holds the collateral and the debt
+      expect((await comet.userCollateral(alice.address, collateralToken.address)).balance).to.equal(supplyAmount);
+      expect((await comet.userBasic(alice.address)).principal).to.be.lessThan(0);
+
       expect(await comet.isLiquidatable(alice.address)).to.be.false;
     });
 
@@ -1233,6 +1235,9 @@ describe('isLiquidatable', function () {
     });
 
     it('isLiquidatable with mixed liquidate factors counts only positive CF assets', async () => {
+      // start from an empty account (the position above is still open)
+      await snapshot.restore();
+
       // Supply equal collateral in all 5 assets
       const supplyAmount = exp(1, 18);
       const symbols = ['ASSET0', 'ASSET1', 'ASSET2', 'ASSET3', 'ASSET4'];
