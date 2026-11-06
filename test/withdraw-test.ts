@@ -625,6 +625,11 @@ describe('withdraw', function () {
         expect((await comet.userCollateral(bob.address, collateral.address)).balance).to.equal(COLLATERAL_SUPPLY_AMOUNT);
       });
 
+      it('bob has the collateral registered in assetsIn before withdrawal', async () => {
+        const offset = 1 << (await comet.getAssetInfoByAddress(collateral.address)).offset;
+        expect((await comet.userBasic(bob.address)).assetsIn & offset).to.equal(offset);
+      });
+
       it('total supply before withdraw equals supply amount', async () => {
         expect(totalSupplyBefore).to.equal(COLLATERAL_SUPPLY_AMOUNT);
       });
@@ -685,12 +690,13 @@ describe('withdraw', function () {
         expect(totalCollateralSupplyBefore.sub(totalCollateralSupplyAfter)).to.equal(COLLATERAL_SUPPLY_AMOUNT);
       });
 
-      it('assetsIn is cleared when collateral balance goes to zero', async () => {
+      it("bob's assetsIn bit is cleared when his collateral balance goes to zero", async () => {
+        // bob (src) held the collateral; alice only received the tokens in her wallet (withdrawTo)
         const collateralIndex = (await comet.getAssetInfoByAddress(collateral.address)).offset;
-        const userData = await comet.userBasic(alice.address);
         const offset = 1 << collateralIndex;
 
-        expect(userData.assetsIn & offset).to.equal(0);
+        expect((await comet.userBasic(bob.address)).assetsIn & offset).to.equal(0);
+        expect((await comet.userBasic(alice.address)).assetsIn).to.equal(0);
       });
 
       it('alice principal is not changed after collateral withdrawal', async () => {
