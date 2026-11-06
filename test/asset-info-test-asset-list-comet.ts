@@ -127,7 +127,7 @@ describe('asset info', function () {
         await expect(assetListFactory.createAssetList([{ ...collateralAssetConfig, borrowCollateralFactor: 0n, liquidateCollateralFactor: 0n }])).to.not.be.reverted;
       });
 
-      it('borrowCF > liquidateF and borrowCF < liquidateCF', async () => {
+      it('borrowCF > liquidationFactor and borrowCF < liquidateCF', async () => {
         await expect(assetListFactory.createAssetList([{
           ...collateralAssetConfig,
           borrowCollateralFactor: exp(0.95, 18),
@@ -136,7 +136,7 @@ describe('asset info', function () {
         }])).to.not.be.reverted;
       });
 
-      it('borrowCF < liquidateCF and liquidateCF > liquidateF', async () => {
+      it('borrowCF < liquidateCF and liquidateCF > liquidationFactor', async () => {
         await expect(assetListFactory.createAssetList([{
           ...collateralAssetConfig,
           borrowCollateralFactor: exp(0.7, 18),
@@ -145,7 +145,7 @@ describe('asset info', function () {
         }])).to.not.be.reverted;
       });
 
-      it('borrowCF < liquidateCF < liquidateF', async () => {
+      it('borrowCF < liquidateCF < liquidationFactor', async () => {
         await expect(assetListFactory.createAssetList([{
           ...collateralAssetConfig,
           borrowCollateralFactor: exp(0.7, 18),
@@ -158,7 +158,7 @@ describe('asset info', function () {
         await expect(assetListFactory.createAssetList([{ ...collateralAssetConfig, borrowCollateralFactor: 0n }])).to.not.be.reverted;
       });
 
-      it('borrowCF = 0, liquidateF = 0, liquidateCF > 0', async () => {
+      it('borrowCF = 0, liquidationFactor = 0, liquidateCF > 0', async () => {
         await expect(assetListFactory.createAssetList([{ ...collateralAssetConfig, borrowCollateralFactor: 0n, liquidationFactor: 0n }])).to.not.be.reverted;
       });
 
@@ -170,11 +170,11 @@ describe('asset info', function () {
         await expect(assetListFactory.createAssetList([{ ...collateralAssetConfig, liquidateCollateralFactor: ONE }])).to.not.be.reverted;
       });
 
-      it('liquidateF < MAX_COLLATERAL_FACTOR', async () => {
+      it('liquidationFactor < MAX_COLLATERAL_FACTOR', async () => {
         await expect(assetListFactory.createAssetList([{ ...collateralAssetConfig, liquidationFactor: ONE - DESCALE }])).to.not.be.reverted;
       });
 
-      it('liquidateF = MAX_COLLATERAL_FACTOR', async () => {
+      it('liquidationFactor = MAX_COLLATERAL_FACTOR', async () => {
         await expect(assetListFactory.createAssetList([{ ...collateralAssetConfig, liquidationFactor: ONE }])).to.not.be.reverted;
       });
     });
@@ -200,7 +200,7 @@ describe('asset info', function () {
           .to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
       });
 
-      it('liquidateF > MAX_COLLATERAL_FACTOR', async () => {
+      it('liquidationFactor > MAX_COLLATERAL_FACTOR', async () => {
         await expect(assetListFactory.createAssetList([{ ...collateralAssetConfig, liquidationFactor: ONE + 1n }]))
           .to.be.revertedWithCustomError(assetList, 'LiqPenaltyTooHigh');
       });

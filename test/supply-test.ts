@@ -212,7 +212,7 @@ describe('supply', function () {
           .withArgs(alice.address, alice.address, BASE_AMOUNT);
       });
 
-      it('emits Transfer event when supplies base asset into empty pool (as supply growths)', async () => {
+      it('emits Transfer event when supplies base asset into empty pool (as supply grows)', async () => {
         const principalFromBase = BASE_AMOUNT; // default index for the empty pool gives same supply amount
 
         await expect(supplyTx)
@@ -228,13 +228,13 @@ describe('supply', function () {
         expect(await baseToken.balanceOf(comet.address)).to.equal(SEED_RESERVES + BASE_AMOUNT);
       });
 
-      it("user's stored principle is increased", async () => {
+      it("user's stored principal is increased", async () => {
         const principalFromBase = BASE_AMOUNT; // default index for the empty pool gives same supply amount
 
         expect((await comet.userBasic(alice.address)).principal).to.equal(principalFromBase);
       });
 
-      it("user's displayed principle is increased", async () => {
+      it("user's displayed principal is increased", async () => {
         const presentFromBase = BASE_AMOUNT; // default index for the empty pool gives same supply amount
 
         expect(await comet.balanceOf(alice.address)).to.equal(presentFromBase);
@@ -284,7 +284,7 @@ describe('supply', function () {
         cometSupplyRateBefore = await comet.getSupplyRate(await comet.getUtilization());
         cometUpdatedTimeBefore = (await comet.totalsBasic()).lastAccrualTime;
 
-        // wait with empty comet for a while
+        // wait for a while so lenders' interest accrues
         await ethers.provider.send('evm_increaseTime', [60 * 60]); // 1 hr
         await ethers.provider.send('evm_mine', []);
       });
@@ -333,24 +333,24 @@ describe('supply', function () {
         expect((await comet.totalsBasic()).lastAccrualTime).to.equal(depositTime);
       });
 
-      it('supples from alice the exact balance as in parameter', async () => {
+      it('supplies from alice the exact balance as in parameter', async () => {
         const aliceBalanceAfter = await baseToken.balanceOf(alice.address);
 
         expect(aliceBalanceBefore.sub(aliceBalanceAfter)).to.equal(SUPPLIED_AMOUNT_ALICE);
       });
 
-      it('Comet token balance growths', async () => {
+      it('Comet token balance grows', async () => {
         const cometBalanceAfter = await baseToken.balanceOf(comet.address);
 
         expect(cometBalanceAfter.sub(cometBalanceBefore)).to.equal(SUPPLIED_AMOUNT_ALICE);
       });
 
-      it("alice's principal growths", async () => {
+      it("alice's principal grows", async () => {
         const curTime = (await ethers.provider.getBlock('latest')).timestamp;
         const timeElapsed = curTime - cometUpdatedTimeBefore;
         const accruedIndex = cometSupplyIndexBefore.add(cometSupplyIndexBefore.mul(cometSupplyRateBefore).mul(timeElapsed).div(exp(1, 18)));
 
-        // healthcheck than current index is re-calculated correctly, and that it really moved
+        // health check that the current index is re-calculated correctly, and that it really moved
         const index = (await comet.totalsBasic()).baseSupplyIndex;
         expect(index).to.be.greaterThan(cometSupplyIndexBefore);
         expect(index).to.equal(accruedIndex);
@@ -362,12 +362,12 @@ describe('supply', function () {
         expect((await comet.userBasic(alice.address)).principal).to.equal(newPrincipal);
       });
 
-      it("alice's displayed balance growths", async () => {
+      it("alice's displayed balance grows", async () => {
         const curTime = (await ethers.provider.getBlock('latest')).timestamp;
         const timeElapsed = curTime - cometUpdatedTimeBefore;
         const accruedIndex = cometSupplyIndexBefore.add(cometSupplyIndexBefore.mul(cometSupplyRateBefore).mul(timeElapsed).div(exp(1, 18)));
 
-        // healthcheck than current index is re-calculated correctly, and that it really moved
+        // health check that the current index is re-calculated correctly, and that it really moved
         const index = (await comet.totalsBasic()).baseSupplyIndex;
         expect(index).to.be.greaterThan(cometSupplyIndexBefore);
         expect(index).to.equal(accruedIndex);
@@ -406,7 +406,7 @@ describe('supply', function () {
         cometSupplyRateBefore = await comet.getSupplyRate(await comet.getUtilization());
         cometUpdatedTimeBefore = (await comet.totalsBasic()).lastAccrualTime;
 
-        // wait with empty comet for a while
+        // wait for a while so lenders' interest accrues
         await ethers.provider.send('evm_increaseTime', [60 * 60]); // 1 hr
         await ethers.provider.send('evm_mine', []);
       });
@@ -436,24 +436,24 @@ describe('supply', function () {
         expect((await comet.totalsBasic()).lastAccrualTime).to.equal(depositTime);
       });
 
-      it('supples from bob the exact balance as in parameter', async () => {
+      it('supplies from bob the exact balance as in parameter', async () => {
         const bobBalanceAfter = await baseToken.balanceOf(bob.address);
 
         expect(bobBalanceBefore.sub(bobBalanceAfter)).to.equal(SUPPLIED_AMOUNT_BOB);
       });
 
-      it('Comet token balance growths', async () => {
+      it('Comet token balance grows', async () => {
         const cometBalanceAfter = await baseToken.balanceOf(comet.address);
 
         expect(cometBalanceAfter.sub(cometBalanceBefore)).to.equal(SUPPLIED_AMOUNT_BOB);
       });
 
-      it("bob's principal growths", async () => {
+      it("bob's principal grows", async () => {
         const curTime = (await ethers.provider.getBlock('latest')).timestamp;
         const timeElapsed = curTime - cometUpdatedTimeBefore;
         const accruedIndex = cometSupplyIndexBefore.add(cometSupplyIndexBefore.mul(cometSupplyRateBefore).mul(timeElapsed).div(exp(1, 18)));
 
-        // healthcheck than current index is re-calculated correctly, and that it really moved
+        // health check that the current index is re-calculated correctly, and that it really moved
         const index = (await comet.totalsBasic()).baseSupplyIndex;
         expect(index).to.be.greaterThan(cometSupplyIndexBefore);
         expect(index).to.equal(accruedIndex);
@@ -466,12 +466,12 @@ describe('supply', function () {
         expect((await comet.userBasic(bob.address)).principal).to.equal(newPrincipal);
       });
 
-      it("bob's displayed balance growths", async () => {
+      it("bob's displayed balance grows", async () => {
         const curTime = (await ethers.provider.getBlock('latest')).timestamp;
         const timeElapsed = curTime - cometUpdatedTimeBefore;
         const accruedIndex = cometSupplyIndexBefore.add(cometSupplyIndexBefore.mul(cometSupplyRateBefore).mul(timeElapsed).div(exp(1, 18)));
 
-        // healthcheck than current index is re-calculated correctly, and that it really moved
+        // health check that the current index is re-calculated correctly, and that it really moved
         const index = (await comet.totalsBasic()).baseSupplyIndex;
         expect(index).to.be.greaterThan(cometSupplyIndexBefore);
         expect(index).to.equal(accruedIndex);
@@ -487,19 +487,19 @@ describe('supply', function () {
 
       it("Comet's stored total supply corresponds to provided principals from all users", async () => {
         /// currently it is an accrued state, so we can compare directly
-        /// get alice's and bob's suppleis together
+        /// get alice's and bob's supplies together
         const alicePrincipal = (await comet.userBasic(alice.address)).principal;
         const bobPrincipal = (await comet.userBasic(bob.address)).principal;
         const totalStoredSupply = alicePrincipal.add(bobPrincipal);
         expect((await comet.totalsBasic()).totalSupplyBase).to.equal(totalStoredSupply);
       });
 
-      it("balanceOf() is >= bob's deposit", async () => {
+      it("balanceOf() equals bob's deposit (within 1 wei rounding)", async () => {
         const newBalanceNaive = SUPPLIED_AMOUNT_BOB;
 
         /// Note: since there is a rounding error, the immediate comet.balanceOf() may return value
         /// which is 1 wei less than the deposited amount. Though the difference will be neglected
-        /// in around 1 block of supply interest (in case if )
+        /// in around 1 block of supply interest.
 
         const newBalance = await comet.balanceOf(bob.address);
 
@@ -508,12 +508,12 @@ describe('supply', function () {
 
       it("Comet's displayed total supply corresponds to displayed balances from all users", async () => {
         /// currently it is an accrued state, so we can compare directly
-        /// get alice's and bob's suppleis together
+        /// get alice's and bob's supplies together
         const alicePresent = await comet.balanceOf(alice.address);
         const bobPresent = await comet.balanceOf(bob.address);
         const totalPresentSupply = alicePresent.add(bobPresent);
 
-        /// Note: because of the rounding errors accumulated (supplied amount -> principle -> present value)
+        /// Note: because of the rounding errors accumulated (supplied amount -> principal -> present value)
         /// There is a high chance to have around 1 wei difference in the displayed market supply (totalSupply())
         /// and the sum of all balances from all users
         expect(await comet.totalSupply()).to.be.approximately(totalPresentSupply, 1);
@@ -1342,7 +1342,7 @@ describe('supply', function () {
         expect(userData.assetsIn & offset).to.equal(0);
       });
 
-      it('should not collateral in the storage', async () => {
+      it('should not have collateral in the storage', async () => {
         expect((await comet.totalsCollateral(collateral.address)).totalSupplyAsset).to.equal(0);
         expect((await comet.userCollateral(alice.address, collateral.address)).balance).to.equal(0);
       });
@@ -1376,7 +1376,7 @@ describe('supply', function () {
         expect(aliceCollateralBalanceBefore.sub(aliceCollateralBalanceAfter)).to.equal(ALICE_COLLATERAL_AMOUNT);
       });
 
-      it("Comet's collateral token balance growths", async () => {
+      it("Comet's collateral token balance grows", async () => {
         expect(await collateral.balanceOf(comet.address)).to.equal(ALICE_COLLATERAL_AMOUNT);
       });
 
@@ -1406,7 +1406,7 @@ describe('supply', function () {
         const timeElapsed = supplyTimestamp.sub(cometUpdatedTimeBefore);
         const accruedIndex = cometSupplyIndexBefore.add(cometSupplyIndexBefore.mul(cometSupplyRateBefore).mul(timeElapsed).div(exp(1, 18)));
 
-        // healthcheck than current index is re-calculated correctly, and that it really moved
+        // health check that the current index is re-calculated correctly, and that it really moved
         const index = (await comet.totalsBasic()).baseSupplyIndex;
         expect(index).to.be.greaterThan(cometSupplyIndexBefore);
         expect(index).to.equal(accruedIndex);
@@ -1792,7 +1792,7 @@ describe('supply', function () {
     });
 
     describe('supplyTo', function () {
-      it('reverts for asset other than base of collateral', async () => {
+      it('reverts for asset other than base or collateral', async () => {
         await unsupportedToken.allocateTo(alice.address, exp(1, 18));
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
         await expect(comet.connect(alice).supplyTo(bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(comet, 'BadAsset');
@@ -1845,7 +1845,7 @@ describe('supply', function () {
         const alicePrincipalAfter = (await comet.userBasic(alice.address)).principal;
         expect(alicePrincipalBefore.sub(alicePrincipalAfter)).to.equal(0);
 
-        // bob's princiapl grows
+        // bob's principal grows
         // correctness of principal calculation is already checked in previous testcases
         expect((await comet.userBasic(bob.address)).principal).to.be.greaterThan(bobPrincipalBefore);
 
@@ -1862,7 +1862,7 @@ describe('supply', function () {
         expect(aliceBaseBalanceBefore.sub(await baseToken.balanceOf(alice.address))).to.equal(ALICE_BASE_AMOUNT);
         expect((await baseToken.balanceOf(comet.address)).sub(cometBaseBalanceBefore)).to.equal(ALICE_BASE_AMOUNT);
 
-        // alice principal is grows
+        // alice principal grows
         // correctness of principal calculation is already checked in previous testcases
         expect((await comet.userBasic(alice.address)).principal).to.be.greaterThan(alicePrincipalBefore);
 
@@ -1923,7 +1923,7 @@ describe('supply', function () {
         await snapshot.restore();
       });
  
-      it('reverts for asset other than base of collateral', async () => {
+      it('reverts for asset other than base or collateral', async () => {
         await unsupportedToken.allocateTo(alice.address, exp(1, 18));
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
         await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(
@@ -2025,7 +2025,7 @@ describe('supply', function () {
         const alicePrincipalAfter = (await comet.userBasic(alice.address)).principal;
         expect(alicePrincipalBefore.sub(alicePrincipalAfter)).to.equal(0);
 
-        // bob's princiapl grows
+        // bob's principal grows
         // correctness of principal calculation is already checked in previous testcases
         expect((await comet.userBasic(bob.address)).principal).to.be.greaterThan(bobPrincipalBefore);
 
@@ -2042,7 +2042,7 @@ describe('supply', function () {
         expect(aliceBaseBalanceBefore.sub(await baseToken.balanceOf(alice.address))).to.equal(ALICE_BASE_AMOUNT);
         expect((await baseToken.balanceOf(comet.address)).sub(cometBaseBalanceBefore)).to.equal(ALICE_BASE_AMOUNT);
 
-        // alice principal is grows
+        // alice principal grows
         // correctness of principal calculation is already checked in previous testcases
         expect((await comet.userBasic(alice.address)).principal).to.be.greaterThan(alicePrincipalBefore);
 

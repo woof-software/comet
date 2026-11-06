@@ -1298,7 +1298,7 @@ describe('isLiquidatable', function () {
         await targetToken.connect(alice).approve(comet.address, supplyAmount);
         await comet.connect(alice).supply(targetToken.address, supplyAmount);
 
-        // Borrow amount collateralized by the single supplied asset under liquidation values (~170 USDC)
+        // Borrow amount collateralized by the single supplied asset under liquidation value (1 × $200 × 0.8 liquidateCF = 160 USDC)
         const borrowAmount = exp(150, 6);
         await baseToken.allocateTo(comet.address, borrowAmount);
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
@@ -1308,7 +1308,7 @@ describe('isLiquidatable', function () {
 
         await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, targetToken.address, 0n);
 
-        // Zero liquidateCF for target asset (last one)
+        // Zero liquidateCF for the target asset (the only supplied asset)
         await updateAssetLiquidateCollateralFactor(configurator, proxyAdmin, comet.address, targetToken.address, 0n, governor);
 
         expect((await comet.getAssetInfoByAddress(targetToken.address)).liquidateCollateralFactor).to.equal(0);
@@ -1323,8 +1323,8 @@ describe('isLiquidatable', function () {
     describe('edge cases', function () {
       /*
        * Tests two resolution paths for price-feed paralysis in isLiquidatable: restoring the
-       * original feed, and setting liquidateCF to 0. Each path proves that the Reverted error
-       * from a broken feed can be unblocked without restoring the feed itself.
+       * original feed, and setting liquidateCF to 0. Either path removes the Reverted error from a
+       * broken feed: restoring the feed, or zeroing liquidateCF so the broken feed is never read.
        */
       describe('revert on price feed side', function () {
         let originalPriceFeed: string;

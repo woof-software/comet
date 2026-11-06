@@ -731,7 +731,7 @@ describe('quoteCollateral', function () {
       await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
       await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
 
-      // Culculation data
+      // Calculation data
       assetInfo = await comet.getAssetInfoByAddress(quoteCollateralToken.address);
       assetPrice = await comet.getPrice(assetInfo.priceFeed);
       basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
@@ -769,7 +769,7 @@ describe('quoteCollateral', function () {
       expect(assetInfo.liquidationFactor).to.eq(0);
     });
 
-    it('quotes with discount if liquidationFactor = 0', async () => {
+    it('quotes without discount if liquidationFactor = 0', async () => {
       quoteAmount = await comet.quoteCollateral(quoteCollateralToken.address, QUOTE_AMOUNT);
 
       // Expected quote calculation
