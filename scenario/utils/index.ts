@@ -533,8 +533,11 @@ export async function supportUtilizationLimit(ctx: CometContext): Promise<boolea
       return true;
     }
     return false;
-  } catch (error) {
-    return false;
+  } catch (e) {
+    // A missing function makes the call return '0x' (handled above); a provider that throws on the revert instead
+    // reports CALL_EXCEPTION. Anything else (RPC down, rate limit, getComet failing) must fail the run, not skip it.
+    if (e?.code === 'CALL_EXCEPTION') return false;
+    throw e;
   }
 }
 
@@ -2005,8 +2008,10 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
     }
     return false;
   } catch (e) {
-    // If the call reverts or fails, extended pause is not supported
-    return false;
+    // A missing function makes the call return '0x' (handled above); a provider that throws on the revert instead
+    // reports CALL_EXCEPTION. Anything else (RPC down, rate limit, getComet failing) must fail the run, not skip it.
+    if (e?.code === 'CALL_EXCEPTION') return false;
+    throw e;
   }
 }
 
