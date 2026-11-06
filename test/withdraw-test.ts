@@ -1176,17 +1176,32 @@ describe('withdraw', function () {
         const balance1 = await baseBalanceOf(comet, alice.address);
         expect(balance1).to.equal(-borrowAmount1);
 
+        // state right after the 1st borrow: the borrow index and rate the next day accrues with
+        const alicePrincipal = (await comet.userBasic(alice.address)).principal.toBigInt();
+        const { baseBorrowIndex: borrowIndex1, lastAccrualTime: accrualTime1 } = await comet.totalsBasic();
+        const borrowRate = (await comet.getBorrowRate(await comet.getUtilization())).toBigInt();
+        expect(borrowRate).to.be.greaterThan(0n);
+
         await fastForward(86400);
         await ethers.provider.send('evm_mine', []);
 
+        // the debt grew by exactly one day of interest at that rate
+        const now = (await ethers.provider.getBlock('latest')).timestamp;
+        const index1 = borrowIndex1.toBigInt();
+        const accruedIndex = index1 + index1 * borrowRate * BigInt(now - accrualTime1) / exp(1, 18);
         const balanceAfterTime = await baseBalanceOf(comet, alice.address);
-        expect(balanceAfterTime).to.be.lte(balance1);
+        expect(balanceAfterTime).to.be.lessThan(balance1);
+        expect(balanceAfterTime).to.equal(alicePrincipal * accruedIndex / exp(1, 15));
 
         const borrowAmount2 = exp(50, 6);
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount2);
 
+        // 2nd borrow adds exactly borrowAmount2 on top of the debt accrued up to that block
+        const indexAtBorrow2 = (await comet.totalsBasic()).baseBorrowIndex.toBigInt();
+        const debtBeforeBorrow2 = alicePrincipal * indexAtBorrow2 / exp(1, 15);
         const finalBalance = await baseBalanceOf(comet, alice.address);
-        expect(finalBalance).to.be.lte(-(borrowAmount1 + borrowAmount2));
+        expect(finalBalance).to.be.lessThan(-(borrowAmount1 + borrowAmount2));
+        expect(finalBalance).to.be.approximately(debtBeforeBorrow2 - borrowAmount2, 1n); // 1 wei rounding
       });
 
       it('borrows to withdraw if necessary/possible', async () => {
