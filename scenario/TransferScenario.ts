@@ -1174,7 +1174,7 @@ scenario(
     },
     cometBalances: (ctx: CometContext) => ({
       albert: {
-        $asset0: getConfigForScenario(ctx).transferCollateral
+        $asset0: getConfigForScenario(ctx, 0).transferCollateral
       }
     })
   },
@@ -1198,7 +1198,7 @@ scenario(
         .transferAsset(
           betty.address,
           collateralAsset.address,
-          BigInt(getConfigForScenario(context).transferCollateral) * scale
+          BigInt(getConfigForScenario(context, offset).transferCollateral) * scale
         )
     ).to.be.revertedWithCustomError(comet, 'CollateralAssetTransferPaused').withArgs(0);
   }
@@ -1210,7 +1210,7 @@ scenario(
     filter: async (ctx: CometContext) => {
       return (
         (await isValidAssetIndex(ctx, 0)) &&
-        (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferCollateral)) &&
+        (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx, 0).transferCollateral)) &&
         (await usesAssetList(ctx)) &&
         !(await isAssetDelisted(ctx, 0)) &&
         (await supportsExtendedPause(ctx))
@@ -1218,7 +1218,7 @@ scenario(
     },
     cometBalances: (ctx: CometContext) => ({
       albert: {
-        $asset0: getConfigForScenario(ctx).transferCollateral
+        $asset0: getConfigForScenario(ctx, 0).transferCollateral
       }
     })
   },
@@ -1245,7 +1245,7 @@ scenario(
           albert.address,
           betty.address,
           collateralAsset.address,
-          BigInt(getConfigForScenario(context).transferCollateral) * scale
+          BigInt(getConfigForScenario(context, offset).transferCollateral) * scale
         )
     ).to.be.revertedWithCustomError(comet, 'CollateralAssetTransferPaused').withArgs(offset);
   }

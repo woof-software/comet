@@ -556,7 +556,7 @@ scenario(
     tokenBalances: async (ctx) => ({
       albert: { $base: '== 0' },
       $comet: {
-        $base: getConfigForScenario(ctx).withdrawBase
+        $base: getConfigForScenario(ctx, 1).withdrawBase
       }
     }),
   },

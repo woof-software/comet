@@ -1380,7 +1380,7 @@ scenario(
     let checkedAssets = 0;
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
-      if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context).withdrawCollateral))) continue;
+      if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context, offset).withdrawCollateral))) continue;
       if (await isAssetDelisted(context, offset)) continue;
 
       const { asset, scale: scaleBN } = await comet.getAssetInfo(offset);
@@ -1455,13 +1455,13 @@ scenario(
     let checkedAssets = 0;
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
-      if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context).withdrawCollateral))) continue;
+      if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context, offset).withdrawCollateral))) continue;
       if (await isAssetDelisted(context, offset)) continue;
 
       const { asset, scale: scaleBN } = await comet.getAssetInfo(offset);
       const collateralAsset = context.getAssetByAddress(asset);
       const scale = scaleBN.toBigInt();
-      const withdrawCollateral = BigInt(getConfigForScenario(context).withdrawCollateral) * scale;
+      const withdrawCollateral = BigInt(getConfigForScenario(context, offset).withdrawCollateral) * scale;
 
       log(`Withdrawing reverts when collateral asset ${offset} withdraw is paused`);
       // Source collateral asset
