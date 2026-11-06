@@ -6,9 +6,6 @@ import { Cache } from '../Cache';
 import { recordTimers, tempDir } from './TestHelpers';
 import { buildToken, deployBuild, faucetTokenBuildFile, tokenArgs, hre } from './DeployHelpers';
 
-// TODO: Test verify
-// TODO: Test caching
-
 describe('Deploy', () => {
   it('deploy', async () => {
     let token = await buildToken();

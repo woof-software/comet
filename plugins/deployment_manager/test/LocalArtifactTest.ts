@@ -34,7 +34,7 @@ describe('Import reading local artifacts', () => {
       /Artifact.*MissingDeploymentTestArtifact.*not found/);
   });
 
-  it('reports missing build info instead of returning incomplete contract data', async () => {
+  it('throws a TypeError when compiler build info is missing', async () => {
     const cache = new Cache('test-network', 'test-deployment', false, tempDir());
     const runtime: HardhatRuntimeEnvironment = {
       ...hre,

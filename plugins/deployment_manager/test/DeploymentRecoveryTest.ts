@@ -106,7 +106,7 @@ describe('DeploymentManager recovery', () => {
         let deployed: Dog | undefined;
         let caught: unknown;
         try {
-          deployed = await manager.deploy(
+          deployed = await manager.deploy<Dog, [string, string, string[]]>(
             'pet', 'test/Dog.sol', ['recoverable', hre.ethers.constants.AddressZero, []], false, 1
           );
         } catch (error) {
