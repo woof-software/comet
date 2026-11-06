@@ -450,15 +450,27 @@ describe('reserves', function () {
         expect(isLiquidatable).to.equal(true);
       });
 
-      it('reserves should decrease by liquidatedAmount minus accrued interest spread', async function () {
+      it('absorb lowers reserves by the absorbed debt plus the supply credited to the borrower', async function () {
         const totalsBefore = await comet.totalsBasic();
         totalBorrowBefore = totalsBefore.totalBorrowBase;
         totalSupplyBefore = totalsBefore.totalSupplyBase;
+        const reservesBefore = await comet.getReserves();
+        // getReserves() is computed at this block's time; absorb runs 1s later, so allow one second of borrow interest
+        const oneSecondOfInterest = (await comet.totalBorrow())
+          .mul(await comet.getBorrowRate(await comet.getUtilization())).div(exp(1, 18)).add(2);
 
         const liquidateTx = await comet.connect(alice).absorb(alice.address, [dave.address]);
         const receipt = await liquidateTx.wait();
         liquidatedAmount = receipt.events?.filter((x) => x.event === 'AbsorbDebt')[0].args.basePaidOut;
+        // the debt includes the interest accrued since the borrow
         expect(liquidatedAmount).to.be.gt(borrowedAmount);
+
+        // reserves = balance + total borrow - total supply: absorb leaves the balance as it is, removes the debt
+        // from total borrow and adds the borrower's leftover credit (collateral value * LF - debt) to total supply
+        const daveSupplyAfter = await comet.balanceOf(dave.address);
+        const reservesAfter = await comet.getReserves();
+        expect(reservesAfter).to.be.lt(reservesBefore);
+        expect(reservesBefore.sub(reservesAfter)).to.be.closeTo(liquidatedAmount.add(daveSupplyAfter), oneSecondOfInterest);
       });
 
       it('total borrow should decrease after liquidation', async function () {
@@ -531,11 +543,14 @@ describe('reserves', function () {
         });
 
         it('total borrow should exceed total supply', async function () {
-          const { totalSupplyBase, totalBorrowBase } = await comet.totalsBasic();
+          // present values (principal * index), the same units getReserves() uses
+          const totalSupply_ = await comet.totalSupply();
+          const totalBorrow_ = await comet.totalBorrow();
           const reserves = await comet.getReserves();
-          expect(totalBorrowBase).to.be.gt(totalSupplyBase);
+          expect(totalBorrow_).to.be.gt(totalSupply_);
           expect(await baseToken.balanceOf(comet.address)).to.equal(0);
-          expect(reserves).to.be.greaterThan(totalBorrowBase.sub(totalSupplyBase));
+          // with no tokens on the comet, reserves = 0 + total borrow - total supply
+          expect(reserves).to.equal(totalBorrow_.sub(totalSupply_));
         });
       });
 
