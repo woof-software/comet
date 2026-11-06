@@ -246,8 +246,10 @@ describe('isLiquidatable', function () {
       const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
       const baseScale = await comet.baseScale();
 
-      // Get debt value in USD
-      const debtUSD = mulPrice(presentValuePrincipal, basePrice, baseScale);
+      // Get debt value in USD: presentValue keeps the sign, so a borrower's debt value is negative
+      const debtUSDSigned = mulPrice(presentValuePrincipal, basePrice, baseScale);
+      expect(debtUSDSigned).to.be.lessThan(0n);
+      const debtUSD = -debtUSDSigned; // positive magnitude
 
       // Get collateral data
       const collateralPrice = await comet.getPrice((await comet.getAssetInfo(0)).priceFeed);
@@ -259,7 +261,7 @@ describe('isLiquidatable', function () {
       // Calculate weighted collateral value
       const weightedCollateral = mulFactor(collateralUSD, (await comet.getAssetInfo(0)).liquidateCollateralFactor);
 
-      // Check if weighted collateral value exceeds debt value
+      // Check if weighted collateral value exceeds the debt magnitude
       expect(weightedCollateral).to.be.greaterThan(debtUSD);
     });
 
