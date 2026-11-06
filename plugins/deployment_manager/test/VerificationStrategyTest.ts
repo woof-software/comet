@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { strict as assert } from 'assert';
 import hre from 'hardhat';
 import * as fs from 'fs/promises';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
@@ -8,10 +9,51 @@ import { Cache } from '../Cache';
 import { deploy, deployBuild } from '../Deploy';
 import { DeploymentManager } from '../DeploymentManager';
 import { getVerifyArgs } from '../VerifyArgs';
-import { faucetTokenBuildFile, tokenArgs } from './DeployHelpers';
+import { tokenArgs } from './DeployHelpers';
+import { BuildFile } from '../Types';
 import { tempDir } from './TestHelpers';
 
 describe('Deployment verification strategies', () => {
+  const artifactName = 'contracts/test/FaucetToken.sol:FaucetToken';
+  let buildFile: BuildFile;
+  let expectedSource: { language: string, sources: unknown, settings: Record<string, unknown> };
+  let compilerVersion: string;
+
+  before(async () => {
+    const artifact = await hre.artifacts.readArtifact(artifactName);
+    const build = await hre.artifacts.getBuildInfo(artifactName);
+    assert.ok(build, 'Local compiler build info must exist for the verification fixture');
+    const output = build.output.contracts[artifact.sourceName][artifact.contractName];
+    const metadataText = (output as typeof output & { metadata?: string }).metadata;
+    assert.ok(metadataText, 'Local compiler output must include metadata');
+    const metadata = JSON.parse(metadataText);
+    // Compiler metadata can contain source hashes only; verification needs the actual source text.
+    metadata.sources = build.input.sources;
+    compilerVersion = metadata.compiler.version;
+    buildFile = {
+      contract: artifact.contractName,
+      contracts: {
+        [artifactName]: {
+          address: '', name: artifact.contractName, abi: artifact.abi, bin: artifact.bytecode,
+          metadata: JSON.stringify(metadata), source: artifact.sourceName, constructorArgs: '',
+        },
+      },
+      version: build.solcLongVersion,
+    };
+    const settings = { ...metadata.settings };
+    delete settings.compilationTarget;
+    expectedSource = { language: build.input.language, sources: build.input.sources, settings };
+  });
+
+  function assertBuildRequest(request: URLSearchParams) {
+    expect(request.get('contractname')).to.equal(artifactName);
+    expect(request.get('compilerversion')).to.equal(compilerVersion);
+    const source = JSON.parse(request.get('sourceCode')!);
+    expect(source).to.eql(expectedSource);
+    expect(source.sources).to.have.property('contracts/test/FaucetToken.sol');
+    expect(source.sources['contracts/test/FaucetToken.sol'].content).to.be.a('string').and.not.empty;
+  }
+
   for (const via of ['artifacts', 'buildfile'] as const) {
     for (const strategy of ['none', 'eager', 'lazy'] as const) {
       const name = {
@@ -35,7 +77,7 @@ describe('Deployment verification strategies', () => {
           const opts = { cache, network: cache.network, verificationStrategy: strategy };
           const contract = via === 'artifacts'
             ? await deploy('test/FaucetToken.sol', tokenArgs, hre, opts)
-            : await deployBuild(faucetTokenBuildFile, tokenArgs, hre, opts);
+            : await deployBuild(buildFile, tokenArgs, hre, opts);
           const queued = await getVerifyArgs(cache);
 
           expect(verified.length).to.equal(strategy === 'eager' ? 1 : 0);
@@ -49,7 +91,7 @@ describe('Deployment verification strategies', () => {
               expect(args.contract).to.equal('contracts/test/FaucetToken.sol:FaucetToken');
             } else if (args?.via === 'buildfile') {
               expect(args.contract).to.equal(contract);
-              expect(args.buildFile).to.eql(faucetTokenBuildFile);
+              expect(args.buildFile).to.eql(buildFile);
               expect(args.deployArgs).to.eql(tokenArgs);
             }
           }
@@ -83,7 +125,9 @@ describe('Deployment verification strategies', () => {
         const pool = agent.get('https://verification.test');
         // Exercise real build-file verification, mocking only the explorer HTTP responses.
         pool.intercept({ path: '/api', method: 'POST' }).reply(200, (options) => {
-          submitted.push(new URLSearchParams(String(options.body)));
+          const request = new URLSearchParams(String(options.body));
+          assertBuildRequest(request);
+          submitted.push(request);
           return { status: '1', message: 'OK', result: 'saved-queue-guid' };
         });
         pool.intercept({
@@ -109,7 +153,7 @@ describe('Deployment verification strategies', () => {
         const original = new DeploymentManager('test-network', 'test-deployment', runtime, config);
         const contract = via === 'artifacts'
           ? await original.deploy('token', 'test/FaucetToken.sol', tokenArgs)
-          : await original._deployBuild(faucetTokenBuildFile, tokenArgs);
+          : await original._deployBuild(buildFile, tokenArgs);
         expect(artifactCalls).to.equal(0);
         expect(submitted).to.have.length(0);
 
@@ -121,7 +165,7 @@ describe('Deployment verification strategies', () => {
         if (restored?.via === 'buildfile') {
           expect(restored.contract).not.to.equal(contract);
           expect(restored.contract.address).to.equal(contract.address);
-          expect(restored.buildFile).to.eql(faucetTokenBuildFile);
+          expect(restored.buildFile).to.eql(buildFile);
           expect(restored.deployArgs).to.eql(tokenArgs);
         }
         await fresh.verifyContracts();
@@ -129,11 +173,8 @@ describe('Deployment verification strategies', () => {
         expect(submitted).to.have.length(via === 'buildfile' ? 1 : 0);
         if (via === 'buildfile') {
           expect(submitted[0].get('contractaddress')).to.equal(contract.address.toLowerCase());
-          expect(submitted[0].get('contractname')).to.equal('contracts/FaucetToken.sol:FaucetToken');
+          assertBuildRequest(submitted[0]);
           expect(submitted[0].get('constructorArguements')).to.equal(contract.interface.encodeDeploy(tokenArgs).slice(2));
-          const source = JSON.parse(submitted[0].get('sourceCode')!);
-          expect(source.language).to.equal('Solidity');
-          expect(source.sources).to.be.an('object');
           agent.assertNoPendingInterceptors();
         }
         expect((await getVerifyArgs(fresh.cache)).size).to.equal(0);
@@ -149,4 +190,66 @@ describe('Deployment verification strategies', () => {
       }
     });
   }
+
+  it('keeps a saved buildfile verification entry when metadata JSON is invalid without contacting the explorer', async () => {
+    const dir = await fs.mkdtemp(tempDir());
+    const previousDispatcher = getGlobalDispatcher();
+    const originalError = console.error;
+    const agent = new MockAgent();
+    agent.disableNetConnect();
+    setGlobalDispatcher(agent);
+    const errors: unknown[][] = [];
+    console.error = (...args: unknown[]) => { errors.push(args); };
+    try {
+      let explorerRequests = 0;
+      const pool = agent.get('https://verification.test');
+      // Count attempted requests too: a blocked network call must not look like a local rejection.
+      pool.intercept({ path: '/api', method: 'POST' }).reply(200, () => {
+        explorerRequests++;
+        return { status: '1', message: 'OK', result: 'unexpected-request' };
+      });
+      pool.intercept({
+        path: '/api', method: 'GET',
+        query: { apikey: 'TEST_KEY', module: 'contract', action: 'checkverifystatus', guid: 'unexpected-request' },
+      }).reply(200, () => {
+        explorerRequests++;
+        return { status: '1', message: 'OK', result: 'Pass - Verified' };
+      });
+      const runtime: HardhatRuntimeEnvironment = {
+        ...hre,
+        config: { ...hre.config, etherscan: { ...hre.config.etherscan, apiKey: 'TEST_KEY' } },
+        run: (async task => {
+          expect(task).to.equal('verify:get-etherscan-endpoint');
+          return { network: 'test-network', urls: { apiURL: 'https://verification.test/api' } };
+        }) as HardhatRuntimeEnvironment['run'],
+      };
+      const config = { baseDir: dir, writeCacheToDisk: true, verificationStrategy: 'lazy' as const };
+      const original = new DeploymentManager('test-network', 'test-deployment', runtime, config);
+      const contract = await original._deployBuild(buildFile, tokenArgs);
+      const queueFile = original.cache.getFilePath({ rel: ['verify', 'args.json'] });
+      const saved = JSON.parse(await fs.readFile(queueFile, 'utf8'));
+
+      // Corrupt only metadata inside the persisted entry; the queue itself remains valid JSON.
+      saved[contract.address].buildFile.contracts[artifactName].metadata = '{"compiler":';
+      const damagedQueue = JSON.stringify(saved);
+      await fs.writeFile(queueFile, damagedQueue);
+
+      const fresh = new DeploymentManager('test-network', 'test-deployment', runtime, { ...config });
+      expect(fresh.cache.cache.size).to.equal(0);
+      await fresh.verifyContracts();
+
+      // The manager uses raise=false: parsing failure is logged and the entry stays queued.
+      expect(errors).to.have.length(2);
+      expect(errors[0][0]).to.be.a('string').and.include(`Unable to verify contract at ${contract.address}: SyntaxError:`);
+      expect(errors[1]).to.eql(['Continuing on anyway...']);
+      expect(explorerRequests).to.equal(0);
+      expect(Object.fromEntries(await getVerifyArgs(fresh.cache))).to.eql(saved);
+      expect(await fs.readFile(queueFile, 'utf8')).to.equal(damagedQueue);
+    } finally {
+      console.error = originalError;
+      setGlobalDispatcher(previousDispatcher);
+      await agent.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
 });
