@@ -1,7 +1,7 @@
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-import { expect, makeProtocol, MAX_ASSETS } from './helpers';
-import { CometExt, CometHarnessInterfaceExtendedAssetList } from 'build/types';
-import { ContractTransaction } from 'ethers';
+import { expect, exp, makeProtocol, MAX_ASSETS, takeSnapshot, SnapshotRestorer } from './helpers';
+import { CometExt, CometHarnessInterfaceExtendedAssetList, FaucetToken } from 'build/types';
+import { BigNumberish, ContractTransaction } from 'ethers';
 
 /**
  * Context: Written after the USDM incident (a Chainlink price feed removal). The protocol added
@@ -1221,6 +1221,149 @@ describe('extended pause functionality', function () {
             cometExt.connect(pauseGuardian).pauseCollateralAssetTransfer(assetIndex, false)
           ).to.be.revertedWithCustomError(cometExt, 'CollateralIsDeactivated');
         });
+      });
+    });
+  });
+
+  describe('lenders withdraw and transfer pauses are independent', function () {
+    const SUPPLY_AMOUNT = exp(100, 6);
+    const DEFAULT_BASE_SUPPLY = exp(1000, 6);
+    const DEFAULT_COLLATERAL_SUPPLY = exp(1, 18);
+    const BASE_BORROW_MIN = exp(1, 6);
+
+    let comet: CometHarnessInterfaceExtendedAssetList;
+    let baseToken: FaucetToken;
+    let alice: SignerWithAddress;
+    let eve: SignerWithAddress;
+    let initialSnapshot: SnapshotRestorer;
+
+    const transferMethods: {
+      name: string;
+      transfer: (src: SignerWithAddress, amount: BigNumberish) => Promise<ContractTransaction>;
+    }[] = [
+      {
+        name: 'transfer',
+        transfer: (src, amount) => comet.connect(src).transfer(eve.address, amount),
+      },
+      {
+        name: 'transferFrom',
+        transfer: (src, amount) => comet.connect(eve).transferFrom(src.address, eve.address, amount),
+      },
+      {
+        name: 'transferAsset',
+        transfer: (src, amount) => comet.connect(src).transferAsset(eve.address, baseToken.address, amount),
+      },
+      {
+        name: 'transferAssetFrom',
+        transfer: (src, amount) => comet.connect(eve).transferAssetFrom(src.address, eve.address, baseToken.address, amount),
+      },
+    ];
+
+    const withdrawMethods: {
+      name: string;
+      withdraw: (src: SignerWithAddress, amount: BigNumberish) => Promise<ContractTransaction>;
+    }[] = [
+      {
+        name: 'withdraw',
+        withdraw: (src, amount) => comet.connect(src).withdraw(baseToken.address, amount),
+      },
+      {
+        name: 'withdrawTo',
+        withdraw: (src, amount) => comet.connect(src).withdrawTo(eve.address, baseToken.address, amount),
+      },
+      {
+        name: 'withdrawFrom',
+        withdraw: (src, amount) => comet.connect(eve).withdrawFrom(src.address, eve.address, baseToken.address, amount),
+      },
+    ];
+
+    before(async function () {
+      const protocol = await makeProtocol({
+        base: 'USDC',
+        baseBorrowMin: BASE_BORROW_MIN,
+        supplyInterestRateSlopeLow: 0,
+        supplyInterestRateSlopeHigh: 0,
+        borrowInterestRateBase: 0,
+        borrowInterestRateSlopeLow: 0,
+        borrowInterestRateSlopeHigh: 0,
+      });
+      comet = protocol.cometWithExtendedAssetList;
+      baseToken = protocol.tokens.USDC as FaucetToken;
+      const weth = protocol.tokens.WETH as FaucetToken;
+      const carol = protocol.users[3];
+      alice = protocol.users[0];
+      eve = protocol.users[4];
+
+      for (const { account, amount } of [
+        { account: carol, amount: DEFAULT_BASE_SUPPLY },
+        { account: alice, amount: SUPPLY_AMOUNT },
+      ]) {
+        await baseToken.allocateTo(account.address, amount);
+        await baseToken.connect(account).approve(comet.address, amount);
+        await comet.connect(account).supply(baseToken.address, amount);
+      }
+
+      await weth.allocateTo(alice.address, DEFAULT_COLLATERAL_SUPPLY);
+      await weth.connect(alice).approve(comet.address, DEFAULT_COLLATERAL_SUPPLY);
+      await comet.connect(alice).supply(weth.address, DEFAULT_COLLATERAL_SUPPLY);
+      await comet.connect(alice).allow(eve.address, true);
+
+      initialSnapshot = await takeSnapshot();
+    });
+
+    describe('under lenders withdraw pause', function () {
+      let lendersPauseSnapshot: SnapshotRestorer;
+
+      before(async function () {
+        await comet.connect(pauseGuardian).pauseLendersWithdraw(true);
+
+        lendersPauseSnapshot = await takeSnapshot();
+      });
+
+      it('lenders withdraw is paused', async function () {
+        expect(await comet.isLendersWithdrawPaused()).to.be.true;
+      });
+
+      for (const { name, transfer } of transferMethods) {
+        it(`${name} of supply plus min borrow does not revert`, async function () {
+          await expect(transfer(alice, SUPPLY_AMOUNT + BASE_BORROW_MIN)).to.not.be.reverted;
+        });
+      }
+
+      afterEach(async function () {
+        await lendersPauseSnapshot.restore();
+      });
+
+      after(async function () {
+        await initialSnapshot.restore();
+      });
+    });
+
+    describe('under lenders transfer pause', function () {
+      let lendersPauseSnapshot: SnapshotRestorer;
+
+      before(async function () {
+        await comet.connect(pauseGuardian).pauseLendersTransfer(true);
+
+        lendersPauseSnapshot = await takeSnapshot();
+      });
+
+      it('lenders transfer is paused', async function () {
+        expect(await comet.isLendersTransferPaused()).to.be.true;
+      });
+
+      for (const { name, withdraw } of withdrawMethods) {
+        it(`${name} of supply plus min borrow does not revert`, async function () {
+          await expect(withdraw(alice, SUPPLY_AMOUNT + BASE_BORROW_MIN)).to.not.be.reverted;
+        });
+      }
+
+      afterEach(async function () {
+        await lendersPauseSnapshot.restore();
+      });
+
+      after(async function () {
+        await initialSnapshot.restore();
       });
     });
   });

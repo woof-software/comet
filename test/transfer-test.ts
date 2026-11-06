@@ -1,7 +1,7 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, NonStandardFaucetFeeToken, NonStandardFaucetFeeToken__factory } from 'build/types';
 import { ethers, expect, exp, makeProtocol, presentValue, ZERO_ADDRESS, presentValueSupply, mulPrice, mulFactor, defaultAssets, MAX_ASSETS, UserBasic, UserCollateral } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-import { BigNumber, ContractTransaction } from 'ethers';
+import { BigNumber, BigNumberish, ContractTransaction } from 'ethers';
 import { SnapshotRestorer, takeSnapshot } from './helpers/snapshot';
 
 describe('transfer', function () {
@@ -2142,5 +2142,175 @@ describe('transfer', function () {
         expect((await cometWith24Collaterals.userCollateral(alice.address, assetToken.address)).balance).to.be.equal(collateralTokenSupplyAmount);
       });
     }
+  });
+
+  describe('lenders transfer pause', function () {
+    const SUPPLY_AMOUNT = exp(100, 6);
+    const DEFAULT_BASE_SUPPLY = exp(1000, 6);
+    const DEFAULT_COLLATERAL_SUPPLY = exp(1, 18);
+    const BASE_BORROW_MIN = exp(1, 6);
+    const BORROW_AMOUNT = SUPPLY_AMOUNT / 2n;
+    const BORROWER_TRANSFER_AMOUNT = exp(10, 6);
+
+    let comet: CometHarnessInterfaceExtendedAssetList;
+    let baseToken: FaucetToken;
+    let eve: SignerWithAddress;
+    let lendersPauseSnapshot: SnapshotRestorer;
+
+    const transferMethods: {
+      name: string;
+      transfer: (src: SignerWithAddress, dst: SignerWithAddress, amount: BigNumberish) => Promise<ContractTransaction>;
+    }[] = [
+      {
+        name: 'transfer',
+        transfer: (src, dst, amount) => comet.connect(src).transfer(dst.address, amount),
+      },
+      {
+        name: 'transferFrom',
+        transfer: (src, dst, amount) => comet.connect(eve).transferFrom(src.address, dst.address, amount),
+      },
+      {
+        name: 'transferAsset',
+        transfer: (src, dst, amount) => comet.connect(src).transferAsset(dst.address, baseToken.address, amount),
+      },
+      {
+        name: 'transferAssetFrom',
+        transfer: (src, dst, amount) => comet.connect(eve).transferAssetFrom(src.address, dst.address, baseToken.address, amount),
+      },
+    ];
+
+    before(async () => {
+      const protocol = await makeProtocol({
+        base: 'USDC',
+        baseBorrowMin: BASE_BORROW_MIN,
+        supplyInterestRateSlopeLow: 0,
+        supplyInterestRateSlopeHigh: 0,
+        borrowInterestRateBase: 0,
+        borrowInterestRateSlopeLow: 0,
+        borrowInterestRateSlopeHigh: 0,
+      });
+      comet = protocol.cometWithExtendedAssetList;
+      baseToken = protocol.tokens.USDC as FaucetToken;
+      const weth = protocol.tokens.WETH as FaucetToken;
+      const carol = protocol.users[3];
+      eve = protocol.users[4];
+
+      for (const { account, amount } of [
+        { account: carol, amount: DEFAULT_BASE_SUPPLY },
+        { account: alice, amount: SUPPLY_AMOUNT },
+      ]) {
+        await baseToken.allocateTo(account.address, amount);
+        await baseToken.connect(account).approve(comet.address, amount);
+        await comet.connect(account).supply(baseToken.address, amount);
+      }
+
+      for (const account of [alice, bob, dave]) {
+        await weth.allocateTo(account.address, DEFAULT_COLLATERAL_SUPPLY);
+        await weth.connect(account).approve(comet.address, DEFAULT_COLLATERAL_SUPPLY);
+        await comet.connect(account).supply(weth.address, DEFAULT_COLLATERAL_SUPPLY);
+        await comet.connect(account).allow(eve.address, true);
+      }
+
+      await comet.connect(bob).withdraw(baseToken.address, BORROW_AMOUNT);
+
+      await comet.connect(pauseGuardian).pauseLendersTransfer(true);
+
+      lendersPauseSnapshot = await takeSnapshot();
+    });
+
+    it('alice balance equals supply', async () => {
+      expect(await comet.balanceOf(alice.address)).to.equal(SUPPLY_AMOUNT);
+    });
+
+    it('bob borrow balance equals borrow amount', async () => {
+      expect(await comet.borrowBalanceOf(bob.address)).to.equal(BORROW_AMOUNT);
+    });
+
+    for (const { name, transfer } of transferMethods) {
+      for (const { description, amount } of [
+        { description: 'part of supply', amount: SUPPLY_AMOUNT / 2n },
+        { description: 'whole supply', amount: SUPPLY_AMOUNT },
+        { description: 'max', amount: ethers.constants.MaxUint256 },
+        { description: 'supply plus min borrow', amount: SUPPLY_AMOUNT + BASE_BORROW_MIN },
+      ]) {
+        it(`${name} of ${description} to account without debt reverts due to lenders pause`, async () => {
+          await expect(transfer(alice, eve, amount)).to.be.revertedWithCustomError(comet, 'LendersTransferPaused');
+        });
+
+        it(`${name} of ${description} to account with debt reverts due to lenders pause`, async () => {
+          await expect(transfer(alice, bob, amount)).to.be.revertedWithCustomError(comet, 'LendersTransferPaused');
+        });
+      }
+    }
+
+    describe('borrower without supply', function () {
+      for (const { name, transfer } of transferMethods) {
+        it(`${name} does not revert`, async () => {
+          await expect(transfer(dave, eve, BORROWER_TRANSFER_AMOUNT)).to.not.be.reverted;
+        });
+      }
+
+      afterEach(async () => {
+        await lendersPauseSnapshot.restore();
+      });
+    });
+
+    describe('both pauses are active', function () {
+      before(async () => {
+        await comet.connect(pauseGuardian).pauseBorrowersTransfer(true);
+      });
+
+      it('alice balance equals supply', async () => {
+        expect(await comet.balanceOf(alice.address)).to.equal(SUPPLY_AMOUNT);
+      });
+
+      for (const { name, transfer } of transferMethods) {
+        it(`${name} of supply plus min borrow reverts due to lenders pause, not borrowers pause`, async () => {
+          await expect(transfer(alice, eve, SUPPLY_AMOUNT + BASE_BORROW_MIN)).to.be.revertedWithCustomError(comet, 'LendersTransferPaused');
+        });
+      }
+
+      it('lifts lenders pause', async () => {
+        await expect(comet.connect(pauseGuardian).pauseLendersTransfer(false)).to.not.be.reverted;
+      });
+
+      for (const { name, transfer } of transferMethods) {
+        it(`${name} of supply plus min borrow reverts due to borrowers pause`, async () => {
+          await expect(transfer(alice, eve, SUPPLY_AMOUNT + BASE_BORROW_MIN)).to.be.revertedWithCustomError(comet, 'BorrowersTransferPaused');
+        });
+      }
+
+      after(async () => {
+        await lendersPauseSnapshot.restore();
+      });
+    });
+
+    describe('lenders pause is lifted', function () {
+      let liftedPauseSnapshot: SnapshotRestorer;
+
+      before(async () => {
+        await comet.connect(pauseGuardian).pauseLendersTransfer(false);
+
+        liftedPauseSnapshot = await takeSnapshot();
+      });
+
+      it('alice balance equals supply', async () => {
+        expect(await comet.balanceOf(alice.address)).to.equal(SUPPLY_AMOUNT);
+      });
+
+      for (const { name, transfer } of transferMethods) {
+        it(`${name} of supply plus min borrow does not revert`, async () => {
+          await expect(transfer(alice, eve, SUPPLY_AMOUNT + BASE_BORROW_MIN)).to.not.be.reverted;
+        });
+      }
+
+      afterEach(async () => {
+        await liftedPauseSnapshot.restore();
+      });
+
+      after(async () => {
+        await lendersPauseSnapshot.restore();
+      });
+    });
   });
 });
