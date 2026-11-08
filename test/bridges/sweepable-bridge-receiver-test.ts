@@ -7,22 +7,22 @@ import {
 } from '../../build/types';
 import { encodeBridgeReceiverCalldata, makeTimelock } from './base-bridge-receiver-test';
 
-async function makeSweepableBridgeReceiver({ initialize } = { initialize: true }) {
-  const [_defaultSigner, govTimelockAdmin, ...signers] = await ethers.getSigners();
-
-  const SweepableBridgeReceiverFactory = (await ethers.getContractFactory('SweepableBridgeReceiverHarness')) as SweepableBridgeReceiverHarness__factory;
-  const sweepableBridgeReceiver = await SweepableBridgeReceiverFactory.deploy();
-  await sweepableBridgeReceiver.deployed();
+async function makeSweepableBridgeReceiver() {
+  const [defaultSigner, govTimelockAdmin, guardian, ...signers] = await ethers.getSigners();
 
   const govTimelock = await makeTimelock({ admin: govTimelockAdmin.address });
-  const localTimelock = await makeTimelock({ admin: sweepableBridgeReceiver.address });
 
-  if (initialize) {
-    await sweepableBridgeReceiver.initialize(
-      govTimelock.address,   // govTimelock
-      localTimelock.address  // localTimelock
-    );
-  }
+  // The local timelock gets the bridge receiver as its admin, at the address the receiver is deployed at next
+  const bridgeReceiverAddress = utils.getContractAddress({ from: defaultSigner.address, nonce: (await defaultSigner.getTransactionCount()) + 1 });
+  const localTimelock = await makeTimelock({ admin: bridgeReceiverAddress });
+
+  const SweepableBridgeReceiverFactory = (await ethers.getContractFactory('SweepableBridgeReceiverHarness')) as SweepableBridgeReceiverHarness__factory;
+  const sweepableBridgeReceiver = await SweepableBridgeReceiverFactory.deploy(
+    govTimelock.address,   // govTimelock
+    localTimelock.address, // localTimelock
+    guardian.address       // initialGuardian
+  );
+  await sweepableBridgeReceiver.deployed();
 
   return {
     sweepableBridgeReceiver,

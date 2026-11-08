@@ -26,22 +26,22 @@ export async function makeTimelock({ admin }: { admin: string }) {
   return timelock;
 }
 
-async function makeBridgeReceiver({ initialize } = { initialize: true }) {
-  const [_defaultSigner, govTimelockAdmin, ...signers] = await ethers.getSigners();
-
-  const BaseBridgeReceiverFactory = (await ethers.getContractFactory('BaseBridgeReceiverHarness')) as BaseBridgeReceiverHarness__factory;
-  const baseBridgeReceiver = await BaseBridgeReceiverFactory.deploy();
-  await baseBridgeReceiver.deployed();
+async function makeBridgeReceiver() {
+  const [defaultSigner, govTimelockAdmin, guardian, ...signers] = await ethers.getSigners();
 
   const govTimelock = await makeTimelock({ admin: govTimelockAdmin.address });
-  const localTimelock = await makeTimelock({ admin: baseBridgeReceiver.address });
 
-  if (initialize) {
-    await baseBridgeReceiver.initialize(
-      govTimelock.address,   // govTimelock
-      localTimelock.address  // localTimelock
-    );
-  }
+  // The local timelock gets the bridge receiver as its admin, at the address the receiver is deployed at next
+  const bridgeReceiverAddress = utils.getContractAddress({ from: defaultSigner.address, nonce: (await defaultSigner.getTransactionCount()) + 1 });
+  const localTimelock = await makeTimelock({ admin: bridgeReceiverAddress });
+
+  const BaseBridgeReceiverFactory = (await ethers.getContractFactory('BaseBridgeReceiverHarness')) as BaseBridgeReceiverHarness__factory;
+  const baseBridgeReceiver = await BaseBridgeReceiverFactory.deploy(
+    govTimelock.address,   // govTimelock
+    localTimelock.address, // localTimelock
+    guardian.address       // initialGuardian
+  );
+  await baseBridgeReceiver.deployed();
 
   return {
     baseBridgeReceiver,
@@ -56,59 +56,6 @@ export function encodeBridgeReceiverCalldata({ targets, values, signatures, call
 }
 
 describe('BaseBridgeReceiver', function () {
-  it('is initialized with empty storage values', async () => {
-    const { baseBridgeReceiver } = await makeBridgeReceiver({initialize: false});
-
-    expect(await baseBridgeReceiver.govTimelock()).to.eq(ethers.constants.AddressZero);
-    expect(await baseBridgeReceiver.localTimelock()).to.eq(ethers.constants.AddressZero);
-    expect(await baseBridgeReceiver.initialized()).to.eq(false);
-  });
-
-  it('initializing sets values', async () => {
-    const {
-      baseBridgeReceiver,
-      govTimelock,
-      localTimelock,
-    } = await makeBridgeReceiver({ initialize: false });
-
-    const tx = await wait(baseBridgeReceiver.initialize(govTimelock.address, localTimelock.address));
-
-    expect(await baseBridgeReceiver.govTimelock()).to.eq(govTimelock.address);
-    expect(await baseBridgeReceiver.localTimelock()).to.eq(localTimelock.address);
-    expect(await baseBridgeReceiver.initialized()).to.eq(true);
-
-    expect(event(tx, 0)).to.be.deep.equal({
-      Initialized: {
-        govTimelock: govTimelock.address,
-        localTimelock: localTimelock.address
-      }
-    });
-  });
-
-  it('reverts on initialize if local timelock admin is not the bridge receiver', async () => {
-    const {
-      baseBridgeReceiver,
-      govTimelock,
-    } = await makeBridgeReceiver({initialize: false});
-    const badLocalTimelock = await makeTimelock({ admin: ethers.constants.AddressZero });
-
-    await expect(
-      baseBridgeReceiver.initialize(govTimelock.address, badLocalTimelock.address)
-    ).to.be.revertedWith("custom error 'InvalidTimelockAdmin()'");
-  });
-
-  it('cannot be reinitialized', async () => {
-    const {
-      baseBridgeReceiver,
-      govTimelock,
-      localTimelock
-    } = await makeBridgeReceiver({initialize: true});
-
-    await expect(
-      baseBridgeReceiver.initialize(govTimelock.address, localTimelock.address)
-    ).to.be.revertedWith("custom error 'AlreadyInitialized()'");
-  });
-
   it('processMessage > reverts if messageSender is not govTimelock', async () => {
     const {
       baseBridgeReceiver,
