@@ -15,8 +15,16 @@ contract PolygonBridgeReceiver is IFxMessageProcessor, BaseBridgeReceiver {
     /**
      * @notice Construct a new PolygonBridgeReceiver instance
      * @param _fxChild Address of Polygon bridged message receiver
+     * @param _govTimelock Address of the governing contract that this contract will receive messages from
+     * @param _localTimelock Address of the timelock contract that this contract will send messages to
+     * @param _initialGuardian Address that can cancel queued proposals
      **/
-    constructor(address _fxChild) {
+    constructor(
+        address _fxChild,
+        address _govTimelock,
+        address _localTimelock,
+        address _initialGuardian
+    ) BaseBridgeReceiver(_govTimelock, _localTimelock, _initialGuardian) {
         fxChild = _fxChild;
     }
 
@@ -25,7 +33,7 @@ contract PolygonBridgeReceiver is IFxMessageProcessor, BaseBridgeReceiver {
      * @param newFxChild New value for fxAddress
      */
     function changeFxChild(address newFxChild) public {
-        if (msg.sender != localTimelock) revert Unauthorized();
+        if (msg.sender != address(localTimelock)) revert Unauthorized();
         address oldFxChild = fxChild;
         fxChild = newFxChild;
         emit NewFxChild(oldFxChild, newFxChild);

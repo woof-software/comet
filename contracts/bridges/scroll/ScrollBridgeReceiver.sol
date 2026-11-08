@@ -16,7 +16,15 @@ contract ScrollBridgeReceiver is SweepableBridgeReceiver {
 
     /// @notice Construct a new ScrollBridgeReceiver instance
     /// @param l2Messenger_ Address of Scroll L2 Messenger contract
-    constructor(address l2Messenger_) {
+    /// @param govTimelock_ Address of the governing contract that this contract will receive messages from
+    /// @param localTimelock_ Address of the timelock contract that this contract will send messages to
+    /// @param initialGuardian_ Address that can cancel queued proposals
+    constructor(
+        address l2Messenger_,
+        address govTimelock_,
+        address localTimelock_,
+        address initialGuardian_
+    ) BaseBridgeReceiver(govTimelock_, localTimelock_, initialGuardian_) {
         l2Messenger = l2Messenger_;
         emit NewL2Messenger(address(0), l2Messenger_);
     }
@@ -24,7 +32,7 @@ contract ScrollBridgeReceiver is SweepableBridgeReceiver {
     /// @notice Update the L2 Messenger address
     /// @param newL2Messenger New address for L2 Messenger contract
     function changeL2Messenger(address newL2Messenger) public {
-        if (msg.sender != localTimelock) revert Unauthorized();
+        if (msg.sender != address(localTimelock)) revert Unauthorized();
         address oldL2Messenger = l2Messenger;
         l2Messenger = newL2Messenger;
         emit NewL2Messenger(oldL2Messenger, newL2Messenger);
