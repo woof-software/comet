@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { strict as assert } from 'assert';
 import hre from 'hardhat';
 import * as fs from 'fs/promises';
+import { readFileSync } from 'fs';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 import { getGlobalDispatcher, MockAgent, setGlobalDispatcher } from 'undici';
 import * as verification from '../Verify';
@@ -11,7 +12,7 @@ import { DeploymentManager } from '../DeploymentManager';
 import { getVerifyArgs } from '../VerifyArgs';
 import { tokenArgs } from './DeployHelpers';
 import { BuildFile } from '../Types';
-import { tempDir } from './TestHelpers';
+import { recordTimers, tempDir } from './TestHelpers';
 
 describe('Deployment verification strategies', () => {
   const artifactName = 'contracts/test/FaucetToken.sol:FaucetToken';
@@ -251,5 +252,124 @@ describe('Deployment verification strategies', () => {
       await agent.close();
       await fs.rm(dir, { recursive: true, force: true });
     }
+  });
+
+  describe('saved buildfile queue and explorer responses', () => {
+    let dir: string;
+    let agent: MockAgent;
+    let previousDispatcher: ReturnType<typeof getGlobalDispatcher>;
+    let timers: ReturnType<typeof recordTimers>;
+    let runtime: HardhatRuntimeEnvironment;
+    let original: DeploymentManager;
+    let address: string;
+    let queueFile: string;
+    let savedQueue: string;
+    let errors: unknown[][];
+    const originalError = console.error;
+    const config = () => ({ baseDir: dir, writeCacheToDisk: true, verificationStrategy: 'lazy' as const });
+
+    beforeEach(async () => {
+      dir = await fs.mkdtemp(tempDir());
+      previousDispatcher = getGlobalDispatcher();
+      agent = new MockAgent();
+      agent.disableNetConnect();
+      setGlobalDispatcher(agent);
+      timers = recordTimers({ immediate: true });
+      errors = [];
+      console.error = (...args: unknown[]) => { errors.push(args); };
+      runtime = {
+        ...hre,
+        config: { ...hre.config, etherscan: { ...hre.config.etherscan, apiKey: 'TEST_KEY' } },
+        run: (async task => {
+          expect(task).to.equal('verify:get-etherscan-endpoint');
+          return { network: 'test-network', urls: { apiURL: 'https://verification.test/api' } };
+        }) as HardhatRuntimeEnvironment['run'],
+      };
+      original = new DeploymentManager('test-network', 'test-deployment', runtime, config());
+      address = (await original._deployBuild(buildFile, tokenArgs)).address;
+      queueFile = original.cache.getFilePath({ rel: ['verify', 'args.json'] });
+      savedQueue = await fs.readFile(queueFile, 'utf8');
+    });
+
+    afterEach(async () => {
+      console.error = originalError;
+      timers.restore();
+      setGlobalDispatcher(previousDispatcher);
+      await agent.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    });
+
+    function submission(result = 'response-guid', status = '1') {
+      agent.get('https://verification.test').intercept({ path: '/api', method: 'POST' })
+        .reply(200, options => {
+          const request = new URLSearchParams(String(options.body));
+          assertBuildRequest(request);
+          expect(request.get('contractaddress')).to.equal(address.toLowerCase());
+          return { status, message: status === '1' ? 'OK' : 'NOTOK', result };
+        });
+    }
+
+    function poll(result: string, status = '1') {
+      agent.get('https://verification.test').intercept({
+        path: '/api', method: 'GET',
+        query: { apikey: 'TEST_KEY', module: 'contract', action: 'checkverifystatus', guid: 'response-guid' },
+      }).reply(200, { status, message: status === '1' ? 'OK' : 'NOTOK', result });
+    }
+
+    for (const response of ['rejected submission', 'failed verification', 'unexpected status'] as const) {
+      it(`retains the saved queue after ${response} and clears it only after a successful retry`, async () => {
+        const reason = response === 'rejected submission' ? 'Rejected verification request'
+          : response === 'failed verification' ? 'Fail - Unable to verify' : 'Unexpected verification status';
+        submission(response === 'rejected submission' ? reason : 'response-guid',
+          response === 'rejected submission' ? '0' : '1');
+        if (response !== 'rejected submission') poll(reason, response === 'failed verification' ? '0' : '1');
+
+        const fresh = new DeploymentManager(original.network, original.deployment, runtime, config());
+        expect(fresh.cache.cache.size).to.equal(0);
+        await timers.run(() => fresh.verifyContracts());
+        agent.assertNoPendingInterceptors();
+        expect(errors).to.have.length(2);
+        expect(String(errors[0][0])).to.include(reason);
+        expect(errors[1]).to.eql(['Continuing on anyway...']);
+        expect(await fs.readFile(queueFile, 'utf8')).to.equal(savedQueue);
+        expect(Object.fromEntries(await getVerifyArgs(fresh.cache))).to.eql(JSON.parse(savedQueue));
+
+        // Retry in another fresh manager to prove recovery uses the persisted entry.
+        submission();
+        poll('Pass - Verified');
+        const retrying = new DeploymentManager(original.network, original.deployment, runtime, config());
+        await timers.run(() => retrying.verifyContracts());
+        agent.assertNoPendingInterceptors();
+        expect(errors).to.have.length(2);
+        expect((await getVerifyArgs(retrying.cache)).size).to.equal(0);
+        expect(JSON.parse(await fs.readFile(queueFile, 'utf8'))).to.eql({});
+      });
+    }
+
+    it('keeps the entry on disk while pending and removes it after the explorer reports success', async () => {
+      submission();
+      const reads: string[] = [];
+      const pool = agent.get('https://verification.test');
+      for (const result of ['Pending in queue', 'Pass - Verified']) {
+        pool.intercept({
+          path: '/api', method: 'GET',
+          query: { apikey: 'TEST_KEY', module: 'contract', action: 'checkverifystatus', guid: 'response-guid' },
+        }).reply(200, () => {
+          // The real queue file must survive both polling requests until success returns.
+          reads.push(readFileSync(queueFile, 'utf8'));
+          return { status: result === 'Pending in queue' ? '0' : '1', message: 'OK', result };
+        });
+      }
+      const fresh = new DeploymentManager(original.network, original.deployment, runtime, config());
+      await timers.run(() => fresh.verifyContracts());
+      agent.assertNoPendingInterceptors();
+      expect(reads).to.eql([savedQueue, savedQueue]);
+      expect(errors).to.eql([]);
+      expect((await getVerifyArgs(fresh.cache)).size).to.equal(0);
+      expect(JSON.parse(await fs.readFile(queueFile, 'utf8'))).to.eql({});
+      // A cleared entry must not trigger any further HTTP request.
+      await timers.run(() => fresh.verifyContracts());
+      expect(errors).to.eql([]);
+    });
   });
 });

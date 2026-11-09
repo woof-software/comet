@@ -30,6 +30,36 @@ describe('ExtendedNonceManager', () => {
     expect(nonces).to.eql([7, 8]);
   });
 
+  it('allocates different pending nonces while an earlier submission is still in flight', async () => {
+    const releaseFirst = deferred<void>();
+    const firstStarted = deferred<void>();
+    const secondStarted = deferred<void>();
+    signer.sendTransaction = async transaction => {
+      const nonce = Number(await transaction.nonce);
+      nonces.push(nonce);
+      if (nonces.length === 1) {
+        firstStarted.resolve();
+        await releaseFirst.promise;
+      } else {
+        secondStarted.resolve();
+      }
+      return { nonce } as providers.TransactionResponse;
+    };
+    const first = manager.sendTransaction({ to: signer.address });
+    let second: Promise<providers.TransactionResponse> | undefined;
+    try {
+      await Promise.race([firstStarted.promise, first]);
+      second = manager.sendTransaction({ to: signer.address });
+      await Promise.race([secondStarted.promise, second]);
+      expect(nonces).to.eql([7, 8]);
+    } finally {
+      releaseFirst.resolve();
+      await Promise.allSettled([first, ...(second ? [second] : [])]);
+    }
+    expect((await first).nonce).to.equal(7);
+    expect((await second!).nonce).to.equal(8);
+  });
+
   it('reloads the chain nonce after a failed submission and reuses it on the next attempt', async () => {
     const reads: Array<providers.BlockTag | undefined> = [];
     signer.getTransactionCount = async tag => { reads.push(tag); return 7; };
@@ -76,7 +106,7 @@ describe('ExtendedNonceManager', () => {
     expect(await observed).to.equal(submissionFailure);
   });
 
-  it('makes a nonce-reset failure visible to the caller', async () => {
+  it('preserves both submission and nonce-reset failures for the caller', async () => {
     const resetFailure = new Error('Cannot refresh nonce');
     signer.getTransactionCount = async tag => {
       if (tag === 'pending') return 7;
@@ -102,9 +132,21 @@ describe('ExtendedNonceManager', () => {
     }
     await Promise.allSettled(resets);
     expect(resets).to.have.length(1);
-    const detail = caught as { cause?: unknown, errors?: unknown[] } | undefined;
-    // Accept a direct reset error or a combined error that preserves it.
-    expect([caught, detail?.cause, ...(detail?.errors ?? [])]).to.include(resetFailure);
+    // Accept cause chains or AggregateError-style collections without fixing the wrapper type.
+    const errors = new Set<unknown>();
+    const pending = [caught];
+    while (pending.length) {
+      const error = pending.pop();
+      if (errors.has(error)) continue;
+      errors.add(error);
+      if (error && typeof error === 'object') {
+        const detail = error as { cause?: unknown, errors?: unknown[] };
+        if (detail.cause !== undefined) pending.push(detail.cause);
+        if (Array.isArray(detail.errors)) pending.push(...detail.errors);
+      }
+    }
+    expect([...errors], 'the original submission error must remain available').to.include(submissionFailure);
+    expect([...errors], 'the nonce-reset error must remain available').to.include(resetFailure);
   });
 
   describe('typed data', () => {

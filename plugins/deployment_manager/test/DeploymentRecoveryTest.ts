@@ -2,11 +2,14 @@ import { expect } from 'chai';
 import hre from 'hardhat';
 import * as fs from 'fs/promises';
 import fsPromises from 'fs/promises';
+import { Contract } from 'ethers';
 import * as verification from '../Verify';
 import { Dog } from '../../../build/types';
 import { DeploymentManager } from '../DeploymentManager';
 import { getAliases } from '../Aliases';
-import { getBuildFile } from '../ContractMap';
+import { getBuildFile, storeBuildFile } from '../ContractMap';
+import { Cache } from '../Cache';
+import { faucetTokenBuildFile, tokenArgs } from './DeployHelpers';
 import { putRoots } from '../Roots';
 import { recordTimers, tempDir } from './TestHelpers';
 
@@ -50,14 +53,29 @@ describe('DeploymentManager recovery', () => {
     }
   });
 
-  for (const boundary of ['build-info read', 'verification', 'build-file cache write']) {
-    it(`does not silently redeploy after a failure in ${boundary} following contract creation`, async () => {
+  const failures = [
+    { via: 'artifacts', boundary: 'build-info read' },
+    { via: 'artifacts', boundary: 'verification' },
+    { via: 'artifacts', boundary: 'build-file cache write' },
+    { via: 'clone', boundary: 'verification' },
+    { via: 'clone', boundary: 'build-file cache write' },
+  ] as const;
+  for (const { via, boundary } of failures) {
+    it(`does not silently redeploy via ${via} after a failure in ${boundary} following contract creation`, async () => {
       const dir = await fs.mkdtemp(tempDir());
       const manager = new DeploymentManager('test-network', 'test-deployment', hre, {
         baseDir: dir,
         writeCacheToDisk: true,
         verificationStrategy: boundary === 'verification' ? 'eager' : 'none',
       });
+      // Clone goes through the real import and _deployBuild paths with a seeded local build.
+      const source = via === 'clone'
+        ? await (await hre.ethers.getContractFactory('FaucetToken')).deploy(...tokenArgs)
+        : undefined;
+      if (source) {
+        await source.deployed();
+        await storeBuildFile(manager.cache, 'source-network', source.address, faucetTokenBuildFile);
+      }
       const signer = await manager.getSigner();
       const originalSend = signer.sendTransaction;
       const originalRead = fsPromises.readFile;
@@ -98,17 +116,19 @@ describe('DeploymentManager recovery', () => {
           });
         } else {
           manager.cache.storeCache = async (spec, data, transformer) => {
-            if (!injected && manager.cache.getFilePath(spec).includes('/.contracts/')) inject();
+            if (!injected && manager.cache.getFilePath(spec).includes(`/${manager.network}/.contracts/`)) inject();
             return originalStore.call(manager.cache, spec, data, transformer);
           };
         }
 
-        let deployed: Dog | undefined;
+        let deployed: Contract | undefined;
         let caught: unknown;
         try {
-          deployed = await timers.run(() => manager.deploy<Dog, [string, string, string[]]>(
-            'pet', 'test/Dog.sol', ['recoverable', hre.ethers.constants.AddressZero, []], false, 1
-          ));
+          deployed = await timers.run(() => source
+            ? manager.clone('pet', source.address, tokenArgs, 'source-network', false, 1)
+            : manager.deploy<Dog, [string, string, string[]]>(
+              'pet', 'test/Dog.sol', ['recoverable', hre.ethers.constants.AddressZero, []], false, 1
+            ));
         } catch (error) {
           caught = error;
         }
@@ -118,14 +138,23 @@ describe('DeploymentManager recovery', () => {
 
         if (deployed) {
           expect(caught).to.equal(undefined);
+          expect(deployed.address, 'recovery must return the first created contract').to.equal(created[0]);
           expect(manager.counter).to.equal(1);
           expect((await manager.contract('pet'))?.address).to.equal(deployed.address);
           expect((await getAliases(manager.cache)).get('pet')).to.equal(deployed.address);
           expect(JSON.parse(await fs.readFile(
             manager.cache.getFilePath({ rel: 'aliases.json' }), 'utf8'
           ))).to.eql({ pet: deployed.address });
+          const savedBuild = await getBuildFile(manager.cache, manager.network, deployed.address);
+          expect(savedBuild?.contract).to.equal(source ? 'FaucetToken' : 'Dog');
+          const freshCache = new Cache(manager.network, manager.deployment, false, dir);
+          expect(await getBuildFile(freshCache, manager.network, deployed.address)).to.eql(savedBuild);
+          if (source) expect(savedBuild).to.eql(faucetTokenBuildFile);
           const beforeRerun = created.length;
-          expect((await manager.deploy('pet', 'test/Dog.sol', [])).address).to.equal(deployed.address);
+          const reused = source
+            ? await manager.clone('pet', source.address, [], 'source-network')
+            : await manager.deploy('pet', 'test/Dog.sol', []);
+          expect(reused.address).to.equal(deployed.address);
           expect(created).to.have.length(beforeRerun);
         } else {
           // Either safe recovery or an explicit failure is acceptable; duplicates are not.

@@ -350,6 +350,29 @@ describe('DeploymentManager', () => {
         expect(verified).to.eql([successful, failed]);
         await expectQueue({ [failed.address]: failed, [skipped.address]: skipped });
       });
+
+      it('preserves the current and unprocessed entries when the async verification filter rejects', async () => {
+        for (const args of [successful, failed, skipped]) {
+          await putVerifyArgs(manager.cache, args.address, args);
+        }
+        const failure = new Error('Verification filter failed');
+        const verified: VerifyArgs[] = [];
+        const filtered: string[] = [];
+        manager.verifyContract = async args => { verified.push(args); return true; };
+
+        await assert.rejects(manager.verifyContracts(async address => {
+          filtered.push(address);
+          if (address === failed.address) throw failure;
+          return true;
+        }), error => error === failure);
+
+        expect(filtered).to.eql([successful.address, failed.address]);
+        expect(verified).to.eql([successful]);
+        await expectQueue({ [failed.address]: failed, [skipped.address]: skipped });
+        await manager.verifyContracts();
+        expect(verified).to.eql([successful, failed, skipped]);
+        await expectQueue({});
+      });
     });
   });
 
