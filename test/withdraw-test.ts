@@ -2487,11 +2487,13 @@ describe('withdraw', function () {
       }
 
       await comet.connect(pauseGuardian).pauseLendersWithdraw(true);
-
-      lendersPauseSnapshot = await takeSnapshot();
     });
 
-    it('alice balance equals supply', async () => {
+    it('sanity check: lenders withdraw is paused', async () => {
+      expect(await comet.isLendersWithdrawPaused()).to.be.true;
+    });
+    
+    it('sanity check: alice balance equals supply', async () => {
       expect(await comet.balanceOf(alice.address)).to.equal(SUPPLY_AMOUNT);
     });
 
@@ -2508,7 +2510,11 @@ describe('withdraw', function () {
       }
     }
 
-    describe('borrower without supply', function () {
+    describe('borrower without supply should withdraw under lenders withdraw pause', function () {
+      before(async () => {
+        lendersPauseSnapshot = await takeSnapshot();
+      });
+      
       for (const { name, withdraw } of withdrawMethods) {
         it(`${name} does not revert`, async () => {
           await expect(withdraw(dave, BORROWER_WITHDRAW_AMOUNT)).to.not.be.reverted;
@@ -2520,12 +2526,14 @@ describe('withdraw', function () {
       });
     });
 
-    describe('both pauses are active', function () {
+    describe('both lender and borrower withdraw pauses are active', function () {
       before(async () => {
+        lendersPauseSnapshot = await takeSnapshot();
+        
         await comet.connect(pauseGuardian).pauseBorrowersWithdraw(true);
       });
 
-      it('alice balance equals supply', async () => {
+      it('sanity check: alice balance equals supply', async () => {
         expect(await comet.balanceOf(alice.address)).to.equal(SUPPLY_AMOUNT);
       });
 
@@ -2550,7 +2558,7 @@ describe('withdraw', function () {
       });
     });
 
-    describe('lenders pause is lifted', function () {
+    describe('happy cases after lenders pause is lifted', function () {
       let liftedPauseSnapshot: SnapshotRestorer;
 
       before(async () => {
@@ -2559,7 +2567,7 @@ describe('withdraw', function () {
         liftedPauseSnapshot = await takeSnapshot();
       });
 
-      it('alice balance equals supply', async () => {
+      it('sanity check: alice balance equals supply', async () => {
         expect(await comet.balanceOf(alice.address)).to.equal(SUPPLY_AMOUNT);
       });
 
