@@ -1094,6 +1094,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         updateBasePrincipal(src, srcUser, srcPrincipalNew);
         updateBasePrincipal(dst, dstUser, dstPrincipalNew);
 
+        if (withdrawAmount > 0 && isLendersTransferPaused()) revert LendersTransferPaused();
+
         if (srcBalance < 0) {
             if (isBorrowersTransferPaused()) revert BorrowersTransferPaused();
             if (uint256(-srcBalance) < baseBorrowMin) revert BorrowTooSmall();
@@ -1215,6 +1217,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         totalBorrowBase += borrowAmount;
 
         updateBasePrincipal(src, srcUser, srcPrincipalNew);
+
+        if (withdrawAmount > 0 && isLendersWithdrawPaused()) revert LendersWithdrawPaused();
 
         if (srcBalance < 0) {
             if (isBorrowersWithdrawPaused()) revert BorrowersWithdrawPaused();
