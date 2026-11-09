@@ -1091,6 +1091,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
         updateBasePrincipal(src, srcUser, srcPrincipalNew);
         updateBasePrincipal(dst, dstUser, dstPrincipalNew);
 
+        if (withdrawAmount > 0 && isLendersTransferPaused()) revert LendersTransferPaused();
+
         if (srcBalance < 0) {
             if (isBorrowersTransferPaused()) revert BorrowersTransferPaused();
             if (uint256(-srcBalance) < baseBorrowMin) revert BorrowTooSmall();
@@ -1106,8 +1108,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
             uint256 totalSupplyWithoutDst = presentValueSupply(baseSupplyIndex, totalSupplyBase - supplyAmount);
             uint256 presentTotalBorrow = presentValueBorrow(baseBorrowIndex, totalBorrowBase);
             if (totalSupplyWithoutDst > 0 && presentTotalBorrow * FACTOR_SCALE / totalSupplyWithoutDst > MAX_SUPPORTED_UTILIZATION) revert ExceedsSupportedUtilization();
-        } else {
-            if (isLendersTransferPaused()) revert LendersTransferPaused();
         }
 
         if (withdrawAmount > 0) {
@@ -1214,6 +1214,8 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
         updateBasePrincipal(src, srcUser, srcPrincipalNew);
 
+        if (withdrawAmount > 0 && isLendersWithdrawPaused()) revert LendersWithdrawPaused();
+
         if (srcBalance < 0) {
             if (isBorrowersWithdrawPaused()) revert BorrowersWithdrawPaused();
             if (uint256(-srcBalance) < baseBorrowMin) revert BorrowTooSmall();
@@ -1221,8 +1223,6 @@ contract CometWithExtendedAssetList is CometMainInterface {
             /// @dev safeguard against the over-utilization leading to illiquidity and reserves exhaustion
             /// At this point totals are updated and it is a borrow case, so we can check resulting utilization
             if (getUtilization() > MAX_SUPPORTED_UTILIZATION) revert ExceedsSupportedUtilization();
-        } else {
-            if (isLendersWithdrawPaused()) revert LendersWithdrawPaused();
         }
 
         doTransferOut(baseToken, to, amount);
