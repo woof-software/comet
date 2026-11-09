@@ -2160,15 +2160,17 @@ describe('transfer', function () {
       await comet.connect(bob).withdraw(baseToken.address, BORROW_AMOUNT);
 
       await comet.connect(pauseGuardian).pauseLendersTransfer(true);
-
-      lendersPauseSnapshot = await takeSnapshot();
     });
 
-    it('alice balance equals supply', async () => {
+    it('sanity check: lenders transfer is paused', async function () {
+      expect(await comet.isLendersTransferPaused()).to.be.true;
+    });
+    
+    it('sanity check: alice balance equals supply amount', async () => {
       expect(await comet.balanceOf(alice.address)).to.equal(SUPPLY_AMOUNT);
     });
 
-    it('bob borrow balance equals borrow amount', async () => {
+    it('sanity check: bob borrow balance equals borrow amount', async () => {
       expect(await comet.borrowBalanceOf(bob.address)).to.equal(BORROW_AMOUNT);
     });
 
@@ -2189,7 +2191,11 @@ describe('transfer', function () {
       }
     }
 
-    describe('borrower without supply', function () {
+    describe('borrower without supply should transfer under lender transfer pause', function () {
+      before(async () => {
+        lendersPauseSnapshot = await takeSnapshot();
+      });
+      
       for (const { name, transfer } of transferMethods) {
         it(`${name} does not revert`, async () => {
           await expect(transfer(dave, eve, BORROWER_TRANSFER_AMOUNT)).to.not.be.reverted;
@@ -2201,12 +2207,13 @@ describe('transfer', function () {
       });
     });
 
-    describe('both pauses are active', function () {
+    describe('both lender and borrower transfer pauses are active', function () {
       before(async () => {
+        lendersPauseSnapshot = await takeSnapshot();
         await comet.connect(pauseGuardian).pauseBorrowersTransfer(true);
       });
 
-      it('alice balance equals supply', async () => {
+      it('sanity check: alice balance equals supply', async () => {
         expect(await comet.balanceOf(alice.address)).to.equal(SUPPLY_AMOUNT);
       });
 
@@ -2231,7 +2238,7 @@ describe('transfer', function () {
       });
     });
 
-    describe('lenders pause is lifted', function () {
+    describe('happy cases after lenders pause is lifted', function () {
       let liftedPauseSnapshot: SnapshotRestorer;
 
       before(async () => {
@@ -2240,7 +2247,7 @@ describe('transfer', function () {
         liftedPauseSnapshot = await takeSnapshot();
       });
 
-      it('alice balance equals supply', async () => {
+      it('sanity check: alice balance equals supply', async () => {
         expect(await comet.balanceOf(alice.address)).to.equal(SUPPLY_AMOUNT);
       });
 
