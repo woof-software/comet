@@ -44,7 +44,7 @@ Three questions are worth separating:
 | **governance DM** (`govDm`) | Deployment Manager for the market that owns governance: mainnet for L2 bases, itself for mainnet bases. |
 | **whale** | Hardcoded address holding COMP. `COMP_WHALES.mainnet` (5 addresses) and `COMP_WHALES.testnet` (1), in `src/deploy/index.ts`. |
 | **open proposal** | Already on-chain in state Pending, Active, Succeeded or Queued. |
-| **bridged proposal** | A proposal queued on an L2 `bridgeReceiver` after a relayed message. |
+| **bridged proposal** | A proposal queued on an L2 `bridgeReceiver` after a relayed message (see [Bridge Receiver](../bridge-receiver.md)). |
 | **fast path** | `fastGovernanceExecute` / `executeOpenProposal`: the whole lifecycle in one function. |
 | **state override** | Writing a storage slot to bypass a rule - used for vote tallies and timelock admin checks. |
 | **proposal cache** | `cache/currentProposal.json`, written when a migration builds a proposal; replayed by the Tenderly modes. |
@@ -132,7 +132,7 @@ Proposals already live on-chain are executed on the fork *before* scenarios run,
 
 `ProposalConstraint`:
 
-1. On a bridged base, executes any proposals already queued on the L2 `bridgeReceiver` (`getOpenBridgedProposals` → `executeBridgedProposal`, which fast-forwards past the receiver's `eta`).
+1. On a bridged base, executes any proposals already queued on the L2 `bridgeReceiver` (`getOpenBridgedProposals` → `executeBridgedProposal`, which fast-forwards past the receiver's `eta`). Only proposals in state `Queued` are picked up; executed, expired and canceled ones are skipped.
 2. Reads `ProposalCreated` logs from the governor over the last `votingDelay + votingPeriod + 30000` blocks and keeps those in state Pending, Active, Succeeded or Queued.
 3. Votes for each, then executes each with `executeOpenProposalAndRelay`, which after execution derives the L2s the proposal touched, mocks their Redstone oracles, and relays.
 4. If a proposal came from a staged migration (matched by id via `MigrationConstraint`), runs that migration's `verify` block afterwards.

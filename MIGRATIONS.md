@@ -84,6 +84,8 @@ const opDm = await deploymentManager.addBridgedDeploymentManager('optimism', 'we
 
 Under `--tenderlyVnet`, each L2 involved gets its own Virtual TestNet, and the relay runs against that.
 
+Replacing a chain's bridge receiver is a bridged proposal too: it hands the local timelock over to the new receiver. The steps, and what happens to proposals still queued on the old receiver, are in [docs/bridge-receiver.md](./docs/bridge-receiver.md#5-replacing-the-receiver).
+
 ## Running a Migration in GitHub
 
 The preferred way to run a migration is in GitHub, via manual workflow dispatch. The goal of this approach is that it's clear to everyone the exact code that ran, which affords less opportunity for "I'm looking at \<CODE X\>, but what was deployed was actually \<CODE Y\>." Look at "Prepare Migration" and "Enact Migration" dispatches in GitHub Actions in this repo (or any fork).

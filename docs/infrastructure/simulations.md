@@ -132,6 +132,8 @@ Per-chain implementations exist for Polygon (FxRoot state sync), Arbitrum (retry
 
 Which L2s are involved is derived from the proposal's own targets (`isBridgeProposal.ts`), matched against the market's bridge roots; a migration can register additional ones with `addBridgedDeploymentManager`.
 
+The relay always executes what it delivers, so it can't leave a proposal queued on the L2. `scenario/BridgeReceiverCancelScenario.ts` needs one to cancel, so it delivers its proposals on the L2 itself, by impersonating the bridge's L2 caller. What the receiver does with a message is described in [Bridge Receiver](../bridge-receiver.md).
+
 A dedicated guide for this is planned; today the mechanics are summarised here and in [`MIGRATIONS.md`](../../MIGRATIONS.md#multichain-proposals).
 
 ---

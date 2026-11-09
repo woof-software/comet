@@ -143,6 +143,8 @@ An example deployment command looks like:
 
 **[CometRewards.sol](https://github.com/compound-finance/comet/blob/main/contracts/CometRewards.sol)** - Contract that allows Comet users to claim rewards based on their protocol participation.
 
+**[BaseBridgeReceiver.sol](https://github.com/compound-finance/comet/blob/main/contracts/bridges/BaseBridgeReceiver.sol)** - Contract that governs a market on an L2: it queues proposals bridged from mainnet governance in the chain's local timelock, executes them, and lets a guardian cancel them before they run. Each chain has its own receiver in `contracts/bridges/` that extends it. See [docs/bridge-receiver.md](./docs/bridge-receiver.md).
+
 ## Vendor contracts
 
 Third-party contracts (e.g. OZ proxies) live under `contracts/vendor`.
