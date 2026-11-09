@@ -2162,7 +2162,7 @@ describe('transfer', function () {
       await comet.connect(pauseGuardian).pauseLendersTransfer(true);
     });
 
-    it('sanity check: lenders transfer is paused', async function () {
+    it('sanity check: lenders transfer is paused', async () => {
       expect(await comet.isLendersTransferPaused()).to.be.true;
     });
     
