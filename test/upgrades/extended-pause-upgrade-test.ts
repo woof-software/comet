@@ -42,7 +42,6 @@ describe('extended pause upgrade test', function () {
   // Extension delegate immutables and constants snapshot
   let assetListFactoryBefore: string;
   let maxAssetsBefore: number;
-  let versionBefore: string;
   let nameBefore: string;
   let symbolBefore: string;
   let baseAccrualScaleBefore: BigNumber;
@@ -159,7 +158,6 @@ describe('extended pause upgrade test', function () {
     // Extension delegate immutables and constants snapshot
     assetListFactoryBefore = await cometExt.assetListFactory();
     maxAssetsBefore = await cometExt.maxAssets();
-    versionBefore = await cometExt.version();
     nameBefore = await cometExt.name();
     symbolBefore = await cometExt.symbol();
     baseAccrualScaleBefore = await cometExt.baseAccrualScale();
@@ -209,7 +207,8 @@ describe('extended pause upgrade test', function () {
   it('should keep comet extension immutables and constants after upgrade', async function () {
     expect(await cometExt.assetListFactory()).to.equal(assetListFactoryBefore);
     expect(await cometExt.maxAssets()).to.equal(maxAssetsBefore);
-    expect(await cometExt.version()).to.equal(versionBefore);
+    // version is a constant of the extension, so it comes from the new implementation
+    expect(await cometExt.version()).to.equal(await newCometExt.version());
     expect(await cometExt.name()).to.equal(nameBefore);
     expect(await cometExt.symbol()).to.equal(symbolBefore);
     expect(await cometExt.baseAccrualScale()).to.equal(baseAccrualScaleBefore);

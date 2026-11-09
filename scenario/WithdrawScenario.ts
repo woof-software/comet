@@ -1,4 +1,7 @@
 import { CometContext, scenario } from './context/CometContext';
+import CometActor from './context/CometActor';
+import { CometInterface } from '../build/types';
+import { ContractTransaction } from 'ethers';
 import { expect } from 'chai';
 import {
   hasMinBorrowGreaterThanOne,
@@ -20,7 +23,7 @@ import {
 } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';
-import { exp } from '../test/helpers';
+import { exp, factorScale } from '../test/helpers';
 
 for (let offset = 0; offset < MAX_ASSETS; offset++) {
   scenario(
@@ -829,6 +832,117 @@ scenario(
     ).to.be.revertedWithCustomError(comet, 'LendersWithdrawPaused');
   }
 );
+
+const lendersWithdrawPauseMethods: {
+  name: string;
+  byOperator: boolean;
+  withdraw: (comet: CometInterface, asset: string, src: CometActor, dst: CometActor, amount: bigint) => Promise<ContractTransaction>;
+  recipient: (src: CometActor, dst: CometActor) => CometActor;
+}[] = [
+  {
+    name: 'withdraw',
+    byOperator: false,
+    withdraw: (comet, asset, src, _dst, amount) => comet.connect(src.signer).withdraw(asset, amount),
+    recipient: (src) => src,
+  },
+  {
+    name: 'withdrawTo',
+    byOperator: false,
+    withdraw: (comet, asset, src, dst, amount) => comet.connect(src.signer).withdrawTo(dst.address, asset, amount),
+    recipient: (_src, dst) => dst,
+  },
+  {
+    name: 'withdrawFrom',
+    byOperator: true,
+    withdraw: (comet, asset, src, dst, amount) => comet.connect(dst.signer).withdrawFrom(src.address, dst.address, asset, amount),
+    recipient: (_src, dst) => dst,
+  },
+];
+
+for (const { name, byOperator, withdraw } of lendersWithdrawPauseMethods) {
+  scenario(
+    `Comet#${name} > reverts when lender takes min borrow on top under lenders withdraw pause`,
+    {
+      filter: async (ctx: CometContext) => {
+        return (
+          (await isValidAssetIndex(ctx, 0)) &&
+          (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawAsset)) &&
+          (await usesAssetList(ctx)) &&
+          !(await isAssetDelisted(ctx, 0)) &&
+          (await supportsExtendedPause(ctx))
+        );
+      },
+      cometBalances: (ctx: CometContext) => ({
+        albert: { $base: getConfigForScenario(ctx).withdrawBase, $asset0: getConfigForScenario(ctx).withdrawAsset },
+        charles: { $base: getConfigForScenario(ctx).withdrawBase * 3 } // to give the protocol enough base for albert to borrow at least min borrow from
+      })
+    },
+    async ({ comet, actors }, _context, world) => {
+      const { albert, betty, pauseGuardian } = actors;
+      const baseAssetAddress = await comet.baseToken();
+      const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+
+      if (byOperator) await albert.allow(betty, true);
+
+      // Fund pause guardian account for gas fees
+      await fundAccount(world, pauseGuardian);
+
+      // Pause lenders withdraw
+      await comet.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
+
+      const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+      // Supply keeps accruing until the tx is mined, cover an hour of it so the withdraw still ends in a borrow
+      const supplyRate = (await comet.getSupplyRate(await comet.getUtilization())).toBigInt();
+      const accrualBuffer = baseSupplied * supplyRate * 3600n / factorScale + 1n;
+
+      await expect(
+        withdraw(comet, baseAssetAddress, albert, betty, baseSupplied + baseBorrowMin + accrualBuffer)
+      ).to.be.revertedWithCustomError(comet, 'LendersWithdrawPaused');
+    }
+  );
+}
+
+for (const { name, byOperator, withdraw, recipient } of lendersWithdrawPauseMethods) {
+  scenario(
+    `Comet#${name} > borrower without supply borrows under lenders withdraw pause`,
+    {
+      filter: async (ctx: CometContext) => {
+        return (
+          (await isValidAssetIndex(ctx, 0)) &&
+          (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawAsset)) &&
+          (await usesAssetList(ctx)) &&
+          !(await isAssetDelisted(ctx, 0)) &&
+          (await supportsExtendedPause(ctx))
+        );
+      },
+      cometBalances: (ctx: CometContext) => ({
+        albert: { $base: getConfigForScenario(ctx).withdrawBase },
+        betty: { $asset0: getConfigForScenario(ctx).withdrawAsset }
+      })
+    },
+    async ({ comet, actors }, context, world) => {
+      const { betty, charles, pauseGuardian } = actors;
+      const baseAssetAddress = await comet.baseToken();
+      const baseAsset = context.getAssetByAddress(baseAssetAddress);
+      const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+
+      if (byOperator) await betty.allow(charles, true);
+
+      // Fund pause guardian account for gas fees
+      await fundAccount(world, pauseGuardian);
+
+      // Pause lenders withdraw
+      await comet.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
+
+      const recipientBalanceBefore = await baseAsset.balanceOf(recipient(betty, charles).address);
+
+      await withdraw(comet, baseAssetAddress, betty, charles, baseBorrowMin);
+
+      expectBase(baseBorrowMin, (await comet.borrowBalanceOf(betty.address)).toBigInt());
+      expectBase(recipientBalanceBefore + baseBorrowMin, await baseAsset.balanceOf(recipient(betty, charles).address));
+    }
+  );
+}
 
 scenario(
   'Comet#withdraw > reverts when specific collateral asset is paused',
