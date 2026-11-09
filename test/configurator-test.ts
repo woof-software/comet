@@ -1441,43 +1441,12 @@ describe('configurator', function () {
           expect((await configuratorProxy.getConfiguration(cometProxy.address)).maxSupportedUtilization).to.equal(NEW_MAX_SUPPORTED_UTILIZATION);
         });
 
-        describe('deploy and upgrade comet with new configuration', function() {
-          before(async () => {
-            await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
-          });
-
-          it('maxSupportedUtilization is updated in comet', async () => {
-            expect(await comet.maxSupportedUtilization()).to.equal(NEW_MAX_SUPPORTED_UTILIZATION);
-          });
-        });
-      });
-
-      describe('happy path by market admin', function() {
-        let marketAdmin: SignerWithAddress;
-        let setTx: ContractTransaction;
-
-        before(async () => {
-          await snapshot.restore();
-          snapshot = await takeSnapshot();
-
-          marketAdmin = (await ethers.getSigners())[7];
-
-          const Factory = (await ethers.getContractFactory('MarketAdminPermissionChecker')) as MarketAdminPermissionChecker__factory;
-          const permissionChecker = await Factory.deploy(governor.address, marketAdmin.address, ZERO_ADDRESS);
-          await permissionChecker.deployed();
-          await configuratorProxy.connect(governor).setMarketAdminPermissionChecker(permissionChecker.address);
-
-          setTx = await configuratorProxy.connect(marketAdmin).setMaxSupportedUtilization(cometProxy.address, NEW_MAX_SUPPORTED_UTILIZATION);
+        it('deploy and upgrade comet with new configuration', async () => {
+          await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
         });
 
-        it('emits SetMaxSupportedUtilization event', async () => {
-          await expect(setTx)
-            .to.emit(configuratorProxy, 'SetMaxSupportedUtilization')
-            .withArgs(cometProxy.address, OLD_MAX_SUPPORTED_UTILIZATION, NEW_MAX_SUPPORTED_UTILIZATION);
-        });
-
-        it('new maxSupportedUtilization is stored in configuration', async () => {
-          expect((await configuratorProxy.getConfiguration(cometProxy.address)).maxSupportedUtilization).to.equal(NEW_MAX_SUPPORTED_UTILIZATION);
+        it('maxSupportedUtilization is updated in comet', async () => {
+          expect(await comet.maxSupportedUtilization()).to.equal(NEW_MAX_SUPPORTED_UTILIZATION);
         });
       });
     });

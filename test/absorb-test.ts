@@ -1275,7 +1275,7 @@ describe('absorb', function () {
 
     // Constants
     const aliceCompSupply = exp(1, 18);
-    const initialLenderSupply = exp(1000, 6);
+    const initialLenderSupply = exp(5000, 6);
 
     // Liquidation transaction
     let liquidationTx: ContractTransaction;
@@ -1938,7 +1938,6 @@ describe('absorb', function () {
           await comet24Assets.connect(underwater24Assets).supply(targetToken.address, supplyAmount);
 
           const borrowAmount = exp(150, 6);
-          await baseToken24Assets.allocateTo(comet24Assets.address, borrowAmount);
           await comet24Assets.connect(underwater24Assets).withdraw(baseToken24Assets.address, borrowAmount);
 
           // Drop price of token to make liquidatable
@@ -1995,7 +1994,6 @@ describe('absorb', function () {
         }
   
         const borrowAmount = exp(500, 6);
-        await baseToken24Assets.allocateTo(comet24Assets.address, borrowAmount);
         await comet24Assets.connect(underwater24Assets).withdraw(baseToken24Assets.address, borrowAmount);
   
         // Drop price of all tokens to make liquidatable

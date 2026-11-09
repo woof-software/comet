@@ -1,5 +1,5 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
-import { ethers, expect, exp, makeProtocol, allocateAndSupply, bumpBorrow, setTotalsBasic, ONE } from './helpers';
+import { ethers, expect, exp, makeProtocol, allocateAndSupply, bumpBorrow, setTotalsBasic, fastForward, ONE } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { SnapshotRestorer, takeSnapshot } from './helpers/snapshot';
 
@@ -16,8 +16,8 @@ import { SnapshotRestorer, takeSnapshot } from './helpers/snapshot';
  *  a borrow transfer lowers utilization and a repay raises it. A transfer between lenders does not change
  *  utilization and reverts only when it is already above the limit.
  *  Operations other than base transfer and base withdraw are not limited, even above the limit.
- *  With zero interest rates states above the limit cannot be reached through regular operations,
- *  so they are set through the harness.
+ *  Interest accrual can take utilization above the limit. With zero interest rates such states
+ *  cannot be reached through regular operations, so they are set through the harness.
  */
 describe('max supported utilization', function () {
   const MARKET_RESERVES = exp(10_000, 6); // Borrows above total supply are paid out of reserves
@@ -36,9 +36,18 @@ describe('max supported utilization', function () {
     // Above the market reserves, so absorbed collateral is for sale
     targetReserves: exp(1_000_000, 6),
   };
+  // Market above the default limit, a state regular operations cannot reach: alice and carol are lenders,
+  // bob borrows up to the limit and the harness adds debt on top
+  const ABOVE_LIMIT_MARKET = {
+    aliceSupply: exp(600, 6),
+    carolSupply: exp(400, 6),
+    bobCollateral: exp(100, 18),
+    bobDebt: exp(2000, 6),
+    bobHarnessDebt: exp(100, 6),
+  };
 
   // Market with the default limit, shared by the cases outside the *_LIMITS tables.
-  // Every case that changes it restores marketSnapshot in after()
+  // Every case that changes it takes a snapshot in before() and restores it in after()
   let comet: CometHarnessInterfaceExtendedAssetList;
   let baseToken: FaucetToken;
   let collateral: FaucetToken;
@@ -52,7 +61,13 @@ describe('max supported utilization', function () {
   let frank: SignerWithAddress;
   let governor: SignerWithAddress;
 
-  let marketSnapshot: SnapshotRestorer;
+  async function setUpUtilizationAboveLimit() {
+    await allocateAndSupply(comet, baseToken, alice, ABOVE_LIMIT_MARKET.aliceSupply);
+    await allocateAndSupply(comet, baseToken, carol, ABOVE_LIMIT_MARKET.carolSupply);
+    await allocateAndSupply(comet, collateral, bob, ABOVE_LIMIT_MARKET.bobCollateral);
+    await comet.connect(bob).withdraw(baseToken.address, ABOVE_LIMIT_MARKET.bobDebt);
+    await bumpBorrow(comet, bob.address, ABOVE_LIMIT_MARKET.bobHarnessDebt);
+  }
 
   before(async () => {
     const protocol = await makeProtocol(MARKET_PROTOCOL_OPTS);
@@ -63,26 +78,7 @@ describe('max supported utilization', function () {
     await baseToken.allocateTo(comet.address, MARKET_RESERVES);
     [alice, bob, carol, dave, eve, frank] = protocol.users;
     governor = protocol.governor;
-
-    marketSnapshot = await takeSnapshot();
   });
-
-  // Market above the default limit, a state regular operations cannot reach: alice and carol are lenders,
-  // bob borrows up to the limit and the harness adds debt on top
-  const ABOVE_LIMIT_MARKET = {
-    aliceSupply: exp(600, 6),
-    carolSupply: exp(400, 6),
-    bobDebt: exp(2000, 6),
-    bobHarnessDebt: exp(100, 6),
-  };
-
-  async function setUpUtilizationAboveLimit() {
-    await allocateAndSupply(comet, baseToken, alice, ABOVE_LIMIT_MARKET.aliceSupply);
-    await allocateAndSupply(comet, baseToken, carol, ABOVE_LIMIT_MARKET.carolSupply);
-    await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
-    await comet.connect(bob).withdraw(baseToken.address, ABOVE_LIMIT_MARKET.bobDebt);
-    await bumpBorrow(comet, bob.address, ABOVE_LIMIT_MARKET.bobHarnessDebt);
-  }
 
   describe('base transfer', function () {
     describe('borrower transfer', function () {
@@ -111,8 +107,12 @@ describe('max supported utilization', function () {
 
       for (const { maxSupportedUtilization, totalBorrow, harnessBorrow, transferAmount } of BORROW_TRANSFER_LIMITS) {
         describe(`${maxSupportedUtilization / exp(1, 16)}% limit`, function () {
+          // dave holds the rest of the total borrow, so a transfer to dave of the dave debt plus an amount repays the whole
+          // dave debt and changes the totals by the same amount as a transfer of that amount to eve, who has no debt.
+          // Exact with zero rates
+          const daveDebt = totalBorrow - CAROL_DEBT;
+
           let limitComet: CometHarnessInterfaceExtendedAssetList;
-          let limitSnapshot: SnapshotRestorer;
 
           before(async () => {
             const protocol = await makeProtocol({ ...MARKET_PROTOCOL_OPTS, maxSupportedUtilization });
@@ -129,18 +129,7 @@ describe('max supported utilization', function () {
             await allocateAndSupply(limitComet, limitCollateral, dave, BORROWER_COLLATERAL);
             await limitComet.connect(dave).withdraw(limitBaseToken.address, totalBorrow - harnessBorrow - CAROL_DEBT);
             if (harnessBorrow > 0n) await bumpBorrow(limitComet, dave.address, harnessBorrow);
-
-            limitSnapshot = await takeSnapshot();
           });
-
-          afterEach(async () => {
-            await limitSnapshot.restore();
-          });
-
-          // dave holds the rest of the total borrow, so a transfer to dave of the dave debt plus an amount repays the whole
-          // dave debt and changes the totals by the same amount as a transfer of that amount to eve, who has no debt.
-          // Exact with zero rates
-          const daveDebt = totalBorrow - CAROL_DEBT;
 
           it('sanity check: total supply and total borrow match the setup', async () => {
             expect(await limitComet.totalSupply()).to.equal(ALICE_SUPPLY + FRANK_SUPPLY);
@@ -148,14 +137,24 @@ describe('max supported utilization', function () {
           });
 
           describe('borrow transfer reaches the limit exactly', function () {
+            let snapshot: SnapshotRestorer;
+
+            before(async () => {
+              snapshot = await takeSnapshot();
+            });
+
+            afterEach(async () => {
+              await snapshot.restore();
+            });
+
             for (const { name, sender, deposit } of BORROW_TRANSFER_SENDERS) {
-              it(`${name} transfer to an account without debt`, async () => {
+              it(`${name} transfer to an account without debt brings utilization to the limit`, async () => {
                 await limitComet.connect(sender()).transfer(eve.address, deposit + transferAmount);
 
                 expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
               });
 
-              it(`${name} transfer to an account with debt`, async () => {
+              it(`${name} transfer to an account with debt brings utilization to the limit`, async () => {
                 await limitComet.connect(sender()).transfer(dave.address, deposit + daveDebt + transferAmount);
 
                 expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
@@ -164,8 +163,16 @@ describe('max supported utilization', function () {
           });
 
           describe('borrow transfer exceeds the limit with 1 wei more debt', function () {
-            beforeEach(async () => {
+            let snapshot: SnapshotRestorer;
+
+            before(async () => {
+              snapshot = await takeSnapshot();
+
               await bumpBorrow(limitComet, carol.address, ONE_WEI);
+            });
+
+            after(async () => {
+              await snapshot.restore();
             });
 
             for (const { name, sender, deposit } of BORROW_TRANSFER_SENDERS) {
@@ -186,12 +193,16 @@ describe('max supported utilization', function () {
       describe('borrow transfer with zero total supply', function () {
         const TRANSFER_AMOUNT = exp(100, 6);
 
+        let snapshot: SnapshotRestorer;
+
         before(async () => {
+          snapshot = await takeSnapshot();
+
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
         });
 
         after(async () => {
-          await marketSnapshot.restore();
+          await snapshot.restore();
         });
 
         it('sanity check: total supply is 0', async () => {
@@ -214,13 +225,17 @@ describe('max supported utilization', function () {
         const DAVE_HARNESS_DEBT = exp(500, 6);
         const TRANSFER_AMOUNT = exp(100, 6);
 
+        let snapshot: SnapshotRestorer;
+
         before(async () => {
+          snapshot = await takeSnapshot();
+
           await bumpBorrow(comet, dave.address, DAVE_HARNESS_DEBT);
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
         });
 
         after(async () => {
-          await marketSnapshot.restore();
+          await snapshot.restore();
         });
 
         it('sanity check: total supply is 0', async () => {
@@ -250,7 +265,11 @@ describe('max supported utilization', function () {
         const CAROL_SUPPLY = exp(400, 6);
         const BOB_DEBT = exp(1500, 6);
 
+        let snapshot: SnapshotRestorer;
+
         before(async () => {
+          snapshot = await takeSnapshot();
+
           await allocateAndSupply(comet, baseToken, alice, ALICE_SUPPLY);
           await allocateAndSupply(comet, baseToken, carol, CAROL_SUPPLY);
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
@@ -258,7 +277,7 @@ describe('max supported utilization', function () {
         });
 
         after(async () => {
-          await marketSnapshot.restore();
+          await snapshot.restore();
         });
 
         it('sanity check: utilization is within the limit', async () => {
@@ -276,12 +295,16 @@ describe('max supported utilization', function () {
 
       describe('utilization is already above the limit', function () {
         // A transfer to carol keeps utilization above the limit, a repay raises it further while total borrow exceeds total supply
+        let snapshot: SnapshotRestorer;
+
         before(async () => {
+          snapshot = await takeSnapshot();
+
           await setUpUtilizationAboveLimit();
         });
 
         after(async () => {
-          await marketSnapshot.restore();
+          await snapshot.restore();
         });
 
         it('sanity check: utilization is above the limit', async () => {
@@ -318,7 +341,6 @@ describe('max supported utilization', function () {
         for (const { maxSupportedUtilization, totalBorrow, harnessBorrow, repayAmount } of LENDER_REPAY_LIMITS) {
           describe(`${maxSupportedUtilization / exp(1, 16)}% limit`, function () {
             let limitComet: CometHarnessInterfaceExtendedAssetList;
-            let limitSnapshot: SnapshotRestorer;
 
             before(async () => {
               const protocol = await makeProtocol({ ...MARKET_PROTOCOL_OPTS, maxSupportedUtilization });
@@ -332,12 +354,6 @@ describe('max supported utilization', function () {
               await allocateAndSupply(limitComet, limitCollateral, bob, BORROWER_COLLATERAL);
               await limitComet.connect(bob).withdraw(limitBaseToken.address, totalBorrow - harnessBorrow - repayAmount);
               if (harnessBorrow > 0n) await bumpBorrow(limitComet, bob.address, harnessBorrow);
-
-              limitSnapshot = await takeSnapshot();
-            });
-
-            afterEach(async () => {
-              await limitSnapshot.restore();
             });
 
             it('sanity check: total supply and total borrow match the setup', async () => {
@@ -346,13 +362,23 @@ describe('max supported utilization', function () {
             });
 
             describe('repay reaches the limit exactly', function () {
-              it("lender's transfer repays part of the debt", async () => {
+              let snapshot: SnapshotRestorer;
+
+              before(async () => {
+                snapshot = await takeSnapshot();
+              });
+
+              afterEach(async () => {
+                await snapshot.restore();
+              });
+
+              it("lender's transfer repays part of the debt and brings utilization to the limit", async () => {
                 await limitComet.connect(alice).transfer(bob.address, repayAmount);
 
                 expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
               });
 
-              it("lender's transfer repays the whole debt with the remainder to the deposit", async () => {
+              it("lender's transfer repays the whole debt with the remainder to the deposit and brings utilization to the limit", async () => {
                 await limitComet.connect(alice).transfer(dave.address, repayAmount + DEPOSIT_REMAINDER);
 
                 expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
@@ -360,8 +386,16 @@ describe('max supported utilization', function () {
             });
 
             describe('repay exceeds the limit with 1 wei more debt', function () {
-              beforeEach(async () => {
+              let snapshot: SnapshotRestorer;
+
+              before(async () => {
+                snapshot = await takeSnapshot();
+
                 await bumpBorrow(limitComet, bob.address, ONE_WEI);
+              });
+
+              after(async () => {
+                await snapshot.restore();
               });
 
               it("lender's transfer repaying part of the debt reverts with ExceedsSupportedUtilization", async () => {
@@ -384,14 +418,18 @@ describe('max supported utilization', function () {
         const ALICE_SUPPLY = exp(100, 6);
         const DAVE_DEBT = exp(190, 6);
 
+        let snapshot: SnapshotRestorer;
+
         before(async () => {
+          snapshot = await takeSnapshot();
+
           await allocateAndSupply(comet, baseToken, alice, ALICE_SUPPLY);
           await allocateAndSupply(comet, collateral, dave, BORROWER_COLLATERAL);
           await comet.connect(dave).withdraw(baseToken.address, DAVE_DEBT);
         });
 
         after(async () => {
-          await marketSnapshot.restore();
+          await snapshot.restore();
         });
 
         it('sanity check: alice holds the whole supply', async () => {
@@ -402,7 +440,7 @@ describe('max supported utilization', function () {
           expect(await comet.totalBorrow()).to.be.above(await comet.totalSupply());
         });
 
-        it('repay with max amount reverts with ExceedsSupportedUtilization', async () => {
+        it("lender's repay with max amount reverts with ExceedsSupportedUtilization", async () => {
           await expect(comet.connect(alice).transfer(dave.address, ethers.constants.MaxUint256))
             .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
         });
@@ -440,7 +478,7 @@ describe('max supported utilization', function () {
             limitSnapshot = await takeSnapshot();
           });
 
-          afterEach(async () => {
+          after(async () => {
             await limitSnapshot.restore();
           });
 
@@ -449,50 +487,58 @@ describe('max supported utilization', function () {
             expect(await limitComet.totalBorrow()).to.equal(DAVE_DEBT);
           });
 
-          it('withdraw reaches the limit exactly', async () => {
+          it('lender withdraw exceeding the limit by 1 wei reverts with ExceedsSupportedUtilization', async () => {
+            await expect(limitComet.connect(alice).withdraw(limitBaseToken.address, withdrawAmount + ONE_WEI))
+              .to.be.revertedWithCustomError(limitComet, 'ExceedsSupportedUtilization');
+          });
+
+          it('lender withdraw brings utilization to the limit', async () => {
             await limitComet.connect(alice).withdraw(limitBaseToken.address, withdrawAmount);
 
             expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
-          });
-
-          it('withdraw exceeding the limit by 1 wei reverts with ExceedsSupportedUtilization', async () => {
-            await expect(limitComet.connect(alice).withdraw(limitBaseToken.address, withdrawAmount + ONE_WEI))
-              .to.be.revertedWithCustomError(limitComet, 'ExceedsSupportedUtilization');
           });
         });
       }
 
       describe('utilization is already above the limit', function () {
+        let snapshot: SnapshotRestorer;
+
         before(async () => {
+          snapshot = await takeSnapshot();
+
           await setUpUtilizationAboveLimit();
         });
 
         after(async () => {
-          await marketSnapshot.restore();
+          await snapshot.restore();
         });
 
         it('sanity check: utilization is above the limit', async () => {
           expect(await comet.getUtilization()).to.be.above(await comet.maxSupportedUtilization());
         });
 
-        it('withdraw of 1 wei reverts with ExceedsSupportedUtilization', async () => {
+        it('lender withdraw of 1 wei reverts with ExceedsSupportedUtilization', async () => {
           await expect(comet.connect(alice).withdraw(baseToken.address, ONE_WEI))
             .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
         });
       });
 
-      describe('last lender withdraws everything while there is debt', function () {
+      describe("last lender can't withdraw everything while there is debt", function () {
         // alice is the only lender, bob is the borrower
         const BOB_DEBT = exp(500, 6);
 
+        let snapshot: SnapshotRestorer;
+
         before(async () => {
+          snapshot = await takeSnapshot();
+
           await allocateAndSupply(comet, baseToken, alice, ALICE_SUPPLY);
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
           await comet.connect(bob).withdraw(baseToken.address, BOB_DEBT);
         });
 
         after(async () => {
-          await marketSnapshot.restore();
+          await snapshot.restore();
         });
 
         it('sanity check: alice holds the whole supply', async () => {
@@ -503,7 +549,7 @@ describe('max supported utilization', function () {
           expect(await comet.totalBorrow()).to.be.above(0);
         });
 
-        it('withdraw reverts with ExceedsSupportedUtilization', async () => {
+        it('withdraw of the whole deposit reverts with ExceedsSupportedUtilization', async () => {
           await expect(comet.connect(alice).withdraw(baseToken.address, ALICE_SUPPLY))
             .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
         });
@@ -515,37 +561,33 @@ describe('max supported utilization', function () {
         const BOB_DEBT = exp(1500, 6);
         const WITHDRAW_UP_TO_LIMIT = exp(250, 6);
 
-        let aboveSupplySnapshot: SnapshotRestorer;
+        let snapshot: SnapshotRestorer;
 
         before(async () => {
+          snapshot = await takeSnapshot();
+
           await allocateAndSupply(comet, baseToken, alice, ALICE_SUPPLY);
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
           await comet.connect(bob).withdraw(baseToken.address, BOB_DEBT);
-
-          aboveSupplySnapshot = await takeSnapshot();
-        });
-
-        afterEach(async () => {
-          await aboveSupplySnapshot.restore();
         });
 
         after(async () => {
-          await marketSnapshot.restore();
+          await snapshot.restore();
         });
 
         it('sanity check: total borrow exceeds total supply', async () => {
           expect(await comet.totalBorrow()).to.be.above(await comet.totalSupply());
         });
 
-        it('withdraw reaches the limit exactly', async () => {
+        it('lender withdraw exceeding the limit by 1 wei reverts with ExceedsSupportedUtilization', async () => {
+          await expect(comet.connect(alice).withdraw(baseToken.address, WITHDRAW_UP_TO_LIMIT + ONE_WEI))
+            .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+        });
+
+        it('lender withdraw brings utilization to the limit', async () => {
           await comet.connect(alice).withdraw(baseToken.address, WITHDRAW_UP_TO_LIMIT);
 
           expect(await comet.getUtilization()).to.equal(await comet.maxSupportedUtilization());
-        });
-
-        it('withdraw exceeding the limit by 1 wei reverts with ExceedsSupportedUtilization', async () => {
-          await expect(comet.connect(alice).withdraw(baseToken.address, WITHDRAW_UP_TO_LIMIT + ONE_WEI))
-            .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
         });
       });
     });
@@ -567,7 +609,6 @@ describe('max supported utilization', function () {
         describe(`${maxSupportedUtilization / exp(1, 16)}% limit`, function () {
           let limitComet: CometHarnessInterfaceExtendedAssetList;
           let limitBaseToken: FaucetToken;
-          let limitSnapshot: SnapshotRestorer;
 
           before(async () => {
             const protocol = await makeProtocol({ ...MARKET_PROTOCOL_OPTS, maxSupportedUtilization });
@@ -581,35 +622,11 @@ describe('max supported utilization', function () {
             await allocateAndSupply(limitComet, limitCollateral, bob, BORROWER_COLLATERAL);
             await allocateAndSupply(limitComet, limitCollateral, dave, BORROWER_COLLATERAL);
             await limitComet.connect(dave).withdraw(limitBaseToken.address, DAVE_DEBT);
-
-            limitSnapshot = await takeSnapshot();
-          });
-
-          afterEach(async () => {
-            await limitSnapshot.restore();
           });
 
           it('sanity check: total supply and total borrow match the setup', async () => {
             expect(await limitComet.totalSupply()).to.equal(ALICE_SUPPLY + CAROL_SUPPLY);
             expect(await limitComet.totalBorrow()).to.equal(DAVE_DEBT);
-          });
-
-          it('new borrower withdraw reaches the limit exactly', async () => {
-            await limitComet.connect(bob).withdraw(limitBaseToken.address, borrowAmount);
-
-            expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
-          });
-
-          it('existing borrower withdraw reaches the limit exactly', async () => {
-            await limitComet.connect(dave).withdraw(limitBaseToken.address, borrowAmount);
-
-            expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
-          });
-
-          it('lender becomes borrower withdraw reaches the limit exactly', async () => {
-            await limitComet.connect(carol).withdraw(limitBaseToken.address, lenderWithdrawAmount);
-
-            expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
           });
 
           it('new borrower withdraw exceeding the limit by 1 wei reverts with ExceedsSupportedUtilization', async () => {
@@ -626,6 +643,36 @@ describe('max supported utilization', function () {
             await expect(limitComet.connect(carol).withdraw(limitBaseToken.address, lenderWithdrawAmount + ONE_WEI))
               .to.be.revertedWithCustomError(limitComet, 'ExceedsSupportedUtilization');
           });
+
+          describe('withdraw reaches the limit exactly', function () {
+            let snapshot: SnapshotRestorer;
+
+            before(async () => {
+              snapshot = await takeSnapshot();
+            });
+
+            afterEach(async () => {
+              await snapshot.restore();
+            });
+
+            it('new borrower withdraw brings utilization to the limit', async () => {
+              await limitComet.connect(bob).withdraw(limitBaseToken.address, borrowAmount);
+
+              expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
+            });
+
+            it('existing borrower withdraw brings utilization to the limit', async () => {
+              await limitComet.connect(dave).withdraw(limitBaseToken.address, borrowAmount);
+
+              expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
+            });
+
+            it('lender becomes borrower withdraw brings utilization to the limit', async () => {
+              await limitComet.connect(carol).withdraw(limitBaseToken.address, lenderWithdrawAmount);
+
+              expect(await limitComet.getUtilization()).to.equal(maxSupportedUtilization);
+            });
+          });
         });
       }
 
@@ -638,24 +685,20 @@ describe('max supported utilization', function () {
         const BOB_DEBT = exp(1500, 6);
         const BORROW_UP_TO_LIMIT = exp(500, 6);
 
-        let indexesSnapshot: SnapshotRestorer;
+        let snapshot: SnapshotRestorer;
 
         before(async () => {
+          snapshot = await takeSnapshot();
+
           await setTotalsBasic(comet, { baseSupplyIndex: SUPPLY_INDEX, baseBorrowIndex: BORROW_INDEX });
           await allocateAndSupply(comet, baseToken, alice, ALICE_SUPPLY);
           await allocateAndSupply(comet, baseToken, carol, CAROL_SUPPLY);
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
           await comet.connect(bob).withdraw(baseToken.address, BOB_DEBT);
-
-          indexesSnapshot = await takeSnapshot();
-        });
-
-        afterEach(async () => {
-          await indexesSnapshot.restore();
         });
 
         after(async () => {
-          await marketSnapshot.restore();
+          await snapshot.restore();
         });
 
         it('sanity check: utilization in principals is below utilization in present values', async () => {
@@ -663,15 +706,15 @@ describe('max supported utilization', function () {
           expect(totalBorrowBase.mul(ONE).div(totalSupplyBase)).to.be.below(await comet.getUtilization());
         });
 
-        it('borrow reaches the limit exactly in present values', async () => {
+        it('borrower withdraw exceeding the limit in present values by 1 wei reverts with ExceedsSupportedUtilization', async () => {
+          await expect(comet.connect(bob).withdraw(baseToken.address, BORROW_UP_TO_LIMIT + ONE_WEI))
+            .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+        });
+
+        it('borrower withdraw brings utilization to the limit in present values', async () => {
           await comet.connect(bob).withdraw(baseToken.address, BORROW_UP_TO_LIMIT);
 
           expect(await comet.getUtilization()).to.equal(await comet.maxSupportedUtilization());
-        });
-
-        it('borrow exceeding the limit by 1 wei reverts with ExceedsSupportedUtilization', async () => {
-          await expect(comet.connect(bob).withdraw(baseToken.address, BORROW_UP_TO_LIMIT + ONE_WEI))
-            .to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
         });
       });
 
@@ -679,12 +722,16 @@ describe('max supported utilization', function () {
         // A withdraw does not create supply, so a borrow with zero total supply exceeds any limit
         const BORROW_AMOUNT = exp(100, 6);
 
+        let snapshot: SnapshotRestorer;
+
         before(async () => {
+          snapshot = await takeSnapshot();
+
           await allocateAndSupply(comet, collateral, bob, BORROWER_COLLATERAL);
         });
 
         after(async () => {
-          await marketSnapshot.restore();
+          await snapshot.restore();
         });
 
         it('sanity check: total supply is 0', async () => {
@@ -703,93 +750,155 @@ describe('max supported utilization', function () {
     });
   });
 
+  describe('interest accrual', function () {
+    // Debt grows at the borrow rate while deposits earn nothing, so accrual alone takes utilization past the limit.
+    // alice is the only lender, bob borrows up to the limit
+    const ALICE_SUPPLY = exp(1000, 6);
+    const BORROW_RATE = exp(0.1, 18);
+    const ACCRUAL_PERIOD = 86400;
+
+    let rateComet: CometHarnessInterfaceExtendedAssetList;
+
+    before(async () => {
+      const protocol = await makeProtocol({ ...MARKET_PROTOCOL_OPTS, borrowInterestRateBase: BORROW_RATE });
+      rateComet = protocol.cometWithExtendedAssetList;
+      const rateBaseToken = protocol.tokens.USDC as FaucetToken;
+      const rateCollateral = protocol.tokens.COMP as FaucetToken;
+      await rateBaseToken.allocateTo(rateComet.address, MARKET_RESERVES);
+      await allocateAndSupply(rateComet, rateBaseToken, alice, ALICE_SUPPLY);
+      await allocateAndSupply(rateComet, rateCollateral, bob, BORROWER_COLLATERAL);
+      const borrowUpToLimit = ALICE_SUPPLY * (await rateComet.maxSupportedUtilization()).toBigInt() / ONE;
+      await rateComet.connect(bob).withdraw(rateBaseToken.address, borrowUpToLimit);
+      await fastForward(ACCRUAL_PERIOD);
+    });
+
+    it('sanity check: utilization is at the limit before the accrual', async () => {
+      expect(await rateComet.getUtilization()).to.equal(await rateComet.maxSupportedUtilization());
+    });
+
+    it('interest accrual does not revert and takes utilization above the limit', async () => {
+      await expect(rateComet.accrueAccount(bob.address)).to.not.be.reverted;
+
+      expect(await rateComet.getUtilization()).to.be.above(await rateComet.maxSupportedUtilization());
+    });
+  });
+
   describe('operations when utilization is above the limit', function () {
     // Only base transfer and base withdraw are limited, every other operation still works above the limit
     const REPAY_AMOUNT = exp(60, 6);
     const SUPPLY_AMOUNT = exp(50, 6);
     const COLLATERAL_SUPPLY_AMOUNT = exp(10, 18);
     const COLLATERAL_WITHDRAW_AMOUNT = exp(5, 18);
+    const LENDER_COLLATERAL = exp(10, 18);
     const RESERVES_WITHDRAW_AMOUNT = exp(1000, 6);
-    // Collateral price at which bob is liquidatable
-    const LIQUIDATION_PRICE = exp(0.5, 8);
-    const BUY_COLLATERAL_AMOUNT = exp(10, 6);
-    // The absorb clears the debt of bob, so the same debt is set for dave to keep the market above the limit
-    const DAVE_HARNESS_DEBT = ABOVE_LIMIT_MARKET.bobDebt + ABOVE_LIMIT_MARKET.bobHarnessDebt;
 
-    let aboveLimitSnapshot: SnapshotRestorer;
+    let operationsSnapshot: SnapshotRestorer;
 
     before(async () => {
+      operationsSnapshot = await takeSnapshot();
+
       await setUpUtilizationAboveLimit();
-
-      aboveLimitSnapshot = await takeSnapshot();
-    });
-
-    afterEach(async () => {
-      await aboveLimitSnapshot.restore();
+      // carol is a lender who also holds collateral
+      await allocateAndSupply(comet, collateral, carol, LENDER_COLLATERAL);
+      await baseToken.allocateTo(bob.address, REPAY_AMOUNT);
+      await baseToken.connect(bob).approve(comet.address, REPAY_AMOUNT);
+      await baseToken.allocateTo(dave.address, SUPPLY_AMOUNT);
+      await baseToken.connect(dave).approve(comet.address, SUPPLY_AMOUNT);
+      await collateral.allocateTo(bob.address, COLLATERAL_SUPPLY_AMOUNT);
+      await collateral.connect(bob).approve(comet.address, COLLATERAL_SUPPLY_AMOUNT);
     });
 
     after(async () => {
-      await marketSnapshot.restore();
+      await operationsSnapshot.restore();
     });
 
     it('sanity check: utilization is above the limit', async () => {
       expect(await comet.getUtilization()).to.be.above(await comet.maxSupportedUtilization());
     });
 
-    it('borrower repays debt', async () => {
-      await baseToken.allocateTo(bob.address, REPAY_AMOUNT);
-      await baseToken.connect(bob).approve(comet.address, REPAY_AMOUNT);
-
-      await expect(comet.connect(bob).supply(baseToken.address, REPAY_AMOUNT)).to.not.be.reverted;
+    it('sanity check: bob borrow is collateralized', async () => {
+      expect(await comet.isBorrowCollateralized(bob.address)).to.be.true;
     });
 
-    it('new lender supplies', async () => {
-      await baseToken.allocateTo(dave.address, SUPPLY_AMOUNT);
-      await baseToken.connect(dave).approve(comet.address, SUPPLY_AMOUNT);
+    describe('operations other than base transfer and base withdraw do not revert above the limit', function () {
+      // Each operation starts from the market above the limit
+      let aboveLimitSnapshot: SnapshotRestorer;
 
-      await expect(comet.connect(dave).supply(baseToken.address, SUPPLY_AMOUNT)).to.not.be.reverted;
+      before(async () => {
+        aboveLimitSnapshot = await takeSnapshot();
+      });
+
+      afterEach(async () => {
+        await aboveLimitSnapshot.restore();
+      });
+
+      it('borrower repays debt', async () => {
+        await expect(comet.connect(bob).supply(baseToken.address, REPAY_AMOUNT)).to.not.be.reverted;
+      });
+
+      it('new lender supplies', async () => {
+        await expect(comet.connect(dave).supply(baseToken.address, SUPPLY_AMOUNT)).to.not.be.reverted;
+      });
+
+      it('collateral supply', async () => {
+        await expect(comet.connect(bob).supply(collateral.address, COLLATERAL_SUPPLY_AMOUNT)).to.not.be.reverted;
+      });
+
+      it('lender withdraws collateral', async () => {
+        await expect(comet.connect(carol).withdraw(collateral.address, COLLATERAL_WITHDRAW_AMOUNT)).to.not.be.reverted;
+      });
+
+      it('borrower with collateralized debt withdraws collateral', async () => {
+        await expect(comet.connect(bob).withdraw(collateral.address, COLLATERAL_WITHDRAW_AMOUNT)).to.not.be.reverted;
+      });
+
+      it('governor withdraws reserves', async () => {
+        await expect(comet.connect(governor).withdrawReserves(governor.address, RESERVES_WITHDRAW_AMOUNT)).to.not.be.reverted;
+      });
+    });
+  });
+
+  describe('liquidation operations when utilization is above the limit', function () {
+    // Collateral price at which bob is liquidatable
+    const LIQUIDATION_PRICE = exp(0.5, 8);
+    const BUY_COLLATERAL_AMOUNT = exp(10, 6);
+    // dave holds the same debt as bob, so the market stays above the limit after the absorb clears the debt of bob
+    const DAVE_HARNESS_DEBT = ABOVE_LIMIT_MARKET.bobDebt + ABOVE_LIMIT_MARKET.bobHarnessDebt;
+
+    let snapshot: SnapshotRestorer;
+
+    before(async () => {
+      snapshot = await takeSnapshot();
+
+      await setUpUtilizationAboveLimit();
+      await bumpBorrow(comet, dave.address, DAVE_HARNESS_DEBT);
+      await collateralPriceFeed.setRoundData(0, LIQUIDATION_PRICE, 0, 0, 0);
+      await baseToken.allocateTo(eve.address, BUY_COLLATERAL_AMOUNT);
+      await baseToken.connect(eve).approve(comet.address, BUY_COLLATERAL_AMOUNT);
     });
 
-    it('borrower supplies and withdraws collateral', async () => {
-      await allocateAndSupply(comet, collateral, bob, COLLATERAL_SUPPLY_AMOUNT);
-
-      await expect(comet.connect(bob).withdraw(collateral.address, COLLATERAL_WITHDRAW_AMOUNT)).to.not.be.reverted;
+    after(async () => {
+      await snapshot.restore();
     });
 
-    it('governor withdraws reserves', async () => {
-      await expect(comet.connect(governor).withdrawReserves(governor.address, RESERVES_WITHDRAW_AMOUNT)).to.not.be.reverted;
+    it('sanity check: utilization is above the limit', async () => {
+      expect(await comet.getUtilization()).to.be.above(await comet.maxSupportedUtilization());
     });
 
-    describe('liquidatable borrower', function () {
-      // beforeEach, since the outer afterEach restores the snapshot with the original price
-      beforeEach(async () => {
-        await collateralPriceFeed.setRoundData(0, LIQUIDATION_PRICE, 0, 0, 0);
-      });
+    it('sanity check: bob is liquidatable', async () => {
+      expect(await comet.isLiquidatable(bob.address)).to.be.true;
+    });
 
-      it('sanity check: bob is liquidatable', async () => {
-        expect(await comet.isLiquidatable(bob.address)).to.be.true;
-      });
+    it('liquidatable borrower is absorbed without revert', async () => {
+      await expect(comet.connect(eve).absorb(eve.address, [bob.address])).to.not.be.reverted;
+    });
 
-      it('borrower is absorbed', async () => {
-        await expect(comet.connect(eve).absorb(eve.address, [bob.address])).to.not.be.reverted;
-      });
+    it('sanity check: utilization is above the limit after the absorb', async () => {
+      expect(await comet.getUtilization()).to.be.above(await comet.maxSupportedUtilization());
+    });
 
-      describe('absorbed collateral', function () {
-        beforeEach(async () => {
-          await comet.connect(eve).absorb(eve.address, [bob.address]);
-          await bumpBorrow(comet, dave.address, DAVE_HARNESS_DEBT);
-          await baseToken.allocateTo(eve.address, BUY_COLLATERAL_AMOUNT);
-          await baseToken.connect(eve).approve(comet.address, BUY_COLLATERAL_AMOUNT);
-        });
-
-        it('sanity check: utilization is above the limit after the absorb', async () => {
-          expect(await comet.getUtilization()).to.be.above(await comet.maxSupportedUtilization());
-        });
-
-        it('absorbed collateral is bought', async () => {
-          await expect(comet.connect(eve).buyCollateral(collateral.address, 0, BUY_COLLATERAL_AMOUNT, eve.address)).to.not.be.reverted;
-        });
-      });
+    it('absorbed collateral is bought without revert', async () => {
+      await expect(comet.connect(eve).buyCollateral(collateral.address, 0, BUY_COLLATERAL_AMOUNT, eve.address)).to.not.be.reverted;
     });
   });
 });
