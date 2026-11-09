@@ -2010,6 +2010,29 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
   }
 }
 
+/**
+ * Check if the BridgeReceiver supports proposal cancellation by the guardian
+ * @param ctx The Comet context
+ * @returns true if the deployment has a BridgeReceiver with a guardian, false otherwise
+ */
+export async function supportsProposalCancellation(ctx: CometContext): Promise<boolean> {
+  try {
+    const bridgeReceiver = await ctx.getBridgeReceiver();
+    if (!bridgeReceiver) return false;
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+
+    // guardian() only exists on BridgeReceivers with proposal cancellation; older ones revert
+    const result = await ethers.provider.call({
+      to: bridgeReceiver.address,
+      data: ethers.utils.id('guardian()').slice(0, 10)
+    });
+
+    return result !== '0x';
+  } catch (e) {
+    return false;
+  }
+}
+
 // returns indices of collaterals that have a supply cap and all collateral factors above zero.
 // pass `amount` to get only the first N of them, omit it to get all.
 export async function getUsableCollateralIndices(ctx: CometContext, amount?: number): Promise<number[]> {

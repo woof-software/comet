@@ -1,3 +1,4 @@
+import { utils } from 'ethers';
 import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
 import { Configurator, FaucetToken, SimplePriceFeed } from '../../../build/types';
 import { DeploySpec, cloneGov, deployComet, exp, sameAddress, wait } from '../../../src/deploy';
@@ -5,6 +6,11 @@ import { DeploySpec, cloneGov, deployComet, exp, sameAddress, wait } from '../..
 // Fixed test addresses for the dev market-admin role (impersonated by scenarios).
 const MARKET_ADMIN = '0x1111111111111111111111111111111111111111';
 const MARKET_ADMIN_PAUSE_GUARDIAN = '0x2222222222222222222222222222222222222222';
+// Fixed test address for the guardian of the dev BridgeReceiver (impersonated by scenarios).
+const BRIDGE_RECEIVER_GUARDIAN = '0x3333333333333333333333333333333333333333';
+
+const HOUR = 60 * 60;
+const DAY = 24 * HOUR;
 
 async function makeToken(
   deploymentManager: DeploymentManager,
@@ -32,7 +38,7 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
   const signer = await deploymentManager.getSigner();
 
   // Deploy governance contracts
-  const { fauceteer } = await cloneGov(deploymentManager);
+  const { fauceteer, timelock } = await cloneGov(deploymentManager);
 
   const DAI = await makeToken(deploymentManager, 10000000, 'DAI', 18, 'DAI');
   const GOLD = await makeToken(deploymentManager, 20000000, 'GOLD', 8, 'GOLD');
@@ -141,5 +147,27 @@ export default async function deploy(deploymentManager: DeploymentManager, deplo
     })
   );
 
-  return { ...deployed, fauceteer };
+  // Deploy a BridgeReceiver with its local Timelock so the bridged-proposal cancellation scenarios run on the local
+  // development base. The governance timelock acts as the governing timelock of another chain. ArbitrumBridgeReceiver
+  // only authenticates the aliased governing timelock, so scenarios deliver messages by impersonating that address.
+  // As on a new chain, the local Timelock is deployed first, with the BridgeReceiver at its predicted address as admin.
+  const bridgeReceiverAddress = utils.getContractAddress({
+    from: signer.address,
+    nonce: (await deploymentManager.hre.ethers.provider.getTransactionCount(signer.address)) + 1
+  });
+  const localTimelock = await deploymentManager.deploy('localTimelock', 'vendor/Timelock.sol', [
+    bridgeReceiverAddress, // admin
+    1 * DAY,               // delay
+    14 * DAY,              // grace period
+    12 * HOUR,             // minimum delay
+    30 * DAY               // maximum delay
+  ]);
+  const bridgeReceiver = await deploymentManager.deploy('bridgeReceiver', 'bridges/arbitrum/ArbitrumBridgeReceiver.sol', [
+    timelock.address,        // govTimelock
+    localTimelock.address,   // localTimelock
+    BRIDGE_RECEIVER_GUARDIAN // initialGuardian
+  ]);
+
+  // Returned as roots: the spider after the deploy script keeps only contracts reachable from them
+  return { ...deployed, fauceteer, localTimelock, bridgeReceiver };
 }

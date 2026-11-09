@@ -16,7 +16,8 @@ export enum ProposalState {
 export enum BridgedProposalState {
   Queued,
   Expired,
-  Executed
+  Executed,
+  Canceled
 }
 
 export type OpenProposal = {
