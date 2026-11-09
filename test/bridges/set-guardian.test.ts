@@ -1,9 +1,9 @@
-import { ethers, expect } from '../../helpers';
+import { ethers, expect } from '../helpers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { ContractTransaction, utils } from 'ethers';
-import { BaseBridgeReceiverHarness, Timelock } from '../../../build/types';
-import { impersonateAccount, setBalance } from '../../helpers/network-helpers';
-import { takeSnapshot, SnapshotRestorer } from '../../helpers/snapshot';
+import { BaseBridgeReceiverHarness, Timelock } from '../../build/types';
+import { impersonateAccount, setBalance } from '../helpers/network-helpers';
+import { takeSnapshot, SnapshotRestorer } from '../helpers/snapshot';
 import { deployBaseBridgeReceiverFixture, encodeProposal } from './shared';
 
 // setGuardian replaces the guardian. Only the local timelock calls it, through a proposal from the governing timelock.

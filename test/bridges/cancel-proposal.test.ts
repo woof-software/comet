@@ -1,8 +1,8 @@
-import { ethers, expect } from '../../helpers';
+import { ethers, expect } from '../helpers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction, utils } from 'ethers';
-import { BaseBridgeReceiverHarness, Timelock } from '../../../build/types';
-import { takeSnapshot, SnapshotRestorer } from '../../helpers/snapshot';
+import { BaseBridgeReceiverHarness, Timelock } from '../../build/types';
+import { takeSnapshot, SnapshotRestorer } from '../helpers/snapshot';
 import {
   GRACE_PERIOD,
   ProposalState,

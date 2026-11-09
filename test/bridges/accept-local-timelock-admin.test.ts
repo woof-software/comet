@@ -1,8 +1,8 @@
-import { expect } from '../../helpers';
+import { expect } from '../helpers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { ContractTransaction, utils } from 'ethers';
-import { BaseBridgeReceiverHarness, Timelock } from '../../../build/types';
-import { takeSnapshot, SnapshotRestorer } from '../../helpers/snapshot';
+import { BaseBridgeReceiverHarness, Timelock } from '../../build/types';
+import { takeSnapshot, SnapshotRestorer } from '../helpers/snapshot';
 import { deployBaseBridgeReceiverFixture, encodeProposal, mineAt } from './shared';
 
 // acceptLocalTimelockAdmin hands an existing local timelock over to a new receiver in two steps:

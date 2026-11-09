@@ -1,6 +1,12 @@
-import { ethers } from '../../helpers';
+import { ethers } from '../helpers';
+import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { BigNumberish, utils } from 'ethers';
-import { BaseBridgeReceiverHarness__factory, Timelock, Timelock__factory } from '../../../build/types';
+import {
+  BaseBridgeReceiverHarness__factory,
+  SweepableBridgeReceiverHarness__factory,
+  Timelock,
+  Timelock__factory,
+} from '../../build/types';
 
 export const DELAY = 10 * 60;
 export const GRACE_PERIOD = 14 * 24 * 60 * 60;
@@ -36,16 +42,29 @@ export async function mineAt(timestamp: BigNumberish) {
   await ethers.provider.send('evm_mine', []);
 }
 
-// Deploys like a fresh chain: the local timelock gets the receiver as its admin at the address the receiver is deployed at next
+// Deploys the local timelock like on a fresh chain: its admin is the contract the deployer deploys next, the receiver
+async function deployLocalTimelock(deployer: SignerWithAddress): Promise<Timelock> {
+  const receiverAddress = utils.getContractAddress({ from: deployer.address, nonce: (await deployer.getTransactionCount()) + 1 });
+  const TimelockFactory = (await ethers.getContractFactory('Timelock')) as Timelock__factory;
+  return TimelockFactory.deploy(receiverAddress, DELAY, GRACE_PERIOD, DELAY, 30 * 24 * 60 * 60);
+}
+
 export async function deployBaseBridgeReceiverFixture() {
   const [deployer, govTimelock, guardian, other] = await ethers.getSigners();
 
-  const receiverAddress = utils.getContractAddress({ from: deployer.address, nonce: (await deployer.getTransactionCount()) + 1 });
-  const TimelockFactory = (await ethers.getContractFactory('Timelock')) as Timelock__factory;
-  const localTimelock: Timelock = await TimelockFactory.deploy(receiverAddress, DELAY, GRACE_PERIOD, DELAY, 30 * 24 * 60 * 60);
-
+  const localTimelock = await deployLocalTimelock(deployer);
   const ReceiverFactory = (await ethers.getContractFactory('BaseBridgeReceiverHarness')) as BaseBridgeReceiverHarness__factory;
   const receiver = await ReceiverFactory.deploy(govTimelock.address, localTimelock.address, guardian.address);
 
   return { ReceiverFactory, receiver, localTimelock, govTimelock, guardian, other };
+}
+
+export async function deploySweepableBridgeReceiverFixture() {
+  const [deployer, govTimelock, guardian, other] = await ethers.getSigners();
+
+  const localTimelock = await deployLocalTimelock(deployer);
+  const ReceiverFactory = (await ethers.getContractFactory('SweepableBridgeReceiverHarness')) as SweepableBridgeReceiverHarness__factory;
+  const receiver = await ReceiverFactory.deploy(govTimelock.address, localTimelock.address, guardian.address);
+
+  return { receiver, localTimelock, govTimelock, other };
 }

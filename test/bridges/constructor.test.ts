@@ -1,6 +1,6 @@
-import { ethers, expect } from '../../helpers';
+import { ethers, expect } from '../helpers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { BaseBridgeReceiverHarness, BaseBridgeReceiverHarness__factory, Timelock } from '../../../build/types';
+import { BaseBridgeReceiverHarness, BaseBridgeReceiverHarness__factory, Timelock } from '../../build/types';
 import { deployBaseBridgeReceiverFixture } from './shared';
 
 // The constructor binds the receiver to the governing and local timelocks and sets the guardian. It marks the admin
@@ -32,6 +32,10 @@ describe('base bridge receiver: constructor', function () {
 
     it('sets the guardian', async () => {
       expect(await receiver.guardian()).to.equal(guardian.address);
+    });
+
+    it('starts with no proposals', async () => {
+      expect(await receiver.proposalCount()).to.equal(0);
     });
 
     it('marks the admin role accepted, the local timelock having the receiver as admin', async () => {
