@@ -17,7 +17,9 @@ import {
   deployUnsupportedAsset,
   getUsableCollateralIndices,
   getMinimumBorrowAmounts,
-  rejectsZeroAmounts
+  rejectsZeroAmounts,
+  supportUtilizationLimit,
+  isFreshMarket
 } from './utils';
 import { matchesDeployment } from './utils';
 import { exp } from '../test/helpers';
@@ -282,6 +284,51 @@ scenario(
     // should change base balance of dst user
     expect(dstBaseBalanceAfter).to.not.equal(dstUserBaseBalanceBefore);
     expect(dstBaseBalanceAfter).to.equal(expectedBaseBalance);
+
+    return txn; // return txn to measure gas
+  }
+);
+
+scenario.only(
+  'Comet#supply > base asset after an idle period with the no-borrow supply rate cut off',
+  {
+    filter: async (ctx: CometContext) =>
+      await supportUtilizationLimit(ctx) && await isFreshMarket(ctx) && (await (await ctx.getComet()).getReserves()).isZero(),
+    upgrade: {
+      supplyPerYearInterestRateBase: exp(0.01, 18),
+    },
+    tokenBalances: (ctx: CometContext) => ({
+      albert: { $base: getConfigForScenario(ctx).supplyBase }, // in units of asset, not wei
+      betty: { $base: getConfigForScenario(ctx).supplyBase },
+    }),
+  },
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty } = actors;
+    const provider = world.deploymentManager.hre.network.provider;
+    const baseAsset = context.getAssetByAddress(await comet.baseToken());
+    const amountToSupply = BigInt(getConfigForScenario(context).supplyBase) * (await comet.baseScale()).toBigInt();
+    const idlePeriod = 30 * 24 * 60 * 60; // 30 days
+
+    // No borrows and no reserves: albert's balance equals the comet's balance, so the supply rate is cut off
+    await baseAsset.approve(albert, comet.address);
+    await albert.safeSupplyAsset({ asset: baseAsset.address, amount: amountToSupply });
+    expect(await comet.getSupplyRate(0)).to.equal(0n);
+
+    await provider.send('evm_increaseTime', [idlePeriod]);
+    await provider.send('evm_mine', []);
+
+    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const expectedBaseBalance = getExpectedBaseBalance(amountToSupply, baseIndexScale, baseSupplyIndex);
+
+    // Betty's deposit must not be treated as reserves that pay albert for the idle period
+    await baseAsset.approve(betty, comet.address);
+    const txn = await betty.safeSupplyAsset({ asset: baseAsset.address, amount: amountToSupply });
+
+    expect((await comet.totalsBasic()).baseSupplyIndex).to.equal(baseSupplyIndex);
+    expect(await comet.balanceOf(albert.address)).to.equal(expectedBaseBalance);
+    expect(await comet.balanceOf(betty.address)).to.equal(expectedBaseBalance);
+    expect(await comet.getReserves()).to.be.gte(0n);
 
     return txn; // return txn to measure gas
   }
