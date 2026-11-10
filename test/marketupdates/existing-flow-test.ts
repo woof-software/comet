@@ -190,7 +190,7 @@ describe('configurator', function() {
       [await configuratorProxy.getAddress(), await cometProxy.getAddress()]
     );
 
-    expect(
+    await expect(
       timelock.executeTransactions(
         [await proxyAdmin.getAddress()],
         [0],

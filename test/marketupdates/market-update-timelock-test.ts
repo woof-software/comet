@@ -136,7 +136,7 @@ describe('MarketUpdateTimelock', function() {
       await configuratorProxy.getAddress(),
       configurator.runner
     );
-    configuratorAsProxy.transferGovernor(await marketUpdateTimelockContract.getAddress());
+    await configuratorAsProxy.transferGovernor(await marketUpdateTimelockContract.getAddress());
     const proposalId = 1n;
 
     // Get the delay from the contract
