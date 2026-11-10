@@ -7,6 +7,8 @@ cache_path  = 'forge/cache'
 
 # disable for CI (used for debugging liquidity issues)
 no_match_test = "test.*SwapVia"
+# capo is a submodule with its own toolchain and tests
+no_match_path = "contracts/capo/*"
 
 evm_version = "cancun"
 solc_version = "0.8.15"

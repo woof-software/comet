@@ -29,7 +29,7 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
     }
 
     function createMarketUpdateDeployment(Vm vm) public returns (MarketUpdateContractsDeployer.DeployedContracts memory) {
-        bytes32 salt = keccak256(abi.encodePacked(vm.envString("SALT")));
+        bytes32 salt = keccak256(abi.encodePacked(vm.envOr("SALT", string("comet"))));
         ChainAddresses.Chain chain = ChainAddresses.getChainBasedOnChainId(1);
         ChainAddresses.ChainAddressesStruct memory chainAddresses = ChainAddresses.getChainAddresses(chain);
 
@@ -76,7 +76,7 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
     }
 
     function createMarketUpdateDeploymentForL2(Vm vm, ChainAddresses.Chain chain) public returns (MarketUpdateContractsDeployer.DeployedContracts memory) {
-        bytes32 salt = keccak256(abi.encodePacked(vm.envString("SALT")));
+        bytes32 salt = keccak256(abi.encodePacked(vm.envOr("SALT", string("comet"))));
 
         address localTimelock = ChainAddresses.getLocalTimelockAddress(chain);
         ChainAddresses.ChainAddressesStruct memory chainAddresses = ChainAddresses.getChainAddresses(chain);
