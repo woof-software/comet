@@ -4,7 +4,8 @@ import CometActor from '../context/CometActor';
 import { expect } from 'chai';
 import { Requirements } from './Requirements';
 import { baseBalanceOf, exp, factorScale } from '../../test/helpers';
-import { ComparativeAmount, ComparisonOp, getAssetFromName, parseAmount, getExpectedBaseBalance, getToTransferAmount } from '../utils';
+import { getExpectedBaseBalance } from '../utils';
+import { ComparativeAmount, ComparisonOp, getAssetFromName, parseAmount, getToTransferAmount } from './utils';
 import { BigNumber } from 'ethers';
 
 async function borrowBase(borrowActor: CometActor, toBorrowBase: bigint, context: CometContext) {

@@ -1,6 +1,5 @@
 import { Constraint } from '../../plugins/scenario';
 import { CometContext } from '../context/CometContext';
-import { optionalNumber } from '../utils';
 import { defactor, factor, factorScale } from '../../test/helpers';
 import { expect } from 'chai';
 import { Requirements } from './Requirements';
@@ -31,6 +30,21 @@ function getUtilizationConfig(requirements: object): UtilizationConfig {
   return {
     utilization: optionalNumber(requirements, 'utilization'),
   };
+}
+
+/**
+ * Reads an optional numeric requirement: undefined when `key` isn't set,
+ * and throws when it is set to anything other than a number.
+ */
+function optionalNumber(o: object, key: string): number | undefined {
+  let value: unknown = o[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'number') {
+    throw new Error(`[requirement ${key} required to be number type]`);
+  }
+  return value;
 }
 
 /*
