@@ -22,31 +22,6 @@ import { Requirements } from './Requirements';
  * Note: if utilization is passed as 0, this will target either borrows=0 or supply=0
  **/
 
-interface UtilizationConfig {
-  utilization?: number;
-}
-
-function getUtilizationConfig(requirements: object): UtilizationConfig {
-  return {
-    utilization: optionalNumber(requirements, 'utilization'),
-  };
-}
-
-/**
- * Reads an optional numeric requirement: undefined when `key` isn't set,
- * and throws when it is set to anything other than a number.
- */
-function optionalNumber(o: object, key: string): number | undefined {
-  let value: unknown = o[key];
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== 'number') {
-    throw new Error(`[requirement ${key} required to be number type]`);
-  }
-  return value;
-}
-
 /*
 some math notes:
 
@@ -64,7 +39,7 @@ else
 */
 export class UtilizationConstraint<T extends CometContext, R extends Requirements> implements Constraint<T, R> {
   async solve(requirements: R, _context: T) {
-    let { utilization } = getUtilizationConfig(requirements);
+    const { utilization } = requirements;
 
     if (utilization === undefined) {
       return null;
@@ -162,7 +137,7 @@ export class UtilizationConstraint<T extends CometContext, R extends Requirement
   }
 
   async check(requirements: R, context: T) {
-    let { utilization } = getUtilizationConfig(requirements);
+    const { utilization } = requirements;
 
     if (utilization) {
       let comet = await context.getComet();
