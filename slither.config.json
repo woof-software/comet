@@ -1,0 +1,8 @@
+{
+  "compile_force_framework": "hardhat",
+  "filter_paths": "forge/|contracts/test/|contracts/vendor/|contracts/liquidator/|contracts/capo/|node_modules/",
+  "exclude_informational": true,
+  "exclude_optimization": true,
+  "detectors_to_exclude": "timestamp",
+  "fail_on": "none"
+}
