@@ -553,7 +553,7 @@ describe('withdraw', function () {
 
       it('withdraw collateral does not revert', async () => {
         withdrawTx = await comet.connect(bob).withdrawTo(alice.address, collateral.address, COLLATERAL_SUPPLY_AMOUNT);
-        expect(withdrawTx).to.not.be.reverted;
+        await expect(withdrawTx).to.not.be.reverted;
       });
 
       it('emits Transfer event (ERC20)', async () => {
@@ -1078,7 +1078,7 @@ describe('withdraw', function () {
         const bobBalanceBefore = await feeBaseToken.balanceOf(bob.address);
 
         const withdrawTx = await feeComet.connect(bob).withdraw(feeBaseToken.address, bobPrincipal);
-        expect(withdrawTx).to.not.be.reverted;
+        await expect(withdrawTx).to.not.be.reverted;
 
         const fee = BigNumber.from(bobPrincipal).mul(NUMERATOR).div(DENOMINATOR);
         const expectedReceived = BigNumber.from(bobPrincipal).sub(fee);
@@ -1091,7 +1091,7 @@ describe('withdraw', function () {
         const aliceBalanceBefore = await feeCollateral.balanceOf(alice.address);
 
         const withdrawTx = await feeComet.connect(alice).withdraw(feeCollateral.address, aliceCollateral);
-        expect(withdrawTx).to.not.be.reverted;
+        await expect(withdrawTx).to.not.be.reverted;
 
         const fee = BigNumber.from(aliceCollateral).mul(NUMERATOR).div(DENOMINATOR);
         const expectedReceived = BigNumber.from(aliceCollateral).sub(fee);
@@ -1169,7 +1169,7 @@ describe('withdraw', function () {
         for (const asset of Object.values(collaterals)) {
           const balanceBefore = await asset.balanceOf(alice.address);
           const withdrawTx = await comet.connect(alice).withdraw(asset.address, SUPPLY_COLLATERAL_AMOUNT);
-          expect(withdrawTx).to.not.be.reverted;
+          await expect(withdrawTx).to.not.be.reverted;
           expect(await asset.balanceOf(alice.address)).to.equal(balanceBefore.add(SUPPLY_COLLATERAL_AMOUNT));
           withdrawTxs.push(withdrawTx);
         }
@@ -1218,7 +1218,7 @@ describe('withdraw', function () {
         for (const asset of Object.values(collaterals)) {
           const balanceBefore = await asset.balanceOf(dave.address);
           const withdrawToTx = await comet.connect(alice).withdrawTo(dave.address, asset.address, SUPPLY_COLLATERAL_AMOUNT);
-          expect(withdrawToTx).to.not.be.reverted;
+          await expect(withdrawToTx).to.not.be.reverted;
           expect(await asset.balanceOf(dave.address)).to.equal(balanceBefore.add(SUPPLY_COLLATERAL_AMOUNT));
           withdrawTxs.push(withdrawToTx);
         }
@@ -1267,7 +1267,7 @@ describe('withdraw', function () {
         for (const asset of Object.values(collaterals)) {
           const balanceBefore = await asset.balanceOf(alice.address);
           const withdrawFromTx = await comet.connect(dave).withdrawFrom(alice.address, alice.address, asset.address, SUPPLY_COLLATERAL_AMOUNT);
-          expect(withdrawFromTx).to.not.be.reverted;
+          await expect(withdrawFromTx).to.not.be.reverted;
           expect(await asset.balanceOf(alice.address)).to.equal(balanceBefore.add(SUPPLY_COLLATERAL_AMOUNT));
           withdrawTxs.push(withdrawFromTx);
         }
