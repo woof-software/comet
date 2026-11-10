@@ -325,7 +325,7 @@ export async function simulateL2ToL1TokenBridging(
             const router = new Contract(
               ARBITRUM_GATEWAY_ROUTER,
               ['function l1TokenToGateway(address l1Token) view returns (address)'],
-              await bridgeDeploymentManager.getSigner()
+              await governanceDeploymentManager.getSigner()
             );
             return await router.l1TokenToGateway(l1Token);
           }
@@ -525,8 +525,8 @@ export async function relayArbitrumCCTPMint(
     // msgDestinationDomain, skip won't use
 
     start = end;
-    end = start + length.bytes32;
-    // msgNonce (bytes32 in MessageTransmitterV2 — was uint64 in CCTP V1), skip won't use
+    end = start + length.uint64;
+    // msgNonce, skip won't use
 
     start = end;
     end = start + length.bytes32;
@@ -539,14 +539,6 @@ export async function relayArbitrumCCTPMint(
     start = end;
     end = start + length.bytes32;
     // msgDestination, skip won't use
-
-    start = end;
-    end = start + length.uint32;
-    // minFinalityThreshold (CCTP V2 only), skip won't use
-
-    start = end;
-    end = start + length.uint32;
-    // finalityThresholdExecuted (CCTP V2 only), skip won't use
 
     start = end;
     end = start + length.uint32;

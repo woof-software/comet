@@ -136,6 +136,7 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
   }
 
   if (ctx.world.base.network === 'optimism' && ctx.world.base.deployment === 'usdt') {
+    config.withdrawAsset = 100000;
     config.transferAsset = 100000;
     config.transferAsset1 = 100000;
     config.rewardsAsset = 100000;
@@ -147,6 +148,7 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     config.bulkerBorrowBase = 5;
     config.bulkerBorrowAsset = 5;
     config.bulkerComet = 100000;
+    config.liquidationBase = 1000;
     config.withdrawBase = 20;
     config.rewardsBase = 20;
     config.liquidationBase = 20;

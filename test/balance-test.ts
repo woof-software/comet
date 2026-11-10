@@ -1,9 +1,11 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
-import { ethers, expect, exp, makeProtocol, oneMonth, defaultAssets, SnapshotRestorer, takeSnapshot, factorScale, presentValueSupply, presentValueBorrow } from './helpers';
+import { ethers, expect, exp, makeProtocol, oneMonth, defaultAssets, SnapshotRestorer, takeSnapshot } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber } from 'ethers';
 
 describe('balance tests', function () {
+  const INDEX_SCALE = BigNumber.from(exp(1, 15));
+  const FACTOR_SCALE = BigNumber.from(exp(1, 18));
   const baseTokenDecimals = 6;
   const seedAmount = BigNumber.from(exp(10_000, baseTokenDecimals));
   const supplyAmount = BigNumber.from(exp(100, baseTokenDecimals));
@@ -96,7 +98,7 @@ describe('balance tests', function () {
         const { baseSupplyIndex } = await comet.totalsBasic();
 
         // expected = principal * baseSupplyIndex / 1e15
-        const expected = BigNumber.from(presentValueSupply(baseSupplyIndex, userBasic.principal));
+        const expected = BigNumber.from(userBasic.principal).mul(baseSupplyIndex).div(INDEX_SCALE);
         expect(await comet.balanceOf(alice.address)).to.equal(expected);
       });
 
@@ -105,7 +107,7 @@ describe('balance tests', function () {
         // balanceOf = principal * baseSupplyIndex / INDEX_SCALE
         const userBasic = await comet.userBasic(alice.address);
         const { baseSupplyIndex } = await comet.totalsBasic();
-        const expected = BigNumber.from(presentValueSupply(baseSupplyIndex, userBasic.principal));
+        const expected = BigNumber.from(userBasic.principal).mul(baseSupplyIndex).div(INDEX_SCALE);
         expect(await comet.balanceOf(alice.address)).to.equal(expected);
         // At initial index (~1e15), rounding loss is at most 1 unit
         expect(supplyAmount.sub(expected)).to.be.lte(1);
@@ -132,8 +134,8 @@ describe('balance tests', function () {
         // Replicate contract formula: newIndex = oldIndex + oldIndex * supplyRate * timeElapsed / FACTOR_SCALE
         const block = await ethers.provider.getBlock('latest');
         const timeElapsed = BigNumber.from(block.timestamp).sub(t0);
-        const expectedIndex = indexBefore.add(indexBefore.mul(supplyRate.mul(timeElapsed)).div(factorScale));
-        const expectedBalance = BigNumber.from(presentValueSupply(expectedIndex, principal));
+        const expectedIndex = indexBefore.add(indexBefore.mul(supplyRate.mul(timeElapsed)).div(FACTOR_SCALE));
+        const expectedBalance = principal.mul(expectedIndex).div(INDEX_SCALE);
 
         expect(await comet.balanceOf(alice.address)).to.equal(expectedBalance);
         expect(expectedBalance).to.be.gt(balanceBefore);
@@ -148,7 +150,7 @@ describe('balance tests', function () {
       it('reflects supply amount immediately after supply', async function () {
         const userBasic = await comet.userBasic(alice.address);
         const { baseSupplyIndex } = await comet.totalsBasic();
-        const expected = BigNumber.from(presentValueSupply(baseSupplyIndex, userBasic.principal));
+        const expected = BigNumber.from(userBasic.principal).mul(baseSupplyIndex).div(INDEX_SCALE);
         expect(await comet.balanceOf(alice.address)).to.equal(expected);
       });
 
@@ -173,8 +175,8 @@ describe('balance tests', function () {
         // Replicate contract formula: newIndex = oldIndex + oldIndex * supplyRate * timeElapsed / FACTOR_SCALE
         const { lastAccrualTime: t1 } = await comet.totalsBasic();
         const timeElapsed = BigNumber.from(t1).sub(t0);
-        const expectedIndex = indexBefore.add(indexBefore.mul(supplyRate.mul(timeElapsed)).div(factorScale));
-        const expectedBalance = BigNumber.from(presentValueSupply(expectedIndex, principal));
+        const expectedIndex = indexBefore.add(indexBefore.mul(supplyRate.mul(timeElapsed)).div(FACTOR_SCALE));
+        const expectedBalance = principal.mul(expectedIndex).div(INDEX_SCALE);
 
         expect(await comet.balanceOf(alice.address)).to.equal(expectedBalance);
       });
@@ -184,7 +186,7 @@ describe('balance tests', function () {
         const { baseSupplyIndex } = await comet.totalsBasic();
 
         // balanceOf = principal * baseSupplyIndex / BASE_INDEX_SCALE
-        const expected = BigNumber.from(presentValueSupply(baseSupplyIndex, userBasic.principal));
+        const expected = BigNumber.from(userBasic.principal).mul(baseSupplyIndex).div(INDEX_SCALE);
         expect(await comet.balanceOf(alice.address)).to.equal(expected);
       });
 
@@ -199,8 +201,8 @@ describe('balance tests', function () {
         const daveBasic = await comet.userBasic(dave.address);
         const { baseSupplyIndex } = await comet.totalsBasic();
 
-        const expectedAlice = BigNumber.from(presentValueSupply(baseSupplyIndex, aliceBasic.principal));
-        const expectedDave = BigNumber.from(presentValueSupply(baseSupplyIndex, daveBasic.principal));
+        const expectedAlice = BigNumber.from(aliceBasic.principal).mul(baseSupplyIndex).div(INDEX_SCALE);
+        const expectedDave = BigNumber.from(daveBasic.principal).mul(baseSupplyIndex).div(INDEX_SCALE);
 
         expect(await comet.balanceOf(alice.address)).to.equal(expectedAlice);
         expect(await comet.balanceOf(dave.address)).to.equal(expectedDave);
@@ -220,7 +222,7 @@ describe('balance tests', function () {
         const userBasic = await comet.userBasic(alice.address);
         const { baseSupplyIndex } = await comet.totalsBasic();
         // balanceOf = principal * baseSupplyIndex / INDEX_SCALE
-        const expectedAfter = BigNumber.from(presentValueSupply(baseSupplyIndex, userBasic.principal));
+        const expectedAfter = BigNumber.from(userBasic.principal).mul(baseSupplyIndex).div(INDEX_SCALE);
         expect(await comet.balanceOf(alice.address)).to.equal(expectedAfter);
         expect(expectedAfter).to.be.lt(balanceBefore);
         expect(expectedAfter).to.be.gt(0);
@@ -230,7 +232,7 @@ describe('balance tests', function () {
         const userBasic = await comet.userBasic(alice.address);
         const { baseSupplyIndex } = await comet.totalsBasic();
 
-        const expected = BigNumber.from(presentValueSupply(baseSupplyIndex, userBasic.principal));
+        const expected = BigNumber.from(userBasic.principal).mul(baseSupplyIndex).div(INDEX_SCALE);
         expect(await comet.balanceOf(alice.address)).to.equal(expected);
       });
     });
@@ -324,7 +326,7 @@ describe('balance tests', function () {
 
         const userBasic = await comet.userBasic(alice.address);
         const { baseSupplyIndex } = await comet.totalsBasic();
-        const expected = BigNumber.from(presentValueSupply(baseSupplyIndex, userBasic.principal));
+        const expected = BigNumber.from(userBasic.principal).mul(baseSupplyIndex).div(INDEX_SCALE);
         expect(await comet.balanceOf(alice.address)).to.equal(expected);
         expect(expected).to.be.gt(0);
       });
@@ -337,7 +339,7 @@ describe('balance tests', function () {
 
         const userBasic = await comet.userBasic(alice.address);
         const { baseSupplyIndex } = await comet.totalsBasic();
-        const expected = BigNumber.from(presentValueSupply(baseSupplyIndex, userBasic.principal));
+        const expected = BigNumber.from(userBasic.principal).mul(baseSupplyIndex).div(INDEX_SCALE);
         expect(await comet.balanceOf(alice.address)).to.equal(expected);
       });
 
@@ -346,7 +348,7 @@ describe('balance tests', function () {
         // balanceOf = principal * baseSupplyIndex / INDEX_SCALE
         const userBasic = await comet.userBasic(alice.address);
         const { baseSupplyIndex } = await comet.totalsBasic();
-        const expected = BigNumber.from(presentValueSupply(baseSupplyIndex, userBasic.principal));
+        const expected = BigNumber.from(userBasic.principal).mul(baseSupplyIndex).div(INDEX_SCALE);
         expect(await comet.balanceOf(alice.address)).to.equal(expected);
         // At initial index (~1e15), rounding loss is at most 1 unit
         expect(supplyAmount.sub(expected)).to.be.lte(1);
@@ -401,10 +403,10 @@ describe('balance tests', function () {
 
         if (asset0Decimals > baseTokenDecimals) {
           const rescaleFactor = exp(1, asset0Decimals - baseTokenDecimals);
-          amountCollateralToSupply = localSupplyAmount.mul(rescaleFactor).mul(priceBase).mul(factorScale).mul(50).div(asset0Info.borrowCollateralFactor).div(priceAsset).div(100);
+          amountCollateralToSupply = localSupplyAmount.mul(rescaleFactor).mul(priceBase).mul(FACTOR_SCALE).mul(50).div(asset0Info.borrowCollateralFactor).div(priceAsset).div(100);
         } else {
           const rescaleFactor = exp(1, baseTokenDecimals - asset0Decimals);
-          amountCollateralToSupply = localSupplyAmount.mul(priceBase).mul(factorScale).mul(50).div(asset0Info.borrowCollateralFactor).div(priceAsset).div(rescaleFactor).div(100);
+          amountCollateralToSupply = localSupplyAmount.mul(priceBase).mul(FACTOR_SCALE).mul(50).div(asset0Info.borrowCollateralFactor).div(priceAsset).div(rescaleFactor).div(100);
         }
 
         await localCollaterals.WETH.allocateTo(localBob.address, amountCollateralToSupply);
@@ -417,7 +419,7 @@ describe('balance tests', function () {
         const supplyRate = await localComet.getSupplyRate(utilization);
         const totals = await localComet.totalsBasic();
         const uint64Max = BigNumber.from(2).pow(64).sub(1);
-        const timeToOverflow = uint64Max.mul(factorScale).div(totals.baseSupplyIndex.mul(supplyRate)).add(1).toNumber();
+        const timeToOverflow = uint64Max.mul(FACTOR_SCALE).div(totals.baseSupplyIndex.mul(supplyRate)).add(1).toNumber();
         await ethers.provider.send('evm_increaseTime', [timeToOverflow]);
         await ethers.provider.send('evm_mine', []);
 
@@ -451,8 +453,8 @@ describe('balance tests', function () {
         // Replicate contract formula: newIndex = oldIndex + oldIndex * supplyRate * timeElapsed / FACTOR_SCALE
         const block = await ethers.provider.getBlock('latest');
         const timeElapsed = BigNumber.from(block.timestamp).sub(t0);
-        const expectedIndex = indexBefore.add(indexBefore.mul(supplyRate.mul(timeElapsed)).div(factorScale));
-        const expectedBalance = BigNumber.from(presentValueSupply(expectedIndex, principal));
+        const expectedIndex = indexBefore.add(indexBefore.mul(supplyRate.mul(timeElapsed)).div(FACTOR_SCALE));
+        const expectedBalance = principal.mul(expectedIndex).div(INDEX_SCALE);
 
         expect(await comet.balanceOf(alice.address)).to.equal(expectedBalance);
       });
@@ -487,7 +489,7 @@ describe('balance tests', function () {
         const { baseBorrowIndex } = await comet.totalsBasic();
 
         // expected = |principal| * baseBorrowIndex / 1e15
-        const expected = BigNumber.from(presentValueBorrow(baseBorrowIndex, BigNumber.from(userBasic.principal).mul(-1)));
+        const expected = BigNumber.from(userBasic.principal).mul(-1).mul(baseBorrowIndex).div(INDEX_SCALE);
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expected);
       });
 
@@ -496,7 +498,7 @@ describe('balance tests', function () {
         // borrowBalanceOf = |principal| * baseBorrowIndex / INDEX_SCALE
         const userBasic = await comet.userBasic(bob.address);
         const { baseBorrowIndex } = await comet.totalsBasic();
-        const expected = BigNumber.from(presentValueBorrow(baseBorrowIndex, BigNumber.from(userBasic.principal).mul(-1)));
+        const expected = BigNumber.from(userBasic.principal).mul(-1).mul(baseBorrowIndex).div(INDEX_SCALE);
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expected);
         // At initial index (~1e15), rounding difference is at most 1 unit
         expect(expected.sub(borrowAmount).abs()).to.be.lte(1);
@@ -527,8 +529,8 @@ describe('balance tests', function () {
         // Replicate contract formula: newIndex = oldIndex + oldIndex * borrowRate * timeElapsed / FACTOR_SCALE
         const block = await ethers.provider.getBlock('latest');
         const timeElapsed = BigNumber.from(block.timestamp).sub(t0);
-        const expectedIndex = indexBefore.add(indexBefore.mul(borrowRate.mul(timeElapsed)).div(factorScale));
-        const expectedBorrow = BigNumber.from(presentValueBorrow(expectedIndex, absPrincipal));
+        const expectedIndex = indexBefore.add(indexBefore.mul(borrowRate.mul(timeElapsed)).div(FACTOR_SCALE));
+        const expectedBorrow = absPrincipal.mul(expectedIndex).div(INDEX_SCALE);
 
         // No accrueAccount call — borrowBalanceOf should still reflect accrued interest
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expectedBorrow);
@@ -551,7 +553,7 @@ describe('balance tests', function () {
       it('reflects borrow amount immediately after borrow', async function () {
         const userBasic = await comet.userBasic(bob.address);
         const { baseBorrowIndex } = await comet.totalsBasic();
-        const expected = BigNumber.from(presentValueBorrow(baseBorrowIndex, BigNumber.from(userBasic.principal).mul(-1)));
+        const expected = BigNumber.from(userBasic.principal).mul(-1).mul(baseBorrowIndex).div(INDEX_SCALE);
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expected);
       });
 
@@ -570,8 +572,8 @@ describe('balance tests', function () {
         // Replicate contract formula: newIndex = oldIndex + oldIndex * borrowRate * timeElapsed / FACTOR_SCALE
         const { lastAccrualTime: t1 } = await comet.totalsBasic();
         const timeElapsed = BigNumber.from(t1).sub(t0);
-        const expectedIndex = indexBefore.add(indexBefore.mul(borrowRate.mul(timeElapsed)).div(factorScale));
-        const expectedBorrow = BigNumber.from(presentValueBorrow(expectedIndex, absPrincipal));
+        const expectedIndex = indexBefore.add(indexBefore.mul(borrowRate.mul(timeElapsed)).div(FACTOR_SCALE));
+        const expectedBorrow = absPrincipal.mul(expectedIndex).div(INDEX_SCALE);
 
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expectedBorrow);
         expect(expectedBorrow).to.be.gt(borrowBefore);
@@ -582,7 +584,7 @@ describe('balance tests', function () {
         const { baseBorrowIndex } = await comet.totalsBasic();
 
         // borrowBalanceOf = |principal| * baseBorrowIndex / BASE_INDEX_SCALE
-        const expected = BigNumber.from(presentValueBorrow(baseBorrowIndex, BigNumber.from(userBasic.principal).mul(-1)));
+        const expected = BigNumber.from(userBasic.principal).mul(-1).mul(baseBorrowIndex).div(INDEX_SCALE);
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expected);
       });
 
@@ -597,8 +599,8 @@ describe('balance tests', function () {
         const daveBasic = await comet.userBasic(dave.address);
         const { baseBorrowIndex } = await comet.totalsBasic();
 
-        const expectedBob = BigNumber.from(presentValueBorrow(baseBorrowIndex, BigNumber.from(bobBasic.principal).mul(-1)));
-        const expectedDave = BigNumber.from(presentValueBorrow(baseBorrowIndex, BigNumber.from(daveBasic.principal).mul(-1)));
+        const expectedBob = BigNumber.from(bobBasic.principal).mul(-1).mul(baseBorrowIndex).div(INDEX_SCALE);
+        const expectedDave = BigNumber.from(daveBasic.principal).mul(-1).mul(baseBorrowIndex).div(INDEX_SCALE);
 
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expectedBob);
         expect(await comet.borrowBalanceOf(dave.address)).to.equal(expectedDave);
@@ -629,7 +631,7 @@ describe('balance tests', function () {
         const userBasic = await comet.userBasic(bob.address);
         const { baseBorrowIndex } = await comet.totalsBasic();
         // borrowBalanceOf = |principal| * baseBorrowIndex / INDEX_SCALE
-        const expectedAfter = BigNumber.from(presentValueBorrow(baseBorrowIndex, BigNumber.from(userBasic.principal).mul(-1)));
+        const expectedAfter = BigNumber.from(userBasic.principal).mul(-1).mul(baseBorrowIndex).div(INDEX_SCALE);
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expectedAfter);
         expect(expectedAfter).to.be.lt(borrowBefore);
         expect(expectedAfter).to.be.gt(0);
@@ -639,7 +641,7 @@ describe('balance tests', function () {
         const userBasic = await comet.userBasic(bob.address);
         const { baseBorrowIndex } = await comet.totalsBasic();
 
-        const expected = BigNumber.from(presentValueBorrow(baseBorrowIndex, BigNumber.from(userBasic.principal).mul(-1)));
+        const expected = BigNumber.from(userBasic.principal).mul(-1).mul(baseBorrowIndex).div(INDEX_SCALE);
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expected);
       });
     });
@@ -711,7 +713,7 @@ describe('balance tests', function () {
 
         const userBasic = await comet.userBasic(bob.address);
         const { baseBorrowIndex } = await comet.totalsBasic();
-        const expected = BigNumber.from(presentValueBorrow(baseBorrowIndex, BigNumber.from(userBasic.principal).mul(-1)));
+        const expected = BigNumber.from(userBasic.principal).mul(-1).mul(baseBorrowIndex).div(INDEX_SCALE);
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expected);
       });
 
@@ -730,7 +732,7 @@ describe('balance tests', function () {
 
         const userBasic = await comet.userBasic(bob.address);
         const { baseBorrowIndex } = await comet.totalsBasic();
-        const expected = BigNumber.from(presentValueBorrow(baseBorrowIndex, BigNumber.from(userBasic.principal).mul(-1)));
+        const expected = BigNumber.from(userBasic.principal).mul(-1).mul(baseBorrowIndex).div(INDEX_SCALE);
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expected);
       });
 
@@ -744,7 +746,7 @@ describe('balance tests', function () {
         // borrowBalanceOf = |principal| * baseBorrowIndex / INDEX_SCALE
         const userBasic = await comet.userBasic(bob.address);
         const { baseBorrowIndex } = await comet.totalsBasic();
-        const expected = BigNumber.from(presentValueBorrow(baseBorrowIndex, BigNumber.from(userBasic.principal).mul(-1)));
+        const expected = BigNumber.from(userBasic.principal).mul(-1).mul(baseBorrowIndex).div(INDEX_SCALE);
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expected);
         // At initial index (~1e15), rounding difference is at most 1 unit
         expect(expected.sub(borrowAmount).abs()).to.be.lte(1);
@@ -819,10 +821,10 @@ describe('balance tests', function () {
 
         if (asset0Decimals > baseTokenDecimals) {
           const rescaleFactor = exp(1, asset0Decimals - baseTokenDecimals);
-          amountCollateralToSupply = localSupplyAmount.mul(rescaleFactor).mul(priceBase).mul(factorScale).mul(50).div(asset0Info.borrowCollateralFactor).div(priceAsset).div(100);
+          amountCollateralToSupply = localSupplyAmount.mul(rescaleFactor).mul(priceBase).mul(FACTOR_SCALE).mul(50).div(asset0Info.borrowCollateralFactor).div(priceAsset).div(100);
         } else {
           const rescaleFactor = exp(1, baseTokenDecimals - asset0Decimals);
-          amountCollateralToSupply = localSupplyAmount.mul(priceBase).mul(factorScale).mul(50).div(asset0Info.borrowCollateralFactor).div(priceAsset).div(rescaleFactor).div(100);
+          amountCollateralToSupply = localSupplyAmount.mul(priceBase).mul(FACTOR_SCALE).mul(50).div(asset0Info.borrowCollateralFactor).div(priceAsset).div(rescaleFactor).div(100);
         }
 
         await localCollaterals.WETH.allocateTo(localBob.address, amountCollateralToSupply);
@@ -835,7 +837,7 @@ describe('balance tests', function () {
         const borrowRate = await localComet.getBorrowRate(utilization);
         const totals = await localComet.totalsBasic();
         const uint64Max = BigNumber.from(2).pow(64).sub(1);
-        const timeToOverflow = uint64Max.mul(factorScale).div(totals.baseBorrowIndex.mul(borrowRate)).add(1).toNumber();
+        const timeToOverflow = uint64Max.mul(FACTOR_SCALE).div(totals.baseBorrowIndex.mul(borrowRate)).add(1).toNumber();
         await ethers.provider.send('evm_increaseTime', [timeToOverflow]);
         await ethers.provider.send('evm_mine', []);
 
@@ -868,8 +870,8 @@ describe('balance tests', function () {
         // Replicate contract formula: newIndex = oldIndex + oldIndex * borrowRate * timeElapsed / FACTOR_SCALE
         const block = await ethers.provider.getBlock('latest');
         const timeElapsed = BigNumber.from(block.timestamp).sub(t0);
-        const expectedIndex = indexBefore.add(indexBefore.mul(borrowRate.mul(timeElapsed)).div(factorScale));
-        const expectedBorrow = BigNumber.from(presentValueBorrow(expectedIndex, absPrincipal));
+        const expectedIndex = indexBefore.add(indexBefore.mul(borrowRate.mul(timeElapsed)).div(FACTOR_SCALE));
+        const expectedBorrow = absPrincipal.mul(expectedIndex).div(INDEX_SCALE);
 
         expect(await comet.borrowBalanceOf(bob.address)).to.equal(expectedBorrow);
       });
