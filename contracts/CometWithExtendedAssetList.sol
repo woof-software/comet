@@ -950,8 +950,9 @@ contract CometWithExtendedAssetList is CometMainInterface {
      * @dev Supply an amount of base asset from `from` to dst
      */
     function supplyBase(address from, address dst, uint256 amount) internal {
-        amount = doTransferIn(baseToken, from, amount);
+        // Accrue before pulling tokens in, so that no-borrow supply rate cut-off doesn't treat pulled tokens as reserves
         accrueInternal();
+        amount = doTransferIn(baseToken, from, amount);
 
         UserBasic memory dstUser = userBasic[dst];
         int104 dstPrincipal = dstUser.principal;
