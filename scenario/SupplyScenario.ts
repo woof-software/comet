@@ -289,7 +289,7 @@ scenario(
   }
 );
 
-scenario.only(
+scenario(
   'Comet#supply > base asset after an idle period with the no-borrow supply rate cut off',
   {
     filter: async (ctx: CometContext) =>
