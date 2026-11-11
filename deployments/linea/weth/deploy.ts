@@ -1,8 +1,6 @@
-import {
-  Deployed,
-  DeploymentManager,
-} from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet, exp } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
+import type { DeploySpec } from '../../../src/deploy';
+import { deployComet, exp } from '../../../src/deploy';
 
 const  L2MESSAGE_SERVICE_ADDRESS = '0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec';
 const  L2STANDARD_BRIDGE_ADDRESS = '0x353012dc4a9A6cF55c941bADC267f82004A8ceB9';

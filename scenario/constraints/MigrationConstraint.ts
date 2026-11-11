@@ -1,8 +1,12 @@
-import { StaticConstraint, Solution, World, debug } from '../../plugins/scenario';
-import { CometContext, MigrationData } from '../context/CometContext';
-import { Migration, loadMigrations, Actions } from '../../plugins/deployment_manager/Migration';
+import type { StaticConstraint, Solution, World } from '../../plugins/scenario';
+import type { Migration, Actions } from '../../plugins/deployment_manager/Migration';
+import { toNumber } from 'ethers';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
+import { debug } from '../../plugins/scenario';
+import type { CometContext, MigrationData } from '../context/CometContext';
+import { loadMigrations } from '../../plugins/deployment_manager/Migration';
 import { modifiedPaths } from '../utils';
-import { DeploymentManager } from '../../plugins/deployment_manager';
+import type { DeploymentManager } from '../../plugins/deployment_manager';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { exp } from '../../test/helpers';
 
@@ -53,13 +57,14 @@ export class MigrationConstraint<T extends CometContext> implements StaticConstr
             migrationData.skipVerify = true;
             debug(`${label} Migration ${migration.name} has already been enacted`);
           } else {
-            migrationData.preMigrationBlockNumber = await ctx.world.deploymentManager.hre.ethers.provider.getBlockNumber();
+            const { provider } = await getHardhatEthers(ctx.world.deploymentManager.hre);
+            migrationData.preMigrationBlockNumber = await provider.getBlockNumber();
             const lastProposalBefore = await governor.proposalCount();
             await migration.actions.enact(ctx.world.deploymentManager, govDeploymentManager, artifact);
             const lastProposalAfter = await governor.proposalCount();
             // Store the latest proposal id if one was created by this migration
             if (lastProposalAfter > lastProposalBefore) {
-              migrationData.lastProposal = lastProposalAfter.toNumber();
+              migrationData.lastProposal = toNumber(lastProposalAfter);
             }
             debug(`${label} Enacted migration ${migration.name}`);
           }

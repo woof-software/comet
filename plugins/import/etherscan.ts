@@ -1,5 +1,17 @@
 import axios from 'axios';
-import { networkConfigs } from '../../hardhat.config';
+
+const chainIds: Record<string, number> = {
+  mainnet: 1,
+  ronin: 2020,
+  polygon: 137,
+  optimism: 10,
+  mantle: 5000,
+  unichain: 130,
+  linea: 59144,
+  base: 8453,
+  arbitrum: 42161,
+  scroll: 534352,
+};
 
 export interface Result {
   status: string;
@@ -9,7 +21,7 @@ export interface Result {
 
 // Updated because of Etherscan V2 update. Not tested and could lead to issues
 export function getEtherscanApiUrl(network: string): string {
-  const chainId = networkConfigs.find(config => config.network.toLowerCase() === network.toLowerCase())?.chainId;
+  const chainId = chainIds[network.toLowerCase()];
 
   if (!chainId) {
     throw new Error(`Unknown etherscan API host for network ${network}`);
@@ -85,11 +97,13 @@ export function getEtherscanApiKey(network: string, i?: number): string {
 }
 
 export async function get(url, data) {
-  const res = (await axios.get(url, { params: data }))['data'];
+  const axiosClient = axios as unknown as import('axios').AxiosStatic;
+  const res = (await axiosClient.get(url, { params: data }))['data'];
   return res;
 }
 
 export async function post(url, data) {
-  const res = (await axios.post(url, data))['data'];
+  const axiosClient = axios as unknown as import('axios').AxiosStatic;
+  const res = (await axiosClient.post(url, data))['data'];
   return res;
 }

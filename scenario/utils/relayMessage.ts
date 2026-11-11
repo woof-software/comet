@@ -1,7 +1,8 @@
-import { DeploymentManager } from '../../plugins/deployment_manager';
+import type { DeploymentManager } from '../../plugins/deployment_manager';
+import { getHardhatEthers } from '../../plugins/deployment_manager/hardhat3/runtime';
 import relayPolygonMessage from './relayPolygonMessage';
 import { relayArbitrumMessage, relayArbitrumCCTPMint, simulateL2ToL1TokenBridging } from './relayArbitrumMessage';
-import relayBaseMessage,{ simulateL2ToL1TokenBridging as simulateBaseL2ToL1TokenBridging} from './relayBaseMessage';
+import relayBaseMessage, { simulateL2ToL1TokenBridging as simulateBaseL2ToL1TokenBridging } from './relayBaseMessage';
 import relayLineaMessage from './relayLineaMessage';
 import relayOptimismMessage, { simulateL2ToL1TokenBridging as simulateOptimismL2ToL1TokenBridging } from './relayOptimismMessage';
 import relayMantleMessage from './relayMantleMessage';
@@ -18,12 +19,13 @@ export default async function relayMessage(
   tenderlyLogs?: any[]
 ) {
   const bridgeNetwork = bridgeDeploymentManager.network;
-  if(bridgeNetwork === governanceDeploymentManager.network) return; // no need to relay if the proposal is on the same network
+  if (bridgeNetwork === governanceDeploymentManager.network) return; // no need to relay if the proposal is on the same network
   console.log(`Relaying messages from ${governanceDeploymentManager.network} -> ${bridgeNetwork}`);
   let proposal;
   switch (bridgeNetwork) {
     case 'base': {
-      const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
+      const { provider } = await getHardhatEthers(bridgeDeploymentManager.hre);
+      const l2StartingBlockNumber = Math.max(0, await provider.getBlockNumber() - L2_BLOCK_BUFFER);
       proposal = await relayBaseMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
@@ -39,7 +41,8 @@ export default async function relayMessage(
       return proposal;
     }
     case 'optimism': {
-      const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
+      const { provider } = await getHardhatEthers(bridgeDeploymentManager.hre);
+      const l2StartingBlockNumber = Math.max(0, await provider.getBlockNumber() - L2_BLOCK_BUFFER);
       proposal = await relayOptimismMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
@@ -83,7 +86,8 @@ export default async function relayMessage(
         tenderlyLogs
       );
     case 'arbitrum': {
-      const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
+      const { provider } = await getHardhatEthers(bridgeDeploymentManager.hre);
+      const l2StartingBlockNumber = Math.max(0, await provider.getBlockNumber() - L2_BLOCK_BUFFER);
       proposal = await relayArbitrumMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,

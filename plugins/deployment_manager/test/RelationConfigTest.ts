@@ -2,15 +2,17 @@ import hre from 'hardhat';
 import { expect } from 'chai';
 
 import {
-  AliasTemplate,
-  FieldKey,
-  RelationConfigMap,
-  RelationInnerConfig,
   aliasTemplateKey,
   getRelationConfig,
   getFieldKey,
   readAlias,
   readField,
+} from '../RelationConfig';
+import type {
+  AliasTemplate,
+  FieldKey,
+  RelationConfigMap,
+  RelationInnerConfig,
 } from '../RelationConfig';
 
 interface FieldKeyTest {
@@ -115,15 +117,21 @@ describe('RelationConfig', () => {
     let two = '0x0000000000000000000000000000000000000002';
     let three = '0x0000000000000000000000000000000000000003';
 
+    const contractFns = {
+      name: async () => one,
+      age: async () => [one, two],
+    };
     let contract = {
-      provider: {
-        getStorageAt: async (c, x) => {
-          return `0x00000000000000000000000000000000000000000000000000000000000000${x.slice(-2)}`;
+      getAddress: async () => _zero,
+      getFunction: (name: keyof typeof contractFns) => ({
+        staticCall: contractFns[name],
+      }),
+      runner: {
+        provider: {
+          getStorage: async (_contractAddress, slot) => {
+            return `0x00000000000000000000000000000000000000000000000000000000000000${slot.slice(-2)}`;
+          },
         },
-      },
-      callStatic: {
-        name: async () => one,
-        age: async () => [one, two],
       },
     };
 
@@ -184,7 +192,9 @@ describe('RelationConfig', () => {
     };
     let contract = {
       ...contractFns,
-      callStatic: contractFns,
+      getFunction: (name: keyof typeof contractFns) => ({
+        staticCall: contractFns[name],
+      }),
     };
 
     let readAliasTests: ReadAliasTest[] = [

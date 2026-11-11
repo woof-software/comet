@@ -1,6 +1,6 @@
-const { readFile, writeFile } = require('fs/promises');
-const stream = require('stream');
-const { spawn } = require('child_process');
+import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 
 async function pandoc(doc) {
   let resolve, reject;
@@ -9,7 +9,7 @@ async function pandoc(doc) {
     reject = reject_;
   });
 
-  child = spawn('pandoc', ['-f', 'markdown', '-o', 'SPEC.pdf']);
+  const child = spawn('pandoc', ['-f', 'markdown', '-o', 'SPEC.pdf']);
   child.on('close', (code) => {
     if (code === 0) {
       resolve();
@@ -20,7 +20,7 @@ async function pandoc(doc) {
   child.stdout.on('data', (data) => {
     console.log('pandoc: ' + data);
   });
-  var stdinStream = new stream.Readable();
+  const stdinStream = new Readable();
   stdinStream.push(doc);
   stdinStream.push(null);
   stdinStream.pipe(child.stdin);

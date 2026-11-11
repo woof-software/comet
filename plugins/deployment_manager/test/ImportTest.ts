@@ -4,7 +4,7 @@ import { expect } from 'chai';
 import { Cache } from '../Cache';
 import { getBuildFile, storeBuildFile } from '../ContractMap';
 import { fetchAndCacheContract, fetchContract, importContract } from '../Import';
-import { BuildFile } from '../Types';
+import type { BuildFile } from '../Types';
 
 export const apiTestResult = {
   status: '1',

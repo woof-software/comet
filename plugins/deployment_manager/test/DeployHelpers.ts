@@ -1,5 +1,5 @@
 import hre from 'hardhat';
-import { BuildFile } from '../Types';
+import type { BuildFile } from '../Types';
 import { deploy, deployBuild } from '../Deploy';
 export { deploy, deployBuild, hre };
 

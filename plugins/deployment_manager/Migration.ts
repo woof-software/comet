@@ -1,5 +1,5 @@
-import { DeploymentManager } from './DeploymentManager';
-import { FileSpec } from './Cache';
+import type { DeploymentManager } from './DeploymentManager';
+import type { FileSpec } from './Cache';
 
 export interface Actions<T> {
   prepare: (dm: DeploymentManager, govDm: DeploymentManager) => Promise<T>;

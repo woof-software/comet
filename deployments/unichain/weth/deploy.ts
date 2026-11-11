@@ -1,8 +1,6 @@
-import {
-  Deployed,
-  DeploymentManager,
-} from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet, exp } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
+import type { DeploySpec } from '../../../src/deploy';
+import { deployComet, exp } from '../../../src/deploy';
 
 export default async function deploy(
   deploymentManager: DeploymentManager,

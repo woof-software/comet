@@ -1,6 +1,6 @@
-import { ethers } from 'ethers';
+import { Interface } from 'ethers';
 
-export const erc20 = new ethers.utils.Interface([
+export const erc20 = new Interface([
   {
     'constant': true,
     'inputs': [],

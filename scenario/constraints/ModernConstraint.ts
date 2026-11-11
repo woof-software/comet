@@ -1,8 +1,9 @@
-import { Constraint } from '../../plugins/scenario';
-import { Solution } from '../../plugins/scenario/Scenario';
-import { CometContext } from '../context/CometContext';
+import type { Constraint } from '../../plugins/scenario';
+import type { Solution } from '../../plugins/scenario/Scenario';
+import type { CometContext } from '../context/CometContext';
 import { getFuzzedRequirements } from './Fuzzing';
-import { Requirements } from './Requirements';
+import { objectify } from '../../test/helpers';
+import type { Requirements } from './Requirements';
 
 export class ModernConstraint<T extends CometContext, R extends Requirements> implements Constraint<T, R> {
   async solve(requirements: R, _context: T) {
@@ -12,7 +13,10 @@ export class ModernConstraint<T extends CometContext, R extends Requirements> im
       if (req.upgrade) {
         solutions.push(async function solution(ctx: T): Promise<T> {
           const current = await ctx.getConfiguration();
-          const upgrade = Object.assign({}, current, req.upgrade);
+          // ethers v6 returns nested structs as immutable Results too.
+          const currentConfig = objectify(current);
+          currentConfig.assetConfigs = Array.from(current.assetConfigs, asset => objectify(asset));
+          const upgrade = Object.assign({}, currentConfig, req.upgrade);
           return await ctx.upgrade(upgrade) as T; // It's been modified
         });
       }

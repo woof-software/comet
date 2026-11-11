@@ -1,4 +1,4 @@
-import { World } from './World';
+import type { World } from './World';
 import { getStackFile } from './Stack';
 
 // A solution modifies a given context and world in a way that satisfies a constraint.
@@ -20,7 +20,7 @@ export interface DynamicConstraint<T, R> {
 
 export type { DynamicConstraint as Constraint };
 
-export type Receipt = { cumulativeGasUsed: { toNumber: () => number } };
+export type Receipt = { cumulativeGasUsed: bigint };
 export type Property<T, U> = (properties: U, context: T, world: World) => Promise<Receipt | void>;
 export type Initializer<T> = (world: World) => Promise<T>;
 export type Transformer<T, U> = (context: T) => Promise<U>;

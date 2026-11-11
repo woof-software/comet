@@ -1,9 +1,9 @@
-import { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
-import { DeploySpec, deployComet } from '../../../src/deploy';
+import type { Deployed, DeploymentManager } from '../../../plugins/deployment_manager';
+import type { DeploySpec } from '../../../src/deploy';
+import { deployComet } from '../../../src/deploy';
 
 export default async function deploy(deploymentManager: DeploymentManager, deploySpec: DeploySpec): Promise<Deployed> {
   const trace = deploymentManager.tracer()
-  const ethers = deploymentManager.hre.ethers;
 
   // pull in existing assets
   const USDT = await deploymentManager.existing('USDT', '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', 'polygon');

@@ -1,6 +1,6 @@
 import { diff as jestDiff } from 'jest-diff';
 import { diff } from 'deep-object-diff';
-import { BigNumber, Contract } from 'ethers';
+import { Contract } from 'ethers';
 
 export async function diffState(
   contract: Contract,
@@ -8,9 +8,8 @@ export async function diffState(
   oldBlockNumber: number,
   newBlockNumber?: number
 ): Promise<object> {
-  const toBigInt = n => (BigNumber.isBigNumber(n) ? n.toBigInt() : n);
-  const oldState = mapObject(await getState(contract, oldBlockNumber), toBigInt);
-  const newState = mapObject(await getState(contract, newBlockNumber), toBigInt);
+  const oldState = await getState(contract, oldBlockNumber);
+  const newState = await getState(contract, newBlockNumber);
 
   // Informational log (can also generate a report if we think is valuable)
   console.log('State changes after migration');
@@ -60,7 +59,7 @@ export async function getCometConfig(comet: Contract, blockNumber?: number): Pro
     const asset = new Contract(
       assetInfo.asset,
       ['function symbol() external view returns (string memory)'],
-      comet.provider
+      comet.runner
     );
     const symbol = await asset.symbol(blockTag);
     config[symbol] = {
@@ -75,17 +74,4 @@ export async function getCometConfig(comet: Contract, blockNumber?: number): Pro
     };
   }
   return config;
-}
-
-function mapObject(obj: object, mapFn: (x) => any) {
-  Object.keys(obj).forEach(key => {
-    const value = obj[key];
-    const newValue = mapFn(value);
-    if (value !== newValue) {
-      obj[key] = newValue;
-    } else if (typeof value === 'object') {
-      mapObject(value, mapFn);
-    }
-  });
-  return obj;
 }
