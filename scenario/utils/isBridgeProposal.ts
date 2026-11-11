@@ -8,11 +8,11 @@ const EXCLUDED_ROOTS = ['comptrollerV2', 'comet', 'configurator', 'rewards', 'bu
 
 const CCTP_DOMAIN_TO_NETWORK: Record<number, string> = {
   0: 'mainnet',
-  1: 'avalanche',
   2: 'optimism',
   3: 'arbitrum',
   6: 'base',
   7: 'polygon',
+  10: 'unichain',
 };
 
 const ROOT_TO_NETWORK: Record<string, string> = {
@@ -39,18 +39,23 @@ const ROOT_TO_NETWORK: Record<string, string> = {
   roninl1NativeBridge: 'ronin',
 };
 
+// openProposal.signatures[i] is always '' (propose() takes no signatures array),
+// so match depositForBurn by its calldata selector instead.
+const DEPOSIT_FOR_BURN_SIGNATURE = 'depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)';
+const DEPOSIT_FOR_BURN_SELECTOR = utils.id(DEPOSIT_FOR_BURN_SIGNATURE).slice(0, 10);
+
 function parseCCTPNetworks(openProposal: OpenProposal, cctpAddress: string): string[] {
   const networks: string[] = [];
   const cctpLower = cctpAddress.toLowerCase();
 
   for (let i = 0; i < openProposal.targets.length; i++) {
     if (openProposal.targets[i].toLowerCase() !== cctpLower) continue;
-    const sig = openProposal.signatures[i];
-    if (!sig.startsWith('depositForBurn(')) continue;
 
     const calldata = openProposal.calldatas[i];
-    // destinationDomain is the second parameter (uint32) in all depositForBurn variants
-    const decoded = utils.defaultAbiCoder.decode(['uint256', 'uint32'], utils.hexDataSlice(calldata, 0, 64));
+    if (utils.hexDataSlice(calldata, 0, 4) !== DEPOSIT_FOR_BURN_SELECTOR) continue;
+
+    // destinationDomain is the second param (uint32); params start after the selector
+    const decoded = utils.defaultAbiCoder.decode(['uint256', 'uint32'], utils.hexDataSlice(calldata, 4, 68));
     const domain = decoded[1];
     const network = CCTP_DOMAIN_TO_NETWORK[domain];
     if (network) networks.push(network);
