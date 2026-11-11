@@ -2,8 +2,7 @@ import { StaticConstraint, Solution, World, debug } from '../../plugins/scenario
 import { CometContext, MigrationData } from '../context/CometContext';
 import { Migration, loadMigrations, Actions } from '../../plugins/deployment_manager/Migration';
 import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { exp } from '../../test/helpers';
+import { impersonateAddress, exp } from '../utils';
 import { execSync } from 'child_process';
 import { existsSync } from 'fs';
 

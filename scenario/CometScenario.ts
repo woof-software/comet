@@ -1,7 +1,6 @@
 import { scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { exp } from '../test/helpers';
-import { expectRevertCustom, perSecond } from './utils';
+import { expectRevertCustom, perSecond, exp } from './utils';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
 import { FaucetToken } from '../build/types';
 import { getConfigForScenario } from './utils/scenarioHelper';

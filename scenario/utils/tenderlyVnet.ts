@@ -127,3 +127,7 @@ export async function getOrCreateVirtualTestnet(
 
   return createVirtualTestnet(dm, opts);
 }
+
+export function isTenderlyLog(log: any): log is { raw: { topics: string[], data: string } } {
+  return !!log?.raw?.topics && !!log?.raw?.data;
+}

@@ -1,12 +1,6 @@
 import { CometContext } from '../context/CometContext';
 import CometAsset from '../context/CometAsset';
-import { exp } from '../../test/helpers';
-import { max, min } from '../utils/assertions';
-
-export interface ComparativeAmount {
-  val: number;
-  op: ComparisonOp;
-}
+import { max, min, exp } from './math';
 
 export enum ComparisonOp {
   GTE,
@@ -14,6 +8,11 @@ export enum ComparisonOp {
   LTE,
   LT,
   EQ,
+}
+
+export interface ComparativeAmount {
+  val: number;
+  op: ComparisonOp;
 }
 
 // Returns the amount that needs to be transferred to satisfy a constraint
@@ -73,19 +72,11 @@ export function parseAmount(amount): ComparativeAmount {
   }
 }
 
-function matchGroup(str, patterns): ComparativeAmount {
-  for (const k in patterns) {
-    const match = patterns[k].exec(str);
-    if (match) return { val: match[1], op: ComparisonOp[k] };
-  }
-  throw new Error(`No match for ${str} in ${patterns}`);
-}
-
 export async function getAssetFromName(
   name: string,
   context: CometContext
 ): Promise<CometAsset> {
-  let comet = await context.getComet(); // TODO: can optimize by taking this as an arg instead
+  const comet = await context.getComet(); // TODO: can optimize by taking this as an arg instead
   if (name.startsWith('$')) {
     const collateralAssetRegex = /asset[0-9]+/;
     const baseAssetRegex = /base/;
@@ -105,4 +96,12 @@ export async function getAssetFromName(
     // If name doesn't match regex, try to find the asset directly from the assets list
     return context.assets[name];
   }
+}
+
+function matchGroup(str, patterns): ComparativeAmount {
+  for (const k in patterns) {
+    const match = patterns[k].exec(str);
+    if (match) return { val: match[1], op: ComparisonOp[k] };
+  }
+  throw new Error(`No match for ${str} in ${patterns}`);
 }
