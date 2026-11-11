@@ -15,7 +15,7 @@ import { execSync } from 'child_process';
 import { existsSync, unlinkSync } from 'fs';
 import { CometContext } from '../context/CometContext';
 import CometAsset from '../context/CometAsset';
-import { exp } from '../../test/helpers';
+import { exp, factorScale } from '../../test/helpers';
 import { DeploymentManager } from '../../plugins/deployment_manager';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { ProposalState, OpenProposal } from '../context/Gov';
@@ -28,6 +28,7 @@ import { getOrCreateVirtualTestnet } from './tenderlyVnet';
 import { BaseBridgeReceiver, CometInterface, FaucetToken } from '../../build/types';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
+import { addTokenBalance, hasWritableBalanceSlot, TOKENS_BY_NETWORK } from './erc20Balance';
 import { Interface } from 'ethers/lib/utils';
 import axios from 'axios';
 export { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp };
@@ -37,6 +38,7 @@ export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
 import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
 export * from './hreUtils';
+export * from './versionControl';
 
 /** Convert a per-year interest factor to per-second (Comet constructor truncation). */
 export function perSecond(perYear: BigNumber): BigNumber {
@@ -551,6 +553,16 @@ export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
   } catch (error) {
     return false;
   }
+}
+
+/**
+ * @notice Whether interest takes utilization of the market above its limit: debt grows faster than supply only while
+ *         the borrow rate is above the supply rate
+ */
+export async function utilizationGrowsAboveLimit(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const maxSupportedUtilization = await comet.maxSupportedUtilization();
+  return (await comet.getBorrowRate(maxSupportedUtilization)).gt(await comet.getSupplyRate(maxSupportedUtilization));
 }
 
 /**
@@ -1846,6 +1858,48 @@ export async function createCrossChainProposal(
   );
 }
 
+export type GovernanceAction = { target: string, signature: string, calldata: string };
+
+/**
+ * @notice Executes the actions in one proposal, the way governance of the market does it
+ * @dev Markets on L2s are governed from mainnet, so there the actions go through a cross-chain proposal
+ */
+export async function executeThroughGovernance(context: CometContext, actions: GovernanceAction[]) {
+  const targets = actions.map(({ target }) => target);
+  const values = actions.map(() => 0);
+  const signatures = actions.map(({ signature }) => signature);
+  const calldatas = actions.map(({ calldata }) => calldata);
+
+  if (isBridgedDeployment(context)) {
+    const l2ProposalData = utils.defaultAbiCoder.encode(
+      ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
+      [targets, values, signatures, calldatas]
+    );
+    await createCrossChainProposal(context, l2ProposalData, await context.getBridgeReceiver());
+  } else {
+    await context.fastGovernanceExecute(targets, values, signatures, calldatas);
+  }
+}
+
+export async function setMaxSupportedUtilizationAction(context: CometContext, newMaxSupportedUtilization: bigint): Promise<GovernanceAction> {
+  const comet = await context.getComet();
+  return {
+    target: (await context.getConfigurator()).address,
+    signature: 'setMaxSupportedUtilization(address,uint64)',
+    calldata: utils.defaultAbiCoder.encode(['address', 'uint64'], [comet.address, newMaxSupportedUtilization]),
+  };
+}
+
+export async function deployAndUpgradeToAction(context: CometContext): Promise<GovernanceAction> {
+  const comet = await context.getComet();
+  const configurator = await context.getConfigurator();
+  return {
+    target: (await context.getCometAdmin()).address,
+    signature: 'deployAndUpgradeTo(address,address)',
+    calldata: utils.defaultAbiCoder.encode(['address', 'address'], [configurator.address, comet.address]),
+  };
+}
+
 export async function executeOpenProposalAndRelay(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
@@ -1969,27 +2023,6 @@ export async function supportsMarketAdminPermissionChecker(ctx: CometContext): P
       return true;
     }
     return false;
-  } catch (e) {
-    return false;
-  }
-}
-
-export async function supportsConfigurableMaxSupportedUtilization(ctx: CometContext): Promise<boolean> {
-  try {
-    const configurator = await ctx.getConfigurator();
-    const proxyAdmin = await ctx.getCometAdmin();
-    const ethers = ctx.world.deploymentManager.hre.ethers;
-
-    // Fixed signature, since the cached Configurator on forks carries the ABI of the old implementation
-    const iface = new ethers.utils.Interface([
-      'function setMaxSupportedUtilization(address cometProxy, uint64 newMaxSupportedUtilization)'
-    ]);
-    const functionSelector = iface.getSighash('setMaxSupportedUtilization');
-
-    const implementation = await proxyAdmin.getProxyImplementation(configurator.address);
-    const code = await ethers.provider.getCode(implementation);
-
-    return code.includes(functionSelector.slice(2));
   } catch (e) {
     return false;
   }
@@ -2121,4 +2154,105 @@ export async function sourceAndSupply(context: CometContext, asset: CometAsset, 
   await context.sourceTokens(amount, asset, actor.address);
   await asset.approve(actor, comet.address);
   await actor.safeSupplyAsset({ asset: asset.address, amount });
+}
+
+/**
+ * @notice Supplies the base token from a lender, an amount that is noticeable next to the total supply of the market
+ * @dev A market without supply gets a fixed amount instead
+ * @return The supplied amount
+ */
+export async function supplyBaseFromLender(context: CometContext, lender: CometActor): Promise<bigint> {
+  const comet = await context.getComet();
+  const baseToken = context.getAssetByAddress(await comet.baseToken());
+  const baseScale = (await comet.baseScale()).toBigInt();
+  const noticeableAmount = (await comet.totalSupply()).toBigInt() / 100n;
+  const amount = noticeableAmount > 1000n * baseScale ? noticeableAmount : 1000n * baseScale;
+
+  await addTokenBalance(context, baseToken.address, lender.address, amount);
+  await baseToken.approve(lender, comet.address);
+  await lender.supplyAsset({ asset: baseToken.address, amount });
+  return amount;
+}
+
+/**
+ * @notice The borrow that brings the current utilization of the market to the target one
+ */
+export async function borrowAmountToUtilization(context: CometContext, targetUtilization: bigint): Promise<bigint> {
+  const comet = await context.getComet();
+  const totalSupply = (await comet.totalSupply()).toBigInt();
+  const totalBorrow = (await comet.totalBorrow()).toBigInt();
+  const borrowAmount = targetUtilization * totalSupply / factorScale - totalBorrow;
+  if (borrowAmount <= 0n) {
+    throw new Error(`Utilization ${await comet.getUtilization()} is already at or above the target ${targetUtilization}`);
+  }
+  return borrowAmount;
+}
+
+/**
+ * @notice Supplies the collateral that covers a borrow with a margin, within the free room under the supply caps
+ * @dev A borrow that moves utilization of a live market takes more collateral than whales hold, so only assets whose
+ *      balance can be set directly are used, the ones with the most borrowing power under their caps first. On a
+ *      network without a token registry every asset is sourced by the context
+ */
+export async function supplyCollateralForBorrow(
+  context: CometContext,
+  borrower: CometActor,
+  borrowAmount: bigint
+) {
+  const comet = await context.getComet();
+  const network = context.world.deploymentManager.network;
+  const baseScale = (await comet.baseScale()).toBigInt();
+  const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+
+  const candidates = [];
+  for (const i of await getUsableCollateralIndices(context)) {
+    const info = await comet.getAssetInfo(i);
+    if (TOKENS_BY_NETWORK[network] !== undefined && !hasWritableBalanceSlot(network, info.asset)) continue;
+    const room = info.supplyCap.toBigInt() - (await comet.totalsCollateral(info.asset)).totalSupplyAsset.toBigInt();
+    if (room <= 0n) continue;
+    const price = (await comet.getPrice(info.priceFeed)).toBigInt();
+    const scale = info.scale.toBigInt();
+    const borrowCollateralFactor = info.borrowCollateralFactor.toBigInt();
+    // Base borrowable against the whole room
+    const roomBorrowValue = room * price * borrowCollateralFactor * baseScale / (scale * factorScale * basePrice);
+    candidates.push({ asset: info.asset, room, price, scale, borrowCollateralFactor, roomBorrowValue });
+  }
+  candidates.sort((a, b) => (b.roomBorrowValue > a.roomBorrowValue ? 1 : -1));
+
+  // The collateral covers the borrow with a margin, so the borrow stays collateralized while interest accrues
+  let remainingBorrowValue = borrowAmount * 110n / 100n;
+  const supplied = [];
+  for (const { asset, room, price, scale, borrowCollateralFactor, roomBorrowValue } of candidates) {
+    if (remainingBorrowValue <= 0n) break;
+    const neededAmount = remainingBorrowValue * basePrice * scale * factorScale / (baseScale * price * borrowCollateralFactor) + 1n;
+    const amount = neededAmount < room ? neededAmount : room;
+    const collateralAsset = context.getAssetByAddress(asset);
+    await addTokenBalance(context, asset, borrower.address, amount);
+    await collateralAsset.approve(borrower, comet.address);
+    await borrower.supplyAsset({ asset, amount });
+    // The needed amount covers the rest of the borrow value even when it takes the whole room
+    remainingBorrowValue = neededAmount <= room ? 0n : remainingBorrowValue - roomBorrowValue;
+    supplied.push({ collateralAsset, amount });
+  }
+
+  if (remainingBorrowValue > 0n) {
+    throw new Error(`Not enough room under the supply caps for the collateral, ${remainingBorrowValue} of base value is left uncovered`);
+  }
+  return supplied;
+}
+
+/**
+ * @notice Supplies the collateral and borrows the base token, which Comet pays out of the liquidity added for it
+ */
+export async function borrowFromMarket(
+  context: CometContext,
+  borrower: CometActor,
+  borrowAmount: bigint
+) {
+  const comet = await context.getComet();
+  const collateral = await supplyCollateralForBorrow(context, borrower, borrowAmount);
+  // Comet pays the borrow out of the liquidity added for it
+  await addTokenBalance(context, await comet.baseToken(), comet.address, borrowAmount);
+  await borrower.withdrawAsset({ asset: await comet.baseToken(), amount: borrowAmount });
+  return collateral;
 }

@@ -84,6 +84,12 @@ export class ProposalConstraint<T extends CometContext> implements StaticConstra
           continue;
         }
 
+        // temporary hack to skip proposal 624, its Polygon part reverts on forks
+        if (proposal.id.eq(624)) {
+          console.log('Skipping proposal 624');
+          continue;
+        }
+
         try {
           // Execute the proposal
           debug(`${label} Processing pending proposal ${proposal.id}`);

@@ -5,16 +5,16 @@ import { BigNumber } from 'ethers';
 import { FuzzType } from './constraints/Fuzzing';
 import {
   supportUtilizationLimit,
-  supportsConfigurableMaxSupportedUtilization,
+  servicePatch2,
   isFreshMarket,
   getUsableCollateralIndices,
   getMinimumBorrowAmounts,
-  matchesDeployment
+  matchesDeployment,
+  sourceAndSupply,
+  UINT256_MAX
 } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { setNextBlockTimestamp } from './utils/hreUtils';
-import { UINT256_MAX } from './utils/constants';
-import { log } from 'console';
 
 function calculateInterestRateSupply(
   utilization: BigNumber,
@@ -136,7 +136,7 @@ scenario(
 scenario(
   'Comet#interestRate > below kink rates using hypothetical configuration constants',
   {
-    filter: async (ctx: CometContext) => await supportsConfigurableMaxSupportedUtilization(ctx),
+    filter: async (ctx: CometContext) => await servicePatch2(ctx),
     upgrade: {
       supplyKink: exp(0.8, 18),
       supplyPerYearInterestRateBase: exp(0, 18),
@@ -160,7 +160,7 @@ scenario(
 scenario(
   'Comet#interestRate > above kink rates using hypothetical configuration constants',
   {
-    filter: async (ctx: CometContext) => await supportsConfigurableMaxSupportedUtilization(ctx),
+    filter: async (ctx: CometContext) => await servicePatch2(ctx),
     upgrade: {
       supplyKink: exp(0.8, 18),
       supplyPerYearInterestRateBase: exp(0, 18),
@@ -184,7 +184,7 @@ scenario(
 scenario(
   'Comet#interestRate > rates using fuzzed configuration constants',
   {
-    filter: async (ctx: CometContext) => await supportsConfigurableMaxSupportedUtilization(ctx),
+    filter: async (ctx: CometContext) => await servicePatch2(ctx),
     upgrade: {
       // TODO: Read types directly from Solidity?
       supplyPerYearInterestRateBase: { type: FuzzType.UINT64 },
@@ -588,7 +588,6 @@ scenario(
   }
 );
 
-
 /**
  * @notice Verifies that rates and indexes do not overflow before a borrower at max supported utilization is liquidated
  * @dev Rates and index increments are uint64 and pass through safe64, so an overflow reverts every accrual and
@@ -622,25 +621,19 @@ scenario(
     const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
     const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
 
-    // The smallest supply that still allows the borrow, with 1 wei more debt to cover the rounding of the principal
+    // The smallest supply that still allows the borrow, with the debt rounded up to cover the rounding of the principal
     const lenderSupply = ((borrowAmount + 1n) * factorScale + maxSupportedUtilization - 1n) / maxSupportedUtilization;
-    await context.sourceTokens(lenderSupply, baseToken.address, albert.address);
-    await baseToken.approve(albert, comet.address);
-    await albert.supplyAsset({ asset: baseToken.address, amount: lenderSupply });
+    await sourceAndSupply(context, baseToken, albert, lenderSupply);
 
     // Borrows above total supply are paid out of reserves
     await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
 
     // Charles only tries to borrow, so the collateral of betty takes the rest of the supply cap
-    await context.sourceTokens(supplyAmount, collateralAsset.address, charles.address);
-    await collateralAsset.approve(charles, comet.address);
-    await charles.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
+    await sourceAndSupply(context, collateralAsset, charles, supplyAmount);
 
     const { supplyCap } = await comet.getAssetInfo(collateralIndex);
     const collateralAmount = supplyCap.toBigInt() - (await comet.totalsCollateral(collateralAsset.address)).totalSupplyAsset.toBigInt();
-    await context.sourceTokens(collateralAmount, collateralAsset.address, betty.address);
-    await collateralAsset.approve(betty, comet.address);
-    await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: collateralAmount });
+    await sourceAndSupply(context, collateralAsset, betty, collateralAmount);
     await betty.withdrawAsset({ asset: baseToken.address, amount: borrowAmount });
 
     const initialUtilization = await comet.getUtilization();
@@ -652,8 +645,6 @@ scenario(
     await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
     expect(await baseToken.balanceOf(comet.address)).to.be.gte(lenderWithdrawAmount + borrowAmount);
 
-    const initialTotals = await comet.totalsBasic();
-    let days = 0;
     while (!(await comet.isLiquidatable(betty.address))) {
       const totalsBefore = await comet.totalsBasic();
       const utilizationBefore = await comet.getUtilization();
@@ -673,24 +664,45 @@ scenario(
       expect(totalsAfter.baseSupplyIndex).to.be.gt(totalsBefore.baseSupplyIndex);
       expect(totalsAfter.baseBorrowIndex).to.be.gt(totalsBefore.baseBorrowIndex);
       expect(await comet.getUtilization()).to.be.gt(utilizationBefore);
-      days++;
     }
 
-    const liquidationTotals = await comet.totalsBasic();
-    log(
-      `The borrower became liquidatable after ${days} days, starting at ${defactor(maxSupportedUtilization) * 100}% ` +
-      `utilization. The supply index grew ${liquidationTotals.baseSupplyIndex.div(initialTotals.baseSupplyIndex)}x ` +
-      `and the borrow index ${liquidationTotals.baseBorrowIndex.div(initialTotals.baseBorrowIndex)}x ` +
-      `of the ${(2n ** 64n - 1n) / initialTotals.baseBorrowIndex.toBigInt()}x that fits uint64`
-    );
+    const totalsBeforeAbsorb = await comet.totalsBasic();
+    const bettyPrincipalBefore = (await comet.userBasic(betty.address)).principal.toBigInt();
+
+    // sanity check: betty holds the whole debt of the market
+    expect(totalsBeforeAbsorb.totalBorrowBase).to.equal(-bettyPrincipalBefore);
 
     await comet.connect(charles.signer).absorb(charles.address, [betty.address]);
+
+    // The absorb takes the whole debt off the market, and the value of the collateral above the debt becomes the
+    // supply of betty
+    const totalsAfterAbsorb = await comet.totalsBasic();
+    const bettyPrincipalAfter = (await comet.userBasic(betty.address)).principal.toBigInt();
     expect(await comet.borrowBalanceOf(betty.address)).to.equal(0n);
+    expect(bettyPrincipalAfter).to.be.gte(0n);
+    expect(totalsAfterAbsorb.totalBorrowBase).to.equal(0n);
+    expect(totalsAfterAbsorb.totalSupplyBase).to.equal(totalsBeforeAbsorb.totalSupplyBase.toBigInt() + bettyPrincipalAfter);
+    expect(await comet.getUtilization()).to.equal(0n);
 
-    // Reserves cover the supply with the accrued interest, which the bad debt of the borrower leaves unpaid
-    await context.sourceTokens((await comet.totalSupply()).toBigInt(), baseToken.address, comet.address);
+    // The bad debt of betty leaves the interest accrued for albert unpaid, so Comet holds less than albert is owed.
+    // The shortfall comes from reserves, so the withdrawal checks the limit and not the balance of Comet
+    const albertBalance = (await comet.balanceOf(albert.address)).toBigInt();
+    const cometBalanceBefore = await baseToken.balanceOf(comet.address);
+    expect(cometBalanceBefore).to.be.below(albertBalance);
+    await context.sourceTokens(albertBalance - cometBalanceBefore, baseToken.address, comet.address);
 
+    // sanity check: without debt utilization stays zero after the withdrawal of albert, so it is within the limit
+    const totalsBeforeWithdraw = await comet.totalsBasic();
+    const albertPrincipal = (await comet.userBasic(albert.address)).principal.toBigInt();
+    expect(totalsBeforeWithdraw.totalBorrowBase).to.equal(0n);
+
+    const albertTokensBefore = await baseToken.balanceOf(albert.address);
     await albert.withdrawAsset({ asset: baseToken.address, amount: UINT256_MAX });
+
+    // Without debt the supply rate is zero, so albert gets exactly his balance and the market loses exactly his principal
     expect(await comet.balanceOf(albert.address)).to.equal(0n);
+    expect(await baseToken.balanceOf(albert.address)).to.equal(albertTokensBefore + albertBalance);
+    expect((await comet.totalsBasic()).totalSupplyBase).to.equal(totalsBeforeWithdraw.totalSupplyBase.toBigInt() - albertPrincipal);
+    expect(await comet.getUtilization()).to.equal(0n);
   }
 );
