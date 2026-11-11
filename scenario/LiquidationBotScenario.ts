@@ -1,7 +1,7 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { isValidAssetIndex, matchesDeployment, MAX_ASSETS, timeUntilUnderwater } from './utils';
-import { ethers, event, exp, wait } from '../test/helpers';
+import { isValidAssetIndex, matchesDeployment, MAX_ASSETS, secondsUntilLiquidatable, exp } from './utils';
+import { ethers, event, wait } from '../test/helpers';
 import CometActor from './context/CometActor';
 import { CometInterface, OnChainLiquidator } from '../build/types';
 import { getPoolConfig, flashLoanPools } from '../scripts/liquidation_bot/liquidateUnderwaterBorrowers';
@@ -229,11 +229,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       });
 
       await world.increaseTime(
-        await timeUntilUnderwater({
-          comet,
-          actor: albert,
-          fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
-        })
+        await secondsUntilLiquidatable(comet, albert, 60n * 10n) // 10 minutes past when position is underwater
       );
 
       // define after increasing time, since increasing time alters reserves
@@ -493,11 +489,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       });
 
       await world.increaseTime(
-        await timeUntilUnderwater({
-          comet,
-          actor: albert,
-          fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
-        })
+        await secondsUntilLiquidatable(comet, albert, 60n * 10n) // 10 minutes past when position is underwater
       );
 
       await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue
@@ -596,11 +588,7 @@ scenario(
     });
 
     await world.increaseTime(
-      await timeUntilUnderwater({
-        comet,
-        actor: albert,
-        fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
-      })
+      await secondsUntilLiquidatable(comet, albert, 60n * 10n) // 10 minutes past when position is underwater
     );
 
     const initialReserves = (await comet.getReserves()).toBigInt();
@@ -711,11 +699,7 @@ scenario(
     });
 
     await world.increaseTime(
-      await timeUntilUnderwater({
-        comet,
-        actor: albert,
-        fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
-      })
+      await secondsUntilLiquidatable(comet, albert, 60n * 10n) // 10 minutes past when position is underwater
     );
 
     const initialReserves = (await comet.getReserves()).toBigInt();
@@ -848,11 +832,7 @@ scenario(
       });
 
       await world.increaseTime(
-        await timeUntilUnderwater({
-          comet,
-          actor: albert,
-          fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
-        })
+        await secondsUntilLiquidatable(comet, albert, 60n * 10n) // 10 minutes past when position is underwater
       );
 
       await comet.connect(betty.signer).accrueAccount(albert.address); // force accrue

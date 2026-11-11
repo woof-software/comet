@@ -3,8 +3,7 @@ import { CometContext } from '../context/CometContext';
 import { expect } from 'chai';
 import { Requirements } from './Requirements';
 import { BigNumber } from 'ethers';
-import { exp } from '../../test/helpers';
-import { ComparativeAmount, ComparisonOp, getAssetFromName, parseAmount, getToTransferAmount } from './utils';
+import { ComparativeAmount, ComparisonOp, getAssetFromName, parseAmount, getToTransferAmount, exp } from '../utils';
 
 /**
  * Resolves an actor name from the requirements to an address.

@@ -1,7 +1,6 @@
 import { CometContext, CometProperties, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { exp } from '../test/helpers';
-import { isRewardSupported, matchesDeployment } from './utils';
+import { isRewardSupported, matchesDeployment, exp } from './utils';
 import { Contract, ContractReceipt } from 'ethers';
 import { CometRewards, ERC20__factory } from '../build/types';
 import {World} from '../plugins/scenario';

@@ -1,11 +1,11 @@
 import { BigNumber, Contract, utils } from 'ethers';
 import { DeploymentManager } from '../../plugins/deployment_manager/DeploymentManager';
+import { applyL1ToL2Alias } from './hreUtils';
 
-// https://github.com/OffchainLabs/arbitrum/blob/master/packages/arb-bridge-eth/contracts/libraries/AddressAliasHelper.sol
-export function applyL1ToL2Alias(l1Address: string) {
-  const offset = BigNumber.from('0x1111000000000000000000000000000000001111');
-  return BigNumber.from(l1Address).add(offset).toHexString();
-}
+// applyL1ToL2Alias lives in hreUtils.ts, because every OP-stack chain uses the same aliasing
+// as Arbitrum. It is re-exported here only so that existing migrations, which import it from
+// arbitrumUtils, keep working without edits. New code should import it from scenario/utils.
+export { applyL1ToL2Alias };
 
 const gatewayInterface = new utils.Interface(
   [

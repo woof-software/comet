@@ -1,6 +1,6 @@
 import { scenario } from './context/CometContext';
 import { event, expect } from '../test/helpers';
-import { expectRevertCustom, timeUntilUnderwater } from './utils';
+import { expectRevertCustom, secondsUntilLiquidatable } from './utils';
 import { matchesDeployment } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 
@@ -23,11 +23,7 @@ scenario(
     const baseToken = await comet.baseToken();
     const baseScale = await comet.baseScale();
 
-    const timeBeforeLiquidation = await timeUntilUnderwater({
-      comet,
-      actor: albert,
-      fudgeFactor: 6000n * 6000n // 1 hour past when position is underwater
-    });
+    const timeBeforeLiquidation = await secondsUntilLiquidatable(comet, albert, 6000n * 6000n); // 1 hour past when position is underwater
 
     while(!(await comet.isLiquidatable(albert.address))) {
       await comet.accrueAccount(albert.address);
@@ -75,11 +71,7 @@ scenario(
     const { albert, betty } = actors;
 
     await world.increaseTime(
-      await timeUntilUnderwater({
-        comet,
-        actor: albert,
-        fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
-      })
+      await secondsUntilLiquidatable(comet, albert, 60n * 10n) // 10 minutes past when position is underwater
     );
 
     const lp0 = await comet.liquidatorPoints(betty.address);
@@ -132,11 +124,7 @@ scenario(
     const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
 
     await world.increaseTime(
-      await timeUntilUnderwater({
-        comet,
-        actor: albert,
-        fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
-      })
+      await secondsUntilLiquidatable(comet, albert, 60n * 10n) // 10 minutes past when position is underwater
     );
 
     await betty.withdrawAsset({ asset: baseToken, amount: baseBorrowMin }); // force accrue
@@ -169,11 +157,7 @@ scenario(
     const { albert, betty } = actors;
 
     
-    const timeBeforeLiquidation = await timeUntilUnderwater({
-      comet,
-      actor: albert,
-      fudgeFactor: 6000n * 6000n // 1 hour past when position is underwater
-    });
+    const timeBeforeLiquidation = await secondsUntilLiquidatable(comet, albert, 6000n * 6000n); // 1 hour past when position is underwater
 
     while(!(await comet.isLiquidatable(albert.address))) {
       await comet.accrueAccount(albert.address);
@@ -232,10 +216,7 @@ scenario(
     const { albert, betty } = actors;
 
     await world.increaseTime(
-      Math.round(await timeUntilUnderwater({
-        comet,
-        actor: albert,
-      }) * 1.001) // XXX why is this off? better to use a price constraint?
+      Math.round(await secondsUntilLiquidatable(comet, albert) * 1.001) // XXX why is this off? better to use a price constraint?
     );
 
     const ab0 = await betty.absorb({ absorber: betty.address, accounts: [albert.address] });
@@ -268,11 +249,7 @@ scenario.skip(
     const collateralBalance = scale.toBigInt() / 1000n; // .001
 
     await world.increaseTime(
-      await timeUntilUnderwater({
-        comet,
-        actor: albert,
-        fudgeFactor: 60n * 10n // 10 minutes past when position is underwater
-      })
+      await secondsUntilLiquidatable(comet, albert, 60n * 10n) // 10 minutes past when position is underwater
     );
 
     await betty.absorb({ absorber: betty.address, accounts: [albert.address] });

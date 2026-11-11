@@ -1,6 +1,7 @@
 import { scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { annualize, defactor, exp } from '../test/helpers';
+import { exp } from './utils';
+import { annualize, defactor } from '../test/helpers';
 import { BigNumber } from 'ethers';
 import { FuzzType } from './constraints/Fuzzing';
 
