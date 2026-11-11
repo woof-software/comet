@@ -183,7 +183,8 @@ export async function simulateL2ToL1TokenBridging(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
   l2StartingBlockNumber?: number,
-  tenderlyLogs?: any[]
+  tenderlyLogs?: any[],
+  proposalIds?: BigNumber[]
 ) {
   if(tenderlyLogs) {
     return;
@@ -218,7 +219,11 @@ export async function simulateL2ToL1TokenBridging(
 
   for (const event of proposalCreatedEvents) {
     const decodedEvent = bridgeReceiver.interface.parseLog(event);
-    const { signatures, calldatas } = decodedEvent.args;
+    const { id, signatures, calldatas } = decodedEvent.args;
+
+    if (proposalIds && !proposalIds.some((p) => p.toString() === id.toString())) {
+      continue;
+    }
 
     for (let i = 0; i < signatures.length; i++) {
       if (signatures[i] === bridgeERC20ToSignature) {
