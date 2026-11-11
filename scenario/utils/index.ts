@@ -1226,6 +1226,9 @@ export async function tenderlyVnetExecute(
   const governanceVnetProvider = governanceVnetDm.hre.ethers.provider;
   const vnetGovernor = governor.connect(governanceVnetProvider);
 
+  const sentVnetTxs: SentVnetTxs = new Map();
+  trackVnetTxs(governanceVnetDm, sentVnetTxs);
+
   const proposalArgs = loadCachedProposal();
   proposalArgs.pop(); // drop signatures; governor.propose(targets, values, calldatas, description)
 
@@ -1307,6 +1310,7 @@ export async function tenderlyVnetExecute(
         writeCacheToDisk: false,
         verificationStrategy: 'lazy',
       });
+      trackVnetTxs(l2VnetDm, sentVnetTxs);
       await l2VnetDm.spider();
       await l2VnetDm.getSigner(proposerAddress);
 
@@ -1319,7 +1323,53 @@ export async function tenderlyVnetExecute(
     }
   }
 
+  const failedVnetTxs = await getFailedVnetTxs(sentVnetTxs);
+  console.log(`Checked ${sentVnetTxs.size} Virtual TestNet txs, ${failedVnetTxs.length} failed`);
+
   console.log(`\n================================================================\n`);
+
+  if (failedVnetTxs.length > 0) {
+    throw new Error(`Virtual TestNet txs reverted:\n${failedVnetTxs.join('\n')}`);
+  }
+}
+
+// tx hash -> the vnet DeploymentManager it was sent through
+type SentVnetTxs = Map<string, DeploymentManager>;
+
+function isSendTxMethod(method: string): boolean {
+  return method === 'eth_sendTransaction' || method === 'eth_sendRawTransaction';
+}
+
+// Records every tx sent to a vnet so the run can fail if any of them reverted. Some calls
+// (e.g. bridged executeProposal) are sent without awaiting the receipt, so reverts go unnoticed otherwise.
+// hre.ethers.provider is a read-only proxy, so this hooks the underlying hardhat provider instead.
+function trackVnetTxs(dm: DeploymentManager, sentTxs: SentVnetTxs) {
+  const hhProvider: any = dm.hre.network.provider;
+  const originalSend = hhProvider.send.bind(hhProvider);
+  const originalRequest = hhProvider.request.bind(hhProvider);
+
+  hhProvider.send = async function (method: string, params?: any[]) {
+    const result = await originalSend(method, params);
+    if (isSendTxMethod(method)) sentTxs.set(result, dm);
+    return result;
+  };
+
+  hhProvider.request = async function (args: { method: string, params?: any[] }) {
+    const result = await originalRequest(args);
+    if (isSendTxMethod(args.method)) sentTxs.set(result, dm);
+    return result;
+  };
+}
+
+async function getFailedVnetTxs(sentTxs: SentVnetTxs): Promise<string[]> {
+  const failed: string[] = [];
+  for (const [hash, dm] of sentTxs) {
+    const receipt = await dm.hre.ethers.provider.getTransactionReceipt(hash);
+    if (!receipt || receipt.status !== 1) {
+      failed.push(`[${dm.network}] ${hash} (status: ${receipt?.status ?? 'no receipt'})`);
+    }
+  }
+  return failed;
 }
 
 export async function voteForOpenProposal(
