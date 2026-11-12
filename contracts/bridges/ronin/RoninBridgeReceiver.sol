@@ -21,7 +21,11 @@ contract RoninBridgeReceiver is SweepableBridgeReceiver, IERC165, IAny2EVMMessag
 
     address public l2Router;
 
-    constructor(address l2Router_) {
+    constructor(
+        address l2Router_,
+        address govTimelock_,
+        address localTimelock_
+    ) BaseBridgeReceiver(govTimelock_, localTimelock_) {
         l2Router = l2Router_;
     }
 

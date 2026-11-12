@@ -11,12 +11,16 @@ contract OptimismBridgeReceiver is SweepableBridgeReceiver {
 
     address public crossDomainMessenger;
 
-    constructor(address crossDomainMessenger_) {
+    constructor(
+        address crossDomainMessenger_,
+        address govTimelock_,
+        address localTimelock_
+    ) BaseBridgeReceiver(govTimelock_, localTimelock_) {
         crossDomainMessenger = crossDomainMessenger_;
     }
 
     function changeCrossDomainMessenger(address newCrossDomainMessenger) public {
-        if (msg.sender != localTimelock) revert Unauthorized();
+        if (msg.sender != address(localTimelock)) revert Unauthorized();
         address oldCrossDomainMessenger = crossDomainMessenger;
         crossDomainMessenger = newCrossDomainMessenger;
         emit NewCrossDomainMessenger(oldCrossDomainMessenger, newCrossDomainMessenger);

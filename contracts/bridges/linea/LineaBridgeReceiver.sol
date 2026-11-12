@@ -8,7 +8,11 @@ contract LineaBridgeReceiver is SweepableBridgeReceiver {
     /// @notice Address of Linea Message Service
     IMessageService public messageService;
 
-    constructor(address _messageService) {
+    constructor(
+        address _messageService,
+        address _govTimelock,
+        address _localTimelock
+    ) BaseBridgeReceiver(_govTimelock, _localTimelock) {
         messageService = IMessageService(_messageService);
     }
 

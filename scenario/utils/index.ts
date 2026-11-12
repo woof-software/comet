@@ -2011,6 +2011,60 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
 }
 
 /**
+ * Check if the BridgeReceiver supports ordered batches of bridged proposals
+ * @param ctx The Comet context
+ * @returns true if the deployment has a BridgeReceiver with batches, false otherwise
+ */
+export async function supportsProposalOrdering(ctx: CometContext): Promise<boolean> {
+  try {
+    const bridgeReceiver = await ctx.getBridgeReceiver();
+    if (!bridgeReceiver) return false;
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+
+    // batchQueuedCount() only exists on BridgeReceivers with batches; older ones revert
+    const result = await ethers.provider.call({
+      to: bridgeReceiver.address,
+      data: bridgeReceiver.interface.encodeFunctionData('batchQueuedCount', [constants.HashZero])
+    });
+
+    return result !== '0x';
+  } catch (e) {
+    return false;
+  }
+}
+
+// Delivers an L2 proposal to the BridgeReceiver the way the bridge does on L2 and leaves it queued. The relay helpers
+// behind createCrossChainProposal execute every bridged proposal they deliver, so none of them stays queued.
+export async function queueBridgedProposal(context: CometContext, bridgeReceiver: BaseBridgeReceiver, l2ProposalData: string) {
+  const dm = context.world.deploymentManager;
+  const govTimelock = await bridgeReceiver.govTimelock();
+
+  if (dm.network === 'polygon') {
+    // The Polygon state receiver hands the synced message to fxChild, which calls processMessageFromRoot
+    const fxChild = await dm.getContractOrThrow('fxChild');
+    const stateReceiver = await impersonateAddress(dm, '0x0000000000000000000000000000000000001001');
+    await setNextBaseFeeToZero(dm);
+    await fxChild.connect(stateReceiver).onStateReceive(
+      0,
+      utils.defaultAbiCoder.encode(['address', 'address', 'bytes'], [govTimelock, bridgeReceiver.address, l2ProposalData]),
+      { gasPrice: 0 }
+    );
+  } else if (dm.network === 'arbitrum' || dm.network === 'hardhat') {
+    // Arbitrum executes the retryable ticket as a call from the aliased governing Timelock. The local development
+    // deployment uses ArbitrumBridgeReceiver for the same reason: its only bridge dependency is that alias.
+    const aliasedGovTimelock = await impersonateAddress(dm, applyL1ToL2Alias(govTimelock));
+    await setNextBaseFeeToZero(dm);
+    await aliasedGovTimelock.sendTransaction({ to: bridgeReceiver.address, data: l2ProposalData, gasPrice: 0 });
+  } else {
+    throw new Error(`No L2 delivery of bridged proposals implemented for ${dm.network}`);
+  }
+
+  const id = await bridgeReceiver.proposalCount();
+  const { eta } = await bridgeReceiver.proposals(id);
+  return { id, eta };
+}
+
+/**
  * Check if Comet rejects zero-amount supply, transfer and withdraw with ZeroAmount
  * @param ctx The Comet context
  * @returns true if a zero base withdraw from an empty account reverts with ZeroAmount, false otherwise

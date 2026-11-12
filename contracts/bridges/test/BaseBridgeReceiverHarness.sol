@@ -4,6 +4,11 @@ pragma solidity 0.8.15;
 import "../BaseBridgeReceiver.sol";
 
 contract BaseBridgeReceiverHarness is BaseBridgeReceiver {
+    constructor(
+        address _govTimelock,
+        address _localTimelock
+    ) BaseBridgeReceiver(_govTimelock, _localTimelock) {}
+
     function processMessageExternal(
         address rootMessageSender,
         bytes calldata data

@@ -4,7 +4,7 @@ pragma solidity 0.8.15;
 import "../interfaces/IERC20NonStandard.sol";
 import "./BaseBridgeReceiver.sol";
 
-contract SweepableBridgeReceiver is BaseBridgeReceiver {
+abstract contract SweepableBridgeReceiver is BaseBridgeReceiver {
     error FailedToSendNativeToken();
     error TransferOutFailed();
 
@@ -15,7 +15,7 @@ contract SweepableBridgeReceiver is BaseBridgeReceiver {
      * @param asset The address of the ERC-20 token to sweep
      */
     function sweepToken(address recipient, address asset) external {
-        if (msg.sender != localTimelock) revert Unauthorized();
+        if (msg.sender != address(localTimelock)) revert Unauthorized();
 
         uint256 balance = IERC20NonStandard(asset).balanceOf(address(this));
         doTransferOut(asset, recipient, balance);
@@ -26,7 +26,7 @@ contract SweepableBridgeReceiver is BaseBridgeReceiver {
      * @param recipient The address that will receive the swept funds
      */
     function sweepNativeToken(address recipient) external {
-        if (msg.sender != localTimelock) revert Unauthorized();
+        if (msg.sender != address(localTimelock)) revert Unauthorized();
 
         uint256 balance = address(this).balance;
         (bool success, ) = recipient.call{ value: balance }("");
