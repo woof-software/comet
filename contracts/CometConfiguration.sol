@@ -35,6 +35,8 @@ contract CometConfiguration {
         uint104 targetReserves;
 
         AssetConfig[] assetConfigs;
+
+        uint64 maxSupportedUtilization;
     }
 
     struct AssetConfig {

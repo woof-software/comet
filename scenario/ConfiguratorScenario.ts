@@ -3,7 +3,13 @@ import { expect } from 'chai';
 import { BigNumber, ethers } from 'ethers';
 import { CometContext, scenario } from './context/CometContext';
 import { exp } from '../test/helpers';
-import { expectRevertCustom, fundAccount, supportsMarketAdminPermissionChecker } from './utils';
+import {
+  expectRevertCustom,
+  fundAccount,
+  matchesDeployment,
+  supportsMarketAdminPermissionChecker,
+  servicePatch2
+} from './utils';
 import { SECONDS_PER_YEAR } from './utils/constants';
 import { MarketAdminPermissionChecker } from '../build/types';
 
@@ -197,6 +203,7 @@ async function deployComet(context: CometContext): Promise<string> {
     baseMinForRewards: exp(1, 9), // 1000000000n
     baseBorrowMin: exp(1, 5), // 100000n
     targetReserves: exp(2, 13), //20000000000000n
+    maxSupportedUtilization: exp(2, 18), // 2000000000000000000n
     assetConfigs: [
       {
         asset: await deployMockERC20(context, 'asset'),
@@ -2983,5 +2990,83 @@ scenario(
       configurator.connect(admin.signer).updateAssetSupplyCap(comet.address, nonExistingAsset, 1n),
       'AssetDoesNotExist()'
     );
+  }
+);
+
+scenario(
+  'Configurator#setMaxSupportedUtilization updates Comet after the upgrade',
+  {
+    filter: async (ctx: CometContext) => await servicePatch2(ctx),
+  },
+  async ({ comet, configurator, actors }, context) => {
+    const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
+    const oldMaxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+    const newMaxSupportedUtilization = oldMaxSupportedUtilization + oldMaxSupportedUtilization / 10n;
+
+    await configurator.connect(admin.signer).setMaxSupportedUtilization(comet.address, newMaxSupportedUtilization);
+
+    // The new limit is stored for the Comet, while the Comet keeps the old one until the upgrade
+    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).maxSupportedUtilization).to.equal(newMaxSupportedUtilization);
+    expect(await comet.maxSupportedUtilization()).to.equal(oldMaxSupportedUtilization);
+
+    await (await context.getCometAdmin()).connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
+
+    expect(await comet.maxSupportedUtilization()).to.equal(newMaxSupportedUtilization);
+  }
+);
+
+scenario(
+  'Configurator#setMaxSupportedUtilization reverts if called by non-governor',
+  {
+    filter: async (ctx: CometContext) => await servicePatch2(ctx),
+  },
+  async ({ comet, configurator, actors }) => {
+    const { admin, albert } = actors;
+    const oldMaxSupportedUtilization = normalizeStructOutput(await configurator.getConfiguration(comet.address)).maxSupportedUtilization;
+    const newMaxSupportedUtilization = oldMaxSupportedUtilization + oldMaxSupportedUtilization / 10n;
+
+    // sanity check: the same call passes from the governor, so only the caller makes it revert
+    await fundAccount(admin.context.world, admin);
+    await configurator.connect(admin.signer).callStatic.setMaxSupportedUtilization(comet.address, newMaxSupportedUtilization);
+
+    // The revert reason depends on the network: a market admin permission checker reverts with Unauthorized, and
+    // without one the call reverts on an empty address
+    await expect(
+      configurator.connect(albert.signer).setMaxSupportedUtilization(comet.address, newMaxSupportedUtilization)
+    ).to.be.reverted;
+
+    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).maxSupportedUtilization).to.equal(oldMaxSupportedUtilization);
+  }
+);
+
+// Market admin is supported only on Optimism, the scenario moves to the market admin scenarios with AssetListV2
+scenario(
+  'Configurator#setMaxSupportedUtilization reverts if called by non-market-admin',
+  {
+    filter: async (ctx: CometContext) => matchesDeployment(ctx, [{ network: 'optimism' }]) && await servicePatch2(ctx),
+  },
+  async ({ comet, configurator, actors }, context) => {
+    const { admin, albert } = actors;
+    const oldMaxSupportedUtilization = normalizeStructOutput(await configurator.getConfiguration(comet.address)).maxSupportedUtilization;
+    const newMaxSupportedUtilization = oldMaxSupportedUtilization + oldMaxSupportedUtilization / 10n;
+
+    // sanity check: the permission checker is set and albert is not the market admin
+    const marketAdminPermissionChecker = (await context.world.deploymentManager.hre.ethers.getContractAt(
+      'MarketAdminPermissionChecker',
+      await configurator.marketAdminPermissionChecker()
+    )) as MarketAdminPermissionChecker;
+    expect(marketAdminPermissionChecker.address).to.not.equal(ethers.constants.AddressZero);
+    expect(await marketAdminPermissionChecker.marketAdmin()).to.not.equal(albert.address);
+
+    // sanity check: the same call passes from the governor, so only the caller makes it revert
+    await fundAccount(admin.context.world, admin);
+    await configurator.connect(admin.signer).callStatic.setMaxSupportedUtilization(comet.address, newMaxSupportedUtilization);
+
+    await expect(
+      configurator.connect(albert.signer).setMaxSupportedUtilization(comet.address, newMaxSupportedUtilization)
+    ).to.be.revertedWithCustomError(marketAdminPermissionChecker, 'Unauthorized');
+
+    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).maxSupportedUtilization).to.equal(oldMaxSupportedUtilization);
   }
 );

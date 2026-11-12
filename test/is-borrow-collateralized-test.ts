@@ -24,7 +24,8 @@ import {
   SnapshotRestorer,
   takeSnapshot,
   updateAssetBorrowCollateralFactor,
-  getLiquidity
+  getLiquidity,
+  allocateAndSupply
 } from './helpers';
 
 describe('isBorrowCollateralized', function () {
@@ -32,6 +33,7 @@ describe('isBorrowCollateralized', function () {
   const ONE_HOUR = 60 * 60;
   const baseTokenDecimals = 6;
   const collateralTokenDecimals = 18;
+  const initialLenderSupply = exp(10_000, baseTokenDecimals);
   // Configurator and protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
   let configurator: Configurator;
@@ -1596,7 +1598,8 @@ describe('isBorrowCollateralized', function () {
             aliceBaseBalanceBefore = await baseToken.balanceOf(alice.address);
             basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
             baseScale = await comet.baseScale();
-            await baseToken.allocateTo(comet.address, WITHDRAW_AMOUNT); // fund comet with base token to allow withdraw
+            // Borrowing requires at least one lender, so seed the market with an initial supply
+            await allocateAndSupply(comet, baseToken, liquidityProvider, initialLenderSupply);
           });
 
           it('alice withdraws 1100 USDC and opens a borrow-backed withdrawal', async () => {
@@ -2334,6 +2337,9 @@ describe('isBorrowCollateralized', function () {
       const PriceFeedWithRevertFactory = (await ethers.getContractFactory('PriceFeedWithRevert')) as PriceFeedWithRevert__factory;
       priceFeedWithRevert = await PriceFeedWithRevertFactory.deploy(100, 8);
 
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet, baseToken, liquidityProvider, initialLenderSupply);
+
       snapshot = await takeSnapshot();
 
       // Supply collateral and borrow base
@@ -2344,7 +2350,6 @@ describe('isBorrowCollateralized', function () {
       await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
       await comet.connect(alice).supply(collateralToken.address, supplyAmount);
 
-      await baseToken.allocateTo(cometProxyAddress, borrowAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // With positive borrowCF, position is collateralized
@@ -2398,7 +2403,6 @@ describe('isBorrowCollateralized', function () {
       // Total liquidity: 5 * 180 = 900 USDC. Borrow 400 to stay well collateralized initially.
       // After zeroing 3 assets, only 2 contribute (360 total) < 400 borrowed, so undercollateralized.
       const borrowAmount = exp(400, 6);
-      await baseToken.allocateTo(comet.address, borrowAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Verify collateralized initially
@@ -2442,7 +2446,6 @@ describe('isBorrowCollateralized', function () {
 
         // Borrow an amount collateralized by the single supplied asset (~180 USDC liquidity)
         const borrowAmount = exp(150, 6);
-        await baseToken.allocateTo(comet.address, borrowAmount);
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
         // Initially collateralized with single asset active
@@ -2481,7 +2484,6 @@ describe('isBorrowCollateralized', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           // Capture the current (normal) price feed for the collateral token
@@ -2535,7 +2537,6 @@ describe('isBorrowCollateralized', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
         });
 
@@ -2587,7 +2588,6 @@ describe('isBorrowCollateralized', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           collateralAssetIndex = (await comet.getAssetInfoByAddress(collateralToken.address)).offset;
@@ -2642,7 +2642,6 @@ describe('isBorrowCollateralized', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           collateralAssetIndex = (await comet.getAssetInfoByAddress(collateralToken.address)).offset;

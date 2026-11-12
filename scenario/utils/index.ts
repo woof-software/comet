@@ -37,6 +37,8 @@ export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
 import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
 export * from './hreUtils';
+export * from './versionControl';
+export * from './userOperations';
 
 /** Convert a per-year interest factor to per-second (Comet constructor truncation). */
 export function perSecond(perYear: BigNumber): BigNumber {
@@ -516,9 +518,9 @@ export async function supportUtilizationLimit(ctx: CometContext): Promise<boolea
     const ethers = ctx.world.deploymentManager.hre.ethers;
     
     const iface = new ethers.utils.Interface([
-      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
+      'function maxSupportedUtilization() external view returns (uint64)',
     ]);
-    const functionSelector = iface.getSighash('MAX_SUPPORTED_UTILIZATION');
+    const functionSelector = iface.getSighash('maxSupportedUtilization');
     
     // Try to call the function using a low-level static call
     // If the function doesn't exist, this will revert
@@ -551,6 +553,16 @@ export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
   } catch (error) {
     return false;
   }
+}
+
+/**
+ * @notice Whether interest takes utilization of the market above its limit: debt grows faster than supply only while
+ *         the borrow rate is above the supply rate
+ */
+export async function utilizationGrowsAboveLimit(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const maxSupportedUtilization = await comet.maxSupportedUtilization();
+  return (await comet.getBorrowRate(maxSupportedUtilization)).gt(await comet.getSupplyRate(maxSupportedUtilization));
 }
 
 /**

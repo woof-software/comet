@@ -1,4 +1,4 @@
-import { ethers, exp, expect, makeConfigurator, SnapshotRestorer, takeSnapshot, ZERO_ADDRESS } from './helpers';
+import { DEFAULT_MAX_SUPPORTED_UTILIZATION, ethers, exp, expect, makeConfigurator, SnapshotRestorer, takeSnapshot, ZERO_ADDRESS } from './helpers';
 import {
   CometExtAssetList,
   CometExtAssetList__factory,
@@ -1402,6 +1402,51 @@ describe('configurator', function () {
           it('targetReserves is updated in comet', async () => {
             expect(await comet.targetReserves()).to.equal(NEW_TARGET_RESERVES);
           });
+        });
+      });
+    });
+
+    describe('setMaxSupportedUtilization', function() {
+      const OLD_MAX_SUPPORTED_UTILIZATION = DEFAULT_MAX_SUPPORTED_UTILIZATION;
+      const NEW_MAX_SUPPORTED_UTILIZATION = exp(3, 18);
+      let snapshot: SnapshotRestorer;
+
+      before(async () => {
+        snapshot = await takeSnapshot();
+      });
+
+      after(async () => await snapshot.restore());
+
+      describe('revert cases', function() {
+        it('reverts by non-governor and non-market admin', async () => {
+          await expect(configuratorProxy.connect(alice).setMaxSupportedUtilization(cometProxy.address, NEW_MAX_SUPPORTED_UTILIZATION))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+      });
+
+      describe('happy path by governor', function() {
+        let setTx: ContractTransaction;
+
+        before(async () => {
+          setTx = await configuratorProxy.connect(governor).setMaxSupportedUtilization(cometProxy.address, NEW_MAX_SUPPORTED_UTILIZATION);
+        });
+
+        it('emits SetMaxSupportedUtilization event', async () => {
+          await expect(setTx)
+            .to.emit(configuratorProxy, 'SetMaxSupportedUtilization')
+            .withArgs(cometProxy.address, OLD_MAX_SUPPORTED_UTILIZATION, NEW_MAX_SUPPORTED_UTILIZATION);
+        });
+
+        it('new maxSupportedUtilization is stored in configuration', async () => {
+          expect((await configuratorProxy.getConfiguration(cometProxy.address)).maxSupportedUtilization).to.equal(NEW_MAX_SUPPORTED_UTILIZATION);
+        });
+
+        it('deploy and upgrade comet with new configuration', async () => {
+          await cometProxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address);
+        });
+
+        it('maxSupportedUtilization is updated in comet', async () => {
+          expect(await comet.maxSupportedUtilization()).to.equal(NEW_MAX_SUPPORTED_UTILIZATION);
         });
       });
     });

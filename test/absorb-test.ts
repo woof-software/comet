@@ -1,4 +1,4 @@
-import { expect, exp, makeProtocol, mulPrice, mulFactor, divPrice, presentValue, principalValue, ZERO_ADDRESS, presentValueSupply, ethers, SnapshotRestorer, makeConfigurator, MAX_ASSETS, takeSnapshot } from './helpers';
+import { expect, exp, makeProtocol, mulPrice, mulFactor, divPrice, presentValue, principalValue, ZERO_ADDRESS, presentValueSupply, ethers, SnapshotRestorer, makeConfigurator, MAX_ASSETS, takeSnapshot, allocateAndSupply } from './helpers';
 import { CometExtAssetList, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
@@ -1267,6 +1267,7 @@ describe('absorb', function () {
     let bob: SignerWithAddress;
     let underwater24Assets: SignerWithAddress;
     let absorber24Assets: SignerWithAddress;
+    let initialLender: SignerWithAddress;
 
     // Price feeds
     let compPriceFeed: SimplePriceFeed;
@@ -1274,6 +1275,7 @@ describe('absorb', function () {
 
     // Constants
     const aliceCompSupply = exp(1, 18);
+    const initialLenderSupply = exp(5000, 6);
 
     // Liquidation transaction
     let liquidationTx: ContractTransaction;
@@ -1322,9 +1324,10 @@ describe('absorb', function () {
 
       alice = configuratorAndProtocol.users[0];
       bob = configuratorAndProtocol.users[1];
+      initialLender = configuratorAndProtocol.users[2];
 
-      // Allocate base token to comet
-      await baseToken.allocateTo(comet.address, exp(1000, 6));
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet, baseToken, initialLender, initialLenderSupply);
 
       // Supply COMP from Alice
       await compToken.allocateTo(alice.address, aliceCompSupply);
@@ -1404,6 +1407,9 @@ describe('absorb', function () {
       await configuratorAndProtocol24Assets.proxyAdmin.deployAndUpgradeTo(configuratorAndProtocol24Assets.configuratorProxy.address, configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address);
 
       baseToken24Assets = configuratorAndProtocol24Assets.tokens['USDC'];
+
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet24Assets, baseToken24Assets, initialLender, initialLenderSupply);
 
       cometExt = (await ethers.getContractAt('CometExtAssetList', comet.address)) as CometExtAssetList;
       const totalBasics = await cometExt.totalsBasic();
@@ -1932,7 +1938,6 @@ describe('absorb', function () {
           await comet24Assets.connect(underwater24Assets).supply(targetToken.address, supplyAmount);
 
           const borrowAmount = exp(150, 6);
-          await baseToken24Assets.allocateTo(comet24Assets.address, borrowAmount);
           await comet24Assets.connect(underwater24Assets).withdraw(baseToken24Assets.address, borrowAmount);
 
           // Drop price of token to make liquidatable
@@ -1989,7 +1994,6 @@ describe('absorb', function () {
         }
   
         const borrowAmount = exp(500, 6);
-        await baseToken24Assets.allocateTo(comet24Assets.address, borrowAmount);
         await comet24Assets.connect(underwater24Assets).withdraw(baseToken24Assets.address, borrowAmount);
   
         // Drop price of all tokens to make liquidatable

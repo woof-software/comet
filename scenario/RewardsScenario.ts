@@ -156,7 +156,11 @@ scenario(
     tokenBalances: async (ctx) => (
       {
         albert: { $asset0: ` == ${getConfigForScenario(ctx).rewardsAsset}` }, // in units of asset, not wei
-        $comet: { $base: ` >= ${getConfigForScenario(ctx).rewardsBase} ` }
+      }
+    ),
+    cometBalances: async (ctx) => (
+      {
+        charles: { $base: ` >= ${getConfigForScenario(ctx).rewardsBase} ` }
       }
     )
   },

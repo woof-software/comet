@@ -3,6 +3,7 @@ pragma solidity ^0.8.15;
 import "@forge-std/src/Vm.sol";
 import "@comet-contracts/bridges/arbitrum/ArbitrumBridgeReceiver.sol";
 import "@comet-contracts/marketupdates/MarketAdminPermissionChecker.sol";
+import "@comet-contracts/CometFactoryWithExtendedAssetList.sol";
 import "../script/marketupdates/helpers/GovernanceHelper.sol";
 import "../script/marketupdates/helpers/MarketUpdateAddresses.sol";
 import "../script/marketupdates/helpers/ChainAddresses.sol";
@@ -118,6 +119,14 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         return deployedContracts;
     }
 
+    // The factory already deployed on chain expects the old Configuration struct, so the new
+    // Configurator cannot deploy through it. Point the market at a factory built from the current code.
+    function setNewFactory(Vm vm, address configuratorProxy, address cometProxy) internal {
+        address newFactory = address(new CometFactoryWithExtendedAssetList());
+        vm.prank(Configurator(configuratorProxy).governor());
+        Configurator(configuratorProxy).setFactory(cometProxy, newFactory);
+    }
+
     function updateAndVerifySupplyKink(
         Vm vm,
         string memory marketName,
@@ -132,6 +141,8 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         uint256 newSupplyKinkByGovernorTimelock = 300000000000000000;
 
         assertEq(MarketAdminPermissionChecker(deployedContracts.marketAdminPermissionChecker).marketAdmin(), deployedContracts.marketUpdateTimelock);
+
+        setNewFactory(vm, configuratorProxy, cometProxy);
 
         address[] memory targets = new address[](2);
         uint256[] memory values = new uint256[](2);
@@ -193,6 +204,11 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         uint256 newSupplyKinkByGovernorTimelock = 300000000000000000;
 
         assert(oldSupplyKinkBeforeGovernorUpdate != newSupplyKinkByGovernorTimelock);
+
+        // Optimism keeps the Configurator already deployed on chain, which still works with the old factory
+        if (chain != ChainAddresses.Chain.OPTIMISM) {
+            setNewFactory(vm, configuratorProxy, cometProxy);
+        }
 
         address[] memory targets = new address[](2);
         uint256[] memory values = new uint256[](2);

@@ -7,6 +7,7 @@
   "borrowMin": "0.01e18",
   "storeFrontPriceFactor": 0.7,
   "targetReserves": "5_000e18",
+  "maxSupportedUtilization": "2e18",
   "rates": {
     "borrowBase": 0.01,
     "borrowSlopeLow": 0.0155,

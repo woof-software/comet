@@ -8,6 +8,7 @@
   "pauseGuardian": "0x3cb4653f3b45f448d9100b118b75a1503281d2ee",
   "storeFrontPriceFactor": 0.6,
   "targetReserves": "20000000e18",
+  "maxSupportedUtilization": "2e18",
   "rates": {
     "borrowBase": 0.015,
     "borrowSlopeLow": 0.05,
