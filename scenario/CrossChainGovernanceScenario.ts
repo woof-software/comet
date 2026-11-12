@@ -49,81 +49,52 @@ scenario(
   {
     filter: async ctx => matchesDeployment(ctx, [{network: 'polygon'}])
   },
-  async ({ comet, configurator, proxyAdmin, timelock: oldLocalTimelock, bridgeReceiver: oldBridgeReceiver }, context, world) => {
+  async ({ comet, timelock: localTimelock, bridgeReceiver: oldBridgeReceiver }, context, world) => {
     const dm = world.deploymentManager;
     const govDeploymentManager = world.auxiliaryDeploymentManager!;
     const fxChild = await dm.getContractOrThrow('fxChild');
 
-    // Deploy new PolygonBridgeReceiver
-    const newBridgeReceiver = await dm.deploy<BaseBridgeReceiver, [string]>(
+    // Deploy new PolygonBridgeReceiver, bound to the current local Timelock
+    const mainnetTimelock = (await govDeploymentManager.getContractOrThrow('timelock')).address;
+    const newBridgeReceiver = await dm.deploy<BaseBridgeReceiver, [string, string, string]>(
       'newBridgeReceiver',
       'bridges/polygon/PolygonBridgeReceiver.sol',
-      [fxChild.address]           // fxChild
-    );
-
-    // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
-    const newLocalTimelock = await dm.deploy(
-      'newTimelock',
-      'vendor/Timelock.sol',
       [
-        newBridgeReceiver.address, // admin
-        2 * secondsPerDay,         // delay
-        14 * secondsPerDay,        // grace period
-        2 * secondsPerDay,         // minimum delay
-        30 * secondsPerDay         // maxiumum delay
+        fxChild.address,       // fxChild
+        mainnetTimelock,       // govTimelock
+        localTimelock.address  // localTimelock
       ]
     );
 
-    // Initialize new PolygonBridgeReceiver
-    const mainnetTimelock = (await govDeploymentManager.getContractOrThrow('timelock')).address;
-    await newBridgeReceiver.initialize(
-      mainnetTimelock,             // govTimelock
-      newLocalTimelock.address     // localTimelock
-    );
-
-    // Process for upgrading L2 governance contracts (order matters):
-    // 1. Update the admin of Comet in Configurator to be the new Timelock
-    // 2. Update the admin of CometProxyAdmin to be the new Timelock
-    const transferOwnershipCalldata = utils.defaultAbiCoder.encode(
+    // Process for handing the local Timelock over to the new BridgeReceiver (order matters, the old
+    // BridgeReceiver stays the admin until the last call):
+    // 1. Make the new BridgeReceiver the pending admin of the local Timelock
+    // 2. Accept the admin role from the new BridgeReceiver
+    const setPendingAdminCalldata = utils.defaultAbiCoder.encode(
       ['address'],
-      [newLocalTimelock.address]
+      [newBridgeReceiver.address]
     );
-    const setGovernorCalldata = await calldata(
-      configurator.populateTransaction.setGovernor(comet.address, newLocalTimelock.address)
-    );
-    const deployAndUpgradeToCalldata = utils.defaultAbiCoder.encode(
-      ['address', 'address'],
-      [configurator.address, comet.address]
-    );
-    const upgradeL2GovContractsProposal = utils.defaultAbiCoder.encode(
+    const handOverLocalTimelockProposal = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
-        [configurator.address, proxyAdmin.address, proxyAdmin.address],
-        [0, 0, 0],
-        [
-          'setGovernor(address,address)',
-          'deployAndUpgradeTo(address,address)',
-          'transferOwnership(address)'
-        ],
-        [setGovernorCalldata, deployAndUpgradeToCalldata, transferOwnershipCalldata]
+        [localTimelock.address, newBridgeReceiver.address],
+        [0, 0],
+        ['setPendingAdmin(address)', 'acceptLocalTimelockAdmin()'],
+        [setPendingAdminCalldata, '0x']
       ]
     );
 
-    expect(await proxyAdmin.owner()).to.eq(oldLocalTimelock.address);
-    expect(await comet.governor()).to.eq(oldLocalTimelock.address);
+    expect(await localTimelock.admin()).to.eq(oldBridgeReceiver.address);
 
-    await createCrossChainProposal(context, upgradeL2GovContractsProposal, oldBridgeReceiver);
+    await createCrossChainProposal(context, handOverLocalTimelockProposal, oldBridgeReceiver);
 
-    expect(await proxyAdmin.owner()).to.eq(newLocalTimelock.address);
-    expect(await comet.governor()).to.eq(newLocalTimelock.address);
+    expect(await localTimelock.admin()).to.eq(newBridgeReceiver.address);
 
-    // Update aliases now that the new Timelock and BridgeReceiver are official
-    await dm.putAlias('timelock', newLocalTimelock);
+    // Update alias now that the new BridgeReceiver is official
     await dm.putAlias('bridgeReceiver', newBridgeReceiver);
 
-    // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
-    const currentTimelockDelay = await newLocalTimelock.delay();
+    // Now, test that the new BridgeReceiver is working properly via another cross-chain proposal
+    const currentTimelockDelay = await localTimelock.delay();
     const newTimelockDelay = currentTimelockDelay.mul(2);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
@@ -131,19 +102,19 @@ scenario(
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
-        [newLocalTimelock.address, comet.address],
+        [localTimelock.address, comet.address],
         [0, 0],
         ['setDelay(uint256)', 'pause(bool,bool,bool,bool,bool)'],
         [setDelayCalldata, pauseCalldata]
       ]
     );
 
-    expect(await newLocalTimelock.delay()).to.eq(currentTimelockDelay);
+    expect(await localTimelock.delay()).to.eq(currentTimelockDelay);
     expect(currentTimelockDelay).to.not.eq(newTimelockDelay);
 
     await createCrossChainProposal(context, l2ProposalData, newBridgeReceiver);
 
-    expect(await newLocalTimelock.delay()).to.eq(newTimelockDelay);
+    expect(await localTimelock.delay()).to.eq(newTimelockDelay);
     expect(await comet.isAbsorbPaused()).to.eq(true);
     expect(await comet.isBuyPaused()).to.eq(true);
     expect(await comet.isSupplyPaused()).to.eq(true);
@@ -157,83 +128,53 @@ scenario(
   {
     filter: async ctx => matchesDeployment(ctx, [{network: 'arbitrum'}])
   },
-  async ({ comet, configurator, proxyAdmin, timelock: oldLocalTimelock, bridgeReceiver: oldBridgeReceiver }, context, world) => {
+  async ({ comet, timelock: localTimelock, bridgeReceiver: oldBridgeReceiver }, context, world) => {
     const dm = world.deploymentManager;
     const governanceDeploymentManager = world.auxiliaryDeploymentManager;
     if (!governanceDeploymentManager) {
       throw new Error('cannot execute governance without governance deployment manager');
     }
 
-    // Deploy new ArbitrumBridgeReceiver
-    const newBridgeReceiver = await dm.deploy<ArbitrumBridgeReceiver, []>(
+    // Deploy new ArbitrumBridgeReceiver, bound to the current local Timelock
+    const mainnetTimelock = (await governanceDeploymentManager.getContractOrThrow('timelock')).address;
+    const newBridgeReceiver = await dm.deploy<ArbitrumBridgeReceiver, [string, string]>(
       'newBridgeReceiver',
       'bridges/arbitrum/ArbitrumBridgeReceiver.sol',
-      []
-    );
-
-    // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
-    const newLocalTimelock = await dm.deploy(
-      'newTimelock',
-      'vendor/Timelock.sol',
       [
-        newBridgeReceiver.address, // admin
-        2 * secondsPerDay,         // delay
-        14 * secondsPerDay,        // grace period
-        2 * secondsPerDay,         // minimum delay
-        30 * secondsPerDay         // maxiumum delay
+        mainnetTimelock,       // govTimelock
+        localTimelock.address  // localTimelock
       ]
     );
 
-    // Initialize new ArbitrumBridgeReceiver
-    const mainnetTimelock = (await governanceDeploymentManager.getContractOrThrow('timelock')).address;
-    await newBridgeReceiver.initialize(
-      mainnetTimelock,             // govTimelock
-      newLocalTimelock.address     // localTimelock
-    );
-
-    // Process for upgrading L2 governance contracts (order matters):
-    // 1. Update the admin of Comet in Configurator to be the new Timelock
-    // 2. Update the admin of CometProxyAdmin to be the new Timelock
-    const transferOwnershipCalldata = utils.defaultAbiCoder.encode(
+    // Process for handing the local Timelock over to the new BridgeReceiver (order matters, the old
+    // BridgeReceiver stays the admin until the last call):
+    // 1. Make the new BridgeReceiver the pending admin of the local Timelock
+    // 2. Accept the admin role from the new BridgeReceiver
+    const setPendingAdminCalldata = utils.defaultAbiCoder.encode(
       ['address'],
-      [newLocalTimelock.address]
+      [newBridgeReceiver.address]
     );
-    const setGovernorCalldata = await calldata(
-      configurator.populateTransaction.setGovernor(comet.address, newLocalTimelock.address)
-    );
-    const deployAndUpgradeToCalldata = utils.defaultAbiCoder.encode(
-      ['address', 'address'],
-      [configurator.address, comet.address]
-    );
-    const upgradeL2GovContractsProposal = utils.defaultAbiCoder.encode(
+    const handOverLocalTimelockProposal = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
-        [configurator.address, proxyAdmin.address, proxyAdmin.address],
-        [0, 0, 0],
-        [
-          'setGovernor(address,address)',
-          'deployAndUpgradeTo(address,address)',
-          'transferOwnership(address)'
-        ],
-        [setGovernorCalldata, deployAndUpgradeToCalldata, transferOwnershipCalldata]
+        [localTimelock.address, newBridgeReceiver.address],
+        [0, 0],
+        ['setPendingAdmin(address)', 'acceptLocalTimelockAdmin()'],
+        [setPendingAdminCalldata, '0x']
       ]
     );
 
-    expect(await proxyAdmin.owner()).to.eq(oldLocalTimelock.address);
-    expect(await comet.governor()).to.eq(oldLocalTimelock.address);
+    expect(await localTimelock.admin()).to.eq(oldBridgeReceiver.address);
 
-    await createCrossChainProposal(context, upgradeL2GovContractsProposal, oldBridgeReceiver);
+    await createCrossChainProposal(context, handOverLocalTimelockProposal, oldBridgeReceiver);
 
-    expect(await proxyAdmin.owner()).to.eq(newLocalTimelock.address);
-    expect(await comet.governor()).to.eq(newLocalTimelock.address);
+    expect(await localTimelock.admin()).to.eq(newBridgeReceiver.address);
 
-    // Update aliases now that the new Timelock and BridgeReceiver are official
-    await dm.putAlias('timelock', newLocalTimelock);
+    // Update alias now that the new BridgeReceiver is official
     await dm.putAlias('bridgeReceiver', newBridgeReceiver);
 
-    // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
-    const currentTimelockDelay = await newLocalTimelock.delay();
+    // Now, test that the new BridgeReceiver is working properly via another cross-chain proposal
+    const currentTimelockDelay = await localTimelock.delay();
     const newTimelockDelay = currentTimelockDelay.mul(2);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
@@ -241,19 +182,19 @@ scenario(
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
-        [newLocalTimelock.address, comet.address],
+        [localTimelock.address, comet.address],
         [0, 0],
         ['setDelay(uint256)', 'pause(bool,bool,bool,bool,bool)'],
         [setDelayCalldata, pauseCalldata]
       ]
     );
 
-    expect(await newLocalTimelock.delay()).to.eq(currentTimelockDelay);
+    expect(await localTimelock.delay()).to.eq(currentTimelockDelay);
     expect(currentTimelockDelay).to.not.eq(newTimelockDelay);
 
     await createCrossChainProposal(context, l2ProposalData, newBridgeReceiver);
 
-    expect(await newLocalTimelock.delay()).to.eq(newTimelockDelay);
+    expect(await localTimelock.delay()).to.eq(newTimelockDelay);
     expect(await comet.isAbsorbPaused()).to.eq(true);
     expect(await comet.isBuyPaused()).to.eq(true);
     expect(await comet.isSupplyPaused()).to.eq(true);
@@ -267,17 +208,7 @@ scenario.skip(
   {
     filter: async ctx => matchesDeployment(ctx, [{ network: 'linea-goerli' }])
   },
-  async (
-    {
-      comet,
-      configurator,
-      proxyAdmin,
-      timelock: oldLocalTimelock,
-      bridgeReceiver: oldBridgeReceiver
-    },
-    context,
-    world
-  ) => {
+  async ({ comet, timelock: localTimelock, bridgeReceiver: oldBridgeReceiver }, context, world) => {
     const dm = world.deploymentManager;
     const governanceDeploymentManager = world.auxiliaryDeploymentManager;
     if (!governanceDeploymentManager) {
@@ -286,95 +217,67 @@ scenario.skip(
 
     const l2MessageService = await dm.getContractOrThrow('l2MessageService');
 
-    // Deploy new LineaBridgeReceiver
-    const newBridgeReceiver = await dm.deploy<LineaBridgeReceiver, [string]>(
+    // Deploy new LineaBridgeReceiver, bound to the current local Timelock
+    const mainnetTimelock = (await governanceDeploymentManager.getContractOrThrow('timelock')).address;
+    const newBridgeReceiver = await dm.deploy<LineaBridgeReceiver, [string, string, string]>(
       'newBridgeReceiver',
       'bridges/linea/LineaBridgeReceiver.sol',
-      [l2MessageService.address]
-    );
-
-    // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
-    const newLocalTimelock = await dm.deploy('newTimelock', 'vendor/Timelock.sol', [
-      newBridgeReceiver.address, // admin
-      2 * secondsPerDay, // delay
-      14 * secondsPerDay, // grace period
-      2 * secondsPerDay, // minimum delay
-      30 * secondsPerDay // maxiumum delay
-    ]);
-
-    // Initialize new LineaBridgeReceiver
-    const mainnetTimelock = (await governanceDeploymentManager.getContractOrThrow('timelock'))
-      .address;
-    await newBridgeReceiver.initialize(
-      mainnetTimelock, // govTimelock
-      newLocalTimelock.address // localTimelock
-    );
-
-    // Process for upgrading L2 governance contracts (order matters):
-    // 1. Update the admin of Comet in Configurator to be the new Timelock
-    // 2. Update the admin of CometProxyAdmin to be the new Timelock
-    const transferOwnershipCalldata = utils.defaultAbiCoder.encode(
-      ['address'],
-      [newLocalTimelock.address]
-    );
-    const setGovernorCalldata = await calldata(
-      configurator.populateTransaction.setGovernor(comet.address, newLocalTimelock.address)
-    );
-    const deployAndUpgradeToCalldata = utils.defaultAbiCoder.encode(
-      ['address', 'address'],
-      [configurator.address, comet.address]
-    );
-    const upgradeL2GovContractsProposal = utils.defaultAbiCoder.encode(
-      ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
-        [configurator.address, proxyAdmin.address, proxyAdmin.address],
-        [0, 0, 0],
-        [
-          'setGovernor(address,address)',
-          'deployAndUpgradeTo(address,address)',
-          'transferOwnership(address)'
-        ],
-        [setGovernorCalldata, deployAndUpgradeToCalldata, transferOwnershipCalldata]
+        l2MessageService.address, // messageService
+        mainnetTimelock,          // govTimelock
+        localTimelock.address     // localTimelock
       ]
     );
 
-    expect(await proxyAdmin.owner()).to.eq(oldLocalTimelock.address);
-    expect(await comet.governor()).to.eq(oldLocalTimelock.address);
+    // Process for handing the local Timelock over to the new BridgeReceiver (order matters, the old
+    // BridgeReceiver stays the admin until the last call):
+    // 1. Make the new BridgeReceiver the pending admin of the local Timelock
+    // 2. Accept the admin role from the new BridgeReceiver
+    const setPendingAdminCalldata = utils.defaultAbiCoder.encode(
+      ['address'],
+      [newBridgeReceiver.address]
+    );
+    const handOverLocalTimelockProposal = utils.defaultAbiCoder.encode(
+      ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
+      [
+        [localTimelock.address, newBridgeReceiver.address],
+        [0, 0],
+        ['setPendingAdmin(address)', 'acceptLocalTimelockAdmin()'],
+        [setPendingAdminCalldata, '0x']
+      ]
+    );
 
-    await createCrossChainProposal(context, upgradeL2GovContractsProposal, oldBridgeReceiver);
+    expect(await localTimelock.admin()).to.eq(oldBridgeReceiver.address);
 
-    expect(await proxyAdmin.owner()).to.eq(newLocalTimelock.address);
-    expect(await comet.governor()).to.eq(newLocalTimelock.address);
+    await createCrossChainProposal(context, handOverLocalTimelockProposal, oldBridgeReceiver);
 
-    // Update aliases now that the new Timelock and BridgeReceiver are official
-    await dm.putAlias('timelock', newLocalTimelock);
+    expect(await localTimelock.admin()).to.eq(newBridgeReceiver.address);
+
+    // Update alias now that the new BridgeReceiver is official
     await dm.putAlias('bridgeReceiver', newBridgeReceiver);
 
-    // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
-    const currentTimelockDelay = await newLocalTimelock.delay();
+    // Now, test that the new BridgeReceiver is working properly via another cross-chain proposal
+    const currentTimelockDelay = await localTimelock.delay();
     const newTimelockDelay = currentTimelockDelay.mul(2);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
-    const pauseCalldata = await calldata(
-      comet.populateTransaction.pause(true, true, true, true, true)
-    );
+    const pauseCalldata = await calldata(comet.populateTransaction.pause(true, true, true, true, true));
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
-        [newLocalTimelock.address, comet.address],
+        [localTimelock.address, comet.address],
         [0, 0],
         ['setDelay(uint256)', 'pause(bool,bool,bool,bool,bool)'],
         [setDelayCalldata, pauseCalldata]
       ]
     );
 
-    expect(await newLocalTimelock.delay()).to.eq(currentTimelockDelay);
+    expect(await localTimelock.delay()).to.eq(currentTimelockDelay);
     expect(currentTimelockDelay).to.not.eq(newTimelockDelay);
 
     await createCrossChainProposal(context, l2ProposalData, newBridgeReceiver);
 
-    expect(await newLocalTimelock.delay()).to.eq(newTimelockDelay);
+    expect(await localTimelock.delay()).to.eq(newTimelockDelay);
     expect(await comet.isAbsorbPaused()).to.eq(true);
     expect(await comet.isBuyPaused()).to.eq(true);
     expect(await comet.isSupplyPaused()).to.eq(true);
@@ -388,17 +291,7 @@ scenario(
   {
     filter: async ctx => matchesDeployment(ctx, [{network: 'scroll'}])
   },
-  async (
-    {
-      comet,
-      configurator,
-      proxyAdmin,
-      timelock: oldLocalTimelock,
-      bridgeReceiver: oldBridgeReceiver
-    },
-    context,
-    world
-  ) => {
+  async ({ comet, timelock: localTimelock, bridgeReceiver: oldBridgeReceiver }, context, world) => {
     const dm = world.deploymentManager;
     const governanceDeploymentManager = world.auxiliaryDeploymentManager;
     if (!governanceDeploymentManager) {
@@ -407,95 +300,67 @@ scenario(
 
     const l2Messenger = await dm.getContractOrThrow('l2Messenger');
 
-    // Deploy new ScrollBridgeReceiver
-    const newBridgeReceiver = await dm.deploy<ScrollBridgeReceiver, [string]>(
+    // Deploy new ScrollBridgeReceiver, bound to the current local Timelock
+    const mainnetTimelock = (await governanceDeploymentManager.getContractOrThrow('timelock')).address;
+    const newBridgeReceiver = await dm.deploy<ScrollBridgeReceiver, [string, string, string]>(
       'newBridgeReceiver',
       'bridges/scroll/ScrollBridgeReceiver.sol',
-      [l2Messenger.address]
-    );
-
-    // Deploy new local Timelock
-    const secondsPerDay = 24 * 60 * 60;
-    const newLocalTimelock = await dm.deploy('newTimelock', 'vendor/Timelock.sol', [
-      newBridgeReceiver.address, // admin
-      2 * secondsPerDay, // delay
-      14 * secondsPerDay, // grace period
-      2 * secondsPerDay, // minimum delay
-      30 * secondsPerDay // maxiumum delay
-    ]);
-
-    // Initialize new ScrollBridgeReceiver
-    const mainnetTimelock = (await governanceDeploymentManager.getContractOrThrow('timelock'))
-      .address;
-    await newBridgeReceiver.initialize(
-      mainnetTimelock, // govTimelock
-      newLocalTimelock.address // localTimelock
-    );
-
-    // Process for upgrading L2 governance contracts (order matters):
-    // 1. Update the admin of Comet in Configurator to be the new Timelock
-    // 2. Update the admin of CometProxyAdmin to be the new Timelock
-    const transferOwnershipCalldata = utils.defaultAbiCoder.encode(
-      ['address'],
-      [newLocalTimelock.address]
-    );
-    const setGovernorCalldata = await calldata(
-      configurator.populateTransaction.setGovernor(comet.address, newLocalTimelock.address)
-    );
-    const deployAndUpgradeToCalldata = utils.defaultAbiCoder.encode(
-      ['address', 'address'],
-      [configurator.address, comet.address]
-    );
-    const upgradeL2GovContractsProposal = utils.defaultAbiCoder.encode(
-      ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
-        [configurator.address, proxyAdmin.address, proxyAdmin.address],
-        [0, 0, 0],
-        [
-          'setGovernor(address,address)',
-          'deployAndUpgradeTo(address,address)',
-          'transferOwnership(address)'
-        ],
-        [setGovernorCalldata, deployAndUpgradeToCalldata, transferOwnershipCalldata]
+        l2Messenger.address,   // l2Messenger
+        mainnetTimelock,       // govTimelock
+        localTimelock.address  // localTimelock
       ]
     );
 
-    expect(await proxyAdmin.owner()).to.eq(oldLocalTimelock.address);
-    expect(await comet.governor()).to.eq(oldLocalTimelock.address);
+    // Process for handing the local Timelock over to the new BridgeReceiver (order matters, the old
+    // BridgeReceiver stays the admin until the last call):
+    // 1. Make the new BridgeReceiver the pending admin of the local Timelock
+    // 2. Accept the admin role from the new BridgeReceiver
+    const setPendingAdminCalldata = utils.defaultAbiCoder.encode(
+      ['address'],
+      [newBridgeReceiver.address]
+    );
+    const handOverLocalTimelockProposal = utils.defaultAbiCoder.encode(
+      ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
+      [
+        [localTimelock.address, newBridgeReceiver.address],
+        [0, 0],
+        ['setPendingAdmin(address)', 'acceptLocalTimelockAdmin()'],
+        [setPendingAdminCalldata, '0x']
+      ]
+    );
 
-    await createCrossChainProposal(context, upgradeL2GovContractsProposal, oldBridgeReceiver);
+    expect(await localTimelock.admin()).to.eq(oldBridgeReceiver.address);
 
-    expect(await proxyAdmin.owner()).to.eq(newLocalTimelock.address);
-    expect(await comet.governor()).to.eq(newLocalTimelock.address);
+    await createCrossChainProposal(context, handOverLocalTimelockProposal, oldBridgeReceiver);
 
-    // Update aliases now that the new Timelock and BridgeReceiver are official
-    await dm.putAlias('timelock', newLocalTimelock);
+    expect(await localTimelock.admin()).to.eq(newBridgeReceiver.address);
+
+    // Update alias now that the new BridgeReceiver is official
     await dm.putAlias('bridgeReceiver', newBridgeReceiver);
 
-    // Now, test that the new L2 governance contracts are working properly via another cross-chain proposal
-    const currentTimelockDelay = await newLocalTimelock.delay();
+    // Now, test that the new BridgeReceiver is working properly via another cross-chain proposal
+    const currentTimelockDelay = await localTimelock.delay();
     const newTimelockDelay = currentTimelockDelay.mul(2);
 
     const setDelayCalldata = utils.defaultAbiCoder.encode(['uint'], [newTimelockDelay]);
-    const pauseCalldata = await calldata(
-      comet.populateTransaction.pause(true, true, true, true, true)
-    );
+    const pauseCalldata = await calldata(comet.populateTransaction.pause(true, true, true, true, true));
     const l2ProposalData = utils.defaultAbiCoder.encode(
       ['address[]', 'uint256[]', 'string[]', 'bytes[]'],
       [
-        [newLocalTimelock.address, comet.address],
+        [localTimelock.address, comet.address],
         [0, 0],
         ['setDelay(uint256)', 'pause(bool,bool,bool,bool,bool)'],
         [setDelayCalldata, pauseCalldata]
       ]
     );
 
-    expect(await newLocalTimelock.delay()).to.eq(currentTimelockDelay);
+    expect(await localTimelock.delay()).to.eq(currentTimelockDelay);
     expect(currentTimelockDelay).to.not.eq(newTimelockDelay);
 
     await createCrossChainProposal(context, l2ProposalData, newBridgeReceiver);
 
-    expect(await newLocalTimelock.delay()).to.eq(newTimelockDelay);
+    expect(await localTimelock.delay()).to.eq(newTimelockDelay);
     expect(await comet.isAbsorbPaused()).to.eq(true);
     expect(await comet.isBuyPaused()).to.eq(true);
     expect(await comet.isSupplyPaused()).to.eq(true);
