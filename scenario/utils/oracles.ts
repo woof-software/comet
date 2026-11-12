@@ -1,7 +1,24 @@
-import { Contract } from 'ethers';
+import { Contract, ContractInterface, ContractTransaction, utils } from 'ethers';
 import { DeploymentManager } from '../../plugins/deployment_manager';
 import { debug } from '../../plugins/deployment_manager/Utils';
 import { impersonateAddress, getProxyAdmin } from './hreUtils';
+import { exp } from './math';
+import { ethers } from 'hardhat';
+
+// Renzo's oracle registry: maps each token to the price oracle Renzo reads it from
+interface RenzoOracle extends Contract {
+  setOracleAddress(token: string, oracle: string): Promise<ContractTransaction>;
+}
+
+// Mainnet addresses used to repoint Renzo's stETH oracle on forks
+const RENZO_ORACLE = '0x5a12796f7e7EBbbc8a402667d266d2e65A814042';
+const RENZO_ADMIN = '0xD1e6626310fD54Eceb5b9a51dA2eC329D6D4B68A';
+const STETH = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84';
+const STETH_ETH_FEED = '0x86392dC19c0b719886221c78AB11eb8Cf5c52812';
+
+const RENZO_ORACLE_ABI: ContractInterface = new utils.Interface([
+  'function setOracleAddress(address _token, address _oracleAddress) external',
+]);
 
 const REDSTONE_FEEDS = {
   mantle: [
@@ -22,43 +39,13 @@ const REDSTONE_FEEDS = {
 };
 
 export async function redeployRenzoOracle(dm: DeploymentManager) {
-  if (dm.network === 'mainnet') {
-    // renzo admin 	0xD1e6626310fD54Eceb5b9a51dA2eC329D6D4B68A
-    const renzoOracle = new Contract(
-      '0x5a12796f7e7EBbbc8a402667d266d2e65A814042',
-      [
-        'function setOracleAddress(address _token, address _oracleAddress) external',
-      ],
-      dm.hre.ethers.provider
-    );
+  if (dm.network !== 'mainnet') return;
 
-    const admin = await impersonateAddress(
-      dm,
-      '0xD1e6626310fD54Eceb5b9a51dA2eC329D6D4B68A'
-    );
-    // set balance
-    await dm.hre.ethers.provider.send('hardhat_setBalance', [
-      admin.address,
-      dm.hre.ethers.utils.hexStripZeros(
-        dm.hre.ethers.utils.parseUnits('100', 'ether').toHexString()
-      ),
-    ]);
+  const admin = await impersonateAddress(dm, RENZO_ADMIN, exp(100, 18));
+  const renzoOracle = new Contract(RENZO_ORACLE, RENZO_ORACLE_ABI, admin) as RenzoOracle;
 
-    const newOracle = await dm.deploy(
-      'renzo:Oracle',
-      'test/MockRenzoOracle.sol',
-      [
-        '0x86392dC19c0b719886221c78AB11eb8Cf5c52812', // stETH / ETH oracle address
-      ]
-    );
-
-    await renzoOracle
-      .connect(admin)
-      .setOracleAddress(
-        '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
-        newOracle.address
-      );
-  }
+  const newOracle = await dm.deploy('renzo:Oracle', 'test/MockRenzoOracle.sol', [STETH_ETH_FEED]);
+  await renzoOracle.setOracleAddress(STETH, newOracle.address);
 }
 
 export async function mockAllRedstoneOracles(dm: DeploymentManager) {
@@ -95,14 +82,7 @@ async function mockRedstoneOracle(dm: DeploymentManager, feed: string) {
     await dm.getSigner()
   );
   const ownerAddress = await proxyAdmin.owner();
-  const owner = await impersonateAddress(dm, ownerAddress);
-  // set balance
-  await dm.hre.ethers.provider.send('hardhat_setBalance', [
-    owner.address,
-    dm.hre.ethers.utils.hexStripZeros(
-      dm.hre.ethers.utils.parseUnits('100', 'ether').toHexString()
-    ),
-  ]);
+  const owner = await impersonateAddress(dm, ownerAddress, exp(100, 18));
   const price = (await feedContract.latestRoundData()).answer;
   console.log(`Current price for ${feed} is ${price}`);
   const newImplementation = await dm.deploy(
