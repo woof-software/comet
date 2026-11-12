@@ -7,6 +7,8 @@ import { impersonateAddress } from '../../plugins/scenario/utils';
 import { isTenderlyLog } from './index';
 
 const LINEA_SETTER_ROLE_ACCOUNT = '0x2b0F9C76970975aec03784EFd763623757EF7652';
+// EIP-7825 transaction gas limit cap (2^24)
+const MAX_TX_GAS_LIMIT = 16_777_216;
 
 export default async function relayLineaMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -269,7 +271,8 @@ export default async function relayLineaMessage(
         await signer.getAddress()
       );
     }else{
-      await bridgeReceiver.executeProposal(id, { gasPrice: 0 });
+      // Use the max gas per tx (EIP-7825): the auto estimate is too tight once Timelock forwards only 63/64 gas to each target
+      await bridgeReceiver.executeProposal(id, { gasPrice: 0, gasLimit: MAX_TX_GAS_LIMIT });
     }
    
     console.log(
