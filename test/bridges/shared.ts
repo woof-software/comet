@@ -1,7 +1,12 @@
 import { ethers } from '../helpers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { BigNumberish, utils } from 'ethers';
-import { BaseBridgeReceiverHarness__factory, Timelock, Timelock__factory } from '../../build/types';
+import {
+  BaseBridgeReceiverHarness__factory,
+  SweepableBridgeReceiverHarness__factory,
+  Timelock,
+  Timelock__factory,
+} from '../../build/types';
 
 export const DELAY = 10 * 60;
 export const GRACE_PERIOD = 14 * 24 * 60 * 60;
@@ -61,4 +66,14 @@ export async function deployBaseBridgeReceiverFixture() {
   const receiver = await ReceiverFactory.deploy(govTimelock.address, localTimelock.address);
 
   return { ReceiverFactory, receiver, localTimelock, govTimelock, other };
+}
+
+export async function deploySweepableBridgeReceiverFixture() {
+  const [deployer, govTimelock, other] = await ethers.getSigners();
+
+  const localTimelock = await deployLocalTimelock(deployer);
+  const ReceiverFactory = (await ethers.getContractFactory('SweepableBridgeReceiverHarness')) as SweepableBridgeReceiverHarness__factory;
+  const receiver = await ReceiverFactory.deploy(govTimelock.address, localTimelock.address);
+
+  return { receiver, localTimelock, govTimelock, other };
 }
