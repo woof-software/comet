@@ -618,6 +618,10 @@ scenario(
     const { albert, betty, charles } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context);
+
+    // sanity check: the market accepts collateral, so betty can borrow
+    expect(collateralIndex, 'the market accepts no collateral').to.not.be.undefined;
+
     const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
     const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
 

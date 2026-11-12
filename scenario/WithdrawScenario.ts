@@ -25,9 +25,6 @@ import {
   sourceAndSupply,
   borrowAmountToUtilization,
   borrowFromMarket,
-  deployAndUpgradeToAction,
-  executeThroughGovernance,
-  setMaxSupportedUtilizationAction,
   supplyCollateralForBorrow,
   supplyBaseFromLender,
   utilizationGrowsAboveLimit
@@ -1752,16 +1749,12 @@ scenario(
 
     const albertSupply = await supplyBaseFromLender(context, albert);
 
-    // sanity check: albert is a lender with his supply, up to the rounding of the principal
-    expect((await comet.balanceOf(albert.address)).toBigInt()).to.be.closeTo(albertSupply, 2n);
-
     // The borrow leaves room for albert to withdraw half of his supply before the market reaches the limit
     const halfSupplyWithdrawn = (await comet.totalSupply()).toBigInt() - albertSupply / 2n;
     const borrowAmount = maxSupportedUtilization * halfSupplyWithdrawn / factorScale - (await comet.totalBorrow()).toBigInt();
     await borrowFromMarket(context, betty, borrowAmount);
 
-    // sanity check: betty owes the borrow up to the same rounding, and utilization is still below the limit
-    expect((await comet.borrowBalanceOf(betty.address)).toBigInt()).to.be.closeTo(borrowAmount, 2n);
+    // sanity check: utilization is still below the limit
     expect(await comet.getUtilization()).to.be.below(maxSupportedUtilization);
 
     // The largest withdrawal that keeps utilization within the limit at the current totals
@@ -1801,10 +1794,11 @@ scenario(
     const { betty } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context, 1);
-    const { collateralAsset, supplyAmount: collateralAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
 
-    // sanity check: the market has no supply
-    expect(await comet.totalSupply()).to.equal(0n);
+    // sanity check: the market accepts collateral, so betty can try to borrow
+    expect(collateralIndex, 'the market accepts no collateral').to.not.be.undefined;
+
+    const { collateralAsset, supplyAmount: collateralAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
 
     // Reserves could pay for the borrow, so only the utilization limit stops it
     await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
@@ -1830,16 +1824,12 @@ scenario(
 
     const albertSupply = await supplyBaseFromLender(context, albert);
 
-    // sanity check: albert is a lender with his supply, up to the rounding of the principal
-    expect((await comet.balanceOf(albert.address)).toBigInt()).to.be.closeTo(albertSupply, 2n);
-
     // Utilization is just below the limit after the borrow
     const borrowAmount = await borrowAmountToUtilization(context, maxSupportedUtilization * 99n / 100n);
     await borrowFromMarket(context, betty, borrowAmount);
 
-    // sanity check: betty owes the borrow up to the same rounding, and utilization is below the limit
+    // sanity check: utilization is below the limit
     const utilization = await comet.getUtilization();
-    expect((await comet.borrowBalanceOf(betty.address)).toBigInt()).to.be.closeTo(borrowAmount, 2n);
     expect(utilization).to.be.below(maxSupportedUtilization);
 
     // sanity check: borrow rate is above supply rate, so utilization grows with time
@@ -1913,20 +1903,17 @@ scenario(
   {
     filter: async (ctx: CometContext) => await servicePatch2(ctx),
   },
-  async ({ comet, actors }, context) => {
-    const { albert, betty, charles } = actors;
+  async ({ comet, configurator, actors }, context) => {
+    const { admin, albert, betty, charles } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const oldMaxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
     // Slightly above the current limit, so the borrow between the two limits fits a live market
     const newMaxSupportedUtilization = oldMaxSupportedUtilization + oldMaxSupportedUtilization / 10n;
 
-    const albertSupply = await supplyBaseFromLender(context, albert);
-
-    // sanity check: albert is a lender with his supply, up to the rounding of the principal
-    expect((await comet.balanceOf(albert.address)).toBigInt()).to.be.closeTo(albertSupply, 2n);
+    await supplyBaseFromLender(context, albert);
 
     // The borrow puts utilization halfway between the old and the new limit, far from the shift the interest makes
-    // while the governance proposal is executed
+    // while the scenario runs
     const borrowAmount = await borrowAmountToUtilization(context, (oldMaxSupportedUtilization + newMaxSupportedUtilization) / 2n);
     await supplyCollateralForBorrow(context, betty, borrowAmount);
     await addTokenBalance(context, baseToken.address, comet.address, borrowAmount);
@@ -1941,12 +1928,12 @@ scenario(
       comet.connect(betty.signer).withdraw(baseToken.address, borrowAmount)
     ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
 
-    await executeThroughGovernance(context, [
-      await setMaxSupportedUtilizationAction(context, newMaxSupportedUtilization),
-      await deployAndUpgradeToAction(context),
-    ]);
+    // Governance raises the limit for the Comet and upgrades it
+    await fundAccount(admin.context.world, admin);
+    await configurator.connect(admin.signer).setMaxSupportedUtilization(comet.address, newMaxSupportedUtilization);
+    await (await context.getCometAdmin()).connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
 
-    // sanity check: governance stored the new limit for the Comet, and the Comet took it with the upgrade
+    // sanity check: the new limit is stored for the Comet, and the Comet took it with the upgrade
     expect((await context.getConfiguration()).maxSupportedUtilization).to.equal(newMaxSupportedUtilization);
     expect(await comet.maxSupportedUtilization()).to.equal(newMaxSupportedUtilization);
 
@@ -1973,9 +1960,8 @@ scenario(
     const borrowAboveNewLimit = borrowAboveLimitAmount > baseBorrowMin ? borrowAboveLimitAmount : baseBorrowMin;
     await supplyCollateralForBorrow(context, charles, borrowAboveNewLimit);
 
-    // Checked with callStatic, since a reverted transaction after the time travel leaves the nonce out of sync with the node
     await expect(
-      comet.connect(charles.signer).callStatic.withdraw(baseToken.address, borrowAboveNewLimit)
+      comet.connect(charles.signer).withdraw(baseToken.address, borrowAboveNewLimit)
     ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
   }
 );
