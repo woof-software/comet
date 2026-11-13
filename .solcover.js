@@ -1,3 +1,4 @@
 module.exports = {
-  skipFiles: ['test/', 'vendor/', 'ERC20.sol']
+  // Paths are relative to contracts/
+  skipFiles: ['test/', 'vendor/', 'capo/', 'interfaces/', 'liquidator/']
 };
