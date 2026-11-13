@@ -2,10 +2,7 @@ import { Deployed, DeploymentManager } from '../../plugins/deployment_manager';
 import { DeploySpec, ProtocolConfiguration, wait, COMP_WHALES } from './index';
 import { getConfiguration } from './NetworkConfiguration';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-
-// Mainnet GovernorBravo contracts that cloneGov copies onto local and testnet deployments
-const MAINNET_GOVERNOR_BRAVO_IMPL = '0xef3b6e9e13706a8f01fe98fdcf66335dc5cfdeed';
-const MAINNET_GOVERNOR_BRAVO = '0xc0da02939e1441f497fd74f78ce7decb17b66529';
+import { ADDRESSES } from '../addresses';
 
 export function sameAddress(a: string, b: string) {
   return BigInt(a) === BigInt(b);
@@ -26,8 +23,8 @@ export async function cloneGov(
 
   const COMP = await deploymentManager.deploy('COMP', 'test/Comp.sol', [admin.address]);
 
-  const governorImpl = await deploymentManager.clone('governor:implementation', MAINNET_GOVERNOR_BRAVO_IMPL, [], 'mainnet', true);
-  const governorProxy = await deploymentManager.clone('governor', MAINNET_GOVERNOR_BRAVO, [
+  const governorImpl = await deploymentManager.clone('governor:implementation', ADDRESSES.mainnet.GOVERNOR_BRAVO_IMPL, [], 'mainnet', true);
+  const governorProxy = await deploymentManager.clone('governor', ADDRESSES.mainnet.GOVERNOR_BRAVO, [
     timelock.address,
     COMP.address,
     admin.address,
