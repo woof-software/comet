@@ -4,8 +4,7 @@ import { constants, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog } from './index';
-
-const LINEA_SETTER_ROLE_ACCOUNT = '0x2b0F9C76970975aec03784EFd763623757EF7652';
+import { ADDRESSES } from '../../src/addresses';
 
 export default async function relayLineaMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -129,7 +128,7 @@ export default async function relayLineaMessage(
 
     const aliasSetterRoleAccount = await impersonateAddress(
       bridgeDeploymentManager,
-      LINEA_SETTER_ROLE_ACCOUNT
+      ADDRESSES.linea.SETTER_ROLE_ACCOUNT
     );
 
     let callData;

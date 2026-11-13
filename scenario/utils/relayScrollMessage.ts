@@ -5,9 +5,6 @@ import { OpenBridgedProposal } from '../context/Gov';
 import { BigNumber, ethers } from 'ethers';
 import { applyL1ToL2Alias, isTenderlyLog } from './index';
 
-// Account that relays L1 messages on scroll-goerli
-const SCROLL_GOERLI_MESSENGER_ALIAS = '0xD69c917c7F1C0a724A51c189B4A8F4F8C8E8cA0a';
-
 /*
 The Scroll relayer applies an offset to the message sender.
 
@@ -73,18 +70,10 @@ export default async function relayScrollMessage(
 
     await setNextBaseFeeToZero(bridgeDeploymentManager);
 
-    let aliasAccount;
-    if (bridgeDeploymentManager.network == 'scroll-goerli'){
-      aliasAccount = await impersonateAddress(
-        bridgeDeploymentManager,
-        SCROLL_GOERLI_MESSENGER_ALIAS
-      );
-    } else {
-      aliasAccount = await impersonateAddress(
-        bridgeDeploymentManager,
-        applyL1ToL2Alias(scrollMessenger.address)
-      );
-    }
+    const aliasAccount = await impersonateAddress(
+      bridgeDeploymentManager,
+      applyL1ToL2Alias(scrollMessenger.address)
+    );
 
     let relayMessageTxn;
     if (tenderlyLogs) {

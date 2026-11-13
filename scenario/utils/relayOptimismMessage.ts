@@ -4,9 +4,7 @@ import { BigNumber, ethers, utils, Contract } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { applyL1ToL2Alias, isTenderlyLog } from './index';
-
-// Optimism OptimismPortal on mainnet, used to simulate L2→L1 token bridging
-const OPTIMISM_L1_PORTAL = '0xbEb5Fc579115071764c7423A4f12eDde41f106Ed';
+import { ADDRESSES } from '../../src/addresses';
 
 export default async function relayOptimismMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -231,11 +229,11 @@ export async function simulateL2ToL1TokenBridging(
         console.log(`Simulating L2→L1 bridgeERC20To: ${amount.toString()} of ${remoteToken} to ${to}`);
 
         console.log('Setting up L1 state to simulate finalizeBridgeERC20...');
-        console.log('Optimism L1 Portal address:', OPTIMISM_L1_PORTAL);
+        console.log('Optimism L1 Portal address:', ADDRESSES.mainnet.OPTIMISM_L1_PORTAL);
         console.log('Overriding slot', utils.hexZeroPad('0x32', 32));
         console.log('l2CrossDomainMessenger:', utils.hexZeroPad(l2CrossDomainMessenger.address, 32));
         await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
-          OPTIMISM_L1_PORTAL,
+          ADDRESSES.mainnet.OPTIMISM_L1_PORTAL,
           utils.hexZeroPad('0x32', 32),
           utils.hexZeroPad(l2CrossDomainMessenger.address, 32)
         ]);
@@ -262,7 +260,7 @@ export async function simulateL2ToL1TokenBridging(
           )
         ).wait();
         await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
-          OPTIMISM_L1_PORTAL,
+          ADDRESSES.mainnet.OPTIMISM_L1_PORTAL,
           utils.hexZeroPad('0x32', 32),
           utils.hexZeroPad('0xdead', 32)
         ]);

@@ -5,22 +5,7 @@ import { Log } from '@ethersproject/abstract-provider';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog } from './index';
-
-// WETH on each side: an L1→L2 transfer of mainnet WETH is sourced as Arbitrum WETH on L2
-const MAINNET_WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
-const ARBITRUM_WETH = '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1';
-
-// ArbSys precompile, mocked because Hardhat's EVM has no Arbitrum precompiles
-const ARB_SYS = '0x0000000000000000000000000000000000000064';
-
-// Mainnet Arbitrum contracts used to simulate L2→L1 token bridging
-const ARBITRUM_GATEWAY_ROUTER = '0x5288c571Fd7aD117beA99bF60FE0846C4E84F933';
-const ARBITRUM_BRIDGE = '0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a';
-const ARBITRUM_OUTBOX = '0x667e23ABd27E623c11d4CC00ca3EC4d0bD63337a';
-
-// Arbitrum CCTP contracts: the TokenMessenger is impersonated to call mint on the TokenMinter
-const ARBITRUM_CCTP_TOKEN_MINTER = '0xE7Ed1fa7f45D05C508232aa32649D89b73b8bA48';
-const ARBITRUM_CCTP_TOKEN_MESSENGER = '0x19330d10d9cc8751218eaf51e8885d058642e08a';
+import { ADDRESSES } from '../../src/addresses';
 
 export async function relayArbitrumMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -170,7 +155,7 @@ export async function relayArbitrumMessage(
         _data
       );
       // if token is mainnet ETH -> than source arbitrum weth
-      if(token == MAINNET_WETH){
+      if(token == ADDRESSES.mainnet.assets.WETH){
         if(tenderlyLogs) {
           const callData = bridgeReceiver.interface.encodeFunctionData(
             'sourceTokens',
@@ -178,7 +163,7 @@ export async function relayArbitrumMessage(
               {
                 dm: bridgeDeploymentManager,
                 amount: amount,
-                asset: MAINNET_WETH,
+                asset: ADDRESSES.mainnet.assets.WETH,
                 address: to,
                 blacklist: []
               }
@@ -192,11 +177,10 @@ export async function relayArbitrumMessage(
           );
         }
 
-
         await sourceTokens({
           dm: bridgeDeploymentManager,
           amount: amount,
-          asset: ARBITRUM_WETH,
+          asset: ADDRESSES.arbitrum.assets.WETH,
           address: to,
           blacklist: [],
         });
@@ -254,7 +238,7 @@ export async function relayArbitrumMessage(
         await bridgeDeploymentManager.hre.network.provider.request({
           method: 'hardhat_setCode',
           params: [
-            ARB_SYS,
+            ADDRESSES.arbitrum.ARB_SYS,
             '0x60206000f3',
           ],
         });
@@ -332,9 +316,9 @@ export async function simulateL2ToL1TokenBridging(
         console.log(`Simulating L2→L1 token bridging: ${amount.toString()} of ${l1Token} to ${to}`);
 
         const gatewayAddress = await (async () => {
-          if(targets[i].toLowerCase() === ARBITRUM_GATEWAY_ROUTER.toLowerCase()) { // Arbitrum WETH gateway
+          if(targets[i].toLowerCase() === ADDRESSES.arbitrum.GATEWAY_ROUTER.toLowerCase()) { // Arbitrum WETH gateway
             const router = new Contract(
-              ARBITRUM_GATEWAY_ROUTER,
+              ADDRESSES.arbitrum.GATEWAY_ROUTER,
               ['function l1TokenToGateway(address l1Token) view returns (address)'],
               await governanceDeploymentManager.getSigner()
             );
@@ -359,7 +343,7 @@ export async function simulateL2ToL1TokenBridging(
         );
         // override 0x4 slot in outbox to L2 gateway
         await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
-          ARBITRUM_OUTBOX,
+          ADDRESSES.mainnet.ARBITRUM_OUTBOX,
           '0x4',
           utils.hexZeroPad(gatewayAddress, 32)
         ]);
@@ -367,7 +351,7 @@ export async function simulateL2ToL1TokenBridging(
         // impersonate outbox to call finalizeInboundTransfer, as if the message came from L2 gateway
         const outboxSigner = await impersonateAddress(
           governanceDeploymentManager,
-          ARBITRUM_OUTBOX
+          ADDRESSES.mainnet.ARBITRUM_OUTBOX
         );
 
         await governanceDeploymentManager.hre.network.provider.send('hardhat_setBalance', [
@@ -376,7 +360,7 @@ export async function simulateL2ToL1TokenBridging(
         ]);
 
         const arbitrumBridge = new Contract(
-          ARBITRUM_BRIDGE,
+          ADDRESSES.mainnet.ARBITRUM_BRIDGE,
           ['function executeCall(address to, uint256 value, bytes calldata data)'],
           outboxSigner
         );
@@ -385,14 +369,14 @@ export async function simulateL2ToL1TokenBridging(
           'finalizeInboundTransfer',
           [
             l1Token,
-            ARBITRUM_GATEWAY_ROUTER,
+            ADDRESSES.arbitrum.GATEWAY_ROUTER,
             to, amount,
             utils.defaultAbiCoder.encode(['uint256', 'bytes'], [0, '0x'])
           ]);
         console.log(`Relaying message to L1 gateway at ${l1GatewayAddress} with data: ${data}`);
         const bridgeTx = await arbitrumBridge.connect(outboxSigner).executeCall(
           l1Gateway.address,
-          l1Token.toLowerCase() === MAINNET_WETH.toLowerCase() ? amount : 0,
+          l1Token.toLowerCase() === ADDRESSES.mainnet.assets.WETH.toLowerCase() ? amount : 0,
           data,
         );
         await (bridgeTx).wait();
@@ -402,7 +386,7 @@ export async function simulateL2ToL1TokenBridging(
         ]);
         // override 0x4 slot in outbox to L2 gateway
         await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
-          ARBITRUM_OUTBOX,
+          ADDRESSES.mainnet.ARBITRUM_OUTBOX,
           '0x4',
           utils.hexZeroPad(constants.AddressZero, 32)
         ]);
@@ -475,7 +459,7 @@ export async function relayArbitrumCCTPMint(
   // L1 contracts
   const L1MessageTransmitter = await governanceDeploymentManager.getContractOrThrow('CCTPMessageTransmitter');
   // Arbitrum TokenMinter which is L2 contracts
-  const TokenMinter = await bridgeDeploymentManager.existing('TokenMinter', ARBITRUM_CCTP_TOKEN_MINTER, 'arbitrum');
+  const TokenMinter = await bridgeDeploymentManager.existing('TokenMinter', ADDRESSES.arbitrum.CCTP_TOKEN_MINTER, 'arbitrum');
 
   let depositForBurnEvents: Log[] = [];
 
@@ -584,7 +568,7 @@ export async function relayArbitrumCCTPMint(
   });
 
   // Impersonate the Arbitrum TokenMinter and mint token to recipient
-  const ImpersonateLocalTokenMessenger = bridgeDeploymentManager.network === 'arbitrum' ? ARBITRUM_CCTP_TOKEN_MESSENGER : '0x0';
+  const ImpersonateLocalTokenMessenger = bridgeDeploymentManager.network === 'arbitrum' ? ADDRESSES.arbitrum.CCTP_TOKEN_MESSENGER : '0x0';
   // Impersonate the Arbitrum TokenMinter and mint token to recipient
   for (let burnEvent of burnEvents) {
     const { recipient, amount, sourceDomain, burnToken } = burnEvent;

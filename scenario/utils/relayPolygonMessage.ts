@@ -5,6 +5,7 @@ import { Contract, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog } from './index';
+import { ADDRESSES } from '../../src/addresses';
 
 type BridgeERC20Data = {
   syncData: string;
@@ -12,13 +13,6 @@ type BridgeERC20Data = {
   rootToken: string;
   amount: bigint;
 };
-
-// Polygon system account that delivers L1 state-sync messages on L2
-const POLYGON_RECEIVER_ADDRESSS = '0x0000000000000000000000000000000000001001';
-
-// ChildChainManager proxy that mints bridged ERC20s on L2
-const POLYGON_CHILD_CHAIN_MANAGER = '0xA6FA4fB5f76172d178d61B04b0ecd319C5d1C0aa';
-const MUMBAI_CHILD_CHAIN_MANAGER = '0xb5505a6d998549090530911180f38aC5130101c6';
 
 function tryDecodeStateSyncedData(stateSyncedData: any): BridgeERC20Data | undefined {
   try {
@@ -48,10 +42,7 @@ export default async function relayPolygonMessage(
   startingBlockNumber: number,
   tenderlyLogs?: any[]
 ) {
-  const childChainManagerProxyAddress =
-    bridgeDeploymentManager.network === 'polygon'
-      ? POLYGON_CHILD_CHAIN_MANAGER
-      : MUMBAI_CHILD_CHAIN_MANAGER;
+  const childChainManagerProxyAddress = ADDRESSES.polygon.CHILD_CHAIN_MANAGER;
 
   const stateSender = await governanceDeploymentManager.getContractOrThrow('stateSender');
   const bridgeReceiver = await bridgeDeploymentManager.getContractOrThrow('bridgeReceiver');
@@ -119,7 +110,7 @@ export default async function relayPolygonMessage(
       );
       const polygonReceiverSigner = await impersonateAddress(
         bridgeDeploymentManager,
-        POLYGON_RECEIVER_ADDRESSS
+        ADDRESSES.polygon.STATE_RECEIVER
       );
       await setNextBaseFeeToZero(bridgeDeploymentManager);
 
@@ -147,7 +138,7 @@ export default async function relayPolygonMessage(
       // Cross-chain message passing
       const polygonReceiverSigner = await impersonateAddress(
         bridgeDeploymentManager,
-        POLYGON_RECEIVER_ADDRESSS
+        ADDRESSES.polygon.STATE_RECEIVER
       );
 
       await setNextBaseFeeToZero(bridgeDeploymentManager);

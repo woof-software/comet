@@ -3,6 +3,7 @@ import { BigNumber, Contract, Event, EventFilter } from 'ethers';
 import { erc20 } from './ERC20';
 import { DeploymentManager } from '../../deployment_manager/DeploymentManager';
 import { setNextBaseFeeToZero } from '../../../scenario/utils/hreUtils';
+import { ADDRESSES } from '../../../src/addresses';
 
 const getMaxEntry = (args: [string, BigNumber][]) =>
   args.reduce(([a1, m], [a2, e]) => (m.gte(e) == true ? [a1, m] : [a2, e]));
@@ -92,15 +93,6 @@ async function removeTokens(
   });
 }
 
-const mintableByBridgeConfig = {
-  unichain: [
-    '0x927b51f251480a681271180da4de28d44ec4afb8',
-    '0x8f187aa05619a017077f5308904739877ce9ea21',
-    '0x949d3A70722731d3bA8E0ca4061E12387c659E75',
-    '0xdf78e4F0A8279942ca68046476919A90f2288656'
-  ],
-};
-
 async function addTokens(
   dm: DeploymentManager,
   amount: BigNumber,
@@ -112,7 +104,7 @@ async function addTokens(
   MAX_SEARCH_BLOCKS = 40000,
   BLOCK_SPAN = 2048
 ) {
-  if (asset.toLowerCase() === '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') { // USDC
+  if (asset.toLowerCase() === ADDRESSES.mainnet.assets.USDC.toLowerCase()) {
     BLOCK_SPAN = 128;
   }
 
@@ -124,15 +116,16 @@ async function addTokens(
   block = block ?? (await ethers.provider.getBlockNumber());
   let tokenContract = new ethers.Contract(asset, erc20, ethers.provider);
   let filter = tokenContract.filters.Transfer();
-  if (mintableByBridgeConfig[dm.network] && mintableByBridgeConfig[dm.network].map((addr: string) => addr.toLowerCase()).includes(asset.toLowerCase())) {
+  const mintableByBridge: readonly string[] = ADDRESSES[dm.network]?.BRIDGE_MINTABLE_TOKENS ?? [];
+  if (mintableByBridge.map(addr => addr.toLowerCase()).includes(asset.toLowerCase())) {
     await dm.hre.network.provider.request({
       method: 'hardhat_impersonateAccount',
-      params: ['0x4200000000000000000000000000000000000010'],
+      params: [ADDRESSES.unichain.L2_STANDARD_BRIDGE],
     });
     await dm.hre.network.provider.send('hardhat_setBalance',
-      ['0x4200000000000000000000000000000000000010', '0x1000000000000000']);
+      [ADDRESSES.unichain.L2_STANDARD_BRIDGE, '0x1000000000000000']);
     
-    const signer = await dm.getSigner('0x4200000000000000000000000000000000000010');
+    const signer = await dm.getSigner(ADDRESSES.unichain.L2_STANDARD_BRIDGE);
     await tokenContract.connect(signer).mint(address, amount);
     return;
   }
