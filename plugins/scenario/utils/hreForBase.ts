@@ -84,10 +84,16 @@ function getBlockRollback(base: ForkSpec) {
     return 25;
 }
 
+// Set/cleared by migrationStarted()/migrationEnded() around each migrate run; while true,
+// forkedHreForBase bypasses a blanket NETWORK_PROVIDER override per L2 fork.
 let activeMigration = false;
 
 export function migrationStarted() {
   activeMigration = true;
+}
+
+export function migrationEnded() {
+  activeMigration = false;
 }
 
 async function getBlockNumberWithRetry(provider: ethers.providers.JsonRpcProvider): Promise<number> {
@@ -207,6 +213,8 @@ function translateVnetRpcCall(
       return null;
     case 'hardhat_setBalance':
       return { method: 'tenderly_setBalance', params: [[params[0]], params[1]] };
+    case 'hardhat_setStorageAt':
+      return { method: 'tenderly_setStorageAt', params };
     case 'hardhat_mine':
       return { method: 'evm_increaseBlocks', params: [params[0]] };
     default:

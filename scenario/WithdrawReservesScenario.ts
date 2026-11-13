@@ -56,10 +56,13 @@ scenario(
     const { admin, albert } = actors;
 
     const scale = (await comet.baseScale()).toBigInt();
+    const reserves = (await comet.getReserves()).toBigInt();
+    // 1000-token margin over reserves: interest accrues into reserves before the tx executes
+    const toWithdrawAmount = (reserves > 0n ? reserves : 0n) + 1000n * scale;
 
     await context.setNextBaseFeeToZero();
     await expectRevertCustom(
-      admin.withdrawReserves(albert.address, 1001n * scale, { gasPrice: 0 }),
+      admin.withdrawReserves(albert.address, toWithdrawAmount, { gasPrice: 0 }),
       'InsufficientReserves()'
     );
   }

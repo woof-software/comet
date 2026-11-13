@@ -77,17 +77,24 @@ export async function runMultistream(bases: ForkSpec[], perBase: boolean = false
   const mainnetBases = bases.filter((b) => b.network === 'mainnet');
   const otherBases = bases.filter((b) => b.network !== 'mainnet');
 
-  console.log(`Preparing: yarn build`);
-  await run('yarn', ['build']);
+  // In CI, the `prepare` job already built and spidered this exact state and the
+  // job just downloaded it as an artifact — redoing it here is pure waste. Local/
+  // standalone runs have no such prepare step, so they still need it themselves.
+  if (process.env.CI) {
+    console.log('Preparing: CI detected, skipping build/spider (already done by the prepare job)');
+  } else {
+    console.log(`Preparing: yarn build`);
+    await run('yarn', ['build']);
 
-  if (mainnetBases.length > 0) {
-    console.log(`Preparing: warming spider cache for mainnet (${mainnetBases.length} base(s)) first`);
-    await run('yarn', ['hardhat', 'scenario:spider', '--bases', mainnetBases.map((b) => b.name).join(',')]);
-  }
+    if (mainnetBases.length > 0) {
+      console.log(`Preparing: warming spider cache for mainnet (${mainnetBases.length} base(s)) first`);
+      await run('yarn', ['hardhat', 'scenario:spider', '--bases', mainnetBases.map((b) => b.name).join(',')]);
+    }
 
-  if (otherBases.length > 0) {
-    console.log(`Preparing: warming spider cache for the remaining ${otherBases.length} base(s), in parallel`);
-    await run('yarn', ['hardhat', 'scenario:spider', '--bases', otherBases.map((b) => b.name).join(',')]);
+    if (otherBases.length > 0) {
+      console.log(`Preparing: warming spider cache for the remaining ${otherBases.length} base(s), in parallel`);
+      await run('yarn', ['hardhat', 'scenario:spider', '--bases', otherBases.map((b) => b.name).join(',')]);
+    }
   }
 
   console.log(`Launching ${groups.size} stream(s) (${perBase ? 'per-base' : 'per-network'}): ${[...groups.keys()].join(', ')}`);
