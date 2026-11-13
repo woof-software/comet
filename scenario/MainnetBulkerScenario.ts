@@ -8,16 +8,14 @@ import {
   MainnetBulker
 } from '../build/types';
 import { expectApproximately, isBulkerSupported, matchesDeployment, exp } from './utils';
-
-const MAINNET_WSTETH_ADDRESS = '0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0';
-const MAINNET_STETH_ADDRESS = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84';
+import { ADDRESSES } from '../src/addresses';
 
 async function getWstETHIndex(context: any): Promise<number> {
   const comet = await context.getComet();
   const totalAssets = await comet.numAssets();
   for (let i = 0; i < totalAssets; i++) {
     const asset = await comet.getAssetInfo(i);
-    if (asset.asset.toLowerCase() === MAINNET_WSTETH_ADDRESS) {
+    if (asset.asset.toLowerCase() === ADDRESSES.mainnet.assets.WSTETH.toLowerCase()) {
       return i;
     }
   }
@@ -46,8 +44,8 @@ scenario(
   async ({ comet, actors, bulker }, context) => {
     const { albert } = actors;
 
-    const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', ADDRESSES.mainnet.assets.STETH) as ERC20;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', ADDRESSES.mainnet.assets.WSTETH) as IWstETH;
 
     const toSupplyStEth = exp(.1, 18);
 
@@ -100,8 +98,8 @@ scenario(
   async ({ comet, actors, bulker }, context) => {
     const { albert } = actors;
 
-    const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', ADDRESSES.mainnet.assets.STETH) as ERC20;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', ADDRESSES.mainnet.assets.WSTETH) as IWstETH;
 
     await albert.allow(bulker.address, true);
 
@@ -154,8 +152,8 @@ scenario(
   async ({ comet, actors, bulker }, context) => {
     const { albert } = actors;
 
-    const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', MAINNET_STETH_ADDRESS) as ERC20;
-    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', MAINNET_WSTETH_ADDRESS) as IWstETH;
+    const stETH = await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', ADDRESSES.mainnet.assets.STETH) as ERC20;
+    const wstETH = await context.world.deploymentManager.hre.ethers.getContractAt('contracts/interfaces/IWstETH.sol:IWstETH', ADDRESSES.mainnet.assets.WSTETH) as IWstETH;
 
     await albert.allow(bulker.address, true);
 

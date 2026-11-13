@@ -1,39 +1,24 @@
 import { Contract } from 'ethers';
 import { DeploymentManager } from '../../plugins/deployment_manager';
+import { ADDRESSES } from '../../src/addresses';
 
-const tokens = [
-  ['mainnet', 'WETH', '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'],
-  ['mainnet', 'LINK', '0x514910771AF9Ca656af840dff83E8264EcF986CA'],
-  ['mainnet', 'GHO', '0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f'],
-  ['ronin', 'WETH', '0xc99a6a985ed2cac1ef41640596c5a5f9f4e19ef5'],
-  ['ronin', 'WRON', '0xe514d9deb7966c8be0ca922de8a064264ea6bcd4'],
-  ['ronin', 'LINK', '0x3902228d6a3d2dc44731fd9d45fee6a61c722d0b'],
-];
+// Tokens whose CCIP prices are refreshed on each network
+const CCIP_TOKENS = {
+  mainnet: [ADDRESSES.mainnet.assets.WETH, ADDRESSES.mainnet.assets.LINK, ADDRESSES.mainnet.assets.GHO],
+  ronin: [ADDRESSES.ronin.assets.WETH, ADDRESSES.ronin.assets.WRON, ADDRESSES.ronin.assets.LINK],
+};
 
 const dest = new Map<string, string>([
   ['ronin', '6916147374840168594'],
   ['mainnet', '5009297550715157269'],
 ]);
 
-// CCIP contracts per network: the CommitStore is impersonated to push fresh prices into the PriceRegistry
-const CCIP_CONTRACTS = [
-  {
-    network: 'mainnet',
-    commitStore: '0x2aa101bf99caef7fc1355d4c493a1fe187a007ce',
-    priceRegistry: '0x8c9b2Efb7c64C394119270bfecE7f54763b958Ad',
-  },
-  {
-    network: 'ronin',
-    commitStore: '0x28c66d9693b2634b2f3b170f6d9584eec2f72ff0',
-    priceRegistry: '0xefCEa3CFA330adcDdeCe99219C57fd45cd166ac1',
-  },
-];
-
 export async function updateCCIPStats(
   dm: DeploymentManager,
   tenderlyLogs?: any[]
 ) {
-  const { commitStore, priceRegistry } = CCIP_CONTRACTS.find(c => c.network === dm.network) || {};
+  // The CommitStore is impersonated to push fresh prices into the PriceRegistry
+  const { CCIP_COMMIT_STORE: commitStore, CCIP_PRICE_REGISTRY: priceRegistry } = ADDRESSES[dm.network] ?? {};
   if (!commitStore || !priceRegistry) {
     console.log(`No CCIP config for network ${dm.network}, skipping CCIP stats update.`);
     return;
@@ -171,8 +156,7 @@ export async function updateCCIPStats(
 
   const tokenPrices = [];
   const gasPrices = [];
-  for (const [network, , address] of tokens) {
-    if (network !== dm.network) continue;
+  for (const address of CCIP_TOKENS[dm.network] ?? []) {
     const price = await registryContract.getTokenPrice(address);
     tokenPrices.push([address, price.value]);
   }

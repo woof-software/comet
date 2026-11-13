@@ -1,3 +1,4 @@
+import { constants } from 'ethers';
 import { get, getEtherscanApiKey, getEtherscanApiUrl, getEtherscanUrl } from './etherscan';
 import { getBlockscoutApiUrl } from './blockscout';
 
@@ -19,7 +20,7 @@ export function debug(...args: any[]) {
  */
 
 export async function loadContract(source: string, network: string, address: string) {
-  if (address === '0x0000000000000000000000000000000000000000') {
+  if (address === constants.AddressZero) {
     throw new Error(`Cannot load ${source} contract for address ${address} on network ${network}. Address invalid.`);
   }
   switch (source) {

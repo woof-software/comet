@@ -4,13 +4,10 @@ import { BigNumber, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog, updateCCIPStats } from './index';
+import { ADDRESSES } from '../../src/addresses';
 
 const roninChainSelector = '6916147374840168594';
 const mainnetChainSelector = '5009297550715157269';
-
-const MAINNET_CCIP_ROUTER = '0x80226fc0Ee2b096224EeAc085Bb9a8cba1146f7D';
-const MAINNET_RONIN_OFF_RAMP = '0x9a3Ed7007809CfD666999e439076B4Ce4120528D';
-const RONIN_TOKEN_ADMIN_REGISTRY = '0x90e83d532A4aD13940139c8ACE0B93b0DdbD323a';
 
 export default async function relayRoninMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -28,13 +25,13 @@ export default async function relayRoninMessage(
 
   const l2TokenAdminRegistry = await bridgeDeploymentManager.existing(
     'l2TokenAdminRegistry',
-    RONIN_TOKEN_ADMIN_REGISTRY,
+    ADDRESSES.ronin.CCIP_TOKEN_ADMIN_REGISTRY,
     'ronin'
   );
 
   const l2CCIPOnRamp = await bridgeDeploymentManager.getContractOrThrow('l2CCIPOnRamp');
-  const l1CCIPRouter = await governanceDeploymentManager.existing('l1CCIPRouter', MAINNET_CCIP_ROUTER, 'mainnet');
-  const l1CCIPOffRamp = await governanceDeploymentManager.existing('roninl1CCIPOffRamp', MAINNET_RONIN_OFF_RAMP, 'mainnet');
+  const l1CCIPRouter = await governanceDeploymentManager.existing('l1CCIPRouter', ADDRESSES.mainnet.CCIP_ROUTER, 'mainnet');
+  const l1CCIPOffRamp = await governanceDeploymentManager.existing('roninl1CCIPOffRamp', ADDRESSES.mainnet.CCIP_RONIN_OFF_RAMP, 'mainnet');
 
   const offRampSigner = await impersonateAddress(bridgeDeploymentManager, l2CCIPOffRamp.address);
   const l1OffRampSigner = await impersonateAddress(governanceDeploymentManager, l1CCIPOffRamp.address);

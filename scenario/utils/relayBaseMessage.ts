@@ -4,9 +4,8 @@ import { BigNumber, ethers, utils } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import { ADDRESSES } from '../../src/addresses';
 
-// Base OptimismPortal on mainnet, used to simulate L2→L1 token bridging
-const BASE_L1_PORTAL = '0x49048044D57e1C92A77f79988d21Fa8fAF74E97e';
 /*
 The Base relayer applies an offset to the message sender.
 
@@ -231,7 +230,6 @@ export async function simulateL2ToL1TokenBridging(
     const decodedEvent = bridgeReceiver.interface.parseLog(event);
     const { signatures, calldatas } = decodedEvent.args;
 
-
     for (let i = 0; i < signatures.length; i++) {
       if (signatures[i] === bridgeERC20ToSignature) {
         const [localToken, remoteToken, to, amount, , extraData] = utils.defaultAbiCoder.decode(
@@ -242,11 +240,11 @@ export async function simulateL2ToL1TokenBridging(
         console.log(`Simulating L2→L1 bridgeERC20To: ${amount.toString()} of ${remoteToken} to ${to}`);
 
         console.log('Setting up L1 state to simulate finalizeBridgeERC20...');
-        console.log('Base L1 Portal address:', BASE_L1_PORTAL);
+        console.log('Base L1 Portal address:', ADDRESSES.mainnet.BASE_L1_PORTAL);
         console.log('Overriding slot', utils.hexZeroPad('0x32', 32));
         console.log('l2CrossDomainMessenger:', utils.hexZeroPad(l2CrossDomainMessenger.address, 32));
         await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
-          BASE_L1_PORTAL,
+          ADDRESSES.mainnet.BASE_L1_PORTAL,
           utils.hexZeroPad('0x32', 32),
           utils.hexZeroPad(l2CrossDomainMessenger.address, 32)
         ]);
@@ -275,7 +273,7 @@ export async function simulateL2ToL1TokenBridging(
         ).wait();
 
         await governanceDeploymentManager.hre.network.provider.send('hardhat_setStorageAt', [
-          BASE_L1_PORTAL,
+          ADDRESSES.mainnet.BASE_L1_PORTAL,
           utils.hexZeroPad('0x32', 32),
           utils.hexZeroPad('0xdead', 32)
         ]);

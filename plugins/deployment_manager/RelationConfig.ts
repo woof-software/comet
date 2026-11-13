@@ -1,6 +1,7 @@
 import { Contract, utils } from 'ethers';
 import { DeploymentManagerConfig } from './type-extensions';
 import { Address, Alias } from './Types';
+import { ADDRESSES } from '../../src/addresses';
 
 export type Ctx = { [aliasTemplate: string]: Contract[] };
 
@@ -91,7 +92,7 @@ async function readKey(contract: Contract, fnName: string): Promise<any> {
     
     if (e.code === 'CALL_EXCEPTION' && fnName === 'symbol') {
       // invalid opcode when calling symbol()
-      if (address === '0xd09acb80c1e8f2291862c4978a008791c9167003') {
+      if (address === ADDRESSES.arbitrum.assets.TETH) {
         return 'tETH';
       }
     }
