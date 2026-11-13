@@ -13,6 +13,13 @@ type BridgeERC20Data = {
   amount: bigint;
 };
 
+// Polygon system account that delivers L1 state-sync messages on L2
+const POLYGON_RECEIVER_ADDRESSS = '0x0000000000000000000000000000000000001001';
+
+// ChildChainManager proxy that mints bridged ERC20s on L2
+const POLYGON_CHILD_CHAIN_MANAGER = '0xA6FA4fB5f76172d178d61B04b0ecd319C5d1C0aa';
+const MUMBAI_CHILD_CHAIN_MANAGER = '0xb5505a6d998549090530911180f38aC5130101c6';
+
 function tryDecodeStateSyncedData(stateSyncedData: any): BridgeERC20Data | undefined {
   try {
     const { syncData } = ethers.utils.defaultAbiCoder.decode(
@@ -41,11 +48,10 @@ export default async function relayPolygonMessage(
   startingBlockNumber: number,
   tenderlyLogs?: any[]
 ) {
-  const POLYGON_RECEIVER_ADDRESSS = '0x0000000000000000000000000000000000001001';
   const childChainManagerProxyAddress =
     bridgeDeploymentManager.network === 'polygon'
-      ? '0xA6FA4fB5f76172d178d61B04b0ecd319C5d1C0aa'
-      : '0xb5505a6d998549090530911180f38aC5130101c6';
+      ? POLYGON_CHILD_CHAIN_MANAGER
+      : MUMBAI_CHILD_CHAIN_MANAGER;
 
   const stateSender = await governanceDeploymentManager.getContractOrThrow('stateSender');
   const bridgeReceiver = await bridgeDeploymentManager.getContractOrThrow('bridgeReceiver');
