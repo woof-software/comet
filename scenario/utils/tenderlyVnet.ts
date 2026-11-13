@@ -8,14 +8,14 @@ export interface TenderlyVnetInfo {
   dashboardUrl?: string;
 }
 
-// All Virtual TestNets created by this flow live in the same Tenderly project.
-const TENDERLY_PROJECT = 'comet';
-
 interface TenderlyCreds {
   account: string;
   project: string;
   accessKey: string;
 }
+
+// All Virtual TestNets created by this flow live in the same Tenderly project.
+const TENDERLY_PROJECT = 'comet';
 
 function getTenderlyCreds(): TenderlyCreds {
   const account = process.env.TENDERLY_USERNAME || process.env.TENDERLY_ACCOUNT;
