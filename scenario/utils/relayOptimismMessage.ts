@@ -5,6 +5,9 @@ import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { applyL1ToL2Alias, isTenderlyLog } from './index';
 
+// Optimism OptimismPortal on mainnet, used to simulate L2→L1 token bridging
+const OPTIMISM_L1_PORTAL = '0xbEb5Fc579115071764c7423A4f12eDde41f106Ed';
+
 export default async function relayOptimismMessage(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
@@ -197,7 +200,6 @@ export async function simulateL2ToL1TokenBridging(
   // L1 contracts
   const opL1CrossDomainMessenger = await governanceDeploymentManager.getContractOrThrow('opL1CrossDomainMessenger');
   const optimismL1Bridge = await governanceDeploymentManager.getContractOrThrow('opL1StandardBridge');
-  const OPTIMISM_L1_PORTAL = '0xbEb5Fc579115071764c7423A4f12eDde41f106Ed';
 
   // Parse recent ProposalCreated events to find actions that bridge tokens from L2 to L1
   // ProposalCreated(address indexed rootMessageSender, uint256 id, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 eta)

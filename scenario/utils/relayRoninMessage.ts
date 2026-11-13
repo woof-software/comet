@@ -10,6 +10,7 @@ const mainnetChainSelector = '5009297550715157269';
 
 const MAINNET_CCIP_ROUTER = '0x80226fc0Ee2b096224EeAc085Bb9a8cba1146f7D';
 const MAINNET_RONIN_OFF_RAMP = '0x9a3Ed7007809CfD666999e439076B4Ce4120528D';
+const RONIN_TOKEN_ADMIN_REGISTRY = '0x90e83d532A4aD13940139c8ACE0B93b0DdbD323a';
 
 export default async function relayRoninMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -27,7 +28,7 @@ export default async function relayRoninMessage(
 
   const l2TokenAdminRegistry = await bridgeDeploymentManager.existing(
     'l2TokenAdminRegistry',
-    '0x90e83d532A4aD13940139c8ACE0B93b0DdbD323a',
+    RONIN_TOKEN_ADMIN_REGISTRY,
     'ronin'
   );
 

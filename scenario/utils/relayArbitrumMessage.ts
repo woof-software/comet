@@ -6,6 +6,22 @@ import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog } from './index';
 
+// WETH on each side: an L1→L2 transfer of mainnet WETH is sourced as Arbitrum WETH on L2
+const MAINNET_WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+const ARBITRUM_WETH = '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1';
+
+// ArbSys precompile, mocked because Hardhat's EVM has no Arbitrum precompiles
+const ARB_SYS = '0x0000000000000000000000000000000000000064';
+
+// Mainnet Arbitrum contracts used to simulate L2→L1 token bridging
+const ARBITRUM_GATEWAY_ROUTER = '0x5288c571Fd7aD117beA99bF60FE0846C4E84F933';
+const ARBITRUM_BRIDGE = '0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a';
+const ARBITRUM_OUTBOX = '0x667e23ABd27E623c11d4CC00ca3EC4d0bD63337a';
+
+// Arbitrum CCTP contracts: the TokenMessenger is impersonated to call mint on the TokenMinter
+const ARBITRUM_CCTP_TOKEN_MINTER = '0xE7Ed1fa7f45D05C508232aa32649D89b73b8bA48';
+const ARBITRUM_CCTP_TOKEN_MESSENGER = '0x19330d10d9cc8751218eaf51e8885d058642e08a';
+
 export async function relayArbitrumMessage(
   governanceDeploymentManager: DeploymentManager,
   bridgeDeploymentManager: DeploymentManager,
@@ -154,7 +170,7 @@ export async function relayArbitrumMessage(
         _data
       );
       // if token is mainnet ETH -> than source arbitrum weth
-      if(token == '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'){
+      if(token == MAINNET_WETH){
         if(tenderlyLogs) {
           const callData = bridgeReceiver.interface.encodeFunctionData(
             'sourceTokens',
@@ -162,7 +178,7 @@ export async function relayArbitrumMessage(
               {
                 dm: bridgeDeploymentManager,
                 amount: amount,
-                asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+                asset: MAINNET_WETH,
                 address: to,
                 blacklist: []
               }
@@ -180,7 +196,7 @@ export async function relayArbitrumMessage(
         await sourceTokens({
           dm: bridgeDeploymentManager,
           amount: amount,
-          asset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+          asset: ARBITRUM_WETH,
           address: to,
           blacklist: [],
         });
@@ -238,7 +254,7 @@ export async function relayArbitrumMessage(
         await bridgeDeploymentManager.hre.network.provider.request({
           method: 'hardhat_setCode',
           params: [
-            '0x0000000000000000000000000000000000000064',
+            ARB_SYS,
             '0x60206000f3',
           ],
         });
@@ -285,10 +301,6 @@ export async function simulateL2ToL1TokenBridging(
   const outboundTransferSignature = 'outboundTransfer(address,address,uint256,bytes)';
   const outboundTransfer2Signature = 'outboundTransfer(address,address,uint256,uint256,uint256,bytes)';
   const depositForBurnSignature = 'depositForBurn(uint256,uint32,bytes32,address,bytes32,uint256,uint32)';
-  const ARBITRUM_GATEWAY_ROUTER = '0x5288c571Fd7aD117beA99bF60FE0846C4E84F933';
-  const ARBITRUM_BRIDGE = '0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a';
-  const ARBITRUM_OUTBOX = '0x667e23ABd27E623c11d4CC00ca3EC4d0bD63337a';
-  const MAINNET_WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 
   for (const event of proposalCreatedEvents) {
     const decodedEvent = bridgeReceiver.interface.parseLog(event);
@@ -463,7 +475,7 @@ export async function relayArbitrumCCTPMint(
   // L1 contracts
   const L1MessageTransmitter = await governanceDeploymentManager.getContractOrThrow('CCTPMessageTransmitter');
   // Arbitrum TokenMinter which is L2 contracts
-  const TokenMinter = await bridgeDeploymentManager.existing('TokenMinter', '0xE7Ed1fa7f45D05C508232aa32649D89b73b8bA48', 'arbitrum');
+  const TokenMinter = await bridgeDeploymentManager.existing('TokenMinter', ARBITRUM_CCTP_TOKEN_MINTER, 'arbitrum');
 
   let depositForBurnEvents: Log[] = [];
 
@@ -572,7 +584,7 @@ export async function relayArbitrumCCTPMint(
   });
 
   // Impersonate the Arbitrum TokenMinter and mint token to recipient
-  const ImpersonateLocalTokenMessenger = bridgeDeploymentManager.network === 'arbitrum' ? '0x19330d10d9cc8751218eaf51e8885d058642e08a' : '0x0';
+  const ImpersonateLocalTokenMessenger = bridgeDeploymentManager.network === 'arbitrum' ? ARBITRUM_CCTP_TOKEN_MESSENGER : '0x0';
   // Impersonate the Arbitrum TokenMinter and mint token to recipient
   for (let burnEvent of burnEvents) {
     const { recipient, amount, sourceDomain, burnToken } = burnEvent;

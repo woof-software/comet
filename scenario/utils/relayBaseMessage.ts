@@ -4,6 +4,9 @@ import { BigNumber, ethers, utils } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { applyL1ToL2Alias, isTenderlyLog } from './index';
+
+// Base OptimismPortal on mainnet, used to simulate L2→L1 token bridging
+const BASE_L1_PORTAL = '0x49048044D57e1C92A77f79988d21Fa8fAF74E97e';
 /*
 The Base relayer applies an offset to the message sender.
 
@@ -208,7 +211,6 @@ export async function simulateL2ToL1TokenBridging(
   // L1 contracts
   const baseL1CrossDomainMessenger = await governanceDeploymentManager.getContractOrThrow('baseL1CrossDomainMessenger');
   const baseL1Bridge = await governanceDeploymentManager.getContractOrThrow('baseL1StandardBridge');
-  const BASE_L1_PORTAL = '0x49048044D57e1C92A77f79988d21Fa8fAF74E97e';
 
   // Parse recent ProposalCreated events to find actions that bridge tokens from L2 to L1
   // ProposalCreated(address indexed rootMessageSender, uint256 id, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 eta)
