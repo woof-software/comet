@@ -1,6 +1,5 @@
 import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
+import { impersonateAddress, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { BigNumber, ethers, utils } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';

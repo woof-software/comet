@@ -1,9 +1,8 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectBase, expectRevertCustom, expectRevertMatches, getExpectedBaseBalance, getInterest, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, UINT256_MAX } from './utils';
+import { expectApproximately, expectBase, expectRevertCustom, expectRevertMatches, getExpectedBaseBalance, getInterest, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, UINT256_MAX, exp } from './utils';
 import { ContractReceipt } from 'ethers';
 import { matchesDeployment } from './utils';
-import { exp } from '../test/helpers';
 import { ethers } from 'hardhat';
 import { getConfigForScenario } from './utils/scenarioHelper';
 

@@ -3,7 +3,7 @@ import { Migration, loadMigrations } from '../../plugins/deployment_manager/Migr
 import { writeEnacted } from '../../plugins/deployment_manager/Enacted';
 import { HardhatRuntimeEnvironment, HardhatConfig } from 'hardhat/types';
 import { DeploymentManager, VerifyArgs } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
+import { impersonateAddress } from '../../scenario/utils/hreUtils';
 import hreForBase, { migrationStarted} from '../../plugins/scenario/utils/hreForBase';
 
 // TODO: Don't depend on scenario's hreForBase
@@ -70,11 +70,11 @@ async function runMigration<T>(
     console.log('Enactment complete');
 
     if (tenderly) {
-      const { tenderlyExecute } = await import('../../scenario/utils');
+      const { tenderlyExecute } = await import('../../scenario/utils/migrationSimulation');
       await tenderlyExecute(govDeploymentManager, deploymentManager, governor, timelock);
     }
     if (tenderlyVnet) {
-      const { tenderlyVnetExecute } = await import('../../scenario/utils');
+      const { tenderlyVnetExecute } = await import('../../scenario/utils/migrationSimulation');
       await tenderlyVnetExecute(govDeploymentManager, deploymentManager, governor, timelock);
     }
     await govDeploymentManager.cleanCache();
