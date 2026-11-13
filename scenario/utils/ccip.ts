@@ -15,23 +15,25 @@ const dest = new Map<string, string>([
   ['mainnet', '5009297550715157269'],
 ]);
 
+// CCIP contracts per network: the CommitStore is impersonated to push fresh prices into the PriceRegistry
+const CCIP_CONTRACTS = [
+  {
+    network: 'mainnet',
+    commitStore: '0x2aa101bf99caef7fc1355d4c493a1fe187a007ce',
+    priceRegistry: '0x8c9b2Efb7c64C394119270bfecE7f54763b958Ad',
+  },
+  {
+    network: 'ronin',
+    commitStore: '0x28c66d9693b2634b2f3b170f6d9584eec2f72ff0',
+    priceRegistry: '0xefCEa3CFA330adcDdeCe99219C57fd45cd166ac1',
+  },
+];
+
 export async function updateCCIPStats(
   dm: DeploymentManager,
   tenderlyLogs?: any[]
 ) {
-  const config = [
-    {
-      network: 'mainnet',
-      commitStore: '0x2aa101bf99caef7fc1355d4c493a1fe187a007ce',
-      priceRegistry: '0x8c9b2Efb7c64C394119270bfecE7f54763b958Ad'
-    },
-    {
-      network: 'ronin',
-      commitStore: '0x28c66d9693b2634b2f3b170f6d9584eec2f72ff0',
-      priceRegistry: '0xefCEa3CFA330adcDdeCe99219C57fd45cd166ac1'
-    }
-  ];
-  const { commitStore, priceRegistry } = config.find(c => c.network === dm.network) || {};
+  const { commitStore, priceRegistry } = CCIP_CONTRACTS.find(c => c.network === dm.network) || {};
   if (!commitStore || !priceRegistry) {
     console.log(`No CCIP config for network ${dm.network}, skipping CCIP stats update.`);
     return;
