@@ -55,20 +55,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '18'
-
-      # Shares the cache key with `prepare`; whichever job populates it first wins, the other reads it
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        id: yarn-cache
-        with:
-          path: |
-            node_modules
-            .yarn/cache
-            .yarn/__virtual__
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          cache: 'yarn'
 
       - name: Install packages
-        if: steps.yarn-cache.outputs.cache-hit != 'true'
         run: yarn install --non-interactive --frozen-lockfile
 
       - id: set-matrix
@@ -96,17 +85,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '18'
-
-      # Create a deterministic cache key based on yarn.lock
-      - name: Cache node_modules (create/save)
-        uses: actions/cache@v4
-        id: yarn-cache
-        with:
-          path: |
-            node_modules
-            .yarn/cache
-            .yarn/__virtual__
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          cache: 'yarn'
 
       - name: Install packages
         run: yarn install --non-interactive --frozen-lockfile
@@ -174,6 +153,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: 'yarn'
 
       - name: Download prepared state
         uses: actions/download-artifact@v4
@@ -181,25 +161,8 @@ jobs:
           name: prepared-data
           path: .
 
-      # Restore the same cache created in prepare
-      - name: Restore node_modules cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            .yarn/cache
-            .yarn/__virtual__
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-
-      # Install only if cache miss (keeps matrix jobs fast)
-      - name: Install deps if needed
-        run: |
-          if [ ! -d node_modules ] || [ ! -d node_modules/.bin ]; then
-            echo "node_modules missing — running yarn install"
-            yarn install --non-interactive --frozen-lockfile
-          else
-            echo "node_modules present from cache — skipping install"
-          fi
+      - name: Install packages
+        run: yarn install --non-interactive --frozen-lockfile
 
       # multistream=true spreads each network group's bases out via scenario:multistream --per-base.
       # For multi-base networks (arbitrum, base, optimism, polygon, linea, ronin) this reopens the
