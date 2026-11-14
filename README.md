@@ -91,6 +91,12 @@ You can enable them by running:
 git config core.hooksPath .githooks
 ```
 
+The pre-commit hook uses `lint-staged` to run ESLint on staged JavaScript and
+TypeScript files in the linted source directories (and `hardhat.config.ts`), and
+Solhint on staged Solidity contracts. Unstaged changes in partially staged files
+stay out of the commit. Full-project lint and TypeScript checks still run in CI;
+you can also run `yarn lint` and `yarn tsc --noEmit` locally.
+
 You can skip pre-commit checks with the `-n` flag:
 
 ```
