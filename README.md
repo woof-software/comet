@@ -212,6 +212,11 @@ forge test
 
 See the [GitHub workflow](.github/workflows/run-forge-tests.yaml) for an example.
 
+The liquidator swap tests use fixed fork blocks: Mainnet `17,000,000` and Polygon
+`41,000,000`. Set `MAINNET_QUICKNODE_LINK` and `POLYGON_QUICKNODE_LINK` to RPC
+endpoints that support historical state at these blocks. Run just these tests with
+`forge test --match-test 'test.*SwapVia'`. They also run in the full suite and CI.
+
 
 ### Deploy contracts
 

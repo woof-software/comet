@@ -6,6 +6,8 @@ import "../../contracts/CometWithExtendedAssetList.sol";
 import "../../contracts/CometConfiguration.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
+import "../../contracts/CometExtAssetList.sol";
+import "../../contracts/AssetListFactory.sol";
 
 contract PolygonLiquidatorTest is Test {
     CometWithExtendedAssetList public comet;
@@ -13,7 +15,6 @@ contract PolygonLiquidatorTest is Test {
 
     // contracts
     address public constant BALANCER_VAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
-    address public constant COMET_EXT = 0x285617313887d43256F852cAE0Ee4de4b68D45B0; // XXX replace with actual address after Polygon launch
     address public constant GNOSIS_SAFE = address(0); // XXX replace with actual address after Polygon launch
     address public constant SUSHISWAP_ROUTER = 0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506;
     address public constant TIMELOCK = address(0); // XXX replace with actual address after Polygon launch
@@ -29,11 +30,6 @@ contract PolygonLiquidatorTest is Test {
     address public constant WBTC = 0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6;
     address public constant WMATIC = 0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270;
 
-    // whales
-    address public constant WETH9_WHALE = 0x2093b4281990A568C9D588b8BCE3BFD7a1557Ebd;
-    address public constant WBTC_WHALE = 0x2093b4281990A568C9D588b8BCE3BFD7a1557Ebd;
-    address public constant WMATIC_WHALE = 0x21Cb017B40abE17B6DFb9Ba64A3Ab0f24A7e60EA;
-
     // price feeds
     address public constant USDC_PRICE_FEED = 0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7;
     address public constant WETH9_PRICE_FEED = 0xF9680D99D6C9589e2a93a78A04A279e509205945;
@@ -41,7 +37,12 @@ contract PolygonLiquidatorTest is Test {
     address public constant WMATIC_PRICE_FEED = 0xAB594600376Ec9fD91F8e885dADF0CE036862dE0;
 
     function setUp() public {
-        vm.createSelectFork(vm.envString("POLYGON_QUICKNODE_LINK"));
+        // Pin external liquidity, prices and token implementations for reproducible swaps.
+        vm.createSelectFork(vm.envString("POLYGON_QUICKNODE_LINK"), 41_000_000);
+        CometExtAssetList cometExt = new CometExtAssetList(
+            CometConfiguration.ExtConfiguration(bytes32("Test Comet"), bytes32("TEST")),
+            address(new AssetListFactory())
+        );
 
         liquidator = new OnChainLiquidator(
             BALANCER_VAULT,
@@ -90,7 +91,7 @@ contract PolygonLiquidatorTest is Test {
                 pauseGuardian: GNOSIS_SAFE,
                 baseToken: USDC,
                 baseTokenPriceFeed: USDC_PRICE_FEED,
-                extensionDelegate: COMET_EXT,
+                extensionDelegate: address(cometExt),
                 supplyKink: 8e17,
                 supplyPerYearInterestRateSlopeLow: 3e16,
                 supplyPerYearInterestRateSlopeHigh: 4e17,
@@ -110,11 +111,13 @@ contract PolygonLiquidatorTest is Test {
             }
         ));
 
+        comet.initializeStorage();
+
         // contracts
         vm.label(UNISWAP_V3_FACTORY, "UniswapV3 Factory");
         vm.label(TIMELOCK, "Timelock");
         vm.label(GNOSIS_SAFE, "Gnosis Safe");
-        vm.label(COMET_EXT, "Comet Ext");
+        vm.label(address(cometExt), "Comet Ext");
 
         // assets
         vm.label(ST_MATIC, "ST_MATIC");
@@ -124,17 +127,11 @@ contract PolygonLiquidatorTest is Test {
         vm.label(METADEX, "METADEX");
         vm.label(WBTC, "WBTC");
         vm.label(WMATIC, "WMATIC");
-
-        // whales
-        vm.label(WETH9_WHALE, "WETH9_WHALE");
-        vm.label(WBTC_WHALE, "WBTC_WHALE");
-        vm.label(WMATIC_WHALE, "WMATIC_WHALE");
     }
 
     function testWETHSwapViaUniswap() external {
         swapWithNoMax(
             WETH9,
-            WETH9_WHALE,
             500e18,
             OnChainLiquidator.PoolConfig({
                 exchange: OnChainLiquidator.Exchange.Uniswap,
@@ -149,7 +146,6 @@ contract PolygonLiquidatorTest is Test {
     function testWBTCSwapViaUniswap() external {
         swapWithNoMax(
             WBTC,
-            WBTC_WHALE,
             30e8,
             OnChainLiquidator.PoolConfig({
                 exchange: OnChainLiquidator.Exchange.Uniswap,
@@ -164,7 +160,6 @@ contract PolygonLiquidatorTest is Test {
     function testWMATICSwapViaUniswap() external {
         swapWithNoMax(
             WMATIC,
-            WMATIC_WHALE,
             500_000e18,
             OnChainLiquidator.PoolConfig({
                 exchange: OnChainLiquidator.Exchange.Uniswap,
@@ -178,7 +173,6 @@ contract PolygonLiquidatorTest is Test {
 
     function swapWithNoMax(
         address asset,
-        address whale,
         uint256 transferAmount,
         OnChainLiquidator.PoolConfig memory poolConfig
     ) internal {
@@ -196,8 +190,8 @@ contract PolygonLiquidatorTest is Test {
         address[] memory assets =  new address[](1);
         assets[0] = asset;
 
-        vm.prank(whale);
-        ERC20(asset).transfer(address(comet), transferAmount);
+        // Seed collateral without depending on a live whale account.
+        deal(asset, address(comet), transferAmount);
 
         liquidator.absorbAndArbitrage(
             address(comet),

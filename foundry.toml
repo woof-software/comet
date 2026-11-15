@@ -5,9 +5,6 @@ libs = ['node_modules', 'forge/lib']
 test = 'forge/test'
 cache_path  = 'forge/cache'
 
-# disable for CI (used for debugging liquidity issues)
-no_match_test = "test.*SwapVia"
-
 evm_version = "cancun"
 solc_version = "0.8.15"
 
