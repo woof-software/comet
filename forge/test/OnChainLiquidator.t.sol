@@ -6,6 +6,8 @@ import "../../contracts/CometWithExtendedAssetList.sol";
 import "../../contracts/CometConfiguration.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
+import "../../contracts/CometExtAssetList.sol";
+import "../../contracts/AssetListFactory.sol";
 
 contract OnChainLiquidatorTest is Test {
     CometWithExtendedAssetList public comet;
@@ -13,7 +15,6 @@ contract OnChainLiquidatorTest is Test {
 
     // contracts
     address public constant BALANCER_VAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
-    address public constant COMET_EXT = 0x285617313887d43256F852cAE0Ee4de4b68D45B0;
     address public constant GNOSIS_SAFE = 0xbbf3f1421D886E9b2c5D716B5192aC998af2012c;
     address public constant SUSHISWAP_ROUTER = 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F;
     address public constant TIMELOCK = 0x6d903f6003cca6255D85CcA4D3B5E5146dC33925;
@@ -27,14 +28,15 @@ contract OnChainLiquidatorTest is Test {
     address public constant WETH9 = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address public constant WST_ETH = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
 
-    // whales
-    address public constant CB_ETH_WHALE = 0xFA11D91e74fdD98F79E01582B9664143E1036931;
-    address public constant WST_ETH_WHALE = 0x10CD5fbe1b404B7E19Ef964B63939907bdaf42E2;
-
     function setUp() public {
-        vm.createSelectFork(vm.envString("MAINNET_QUICKNODE_LINK"));
+        // Pin external liquidity, prices and token implementations for reproducible swaps.
+        vm.createSelectFork(vm.envString("MAINNET_QUICKNODE_LINK"), 17_000_000);
+        CometExtAssetList cometExt = new CometExtAssetList(
+            CometConfiguration.ExtConfiguration(bytes32("Test Comet"), bytes32("TEST")),
+            address(new AssetListFactory())
+        );
 
-        // XXX replace with deployed feeds after mainnet/WETH launch
+        // Fixed prices exercise profitable liquidation routes at the pinned fork block.
         SimplePriceFeed wethPriceFeed = new SimplePriceFeed(1e8, 8);
         SimplePriceFeed wstEthPriceFeed = new SimplePriceFeed(98973832, 8);
         SimplePriceFeed cbEthPriceFeed = new SimplePriceFeed(98104218, 8);
@@ -75,7 +77,7 @@ contract OnChainLiquidatorTest is Test {
                 pauseGuardian: GNOSIS_SAFE,
                 baseToken: WETH9,
                 baseTokenPriceFeed: address(wethPriceFeed),
-                extensionDelegate: COMET_EXT,
+                extensionDelegate: address(cometExt),
                 supplyKink: 8e17,
                 supplyPerYearInterestRateSlopeLow: 3e16,
                 supplyPerYearInterestRateSlopeHigh: 4e17,
@@ -95,12 +97,14 @@ contract OnChainLiquidatorTest is Test {
             }
         ));
 
+        comet.initializeStorage();
+
         // contracts
         vm.label(UNISWAP_V3_FACTORY, "UniswapV3 Factory");
 
         vm.label(TIMELOCK, "Timelock");
         vm.label(GNOSIS_SAFE, "Gnosis Safe");
-        vm.label(COMET_EXT, "Comet Ext");
+        vm.label(address(cometExt), "Comet Ext");
 
         // assets
         vm.label(CB_ETH, "CB_ETH");
@@ -108,16 +112,11 @@ contract OnChainLiquidatorTest is Test {
         vm.label(USDC, "USDC");
         vm.label(WETH9, "WETH9");
         vm.label(WST_ETH, "WST_ETH");
-
-        // whales
-        vm.label(CB_ETH_WHALE, "CB_ETH_WHALE");
-        vm.label(WST_ETH_WHALE, "WST_ETH_WHALE");
     }
 
     function testCbETHSwapViaUniswap() external {
         swapWithNoMax(
             CB_ETH,
-            CB_ETH_WHALE,
             1000e18,
             OnChainLiquidator.PoolConfig({
                 exchange: OnChainLiquidator.Exchange.Uniswap,
@@ -132,7 +131,6 @@ contract OnChainLiquidatorTest is Test {
     function testWstETHSwapViaBalancer() external {
         swapWithNoMax(
             WST_ETH,
-            WST_ETH_WHALE,
             2000e18,
             OnChainLiquidator.PoolConfig({
                 exchange: OnChainLiquidator.Exchange.Balancer,
@@ -147,7 +145,6 @@ contract OnChainLiquidatorTest is Test {
     function testWstETHSwapViaCurve() external {
         swapWithNoMax(
             WST_ETH,
-            WST_ETH_WHALE,
             2000e18,
             OnChainLiquidator.PoolConfig({
                 exchange: OnChainLiquidator.Exchange.Curve,
@@ -161,7 +158,6 @@ contract OnChainLiquidatorTest is Test {
 
     function swapWithNoMax(
         address asset,
-        address whale,
         uint256 transferAmount,
         OnChainLiquidator.PoolConfig memory poolConfig
     ) internal {
@@ -179,8 +175,8 @@ contract OnChainLiquidatorTest is Test {
         address[] memory assets =  new address[](1);
         assets[0] = asset;
 
-        vm.prank(whale);
-        ERC20(asset).transfer(address(comet), transferAmount);
+        // Seed collateral without depending on a live whale account.
+        deal(asset, address(comet), transferAmount);
 
         liquidator.absorbAndArbitrage(
             address(comet),

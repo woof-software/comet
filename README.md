@@ -91,6 +91,12 @@ You can enable them by running:
 git config core.hooksPath .githooks
 ```
 
+The pre-commit hook uses `lint-staged` to run ESLint on staged JavaScript and
+TypeScript files in the linted source directories (and `hardhat.config.ts`), and
+Solhint on staged Solidity contracts. Unstaged changes in partially staged files
+stay out of the commit. Full-project lint and TypeScript checks still run in CI;
+you can also run `yarn lint` and `yarn tsc --noEmit` locally.
+
 You can skip pre-commit checks with the `-n` flag:
 
 ```
@@ -205,6 +211,11 @@ forge test
 ```
 
 See the [GitHub workflow](.github/workflows/run-forge-tests.yaml) for an example.
+
+The liquidator swap tests use fixed fork blocks: Mainnet `17,000,000` and Polygon
+`41,000,000`. Set `MAINNET_QUICKNODE_LINK` and `POLYGON_QUICKNODE_LINK` to RPC
+endpoints that support historical state at these blocks. Run just these tests with
+`forge test --match-test 'test.*SwapVia'`. They also run in the full suite and CI.
 
 
 ### Deploy contracts
