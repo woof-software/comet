@@ -53,9 +53,21 @@ jobs:
           submodules: recursive
 
       - uses: actions/setup-node@v4
+        id: node
         with:
           node-version: '18'
-          cache: 'yarn'
+
+      - name: Read Yarn version
+        id: yarn-version
+        run: |
+          yarn_version=$(yarn --version)
+          echo "version=$yarn_version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache installed dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ runner.arch }}-node-${{ steps.node.outputs.node-version }}-yarn-${{ steps.yarn-version.outputs.version }}-modules-v2-${{ hashFiles('package.json', 'yarn.lock', '.yarnrc', '.npmrc') }}
 
       - name: Install packages
         run: yarn install --non-interactive --frozen-lockfile
@@ -83,9 +95,21 @@ jobs:
           submodules: recursive
 
       - uses: actions/setup-node@v4
+        id: node
         with:
           node-version: '18'
-          cache: 'yarn'
+
+      - name: Read Yarn version
+        id: yarn-version
+        run: |
+          yarn_version=$(yarn --version)
+          echo "version=$yarn_version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache installed dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ runner.arch }}-node-${{ steps.node.outputs.node-version }}-yarn-${{ steps.yarn-version.outputs.version }}-modules-v2-${{ hashFiles('package.json', 'yarn.lock', '.yarnrc', '.npmrc') }}
 
       - name: Install packages
         run: yarn install --non-interactive --frozen-lockfile
@@ -151,9 +175,21 @@ jobs:
 
       - name: Setup Node
         uses: actions/setup-node@v4
+        id: node
         with:
           node-version: '18'
-          cache: 'yarn'
+
+      - name: Read Yarn version
+        id: yarn-version
+        run: |
+          yarn_version=$(yarn --version)
+          echo "version=$yarn_version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache installed dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ runner.arch }}-node-${{ steps.node.outputs.node-version }}-yarn-${{ steps.yarn-version.outputs.version }}-modules-v2-${{ hashFiles('package.json', 'yarn.lock', '.yarnrc', '.npmrc') }}
 
       - name: Download prepared state
         uses: actions/download-artifact@v4
