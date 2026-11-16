@@ -1452,7 +1452,7 @@ describe('absorb', function () {
       it('absorbs undercollateralized account', async () => {
         liquidationTx = await comet.connect(bob).absorb(bob.address, [alice.address]);
 
-        expect(liquidationTx).to.not.be.reverted;
+        await expect(liquidationTx).to.not.be.reverted;
       });
 
       it('emits AbsorbCollateral event', async () => {
@@ -1460,7 +1460,7 @@ describe('absorb', function () {
         const [_, price] = await compPriceFeed.latestRoundData();
         expectedUsdValue = mulPrice(aliceCompSupply, price, assetInfo.scale);
 
-        expect(liquidationTx).to.emit(comet, 'AbsorbCollateral').withArgs(bob.address, alice.address, compToken.address, aliceCompSupply, expectedUsdValue);
+        await expect(liquidationTx).to.emit(comet, 'AbsorbCollateral').withArgs(bob.address, alice.address, compToken.address, aliceCompSupply, expectedUsdValue);
       });
 
       it('reduces totals supply of the asset for seized asset', async () => {
@@ -1503,20 +1503,22 @@ describe('absorb', function () {
 
       it('updates user principal correctly after absorption', async () => {
         expect((await comet.userBasic(alice.address)).principal).to.equal(newPrincipal);
-
-        await snapshot.restore();
       });
 
       it('emits AbsorbDebt event', async () => {
-        const basePaidOut = newBalance - oldBalance;
+        // newBalance is clamped to 0; absorb accrues first, so oldBalance uses the indices at the absorb block
+        const { blockNumber } = await liquidationTx.wait();
+        const totalsAtAbsorb = await cometExt.totalsBasic({ blockTag: blockNumber });
+        const oldBalanceAtAbsorb = presentValue(oldPrincipal, totalsAtAbsorb.baseSupplyIndex, totalsAtAbsorb.baseBorrowIndex);
+        const basePaidOut = newBalance - oldBalanceAtAbsorb;
         const valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, baseScale);
-        expect(liquidationTx).to.emit(comet, 'AbsorbDebt').withArgs(bob.address, alice.address, basePaidOut, valueOfBasePaidOut);
+        await expect(liquidationTx).to.emit(comet, 'AbsorbDebt').withArgs(bob.address, alice.address, basePaidOut, valueOfBasePaidOut);
       });
 
       it('Transfer event is not emitted', async () => {
         // Transfer event emits only when new principal is greater than 0
         expect(newPrincipal).to.equal(0);
-        expect(liquidationTx).to.not.emit(comet, 'Transfer');
+        await expect(liquidationTx).to.not.emit(comet, 'Transfer');
       });
     });
 
@@ -1558,7 +1560,7 @@ describe('absorb', function () {
       it('absorbs undercollateralized account', async () => {
         liquidationTx = await comet.connect(bob).absorb(bob.address, [alice.address]);
 
-        expect(liquidationTx).to.not.be.reverted;
+        await expect(liquidationTx).to.not.be.reverted;
       });
 
       it('emits AbsorbCollateral event', async () => {
@@ -1659,13 +1661,13 @@ describe('absorb', function () {
 
       it('absorbs undercollateralized account', async () => {
         liquidationTx = await comet.connect(bob).absorb(bob.address, [alice.address]);
-        expect(liquidationTx).to.not.be.reverted;
+        await expect(liquidationTx).to.not.be.reverted;
       });
 
       it('emits AbsorbCollateral event with usdValue of 0', async () => {
         // assetPrices[i] stays 0 because isLiquidatableInternal skips LCF=0 assets before calling getPrice()
         // value = mulPrice(seizeAmount, 0, scale) = 0
-        expect(liquidationTx).to.emit(comet, 'AbsorbCollateral').withArgs(bob.address, alice.address, compToken.address, aliceCompSupply, 0n);
+        await expect(liquidationTx).to.emit(comet, 'AbsorbCollateral').withArgs(bob.address, alice.address, compToken.address, aliceCompSupply, 0n);
       });
 
       it('reduces totals supply of the asset for seized asset', async () => {
@@ -1724,14 +1726,18 @@ describe('absorb', function () {
       });
 
       it('emits AbsorbDebt event', async () => {
-        // basePaidOut = computedNewBalance - oldBalance = 0 - oldBalance = -oldBalance (full debt absorbed by reserves)
-        const basePaidOut = computedNewBalance - oldBalance;
+        // basePaidOut = computedNewBalance - oldBalance = 0 - oldBalance = -oldBalance (full debt absorbed by reserves).
+        // absorb accrues first, so oldBalance uses the indices at the absorb block, not at the snapshot
+        const { blockNumber } = await liquidationTx.wait();
+        const totalsAtAbsorb = await cometExt.totalsBasic({ blockTag: blockNumber });
+        const oldBalanceAtAbsorb = presentValue(oldPrincipal, totalsAtAbsorb.baseSupplyIndex, totalsAtAbsorb.baseBorrowIndex);
+        const basePaidOut = computedNewBalance - oldBalanceAtAbsorb;
         const valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, baseScale);
-        expect(liquidationTx).to.emit(comet, 'AbsorbDebt').withArgs(bob.address, alice.address, basePaidOut, valueOfBasePaidOut);
+        await expect(liquidationTx).to.emit(comet, 'AbsorbDebt').withArgs(bob.address, alice.address, basePaidOut, valueOfBasePaidOut);
       });
 
       it('Transfer event is not emitted', async () => {
-        expect(liquidationTx).to.not.emit(comet, 'Transfer');
+        await expect(liquidationTx).to.not.emit(comet, 'Transfer');
       });
 
       it('comet base token ERC20 balance is unchanged after absorption', async () => {
@@ -1813,11 +1819,11 @@ describe('absorb', function () {
 
       it('absorbs is successful', async () => {
         liquidationTx = await comet.connect(bob).absorb(bob.address, [alice.address]);
-        expect(liquidationTx).to.not.be.reverted;
+        await expect(liquidationTx).to.not.be.reverted;
       });
 
       it('does not emit AbsorbCollateral event', async () => {
-        expect(liquidationTx).to.not.emit(comet, 'AbsorbCollateral');
+        await expect(liquidationTx).to.not.emit(comet, 'AbsorbCollateral');
       });
 
       it('does not affect user collateral balance', async () => {
@@ -1876,14 +1882,18 @@ describe('absorb', function () {
       });
 
       it('emits AbsorbDebt event', async () => {
-        // basePaidOut = computedNewBalance - oldBalance = 0 - oldBalance = -oldBalance (full debt absorbed by reserves)
-        const basePaidOut = computedNewBalance - oldBalance;
+        // basePaidOut = computedNewBalance - oldBalance = 0 - oldBalance = -oldBalance (full debt absorbed by reserves).
+        // absorb accrues first, so oldBalance uses the indices at the absorb block, not at the snapshot
+        const { blockNumber } = await liquidationTx.wait();
+        const totalsAtAbsorb = await cometExt.totalsBasic({ blockTag: blockNumber });
+        const oldBalanceAtAbsorb = presentValue(oldPrincipal, totalsAtAbsorb.baseSupplyIndex, totalsAtAbsorb.baseBorrowIndex);
+        const basePaidOut = computedNewBalance - oldBalanceAtAbsorb;
         const valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, baseScale);
-        expect(liquidationTx).to.emit(comet, 'AbsorbDebt').withArgs(bob.address, alice.address, basePaidOut, valueOfBasePaidOut);
+        await expect(liquidationTx).to.emit(comet, 'AbsorbDebt').withArgs(bob.address, alice.address, basePaidOut, valueOfBasePaidOut);
       });
 
       it('Transfer event is not emitted', async () => {
-        expect(liquidationTx).to.not.emit(comet, 'Transfer');
+        await expect(liquidationTx).to.not.emit(comet, 'Transfer');
       });
 
       it('comet base token ERC20 balance is unchanged after absorption', async () => {
@@ -2106,11 +2116,11 @@ describe('absorb', function () {
       });
 
       it('isLiquidatable now does not revert', async () => {
-        expect(await comet.isLiquidatable(alice.address)).to.not.be.reverted;
+        await expect(await comet.isLiquidatable(alice.address)).to.not.be.reverted;
       });
 
       it('isBorrowCollateralized now does not revert', async () => {
-        expect(await comet.isBorrowCollateralized(alice.address)).to.not.be.reverted;
+        await expect(await comet.isBorrowCollateralized(alice.address)).to.not.be.reverted;
       });
 
       it('absorb does not revert', async () => {
