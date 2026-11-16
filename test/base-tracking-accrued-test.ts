@@ -1,4 +1,4 @@
-import { ethers, expect, exp, fastForward, getBlock, makeProtocol } from './helpers';
+import { ethers, expect, exp, fastForward, getBlock, makeProtocol, allocateAndSupply } from './helpers';
 
 describe('baseTrackingAccrued', function() {
   it('supply updates baseTrackingAccrued to 6 decimal value', async () => {
@@ -169,7 +169,7 @@ describe('baseTrackingAccrued', function() {
     const start = (await getBlock()).timestamp + 100;
 
     const {
-      cometWithExtendedAssetList : comet, tokens, users: [alice]
+      cometWithExtendedAssetList : comet, tokens, users: [alice, initialLender]
     } = await makeProtocol({
       base: 'USDC',
       trackingIndexScale: 1e15,
@@ -179,11 +179,12 @@ describe('baseTrackingAccrued', function() {
     });
     const { USDC, WETH } = tokens;
 
+    // Borrowing requires at least one lender, so seed the market with an initial supply
+    await allocateAndSupply(comet, USDC, initialLender, exp(2, 6));
+
     // allocate and approve transfers
     await WETH.allocateTo(alice.address, exp(1,18));
     await WETH.connect(alice).approve(comet.address, exp(1,18));
-
-    await USDC.allocateTo(comet.address, 2e6); // for two withdrawls of 1e6
 
     // supply WETH as collateral
     await comet.connect(alice).supply(WETH.address, exp(1,18));

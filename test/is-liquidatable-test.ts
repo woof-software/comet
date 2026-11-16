@@ -1,5 +1,5 @@
 import { CometExt, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
-import { expect, exp, ethers, MAX_ASSETS, presentValue, mulPrice, mulFactor, factorScale, BigNumber, takeSnapshot, SnapshotRestorer, makeConfigurator, updateAssetBorrowCollateralFactor, getLiquidityWithLiquidateCF, updateAssetLiquidateCollateralFactor } from './helpers';
+import { expect, exp, ethers, MAX_ASSETS, presentValue, mulPrice, mulFactor, factorScale, BigNumber, takeSnapshot, SnapshotRestorer, makeConfigurator, updateAssetBorrowCollateralFactor, getLiquidityWithLiquidateCF, updateAssetLiquidateCollateralFactor, allocateAndSupply } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
 describe('isLiquidatable', function () {
@@ -1112,6 +1112,7 @@ describe('isLiquidatable', function () {
     let alice: SignerWithAddress;
     let governor: SignerWithAddress;
     let pauseGuardian: SignerWithAddress;
+    let initialLender: SignerWithAddress;
 
     // Values
     let supplyAmount: bigint;
@@ -1146,6 +1147,7 @@ describe('isLiquidatable', function () {
       alice = protocol.users[0];
       governor = protocol.governor;
       pauseGuardian = protocol.pauseGuardian;
+      initialLender = protocol.users[1];
 
       // Upgrade proxy to extended asset list implementation to support many assets
       const assetListFactory = protocol.assetListFactory;
@@ -1172,6 +1174,9 @@ describe('isLiquidatable', function () {
       const PriceFeedWithRevertFactory = (await ethers.getContractFactory('PriceFeedWithRevert')) as PriceFeedWithRevert__factory;
       priceFeedWithRevert = await PriceFeedWithRevertFactory.deploy(100, 8);
 
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet, baseToken, initialLender, exp(10_000, 6));
+
       snapshot = await takeSnapshot();
 
       // Supply collateral and borrow base
@@ -1182,7 +1187,6 @@ describe('isLiquidatable', function () {
       await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
       await comet.connect(alice).supply(collateralToken.address, supplyAmount);
 
-      await baseToken.allocateTo(cometProxyAddress, borrowAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // With positive liquidateCF and ample collateral, not liquidatable
@@ -1248,7 +1252,6 @@ describe('isLiquidatable', function () {
       // Total liquidation value: 5 * 160 = 800 USDC. Borrow 400 so not liquidatable initially.
       // After zeroing 3 assets, only 2 contribute (320 total) < 400 borrowed, so liquidatable.
       const borrowAmount = exp(400, 6);
-      await baseToken.allocateTo(comet.address, borrowAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Verify NOT liquidatable initially
@@ -1293,7 +1296,6 @@ describe('isLiquidatable', function () {
 
         // Borrow amount collateralized by the single supplied asset under liquidation values (~170 USDC)
         const borrowAmount = exp(150, 6);
-        await baseToken.allocateTo(comet.address, borrowAmount);
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
         // Initially not liquidatable with positive liquidateCF
@@ -1332,7 +1334,6 @@ describe('isLiquidatable', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           // With positive liquidateCF and ample collateral, not liquidatable
@@ -1387,7 +1388,6 @@ describe('isLiquidatable', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
         });
 
@@ -1441,7 +1441,6 @@ describe('isLiquidatable', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           collateralAssetIndex = (await comet.getAssetInfoByAddress(collateralToken.address)).offset;
@@ -1495,7 +1494,6 @@ describe('isLiquidatable', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           collateralAssetIndex = (await comet.getAssetInfoByAddress(collateralToken.address)).offset;

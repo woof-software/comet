@@ -215,16 +215,13 @@ scenario(
       { network: 'ronin' },
       { network: 'scroll' },
     ]),
-    tokenBalances: async (ctx) => (
-      {
-        $comet: {
-          $base: getConfigForScenario(ctx).liquidationBase
-        }
-      }),
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidationBase,
         $asset0: getConfigForScenario(ctx).liquidationAsset
+      },
+      charles: {
+        $base: getConfigForScenario(ctx).liquidationBase
       }
     }),
   },
@@ -336,10 +333,12 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       && await usesAssetList(ctx)
       && !(await isAssetDelisted(ctx, i))
       && await supportsExtendedPause(ctx),
-      tokenBalances: async (ctx: CometContext) => (
+      tokenBalances: {
+        albert: { $base: '== 0' },
+      },
+      cometBalances: async (ctx: CometContext) => (
         {
-          albert: { $base: '== 0' },
-          $comet: { $base: getConfigForScenario(ctx, i).withdrawBase },
+          charles: { $base: getConfigForScenario(ctx, i).withdrawBase },
         }
       ),
     },
@@ -430,9 +429,11 @@ for (let i = 0; i < MAX_ASSETS; i++) {
     {
       filter: async (ctx) => 
         await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsExtendedPause(ctx),
-      tokenBalances: async (ctx) => ({
+      tokenBalances: {
         albert: { $base: '== 0' },
-        $comet: {
+      },
+      cometBalances: async (ctx) => ({
+        charles: {
           $base: getConfigForScenario(ctx, i).withdrawBase
         }
       }),
@@ -553,9 +554,11 @@ scenario(
       !(await isAssetDelisted(ctx, 0)) &&
       !(await isAssetDelisted(ctx, 1)) &&
       await supportsExtendedPause(ctx),
-    tokenBalances: async (ctx) => ({
+    tokenBalances: {
       albert: { $base: '== 0' },
-      $comet: {
+    },
+    cometBalances: async (ctx) => ({
+      charles: {
         $base: getConfigForScenario(ctx).withdrawBase
       }
     }),
