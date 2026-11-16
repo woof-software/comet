@@ -106,7 +106,8 @@ contract PolygonLiquidatorTest is Test {
                 baseMinForRewards: 1000000e6,
                 baseBorrowMin: 100e6,
                 targetReserves: 5000000e6,
-                assetConfigs: assetConfigs
+                assetConfigs: assetConfigs,
+                maxSupportedUtilization: 2e18
             }
         ));
 
