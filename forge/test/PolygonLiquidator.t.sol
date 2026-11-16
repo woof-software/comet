@@ -6,8 +6,9 @@ import "../../contracts/CometWithExtendedAssetList.sol";
 import "../../contracts/CometConfiguration.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
+import { AssetListDeployer } from "./helpers/AssetListDeployer.sol";
 
-contract PolygonLiquidatorTest is Test {
+contract PolygonLiquidatorTest is Test, AssetListDeployer {
     CometWithExtendedAssetList public comet;
     OnChainLiquidator public liquidator;
 
@@ -41,7 +42,7 @@ contract PolygonLiquidatorTest is Test {
     address public constant WMATIC_PRICE_FEED = 0xAB594600376Ec9fD91F8e885dADF0CE036862dE0;
 
     function setUp() public {
-        vm.createSelectFork(vm.envString("POLYGON_QUICKNODE_LINK"));
+        vm.createSelectFork("polygon");
 
         liquidator = new OnChainLiquidator(
             BALANCER_VAULT,
@@ -69,7 +70,7 @@ contract PolygonLiquidatorTest is Test {
             priceFeed: WBTC_PRICE_FEED,
             decimals: 8,
             borrowCollateralFactor: 7e17,
-            liquidateCollateralFactor: 95e16,
+            liquidateCollateralFactor: 9e17,
             liquidationFactor: 95e16,
             supplyCap: 0
         });
@@ -106,7 +107,7 @@ contract PolygonLiquidatorTest is Test {
                 baseMinForRewards: 1000000e6,
                 baseBorrowMin: 100e6,
                 targetReserves: 5000000e6,
-                assetConfigs: assetConfigs
+                assetList: address(deployAssetList(assetConfigs, makeAddr("proxyAdmin"), makeAddr("configurator")))
             }
         ));
 

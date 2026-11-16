@@ -4,14 +4,16 @@ pragma solidity 0.8.15;
 import "./CometConfiguration.sol";
 import "./CometStorage.sol";
 import "./CometMath.sol";
+import { IAssetListStructs } from "./interfaces/assetList/IAssetListStructs.sol";
 
-abstract contract CometCore is CometConfiguration, CometStorage, CometMath {
+/// @dev `AssetInfo` is declared in IAssetListStructs, so Comet and the asset list share one type
+abstract contract CometCore is CometConfiguration, CometStorage, CometMath, IAssetListStructs {
     /** Internal constants **/
 
     /// @dev The max number of assets this contract is hardcoded to support
     ///  Do not change this variable without updating all the fields throughout the contract,
     //    including the size of UserBasic.assetsIn and corresponding integer conversions.
-    uint8 internal constant MAX_ASSETS = 15;
+    uint8 internal constant MAX_ASSETS = 24;
 
     /// @dev The max number of decimals base token can have
     ///  Note this cannot just be increased arbitrarily.
@@ -26,6 +28,24 @@ abstract contract CometCore is CometConfiguration, CometStorage, CometMath {
     uint8 internal constant PAUSE_WITHDRAW_OFFSET = 2;
     uint8 internal constant PAUSE_ABSORB_OFFSET = 3;
     uint8 internal constant PAUSE_BUY_OFFSET = 4;
+
+    /// @dev Offsets for specific actions in the extended pause flag bit array
+    /// @dev Offset of pause lenders withdraw
+    uint24 internal constant PAUSE_LENDERS_WITHDRAW_OFFSET = 0;
+    /// @dev Offset of pause borrowers withdraw
+    uint24 internal constant PAUSE_BORROWERS_WITHDRAW_OFFSET = 1;
+    /// @dev Offset of pause collateral supply
+    uint24 internal constant PAUSE_COLLATERAL_SUPPLY_OFFSET = 2;
+    /// @dev Offset of pause base supply
+    uint24 internal constant PAUSE_BASE_SUPPLY_OFFSET = 3;
+    /// @dev Offset of pause lenders transfer
+    uint24 internal constant PAUSE_LENDERS_TRANSFER_OFFSET = 4;
+    /// @dev Offset of pause borrowers transfer
+    uint24 internal constant PAUSE_BORROWERS_TRANSFER_OFFSET = 5;
+    /// @dev Offset of pause collateral transfer
+    uint24 internal constant PAUSE_COLLATERALS_TRANSFER_OFFSET = 6;
+    /// @dev Offset of pause collateral withdraw
+    uint24 internal constant PAUSE_COLLATERALS_WITHDRAW_OFFSET = 7;
 
     /// @dev The decimals required for a price feed
     uint8 internal constant PRICE_FEED_DECIMALS = 8;
