@@ -9,6 +9,7 @@
   "pauseGuardian": "0xbbf3f1421D886E9b2c5D716B5192aC998af2012c",
   "storeFrontPriceFactor": 0.6,
   "targetReserves": "10000000e6",
+  "maxSupportedUtilization": "2e18",
   "rates": {
     "supplyKink": 0.9,
     "supplySlopeLow": 0.036,
