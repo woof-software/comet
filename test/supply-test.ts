@@ -575,6 +575,75 @@ describe('supply', function () {
         expect(await comet.totalSupply()).to.be.approximately(totalPresentSupply, 1);
       });
     });
+
+    describe('supply base asset: after an idle period with the no-borrow supply rate cut off', function () {
+      const SUPPLY_BASE_RATE = exp(0.01, 18); // 1% per year
+      const IDLE_PERIOD = 30 * 24 * 60 * 60; // 30 days
+      const ALICE_SUPPLY_AMOUNT = exp(5e9, baseTokenDecimals);
+      const BOB_SUPPLY_AMOUNT = exp(1e9, baseTokenDecimals);
+
+      let testComet: CometHarnessInterfaceExtendedAssetList;
+      let testBaseToken: FaucetToken | NonStandardFaucetFeeToken;
+      let baseSupplyIndexBefore: BigNumber;
+      let restorer: SnapshotRestorer;
+
+      before(async () => {
+        restorer = await takeSnapshot();
+
+        const protocol = await makeProtocol({ base: 'USDC', supplyInterestRateBase: SUPPLY_BASE_RATE });
+        testComet = protocol.cometWithExtendedAssetList;
+        testBaseToken = protocol.tokens['USDC'];
+
+        await testBaseToken.allocateTo(alice.address, ALICE_SUPPLY_AMOUNT);
+        await testBaseToken.allocateTo(bob.address, BOB_SUPPLY_AMOUNT);
+        await testBaseToken.connect(alice).approve(testComet.address, ALICE_SUPPLY_AMOUNT);
+        await testBaseToken.connect(bob).approve(testComet.address, BOB_SUPPLY_AMOUNT);
+
+        // No borrows and no reserves: alice's balance equals the comet's balance, so the supply rate is cut off
+        await testComet.connect(alice).supply(testBaseToken.address, ALICE_SUPPLY_AMOUNT);
+
+        await ethers.provider.send('evm_increaseTime', [IDLE_PERIOD]);
+        await ethers.provider.send('evm_mine', []);
+
+        baseSupplyIndexBefore = (await testComet.totalsBasic()).baseSupplyIndex;
+      });
+
+      after(async () => {
+        await restorer.restore();
+      });
+
+      it('sanity: base supply rate is set', async () => {
+        expect(await testComet.supplyPerSecondInterestRateBase()).to.be.gt(0);
+      });
+
+      it('sanity: supply rate is cut off before the supply', async () => {
+        expect(await testComet.getSupplyRate(await testComet.getUtilization())).to.equal(0);
+      });
+
+      it('bob supplies base asset after the idle period', async () => {
+        await expect(testComet.connect(bob).supply(testBaseToken.address, BOB_SUPPLY_AMOUNT)).to.not.be.reverted;
+      });
+
+      it('supply index does not change', async () => {
+        expect((await testComet.totalsBasic()).baseSupplyIndex).to.equal(baseSupplyIndexBefore);
+      });
+
+      it("alice's balance does not grow from bob's deposit", async () => {
+        expect(await testComet.balanceOf(alice.address)).to.equal(ALICE_SUPPLY_AMOUNT);
+      });
+
+      it("bob's balance equals the supplied amount", async () => {
+        expect(await testComet.balanceOf(bob.address)).to.equal(BOB_SUPPLY_AMOUNT);
+      });
+
+      it('reserves stay at zero', async () => {
+        expect(await testComet.getReserves()).to.equal(0);
+      });
+
+      it('supply rate stays cut off after the supply', async () => {
+        expect(await testComet.getSupplyRate(await testComet.getUtilization())).to.equal(0);
+      });
+    });
   });
 
   describe('repay', function () {
