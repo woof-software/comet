@@ -161,7 +161,6 @@ scenario(
     )) as AssetList;
     const cometImplementationBefore = await proxyAdmin.getProxyImplementation(comet.address);
     const before = await snapshotMarket(context, properties);
-    const pricesBefore = await Promise.all(before.assetInfos.map(({ priceFeed }) => comet.getPrice(priceFeed)));
 
     // Same price as the current feed, so no position is affected
     const newFeed = (await context.world.deploymentManager.deploy(
@@ -219,8 +218,13 @@ scenario(
     }
 
     expect(await comet.getPrice(newFeed)).to.equal(oldPrice);
-    const pricesAfter = await Promise.all(after.assetInfos.map(({ priceFeed }) => comet.getPrice(priceFeed)));
-    expect(pricesAfter).to.deep.equal(pricesBefore);
+    // Read in the same block: rate based feeds (e.g. sUSDS) accrue while the proposals execute
+    for (let index = 0; index < after.assetInfos.length; index++) {
+      const priceAfter = (await comet.getPrice(after.assetInfos[index].priceFeed)).toBigInt();
+      const priceBefore = (await comet.getPrice(before.assetInfos[index].priceFeed)).toBigInt();
+      const expectedPrice = index === assetIndex ? oldPrice : priceBefore;
+      expect(priceAfter, `price of asset ${index}`).to.equal(expectedPrice);
+    }
 
     expect((await configurator.callStatic.deployAssetList(comet.address)).newAssetListImpl).to.equal(constants.AddressZero);
 
@@ -411,7 +415,6 @@ scenario(
 
     const cometImplementationBefore = await proxyAdmin.getProxyImplementation(comet.address);
     const before = await snapshotMarket(context, properties);
-    const pricesBefore = await Promise.all(before.assetInfos.map(({ priceFeed }) => comet.getPrice(priceFeed)));
     const assetList = (await ethers.getContractAt('AssetList', before.assetList)) as AssetList;
     const oldConfig = (await configurator.getAssetConfigs(comet.address))[assetIndex];
     const oldPrice = (await comet.getPrice(oldConfig.priceFeed)).toBigInt();
@@ -510,8 +513,13 @@ scenario(
     expect(setEvents.length).to.equal(1);
 
     expect(await comet.getPrice(newFeed)).to.equal(oldPrice);
-    const pricesAfter = await Promise.all(after.assetInfos.map(({ priceFeed }) => comet.getPrice(priceFeed)));
-    expect(pricesAfter).to.deep.equal(pricesBefore);
+    // Read in the same block: rate based feeds (e.g. sUSDS) accrue while the proposals execute
+    for (let index = 0; index < after.assetInfos.length; index++) {
+      const priceAfter = (await comet.getPrice(after.assetInfos[index].priceFeed)).toBigInt();
+      const priceBefore = (await comet.getPrice(before.assetInfos[index].priceFeed)).toBigInt();
+      const expectedPrice = index === assetIndex ? oldPrice : priceBefore;
+      expect(priceAfter, `price of asset ${index}`).to.equal(expectedPrice);
+    }
 
     expect(after.totalsBasic).to.deep.equal(before.totalsBasic);
     expect(after.totalsCollateral).to.deep.equal(before.totalsCollateral);
