@@ -22,6 +22,18 @@ export function mockVerifySuccess(hre: HardhatRuntimeEnvironment) {
     goerli: 'GOERLI_KEY',
   };
   hre.network.name = 'goerli';
+
+  // verify:verify compiles the whole project before verifying unless told not to. Tests already run against
+  // compiled artifacts, and hardhat-etherscan mutates the in-memory solc config while verifying, which makes
+  // Hardhat's compile cache look stale, so each compile here is a full viaIR rebuild that can exceed the mocha timeout.
+  let runOld = hre.run.bind(hre);
+  (hre as { run: typeof hre.run }).run = function (taskIdentifier, taskArguments, ...rest) {
+    if (taskIdentifier === 'verify:verify') {
+      taskArguments = { ...taskArguments, noCompile: true };
+    }
+    return runOld(taskIdentifier, taskArguments, ...rest);
+  } as typeof hre.run;
+
   let sendOld = hre.network.provider.send.bind(hre.network.provider);
   hre.network.provider.send = function (...args) {
     if (args.length === 1 && args[0] === 'eth_chainId') {
