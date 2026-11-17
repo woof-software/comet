@@ -724,10 +724,14 @@ describe('balance tests', function () {
         await collaterals.WETH.connect(bob).approve(comet.address, largeCollateral);
         await comet.connect(bob).supply(collaterals.WETH.address, largeCollateral);
 
-        // Seed more reserves to cover large borrow
-        await baseToken.allocateTo(comet.address, exp(1_000_000, baseTokenDecimals));
-
         const borrowLimit = await comet.getBorrowLimit(bob.address);
+
+        // Reserves do not count toward utilization, so the liquidity for a large borrow has to come from a lender.
+        // Alice supplies the borrow amount, which keeps utilization under the 200% cap.
+        await baseToken.allocateTo(alice.address, borrowLimit);
+        await baseToken.connect(alice).approve(comet.address, borrowLimit);
+        await comet.connect(alice).supply(baseToken.address, borrowLimit);
+
         await comet.connect(bob).withdraw(baseToken.address, borrowLimit);
 
         const userBasic = await comet.userBasic(bob.address);
@@ -758,10 +762,24 @@ describe('balance tests', function () {
         await comet.connect(dave).supply(collaterals.WETH.address, collateralAmount);
 
         const maxBorrow = await comet.getBorrowLimit(dave.address);
+
+        // Alice adds liquidity so the max borrow stays under the 200% utilization cap
+        await baseToken.allocateTo(alice.address, maxBorrow);
+        await baseToken.connect(alice).approve(comet.address, maxBorrow);
+        await comet.connect(alice).supply(baseToken.address, maxBorrow);
+
         await comet.connect(dave).withdraw(baseToken.address, maxBorrow);
 
-        // Drop WETH price by 20% to make position liquidatable
-        const droppedPrice = BigNumber.from(exp(3000, 8)).mul(80).div(100);
+        // Liquidation starts once collateral value times the liquidate collateral factor falls below the debt value.
+        // The price is solved from Dave's current debt: the price at which the collateral exactly covers the debt,
+        // rounded down, then lowered by one unit. One price unit on 1 WETH is worth more than the protocol's rounding,
+        // so the position is liquidatable right away, without waiting for interest to push the debt up.
+        const wethInfo = await comet.getAssetInfoByAddress(collaterals.WETH.address);
+        const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
+        const debtValue = (await comet.borrowBalanceOf(dave.address)).mul(basePrice).div(await comet.baseScale());
+        const droppedPrice = debtValue.mul(FACTOR_SCALE).mul(wethInfo.scale)
+          .div(collateralAmount.mul(wethInfo.liquidateCollateralFactor))
+          .sub(1);
         await priceFeeds.WETH.setPrice(droppedPrice);
 
         expect(await comet.isLiquidatable(dave.address)).to.equal(true);

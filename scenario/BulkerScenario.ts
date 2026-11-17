@@ -1,9 +1,9 @@
 import { CometContext, scenario } from './context/CometContext';
 import { constants, utils } from 'ethers';
 import { expect } from 'chai';
-import { expectBase, isRewardSupported, isBulkerSupported, getExpectedBaseBalance, matchesDeployment } from './utils';
+import { expectBase, isRewardSupported, isBulkerSupported, getBulkerCollateralIndex, getExpectedBaseBalance, matchesDeployment } from './utils';
 import { exp } from '../test/helpers';
-import { getConfigForScenario } from './utils/scenarioHelper';
+import { getBulkerCollateralAmount, getConfigForScenario } from './utils/scenarioHelper';
 
 async function hasNativeAsCollateral(ctx: CometContext): Promise<boolean> {
   const comet = await ctx.getComet();
@@ -25,24 +25,32 @@ async function hasNativeAsBase(ctx: CometContext): Promise<boolean> {
   if ((await comet.baseToken()).toLowerCase() === wrappedNativeToken.toLowerCase()) return true;
 }
 
+type CollateralAmount = (ctx: CometContext, index: number) => number;
+
+// The WETH base market supplies a smaller amount of collateral
+const getBulkerWethCollateralAmount: CollateralAmount = (ctx, index) => getConfigForScenario(ctx, index).bulkerAsset2;
+
+// Supply cap room needed for the collateral asset the scenario supplies (see getBulkerCollateralIndex)
+async function getCollateralSupplyCaps(ctx: CometContext, getAmount: CollateralAmount = getBulkerCollateralAmount) {
+  const index = await getBulkerCollateralIndex(ctx);
+  if (index === -1) return {};
+  return { [`$asset${index}`]: getAmount(ctx, index) };
+}
+
+// Tokens Albert needs to hold, on top of `base`, to supply the collateral asset the scenario uses
+async function getCollateralTokenBalances(ctx: CometContext, base: string, getAmount: CollateralAmount = getBulkerCollateralAmount) {
+  const index = await getBulkerCollateralIndex(ctx);
+  const comet = { $base: getConfigForScenario(ctx).bulkerComet };
+  if (index === -1) return { albert: { $base: base }, $comet: comet };
+  return { albert: { $base: base, [`$asset${index}`]: getAmount(ctx, index) }, $comet: comet };
+}
+
 scenario(
   'Comet#bulker > WRON base all non-reward actions in one txn for single asset',
   {
-    filter: async (ctx) => await isBulkerSupported(ctx) && matchesDeployment(ctx, [{ network: 'ronin', deployment: 'wron'}]),
-    supplyCaps: async (ctx) =>  (
-      {
-        $asset0: getConfigForScenario(ctx).bulkerAsset,
-      }
-    ),
-    tokenBalances: async (ctx) =>  (
-      {
-        albert: {
-          $base: '== 0',
-          $asset0: getConfigForScenario(ctx).bulkerAsset,
-        },
-        $comet: { $base: getConfigForScenario(ctx).bulkerComet },
-      }
-    ),
+    filter: async (ctx) => await isBulkerSupported(ctx) && matchesDeployment(ctx, [{ network: 'ronin', deployment: 'wron'}]) && await getBulkerCollateralIndex(ctx) !== -1,
+    supplyCaps: async (ctx) => await getCollateralSupplyCaps(ctx),
+    tokenBalances: async (ctx) => await getCollateralTokenBalances(ctx, '== 0'),
   },
   async ({ comet, actors, bulker }, context) => {
     const { albert, betty } = actors;
@@ -50,13 +58,15 @@ scenario(
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseScale = (await comet.baseScale()).toBigInt();
-    // if asset 0 is native token we took asset 1
-    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
+    // the first asset that is neither the native token nor delisted
+    const collateralIndex = await getBulkerCollateralIndex(context);
+    const config = getConfigForScenario(context, collateralIndex);
+    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(collateralIndex);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
     const collateralScale = scaleBN.toBigInt();
-    const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset) * collateralScale;
-    const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
-    const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
+    const toSupplyCollateral = BigInt(getBulkerCollateralAmount(context, collateralIndex)) * collateralScale;
+    const toBorrowBase = BigInt(config.bulkerBorrowBase) * baseScale;
+    const toTransferBase = BigInt(config.bulkerBorrowAsset) * baseScale;
     const toSupplyWron = exp(0.01, 18);
     const toWithdrawWron = exp(0.005, 18);
 
@@ -118,23 +128,9 @@ scenario(
 scenario(
   'Comet#bulker > (non-WETH base) all non-reward actions in one txn',
   {
-    filter: async (ctx) => await isBulkerSupported(ctx) && !matchesDeployment(ctx, [{ deployment: 'weth' }, { deployment: 'wsteth' }, { network: 'ronin', deployment: 'wron'}]),
-    supplyCaps: async (ctx) => (
-      {
-        $asset0: getConfigForScenario(ctx).bulkerAsset,
-        $asset1: getConfigForScenario(ctx).bulkerAsset1,
-      }
-    ),
-    tokenBalances: async (ctx) => (
-      {
-        albert: {
-          $base: '== 0',
-          $asset0: getConfigForScenario(ctx).bulkerAsset,
-          $asset1: getConfigForScenario(ctx).bulkerAsset1
-        },
-        $comet: { $base: getConfigForScenario(ctx).bulkerComet },
-      }
-    ),
+    filter: async (ctx) => await isBulkerSupported(ctx) && !matchesDeployment(ctx, [{ deployment: 'weth' }, { deployment: 'wsteth' }, { network: 'ronin', deployment: 'wron'}]) && await getBulkerCollateralIndex(ctx) !== -1,
+    supplyCaps: async (ctx) => await getCollateralSupplyCaps(ctx),
+    tokenBalances: async (ctx) => await getCollateralTokenBalances(ctx, '== 0'),
   },
   async ({ comet, actors, bulker }, context) => {
     const { albert, betty } = actors;
@@ -142,15 +138,15 @@ scenario(
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseScale = (await comet.baseScale()).toBigInt();
-    // if asset 0 is native token we took asset 1
-    const { asset: asset0, scale: scale0 } = await comet.getAssetInfo(0);
-    const { asset: asset1, scale: scale1 } = await comet.getAssetInfo(1);
-    const { asset: collateralAssetAddress, scale: scaleBN } = asset0 === wrappedNativeToken ? { asset: asset1, scale: scale1 } : { asset: asset0, scale: scale0 };
+    // the first asset that is neither the native token nor delisted
+    const collateralIndex = await getBulkerCollateralIndex(context);
+    const config = getConfigForScenario(context, collateralIndex);
+    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(collateralIndex);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
     const collateralScale = scaleBN.toBigInt();
-    const toSupplyCollateral = BigInt(asset0 === wrappedNativeToken ? getConfigForScenario(context).bulkerAsset1 : getConfigForScenario(context).bulkerAsset) * collateralScale;
-    const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
-    const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
+    const toSupplyCollateral = BigInt(getBulkerCollateralAmount(context, collateralIndex)) * collateralScale;
+    const toBorrowBase = BigInt(config.bulkerBorrowBase) * baseScale;
+    const toTransferBase = BigInt(config.bulkerBorrowAsset) * baseScale;
     const toSupplyEth = exp(0.01, 18);
     const toWithdrawEth = exp(0.005, 18);
 
@@ -213,33 +209,25 @@ scenario(
   {
     filter: async (ctx) => await isBulkerSupported(ctx) &&
       matchesDeployment(ctx, [{ deployment: 'weth' }, { network: 'ronin', deployment: 'wron'}]) &&
-      !matchesDeployment(ctx, [{ network: 'ronin', deployment: 'weth' }]),
-    supplyCaps: async (ctx) => (
-      {
-        $asset0: getConfigForScenario(ctx).bulkerAsset,
-      }
-    ),
-    tokenBalances: async (ctx) => (
-      {
-        albert: {
-          $base: '== 0',
-          $asset0: getConfigForScenario(ctx).bulkerAsset
-        },
-        $comet: { $base: getConfigForScenario(ctx).bulkerComet },
-      }
-    ),
+      !matchesDeployment(ctx, [{ network: 'ronin', deployment: 'weth' }]) &&
+      await getBulkerCollateralIndex(ctx) !== -1,
+    supplyCaps: async (ctx) => await getCollateralSupplyCaps(ctx),
+    tokenBalances: async (ctx) => await getCollateralTokenBalances(ctx, '== 0'),
   },
   async ({ comet, actors, bulker }, context) => {
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseScale = (await comet.baseScale()).toBigInt();
-    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
+    // the first asset that is neither the native token nor delisted
+    const collateralIndex = await getBulkerCollateralIndex(context);
+    const config = getConfigForScenario(context, collateralIndex);
+    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(collateralIndex);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
     const collateralScale = scaleBN.toBigInt();
-    const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset) * collateralScale;
-    const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
-    const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
+    const toSupplyCollateral = BigInt(getBulkerCollateralAmount(context, collateralIndex)) * collateralScale;
+    const toBorrowBase = BigInt(config.bulkerBorrowBase) * baseScale;
+    const toTransferBase = BigInt(config.bulkerBorrowAsset) * baseScale;
     const toSupplyEth = exp(0.01, 18);
     const toWithdrawEth = exp(0.005, 18);
 
@@ -295,21 +283,9 @@ scenario(
 scenario(
   'Comet#bulker > (non-WETH base) all actions in one txn for single asset',
   {
-    filter: async (ctx) => await isBulkerSupported(ctx) && await isRewardSupported(ctx) && matchesDeployment(ctx, [{ network: 'ronin', deployment: 'wron'}]),
-    supplyCaps: async (ctx) =>  (
-      {
-        $asset0: getConfigForScenario(ctx).bulkerAsset,
-      }
-    ),
-    tokenBalances: async (ctx) =>  (
-      {
-        albert: {
-          $base: `==  ${getConfigForScenario(ctx).bulkerBase}`,
-          $asset0: getConfigForScenario(ctx).bulkerAsset,
-        },
-        $comet: { $base: getConfigForScenario(ctx).bulkerComet },
-      }
-    ),
+    filter: async (ctx) => await isBulkerSupported(ctx) && await isRewardSupported(ctx) && matchesDeployment(ctx, [{ network: 'ronin', deployment: 'wron'}]) && await getBulkerCollateralIndex(ctx) !== -1,
+    supplyCaps: async (ctx) => await getCollateralSupplyCaps(ctx),
+    tokenBalances: async (ctx) => await getCollateralTokenBalances(ctx, `== ${getConfigForScenario(ctx).bulkerBase}`),
   },
   async ({ comet, actors, rewards, bulker }, context, world) => {
     const { albert, betty } = actors;
@@ -317,15 +293,17 @@ scenario(
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseScale = (await comet.baseScale()).toBigInt();
-    // if asset 0 is native token we took asset 1
-    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
+    // the first asset that is neither the native token nor delisted
+    const collateralIndex = await getBulkerCollateralIndex(context);
+    const config = getConfigForScenario(context, collateralIndex);
+    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(collateralIndex);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
     const collateralScale = scaleBN.toBigInt();
     const [rewardTokenAddress] = await rewards.rewardConfig(comet.address);
-    const toSupplyBase = BigInt(getConfigForScenario(context).bulkerBase) * baseScale;
-    const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset) * collateralScale;
-    const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
-    const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
+    const toSupplyBase = BigInt(config.bulkerBase) * baseScale;
+    const toSupplyCollateral = BigInt(getBulkerCollateralAmount(context, collateralIndex)) * collateralScale;
+    const toBorrowBase = BigInt(config.bulkerBorrowBase) * baseScale;
+    const toTransferBase = BigInt(config.bulkerBorrowAsset) * baseScale;
     const toSupplyEth = exp(0.01, 18);
     const toWithdrawEth = exp(0.005, 18);
 
@@ -403,23 +381,9 @@ scenario(
 scenario(
   'Comet#bulker > (non-WETH base) all actions in one txn',
   {
-    filter: async (ctx) => await isBulkerSupported(ctx) && await isRewardSupported(ctx) && !matchesDeployment(ctx, [{ deployment: 'weth' }, { deployment: 'wsteth' }, { network: 'base', deployment: 'usds' }, { deployment: 'wsteth' }, { network: 'ronin', deployment: 'wron'}]),
-    supplyCaps: async (ctx) => (
-      {
-        $asset0: getConfigForScenario(ctx).bulkerAsset,
-        $asset1: getConfigForScenario(ctx).bulkerAsset1,
-      }
-    ),
-    tokenBalances: async (ctx) => (
-      {
-        albert: {
-          $base: `==  ${getConfigForScenario(ctx).bulkerBase}`,
-          $asset0: getConfigForScenario(ctx).bulkerAsset,
-          $asset1: getConfigForScenario(ctx).bulkerAsset1
-        },
-        $comet: { $base: getConfigForScenario(ctx).bulkerComet },
-      }
-    ),
+    filter: async (ctx) => await isBulkerSupported(ctx) && await isRewardSupported(ctx) && !matchesDeployment(ctx, [{ deployment: 'weth' }, { deployment: 'wsteth' }, { network: 'base', deployment: 'usds' }, { deployment: 'wsteth' }, { network: 'ronin', deployment: 'wron'}]) && await getBulkerCollateralIndex(ctx) !== -1,
+    supplyCaps: async (ctx) => await getCollateralSupplyCaps(ctx),
+    tokenBalances: async (ctx) => await getCollateralTokenBalances(ctx, `== ${getConfigForScenario(ctx).bulkerBase}`),
   },
   async ({ comet, actors, rewards, bulker }, context, world) => {
     const { albert, betty } = actors;
@@ -427,17 +391,17 @@ scenario(
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseScale = (await comet.baseScale()).toBigInt();
-    // if asset 0 is native token we took asset 1
-    const { asset: asset0, scale: scale0 } = await comet.getAssetInfo(0);
-    const { asset: asset1, scale: scale1 } = await comet.getAssetInfo(1);
-    const { asset: collateralAssetAddress, scale: scaleBN } = asset0 === wrappedNativeToken ? { asset: asset1, scale: scale1 } : { asset: asset0, scale: scale0 };
+    // the first asset that is neither the native token nor delisted
+    const collateralIndex = await getBulkerCollateralIndex(context);
+    const config = getConfigForScenario(context, collateralIndex);
+    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(collateralIndex);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
     const collateralScale = scaleBN.toBigInt();
     const [rewardTokenAddress] = await rewards.rewardConfig(comet.address);
-    const toSupplyBase = BigInt(getConfigForScenario(context).bulkerBase) * baseScale;
-    const toSupplyCollateral = BigInt(asset0 === wrappedNativeToken ? getConfigForScenario(context).bulkerAsset1 : getConfigForScenario(context).bulkerAsset) * collateralScale;
-    const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
-    const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
+    const toSupplyBase = BigInt(config.bulkerBase) * baseScale;
+    const toSupplyCollateral = BigInt(getBulkerCollateralAmount(context, collateralIndex)) * collateralScale;
+    const toBorrowBase = BigInt(config.bulkerBorrowBase) * baseScale;
+    const toTransferBase = BigInt(config.bulkerBorrowAsset) * baseScale;
     const toSupplyEth = exp(0.01, 18);
     const toWithdrawEth = exp(0.005, 18);
 
@@ -515,23 +479,9 @@ scenario(
 scenario(
   'Comet#bulker > (wstETH base) all actions in one txn',
   {
-    filter: async (ctx) => await isBulkerSupported(ctx) && await isRewardSupported(ctx) && matchesDeployment(ctx, [{ deployment: 'wsteth' }]),
-    supplyCaps: async (ctx) =>  (
-      {
-        $asset0: getConfigForScenario(ctx).bulkerAsset,
-        $asset1: getConfigForScenario(ctx).bulkerAsset1,
-      }
-    ),
-    tokenBalances: async (ctx) => (
-      {
-        albert: {
-          $base: `== ${getConfigForScenario(ctx).bulkerBase}`,
-          $asset0: getConfigForScenario(ctx).bulkerAsset,
-          $asset1: getConfigForScenario(ctx).bulkerAsset1
-        },
-        $comet: { $base: getConfigForScenario(ctx).bulkerComet },
-      }
-    ),
+    filter: async (ctx) => await isBulkerSupported(ctx) && await isRewardSupported(ctx) && matchesDeployment(ctx, [{ deployment: 'wsteth' }]) && await getBulkerCollateralIndex(ctx) !== -1,
+    supplyCaps: async (ctx) => await getCollateralSupplyCaps(ctx),
+    tokenBalances: async (ctx) => await getCollateralTokenBalances(ctx, `== ${getConfigForScenario(ctx).bulkerBase}`),
   },
   async ({ comet, actors, rewards, bulker }, context, world) => {
     const { albert, betty } = actors;
@@ -539,17 +489,17 @@ scenario(
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseScale = (await comet.baseScale()).toBigInt();
-    // if asset 0 is native token we took asset 1
-    const { asset: asset0, scale: scale0 } = await comet.getAssetInfo(0);
-    const { asset: asset1, scale: scale1 } = await comet.getAssetInfo(1);
-    const { asset: collateralAssetAddress, scale: scaleBN } = asset0 === wrappedNativeToken ? { asset: asset1, scale: scale1 } : { asset: asset0, scale: scale0 };
+    // the first asset that is neither the native token nor delisted
+    const collateralIndex = await getBulkerCollateralIndex(context);
+    const config = getConfigForScenario(context, collateralIndex);
+    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(collateralIndex);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
     const collateralScale = scaleBN.toBigInt();
     const [rewardTokenAddress] = await rewards.rewardConfig(comet.address);
-    const toSupplyBase = BigInt(getConfigForScenario(context).bulkerBase) * baseScale;
-    const toSupplyCollateral = BigInt(asset0 === wrappedNativeToken ? getConfigForScenario(context).bulkerAsset1 : getConfigForScenario(context).bulkerAsset) * collateralScale;
-    const toBorrowBase = BigInt(getConfigForScenario(context).bulkerBorrowBase) * baseScale;
-    const toTransferBase = BigInt(getConfigForScenario(context).bulkerBorrowAsset) * baseScale;
+    const toSupplyBase = BigInt(config.bulkerBase) * baseScale;
+    const toSupplyCollateral = BigInt(getBulkerCollateralAmount(context, collateralIndex)) * collateralScale;
+    const toBorrowBase = BigInt(config.bulkerBorrowBase) * baseScale;
+    const toTransferBase = BigInt(config.bulkerBorrowAsset) * baseScale;
     const toSupplyEth = exp(0.01, 18);
     const toWithdrawEth = exp(0.005, 18);
 
@@ -629,30 +579,24 @@ scenario(
     filter: async (ctx) => await isBulkerSupported(ctx) &&
       await isRewardSupported(ctx) &&
       matchesDeployment(ctx, [{ deployment: 'weth' }, { network: 'ronin', deployment: 'wron'}]) &&
-      !matchesDeployment(ctx, [{ network: 'ronin', deployment: 'weth'}]),
-    supplyCaps: async (ctx) => (
-      {
-        $asset0: getConfigForScenario(ctx).bulkerAsset2,
-      }
-    ),
-    tokenBalances: async (ctx) => (
-      {
-        albert: { $base: `== ${getConfigForScenario(ctx).bulkerBase1}`, $asset0: getConfigForScenario(ctx).bulkerAsset2 },
-        $comet: { $base: getConfigForScenario(ctx).bulkerComet },
-      }
-    ),
+      !matchesDeployment(ctx, [{ network: 'ronin', deployment: 'weth'}]) &&
+      await getBulkerCollateralIndex(ctx) !== -1,
+    supplyCaps: async (ctx) => await getCollateralSupplyCaps(ctx, getBulkerWethCollateralAmount),
+    tokenBalances: async (ctx) => await getCollateralTokenBalances(ctx, `== ${getConfigForScenario(ctx).bulkerBase1}`, getBulkerWethCollateralAmount),
   },
   async ({ comet, actors, rewards, bulker }, context, world) => {
     const { albert, betty } = actors;
     const baseAssetAddress = await comet.baseToken();
     const baseAsset = context.getAssetByAddress(baseAssetAddress);
     const baseScale = (await comet.baseScale()).toBigInt();
-    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
+    // the first asset that is neither the native token nor delisted
+    const collateralIndex = await getBulkerCollateralIndex(context);
+    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(collateralIndex);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
     const collateralScale = scaleBN.toBigInt();
     const [rewardTokenAddress] = await rewards.rewardConfig(comet.address);
     const toSupplyBase = BigInt(getConfigForScenario(context).bulkerBase1) * baseScale;
-    const toSupplyCollateral = BigInt(getConfigForScenario(context).bulkerAsset2) * collateralScale;
+    const toSupplyCollateral = BigInt(getBulkerWethCollateralAmount(context, collateralIndex)) * collateralScale;
     const toBorrowBase = 5n * baseScale;
     const toTransferBase = 2n * baseScale;
     const toSupplyEth = exp(0.01, 18);
