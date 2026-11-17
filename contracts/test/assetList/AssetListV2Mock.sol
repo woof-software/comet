@@ -16,7 +16,13 @@ contract AssetListV2Mock is AssetList {
 }
 
 contract AssetListFactoryV2Mock {
-    function createAssetList(IAssetListStructs.ImmutableAssetConfig[] memory assetConfigs, address configurator) external returns (address) {
+    address public immutable configurator;
+
+    constructor(address configurator_) {
+        configurator = configurator_;
+    }
+
+    function createAssetList(IAssetListStructs.ImmutableAssetConfig[] memory assetConfigs) external returns (address) {
         return address(new AssetListV2Mock(assetConfigs, configurator));
     }
 }

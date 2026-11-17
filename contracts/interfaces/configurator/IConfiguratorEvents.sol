@@ -6,8 +6,7 @@ import { IAssetListStructs } from "../assetList/IAssetListStructs.sol";
 
 /**
  * @title Compound's Configurator Events
- * @author Woof
- * @custom:security-contact dmitriy@woof.software
+ * @author Compound
  */
 interface IConfiguratorEvents {
     /*//////////////////////////////////////////////////////////////

@@ -6,8 +6,7 @@ import { IAssetListStructs } from "./assetList/IAssetListStructs.sol";
 /**
  * @title Deployable
  * @notice The part of the Configurator which the proxy admin calls to deploy new implementations
- * @author Woof
- * @custom:security-contact dmitriy@woof.software
+ * @author Compound
  */
 interface Deployable {
     function deploy(address cometProxy) external returns (address);

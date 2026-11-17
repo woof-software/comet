@@ -3,8 +3,7 @@ pragma solidity 0.8.15;
 
 /**
  * @title Compound's Asset List Structs
- * @author Woof
- * @custom:security-contact dmitriy@woof.software
+ * @author Compound
  */
 interface IAssetListStructs {
     /**

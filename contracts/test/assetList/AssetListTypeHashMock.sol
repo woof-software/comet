@@ -16,8 +16,7 @@ import { IAssetListStructs } from "../../interfaces/assetList/IAssetListStructs.
  * @dev A full copy of contracts/AssetList.sol: Solidity can't override a constant, so the contract can't inherit it.
  *      Any change to AssetList.sol must be copied here as well, or the deployment scenarios test a list that differs
  *      from the real one in more than the TYPEHASH
- * @author Woof
- * @custom:security-contact dmitriy@woof.software
+ * @author Compound
  */
 contract AssetListTypeHashMock is IAssetList, IConfigHash, Initializable {
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -31,6 +30,9 @@ contract AssetListTypeHashMock is IAssetList, IConfigHash, Initializable {
     bytes32 public constant TYPEHASH =
         keccak256("ImmutableConfigV2[](address asset,address priceFeed)");
 
+    /// @dev The max number of assets, one per pair of immutables below
+    uint8 public constant MAX_ASSETS = 24;
+
     /// @dev The decimals required for a price feed
     uint8 internal constant PRICE_FEED_DECIMALS = 8;
 
@@ -42,9 +44,6 @@ contract AssetListTypeHashMock is IAssetList, IConfigHash, Initializable {
 
     /// @dev The scale for factors, so 1e18 is a factor of 1, the max for any of them
     uint64 internal constant FACTOR_SCALE = 1e18;
-
-    /// @dev The max number of assets, one per pair of immutables below
-    uint8 internal constant MAX_ASSETS = 24;
 
     uint256 internal immutable asset00_a;
     address internal immutable priceFeedAddress00;
@@ -479,7 +478,13 @@ contract AssetListTypeHashMock is IAssetList, IConfigHash, Initializable {
 }
 
 contract AssetListTypeHashFactoryMock {
-    function createAssetList(IAssetListStructs.ImmutableAssetConfig[] memory assetConfigs, address configurator) external returns (address) {
+    address public immutable configurator;
+
+    constructor(address configurator_) {
+        configurator = configurator_;
+    }
+
+    function createAssetList(IAssetListStructs.ImmutableAssetConfig[] memory assetConfigs) external returns (address) {
         return address(new AssetListTypeHashMock(assetConfigs, configurator));
     }
 }

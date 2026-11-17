@@ -223,6 +223,15 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /**
+     * @notice Get the max number of assets the asset list can hold
+     * @dev Kept for backward compatibility; the cap belongs to the asset list
+     * @return The max number of assets
+     */
+    function maxAssets() override external view returns (uint8) {
+        return assetList.MAX_ASSETS();
+    }
+
+    /**
      * @notice Get the i-th asset info, according to the order they were passed in originally
      * @param i The index of the asset info to get
      * @return The asset info object
@@ -1329,7 +1338,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
         uint128 seizeAmount;
         uint256 value;
         // A liquidatable account gets one price slot per asset, so the length is the number of assets
-        uint8 numAssets_ = uint8(assetPrices.length);
+        uint8 numAssets_ = numAssets();
         for (uint8 i; i < numAssets_; ) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 assetInfo = getAssetInfo(i);

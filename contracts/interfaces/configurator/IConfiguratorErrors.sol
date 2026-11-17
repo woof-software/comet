@@ -3,8 +3,7 @@ pragma solidity 0.8.15;
 
 /**
  * @title Compound's Configurator Errors
- * @author Woof
- * @custom:security-contact dmitriy@woof.software
+ * @author Compound
  */
 interface IConfiguratorErrors {
     /// @dev The Configurator is already initialized, or is the implementation, which can never be initialized

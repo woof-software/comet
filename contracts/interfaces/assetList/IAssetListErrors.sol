@@ -3,8 +3,7 @@ pragma solidity 0.8.15;
 
 /**
  * @title Compound's Asset List Errors
- * @author Woof
- * @custom:security-contact dmitriy@woof.software
+ * @author Compound
  */
 interface IAssetListErrors {
     /// @dev The asset list is built with no assets

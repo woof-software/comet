@@ -6,8 +6,7 @@ pragma solidity 0.8.15;
  * @notice Shared getter for contracts built from a config whose hash is computed with the ConfigHash library
  * @dev Every such contract exposes its hash under this one name, so any caller can read it the same way,
  *      e.g. to check with ConfigHash.areHashesEqual whether a new config differs and a redeploy is needed
- * @author Woof
- * @custom:security-contact dmitriy@woof.software
+ * @author Compound
  */
 interface IConfigHash {
     /// @notice The hash of the config this contract was built from

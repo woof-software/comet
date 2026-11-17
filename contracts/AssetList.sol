@@ -25,6 +25,9 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
     bytes32 public constant TYPEHASH =
         keccak256("ImmutableConfig[](address asset,address priceFeed)");
 
+    /// @notice The max number of assets, one per pair of immutables below
+    uint8 public constant MAX_ASSETS = 24;
+
     /// @dev The decimals required for a price feed
     uint8 internal constant PRICE_FEED_DECIMALS = 8;
 
@@ -36,9 +39,6 @@ contract AssetList is IAssetList, IConfigHash, Initializable {
 
     /// @dev The scale for factors, so 1e18 is a factor of 1, the max for any of them
     uint64 internal constant FACTOR_SCALE = 1e18;
-
-    /// @dev The max number of assets, one per pair of immutables below
-    uint8 internal constant MAX_ASSETS = 24;
 
     uint256 internal immutable asset00_a;
     address internal immutable priceFeedAddress00;

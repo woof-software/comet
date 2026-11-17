@@ -9,8 +9,7 @@ import { IConfigHash } from "../interfaces/IConfigHash.sol";
  * @dev Works for any config type: the caller passes its own type hash and the config ABI-encoded with `abi.encode`.
  *      The type hash keeps configs of different types apart even when their bytes are equal.
  *      Never pass `abi.encodePacked` output: packed encoding is ambiguous and two configs could share a hash.
- * @author Woof
- * @custom:security-contact dmitriy@woof.software
+ * @author Compound
  */
 library ConfigHash {
     /**
