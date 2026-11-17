@@ -146,17 +146,14 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         vm.prank(proxyAdminOwner);
         proxyAdmin.upgrade(TransparentUpgradeableProxy(payable(configuratorProxy)), deployedContracts.newConfiguratorImplementation);
 
-        address assetListFactory = address(new AssetListFactory());
+        address assetListFactory = address(new AssetListFactory(address(configurator)));
         address cometFactory = address(new CometFactoryWithExtendedAssetList());
 
         vm.startPrank(governor);
         configurator.setAssetListFactory(cometProxy, assetListFactory);
         // The market has no list yet and deployAssetList only redeploys an existing one, so the first implementation
         // comes straight from the factory
-        address assetListImpl = AssetListFactory(assetListFactory).createAssetList(
-            configurator.getImmutableAssetConfig(cometProxy),
-            address(configurator)
-        );
+        address assetListImpl = AssetListFactory(assetListFactory).createAssetList(configurator.getImmutableAssetConfig(cometProxy));
         address assetList = address(new TransparentUpgradeableProxy(
             assetListImpl,
             address(proxyAdmin),

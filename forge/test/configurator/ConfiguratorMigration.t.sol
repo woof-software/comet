@@ -100,7 +100,7 @@ contract ConfiguratorMigrationTest is Test {
         validateAssetConfigs(cometC);
 
         // Give every market its asset list and a real Comet built on it
-        AssetListFactory assetListFactory = new AssetListFactory();
+        AssetListFactory assetListFactory = new AssetListFactory(address(configurator()));
         CometFactoryWithExtendedAssetList cometFactory = new CometFactoryWithExtendedAssetList();
         deployAssetListAndComet(cometA, assetListFactory, cometFactory);
         deployAssetListAndComet(cometB, assetListFactory, cometFactory);
@@ -232,7 +232,7 @@ contract ConfiguratorMigrationTest is Test {
 
         // The market has no list yet and deployAssetList only redeploys an existing one, so the first implementation
         // comes straight from the factory, built from the migrated immutable configs
-        address assetListImpl = assetListFactory.createAssetList(configurator().getImmutableAssetConfig(comet), address(configurator()));
+        address assetListImpl = assetListFactory.createAssetList(configurator().getImmutableAssetConfig(comet));
 
         // The list proxy is owned by the proxy admin, so later deploys can upgrade it
         address assetList = address(new TransparentUpgradeableProxy(

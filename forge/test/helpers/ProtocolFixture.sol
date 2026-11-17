@@ -129,7 +129,6 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
     }
 
     function deployExtensionDelegate() internal {
-        assetListFactory = new AssetListFactory();
         extensionDelegate = new CometExt(
             CometConfiguration.ExtConfiguration(
                 { name32: "Compound USDC", symbol32: "cUSDCv3" }
@@ -205,6 +204,7 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
             abi.encodeCall(Configurator.initialize, (timelock))
         );
         configurator = Configurator(address(configuratorProxy));
+        assetListFactory = new AssetListFactory(address(configuratorProxy));
 
         // The asset list comes first, because the Comet constructor already reads it
         assetList = deployAssetList(buildAssetConfigs(), address(proxyAdmin), address(configuratorProxy));
