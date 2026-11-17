@@ -19,6 +19,7 @@ forge/out
 .env
 coverage/
 coverage.json
+.coverage-capo-abi/
 typechain/
 
 test-results.json
