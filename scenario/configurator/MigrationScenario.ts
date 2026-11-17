@@ -7,6 +7,7 @@ import {
   getMinimumBorrowAmounts,
   getUsableCollateralIndices,
   isAssetListMigrationRequired,
+  isConfiguratorMigrated,
   matchesDeployment,
   supportsMarketAdminPermissionChecker,
 } from '../utils';
@@ -35,6 +36,8 @@ scenario(
     filter: async (ctx) =>
       matchesDeployment(ctx, [{ network: 'mainnet' }, { network: 'arbitrum' }, { network: 'base' }, { network: 'optimism' }]) &&
       await isAssetListMigrationRequired(ctx) &&
+      // The scenario starts from the V1 Configurator
+      !(await isConfiguratorMigrated(ctx)) &&
       // The borrow position needs a collateral that can be supplied; a wound-down market has none
       (await getUsableCollateralIndices(ctx, 1)).length > 0,
   },

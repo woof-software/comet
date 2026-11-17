@@ -35,6 +35,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
 import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
+import { isConfiguratorMigrated } from './versionControl';
 
 export * from './hreUtils';
 export * from './versionControl';
@@ -1530,6 +1531,7 @@ export async function executeOpenProposal(
 
     const tx = await governor.execute(id, { gasPrice: 0, gasLimit: 120000000 });
     const receipt = await tx.wait();
+    console.log(`GAS_MEASURE proposal ${id} gasUsed ${receipt.gasUsed.toString()}`);
 
     if (receipt.gasUsed.toNumber() >= 16_777_215) {
       throw new Error('Execution may have failed due to hitting gas limit');
@@ -2118,13 +2120,19 @@ export async function getMinimumBorrowAmounts(context: CometContext, collateralI
 // directly by the governor instead of through proposals: the Configurator is upgraded through the intermediate
 // version that migrates the asset configs, an asset list factory and an asset list are deployed, and the Comet is
 // rebuilt on the list. The new contracts are deployed under the aliases deployComet reads, so that a following
-// deployComet finds them and does not roll the Configurator back to the old implementation
+// deployComet finds them and does not roll the Configurator back to the old implementation.
+// A market whose Configurator is already migrated, but whose Comet is not upgraded yet, is only rebuilt on its list
 export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAddress) {
   const dm = ctx.world.deploymentManager;
   const ethers = dm.hre.ethers;
   const comet = await ctx.getComet();
   const configurator = (await ethers.getContractAt('Configurator', (await ctx.getConfigurator()).address, admin)) as Configurator;
   const proxyAdmin = (await ethers.getContractAt('CometProxyAdmin', (await ctx.getCometAdmin()).address, admin)) as CometProxyAdmin;
+
+  if (await isConfiguratorMigrated(ctx)) {
+    await (await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address)).wait();
+    return;
+  }
 
   // A Configurator that stores the market admin permission checker has its own storage layout, so its own versions
   const withMarketAdmin = await supportsMarketAdminPermissionChecker(ctx);
