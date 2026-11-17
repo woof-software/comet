@@ -6,6 +6,7 @@ import { expectRevertCustom, fundAccount, matchesDeployment } from '../utils';
 import { SECONDS_PER_YEAR } from '../utils/constants';
 import { ConfiguratorOptimism, MarketAdminPermissionChecker } from '../../build/types';
 import { normalizeStructOutput } from './shared';
+import { isAssetListMigrationRequired } from '../utils/versionControl';
 
 // Scenarios for the market admin, who may call a subset of the Configurator setters without full governance.
 // The market admin permission checker lives on Optimism's Configurator only, so every scenario here runs on Optimism
@@ -440,5 +441,36 @@ scenario(
     await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.baseBorrowMin()).toBigInt()).to.be.equal(newBaseBorrowMin);
+  }
+);
+
+// The market admin may change the factors and caps of an asset. Each setter writes to the asset list at once, so the
+// Comet reads the new value with no redeploy, and a later redeploy by governance keeps it
+scenario(
+  'Configurator#updateAssetBorrowCollateralFactor by market-admin reaches the asset list at once and survives a redeploy',
+  {
+    filter: async (ctx: CometContext) =>
+      matchesDeployment(ctx, [{ network: 'optimism' }]) && !(await isAssetListMigrationRequired(ctx)),
+  },
+  async ({ comet, configurator, actors }, context) => {
+    const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
+    const marketAdminSigner = await getMarketAdminSigner(context);
+
+    // The first asset that is not delisted; lowering its borrow collateral factor keeps the factors in order
+    const numAssets = await comet.numAssets();
+    let assetIndex = 0;
+    while (assetIndex < numAssets && (await comet.getAssetInfo(assetIndex)).borrowCollateralFactor.eq(0)) assetIndex++;
+    const { asset, borrowCollateralFactor } = await comet.getAssetInfo(assetIndex);
+    const newBorrowCollateralFactor = borrowCollateralFactor.mul(9).div(10);
+
+    await configurator.connect(marketAdminSigner).updateAssetBorrowCollateralFactor(comet.address, asset, newBorrowCollateralFactor);
+
+    expect((await configurator.getAssetConfigs(comet.address))[assetIndex].borrowCollateralFactor).to.equal(newBorrowCollateralFactor);
+    expect((await comet.getAssetInfo(assetIndex)).borrowCollateralFactor).to.equal(newBorrowCollateralFactor);
+
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+
+    expect((await comet.getAssetInfo(assetIndex)).borrowCollateralFactor).to.equal(newBorrowCollateralFactor);
   }
 );

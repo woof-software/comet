@@ -39,7 +39,6 @@ describe('extended pause upgrade test', function () {
   let newImpl: string;
 
   // Extension delegate storage snapshot
-  let maxAssetsBefore: number;
   let nameBefore: string;
   let symbolBefore: string;
   let baseAccrualScaleBefore: BigNumber;
@@ -117,20 +116,23 @@ describe('extended pause upgrade test', function () {
 
     // Give the market its asset list: a new implementation and a proxy owned by the Comet's proxy admin,
     // initialized with the migrated factors and caps
-    const assetListFactory = await (await ethers.getContractFactory('AssetListFactory')).deploy() as AssetListFactory;
+    const assetListFactory = await (await ethers.getContractFactory('AssetListFactory')).deploy(configurator.address) as AssetListFactory;
     await configurator.connect(governor).setAssetListFactory(COMET_ADDRESS, assetListFactory.address);
-    const { newAssetListImpl } = await configurator.callStatic.deployAssetList(COMET_ADDRESS);
-    await configurator.deployAssetList(COMET_ADDRESS);
+    // deployAssetList only redeploys an existing list, so the first implementation comes straight from the factory
+    const immutableConfigs = await configurator.getImmutableAssetConfig(COMET_ADDRESS);
+    const newAssetListImpl = await assetListFactory.callStatic.createAssetList(immutableConfigs);
+    await assetListFactory.createAssetList(immutableConfigs);
     const assetListImplementation = await ethers.getContractAt('AssetList', newAssetListImpl);
     const assetListProxy = await (await ethers.getContractFactory('TransparentUpgradeableProxy')).deploy(
       newAssetListImpl,
       proxyAdmin.address,
       assetListImplementation.interface.encodeFunctionData('initialize', [
         await configurator.getStorageAssetConfig(COMET_ADDRESS),
-        CONFIGURATOR_ADDRESS,
       ])
     );
-    await configurator.connect(governor).updateAssetList(COMET_ADDRESS, assetListProxy.address);
+    // setConfiguration sets the list proxy once, for a market that has none yet
+    const configuration = await configurator.getConfiguration(COMET_ADDRESS);
+    await configurator.connect(governor).setConfiguration(COMET_ADDRESS, { ...configuration, assetList: assetListProxy.address });
 
     // Get current extension delegate
     const currentExtensionDelegate = await comet.extensionDelegate();
@@ -181,7 +183,6 @@ describe('extended pause upgrade test', function () {
     cometExt = await ethers.getContractAt('CometExt', COMET_ADDRESS) as CometExt;
 
     // Extension delegate storage snapshot
-    maxAssetsBefore = await cometExt.maxAssets();
     nameBefore = await cometExt.name();
     symbolBefore = await cometExt.symbol();
     baseAccrualScaleBefore = await cometExt.baseAccrualScale();
@@ -219,7 +220,6 @@ describe('extended pause upgrade test', function () {
   });
 
   it('should save comet extension storage safely after upgrade', async function () {
-    expect(await cometExt.maxAssets()).to.equal(maxAssetsBefore);
     // version is a constant of the extension code, so it is the new one's, not the one read before
     expect(await cometExt.version()).to.equal(await newCometExt.version());
     expect(await cometExt.name()).to.equal(nameBefore);

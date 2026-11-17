@@ -54,7 +54,6 @@ contract OnChainLiquidatorTest is Test, AssetListDeployer {
         assetConfigs[0] = CometConfiguration.AssetConfig({
             asset: CB_ETH,
             priceFeed: address(cbEthPriceFeed),
-            decimals: 18,
             borrowCollateralFactor: 9e17,
             liquidateCollateralFactor: 93e16,
             liquidationFactor: 95e16,
@@ -63,7 +62,6 @@ contract OnChainLiquidatorTest is Test, AssetListDeployer {
         assetConfigs[1] = CometConfiguration.AssetConfig({
             asset: WST_ETH,
             priceFeed: address(wstEthPriceFeed),
-            decimals: 18,
             borrowCollateralFactor: 9e17,
             liquidateCollateralFactor: 93e16,
             liquidationFactor: 95e16,

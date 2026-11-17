@@ -45,7 +45,7 @@ describe('asset list factors validation', function () {
     asset = (await assetList.getAssetInfo(TARGET)).asset;
     assets = (await configurator.getAssetConfigs(comet.address)).map((config) => config.asset);
     immutableConfigs = await deployImmutableAssetConfigs(DECIMALS);
-    implementation = await AssetListContractFactory.deploy(immutableConfigs);
+    implementation = await AssetListContractFactory.deploy(immutableConfigs, configurator.address);
   });
 
   // A new asset list of MAX_ASSETS collaterals, deployed the way a market gets one: the implementation holds the
@@ -59,8 +59,7 @@ describe('asset list factors validation', function () {
       DECIMALS.map((decimals, i) => ({
         ...(index === undefined || i === index ? f : fixtureFactors),
         supplyCap: SUPPLY_CAP * 10n ** BigInt(decimals),
-      })),
-      configurator.address
+      }))
     );
   }
 
@@ -137,7 +136,7 @@ describe('asset list factors validation', function () {
                               INITIALIZE
   //////////////////////////////////////////////////////////////*/
 
-  describe('initialize', function () {
+  context('initialize', function () {
     for (const { name, factors: f } of HAPPY_CASES) {
       context(name, function () {
         let newAssetList: AssetList;
@@ -160,7 +159,7 @@ describe('asset list factors validation', function () {
   //////////////////////////////////////////////////////////////*/
 
   // The full flow through the Configurator: updateAsset<Field> updates the stored config and calls the asset list setter
-  describe('setters', function () {
+  context('setters', function () {
     // The struct field a setter writes: updateAssetBorrowCollateralFactor writes borrowCollateralFactor
     const fieldKey = (field: string) => field[0].toLowerCase() + field.slice(1);
     const namedKeys = (struct: object) => Object.keys(struct).filter((key) => isNaN(Number(key)));
@@ -291,7 +290,7 @@ describe('asset list factors validation', function () {
           before(async () => {
             snapshot = await takeSnapshot();
             for (const asset_ of assets) await update(field, value, asset_);
-            const newImplementation = await AssetListContractFactory.deploy(await configurator.getImmutableAssetConfig(comet.address));
+            const newImplementation = await AssetListContractFactory.deploy(await configurator.getImmutableAssetConfig(comet.address), configurator.address);
             await proxyAdmin.upgrade(assetList.address, newImplementation.address);
           });
 
@@ -314,7 +313,7 @@ describe('asset list factors validation', function () {
   // Each context's factors differ from the fixture factors (0.75, 0.8, 0.9) in one field only,
   // so the setter case is the one Configurator call that sets that field.
   // Both run for every collateral, one at a time, to show every index is validated the same way
-  describe('revert cases', function () {
+  context('revert cases', function () {
     context('BCF equals LCF when both are non-zero', function () {
       const borrowCF = exp(0.8, 18);
       const liquidateCF = borrowCF;
@@ -448,10 +447,10 @@ describe('asset list factors validation', function () {
 
   // The factor checks run in the asset list and a failed one reverts the whole call. Only the cases that depend on
   // the order of calls are here; the fixture asset starts at 0.75 / 0.8 / 0.9
-  describe('validation: order of calls', function () {
+  context('validation: order of calls', function () {
     const FACTOR = 10n ** 16n; // 0.01
 
-    describe('raising borrowCF above the current liquidateCF', function () {
+    context('raising borrowCF above the current liquidateCF', function () {
       let snapshot: SnapshotRestorer;
 
       before(async () => (snapshot = await takeSnapshot()));
@@ -468,7 +467,7 @@ describe('asset list factors validation', function () {
       });
     });
 
-    describe('lowering liquidateCF to or below the current borrowCF', function () {
+    context('lowering liquidateCF to or below the current borrowCF', function () {
       let snapshot: SnapshotRestorer;
 
       before(async () => (snapshot = await takeSnapshot()));
@@ -490,7 +489,7 @@ describe('asset list factors validation', function () {
       });
     });
 
-    describe('lowering liquidationFactor to or below the current liquidateCF', function () {
+    context('lowering liquidationFactor to or below the current liquidateCF', function () {
       let snapshot: SnapshotRestorer;
 
       before(async () => (snapshot = await takeSnapshot()));

@@ -43,7 +43,8 @@ contract ConfiguratorIntermediateOptimism is ConfiguratorIntermediateStorageOpti
 
     /**
      * @notice Moves the asset configs of each market from Configuration.assetConfigs to the assetConfigs mapping
-     * @dev Note: Only callable by governor. The whole configs are copied, factors and supply caps included.
+     * @dev Note: Only callable by governor. Every field but decimals is copied, factors and supply caps included;
+     *      decimals are dropped because the asset list now reads them from the token.
      *      Clearing Configuration.assetConfigs also zeroes the slot the final Configuration reads as assetList
      * @param comets The Comet proxies to migrate
      */
@@ -55,8 +56,21 @@ contract ConfiguratorIntermediateOptimism is ConfiguratorIntermediateStorageOpti
             // A second run would copy the already cleared, empty array over the migrated configs
             if (assetConfigs[cometProxy].length != 0) revert AlreadyMigrated();
 
-            uint256 numAssets = configuratorParams[cometProxy].assetConfigs.length;
-            assetConfigs[cometProxy] = configuratorParams[cometProxy].assetConfigs;
+            AssetConfig[] storage oldConfigs = configuratorParams[cometProxy].assetConfigs;
+            uint256 numAssets = oldConfigs.length;
+            // The old struct has decimals between the price feed and the factors, so the two layouts differ
+            // and each config is rebuilt field by field instead of copying the array as a whole
+            for (uint256 j; j < numAssets; ++j) {
+                AssetConfig storage oldConfig = oldConfigs[j];
+                assetConfigs[cometProxy].push(CometConfiguration.AssetConfig({
+                    asset: oldConfig.asset,
+                    priceFeed: oldConfig.priceFeed,
+                    borrowCollateralFactor: oldConfig.borrowCollateralFactor,
+                    liquidateCollateralFactor: oldConfig.liquidateCollateralFactor,
+                    liquidationFactor: oldConfig.liquidationFactor,
+                    supplyCap: oldConfig.supplyCap
+                }));
+            }
             delete configuratorParams[cometProxy].assetConfigs;
             emit AssetConfigsMigrated(cometProxy, numAssets);
         }

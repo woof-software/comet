@@ -6,8 +6,7 @@ import { CometConfiguration } from "../CometConfiguration.sol";
 /**
  * @title Compound's Comet Factory Interface
  * @notice Deploys new Comet implementations
- * @author Woof
- * @custom:security-contact dmitriy@woof.software
+ * @author Compound
  */
 interface ICometFactory {
     /**

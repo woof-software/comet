@@ -21,7 +21,6 @@ abstract contract AssetListDeployer {
         for (uint256 i; i < assetConfigs.length; ++i) {
             immutableConfigs[i] = IAssetListStructs.ImmutableAssetConfig({
                 asset: assetConfigs[i].asset,
-                decimals: assetConfigs[i].decimals,
                 priceFeed: assetConfigs[i].priceFeed
             });
             storageConfigs[i] = IAssetListStructs.StorageAssetConfig({
@@ -33,9 +32,9 @@ abstract contract AssetListDeployer {
         }
 
         return AssetList(address(new TransparentUpgradeableProxy(
-            address(new AssetList(immutableConfigs)),
+            address(new AssetList(immutableConfigs, configurator_)),
             admin,
-            abi.encodeCall(AssetList.initialize, (storageConfigs, configurator_))
+            abi.encodeCall(AssetList.initialize, (storageConfigs))
         )));
     }
 }

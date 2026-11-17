@@ -93,13 +93,13 @@ describe('updateAssetsIn', function () {
   });
 
   it('reverts for non-existent asset address', async () => {
-    const { cometWithExtendedAssetList: comet } = await makeProtocol();
+    const { cometWithExtendedAssetList: comet, assetList } = await makeProtocol();
     const [_governor, pauseGuardian, user] = await ethers.getSigners();
 
     const erroneousAssetAddress = pauseGuardian.address;
 
     await expect(
       comet.updateAssetsInExternal(user.address, erroneousAssetAddress, 0, 100)
-    ).to.be.revertedWith("custom error 'BadAsset()'");
+    ).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
   });
 });
