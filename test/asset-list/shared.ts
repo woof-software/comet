@@ -18,7 +18,7 @@ import { impersonateAccount, setBalance } from '../helpers/network-helpers';
 export const MAX_ASSETS = 24;
 export const PRICE_FEED_DECIMALS = 8;
 export const MAX_ASSET_DECIMALS = 19;
-export const TYPEHASH = ethers.utils.id('ImmutableConfig[](address asset,uint8 decimals,address priceFeed)');
+export const TYPEHASH = ethers.utils.id('ImmutableConfig[](address asset,address priceFeed)');
 
 // Decimals of the fixture assets, in the order they are listed. They cover both ends of the allowed range:
 // 0 decimals (scale 1) and MAX_ASSET_DECIMALS.
@@ -58,7 +58,7 @@ export async function deployImmutableAssetConfig(
 ): Promise<ImmutableAssetConfigStruct> {
   const token = await deploy('FaucetToken', 0, 'Asset', decimals, 'ASSET');
   const priceFeed = await deploy('SimplePriceFeed', 10n ** BigInt(priceFeedDecimals), priceFeedDecimals);
-  return { asset: token.address, decimals, priceFeed: priceFeed.address };
+  return { asset: token.address, priceFeed: priceFeed.address };
 }
 
 // A new token and price feed with the fixture factors and supply cap: a full asset config, as the Configurator
@@ -91,7 +91,7 @@ export async function deployImmutableAssetConfigs(decimalsList: number[]): Promi
 // ConfigHash.hashConfig(typeHash, abi.encode(configs)), computed off-chain.
 export function hashConfig(configs: ImmutableAssetConfigStruct[], typeHash = TYPEHASH): string {
   const encoded = ethers.utils.defaultAbiCoder.encode(
-    ['tuple(address asset, uint8 decimals, address priceFeed)[]'],
+    ['tuple(address asset, address priceFeed)[]'],
     [configs]
   );
   return ethers.utils.keccak256(ethers.utils.hexConcat([typeHash, encoded]));
@@ -101,14 +101,13 @@ export function hashConfig(configs: ImmutableAssetConfigStruct[], typeHash = TYP
 export async function deployAssetListProxy(
   implementation: AssetList,
   admin: string,
-  storageConfigs: StorageAssetConfigStruct[],
-  configurator: string
+  storageConfigs: StorageAssetConfigStruct[]
 ): Promise<AssetList> {
   const proxy = await deploy(
     'TransparentUpgradeableProxy',
     implementation.address,
     admin,
-    implementation.interface.encodeFunctionData('initialize', [storageConfigs, configurator])
+    implementation.interface.encodeFunctionData('initialize', [storageConfigs])
   );
   return implementation.attach(proxy.address);
 }
@@ -139,15 +138,14 @@ export async function deployAssetListFixture(): Promise<AssetListFixture> {
     liquidationFactor: LIQUIDATION_FACTOR,
     supplyCap: SUPPLY_CAP * 10n ** BigInt(decimals),
   }));
-  const assetListImplementation = await AssetListContractFactory.deploy(configs);
+  const assetListImplementation = await AssetListContractFactory.deploy(configs, configurator.address);
   const assetList = await deployAssetListProxy(
     assetListImplementation,
     proxyAdmin.address,
-    storageConfigs,
-    configurator.address
+    storageConfigs
   );
 
-  const assetListFactory = await deploy<AssetListFactory>('AssetListFactory');
+  const assetListFactory = await deploy<AssetListFactory>('AssetListFactory', configurator.address);
   const cometFactory = await deploy<CometFactoryWithExtendedAssetList>('CometFactoryWithExtendedAssetList');
   const baseToken = await deploy<FaucetToken>('FaucetToken', 0, 'USDC', 6, 'USDC');
   const configuration = {

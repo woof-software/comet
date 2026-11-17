@@ -4,10 +4,10 @@ pragma solidity ^0.8.15;
 import "forge-std/Test.sol";
 
 import { AssetList } from "@comet-contracts/AssetList.sol";
-import { AssetListFactory } from "@comet-contracts/AssetListFactory.sol";
+import { AssetListFactory } from "@comet-contracts/test/assetList/AssetListFactory.sol";
 import { CometConfiguration } from "@comet-contracts/CometConfiguration.sol";
 import { CometExt } from "@comet-contracts/CometExt.sol";
-import { CometFactoryWithExtendedAssetList } from "@comet-contracts/CometFactoryWithExtendedAssetList.sol";
+import { CometFactoryWithExtendedAssetList } from "@comet-contracts/test/CometFactoryWithExtendedAssetList.sol";
 import { CometInterface } from "@comet-contracts/CometInterface.sol";
 import { CometProxyAdmin, Deployable } from "@comet-contracts/CometProxyAdmin.sol";
 import { CometWithExtendedAssetList } from "@comet-contracts/CometWithExtendedAssetList.sol";
@@ -129,7 +129,6 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
     }
 
     function deployExtensionDelegate() internal {
-        assetListFactory = new AssetListFactory();
         extensionDelegate = new CometExt(
             CometConfiguration.ExtConfiguration(
                 { name32: "Compound USDC", symbol32: "cUSDCv3" }
@@ -145,7 +144,6 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
             assetConfigs[i] = CometConfiguration.AssetConfig({
                 asset: address(collaterals[i]),
                 priceFeed: address(collateralPriceFeeds[i]),
-                decimals: spec.decimals,
                 borrowCollateralFactor: spec.borrowCollateralFactor,
                 liquidateCollateralFactor: spec.liquidateCollateralFactor,
                 liquidationFactor: spec.liquidationFactor,
@@ -206,6 +204,7 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
             abi.encodeCall(Configurator.initialize, (timelock))
         );
         configurator = Configurator(address(configuratorProxy));
+        assetListFactory = new AssetListFactory(address(configuratorProxy));
 
         // The asset list comes first, because the Comet constructor already reads it
         assetList = deployAssetList(buildAssetConfigs(), address(proxyAdmin), address(configuratorProxy));

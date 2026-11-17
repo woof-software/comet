@@ -2,7 +2,7 @@
 pragma solidity ^0.8.15;
 
 import { CometConfiguration } from "@comet-contracts/CometConfiguration.sol";
-import { CometCore } from "@comet-contracts/CometCore.sol";
+import { IAssetListStructs } from "@comet-contracts/interfaces/assetList/IAssetListStructs.sol";
 
 import { ProtocolFixture } from "../helpers/ProtocolFixture.sol";
 
@@ -35,7 +35,7 @@ contract CollateralConfigurationTest is ProtocolFixture {
         assertEq(comet.numAssets(), storedConfigs.length, "asset count differs from the configurator's");
 
         for (uint8 i; i < storedConfigs.length; ++i) {
-            CometCore.AssetInfo memory assetInfo = comet.getAssetInfo(i);
+            IAssetListStructs.AssetInfo memory assetInfo = comet.getAssetInfo(i);
 
             assertEq(storedConfigs[i].supplyCap, uint128(uint256(keccak256(abi.encode(seed, i)))), "configurator did not store the cap");
             assertEq(assetInfo.asset, storedConfigs[i].asset, "collateral order differs from the configurator's");

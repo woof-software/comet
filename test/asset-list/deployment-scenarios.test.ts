@@ -14,7 +14,7 @@ import { ImmutableAssetConfigStruct, StorageAssetConfigStruct } from '../../buil
 import { deployAssetListFixture, hashConfig } from './shared';
 import { AssetInfoStructOutput } from 'build/types/IAssetList';
 
-describe('asset list deployment scenarios', function () {
+context('asset list deployment scenarios', function () {
   let governor: SignerWithAddress;
   let assetList: AssetList; // proxy
   let configs: ImmutableAssetConfigStruct[];
@@ -37,7 +37,7 @@ describe('asset list deployment scenarios', function () {
                 CASE 1: CONFIG UNCHANGED, CODE CHANGED
   //////////////////////////////////////////////////////////////*/
 
-  describe('config unchanged, AssetList code changed', function () {
+  context('config unchanged, AssetList code changed', function () {
     let newFactory: AssetListFactoryV2Mock;
     let newImplementation: AssetListV2Mock;
     let newPriceFeed: string;
@@ -50,7 +50,7 @@ describe('asset list deployment scenarios', function () {
     });
 
     it('deploys the new factory', async () => {
-      newFactory = await (await ethers.getContractFactory('AssetListFactoryV2Mock')).deploy() as AssetListFactoryV2Mock;
+      newFactory = await (await ethers.getContractFactory('AssetListFactoryV2Mock')).deploy(configurator.address) as AssetListFactoryV2Mock;
     });
 
     it('deploys the new implementation from the current immutable configs', async () => {
@@ -127,8 +127,8 @@ describe('asset list deployment scenarios', function () {
 
   // AssetListTypeHashMock is a full copy of AssetList with only the TYPEHASH changed, so it has to be kept in sync with
   // contracts/AssetList.sol by hand: after any change there, copy it into the mock as well
-  describe('TYPEHASH updated', function () {
-    const NEW_TYPEHASH = ethers.utils.id('ImmutableConfigV2[](address asset,uint8 decimals,address priceFeed)');
+  context('TYPEHASH updated', function () {
+    const NEW_TYPEHASH = ethers.utils.id('ImmutableConfigV2[](address asset,address priceFeed)');
 
     let newFactory: AssetListTypeHashFactoryMock;
     let newImplementation: AssetListTypeHashMock;
@@ -142,7 +142,7 @@ describe('asset list deployment scenarios', function () {
     });
 
     it('deploys the new factory', async () => {
-      newFactory = await (await ethers.getContractFactory('AssetListTypeHashFactoryMock')).deploy() as AssetListTypeHashFactoryMock;
+      newFactory = await (await ethers.getContractFactory('AssetListTypeHashFactoryMock')).deploy(configurator.address) as AssetListTypeHashFactoryMock;
     });
 
     it('deploys the new implementation from the current immutable configs', async () => {

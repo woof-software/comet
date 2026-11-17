@@ -133,12 +133,6 @@ export async function deployNetworkComet(
     symbol32: ethers.utils.formatBytes32String(symbol)
   };
 
-  const assetListFactory = await deploymentManager.deploy(
-    'assetListFactory',
-    'test/assetList/AssetListFactory.sol',
-    [],
-    maybeForce()
-  );
   const cometExt = await deploymentManager.deploy(
     'comet:implementation:implementation',
     'CometExt.sol',
@@ -171,12 +165,20 @@ export async function deployNetworkComet(
     maybeForce()
   );
 
-  // The asset list is built from the immutable part of the asset configs (asset, decimals, price feed); the factors
-  // and supply caps live in the storage of its proxy, which only the Configurator may update
+  // The factory is bound to the Configurator, the only address allowed to call the setters of the lists it creates
+  const assetListFactory = await deploymentManager.deploy(
+    'assetListFactory',
+    'test/assetList/AssetListFactory.sol',
+    [configuratorProxy.address],
+    maybeForce()
+  );
+
+  // The asset list is built from the immutable part of the asset configs (asset, price feed) and the
+  // Configurator, the only address allowed to update the factors and supply caps that live in its proxy's storage
   const assetListImpl = await deploymentManager.deploy(
     'assetList:implementation',
     'AssetList.sol',
-    [assetConfigs.map(({ asset, decimals, priceFeed }) => ({ asset, decimals, priceFeed }))],
+    [assetConfigs.map(({ asset, priceFeed }) => ({ asset, priceFeed })), configuratorProxy.address],
     maybeForce()
   );
 
@@ -190,7 +192,7 @@ export async function deployNetworkComet(
     [
       assetListImpl.address,
       cometAdmin.address,
-      (await assetListImpl.populateTransaction.initialize(storageAssetConfigs, configuratorProxy.address)).data,
+      (await assetListImpl.populateTransaction.initialize(storageAssetConfigs)).data,
     ],
     maybeForce()
   );
@@ -308,8 +310,22 @@ export async function deployNetworkComet(
   await deploymentManager.idempotent(
     async () => amAdmin && (isTmpImpl || deploySpec.all || deploySpec.cometMain || deploySpec.cometExt),
     async () => {
-      trace(`Setting configuration in Configurator for ${comet.address} (${isTmpImpl})`);
-      trace(await wait(configurator.connect(admin).setConfiguration(comet.address, configuration)));
+      const storedConfiguration = await configurator.getConfiguration(comet.address);
+      if (sameAddress(storedConfiguration.assetList, '0x0000000000000000000000000000000000000000')) {
+        trace(`Setting configuration in Configurator for ${comet.address} (${isTmpImpl})`);
+        trace(await wait(configurator.connect(admin).setConfiguration(comet.address, configuration)));
+      } else {
+        // setConfiguration sets the asset list only once, so a market that already has one gets each changed field
+        // through its own setter, named set<Field>. The base token and tracking index scale never change, and the
+        // asset list proxy stays the one set first
+        for (const field of Object.keys(configuration)) {
+          if (['baseToken', 'trackingIndexScale', 'assetList'].includes(field)) continue;
+          if (BigInt(storedConfiguration[field].toString()) === BigInt(configuration[field].toString())) continue;
+          const setter = `set${field[0].toUpperCase()}${field.slice(1)}`;
+          trace(`Calling ${setter} in Configurator for ${comet.address}`);
+          trace(await wait(configurator.connect(admin)[setter](comet.address, configuration[field])));
+        }
+      }
 
       trace(`Upgrading implementation of Comet...`);
       trace(await wait(cometAdmin.connect(admin).deployAndUpgradeTo(configurator.address, comet.address)));
