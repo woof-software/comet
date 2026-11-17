@@ -2,6 +2,10 @@ name: Run Coverage
 on:
   workflow_dispatch:
   pull_request:
+
+permissions:
+  contents: read
+
 jobs:
   run-coverage:
     name: Run coverage
@@ -26,7 +30,7 @@ jobs:
         run: yarn cover
 
       - name: Upload the coverage reports to Coveralls
-        uses: coverallsapp/github-action@master
+        uses: coverallsapp/github-action@v2.3.8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           git-commit: ${{ github.event.pull_request.head.sha || github.sha }}
