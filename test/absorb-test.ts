@@ -1,4 +1,4 @@
-import { expect, exp, makeProtocol, mulPrice, mulFactor, divPrice, presentValue, principalValue, ZERO_ADDRESS, presentValueSupply, ethers } from './helpers';
+import { expect, exp, makeProtocol, mulPrice, mulFactor, divPrice, presentValue, principalValue, ZERO_ADDRESS, presentValueSupply, ethers, nonZeroBaseFeeUnderCoverage } from './helpers';
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
@@ -777,8 +777,7 @@ describe('absorb', function () {
     });
 
     it('absor is successful for the first user', async () => {
-      // Coverage runs with a base fee of 0, which would make approxSpend 0; force a non-zero base fee.
-      await ethers.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x1']);
+      await nonZeroBaseFeeUnderCoverage();
       await expect(comet.connect(absorber).absorb(absorber.address, [testUser1.address])).to.not.be.reverted;
     });
 
@@ -799,7 +798,7 @@ describe('absorb', function () {
     });
 
     it('second absorb is successful for the second user', async () => {
-      await ethers.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x1']);
+      await nonZeroBaseFeeUnderCoverage();
       await expect(comet.connect(absorber).absorb(absorber.address, [testUser2.address])).to.not.be.reverted;
     });
 

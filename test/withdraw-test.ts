@@ -1,4 +1,4 @@
-import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, setTotalsBasic, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS } from './helpers';
+import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, setTotalsBasic, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS, gasLimit } from './helpers';
 import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
@@ -167,7 +167,7 @@ describe('withdraw', function () {
 
       it('gas used is within limit', async () => {
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(140000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(gasLimit(106000));
       });
     });
 
@@ -329,7 +329,7 @@ describe('withdraw', function () {
 
       it('gas used is within limit', async () => {
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(255000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(gasLimit(121000));
       });
     });
 
@@ -583,7 +583,7 @@ describe('withdraw', function () {
 
       it('gas used is within expected bounds', async () => {
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(130000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(gasLimit(87000));
       });
     });
 
