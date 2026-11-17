@@ -133,12 +133,6 @@ export async function deployNetworkComet(
     symbol32: ethers.utils.formatBytes32String(symbol)
   };
 
-  const assetListFactory = await deploymentManager.deploy(
-    'assetListFactory',
-    'test/assetList/AssetListFactory.sol',
-    [],
-    maybeForce()
-  );
   const cometExt = await deploymentManager.deploy(
     'comet:implementation:implementation',
     'CometExt.sol',
@@ -168,6 +162,14 @@ export async function deployNetworkComet(
     'configurator',
     'ConfiguratorProxy.sol',
     [configuratorImpl.address, cometAdmin.address, (await configuratorImpl.populateTransaction.initialize(admin.address)).data],
+    maybeForce()
+  );
+
+  // The factory is bound to the Configurator, the only address allowed to call the setters of the lists it creates
+  const assetListFactory = await deploymentManager.deploy(
+    'assetListFactory',
+    'test/assetList/AssetListFactory.sol',
+    [configuratorProxy.address],
     maybeForce()
   );
 

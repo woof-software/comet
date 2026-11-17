@@ -14,7 +14,7 @@ async function deployAssetListFactory(context: CometContext): Promise<string> {
   const assetListFactory = await context.world.deploymentManager.deploy(
     'test:assetListFactory',
     'test/assetList/AssetListFactory.sol',
-    []
+    [(await context.getConfigurator()).address]
   );
 
   return assetListFactory.address;

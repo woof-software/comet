@@ -503,8 +503,11 @@ async function buildContractFromSourceData(
   const contractFQN = `${contractPath}:${contract}`;
 
   let contractCreationCode = await getContractCreationCode(network, address, family);
-  if (constructorArgs?.length > 0 && contractCreationCode?.endsWith(constructorArgs)) {
-    contractCreationCode = contractCreationCode.slice(0, -constructorArgs.length);
+  // Blockscout and Sourcify return the args with a 0x prefix and the code has none, so the prefix is dropped to compare;
+  // args left on the code would be read by the constructor instead of the ones passed when the clone is deployed
+  const args = constructorArgs?.replace(/^0x/, '');
+  if (args?.length > 0 && contractCreationCode?.endsWith(args)) {
+    contractCreationCode = contractCreationCode.slice(0, -args.length);
   }
 
   const encodedABI = JSON.stringify(abi);

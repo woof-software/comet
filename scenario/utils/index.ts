@@ -2107,7 +2107,7 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
     [],
     true
   );
-  const assetListFactory = await dm.deploy('assetListFactory', 'test/assetList/AssetListFactory.sol', [], true);
+  const assetListFactory = await dm.deploy('assetListFactory', 'test/assetList/AssetListFactory.sol', [configurator.address], true);
   const cometFactory = await dm.deploy('cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], true);
 
   // The Configurator proxy is upgraded by its own admin, read from the EIP-1967 admin slot

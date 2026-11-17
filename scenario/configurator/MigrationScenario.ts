@@ -103,7 +103,7 @@ scenario(
       [],
       true
     );
-    const assetListFactory = await dm.deploy('test:assetListFactory', 'test/assetList/AssetListFactory.sol', [], true);
+    const assetListFactory = await dm.deploy('test:assetListFactory', 'test/assetList/AssetListFactory.sol', [configurator.address], true);
     const cometFactory = await dm.deploy('test:cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], true);
 
     /*//////////////////////////////////////////////////////////////
@@ -162,8 +162,8 @@ scenario(
     // The market has no list yet and deployAssetList only redeploys an existing one, so the first implementation
     // comes straight from the factory, built from the migrated immutable configs
     const immutableConfigs = await configurator.getImmutableAssetConfig(comet.address);
-    const newAssetListImpl = await assetListFactory.callStatic.createAssetList(immutableConfigs, configurator.address);
-    await (await assetListFactory.createAssetList(immutableConfigs, configurator.address)).wait();
+    const newAssetListImpl = await assetListFactory.callStatic.createAssetList(immutableConfigs);
+    await assetListFactory.createAssetList(immutableConfigs);
     const assetListImplementation = (await ethers.getContractAt('AssetList', newAssetListImpl)) as AssetList;
 
     // The proxy is owned by the Comet's proxy admin, so later deploys can upgrade it, and is initialized on creation
