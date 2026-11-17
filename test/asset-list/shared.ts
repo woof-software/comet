@@ -145,7 +145,7 @@ export async function deployAssetListFixture(): Promise<AssetListFixture> {
     storageConfigs
   );
 
-  const assetListFactory = await deploy<AssetListFactory>('AssetListFactory');
+  const assetListFactory = await deploy<AssetListFactory>('AssetListFactory', configurator.address);
   const cometFactory = await deploy<CometFactoryWithExtendedAssetList>('CometFactoryWithExtendedAssetList');
   const baseToken = await deploy<FaucetToken>('FaucetToken', 0, 'USDC', 6, 'USDC');
   const configuration = {

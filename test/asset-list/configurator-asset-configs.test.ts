@@ -158,6 +158,13 @@ describe('configurator: assets configs management', function () {
       it(`the list has ${MAX_ASSETS} assets`, async () => {
         expect(await assetList.numAssets()).to.equal(MAX_ASSETS);
       });
+
+      // Kept for backward compatibility: integrators read the asset cap from the Comet, which returns the list's cap
+      it('maxAssets of the Comet is the MAX_ASSETS of the list, and the full list reaches it', async () => {
+        expect(await comet.maxAssets()).to.equal(await assetList.MAX_ASSETS());
+        expect(await comet.maxAssets()).to.equal(MAX_ASSETS);
+        expect(await comet.numAssets()).to.equal(await comet.maxAssets());
+      });
     });
 
     context('revert when', function () {

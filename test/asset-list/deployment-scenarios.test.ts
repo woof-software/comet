@@ -50,13 +50,13 @@ context('asset list deployment scenarios', function () {
     });
 
     it('deploys the new factory', async () => {
-      newFactory = await (await ethers.getContractFactory('AssetListFactoryV2Mock')).deploy() as AssetListFactoryV2Mock;
+      newFactory = await (await ethers.getContractFactory('AssetListFactoryV2Mock')).deploy(configurator.address) as AssetListFactoryV2Mock;
     });
 
     it('deploys the new implementation from the current immutable configs', async () => {
       const immutableConfigs = await configurator.getImmutableAssetConfig(comet.address);
-      const address = await newFactory.callStatic.createAssetList(immutableConfigs, configurator.address);
-      await newFactory.createAssetList(immutableConfigs, configurator.address);
+      const address = await newFactory.callStatic.createAssetList(immutableConfigs);
+      await newFactory.createAssetList(immutableConfigs);
       newImplementation = await ethers.getContractAt('AssetListV2Mock', address) as AssetListV2Mock;
     });
 
@@ -142,13 +142,13 @@ context('asset list deployment scenarios', function () {
     });
 
     it('deploys the new factory', async () => {
-      newFactory = await (await ethers.getContractFactory('AssetListTypeHashFactoryMock')).deploy() as AssetListTypeHashFactoryMock;
+      newFactory = await (await ethers.getContractFactory('AssetListTypeHashFactoryMock')).deploy(configurator.address) as AssetListTypeHashFactoryMock;
     });
 
     it('deploys the new implementation from the current immutable configs', async () => {
       const immutableConfigs = await configurator.getImmutableAssetConfig(comet.address);
-      const address = await newFactory.callStatic.createAssetList(immutableConfigs, configurator.address);
-      await newFactory.createAssetList(immutableConfigs, configurator.address);
+      const address = await newFactory.callStatic.createAssetList(immutableConfigs);
+      await newFactory.createAssetList(immutableConfigs);
       newImplementation = await ethers.getContractAt('AssetListTypeHashMock', address) as AssetListTypeHashMock;
     });
 

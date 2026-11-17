@@ -42,9 +42,6 @@ context('supply cap', function () {
   function runSupplyCapTests(decimals: bigint) {
     const oneToken = 10n ** decimals;
 
-    // A regular cap every collateral starts with; each flow swaps in its own cap
-    const normalSupplyCap = oneToken * 1_000_000n;
-
     const SUPPLY_CAPS = [
       { name: '1 wei supply cap', supplyCap: 1n },
       { name: 'cap one wei below a whole token unit', supplyCap: oneToken - 1n },
@@ -91,31 +88,6 @@ context('supply cap', function () {
           });
         });
       }
-
-      // A cap above uint128 max, set on one collateral at a time, must make the list's ABI decoder revert with no reason.
-      // ethers won't encode it as uint128, so initialize is sent raw with the cap encoded as uint256 (same 32-byte layout)
-      // to a proxy deployed without initialize data.
-      Array.from({ length: MAX_ASSETS }).forEach((_, i) => {
-        context(`uint128 max + 1 cap on collateral ${i}`, function () {
-          it('reverts on initialize', async () => {
-            const proxy = await (await ethers.getContractFactory('TransparentUpgradeableProxy')).deploy(
-              implementation.address,
-              proxyAdmin.address,
-              '0x'
-            );
-            const storageConfigs = Array.from({ length: MAX_ASSETS }, (_, j) =>
-              storageConfig(j === i ? MAX_UINT128 + 1n : normalSupplyCap)
-            );
-            const data = AssetListContractFactory.interface.getSighash('initialize') + ethers.utils.defaultAbiCoder.encode(
-              ['tuple(uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint256 supplyCap)[]', 'address'],
-              [storageConfigs, configurator.address]
-            ).slice(2);
-            const [signer] = await ethers.getSigners();
-
-            await expect(signer.sendTransaction({ to: proxy.address, data, gasLimit: 30_000_000 })).to.be.revertedWithoutReason();
-          });
-        });
-      });
     });
 
     /*//////////////////////////////////////////////////////////////

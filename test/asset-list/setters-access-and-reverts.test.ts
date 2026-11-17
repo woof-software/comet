@@ -148,8 +148,8 @@ describe('asset list setters: access and reverts', function () {
       it('the upgrade reverts with AssetIndexMismatch', async () => {
         const swappedConfigs = [configs[1], configs[0], ...configs.slice(2)];
         const swappedStorageConfigs = [storageConfigs[1], storageConfigs[0], ...storageConfigs.slice(2)];
-        const swappedImplementation = await assetListFactory.callStatic.createAssetList(swappedConfigs, configurator.address);
-        await assetListFactory.createAssetList(swappedConfigs, configurator.address);
+        const swappedImplementation = await assetListFactory.callStatic.createAssetList(swappedConfigs);
+        await assetListFactory.createAssetList(swappedConfigs);
 
         await expect(proxyAdmin.upgradeAndCall(
           assetList.address,

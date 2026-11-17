@@ -116,12 +116,12 @@ describe('extended pause upgrade test', function () {
 
     // Give the market its asset list: a new implementation and a proxy owned by the Comet's proxy admin,
     // initialized with the migrated factors and caps
-    const assetListFactory = await (await ethers.getContractFactory('AssetListFactory')).deploy() as AssetListFactory;
+    const assetListFactory = await (await ethers.getContractFactory('AssetListFactory')).deploy(configurator.address) as AssetListFactory;
     await configurator.connect(governor).setAssetListFactory(COMET_ADDRESS, assetListFactory.address);
     // deployAssetList only redeploys an existing list, so the first implementation comes straight from the factory
     const immutableConfigs = await configurator.getImmutableAssetConfig(COMET_ADDRESS);
-    const newAssetListImpl = await assetListFactory.callStatic.createAssetList(immutableConfigs, configurator.address);
-    await assetListFactory.createAssetList(immutableConfigs, configurator.address);
+    const newAssetListImpl = await assetListFactory.callStatic.createAssetList(immutableConfigs);
+    await assetListFactory.createAssetList(immutableConfigs);
     const assetListImplementation = await ethers.getContractAt('AssetList', newAssetListImpl);
     const assetListProxy = await (await ethers.getContractFactory('TransparentUpgradeableProxy')).deploy(
       newAssetListImpl,

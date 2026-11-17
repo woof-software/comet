@@ -75,7 +75,7 @@ describe('configurator: asset list management', function () {
         firstTx = await configurator.setAssetListFactory(otherMarket, assetListFactory.address);
         await configurator.addAsset(otherMarket, await deployAssetConfig());
 
-        newFactory = (await (await ethers.getContractFactory('AssetListFactory')).deploy()) as AssetListFactory;
+        newFactory = (await (await ethers.getContractFactory('AssetListFactory')).deploy(configurator.address)) as AssetListFactory;
         tx = await configurator.setAssetListFactory(comet.address, newFactory.address);
         // An immutable change, so that deployAssetList has a list to deploy
         priceFeed = await newPriceFeed();

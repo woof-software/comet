@@ -9,7 +9,6 @@ describe('transfer', function () {
   const baseTokenDecimals = 6;
   // Contracts
   let comet: CometHarnessInterfaceExtendedAssetList;
-  // Comet forwards the asset lookups to the list, so an unknown asset reverts with the list's error
   let baseToken: FaucetToken;
   let collaterals: { [symbol: string]: FaucetToken } = {};
   let unsupportedToken: FaucetToken;

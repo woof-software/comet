@@ -389,9 +389,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
 
   const unsupportedToken = await FaucetFactory.deploy(1e6, 'Unsupported Token', 6, 'USUP');
 
-  const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
-  const assetListFactory = await AssetListFactory.deploy();
-  await assetListFactory.deployed();  
 
   let extensionDelegateAssetList = opts.extensionDelegateAssetList;
   if (extensionDelegateAssetList === undefined) {
@@ -431,8 +428,11 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     priceFeed: priceFeeds[symbol].address,
   }));
   const assetListConfigurator = dfn(opts.assetListConfigurator, governor.address);
-  const assetListImplementation = await assetListFactory.callStatic.createAssetList(assetImmutableConfigs, assetListConfigurator);
-  await wait(assetListFactory.createAssetList(assetImmutableConfigs, assetListConfigurator));
+  const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
+  const assetListFactory = await AssetListFactory.deploy(assetListConfigurator);
+  await assetListFactory.deployed();
+  const assetListImplementation = await assetListFactory.callStatic.createAssetList(assetImmutableConfigs);
+  await assetListFactory.createAssetList(assetImmutableConfigs);
   const AssetListContractFactory = (await ethers.getContractFactory('AssetList')) as AssetList__factory;
   const AssetListProxyFactory = (await ethers.getContractFactory('TransparentUpgradeableProxy')) as TransparentUpgradeableProxy__factory;
   const assetListProxy = await AssetListProxyFactory.deploy(

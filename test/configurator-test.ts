@@ -221,10 +221,11 @@ describe('configurator', function () {
 
     // The fixture market already has an asset list, so setConfiguration can only configure a new market
     describe('happy path (new market)', function() {
-      const newMarket = ethers.Wallet.createRandom().address;
+      let newMarket: string;
       let emptyConfiguration: ConfigurationStruct;
       let setConfigurationTx: ContractTransaction;
       before(async () => {
+        newMarket = (await ethers.getSigners())[8].address;
         emptyConfiguration = await configuratorProxy.getConfiguration(newMarket);
         // Make new configuration different from old configuration
         newConfiguration = {
@@ -277,7 +278,7 @@ describe('configurator', function () {
 
     describe('edge cases', function() {
       it('a market without an asset list can be configured again', async () => {
-        const marketWithoutList = ethers.Wallet.createRandom().address;
+        const marketWithoutList = (await ethers.getSigners())[9].address;
         const configurationWithoutList = { ...oldConfiguration, assetList: ZERO_ADDRESS };
         await configuratorProxy.connect(governor).setConfiguration(marketWithoutList, configurationWithoutList);
         await configuratorProxy.connect(governor).setConfiguration(marketWithoutList, configurationWithoutList);
@@ -1843,14 +1844,21 @@ describe('configurator', function () {
           await expect(configuratorProxy.connect(alice).transferGovernor(alice.address))
             .to.be.revertedWithCustomError(configurator, 'Unauthorized');
         });
-
-        it('reverts if new governor is zero address', async () => {
-          await expect(configuratorProxy.connect(governor).transferGovernor(ZERO_ADDRESS))
-            .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
-        });
       });
 
       describe('edge cases', function() {
+        it('can transfer to zero address (bricks the configurator)', async () => {
+          const snapshot = await takeSnapshot();
+
+          await configuratorProxy.connect(governor).transferGovernor(ZERO_ADDRESS);
+          expect(await configuratorProxy.governor()).to.equal(ZERO_ADDRESS);
+
+          await expect(configuratorProxy.connect(governor).transferGovernor(governor.address))
+            .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+
+          await snapshot.restore();
+        });
+
         it('can transfer to the same governor', async () => {
           await configuratorProxy.connect(governor).transferGovernor(governor.address);
           expect(await configuratorProxy.governor()).to.equal(governor.address);

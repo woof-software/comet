@@ -16,10 +16,6 @@ describe('constructor', function () {
   });
 
   it('verifies asset scales', async function () {
-    const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
-    const assetListFactory = await AssetListFactory.deploy();
-    await assetListFactory.deployed();
-
     const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
     const token = await FaucetFactory.deploy(1e6, 'EVIL', 18, 'EVIL');
     await token.deployed();
@@ -31,8 +27,11 @@ describe('constructor', function () {
     // The asset list reads the decimals from the token itself, so the scale follows the token's own decimals
     const configs = [{ asset: token.address, priceFeed: priceFeed.address }];
     const configurator = (await ethers.getSigners())[0].address;
-    const assetListAddress = await assetListFactory.callStatic.createAssetList(configs, configurator);
-    await (await assetListFactory.createAssetList(configs, configurator)).wait();
+    const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
+    const assetListFactory = await AssetListFactory.deploy(configurator);
+    await assetListFactory.deployed();
+    const assetListAddress = await assetListFactory.callStatic.createAssetList(configs);
+    await assetListFactory.createAssetList(configs);
     const assetList = AssetList__factory.connect(assetListAddress, ethers.provider);
 
     expect((await assetList.getAssetInfo(0)).scale).to.equal(10n ** BigInt(await token.decimals()));
@@ -101,14 +100,14 @@ describe('constructor', function () {
     const baseToken = await FaucetFactory.deploy(1e6, 'USDC', 6, 'USDC');
     await baseToken.deployed();
 
-    const randomAddress = () => ethers.Wallet.createRandom().address;
+    const [governor, pauseGuardian, baseTokenPriceFeed, extensionDelegate] = await ethers.getSigners();
     const CometFactory = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
     await expect(CometFactory.deploy({
-      governor: randomAddress(),
-      pauseGuardian: randomAddress(),
+      governor: governor.address,
+      pauseGuardian: pauseGuardian.address,
       baseToken: baseToken.address,
-      baseTokenPriceFeed: randomAddress(),
-      extensionDelegate: randomAddress(),
+      baseTokenPriceFeed: baseTokenPriceFeed.address,
+      extensionDelegate: extensionDelegate.address,
       supplyKink: exp(0.8, 18),
       supplyPerYearInterestRateSlopeLow: exp(0.05, 18),
       supplyPerYearInterestRateSlopeHigh: exp(2, 18),
