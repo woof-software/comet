@@ -246,8 +246,10 @@ describe('isLiquidatable', function () {
       const basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
       const baseScale = await comet.baseScale();
 
-      // Get debt value in USD
-      const debtUSD = mulPrice(presentValuePrincipal, basePrice, baseScale);
+      // Get debt value in USD: presentValue keeps the sign, so a borrower's debt value is negative
+      const debtUSDSigned = mulPrice(presentValuePrincipal, basePrice, baseScale);
+      expect(debtUSDSigned).to.be.lessThan(0n);
+      const debtUSD = -debtUSDSigned; // positive magnitude
 
       // Get collateral data
       const collateralPrice = await comet.getPrice((await comet.getAssetInfo(0)).priceFeed);
@@ -259,7 +261,7 @@ describe('isLiquidatable', function () {
       // Calculate weighted collateral value
       const weightedCollateral = mulFactor(collateralUSD, (await comet.getAssetInfo(0)).liquidateCollateralFactor);
 
-      // Check if weighted collateral value exceeds debt value
+      // Check if weighted collateral value exceeds the debt magnitude
       expect(weightedCollateral).to.be.greaterThan(debtUSD);
     });
 
@@ -1215,8 +1217,6 @@ describe('isLiquidatable', function () {
 
     it('position becomes liquidatable when liquidateCF is set to 0', async () => {
       expect(await comet.isLiquidatable(alice.address)).to.be.true;
-
-      await snapshot.restore();
     });
 
     it('liquidateCF can be restored back', async function () {
@@ -1228,6 +1228,10 @@ describe('isLiquidatable', function () {
     });
 
     it('position is not liquidatable when liquidateCF is restored back', async function () {
+      // the same position is still open: alice holds the collateral and the debt
+      expect((await comet.userCollateral(alice.address, collateralToken.address)).balance).to.equal(supplyAmount);
+      expect((await comet.userBasic(alice.address)).principal).to.be.lessThan(0);
+
       expect(await comet.isLiquidatable(alice.address)).to.be.false;
     });
 
@@ -1237,6 +1241,9 @@ describe('isLiquidatable', function () {
     });
 
     it('isLiquidatable with mixed liquidate factors counts only positive CF assets', async () => {
+      // start from an empty account (the position above is still open)
+      await snapshot.restore();
+
       // Supply equal collateral in all 5 assets
       const supplyAmount = exp(1, 18);
       const symbols = ['ASSET0', 'ASSET1', 'ASSET2', 'ASSET3', 'ASSET4'];
@@ -1252,6 +1259,7 @@ describe('isLiquidatable', function () {
       // Total liquidation value: 5 * 160 = 800 USDC. Borrow 400 so not liquidatable initially.
       // After zeroing 3 assets, only 2 contribute (320 total) < 400 borrowed, so liquidatable.
       const borrowAmount = exp(400, 6);
+      await baseToken.allocateTo(comet.address, borrowAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Verify NOT liquidatable initially
@@ -1294,8 +1302,9 @@ describe('isLiquidatable', function () {
         await targetToken.connect(alice).approve(comet.address, supplyAmount);
         await comet.connect(alice).supply(targetToken.address, supplyAmount);
 
-        // Borrow amount collateralized by the single supplied asset under liquidation values (~170 USDC)
+        // Borrow amount collateralized by the single supplied asset under liquidation value (1 × $200 × 0.8 liquidateCF = 160 USDC)
         const borrowAmount = exp(150, 6);
+        await baseToken.allocateTo(comet.address, borrowAmount);
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
         // Initially not liquidatable with positive liquidateCF
@@ -1318,8 +1327,8 @@ describe('isLiquidatable', function () {
     describe('edge cases', function () {
       /*
        * Tests two resolution paths for price-feed paralysis in isLiquidatable: restoring the
-       * original feed, and setting liquidateCF to 0. Each path proves that the Reverted error
-       * from a broken feed can be unblocked without restoring the feed itself.
+       * original feed, and setting liquidateCF to 0. Either path removes the Reverted error from a
+       * broken feed: restoring the feed, or zeroing liquidateCF so the broken feed is never read.
        */
       describe('revert on price feed side', function () {
         let originalPriceFeed: string;
@@ -1334,6 +1343,7 @@ describe('isLiquidatable', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
+          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           // With positive liquidateCF and ample collateral, not liquidatable
@@ -1388,6 +1398,7 @@ describe('isLiquidatable', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
+          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
         });
 
@@ -1441,6 +1452,7 @@ describe('isLiquidatable', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
+          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           collateralAssetIndex = (await comet.getAssetInfoByAddress(collateralToken.address)).offset;
@@ -1494,6 +1506,7 @@ describe('isLiquidatable', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
+          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           collateralAssetIndex = (await comet.getAssetInfoByAddress(collateralToken.address)).offset;

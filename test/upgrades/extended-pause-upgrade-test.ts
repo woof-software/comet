@@ -59,6 +59,8 @@ describe('extended pause upgrade test', function () {
 
   // Totals basic snapshot
   let totalsBasicBefore: TotalsBasicStructOutput;
+  // Legacy pause() flags, set to a non-trivial pattern before the upgrade
+  let legacyPausesBefore: boolean[];
 
   // Upgrade transaction
   let upgradeTx: ContractTransaction;
@@ -196,10 +198,20 @@ describe('extended pause upgrade test', function () {
     // Totals basic snapshot
     totalsBasicBefore = await cometExt.totalsBasic();
 
-    // Impersonate governor
+    // Impersonate pause guardian
     await impersonateAccount(pauseGuardianBefore);
     pauseGuardian = await ethers.getSigner(pauseGuardianBefore);
     await setBalance(pauseGuardianBefore, ethers.utils.parseEther('10000'));
+
+    // Pause absorb and buy with the legacy pause() so "preserved after upgrade" is not just false == false
+    // (the flags live in totalsBasic.pauseFlags, so the snapshot is taken again after this)
+    await comet.connect(pauseGuardian).pause(false, false, false, true, true);
+    legacyPausesBefore = [
+      await comet.isSupplyPaused(), await comet.isTransferPaused(), await comet.isWithdrawPaused(),
+      await comet.isAbsorbPaused(), await comet.isBuyPaused(),
+    ];
+    expect(legacyPausesBefore).to.deep.equal([false, false, false, true, true]);
+    totalsBasicBefore = await cometExt.totalsBasic();
 
     upgradeTx = await proxyAdmin.connect(governor).upgrade(COMET_ADDRESS, newImpl);
 
@@ -228,7 +240,7 @@ describe('extended pause upgrade test', function () {
     expect(await cometExt.priceScale()).to.equal(priceScaleBefore);
   });
 
-  it('should save comet storage safely after upgrade', async function () {
+  it('should keep comet immutables and totalsBasic storage after upgrade', async function () {
     expect(await comet.governor()).to.equal(governorBefore);
     expect(await comet.pauseGuardian()).to.equal(pauseGuardianBefore);
     expect(await comet.baseToken()).to.equal(baseTokenBefore);
@@ -236,6 +248,34 @@ describe('extended pause upgrade test', function () {
     expect(await comet.extensionDelegate()).to.equal(newCometExt.address);
     expect(await comet.supplyKink()).to.equal(supplyKinkBefore);
     expect(await cometExt.totalsBasic()).to.deep.equal(totalsBasicBefore);
+  });
+
+  it('should keep the legacy pause() flags after upgrade', async function () {
+    expect([
+      await comet.isSupplyPaused(), await comet.isTransferPaused(), await comet.isWithdrawPaused(),
+      await comet.isAbsorbPaused(), await comet.isBuyPaused(),
+    ]).to.deep.equal(legacyPausesBefore);
+  });
+
+  it('should read all new storage as zero right after upgrade (no storage collision)', async function () {
+    // extendedPauseFlags: every flag is off
+    expect(await comet.isLendersWithdrawPaused()).to.be.false;
+    expect(await comet.isBorrowersWithdrawPaused()).to.be.false;
+    expect(await comet.isCollateralSupplyPaused()).to.be.false;
+    expect(await comet.isBaseSupplyPaused()).to.be.false;
+    expect(await comet.isLendersTransferPaused()).to.be.false;
+    expect(await comet.isBorrowersTransferPaused()).to.be.false;
+    expect(await comet.isCollateralTransferPaused()).to.be.false;
+    expect(await comet.isCollateralWithdrawPaused()).to.be.false;
+
+    // per-asset bitmaps (supply / transfer / withdraw pauses, deactivation): no bit set for any listed asset
+    const numAssets = await comet.numAssets();
+    for (let i = 0; i < numAssets; i++) {
+      expect(await comet.isCollateralAssetSupplyPaused(i), `supply pause, asset ${i}`).to.be.false;
+      expect(await comet.isCollateralAssetTransferPaused(i), `transfer pause, asset ${i}`).to.be.false;
+      expect(await comet.isCollateralAssetWithdrawPaused(i), `withdraw pause, asset ${i}`).to.be.false;
+      expect(await comet.isCollateralDeactivated(i), `deactivated, asset ${i}`).to.be.false;
+    }
   });
 
   it('should allow to call extended pause functions after upgrade', async function () {
@@ -249,6 +289,8 @@ describe('extended pause upgrade test', function () {
     await cometExt.connect(governor).pauseBorrowersTransfer(true);
     await cometExt.connect(governor).pauseCollateralTransfer(true);
     await cometExt.connect(governor).pauseCollateralAssetTransfer(0, true);
+    await cometExt.connect(governor).pauseCollateralWithdraw(true);
+    await cometExt.connect(governor).pauseCollateralAssetWithdraw(0, true);
   });
 
   it('should update pause flags in comet storage', async function () {
@@ -261,6 +303,8 @@ describe('extended pause upgrade test', function () {
     expect(await comet.isBorrowersTransferPaused()).to.be.true;
     expect(await comet.isCollateralTransferPaused()).to.be.true;
     expect(await comet.isCollateralAssetTransferPaused(0)).to.be.true;
+    expect(await comet.isCollateralWithdrawPaused()).to.be.true;
+    expect(await comet.isCollateralAssetWithdrawPaused(0)).to.be.true;
 
     await snapshot.restore();
   });
@@ -273,7 +317,7 @@ describe('extended pause upgrade test', function () {
     expect(await comet.isCollateralDeactivated(0)).to.be.true;
   });
 
-  it('should update deactivated collaterals flag in comet storage', async function () {
+  it('should set bit 0 of deactivatedCollaterals bitmap after deactivation', async function () {
     expect(await comet.deactivatedCollaterals()).to.equal(1);
   });
 
@@ -290,7 +334,7 @@ describe('extended pause upgrade test', function () {
     expect(await comet.isCollateralDeactivated(0)).to.be.false;
   });
 
-  it('should update deactivated collaterals flag in comet storage', async function () {
+  it('should clear bit 0 of deactivatedCollaterals bitmap after activation', async function () {
     expect(await comet.deactivatedCollaterals()).to.equal(0);
   });
 

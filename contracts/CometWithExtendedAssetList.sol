@@ -115,6 +115,11 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
     uint8 internal constant MAX_ASSETS_FOR_ASSET_LIST = 24;
 
+    /// @dev The protocol only supports 200% utilization on which borrows are allowed
+    /// It keeps healthy state of the market, with no over-utilization leading to illiquidity,
+    /// and keeps protocol reserves from exhaustion
+    uint256 public constant MAX_SUPPORTED_UTILIZATION = 2e18;
+
     /**
      * @notice Construct a new protocol instance
      * @param config The mapping of initial/constant parameters

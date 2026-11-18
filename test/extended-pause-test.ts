@@ -1,7 +1,7 @@
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
-import { expect, exp, makeProtocol, MAX_ASSETS, takeSnapshot, SnapshotRestorer } from './helpers';
+import { ethers, exp, expect, makeProtocol, MAX_ASSETS, takeSnapshot, SnapshotRestorer } from './helpers';
 import { CometExt, CometHarnessInterfaceExtendedAssetList, FaucetToken } from 'build/types';
-import { BigNumberish, ContractTransaction } from 'ethers';
+import { ContractTransaction } from 'ethers';
 
 /**
  * Context: Written after the USDM incident (a Chainlink price feed removal). The protocol added
@@ -34,17 +34,24 @@ import { BigNumberish, ContractTransaction } from 'ethers';
  *   `isCollateralAssetTransferPaused(offset)`.
  *
  * What this suite verifies:
- * - Only Governor or Pause Guardian can toggle (access control via `onlyGovernorOrPauseGuardian`).
- * - Idempotency protection: attempting to set an already‑set status reverts with
- *   `OffsetStatusAlreadySet` or `CollateralAssetOffsetStatusAlreadySet`.
- * - Each pause flag blocks exactly its intended flow and does not affect unrelated flows:
- *   - Base vs collateral supply; lenders vs borrowers withdraw/transfer; global vs per‑asset flags.
- * - Per‑asset flags override behavior for a single collateral by index without impacting others.
+ * - Only Governor or Pause Guardian can toggle (access control via `onlyGovernorOrPauseGuardian`),
+ *   in both directions: an unauthorized user can neither pause nor unpause.
+ * - Both roles can pause and unpause every flag.
+ * - Idempotency protection: setting an already‑set status reverts with `OffsetStatusAlreadySet` or
+ *   `CollateralAssetOffsetStatusAlreadySet`, for both values (pause twice, unpause twice).
+ * - Events are emitted for each toggle action from `CometExt` methods.
+ * - Isolation: a global flag changes only itself (other extended flags, legacy flags and per‑asset
+ *   flags stay unchanged); a per‑asset flag changes only its own asset index and its own action.
  * - Unpausing per-asset collateral supply/transfer requires the collateral to be active;
  *   unpause attempts on deactivated collateral revert with `CollateralIsDeactivated`.
  * - Boundary conditions: `isValidAssetIndex` enforced; invalid indices revert with `InvalidAssetIndex`.
- * - Coexistence with legacy pause flags: both layers are respected (extended flags are additional gates).
- * - Events are emitted for each toggle action from `CometExt` methods.
+ * - Coexistence with legacy pause flags (base supply, lenders withdraw, lenders transfer): the legacy
+ *   flag is checked first and reverts with `Paused`; with only the extended flag on, the extended error
+ *   is returned; the action succeeds only when both are off.
+ *
+ * Not covered here: that each extended flag blocks exactly its intended user flow (base vs collateral
+ * supply, lenders vs borrowers withdraw/transfer, global vs per‑asset). That is in `supply-test.ts`,
+ * `withdraw-test.ts` and `transfer-test.ts`.
  */
 describe('extended pause functionality', function () {
   // Contracts
@@ -52,11 +59,15 @@ describe('extended pause functionality', function () {
   let cometExt: CometExt;
   let cometWithMaxAssets: CometHarnessInterfaceExtendedAssetList;
   let cometExtWithMaxAssets: CometExt;
+  let baseToken: FaucetToken;
 
   // Signers
   let governor: SignerWithAddress;
   let pauseGuardian: SignerWithAddress;
   let users: SignerWithAddress[] = [];
+
+  // Snapshot of the original state, taken after setup
+  let fixture: SnapshotRestorer;
 
   // Constants
   const assetIndex = 0;
@@ -65,6 +76,7 @@ describe('extended pause functionality', function () {
     const protocol = await makeProtocol({ assets: { USDC: {}, ASSET1: {} } });
     comet = protocol.cometWithExtendedAssetList;
     cometExt = comet.attach(comet.address) as CometExt;
+    baseToken = protocol.tokens[protocol.base] as FaucetToken;
     governor = protocol.governor;
     pauseGuardian = protocol.pauseGuardian;
     users = protocol.users;
@@ -78,6 +90,13 @@ describe('extended pause functionality', function () {
     });
     cometWithMaxAssets = protocolWithMaxAssets.cometWithExtendedAssetList;
     cometExtWithMaxAssets = cometWithMaxAssets.attach(cometWithMaxAssets.address) as CometExt;
+
+    // Original state: both protocols deployed, nothing paused. Flows that need it call `fixture.restore()`.
+    fixture = await takeSnapshot();
+  });
+
+  after(async function () {
+    await fixture.restore();
   });
 
   describe('withdraw pause functions', function () {
@@ -93,7 +112,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits LendersWithdrawPauseAction event when pausing by governor', async function () {
-          expect(pauseLendersWithdrawTx)
+          await expect(pauseLendersWithdrawTx)
             .to.emit(cometExt, 'LendersWithdrawPauseAction')
             .withArgs(true);
         });
@@ -108,7 +127,7 @@ describe('extended pause functionality', function () {
             .withArgs(false);
         });
 
-        it('sets to false when pausing by governor', async function () {
+        it('sets to false when unpausing by governor', async function () {
           expect(await comet.isLendersWithdrawPaused()).to.be.false;
         });
 
@@ -121,7 +140,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits LendersWithdrawPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseLendersWithdrawTx)
+          await expect(pauseLendersWithdrawTx)
             .to.emit(cometExt, 'LendersWithdrawPauseAction')
             .withArgs(true);
         });
@@ -138,7 +157,7 @@ describe('extended pause functionality', function () {
             .withArgs(false);
         });
 
-        it('sets to false when pausing by pause guardian', async function () {
+        it('sets to false when unpausing by pause guardian', async function () {
           expect(await comet.isLendersWithdrawPaused()).to.be.false;
         });
       });
@@ -164,6 +183,43 @@ describe('extended pause functionality', function () {
             cometExt.connect(pauseGuardian).pauseLendersWithdraw(false)
           ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
         });
+
+        it('allows governor to pause', async function () {
+          await cometExt.connect(governor).pauseLendersWithdraw(true);
+          expect(await comet.isLendersWithdrawPaused()).to.be.true;
+        });
+
+        it('reverts duplicate pause (governor)', async function () {
+          await expect(
+            cometExt.connect(governor).pauseLendersWithdraw(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts duplicate pause (pause guardian)', async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseLendersWithdraw(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts unpause by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pauseLendersWithdraw(false)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('stays paused', async function () {
+          expect(await comet.isLendersWithdrawPaused()).to.be.true;
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pauseLendersWithdraw(false))
+            .to.emit(cometExt, 'LendersWithdrawPauseAction')
+            .withArgs(false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isLendersWithdrawPaused()).to.be.false;
+        });
       });
     });
 
@@ -179,7 +235,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits BorrowersWithdrawPauseAction event when pausing by governor', async function () {
-          expect(pauseBorrowersWithdrawTx)
+          await expect(pauseBorrowersWithdrawTx)
             .to.emit(cometExt, 'BorrowersWithdrawPauseAction')
             .withArgs(true);
         });
@@ -206,7 +262,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits BorrowersWithdrawPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseBorrowersWithdrawTx)
+          await expect(pauseBorrowersWithdrawTx)
             .to.emit(cometExt, 'BorrowersWithdrawPauseAction')
             .withArgs(true);
         });
@@ -249,6 +305,43 @@ describe('extended pause functionality', function () {
             cometExt.connect(pauseGuardian).pauseBorrowersWithdraw(false)
           ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
         });
+
+        it('allows governor to pause', async function () {
+          await cometExt.connect(governor).pauseBorrowersWithdraw(true);
+          expect(await comet.isBorrowersWithdrawPaused()).to.be.true;
+        });
+
+        it('reverts duplicate pause (governor)', async function () {
+          await expect(
+            cometExt.connect(governor).pauseBorrowersWithdraw(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts duplicate pause (pause guardian)', async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseBorrowersWithdraw(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts unpause by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pauseBorrowersWithdraw(false)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('stays paused', async function () {
+          expect(await comet.isBorrowersWithdrawPaused()).to.be.true;
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pauseBorrowersWithdraw(false))
+            .to.emit(cometExt, 'BorrowersWithdrawPauseAction')
+            .withArgs(false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isBorrowersWithdrawPaused()).to.be.false;
+        });
       });
     });
 
@@ -264,7 +357,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralWithdrawPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralWithdrawTx)
+          await expect(pauseCollateralWithdrawTx)
             .to.emit(cometExt, 'CollateralWithdrawPauseAction')
             .withArgs(true);
         });
@@ -293,7 +386,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralWithdrawPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralWithdrawTx)
+          await expect(pauseCollateralWithdrawTx)
             .to.emit(cometExt, 'CollateralWithdrawPauseAction')
             .withArgs(true);
         });
@@ -336,6 +429,43 @@ describe('extended pause functionality', function () {
             cometExt.connect(pauseGuardian).pauseCollateralWithdraw(false)
           ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
         });
+
+        it('allows governor to pause', async function () {
+          await cometExt.connect(governor).pauseCollateralWithdraw(true);
+          expect(await comet.isCollateralWithdrawPaused()).to.be.true;
+        });
+
+        it('reverts duplicate pause (governor)', async function () {
+          await expect(
+            cometExt.connect(governor).pauseCollateralWithdraw(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts duplicate pause (pause guardian)', async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseCollateralWithdraw(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts unpause by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pauseCollateralWithdraw(false)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('stays paused', async function () {
+          expect(await comet.isCollateralWithdrawPaused()).to.be.true;
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pauseCollateralWithdraw(false))
+            .to.emit(cometExt, 'CollateralWithdrawPauseAction')
+            .withArgs(false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isCollateralWithdrawPaused()).to.be.false;
+        });
       });
     });
 
@@ -351,7 +481,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetWithdrawPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralAssetWithdrawTx)
+          await expect(pauseCollateralAssetWithdrawTx)
             .to.emit(cometExt, 'CollateralAssetWithdrawPauseAction')
             .withArgs(assetIndex, true);
         });
@@ -384,7 +514,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetWithdrawPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralAssetWithdrawTx)
+          await expect(pauseCollateralAssetWithdrawTx)
             .to.emit(cometExt, 'CollateralAssetWithdrawPauseAction')
             .withArgs(assetIndex, true);
         });
@@ -413,12 +543,12 @@ describe('extended pause functionality', function () {
           it(`allows to pause collateral asset withdraw for asset ${i} with ${MAX_ASSETS} collaterals`, async function () {
             const assetIndex = i - 1;
 
-            // Pause the collateral at index i
+            // Pause the collateral at assetIndex
             await cometExtWithMaxAssets
               .connect(governor)
               .pauseCollateralAssetWithdraw(assetIndex, true);
 
-            // Verify that the asset at index i is paused
+            // Verify that the asset at assetIndex is paused
             expect(await cometWithMaxAssets.isCollateralAssetWithdrawPaused(assetIndex)).to
               .be.true;
           });
@@ -428,12 +558,12 @@ describe('extended pause functionality', function () {
           it(`allows to unpause collateral asset withdraw for asset ${i} with ${MAX_ASSETS} collaterals`, async function () {
             const assetIndex = i - 1;
 
-            // Unpause the collateral at index i
+            // Unpause the collateral at assetIndex
             await cometExtWithMaxAssets
               .connect(governor)
               .pauseCollateralAssetWithdraw(assetIndex, false);
 
-            // Verify that the asset at index i is paused
+            // Verify that the asset at assetIndex is unpaused
             expect(await cometWithMaxAssets.isCollateralAssetWithdrawPaused(assetIndex)).to
               .be.false;
           });
@@ -474,6 +604,43 @@ describe('extended pause functionality', function () {
           );
         });
 
+        it('allows governor to pause', async function () {
+          await cometExt.connect(governor).pauseCollateralAssetWithdraw(assetIndex, true);
+          expect(await comet.isCollateralAssetWithdrawPaused(assetIndex)).to.be.true;
+        });
+
+        it('reverts duplicate pause (governor)', async function () {
+          await expect(
+            cometExt.connect(governor).pauseCollateralAssetWithdraw(assetIndex, true)
+          ).to.be.revertedWithCustomError(cometExt, 'CollateralAssetOffsetStatusAlreadySet');
+        });
+
+        it('reverts duplicate pause (pause guardian)', async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseCollateralAssetWithdraw(assetIndex, true)
+          ).to.be.revertedWithCustomError(cometExt, 'CollateralAssetOffsetStatusAlreadySet');
+        });
+
+        it('reverts unpause by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pauseCollateralAssetWithdraw(assetIndex, false)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('stays paused', async function () {
+          expect(await comet.isCollateralAssetWithdrawPaused(assetIndex)).to.be.true;
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pauseCollateralAssetWithdraw(assetIndex, false))
+            .to.emit(cometExt, 'CollateralAssetWithdrawPauseAction')
+            .withArgs(assetIndex, false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isCollateralAssetWithdrawPaused(assetIndex)).to.be.false;
+        });
+
         it('reverts with InvalidAssetIndex when assetIndex >= numAssets', async function () {
           await expect(
             cometExt
@@ -497,9 +664,9 @@ describe('extended pause functionality', function () {
           await expect(pauseCollateralSupplyTx).to.not.be.reverted;
         });
 
-        it('emits LendersSupplyPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralSupplyTx)
-            .to.emit(cometExt, 'LendersSupplyPauseAction')
+        it('emits CollateralSupplyPauseAction event when pausing by governor', async function () {
+          await expect(pauseCollateralSupplyTx)
+            .to.emit(cometExt, 'CollateralSupplyPauseAction')
             .withArgs(true);
         });
 
@@ -524,9 +691,9 @@ describe('extended pause functionality', function () {
           await expect(pauseCollateralSupplyTx).to.not.be.reverted;
         });
 
-        it('emits LendersSupplyPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralSupplyTx)
-            .to.emit(cometExt, 'LendersSupplyPauseAction')
+        it('emits CollateralSupplyPauseAction event when pausing by pause guardian', async function () {
+          await expect(pauseCollateralSupplyTx)
+            .to.emit(cometExt, 'CollateralSupplyPauseAction')
             .withArgs(true);
         });
 
@@ -568,6 +735,43 @@ describe('extended pause functionality', function () {
             cometExt.connect(pauseGuardian).pauseCollateralSupply(false)
           ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
         });
+
+        it('allows governor to pause', async function () {
+          await cometExt.connect(governor).pauseCollateralSupply(true);
+          expect(await comet.isCollateralSupplyPaused()).to.be.true;
+        });
+
+        it('reverts duplicate pause (governor)', async function () {
+          await expect(
+            cometExt.connect(governor).pauseCollateralSupply(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts duplicate pause (pause guardian)', async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseCollateralSupply(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts unpause by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pauseCollateralSupply(false)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('stays paused', async function () {
+          expect(await comet.isCollateralSupplyPaused()).to.be.true;
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pauseCollateralSupply(false))
+            .to.emit(cometExt, 'CollateralSupplyPauseAction')
+            .withArgs(false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isCollateralSupplyPaused()).to.be.false;
+        });
       });
     });
 
@@ -582,9 +786,9 @@ describe('extended pause functionality', function () {
           await expect(pauseBaseSupplyTx).to.not.be.reverted;
         });
 
-        it('emits BorrowersSupplyPauseAction event when pausing by governor', async function () {
-          expect(pauseBaseSupplyTx)
-            .to.emit(cometExt, 'BorrowersSupplyPauseAction')
+        it('emits BaseSupplyPauseAction event when pausing by governor', async function () {
+          await expect(pauseBaseSupplyTx)
+            .to.emit(cometExt, 'BaseSupplyPauseAction')
             .withArgs(true);
         });
 
@@ -609,9 +813,9 @@ describe('extended pause functionality', function () {
           await expect(pauseBaseSupplyTx).to.not.be.reverted;
         });
 
-        it('emits BorrowersSupplyPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseBaseSupplyTx)
-            .to.emit(cometExt, 'BorrowersSupplyPauseAction')
+        it('emits BaseSupplyPauseAction event when pausing by pause guardian', async function () {
+          await expect(pauseBaseSupplyTx)
+            .to.emit(cometExt, 'BaseSupplyPauseAction')
             .withArgs(true);
         });
 
@@ -651,6 +855,43 @@ describe('extended pause functionality', function () {
             cometExt.connect(pauseGuardian).pauseBaseSupply(false)
           ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
         });
+
+        it('allows governor to pause', async function () {
+          await cometExt.connect(governor).pauseBaseSupply(true);
+          expect(await comet.isBaseSupplyPaused()).to.be.true;
+        });
+
+        it('reverts duplicate pause (governor)', async function () {
+          await expect(
+            cometExt.connect(governor).pauseBaseSupply(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts duplicate pause (pause guardian)', async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseBaseSupply(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts unpause by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pauseBaseSupply(false)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('stays paused', async function () {
+          expect(await comet.isBaseSupplyPaused()).to.be.true;
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pauseBaseSupply(false))
+            .to.emit(cometExt, 'BaseSupplyPauseAction')
+            .withArgs(false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isBaseSupplyPaused()).to.be.false;
+        });
       });
     });
 
@@ -666,7 +907,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetSupplyPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralAssetSupplyTx)
+          await expect(pauseCollateralAssetSupplyTx)
             .to.emit(cometExt, 'CollateralAssetSupplyPauseAction')
             .withArgs(assetIndex, true);
         });
@@ -699,7 +940,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetSupplyPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralAssetSupplyTx)
+          await expect(pauseCollateralAssetSupplyTx)
             .to.emit(cometExt, 'CollateralAssetSupplyPauseAction')
             .withArgs(assetIndex, true);
         });
@@ -728,12 +969,12 @@ describe('extended pause functionality', function () {
           it(`allows to pause collateral asset supply for asset ${i} with ${MAX_ASSETS} collaterals`, async function () {
             const assetIndex = i - 1;
 
-            // Pause the collateral at index i
+            // Pause the collateral at assetIndex
             await cometExtWithMaxAssets
               .connect(governor)
               .pauseCollateralAssetSupply(assetIndex, true);
 
-            // Verify that the asset at index i is paused
+            // Verify that the asset at assetIndex is paused
             expect(await cometWithMaxAssets.isCollateralAssetSupplyPaused(assetIndex)).to.be
               .true;
           });
@@ -743,12 +984,12 @@ describe('extended pause functionality', function () {
           it(`allows to unpause collateral asset supply for asset ${i} with ${MAX_ASSETS} collaterals`, async function () {
             const assetIndex = i - 1;
 
-            // Pause the collateral at index i
+            // Unpause the collateral at assetIndex
             await cometExtWithMaxAssets
               .connect(governor)
               .pauseCollateralAssetSupply(assetIndex, false);
 
-            // Verify that the asset at index i is paused
+            // Verify that the asset at assetIndex is unpaused
             expect(await cometWithMaxAssets.isCollateralAssetSupplyPaused(assetIndex)).to.be
               .false;
           });
@@ -789,6 +1030,43 @@ describe('extended pause functionality', function () {
           );
         });
 
+        it('allows governor to pause', async function () {
+          await cometExt.connect(governor).pauseCollateralAssetSupply(assetIndex, true);
+          expect(await comet.isCollateralAssetSupplyPaused(assetIndex)).to.be.true;
+        });
+
+        it('reverts duplicate pause (governor)', async function () {
+          await expect(
+            cometExt.connect(governor).pauseCollateralAssetSupply(assetIndex, true)
+          ).to.be.revertedWithCustomError(cometExt, 'CollateralAssetOffsetStatusAlreadySet');
+        });
+
+        it('reverts duplicate pause (pause guardian)', async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseCollateralAssetSupply(assetIndex, true)
+          ).to.be.revertedWithCustomError(cometExt, 'CollateralAssetOffsetStatusAlreadySet');
+        });
+
+        it('reverts unpause by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pauseCollateralAssetSupply(assetIndex, false)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('stays paused', async function () {
+          expect(await comet.isCollateralAssetSupplyPaused(assetIndex)).to.be.true;
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pauseCollateralAssetSupply(assetIndex, false))
+            .to.emit(cometExt, 'CollateralAssetSupplyPauseAction')
+            .withArgs(assetIndex, false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isCollateralAssetSupplyPaused(assetIndex)).to.be.false;
+        });
+
         it('reverts with InvalidAssetIndex when assetIndex >= numAssets', async function () {
           await expect(
             cometExt
@@ -804,9 +1082,6 @@ describe('extended pause functionality', function () {
           await expect(
             cometExt.connect(pauseGuardian).pauseCollateralAssetSupply(assetIndex, false)
           ).to.be.revertedWithCustomError(cometExt, 'CollateralIsDeactivated');
-
-          // Activate the collateral asset
-          await cometExt.connect(governor).activateCollateral(assetIndex);
         });
       });
     });
@@ -825,7 +1100,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits LendersTransferPauseAction event when pausing by governor', async function () {
-          expect(pauseLendersTransferTx)
+          await expect(pauseLendersTransferTx)
             .to.emit(cometExt, 'LendersTransferPauseAction')
             .withArgs(true);
         });
@@ -852,7 +1127,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits LendersTransferPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseLendersTransferTx)
+          await expect(pauseLendersTransferTx)
             .to.emit(cometExt, 'LendersTransferPauseAction')
             .withArgs(true);
         });
@@ -895,6 +1170,43 @@ describe('extended pause functionality', function () {
             cometExt.connect(pauseGuardian).pauseLendersTransfer(false)
           ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
         });
+
+        it('allows governor to pause', async function () {
+          await cometExt.connect(governor).pauseLendersTransfer(true);
+          expect(await comet.isLendersTransferPaused()).to.be.true;
+        });
+
+        it('reverts duplicate pause (governor)', async function () {
+          await expect(
+            cometExt.connect(governor).pauseLendersTransfer(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts duplicate pause (pause guardian)', async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseLendersTransfer(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts unpause by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pauseLendersTransfer(false)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('stays paused', async function () {
+          expect(await comet.isLendersTransferPaused()).to.be.true;
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pauseLendersTransfer(false))
+            .to.emit(cometExt, 'LendersTransferPauseAction')
+            .withArgs(false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isLendersTransferPaused()).to.be.false;
+        });
       });
     });
 
@@ -910,7 +1222,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits BorrowersTransferPauseAction event when pausing by governor', async function () {
-          expect(pauseBorrowersTransferTx)
+          await expect(pauseBorrowersTransferTx)
             .to.emit(cometExt, 'BorrowersTransferPauseAction')
             .withArgs(true);
         });
@@ -937,7 +1249,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits BorrowersTransferPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseBorrowersTransferTx)
+          await expect(pauseBorrowersTransferTx)
             .to.emit(cometExt, 'BorrowersTransferPauseAction')
             .withArgs(true);
         });
@@ -980,6 +1292,43 @@ describe('extended pause functionality', function () {
             cometExt.connect(pauseGuardian).pauseBorrowersTransfer(false)
           ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
         });
+
+        it('allows governor to pause', async function () {
+          await cometExt.connect(governor).pauseBorrowersTransfer(true);
+          expect(await comet.isBorrowersTransferPaused()).to.be.true;
+        });
+
+        it('reverts duplicate pause (governor)', async function () {
+          await expect(
+            cometExt.connect(governor).pauseBorrowersTransfer(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts duplicate pause (pause guardian)', async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseBorrowersTransfer(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts unpause by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pauseBorrowersTransfer(false)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('stays paused', async function () {
+          expect(await comet.isBorrowersTransferPaused()).to.be.true;
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pauseBorrowersTransfer(false))
+            .to.emit(cometExt, 'BorrowersTransferPauseAction')
+            .withArgs(false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isBorrowersTransferPaused()).to.be.false;
+        });
       });
     });
 
@@ -995,7 +1344,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralTransferPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralTransferTx)
+          await expect(pauseCollateralTransferTx)
             .to.emit(cometExt, 'CollateralTransferPauseAction')
             .withArgs(true);
         });
@@ -1024,7 +1373,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralTransferPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralTransferTx)
+          await expect(pauseCollateralTransferTx)
             .to.emit(cometExt, 'CollateralTransferPauseAction')
             .withArgs(true);
         });
@@ -1067,12 +1416,54 @@ describe('extended pause functionality', function () {
             cometExt.connect(pauseGuardian).pauseCollateralTransfer(false)
           ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
         });
+
+        it('allows governor to pause', async function () {
+          await cometExt.connect(governor).pauseCollateralTransfer(true);
+          expect(await comet.isCollateralTransferPaused()).to.be.true;
+        });
+
+        it('reverts duplicate pause (governor)', async function () {
+          await expect(
+            cometExt.connect(governor).pauseCollateralTransfer(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts duplicate pause (pause guardian)', async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseCollateralTransfer(true)
+          ).to.be.revertedWithCustomError(cometExt, 'OffsetStatusAlreadySet');
+        });
+
+        it('reverts unpause by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pauseCollateralTransfer(false)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('stays paused', async function () {
+          expect(await comet.isCollateralTransferPaused()).to.be.true;
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pauseCollateralTransfer(false))
+            .to.emit(cometExt, 'CollateralTransferPauseAction')
+            .withArgs(false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isCollateralTransferPaused()).to.be.false;
+        });
       });
     });
 
     describe('pauseCollateralAssetTransfer', function () {
       describe('happy cases', function () {
         let pauseCollateralAssetTransferTx: ContractTransaction;
+
+        // The pauseCollateralAssetSupply revert cases leave the asset deactivated; unpausing transfer needs it active
+        before(async function () {
+          await fixture.restore();
+        });
 
         it('allows governor to call pauseCollateralAssetTransfer', async function () {
           pauseCollateralAssetTransferTx = await cometExt
@@ -1082,7 +1473,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetTransferPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralAssetTransferTx)
+          await expect(pauseCollateralAssetTransferTx)
             .to.emit(cometExt, 'CollateralAssetTransferPauseAction')
             .withArgs(assetIndex, true);
         });
@@ -1115,7 +1506,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetTransferPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralAssetTransferTx)
+          await expect(pauseCollateralAssetTransferTx)
             .to.emit(cometExt, 'CollateralAssetTransferPauseAction')
             .withArgs(assetIndex, true);
         });
@@ -1144,12 +1535,12 @@ describe('extended pause functionality', function () {
           it(`allows to pause collateral asset transfer for asset ${i} with ${MAX_ASSETS} collaterals`, async function () {
             const assetIndex = i - 1;
 
-            // Pause the collateral at index i
+            // Pause the collateral at assetIndex
             await cometExtWithMaxAssets
               .connect(governor)
               .pauseCollateralAssetTransfer(assetIndex, true);
 
-            // Verify that the asset at index i is paused
+            // Verify that the asset at assetIndex is paused
             expect(await cometWithMaxAssets.isCollateralAssetTransferPaused(assetIndex)).to
               .be.true;
           });
@@ -1159,12 +1550,12 @@ describe('extended pause functionality', function () {
           it(`allows to unpause collateral asset transfer for asset ${i} with ${MAX_ASSETS} collaterals`, async function () {
             const assetIndex = i - 1;
 
-            // Pause the collateral at index i
+            // Unpause the collateral at assetIndex
             await cometExtWithMaxAssets
               .connect(governor)
               .pauseCollateralAssetTransfer(assetIndex, false);
 
-            // Verify that the asset at index i is paused
+            // Verify that the asset at assetIndex is unpaused
             expect(await cometWithMaxAssets.isCollateralAssetTransferPaused(assetIndex)).to
               .be.false;
           });
@@ -1205,6 +1596,43 @@ describe('extended pause functionality', function () {
           );
         });
 
+        it('allows governor to pause', async function () {
+          await cometExt.connect(governor).pauseCollateralAssetTransfer(assetIndex, true);
+          expect(await comet.isCollateralAssetTransferPaused(assetIndex)).to.be.true;
+        });
+
+        it('reverts duplicate pause (governor)', async function () {
+          await expect(
+            cometExt.connect(governor).pauseCollateralAssetTransfer(assetIndex, true)
+          ).to.be.revertedWithCustomError(cometExt, 'CollateralAssetOffsetStatusAlreadySet');
+        });
+
+        it('reverts duplicate pause (pause guardian)', async function () {
+          await expect(
+            cometExt.connect(pauseGuardian).pauseCollateralAssetTransfer(assetIndex, true)
+          ).to.be.revertedWithCustomError(cometExt, 'CollateralAssetOffsetStatusAlreadySet');
+        });
+
+        it('reverts unpause by unauthorized user', async function () {
+          await expect(
+            cometExt.connect(users[0]).pauseCollateralAssetTransfer(assetIndex, false)
+          ).to.be.revertedWithCustomError(cometExt, 'OnlyPauseGuardianOrGovernor');
+        });
+
+        it('stays paused', async function () {
+          expect(await comet.isCollateralAssetTransferPaused(assetIndex)).to.be.true;
+        });
+
+        it('allows pause guardian to unpause', async function () {
+          await expect(cometExt.connect(pauseGuardian).pauseCollateralAssetTransfer(assetIndex, false))
+            .to.emit(cometExt, 'CollateralAssetTransferPauseAction')
+            .withArgs(assetIndex, false);
+        });
+
+        it('sets to false when unpausing by pause guardian', async function () {
+          expect(await comet.isCollateralAssetTransferPaused(assetIndex)).to.be.false;
+        });
+
         it('reverts with InvalidAssetIndex when assetIndex >= numAssets', async function () {
           await expect(
             cometExt
@@ -1225,146 +1653,585 @@ describe('extended pause functionality', function () {
     });
   });
 
-  describe('lenders withdraw and transfer pauses are independent', function () {
-    const SUPPLY_AMOUNT = exp(100, 6);
-    const DEFAULT_BASE_SUPPLY = exp(1000, 6);
-    const DEFAULT_COLLATERAL_SUPPLY = exp(1, 18);
-    const BASE_BORROW_MIN = exp(1, 6);
+  /**
+   * Pausing one flag must not touch any other flag: other extended flags, legacy flags, other asset
+   * indexes and other per-asset actions.
+   */
+  describe('flag isolation', function () {
+    type GlobalFlag = {
+      name: string;
+      pause: (signer: SignerWithAddress, paused: boolean) => Promise<ContractTransaction>;
+      isPaused: () => Promise<boolean>;
+    };
+
+    type AssetFlag = {
+      name: string;
+      pause: (ext: CometExt, signer: SignerWithAddress, index: number, paused: boolean) => Promise<ContractTransaction>;
+      isPaused: (c: CometHarnessInterfaceExtendedAssetList, index: number) => Promise<boolean>;
+    };
+
+    const globalFlags: GlobalFlag[] = [
+      {
+        name: 'pauseLendersWithdraw',
+        pause: (signer, paused) => cometExt.connect(signer).pauseLendersWithdraw(paused),
+        isPaused: () => comet.isLendersWithdrawPaused(),
+      },
+      {
+        name: 'pauseBorrowersWithdraw',
+        pause: (signer, paused) => cometExt.connect(signer).pauseBorrowersWithdraw(paused),
+        isPaused: () => comet.isBorrowersWithdrawPaused(),
+      },
+      {
+        name: 'pauseCollateralWithdraw',
+        pause: (signer, paused) => cometExt.connect(signer).pauseCollateralWithdraw(paused),
+        isPaused: () => comet.isCollateralWithdrawPaused(),
+      },
+      {
+        name: 'pauseCollateralSupply',
+        pause: (signer, paused) => cometExt.connect(signer).pauseCollateralSupply(paused),
+        isPaused: () => comet.isCollateralSupplyPaused(),
+      },
+      {
+        name: 'pauseBaseSupply',
+        pause: (signer, paused) => cometExt.connect(signer).pauseBaseSupply(paused),
+        isPaused: () => comet.isBaseSupplyPaused(),
+      },
+      {
+        name: 'pauseLendersTransfer',
+        pause: (signer, paused) => cometExt.connect(signer).pauseLendersTransfer(paused),
+        isPaused: () => comet.isLendersTransferPaused(),
+      },
+      {
+        name: 'pauseBorrowersTransfer',
+        pause: (signer, paused) => cometExt.connect(signer).pauseBorrowersTransfer(paused),
+        isPaused: () => comet.isBorrowersTransferPaused(),
+      },
+      {
+        name: 'pauseCollateralTransfer',
+        pause: (signer, paused) => cometExt.connect(signer).pauseCollateralTransfer(paused),
+        isPaused: () => comet.isCollateralTransferPaused(),
+      },
+    ];
+
+    const assetFlags: AssetFlag[] = [
+      {
+        name: 'pauseCollateralAssetWithdraw',
+        pause: (ext, signer, index, paused) => ext.connect(signer).pauseCollateralAssetWithdraw(index, paused),
+        isPaused: (c, index) => c.isCollateralAssetWithdrawPaused(index),
+      },
+      {
+        name: 'pauseCollateralAssetSupply',
+        pause: (ext, signer, index, paused) => ext.connect(signer).pauseCollateralAssetSupply(index, paused),
+        isPaused: (c, index) => c.isCollateralAssetSupplyPaused(index),
+      },
+      {
+        name: 'pauseCollateralAssetTransfer',
+        pause: (ext, signer, index, paused) => ext.connect(signer).pauseCollateralAssetTransfer(index, paused),
+        isPaused: (c, index) => c.isCollateralAssetTransferPaused(index),
+      },
+    ];
+
+    describe('isolation of global flags', function () {
+      for (const flag of globalFlags) {
+        describe(`${flag.name}(true)`, function () {
+          before(async function () {
+            await fixture.restore();
+          });
+
+          it('allows governor to pause', async function () {
+            await flag.pause(governor, true);
+            expect(await flag.isPaused()).to.be.true;
+          });
+
+          it('leaves every other extended flag unpaused', async function () {
+            for (const other of globalFlags.filter((f) => f !== flag)) {
+              expect(await other.isPaused(), other.name).to.be.false;
+            }
+          });
+
+          it('leaves legacy flags unpaused', async function () {
+            expect(await comet.isSupplyPaused()).to.be.false;
+            expect(await comet.isTransferPaused()).to.be.false;
+            expect(await comet.isWithdrawPaused()).to.be.false;
+            expect(await comet.isAbsorbPaused()).to.be.false;
+            expect(await comet.isBuyPaused()).to.be.false;
+          });
+
+          it('leaves per-asset flags unpaused', async function () {
+            for (const assetFlag of assetFlags) {
+              expect(await assetFlag.isPaused(comet, assetIndex), assetFlag.name).to.be.false;
+            }
+          });
+        });
+      }
+    });
+
+    describe('isolation of per-asset flags', function () {
+      for (const flag of assetFlags) {
+        for (const pausedIndex of [0, MAX_ASSETS - 1]) {
+          describe(`${flag.name}(${pausedIndex}, true) with ${MAX_ASSETS} collaterals`, function () {
+            before(async function () {
+              await fixture.restore();
+            });
+
+            it('allows governor to pause the asset', async function () {
+              await flag.pause(cometExtWithMaxAssets, governor, pausedIndex, true);
+              expect(await flag.isPaused(cometWithMaxAssets, pausedIndex)).to.be.true;
+            });
+
+            it('leaves every other asset index unpaused for the same action', async function () {
+              for (let index = 0; index < MAX_ASSETS; index++) {
+                if (index === pausedIndex) continue;
+                expect(await flag.isPaused(cometWithMaxAssets, index), `asset index ${index}`).to.be.false;
+              }
+            });
+
+            it('leaves the other per-asset actions unpaused for every asset index', async function () {
+              for (const other of assetFlags.filter((f) => f !== flag)) {
+                for (let index = 0; index < MAX_ASSETS; index++) {
+                  expect(await other.isPaused(cometWithMaxAssets, index), `${other.name} asset index ${index}`).to.be
+                    .false;
+                }
+              }
+            });
+
+            it('leaves global collateral flags unpaused', async function () {
+              expect(await cometWithMaxAssets.isCollateralWithdrawPaused()).to.be.false;
+              expect(await cometWithMaxAssets.isCollateralSupplyPaused()).to.be.false;
+              expect(await cometWithMaxAssets.isCollateralTransferPaused()).to.be.false;
+            });
+          });
+        }
+      }
+    });
+  });
+
+  /**
+   * The legacy coarse flags (`pause(supply, transfer, withdraw, absorb, buy)`) are checked first and revert
+   * with `Paused`. The extended flags are an additional gate behind them. Each flow walks a lender through:
+   * both on -> only extended on -> only legacy on -> both off.
+   */
+  describe('coexistence with legacy pause flags', function () {
+    describe('base supply: legacy supply pause and pauseBaseSupply', function () {
+      let alice: SignerWithAddress;
+      let amount: bigint;
+
+      before(async function () {
+        await fixture.restore();
+        alice = users[0];
+        amount = 100n * 10n ** BigInt(await baseToken.decimals());
+        await baseToken.allocateTo(alice.address, amount);
+        await baseToken.connect(alice).approve(comet.address, amount);
+      });
+
+      it('allows pause guardian to pause legacy supply and base supply', async function () {
+        await comet.connect(pauseGuardian).pause(true, false, false, false, false);
+        await cometExt.connect(pauseGuardian).pauseBaseSupply(true);
+        expect(await comet.isSupplyPaused()).to.be.true;
+        expect(await comet.isBaseSupplyPaused()).to.be.true;
+      });
+
+      it('reverts base supply with Paused while both are on', async function () {
+        await expect(
+          comet.connect(alice).supply(baseToken.address, amount)
+        ).to.be.revertedWithCustomError(comet, 'Paused');
+      });
+
+      it('allows pause guardian to lift the legacy supply pause', async function () {
+        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
+        expect(await comet.isSupplyPaused()).to.be.false;
+      });
+
+      it('reverts base supply with BaseSupplyPaused while only the extended flag is on', async function () {
+        await expect(
+          comet.connect(alice).supply(baseToken.address, amount)
+        ).to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
+      });
+
+      it('allows pause guardian to pause legacy supply again and lift base supply pause', async function () {
+        await comet.connect(pauseGuardian).pause(true, false, false, false, false);
+        await cometExt.connect(pauseGuardian).pauseBaseSupply(false);
+        expect(await comet.isSupplyPaused()).to.be.true;
+        expect(await comet.isBaseSupplyPaused()).to.be.false;
+      });
+
+      it('reverts base supply with Paused while only the legacy flag is on', async function () {
+        await expect(
+          comet.connect(alice).supply(baseToken.address, amount)
+        ).to.be.revertedWithCustomError(comet, 'Paused');
+      });
+
+      it('allows pause guardian to lift the legacy supply pause again', async function () {
+        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
+        expect(await comet.isSupplyPaused()).to.be.false;
+      });
+
+      it('allows base supply when both are off', async function () {
+        await expect(
+          comet.connect(alice).supply(baseToken.address, amount)
+        ).to.changeTokenBalances(baseToken, [alice, comet], [-amount, amount]);
+      });
+    });
+
+    describe('lenders withdraw: legacy withdraw pause and pauseLendersWithdraw', function () {
+      let alice: SignerWithAddress;
+      let amount: bigint;
+
+      before(async function () {
+        await fixture.restore();
+        alice = users[0];
+        amount = 100n * 10n ** BigInt(await baseToken.decimals());
+        await baseToken.allocateTo(alice.address, amount);
+        await baseToken.connect(alice).approve(comet.address, amount);
+        await comet.connect(alice).supply(baseToken.address, amount);
+      });
+
+      it('allows pause guardian to pause legacy withdraw and lenders withdraw', async function () {
+        await comet.connect(pauseGuardian).pause(false, false, true, false, false);
+        await cometExt.connect(pauseGuardian).pauseLendersWithdraw(true);
+        expect(await comet.isWithdrawPaused()).to.be.true;
+        expect(await comet.isLendersWithdrawPaused()).to.be.true;
+      });
+
+      it('reverts lender withdraw with Paused while both are on', async function () {
+        await expect(
+          comet.connect(alice).withdraw(baseToken.address, amount)
+        ).to.be.revertedWithCustomError(comet, 'Paused');
+      });
+
+      it('allows pause guardian to lift the legacy withdraw pause', async function () {
+        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
+        expect(await comet.isWithdrawPaused()).to.be.false;
+      });
+
+      it('reverts lender withdraw with LendersWithdrawPaused while only the extended flag is on', async function () {
+        await expect(
+          comet.connect(alice).withdraw(baseToken.address, amount)
+        ).to.be.revertedWithCustomError(comet, 'LendersWithdrawPaused');
+      });
+
+      it('allows pause guardian to pause legacy withdraw again and lift lenders withdraw pause', async function () {
+        await comet.connect(pauseGuardian).pause(false, false, true, false, false);
+        await cometExt.connect(pauseGuardian).pauseLendersWithdraw(false);
+        expect(await comet.isWithdrawPaused()).to.be.true;
+        expect(await comet.isLendersWithdrawPaused()).to.be.false;
+      });
+
+      it('reverts lender withdraw with Paused while only the legacy flag is on', async function () {
+        await expect(
+          comet.connect(alice).withdraw(baseToken.address, amount)
+        ).to.be.revertedWithCustomError(comet, 'Paused');
+      });
+
+      it('allows pause guardian to lift the legacy withdraw pause again', async function () {
+        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
+        expect(await comet.isWithdrawPaused()).to.be.false;
+      });
+
+      it('allows lender withdraw when both are off', async function () {
+        await expect(
+          comet.connect(alice).withdraw(baseToken.address, amount)
+        ).to.changeTokenBalances(baseToken, [alice, comet], [amount, -amount]);
+      });
+    });
+
+    describe('lenders transfer: legacy transfer pause and pauseLendersTransfer', function () {
+      let alice: SignerWithAddress;
+      let bob: SignerWithAddress;
+      let amount: bigint;
+
+      before(async function () {
+        await fixture.restore();
+        [alice, bob] = users;
+        amount = 100n * 10n ** BigInt(await baseToken.decimals());
+        await baseToken.allocateTo(alice.address, amount);
+        await baseToken.connect(alice).approve(comet.address, amount);
+        await comet.connect(alice).supply(baseToken.address, amount);
+      });
+
+      it('allows pause guardian to pause legacy transfer and lenders transfer', async function () {
+        await comet.connect(pauseGuardian).pause(false, true, false, false, false);
+        await cometExt.connect(pauseGuardian).pauseLendersTransfer(true);
+        expect(await comet.isTransferPaused()).to.be.true;
+        expect(await comet.isLendersTransferPaused()).to.be.true;
+      });
+
+      it('reverts lender transfer with Paused while both are on', async function () {
+        await expect(
+          comet.connect(alice).transfer(bob.address, amount)
+        ).to.be.revertedWithCustomError(comet, 'Paused');
+      });
+
+      it('allows pause guardian to lift the legacy transfer pause', async function () {
+        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
+        expect(await comet.isTransferPaused()).to.be.false;
+      });
+
+      it('reverts lender transfer with LendersTransferPaused while only the extended flag is on', async function () {
+        await expect(
+          comet.connect(alice).transfer(bob.address, amount)
+        ).to.be.revertedWithCustomError(comet, 'LendersTransferPaused');
+      });
+
+      it('allows pause guardian to pause legacy transfer again and lift lenders transfer pause', async function () {
+        await comet.connect(pauseGuardian).pause(false, true, false, false, false);
+        await cometExt.connect(pauseGuardian).pauseLendersTransfer(false);
+        expect(await comet.isTransferPaused()).to.be.true;
+        expect(await comet.isLendersTransferPaused()).to.be.false;
+      });
+
+      it('reverts lender transfer with Paused while only the legacy flag is on', async function () {
+        await expect(
+          comet.connect(alice).transfer(bob.address, amount)
+        ).to.be.revertedWithCustomError(comet, 'Paused');
+      });
+
+      it('allows pause guardian to lift the legacy transfer pause again', async function () {
+        await comet.connect(pauseGuardian).pause(false, false, false, false, false);
+        expect(await comet.isTransferPaused()).to.be.false;
+      });
+
+      it('allows lender transfer when both are off', async function () {
+        await comet.connect(alice).transfer(bob.address, amount);
+        expect(await comet.balanceOf(alice.address)).to.equal(0);
+        expect(await comet.balanceOf(bob.address)).to.equal(amount);
+      });
+    });
+  });
+
+  /**
+   * @title What each extended pause leaves working
+   * @notice extended-pause-test checks that each pause blocks its own action and sets only its own flag.
+   *  These flows check the behaviour around it on a market with a lender and a borrower:
+   *  - pauseBaseSupply also blocks repaying a borrow (a repay is a base supply);
+   *  - a lenders pause leaves borrowers working and a borrowers pause leaves lenders working,
+   *    for withdraw and for transfer;
+   *  - a per-asset collateral pause leaves the other collateral working.
+   *
+   *  Setup: alice lends 10,000 USDC, bob borrows 1,000 USDC against 1 WETH, charles holds WETH and WBTC.
+   */
+  describe('extended pause side effects', function () {
+    const USDC_SCALE = exp(1, 6);
+    const LEND_AMOUNT = 10_000n * USDC_SCALE;
+    const BORROW_AMOUNT = 1_000n * USDC_SCALE;
+    const STEP_AMOUNT = 100n * USDC_SCALE;
 
     let comet: CometHarnessInterfaceExtendedAssetList;
-    let baseToken: FaucetToken;
+    let cometExt: CometExt;
+    let usdc: FaucetToken;
+    let weth: FaucetToken;
+    let wbtc: FaucetToken;
+    let wethIndex: number;
     let alice: SignerWithAddress;
-    let eve: SignerWithAddress;
-    let initialSnapshot: SnapshotRestorer;
-
-    const transferMethods: {
-      name: string;
-      transfer: (src: SignerWithAddress, amount: BigNumberish) => Promise<ContractTransaction>;
-    }[] = [
-      {
-        name: 'transfer',
-        transfer: (src, amount) => comet.connect(src).transfer(eve.address, amount),
-      },
-      {
-        name: 'transferFrom',
-        transfer: (src, amount) => comet.connect(eve).transferFrom(src.address, eve.address, amount),
-      },
-      {
-        name: 'transferAsset',
-        transfer: (src, amount) => comet.connect(src).transferAsset(eve.address, baseToken.address, amount),
-      },
-      {
-        name: 'transferAssetFrom',
-        transfer: (src, amount) => comet.connect(eve).transferAssetFrom(src.address, eve.address, baseToken.address, amount),
-      },
-    ];
-
-    const withdrawMethods: {
-      name: string;
-      withdraw: (src: SignerWithAddress, amount: BigNumberish) => Promise<ContractTransaction>;
-    }[] = [
-      {
-        name: 'withdraw',
-        withdraw: (src, amount) => comet.connect(src).withdraw(baseToken.address, amount),
-      },
-      {
-        name: 'withdrawTo',
-        withdraw: (src, amount) => comet.connect(src).withdrawTo(eve.address, baseToken.address, amount),
-      },
-      {
-        name: 'withdrawFrom',
-        withdraw: (src, amount) => comet.connect(eve).withdrawFrom(src.address, eve.address, baseToken.address, amount),
-      },
-    ];
+    let bob: SignerWithAddress;
+    let charles: SignerWithAddress;
+    let pauseGuardian: SignerWithAddress;
+    let fixture: SnapshotRestorer;
 
     before(async function () {
       const protocol = await makeProtocol({
         base: 'USDC',
-        baseBorrowMin: BASE_BORROW_MIN,
-        supplyInterestRateSlopeLow: 0,
-        supplyInterestRateSlopeHigh: 0,
-        borrowInterestRateBase: 0,
-        borrowInterestRateSlopeLow: 0,
-        borrowInterestRateSlopeHigh: 0,
+        assets: {
+          USDC: { decimals: 6 },
+          WETH: { decimals: 18, initialPrice: 3000, borrowCF: exp(0.8, 18), liquidateCF: exp(0.85, 18), liquidationFactor: exp(0.9, 18) },
+          WBTC: { decimals: 8, initialPrice: 41000, borrowCF: exp(0.7, 18), liquidateCF: exp(0.75, 18), liquidationFactor: exp(0.9, 18) },
+        },
       });
       comet = protocol.cometWithExtendedAssetList;
-      baseToken = protocol.tokens.USDC as FaucetToken;
-      const weth = protocol.tokens.WETH as FaucetToken;
-      const carol = protocol.users[3];
-      alice = protocol.users[0];
-      eve = protocol.users[4];
+      cometExt = comet.attach(comet.address) as CometExt;
+      usdc = protocol.tokens.USDC as FaucetToken;
+      weth = protocol.tokens.WETH as FaucetToken;
+      wbtc = protocol.tokens.WBTC as FaucetToken;
+      wethIndex = (await comet.getAssetInfoByAddress(weth.address)).offset;
+      [alice, bob, charles] = protocol.users;
+      pauseGuardian = protocol.pauseGuardian;
 
-      for (const { account, amount } of [
-        { account: carol, amount: DEFAULT_BASE_SUPPLY },
-        { account: alice, amount: SUPPLY_AMOUNT },
-      ]) {
-        await baseToken.allocateTo(account.address, amount);
-        await baseToken.connect(account).approve(comet.address, amount);
-        await comet.connect(account).supply(baseToken.address, amount);
-      }
+      // alice lends; her supply is the cash bob borrows
+      await usdc.allocateTo(alice.address, 2n * LEND_AMOUNT);
+      await usdc.connect(alice).approve(comet.address, ethers.constants.MaxUint256);
+      await comet.connect(alice).supply(usdc.address, LEND_AMOUNT);
 
-      await weth.allocateTo(alice.address, DEFAULT_COLLATERAL_SUPPLY);
-      await weth.connect(alice).approve(comet.address, DEFAULT_COLLATERAL_SUPPLY);
-      await comet.connect(alice).supply(weth.address, DEFAULT_COLLATERAL_SUPPLY);
-      await comet.connect(alice).allow(eve.address, true);
+      // bob borrows against 1 WETH, and has USDC in his wallet to repay with
+      await weth.allocateTo(bob.address, exp(2, 18));
+      await weth.connect(bob).approve(comet.address, ethers.constants.MaxUint256);
+      await comet.connect(bob).supply(weth.address, exp(1, 18));
+      await comet.connect(bob).withdraw(usdc.address, BORROW_AMOUNT);
+      await usdc.allocateTo(bob.address, BORROW_AMOUNT);
+      await usdc.connect(bob).approve(comet.address, ethers.constants.MaxUint256);
 
-      initialSnapshot = await takeSnapshot();
+      // charles holds both collaterals, with no borrow
+      await weth.allocateTo(charles.address, exp(2, 18));
+      await wbtc.allocateTo(charles.address, exp(2, 8));
+      await weth.connect(charles).approve(comet.address, ethers.constants.MaxUint256);
+      await wbtc.connect(charles).approve(comet.address, ethers.constants.MaxUint256);
+      await comet.connect(charles).supply(weth.address, exp(1, 18));
+      await comet.connect(charles).supply(wbtc.address, exp(1, 8));
+
+      fixture = await takeSnapshot();
     });
 
-    describe('under lenders withdraw pause', function () {
-      let lendersPauseSnapshot: SnapshotRestorer;
+    after(async function () {
+      await fixture.restore();
+    });
+
+    describe('pauseBaseSupply blocks repaying a borrow', function () {
+      let principalBefore: bigint;
 
       before(async function () {
-        await comet.connect(pauseGuardian).pauseLendersWithdraw(true);
-
-        lendersPauseSnapshot = await takeSnapshot();
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseBaseSupply(true);
       });
 
-      it('lenders withdraw is paused', async function () {
-        expect(await comet.isLendersWithdrawPaused()).to.be.true;
+      it('bob has a borrow to repay', async function () {
+        principalBefore = (await comet.userBasic(bob.address)).principal.toBigInt();
+        expect(principalBefore).to.be.lessThan(0n);
       });
 
-      for (const { name, transfer } of transferMethods) {
-        it(`${name} of supply plus min borrow does not revert`, async function () {
-          await expect(transfer(alice, SUPPLY_AMOUNT + BASE_BORROW_MIN)).to.not.be.reverted;
-        });
-      }
-
-      afterEach(async function () {
-        await lendersPauseSnapshot.restore();
+      it('repay with supply reverts with BaseSupplyPaused', async function () {
+        await expect(comet.connect(bob).supply(usdc.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
       });
 
-      after(async function () {
-        await initialSnapshot.restore();
+      it('repay-all with supply(MaxUint256) reverts with BaseSupplyPaused', async function () {
+        await expect(comet.connect(bob).supply(usdc.address, ethers.constants.MaxUint256))
+          .to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
+      });
+
+      it('repay on bob\'s behalf with supplyTo reverts with BaseSupplyPaused', async function () {
+        await expect(comet.connect(alice).supplyTo(bob.address, usdc.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'BaseSupplyPaused');
+      });
+
+      it('bob\'s borrow principal is unchanged', async function () {
+        expect((await comet.userBasic(bob.address)).principal).to.equal(principalBefore);
+      });
+
+      it('collateral supply still works', async function () {
+        await comet.connect(bob).supply(weth.address, exp(0.5, 18));
+        expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(exp(1.5, 18));
+      });
+
+      it('after unpausing, the repay goes through and lowers the borrow', async function () {
+        await cometExt.connect(pauseGuardian).pauseBaseSupply(false);
+        const borrowBefore = (await comet.borrowBalanceOf(bob.address)).toBigInt();
+        await comet.connect(bob).supply(usdc.address, STEP_AMOUNT);
+        // one block of interest accrues between the read and the repay
+        expect(await comet.borrowBalanceOf(bob.address)).to.be.closeTo(borrowBefore - STEP_AMOUNT, 1000);
       });
     });
 
-    describe('under lenders transfer pause', function () {
-      let lendersPauseSnapshot: SnapshotRestorer;
-
+    describe('pauseLendersWithdraw leaves borrowers working', function () {
       before(async function () {
-        await comet.connect(pauseGuardian).pauseLendersTransfer(true);
-
-        lendersPauseSnapshot = await takeSnapshot();
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseLendersWithdraw(true);
       });
 
-      it('lenders transfer is paused', async function () {
-        expect(await comet.isLendersTransferPaused()).to.be.true;
+      it('alice (lender) cannot withdraw', async function () {
+        await expect(comet.connect(alice).withdraw(usdc.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'LendersWithdrawPaused');
       });
 
-      for (const { name, withdraw } of withdrawMethods) {
-        it(`${name} of supply plus min borrow does not revert`, async function () {
-          await expect(withdraw(alice, SUPPLY_AMOUNT + BASE_BORROW_MIN)).to.not.be.reverted;
-        });
-      }
-
-      afterEach(async function () {
-        await lendersPauseSnapshot.restore();
+      it('bob (borrower) can still borrow more', async function () {
+        const borrowBefore = (await comet.borrowBalanceOf(bob.address)).toBigInt();
+        const walletBefore = (await usdc.balanceOf(bob.address)).toBigInt();
+        await comet.connect(bob).withdraw(usdc.address, STEP_AMOUNT);
+        expect(await usdc.balanceOf(bob.address)).to.equal(walletBefore + STEP_AMOUNT);
+        expect(await comet.borrowBalanceOf(bob.address)).to.be.gte(borrowBefore + STEP_AMOUNT);
       });
 
-      after(async function () {
-        await initialSnapshot.restore();
+      it('bob can still withdraw part of his collateral', async function () {
+        await comet.connect(bob).withdraw(weth.address, exp(0.1, 18));
+        expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(exp(0.9, 18));
+      });
+    });
+
+    describe('pauseBorrowersWithdraw leaves lenders working', function () {
+      before(async function () {
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseBorrowersWithdraw(true);
+      });
+
+      it('bob (borrower) cannot borrow more', async function () {
+        await expect(comet.connect(bob).withdraw(usdc.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'BorrowersWithdrawPaused');
+      });
+
+      it('alice (lender) can still withdraw', async function () {
+        const walletBefore = (await usdc.balanceOf(alice.address)).toBigInt();
+        await comet.connect(alice).withdraw(usdc.address, STEP_AMOUNT);
+        expect(await usdc.balanceOf(alice.address)).to.equal(walletBefore + STEP_AMOUNT);
+      });
+    });
+
+    describe('pauseLendersTransfer leaves borrowers working', function () {
+      before(async function () {
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseLendersTransfer(true);
+      });
+
+      it('alice (lender) cannot transfer base', async function () {
+        await expect(comet.connect(alice).transfer(charles.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'LendersTransferPaused');
+      });
+
+      it('bob (borrower) can still transfer base, which borrows it', async function () {
+        const borrowBefore = (await comet.borrowBalanceOf(bob.address)).toBigInt();
+        await comet.connect(bob).transfer(charles.address, STEP_AMOUNT);
+        expect(await comet.balanceOf(charles.address)).to.be.closeTo(STEP_AMOUNT, 1);
+        expect(await comet.borrowBalanceOf(bob.address)).to.be.gte(borrowBefore + STEP_AMOUNT);
+      });
+    });
+
+    describe('pauseBorrowersTransfer leaves lenders working', function () {
+      before(async function () {
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseBorrowersTransfer(true);
+      });
+
+      it('bob (borrower) cannot transfer base', async function () {
+        await expect(comet.connect(bob).transfer(charles.address, STEP_AMOUNT))
+          .to.be.revertedWithCustomError(comet, 'BorrowersTransferPaused');
+      });
+
+      it('alice (lender) can still transfer base', async function () {
+        await comet.connect(alice).transfer(charles.address, STEP_AMOUNT);
+        expect(await comet.balanceOf(charles.address)).to.be.closeTo(STEP_AMOUNT, 1);
+      });
+    });
+
+    describe('per-asset collateral pauses leave the other collateral working', function () {
+      before(async function () {
+        await fixture.restore();
+        await cometExt.connect(pauseGuardian).pauseCollateralAssetSupply(wethIndex, true);
+        await cometExt.connect(pauseGuardian).pauseCollateralAssetWithdraw(wethIndex, true);
+        await cometExt.connect(pauseGuardian).pauseCollateralAssetTransfer(wethIndex, true);
+      });
+
+      it('WETH supply, withdraw and transfer revert with the per-asset errors', async function () {
+        await expect(comet.connect(charles).supply(weth.address, exp(0.1, 18)))
+          .to.be.revertedWithCustomError(comet, 'CollateralAssetSupplyPaused').withArgs(wethIndex);
+        await expect(comet.connect(charles).withdraw(weth.address, exp(0.1, 18)))
+          .to.be.revertedWithCustomError(comet, 'CollateralAssetWithdrawPaused').withArgs(wethIndex);
+        await expect(comet.connect(charles).transferAsset(alice.address, weth.address, exp(0.1, 18)))
+          .to.be.revertedWithCustomError(comet, 'CollateralAssetTransferPaused').withArgs(wethIndex);
+      });
+
+      it('WBTC supply still works', async function () {
+        await comet.connect(charles).supply(wbtc.address, exp(0.5, 8));
+        expect(await comet.collateralBalanceOf(charles.address, wbtc.address)).to.equal(exp(1.5, 8));
+      });
+
+      it('WBTC withdraw still works', async function () {
+        await comet.connect(charles).withdraw(wbtc.address, exp(0.5, 8));
+        expect(await comet.collateralBalanceOf(charles.address, wbtc.address)).to.equal(exp(1, 8));
+      });
+
+      it('WBTC transfer still works', async function () {
+        await comet.connect(charles).transferAsset(alice.address, wbtc.address, exp(0.5, 8));
+        expect(await comet.collateralBalanceOf(alice.address, wbtc.address)).to.equal(exp(0.5, 8));
+        expect(await comet.collateralBalanceOf(charles.address, wbtc.address)).to.equal(exp(0.5, 8));
       });
     });
   });
+
 });

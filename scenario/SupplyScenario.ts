@@ -19,7 +19,7 @@ import {
   getMinimumBorrowAmounts,
   rejectsZeroAmounts,
   supportUtilizationLimit,
-  isFreshMarket
+  isFreshMarket,
   sourceAndSupply
 } from './utils';
 import { matchesDeployment } from './utils';
@@ -683,7 +683,7 @@ scenario(
     const scale = (await comet.baseScale()).toBigInt();
 
     await albert.allow(betty, true);
-    await baseAsset.approve(albert, betty, 10n * scale);
+    await baseAsset.approve(albert, comet.address, 10n * scale);
 
     await expect(comet.connect(betty.signer).supplyFrom(albert.address, betty.address, baseAsset.address, 100n * scale))
       .to.be.reverted;
@@ -705,7 +705,7 @@ scenario(
     const scale = scaleBN.toBigInt();
 
     await albert.allow(betty, true);
-    await collateralAsset.approve(albert, betty, 10n * scale);
+    await collateralAsset.approve(albert, comet.address, 10n * scale);
 
     await expectRevertMatches(
       comet.connect(betty.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, 100n * scale),

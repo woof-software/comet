@@ -92,7 +92,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       const dstUserCollateralBalanceBefore = await betty.getCometCollateralBalance(assetAddress);
       const dstUserAssetBalanceBefore = await collateralAsset.balanceOf(betty.address);
 
-      // Albert withdraws 100 units of collateral from Comet
+      // Albert withdraws the configured amount of collateral from Comet to Betty
       const txn = await comet
         .connect(albert.signer)
         .withdrawTo(betty.address, collateralAsset.address, amountToWithdraw)
@@ -276,7 +276,7 @@ scenario(
 
     const amountToWithdraw = fromUserBaseBalanceBefore / 2n;
 
-    // Betty withdraws supplied units of base from Albert
+    // Charles withdraws half of Albert's supplied base to Betty
     await comet.connect(charles.signer).withdrawFrom(albert.address, betty.address, baseAsset.address, amountToWithdraw);
 
     const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
@@ -1292,7 +1292,7 @@ scenario(
     const collateralIndices = await getUsableCollateralIndices(context);
 
     // A protocol holding no base would make the borrow a single wei, far under the market's minimum borrow,
-    // and it would revert for that reason instead. Give it 1000 base tokens first so the borrow is a real one.
+    // and it would revert for that reason instead. Give it 100 base tokens first so the borrow is a real one.
     if ((await baseAsset.balanceOf(comet.address)) === 0n) {
       await context.sourceTokens(100n * baseScale, baseAsset.address, comet.address);
     }
