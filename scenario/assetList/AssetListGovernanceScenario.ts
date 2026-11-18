@@ -11,6 +11,7 @@ import { calldata } from '../../src/deploy';
 import { exp } from '../../test/helpers';
 import { hashConfig } from '../../test/asset-list/shared';
 import { deployMockERC20, deployPriceFeed } from '../configurator/shared';
+import { supplyBaseFromLender } from '../utils/userOperations';
 
 // EIP-1967 implementation and admin slots of a proxy
 const IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
@@ -756,11 +757,18 @@ scenario(
     await borrowAgainst(context, properties, betty, await firstListedAssetIndex(properties));
     const before = await snapshotMarket(context, properties);
 
-    const newAssetConfig = {
-      asset: await deployMockERC20(context, 'positionsAsset'),
-      priceFeed: await deployPriceFeed(context, 'positionsAsset'),
-      ...storageConfig,
-    };
+    // Charles borrows the minimum against the new asset at the end, with twice the collateral that borrow needs;
+    // the cap is set to that amount, as the shared one can be too small for the minimum borrow of the market
+    const asset = await deployMockERC20(context, 'positionsAsset');
+    const priceFeed = await deployPriceFeed(context, 'positionsAsset');
+    const token = await context.world.deploymentManager.hre.ethers.getContractAt('FaucetToken', asset) as FaucetToken;
+    const borrowAmount = (await comet.baseBorrowMin()).toBigInt();
+    const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
+    const collateralBCF = storageConfig.borrowCollateralFactor;
+    const collateralAmount = 2n * borrowAmount * basePrice * 10n ** BigInt(await token.decimals()) * 10n ** 18n /
+      ((await comet.baseScale()).toBigInt() * (await comet.getPrice(priceFeed)).toBigInt() * collateralBCF);
+
+    const newAssetConfig = { asset, priceFeed, ...storageConfig, supplyCap: collateralAmount };
 
     await executeProposal(
       context,
@@ -792,6 +800,19 @@ scenario(
     // The new asset holds nothing of anyone yet
     expect((await comet.totalsCollateral(newAssetConfig.asset)).totalSupplyAsset).to.equal(0);
     expect(await comet.collateralBalanceOf(betty.address, newAssetConfig.asset)).to.equal(0);
+
+    // The new asset backs a borrow: Charles supplies the collateral and borrows the minimum against it. Betty's borrow
+    // can take all the base Albert supplied, so Albert lends more first. The mock token has no holders to source it
+    // from, so it comes from its faucet
+    const { albert, charles } = actors;
+    await supplyBaseFromLender(context, albert);
+    await token.allocateTo(charles.address, collateralAmount);
+    await token.connect(charles.signer).approve(comet.address, collateralAmount);
+    await charles.supplyAsset({ asset, amount: collateralAmount });
+    await charles.withdrawAsset({ asset: await comet.baseToken(), amount: borrowAmount });
+
+    expect(await comet.collateralBalanceOf(charles.address, newAssetConfig.asset)).to.equal(collateralAmount);
+    expect(await comet.borrowBalanceOf(charles.address)).to.equal(borrowAmount);
   }
 );
 

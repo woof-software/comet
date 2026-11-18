@@ -9,7 +9,7 @@ import {
   CometWithExtendedAssetList,
   Configurator,
 } from 'build/types';
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { CometExt, TotalsBasicStructOutput } from 'build/types/CometExt';
 
@@ -237,7 +237,7 @@ describe('extended pause upgrade test', function () {
   });
 
   it('should save comet extension storage safely after upgrade', async function () {
-    // version is a constant of the extension code, so it is the new one's, not the one read before
+    // version is a constant of the extension, so it comes from the new implementation
     expect(await cometExt.version()).to.equal(await newCometExt.version());
     expect(await cometExt.name()).to.equal(nameBefore);
     expect(await cometExt.symbol()).to.equal(symbolBefore);

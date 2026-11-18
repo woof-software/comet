@@ -698,6 +698,10 @@ describe('transfer', function () {
         await expect(comet.connect(alice).transferAsset(bob.address, unsupportedToken.address, 0n)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
       });
 
+      it('zero amount', async () => {
+        await expect(comet.connect(alice).transferAsset(bob.address, collateral.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
       it('amount > balance', async () => {
         const balance = await comet.collateralBalanceOf(alice.address, collateral.address);
 
@@ -1522,6 +1526,15 @@ describe('transfer', function () {
             receiver.address,
             unsupportedToken.address,
             0n
+          )).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+        });
+
+        it('zero amount', async () => {
+          await expect(comet.connect(operator).transferAssetFrom(
+            holder.address,
+            receiver.address,
+            collaterals['COMP'].address,
+            0
           )).to.be.revertedWithCustomError(comet, 'ZeroAmount');
         });
 
