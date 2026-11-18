@@ -567,7 +567,7 @@ scenario(
     },
     cometBalances: async (ctx) => ({
       charles: {
-        $base: getConfigForScenario(ctx).withdrawBase
+        $base: getConfigForScenario(ctx, 1).withdrawBase
       }
     }),
   },

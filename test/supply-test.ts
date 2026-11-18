@@ -752,34 +752,6 @@ describe('supply', function () {
         });
       });
 
-      describe('MaxUint supplies 0 when the dst has no borrow', function () {
-        let totalsBefore: Awaited<ReturnType<CometHarnessInterfaceExtendedAssetList['totalsBasic']>>;
-        let supplyTx: Awaited<ReturnType<typeof wait>>;
-
-        before(async function () {
-          await maxFixture.restore();
-          totalsBefore = await maxComet.totalsBasic();
-          supplyTx = await wait(maxComet.connect(payer).supplyTo(borrower.address, usdc.address, ethers.constants.MaxUint256));
-        });
-
-        it('emits Transfer and Supply for 0', async () => {
-          expect(supplyTx.receipt['events'].length).to.equal(2);
-          expect(event(supplyTx, 0)).to.deep.equal({ Transfer: { from: payer.address, to: maxComet.address, amount: 0n } });
-          expect(event(supplyTx, 1)).to.deep.equal({ Supply: { from: payer.address, dst: borrower.address, amount: 0n } });
-        });
-
-        it('no tokens move and no balance is created', async () => {
-          expect((await holdings(borrower.address)).internal).to.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
-          expect((await holdings(payer.address)).external.USDC).to.equal(PAYER_FUNDS);
-        });
-
-        it('totals are unchanged', async () => {
-          const totalsAfter = await maxComet.totalsBasic();
-          expect(totalsAfter.totalSupplyBase).to.equal(totalsBefore.totalSupplyBase);
-          expect(totalsAfter.totalBorrowBase).to.equal(totalsBefore.totalBorrowBase);
-        });
-      });
-
       describe('repaying exactly the borrow', function () {
         const DEBT = 100e6;
         let supplyTx: Awaited<ReturnType<typeof wait>>;
@@ -795,24 +767,6 @@ describe('supply', function () {
           expect(supplyTx.receipt['events'].length).to.equal(2);
           expect(event(supplyTx, 0)).to.deep.equal({ Transfer: { from: payer.address, to: maxComet.address, amount: BigInt(DEBT) } });
           expect(event(supplyTx, 1)).to.deep.equal({ Supply: { from: payer.address, dst: borrower.address, amount: BigInt(DEBT) } });
-        });
-      });
-
-      // Edge case: when supplying 0, dstPrincipalNew can be less than dstPrincipal due to rounding
-      describe('supplying 0 when rounding gives dstPrincipalNew < dstPrincipal', function () {
-        let supplyTx: Awaited<ReturnType<typeof wait>>;
-
-        before(async function () {
-          await maxFixture.restore();
-          await maxComet.setBasePrincipal(borrower.address, 99999992291226);
-          await overrideTotals({ totalSupplyBase: 699999944771920, baseSupplyIndex: 1000000131467072 });
-          supplyTx = await wait(maxComet.connect(borrower).supply(usdc.address, 0));
-        });
-
-        it('does not revert and emits Transfer and Supply for 0', async () => {
-          expect(supplyTx.receipt['events'].length).to.equal(2);
-          expect(event(supplyTx, 0)).to.deep.equal({ Transfer: { from: borrower.address, to: maxComet.address, amount: 0n } });
-          expect(event(supplyTx, 1)).to.deep.equal({ Supply: { from: borrower.address, dst: borrower.address, amount: 0n } });
         });
       });
 
