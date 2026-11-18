@@ -68,6 +68,8 @@ abstract contract CometMainInterface is CometCore {
     error DeactivatedCollateralBorrowBlocked();
     /// @notice Error emitted when deactivated token balance is > 0 on the balance of the account
     error TokenIsDeactivated(address asset);
+    /// @notice Error emitted when a supply, transfer or withdraw amount is zero
+    error ZeroAmount();
 
     event Supply(address indexed from, address indexed dst, uint amount);
     event Transfer(address indexed from, address indexed to, uint amount);
@@ -138,6 +140,7 @@ abstract contract CometMainInterface is CometCore {
     function getSupplyRate(uint utilization) virtual public view returns (uint64);
     function getBorrowRate(uint utilization) virtual public view returns (uint64);
     function getUtilization() virtual public view returns (uint);
+    function maxSupportedUtilization() virtual external view returns (uint64);
 
     function governor() virtual external view returns (address);
     function pauseGuardian() virtual external view returns (address);

@@ -1,4 +1,4 @@
-import { expect, exp, makeProtocol, ONE } from './helpers';
+import { DEFAULT_MAX_SUPPORTED_UTILIZATION, expect, exp, makeProtocol, ONE } from './helpers';
 import { ethers } from 'hardhat';
 import {
   SimplePriceFeed__factory,
@@ -111,6 +111,7 @@ describe('asset info', function () {
       baseMinForRewards: 0,
       baseBorrowMin: 0,
       targetReserves: 0,
+      maxSupportedUtilization: DEFAULT_MAX_SUPPORTED_UTILIZATION,
       assetConfigs: Object.entries(assets).reduce((acc, [symbol], _i) => {
         if (symbol != base) {
           acc.push({

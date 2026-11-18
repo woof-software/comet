@@ -37,6 +37,8 @@ export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
 import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
 export * from './hreUtils';
+export * from './versionControl';
+export * from './userOperations';
 
 /** Convert a per-year interest factor to per-second (Comet constructor truncation). */
 export function perSecond(perYear: BigNumber): BigNumber {
@@ -516,9 +518,9 @@ export async function supportUtilizationLimit(ctx: CometContext): Promise<boolea
     const ethers = ctx.world.deploymentManager.hre.ethers;
     
     const iface = new ethers.utils.Interface([
-      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
+      'function maxSupportedUtilization() external view returns (uint64)',
     ]);
-    const functionSelector = iface.getSighash('MAX_SUPPORTED_UTILIZATION');
+    const functionSelector = iface.getSighash('maxSupportedUtilization');
     
     // Try to call the function using a low-level static call
     // If the function doesn't exist, this will revert
@@ -554,6 +556,16 @@ export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
   } catch (error) {
     return false;
   }
+}
+
+/**
+ * @notice Whether interest takes utilization of the market above its limit: debt grows faster than supply only while
+ *         the borrow rate is above the supply rate
+ */
+export async function utilizationGrowsAboveLimit(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const maxSupportedUtilization = await comet.maxSupportedUtilization();
+  return (await comet.getBorrowRate(maxSupportedUtilization)).gt(await comet.getSupplyRate(maxSupportedUtilization));
 }
 
 /**
@@ -2012,6 +2024,30 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
     // reports CALL_EXCEPTION. Anything else (RPC down, rate limit, getComet failing) must fail the run, not skip it.
     if (e?.code === 'CALL_EXCEPTION') return false;
     throw e;
+  }
+}
+
+/**
+ * Check if Comet rejects zero-amount supply, transfer and withdraw with ZeroAmount
+ * @param ctx The Comet context
+ * @returns true if a zero base withdraw from an empty account reverts with ZeroAmount, false otherwise
+ */
+export async function rejectsZeroAmounts(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const ethers = ctx.world.deploymentManager.hre.ethers;
+
+  // Local ABI, so the custom error is decoded even if the deployment's ABI predates it
+  const cometWithZeroAmount = new ethers.Contract(
+    comet.address,
+    ['function withdraw(address asset, uint amount)', 'error ZeroAmount()'],
+    ethers.provider
+  );
+
+  try {
+    await cometWithZeroAmount.callStatic.withdraw(await comet.baseToken(), 0, { from: ethers.Wallet.createRandom().address });
+    return false;
+  } catch (e) {
+    return e.errorName === 'ZeroAmount';
   }
 }
 

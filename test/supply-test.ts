@@ -1,4 +1,4 @@
-import { ethers, event, expect, exp, makeProtocol, portfolio, wait, fastForward, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS, presentValueSupply } from './helpers';
+import { ethers, event, expect, exp, makeProtocol, portfolio, wait, fastForward, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS, presentValueSupply, setTotalsBasic } from './helpers';
 import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
@@ -176,6 +176,71 @@ describe('supply', function () {
 
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
         await expect(comet.connect(alice).supply(unsupportedToken.address, 1)).to.be.revertedWithCustomError(comet, 'BadAsset');
+      });
+
+      it('reverts on zero amount', async () => {
+        await expect(comet.connect(alice).supply(baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied to another account', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied from an account', async () => {
+        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on max amount when there is no debt to repay', async () => {
+        await baseToken.connect(alice).approve(comet.address, ethers.constants.MaxUint256);
+        await expect(comet.connect(alice).supply(baseToken.address, ethers.constants.MaxUint256)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+        await baseToken.connect(alice).approve(comet.address, 0);
+      });
+
+      it('reverts on max amount supplied to an account with no debt', async () => {
+        await baseToken.connect(alice).approve(comet.address, ethers.constants.MaxUint256);
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, ethers.constants.MaxUint256)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+        await baseToken.connect(alice).approve(comet.address, 0);
+      });
+    });
+
+    describe('supply base asset: minimal amount to a supplier with a non-exact principal conversion', function () {
+      const BASE_SUPPLY_INDEX = 1_000_000_123_456_789n;
+      const BOB_SUPPLY_AMOUNT = 99_999n;
+
+      let restorer: SnapshotRestorer;
+      let bobPrincipalBefore: bigint;
+      let baseSupplyIndex: bigint;
+
+      before(async () => {
+        restorer = await takeSnapshot();
+
+        await setTotalsBasic(comet, { baseSupplyIndex: BASE_SUPPLY_INDEX });
+        await baseToken.connect(bob).approve(comet.address, BOB_SUPPLY_AMOUNT);
+        await comet.connect(bob).supply(baseToken.address, BOB_SUPPLY_AMOUNT);
+
+        bobPrincipalBefore = (await comet.userBasic(bob.address)).principal.toBigInt();
+        baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+        await baseToken.connect(alice).approve(comet.address, 1);
+      });
+
+      after(async () => {
+        await restorer.restore();
+      });
+
+      it('sanity: principal to balance conversion is not exact', async () => {
+        expect(bobPrincipalBefore * baseSupplyIndex % exp(1, 15)).to.not.equal(0n);
+      });
+
+      it('reverts on zero amount supplied to the supplier', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('supplying 1 wei to the supplier succeeds', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, 1)).to.not.be.reverted;
+      });
+
+      it('supplier principal does not decrease', async () => {
+        expect((await comet.userBasic(bob.address)).principal).to.be.gte(bobPrincipalBefore);
       });
     });
 
@@ -687,34 +752,6 @@ describe('supply', function () {
         });
       });
 
-      describe('MaxUint supplies 0 when the dst has no borrow', function () {
-        let totalsBefore: Awaited<ReturnType<CometHarnessInterfaceExtendedAssetList['totalsBasic']>>;
-        let supplyTx: Awaited<ReturnType<typeof wait>>;
-
-        before(async function () {
-          await maxFixture.restore();
-          totalsBefore = await maxComet.totalsBasic();
-          supplyTx = await wait(maxComet.connect(payer).supplyTo(borrower.address, usdc.address, ethers.constants.MaxUint256));
-        });
-
-        it('emits Transfer and Supply for 0', async () => {
-          expect(supplyTx.receipt['events'].length).to.equal(2);
-          expect(event(supplyTx, 0)).to.deep.equal({ Transfer: { from: payer.address, to: maxComet.address, amount: 0n } });
-          expect(event(supplyTx, 1)).to.deep.equal({ Supply: { from: payer.address, dst: borrower.address, amount: 0n } });
-        });
-
-        it('no tokens move and no balance is created', async () => {
-          expect((await holdings(borrower.address)).internal).to.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
-          expect((await holdings(payer.address)).external.USDC).to.equal(PAYER_FUNDS);
-        });
-
-        it('totals are unchanged', async () => {
-          const totalsAfter = await maxComet.totalsBasic();
-          expect(totalsAfter.totalSupplyBase).to.equal(totalsBefore.totalSupplyBase);
-          expect(totalsAfter.totalBorrowBase).to.equal(totalsBefore.totalBorrowBase);
-        });
-      });
-
       describe('repaying exactly the borrow', function () {
         const DEBT = 100e6;
         let supplyTx: Awaited<ReturnType<typeof wait>>;
@@ -733,24 +770,6 @@ describe('supply', function () {
         });
       });
 
-      // Edge case: when supplying 0, dstPrincipalNew can be less than dstPrincipal due to rounding
-      describe('supplying 0 when rounding gives dstPrincipalNew < dstPrincipal', function () {
-        let supplyTx: Awaited<ReturnType<typeof wait>>;
-
-        before(async function () {
-          await maxFixture.restore();
-          await maxComet.setBasePrincipal(borrower.address, 99999992291226);
-          await overrideTotals({ totalSupplyBase: 699999944771920, baseSupplyIndex: 1000000131467072 });
-          supplyTx = await wait(maxComet.connect(borrower).supply(usdc.address, 0));
-        });
-
-        it('does not revert and emits Transfer and Supply for 0', async () => {
-          expect(supplyTx.receipt['events'].length).to.equal(2);
-          expect(event(supplyTx, 0)).to.deep.equal({ Transfer: { from: borrower.address, to: maxComet.address, amount: 0n } });
-          expect(event(supplyTx, 1)).to.deep.equal({ Supply: { from: borrower.address, dst: borrower.address, amount: 0n } });
-        });
-      });
-
       describe('MaxUint for a collateral asset', function () {
         before(async function () {
           await maxFixture.restore();
@@ -762,6 +781,75 @@ describe('supply', function () {
           await expect(maxComet.connect(payer).supplyTo(borrower.address, maxCollateral.address, ethers.constants.MaxUint256))
             .to.be.revertedWithCustomError(maxComet, 'InvalidUInt128');
         });
+      });
+    });
+
+    describe('supply base asset: after an idle period with the no-borrow supply rate cut off', function () {
+      const SUPPLY_BASE_RATE = exp(0.01, 18); // 1% per year
+      const IDLE_PERIOD = 30 * 24 * 60 * 60; // 30 days
+      const ALICE_SUPPLY_AMOUNT = exp(5e9, baseTokenDecimals);
+      const BOB_SUPPLY_AMOUNT = exp(1e9, baseTokenDecimals);
+
+      let testComet: CometHarnessInterfaceExtendedAssetList;
+      let testBaseToken: FaucetToken | NonStandardFaucetFeeToken;
+      let baseSupplyIndexBefore: BigNumber;
+      let restorer: SnapshotRestorer;
+
+      before(async () => {
+        restorer = await takeSnapshot();
+
+        const protocol = await makeProtocol({ base: 'USDC', supplyInterestRateBase: SUPPLY_BASE_RATE });
+        testComet = protocol.cometWithExtendedAssetList;
+        testBaseToken = protocol.tokens['USDC'];
+
+        await testBaseToken.allocateTo(alice.address, ALICE_SUPPLY_AMOUNT);
+        await testBaseToken.allocateTo(bob.address, BOB_SUPPLY_AMOUNT);
+        await testBaseToken.connect(alice).approve(testComet.address, ALICE_SUPPLY_AMOUNT);
+        await testBaseToken.connect(bob).approve(testComet.address, BOB_SUPPLY_AMOUNT);
+
+        // No borrows and no reserves: alice's balance equals the comet's balance, so the supply rate is cut off
+        await testComet.connect(alice).supply(testBaseToken.address, ALICE_SUPPLY_AMOUNT);
+
+        await ethers.provider.send('evm_increaseTime', [IDLE_PERIOD]);
+        await ethers.provider.send('evm_mine', []);
+
+        baseSupplyIndexBefore = (await testComet.totalsBasic()).baseSupplyIndex;
+      });
+
+      after(async () => {
+        await restorer.restore();
+      });
+
+      it('sanity: base supply rate is set', async () => {
+        expect(await testComet.supplyPerSecondInterestRateBase()).to.be.gt(0);
+      });
+
+      it('sanity: supply rate is cut off before the supply', async () => {
+        expect(await testComet.getSupplyRate(await testComet.getUtilization())).to.equal(0);
+      });
+
+      it('bob supplies base asset after the idle period', async () => {
+        await expect(testComet.connect(bob).supply(testBaseToken.address, BOB_SUPPLY_AMOUNT)).to.not.be.reverted;
+      });
+
+      it('supply index does not change', async () => {
+        expect((await testComet.totalsBasic()).baseSupplyIndex).to.equal(baseSupplyIndexBefore);
+      });
+
+      it("alice's balance does not grow from bob's deposit", async () => {
+        expect(await testComet.balanceOf(alice.address)).to.equal(ALICE_SUPPLY_AMOUNT);
+      });
+
+      it("bob's balance equals the supplied amount", async () => {
+        expect(await testComet.balanceOf(bob.address)).to.equal(BOB_SUPPLY_AMOUNT);
+      });
+
+      it('reserves stay at zero', async () => {
+        expect(await testComet.getReserves()).to.equal(0);
+      });
+
+      it('supply rate stays cut off after the supply', async () => {
+        expect(await testComet.getSupplyRate(await testComet.getUtilization())).to.equal(0);
       });
     });
   });
@@ -1277,6 +1365,18 @@ describe('supply', function () {
           'SupplyCapExceeded'
         );
         await collateral.connect(alice).approve(comet.address, 0);
+      });
+
+      it('reverts on zero amount', async () => {
+        await expect(comet.connect(alice).supply(collateral.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied to another account', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, collateral.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied from an account', async () => {
+        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, collateral.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
       });
     });
 

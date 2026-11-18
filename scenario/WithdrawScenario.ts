@@ -1,4 +1,7 @@
 import { CometContext, scenario } from './context/CometContext';
+import CometActor from './context/CometActor';
+import { CometInterface } from '../build/types';
+import { ContractTransaction } from 'ethers';
 import { expect } from 'chai';
 import {
   hasMinBorrowGreaterThanOne,
@@ -14,11 +17,22 @@ import {
   getMinimumBorrowAmounts,
   presentValueSupply,
   expectBase,
-  deployUnsupportedAsset
+  deployUnsupportedAsset,
+  servicePatch2,
+  isFreshMarket,
+  rejectsZeroAmounts,
+  UINT256_MAX,
+  sourceAndSupply,
+  borrowAmountToUtilization,
+  borrowFromMarket,
+  supplyCollateralForBorrow,
+  supplyBaseFromLender,
+  utilizationGrowsAboveLimit
 } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
+import { addTokenBalance } from './utils/erc20Balance';
 import { log } from 'console';
-import { exp } from '../test/helpers';
+import { exp, factorScale } from '../test/helpers';
 
 for (let offset = 0; offset < MAX_ASSETS; offset++) {
   scenario(
@@ -26,6 +40,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
     {
       filter: async (ctx: CometContext) =>
         (await isValidAssetIndex(ctx, offset)) &&
+        getConfigForScenario(ctx, offset).withdrawCollateral > 0 &&
         (await isTriviallySourceable(ctx, offset, getConfigForScenario(ctx, offset).withdrawCollateral)),
       cometBalances: (ctx: CometContext) => ({
         albert: { [`$asset${offset}`]: getConfigForScenario(ctx, offset).withdrawCollateral }
@@ -61,6 +76,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
     {
       filter: async (ctx: CometContext) =>
         (await isValidAssetIndex(ctx, offset)) &&
+        getConfigForScenario(ctx, offset).withdrawCollateral > 0 &&
         (await isTriviallySourceable(ctx, offset, getConfigForScenario(ctx, offset).withdrawCollateral)),
       cometBalances: (ctx: CometContext) => ({
         albert: { [`$asset${offset}`]: getConfigForScenario(ctx, offset).withdrawCollateral }
@@ -104,6 +120,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
     {
       filter: async (ctx: CometContext) =>
         (await isValidAssetIndex(ctx, offset)) &&
+        getConfigForScenario(ctx, offset).withdrawCollateral > 0 &&
         (await isTriviallySourceable(ctx, offset, getConfigForScenario(ctx, offset).withdrawCollateral)),
       cometBalances: (ctx: CometContext) => ({
         albert: { [`$asset${offset}`]: getConfigForScenario(ctx, offset).withdrawCollateral }
@@ -295,7 +312,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert } = actors;
+      const { albert, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
 
       // Albert borrows against the collateral in this scenario's slot
@@ -309,8 +326,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(amountToWithdraw, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, amountToWithdraw);
 
       const userAssetBalanceBefore = await baseAsset.balanceOf(albert.address);
 
@@ -341,7 +358,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert, betty } = actors;
+      const { albert, betty, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
 
       // Albert borrows against the collateral in this scenario's slot
@@ -355,8 +372,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(amountToWithdraw, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, amountToWithdraw);
 
       const fromUserAssetBalanceBefore = await baseAsset.balanceOf(albert.address);
       const dstUserBorrowBalanceBefore = (await comet.borrowBalanceOf(betty.address)).toBigInt();
@@ -406,8 +423,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(amountToWithdraw, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so betty supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, betty, amountToWithdraw);
 
       await albert.allow(charles, true);
 
@@ -825,6 +842,117 @@ scenario(
   }
 );
 
+const lendersWithdrawPauseMethods: {
+  name: string;
+  byOperator: boolean;
+  withdraw: (comet: CometInterface, asset: string, src: CometActor, dst: CometActor, amount: bigint) => Promise<ContractTransaction>;
+  recipient: (src: CometActor, dst: CometActor) => CometActor;
+}[] = [
+  {
+    name: 'withdraw',
+    byOperator: false,
+    withdraw: (comet, asset, src, _dst, amount) => comet.connect(src.signer).withdraw(asset, amount),
+    recipient: (src) => src,
+  },
+  {
+    name: 'withdrawTo',
+    byOperator: false,
+    withdraw: (comet, asset, src, dst, amount) => comet.connect(src.signer).withdrawTo(dst.address, asset, amount),
+    recipient: (_src, dst) => dst,
+  },
+  {
+    name: 'withdrawFrom',
+    byOperator: true,
+    withdraw: (comet, asset, src, dst, amount) => comet.connect(dst.signer).withdrawFrom(src.address, dst.address, asset, amount),
+    recipient: (_src, dst) => dst,
+  },
+];
+
+for (const { name, byOperator, withdraw } of lendersWithdrawPauseMethods) {
+  scenario(
+    `Comet#${name} > reverts when lender takes min borrow on top under lenders withdraw pause`,
+    {
+      filter: async (ctx: CometContext) => {
+        return (
+          (await isValidAssetIndex(ctx, 0)) &&
+          (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawAsset)) &&
+          (await usesAssetList(ctx)) &&
+          !(await isAssetDelisted(ctx, 0)) &&
+          (await supportsExtendedPause(ctx))
+        );
+      },
+      cometBalances: (ctx: CometContext) => ({
+        albert: { $base: getConfigForScenario(ctx).withdrawBase, $asset0: getConfigForScenario(ctx).withdrawAsset },
+        charles: { $base: getConfigForScenario(ctx).withdrawBase * 3 } // to give the protocol enough base for albert to borrow at least min borrow from
+      })
+    },
+    async ({ comet, actors }, _context, world) => {
+      const { albert, betty, pauseGuardian } = actors;
+      const baseAssetAddress = await comet.baseToken();
+      const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+
+      if (byOperator) await albert.allow(betty, true);
+
+      // Fund pause guardian account for gas fees
+      await fundAccount(world, pauseGuardian);
+
+      // Pause lenders withdraw
+      await comet.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
+
+      const baseSupplied = (await comet.balanceOf(albert.address)).toBigInt();
+      // Supply keeps accruing until the tx is mined, cover an hour of it so the withdraw still ends in a borrow
+      const supplyRate = (await comet.getSupplyRate(await comet.getUtilization())).toBigInt();
+      const accrualBuffer = baseSupplied * supplyRate * 3600n / factorScale + 1n;
+
+      await expect(
+        withdraw(comet, baseAssetAddress, albert, betty, baseSupplied + baseBorrowMin + accrualBuffer)
+      ).to.be.revertedWithCustomError(comet, 'LendersWithdrawPaused');
+    }
+  );
+}
+
+for (const { name, byOperator, withdraw, recipient } of lendersWithdrawPauseMethods) {
+  scenario(
+    `Comet#${name} > borrower without supply borrows under lenders withdraw pause`,
+    {
+      filter: async (ctx: CometContext) => {
+        return (
+          (await isValidAssetIndex(ctx, 0)) &&
+          (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).withdrawAsset)) &&
+          (await usesAssetList(ctx)) &&
+          !(await isAssetDelisted(ctx, 0)) &&
+          (await supportsExtendedPause(ctx))
+        );
+      },
+      cometBalances: (ctx: CometContext) => ({
+        albert: { $base: getConfigForScenario(ctx).withdrawBase },
+        betty: { $asset0: getConfigForScenario(ctx).withdrawAsset }
+      })
+    },
+    async ({ comet, actors }, context, world) => {
+      const { betty, charles, pauseGuardian } = actors;
+      const baseAssetAddress = await comet.baseToken();
+      const baseAsset = context.getAssetByAddress(baseAssetAddress);
+      const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+
+      if (byOperator) await betty.allow(charles, true);
+
+      // Fund pause guardian account for gas fees
+      await fundAccount(world, pauseGuardian);
+
+      // Pause lenders withdraw
+      await comet.connect(pauseGuardian.signer).pauseLendersWithdraw(true);
+
+      const recipientBalanceBefore = await baseAsset.balanceOf(recipient(betty, charles).address);
+
+      await withdraw(comet, baseAssetAddress, betty, charles, baseBorrowMin);
+
+      expectBase(baseBorrowMin, (await comet.borrowBalanceOf(betty.address)).toBigInt());
+      expectBase(recipientBalanceBefore + baseBorrowMin, await baseAsset.balanceOf(recipient(betty, charles).address));
+    }
+  );
+}
+
 scenario(
   'Comet#withdraw > reverts when specific collateral asset is paused',
   {
@@ -991,7 +1119,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert } = actors;
+      const { albert, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
       const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
 
@@ -999,8 +1127,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, borrowAmount);
 
       expect(await comet.borrowBalanceOf(albert.address)).to.equal(0n);
       await albert.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
@@ -1026,7 +1154,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert, betty } = actors;
+      const { albert, betty, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
       const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
 
@@ -1034,8 +1162,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, borrowAmount);
 
       expect(await comet.borrowBalanceOf(albert.address)).to.equal(0n);
       await albert.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
@@ -1061,7 +1189,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert, betty } = actors;
+      const { albert, betty, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
       const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
 
@@ -1069,8 +1197,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, borrowAmount);
 
       expect(await comet.borrowBalanceOf(albert.address)).to.equal(0n);
       await albert.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
@@ -1250,9 +1378,11 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
         (await usesAssetList(ctx)) &&
         !(await isAssetDelisted(ctx, offset)) &&
         (await supportsExtendedPause(ctx)),
-      tokenBalances: (ctx: CometContext) => ({
-        albert: { $base: '== 0' },
-        $comet: { $base: getConfigForScenario(ctx, offset).withdrawBase }
+      tokenBalances: {
+        albert: { $base: '== 0' }
+      },
+      cometBalances: (ctx: CometContext) => ({
+        charles: { $base: getConfigForScenario(ctx, offset).withdrawBase }
       })
     },
     async ({ comet, configurator, proxyAdmin, actors }, context, world) => {
@@ -1617,5 +1747,313 @@ scenario(
       checkedAssets++;
     }
     expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
+  }
+);
+
+scenario(
+  'Comet#withdraw > lender withdrawal is limited by max supported utilization',
+  {
+    filter: async (ctx: CometContext) => await servicePatch2(ctx),
+  },
+  async ({ comet, actors }, context) => {
+    const { albert, betty } = actors;
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+
+    const albertSupply = await supplyBaseFromLender(context, albert);
+
+    // The borrow leaves room for albert to withdraw half of his supply before the market reaches the limit
+    const halfSupplyWithdrawn = (await comet.totalSupply()).toBigInt() - albertSupply / 2n;
+    const borrowAmount = maxSupportedUtilization * halfSupplyWithdrawn / factorScale - (await comet.totalBorrow()).toBigInt();
+    await borrowFromMarket(context, betty, borrowAmount);
+
+    // sanity check: utilization is still below the limit
+    expect(await comet.getUtilization()).to.be.below(maxSupportedUtilization);
+
+    // The largest withdrawal that keeps utilization within the limit at the current totals
+    const totalSupply = (await comet.totalSupply()).toBigInt();
+    const totalBorrow = (await comet.totalBorrow()).toBigInt();
+    const maxWithdrawAmount = totalSupply - (totalBorrow * factorScale + maxSupportedUtilization - 1n) / maxSupportedUtilization;
+
+    // Interest accrues before each withdrawal and moves the largest withdrawal, so the checks keep a margin of the
+    // interest both totals accrue while the scenario runs, plus a few wei for the rounding of principals
+    const utilization = (await comet.getUtilization()).toBigInt();
+    const supplyInterest = totalSupply * (await comet.getSupplyRate(utilization)).toBigInt() * 3600n / factorScale;
+    const borrowInterest = totalBorrow * (await comet.getBorrowRate(utilization)).toBigInt() * 3600n / factorScale;
+    const margin = supplyInterest + borrowInterest * factorScale / maxSupportedUtilization + 10n;
+
+    // sanity check: the withdrawals on both sides of the limit are a part of the albert supply
+    expect(maxWithdrawAmount).to.be.above(margin);
+    expect(maxWithdrawAmount + margin).to.be.below(albertSupply);
+
+    await expect(
+      comet.connect(albert.signer).withdraw(baseToken.address, maxWithdrawAmount + margin)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+
+    const albertBalanceBefore = await baseToken.balanceOf(albert.address);
+    await albert.withdrawAsset({ asset: baseToken.address, amount: maxWithdrawAmount - margin });
+
+    expect(await baseToken.balanceOf(albert.address)).to.equal(albertBalanceBefore + maxWithdrawAmount - margin);
+    expect(await comet.getUtilization()).to.be.at.most(maxSupportedUtilization);
+  }
+);
+
+scenario(
+  'Comet#withdraw > borrow reverts when total supply is zero',
+  {
+    filter: async (ctx: CometContext) => await servicePatch2(ctx) && await isFreshMarket(ctx),
+  },
+  async ({ comet, actors }, context) => {
+    const { betty } = actors;
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const [collateralIndex] = await getUsableCollateralIndices(context, 1);
+
+    // sanity check: the market accepts collateral, so betty can try to borrow
+    expect(collateralIndex, 'the market accepts no collateral').to.not.be.undefined;
+
+    const { collateralAsset, supplyAmount: collateralAmount, borrowAmount } = await getMinimumBorrowAmounts(context, collateralIndex);
+
+    // Reserves could pay for the borrow, so only the utilization limit stops it
+    await context.sourceTokens(borrowAmount, baseToken.address, comet.address);
+
+    await sourceAndSupply(context, collateralAsset, betty, collateralAmount);
+
+    await expect(
+      comet.connect(betty.signer).withdraw(baseToken.address, borrowAmount)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+  }
+);
+
+scenario(
+  'Comet#withdraw > market unlocks after utilization goes above the limit',
+  {
+    filter: async (ctx: CometContext) =>
+      await servicePatch2(ctx) && await utilizationGrowsAboveLimit(ctx),
+  },
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty, charles } = actors;
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const maxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+
+    const albertSupply = await supplyBaseFromLender(context, albert);
+
+    // Utilization is just below the limit after the borrow
+    const borrowAmount = await borrowAmountToUtilization(context, maxSupportedUtilization * 99n / 100n);
+    await borrowFromMarket(context, betty, borrowAmount);
+
+    // sanity check: utilization is below the limit
+    const utilization = await comet.getUtilization();
+    expect(utilization).to.be.below(maxSupportedUtilization);
+
+    // sanity check: borrow rate is above supply rate, so utilization grows with time
+    expect(await comet.getBorrowRate(utilization)).to.be.above(await comet.getSupplyRate(utilization));
+
+    // Time moves in steps until the interest takes utilization above the limit and betty is liquidatable: the debt
+    // of other borrowers on a live market grows as well, and a longer step leaves utilization above the limit even
+    // without the debt of betty
+    while (
+      !(await comet.isLiquidatable(betty.address)) ||
+      (await comet.getUtilization()).toBigInt() <= maxSupportedUtilization
+    ) {
+      await world.increaseTime(7 * 24 * 60 * 60);
+      await comet.accrueAccount(betty.address);
+    }
+
+    expect(await comet.getUtilization()).to.be.above(maxSupportedUtilization);
+
+    // Checked with callStatic, since a reverted transaction after the time travel leaves the nonce out of sync with the node
+    await expect(
+      comet.connect(albert.signer).callStatic.withdraw(baseToken.address, albertSupply / 100n)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+
+    const repayAmount = albertSupply / 100n;
+    await addTokenBalance(context, baseToken.address, betty.address, repayAmount);
+    await baseToken.approve(betty, comet.address);
+    const bettyPrincipalBeforeRepay = (await comet.userBasic(betty.address)).principal.toBigInt();
+    const totalBorrowBaseBeforeRepay = (await comet.totalsBasic()).totalBorrowBase.toBigInt();
+    await betty.supplyAsset({ asset: baseToken.address, amount: repayAmount });
+
+    // The repay lowers the debt of betty, and total borrow moves by exactly the change of her principal
+    const bettyPrincipalAfterRepay = (await comet.userBasic(betty.address)).principal.toBigInt();
+    expect(bettyPrincipalAfterRepay).to.be.above(bettyPrincipalBeforeRepay);
+    expect(bettyPrincipalAfterRepay).to.be.below(0n);
+    expect((await comet.totalsBasic()).totalBorrowBase).to.equal(totalBorrowBaseBeforeRepay - (bettyPrincipalAfterRepay - bettyPrincipalBeforeRepay));
+
+    // On a small market the repay can make betty healthy again, so the debt grows until she is liquidatable
+    while (!(await comet.isLiquidatable(betty.address))) {
+      await world.increaseTime(7 * 24 * 60 * 60);
+      await comet.accrueAccount(betty.address);
+    }
+
+    // The absorb takes the debt of betty off the market, the rest of the debt belongs to other borrowers. Compared
+    // in principals, since the debt keeps accruing until the absorb
+    const bettyPrincipal = (await comet.userBasic(betty.address)).principal.toBigInt();
+    const totalBorrowBaseBefore = (await comet.totalsBasic()).totalBorrowBase.toBigInt();
+    await comet.connect(charles.signer).absorb(charles.address, [betty.address]);
+
+    expect(await comet.borrowBalanceOf(betty.address)).to.equal(0n);
+    expect((await comet.totalsBasic()).totalBorrowBase).to.equal(totalBorrowBaseBefore + bettyPrincipal);
+    expect(await comet.getUtilization()).to.be.at.most(maxSupportedUtilization);
+
+    const albertBalance = (await comet.balanceOf(albert.address)).toBigInt();
+    const albertBalanceBefore = await baseToken.balanceOf(albert.address);
+    const albertPrincipalBefore = (await comet.userBasic(albert.address)).principal.toBigInt();
+    const totalSupplyBaseBefore = (await comet.totalsBasic()).totalSupplyBase.toBigInt();
+    await albert.withdrawAsset({ asset: baseToken.address, amount: albertBalance });
+
+    // albert gets the whole amount, and total supply drops by exactly the change of his principal, which keeps
+    // utilization within the limit
+    const albertPrincipalAfter = (await comet.userBasic(albert.address)).principal.toBigInt();
+    expect(await baseToken.balanceOf(albert.address)).to.equal(albertBalanceBefore + albertBalance);
+    expect(albertPrincipalAfter).to.be.below(albertPrincipalBefore);
+    expect((await comet.totalsBasic()).totalSupplyBase).to.equal(totalSupplyBaseBefore - (albertPrincipalBefore - albertPrincipalAfter));
+    expect(await comet.getUtilization()).to.be.at.most(maxSupportedUtilization);
+  }
+);
+
+scenario(
+  'Comet#withdraw > borrow up to a higher max supported utilization succeeds after governance raises the limit',
+  {
+    filter: async (ctx: CometContext) => await servicePatch2(ctx),
+  },
+  async ({ comet, configurator, actors }, context) => {
+    const { admin, albert, betty, charles } = actors;
+    const baseToken = context.getAssetByAddress(await comet.baseToken());
+    const oldMaxSupportedUtilization = (await comet.maxSupportedUtilization()).toBigInt();
+    // Slightly above the current limit, so the borrow between the two limits fits a live market
+    const newMaxSupportedUtilization = oldMaxSupportedUtilization + oldMaxSupportedUtilization / 10n;
+
+    await supplyBaseFromLender(context, albert);
+
+    // The borrow puts utilization halfway between the old and the new limit, far from the shift the interest makes
+    // while the scenario runs
+    const borrowAmount = await borrowAmountToUtilization(context, (oldMaxSupportedUtilization + newMaxSupportedUtilization) / 2n);
+    await supplyCollateralForBorrow(context, betty, borrowAmount);
+    await addTokenBalance(context, baseToken.address, comet.address, borrowAmount);
+
+    // sanity check: the borrow would put utilization between the old and the new limit
+    const totalSupply = (await comet.totalSupply()).toBigInt();
+    const expectedUtilization = ((await comet.totalBorrow()).toBigInt() + borrowAmount) * factorScale / totalSupply;
+    expect(expectedUtilization).to.be.above(oldMaxSupportedUtilization);
+    expect(expectedUtilization).to.be.below(newMaxSupportedUtilization);
+
+    await expect(
+      comet.connect(betty.signer).withdraw(baseToken.address, borrowAmount)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+
+    // Governance raises the limit for the Comet and upgrades it
+    await fundAccount(admin.context.world, admin);
+    await configurator.connect(admin.signer).setMaxSupportedUtilization(comet.address, newMaxSupportedUtilization);
+    await (await context.getCometAdmin()).connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
+
+    // sanity check: the new limit is stored for the Comet, and the Comet took it with the upgrade
+    expect((await context.getConfiguration()).maxSupportedUtilization).to.equal(newMaxSupportedUtilization);
+    expect(await comet.maxSupportedUtilization()).to.equal(newMaxSupportedUtilization);
+
+    const totalBorrowBaseBefore = (await comet.totalsBasic()).totalBorrowBase.toBigInt();
+    await betty.withdrawAsset({ asset: baseToken.address, amount: borrowAmount });
+
+    // betty owes the borrow up to the rounding of the principal, total borrow grows by exactly her debt principal,
+    // and utilization lands between the old and the new limit
+    const bettyPrincipal = (await comet.userBasic(betty.address)).principal.toBigInt();
+    expect((await comet.borrowBalanceOf(betty.address)).toBigInt()).to.be.closeTo(borrowAmount, 2n);
+    expect((await comet.totalsBasic()).totalBorrowBase).to.equal(totalBorrowBaseBefore - bettyPrincipal);
+    const utilization = (await comet.getUtilization()).toBigInt();
+    expect(utilization).to.be.above(oldMaxSupportedUtilization);
+    expect(utilization).to.be.at.most(newMaxSupportedUtilization);
+
+    // The new limit still blocks: a borrow far above it reverts, out of reach of the interest accrued before it.
+    // charles brings his own collateral, so the revert comes from the limit and not from the collateral check. On a
+    // small market the minimum borrow is already far above the limit
+    const borrowAboveLimitAmount = await borrowAmountToUtilization(
+      context,
+      newMaxSupportedUtilization + (newMaxSupportedUtilization - oldMaxSupportedUtilization) / 2n
+    );
+    const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
+    const borrowAboveNewLimit = borrowAboveLimitAmount > baseBorrowMin ? borrowAboveLimitAmount : baseBorrowMin;
+    await supplyCollateralForBorrow(context, charles, borrowAboveNewLimit);
+
+    await expect(
+      comet.connect(charles.signer).withdraw(baseToken.address, borrowAboveNewLimit)
+    ).to.be.revertedWithCustomError(comet, 'ExceedsSupportedUtilization');
+  }
+);
+
+scenario(
+  'Comet#withdraw > reverts on zero base amount',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert } = actors;
+    const baseToken = await comet.baseToken();
+
+    await expect(
+      comet.connect(albert.signer).withdraw(baseToken, 0)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+  }
+);
+
+scenario(
+  'Comet#withdrawTo > reverts on zero base amount',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert, betty } = actors;
+    const baseToken = await comet.baseToken();
+
+    await expect(
+      comet.connect(albert.signer).withdrawTo(betty.address, baseToken, 0)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+  }
+);
+
+scenario(
+  'Comet#withdrawFrom > reverts on zero base amount',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert, betty } = actors;
+    const baseToken = await comet.baseToken();
+
+    await albert.allow(betty, true);
+
+    await expect(
+      comet.connect(betty.signer).withdrawFrom(albert.address, betty.address, baseToken, 0)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+  }
+);
+
+scenario(
+  'Comet#withdraw > reverts on max base amount without balance',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert } = actors;
+    const baseToken = await comet.baseToken();
+
+    expect(await comet.balanceOf(albert.address)).to.equal(0n);
+
+    await expect(
+      comet.connect(albert.signer).withdraw(baseToken, UINT256_MAX)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+  }
+);
+
+scenario(
+  'Comet#withdraw > reverts on zero collateral amount',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert } = actors;
+    const { asset } = await comet.getAssetInfo(0);
+
+    await expect(
+      comet.connect(albert.signer).withdraw(asset, 0)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
   }
 );
