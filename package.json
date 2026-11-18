@@ -40,7 +40,7 @@
     "test": "hardhat test ./test/*.ts ./test/**/*.ts ./plugins/deployment_manager/test/*.ts ",
     "audit:liquidator": "vendoza contracts/liquidator/vendor/manifest.json",
     "audit:vendor": "vendoza contracts/vendor/manifest.json",
-    "slither:fn-clashes": "slither-check-upgradeability contracts/Configurator.sol Configurator --proxy-filename contracts/ConfiguratorProxy.sol --proxy-name ConfiguratorProxy",
+    "slither": "yarn build && slither . --hardhat-ignore-compile",
     "liquidation-bot": "hardhat run scripts/liquidation_bot/index.ts"
   },
   "keywords": [],
