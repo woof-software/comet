@@ -101,8 +101,7 @@ function paramString(params: { [k: string]: string | number }) {
   return Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}=${v}`).join('&');
 }
 
-// Bytecode fetch is source-agnostic: RPC works regardless of which step below supplied
-// the ABI/source, so it's tried first for both families in getContractCreationCode.
+// The RPC returns the deployed code, not the creation code, so getContractCreationCode tries it only as a last resort
 
 async function scrapeContractCreationCodeFromRPC(network: string, address: string) {
   const rpcUrl = await getBlockscoutRPCUrl(network);
@@ -225,16 +224,18 @@ async function getContractCreationCode(network: string, address: string, family:
     ]);
   }
 
-  // Etherscan family: RPC first, then scrape/proxy/txlist rotated across every key.
+  // Etherscan family: the creation tx first, rotated across every key, then the creation code scraped from the page.
+  // The eth_getCode strategies return the deployed code, which reverts when deployed again, so they come last
   const maxKeyRotations = 12;
-  const strategies = [() => scrapeContractCreationCodeFromRPC(network, address)];
+  const strategies: (() => Promise<string>)[] = [];
   for (let i = 0; i < maxKeyRotations; i++) {
-    strategies.push(
-      () => scrapeContractCreationCodeFromEtherscanApi(network, address, i),
-      () => pullFirstTransactionForContractFromEtherscan(network, address, i),
-    );
+    strategies.push(() => pullFirstTransactionForContractFromEtherscan(network, address, i));
   }
   strategies.push(() => scrapeContractCreationCodeFromEtherscan(network, address));
+  strategies.push(() => scrapeContractCreationCodeFromRPC(network, address));
+  for (let i = 0; i < maxKeyRotations; i++) {
+    strategies.push(() => scrapeContractCreationCodeFromEtherscanApi(network, address, i));
+  }
   return tryStrategies(strategies);
 }
 

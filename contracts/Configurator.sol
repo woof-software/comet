@@ -173,6 +173,12 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         emit SetTargetReserves(cometProxy, oldTargetReserves, newTargetReserves);
     }
 
+    function setMaxSupportedUtilization(address cometProxy, uint64 newMaxSupportedUtilization) external onlyGovernor {
+        uint64 oldMaxSupportedUtilization = configuratorParams[cometProxy].maxSupportedUtilization;
+        configuratorParams[cometProxy].maxSupportedUtilization = newMaxSupportedUtilization;
+        emit SetMaxSupportedUtilization(cometProxy, oldMaxSupportedUtilization, newMaxSupportedUtilization);
+    }
+
     /*//////////////////////////////////////////////////////////////
                          ASSET LIST MANAGEMENT
     //////////////////////////////////////////////////////////////*/

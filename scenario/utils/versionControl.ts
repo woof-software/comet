@@ -5,6 +5,8 @@ import { CometContext } from '../context/CometContext';
 //    instead of rounding it down to whole tokens
 //  - strict collateral factor ordering: every collateral must satisfy BCF < LCF < LF <= MAX,
 //    where a lower factor may be zero only when every factor below it is zero too
+//  - configurable max supported utilization: governance sets the limit per market through the Configurator,
+//    and Comet takes it from its configuration instead of a constant
 export const SERVICE_PATCH_2_VERSION = '1.2.2';
 
 /**
@@ -29,13 +31,13 @@ export async function servicePatch(ctx: CometContext): Promise<boolean> {
     const ethers = ctx.world.deploymentManager.hre.ethers;
 
     const iface = new ethers.utils.Interface([
-      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
+      'function maxSupportedUtilization() external view returns (uint)',
     ]);
 
     // A Comet without the function reverts or returns nothing
     const result = await ethers.provider.call({
       to: comet.address,
-      data: iface.getSighash('MAX_SUPPORTED_UTILIZATION'),
+      data: iface.getSighash('maxSupportedUtilization'),
     });
 
     return !!result && result !== '0x';

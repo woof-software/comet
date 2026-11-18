@@ -38,13 +38,13 @@ jobs:
         run: yarn install --non-interactive --frozen-lockfile
 
       - name: Compile
-        run: yarn build
+        run: yarn hardhat compile
 
       - name: Check types
         run: yarn tsc
 
       - name: Run tests
-        run: yarn test --no-compile
+        run: yarn test
 
       - uses: actions/upload-artifact@v4  # upload test results
         if: success() || failure()        # run this step even if previous step failed

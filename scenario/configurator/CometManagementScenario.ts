@@ -4,6 +4,7 @@ import { CometContext, scenario } from '../context/CometContext';
 import { exp } from '../../test/helpers';
 import { fundAccount } from '../utils';
 import { SECONDS_PER_YEAR } from '../utils/constants';
+import { servicePatch2 } from '../utils/versionControl';
 import { CometWithExtendedAssetList } from '../../build/types';
 import {
   normalizeStructOutput,
@@ -74,6 +75,7 @@ async function deployComet(context: CometContext): Promise<string> {
     baseMinForRewards: exp(1, 9), // 1000000000n
     baseBorrowMin: exp(1, 5), // 100000n
     targetReserves: exp(2, 13), //20000000000000n
+    maxSupportedUtilization: exp(2, 18), // 200% utilization, the same default the unit tests use
     assetList: await deployAssetList(context),
   };
 
@@ -1243,6 +1245,81 @@ scenario(
     await expect(
       configurator.connect(albert.signer).setTargetReserves(comet.address, newTargetReserves)
     ).to.be.revertedWithCustomError(configurator, 'Unauthorized');
+  }
+);
+
+// The max supported utilization exists from service patch 2 on, so these scenarios skip older markets
+scenario(
+  'Configurator#setMaxSupportedUtilization updates value if called by governor',
+  {
+    filter: async (ctx: CometContext) => await servicePatch2(ctx),
+  },
+  async ({ comet, configurator, actors }) => {
+    const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
+
+    const { maxSupportedUtilization } = await configurator.getConfiguration(comet.address);
+    const newMaxSupportedUtilization = maxSupportedUtilization.add(maxSupportedUtilization.div(10));
+
+    await configurator.connect(admin.signer).setMaxSupportedUtilization(comet.address, newMaxSupportedUtilization);
+
+    // The new limit is stored for the Comet, while the Comet keeps the old one until the upgrade
+    expect((await configurator.getConfiguration(comet.address)).maxSupportedUtilization).to.be.equal(
+      newMaxSupportedUtilization
+    );
+    expect(await comet.maxSupportedUtilization()).to.be.equal(maxSupportedUtilization);
+
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+
+    expect(await comet.maxSupportedUtilization()).to.be.equal(newMaxSupportedUtilization);
+  }
+);
+
+scenario(
+  'Configurator#setMaxSupportedUtilization can be overwritten multiple times',
+  {
+    filter: async (ctx: CometContext) => await servicePatch2(ctx),
+  },
+  async ({ comet, configurator, actors }) => {
+    const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
+
+    const { maxSupportedUtilization } = await configurator.getConfiguration(comet.address);
+    const firstNewMaxSupportedUtilization = maxSupportedUtilization.add(1);
+    const secondNewMaxSupportedUtilization = firstNewMaxSupportedUtilization.add(1);
+
+    await configurator.connect(admin.signer).setMaxSupportedUtilization(comet.address, firstNewMaxSupportedUtilization);
+
+    expect((await configurator.getConfiguration(comet.address)).maxSupportedUtilization).to.be.equal(
+      firstNewMaxSupportedUtilization
+    );
+
+    await configurator.connect(admin.signer).setMaxSupportedUtilization(comet.address, secondNewMaxSupportedUtilization);
+
+    expect((await configurator.getConfiguration(comet.address)).maxSupportedUtilization).to.be.equal(
+      secondNewMaxSupportedUtilization
+    );
+  }
+);
+
+scenario(
+  'Configurator#setMaxSupportedUtilization reverts if called by unauthorized caller',
+  {
+    filter: async (ctx: CometContext) => await servicePatch2(ctx),
+  },
+  async ({ comet, configurator, actors }) => {
+    const { albert } = actors;
+
+    const { maxSupportedUtilization } = await configurator.getConfiguration(comet.address);
+    const newMaxSupportedUtilization = maxSupportedUtilization.add(1);
+
+    await expect(
+      configurator.connect(albert.signer).setMaxSupportedUtilization(comet.address, newMaxSupportedUtilization)
+    ).to.be.revertedWithCustomError(configurator, 'Unauthorized');
+
+    expect((await configurator.getConfiguration(comet.address)).maxSupportedUtilization).to.be.equal(
+      maxSupportedUtilization
+    );
   }
 );
 

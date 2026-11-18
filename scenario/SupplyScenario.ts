@@ -1,6 +1,26 @@
 import { CometContext, scenario } from './context/CometContext';
 import { expect } from 'chai';
-import { expectApproximately, expectBase, expectRevertMatches, getExpectedBaseBalance, getInterest, isTriviallySourceable, isValidAssetIndex, MAX_ASSETS, UINT256_MAX, fundAccount, isAssetDelisted, servicePatch, deployUnsupportedAsset, getUsableCollateralIndices, getMinimumBorrowAmounts, rejectsZeroAmounts } from './utils';
+import {
+  expectApproximately,
+  expectBase,
+  expectRevertMatches,
+  getExpectedBaseBalance,
+  getInterest,
+  isTriviallySourceable,
+  isValidAssetIndex,
+  MAX_ASSETS,
+  UINT256_MAX,
+  fundAccount,
+  isAssetDelisted,
+  deployUnsupportedAsset,
+  getUsableCollateralIndices,
+  getMinimumBorrowAmounts,
+  rejectsZeroAmounts,
+  isFreshMarket,
+  sourceAndSupply,
+  servicePatch,
+  servicePatch2
+} from './utils';
 import { matchesDeployment } from './utils';
 import { exp } from '../test/helpers';
 import { ethers } from 'hardhat';
@@ -271,6 +291,51 @@ scenario(
 );
 
 scenario(
+  'Comet#supply > base asset after an idle period with the no-borrow supply rate cut off',
+  {
+    filter: async (ctx: CometContext) =>
+      await servicePatch2(ctx) && await isFreshMarket(ctx) && (await (await ctx.getComet()).getReserves()).isZero(),
+    upgrade: {
+      supplyPerYearInterestRateBase: exp(0.01, 18),
+    },
+    tokenBalances: (ctx: CometContext) => ({
+      albert: { $base: getConfigForScenario(ctx).supplyBase }, // in units of asset, not wei
+      betty: { $base: getConfigForScenario(ctx).supplyBase },
+    }),
+  },
+  async ({ comet, actors }, context, world) => {
+    const { albert, betty } = actors;
+    const provider = world.deploymentManager.hre.network.provider;
+    const baseAsset = context.getAssetByAddress(await comet.baseToken());
+    const amountToSupply = BigInt(getConfigForScenario(context).supplyBase) * (await comet.baseScale()).toBigInt();
+    const idlePeriod = 30 * 24 * 60 * 60; // 30 days
+
+    // No borrows and no reserves: albert's balance equals the comet's balance, so the supply rate is cut off
+    await baseAsset.approve(albert, comet.address);
+    await albert.safeSupplyAsset({ asset: baseAsset.address, amount: amountToSupply });
+    expect(await comet.getSupplyRate(0)).to.equal(0n);
+
+    await provider.send('evm_increaseTime', [idlePeriod]);
+    await provider.send('evm_mine', []);
+
+    const baseIndexScale = (await comet.baseIndexScale()).toBigInt();
+    const baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+    const expectedBaseBalance = getExpectedBaseBalance(amountToSupply, baseIndexScale, baseSupplyIndex);
+
+    // Betty's deposit must not be treated as reserves that pay albert for the idle period
+    await baseAsset.approve(betty, comet.address);
+    const txn = await betty.safeSupplyAsset({ asset: baseAsset.address, amount: amountToSupply });
+
+    expect((await comet.totalsBasic()).baseSupplyIndex).to.equal(baseSupplyIndex);
+    expect(await comet.balanceOf(albert.address)).to.equal(expectedBaseBalance);
+    expect(await comet.balanceOf(betty.address)).to.equal(expectedBaseBalance);
+    expect(await comet.getReserves()).to.be.gte(0n);
+
+    return txn; // return txn to measure gas
+  }
+);
+
+scenario(
   'Comet#supply > base asset with token fees',
   {
     tokenBalances: {
@@ -374,7 +439,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert } = actors;
+      const { albert, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
       const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
 
@@ -382,8 +447,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(albert, comet.address);
       await albert.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, borrowAmount);
 
       expect(await comet.borrowBalanceOf(albert.address)).to.equal(0n);
       await albert.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
@@ -418,7 +483,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
     async ({ comet, actors }, context) => {
-      const { albert, betty } = actors;
+      const { albert, betty, charles } = actors;
       const baseAsset = context.getAssetByAddress(await comet.baseToken());
       const { collateralAsset, supplyAmount, borrowAmount } = await getMinimumBorrowAmounts(context, offset);
 
@@ -426,8 +491,8 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
       await collateralAsset.approve(betty, comet.address);
       await betty.safeSupplyAsset({ asset: collateralAsset.address, amount: supplyAmount });
 
-      // Give the protocol enough base liquidity to pay out the borrow
-      await context.sourceTokens(borrowAmount, baseAsset.address, comet.address);
+      // Borrowing requires at least one lender, so charles supplies the base to pay out the borrow
+      await sourceAndSupply(context, baseAsset, charles, borrowAmount);
 
       expect(await comet.borrowBalanceOf(betty.address)).to.equal(0n);
       await betty.withdrawAsset({ asset: baseAsset.address, amount: borrowAmount });
@@ -618,7 +683,7 @@ scenario(
     const scale = (await comet.baseScale()).toBigInt();
 
     await albert.allow(betty, true);
-    await baseAsset.approve(albert, betty, 10n * scale);
+    await baseAsset.approve(albert, comet.address, 10n * scale);
 
     await expect(comet.connect(betty.signer).supplyFrom(albert.address, betty.address, baseAsset.address, 100n * scale))
       .to.be.reverted;
@@ -640,7 +705,7 @@ scenario(
     const scale = scaleBN.toBigInt();
 
     await albert.allow(betty, true);
-    await collateralAsset.approve(albert, betty, 10n * scale);
+    await collateralAsset.approve(albert, comet.address, 10n * scale);
 
     await expectRevertMatches(
       comet.connect(betty.signer).supplyFrom(albert.address, betty.address, collateralAsset.address, 100n * scale),

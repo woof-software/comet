@@ -32,6 +32,7 @@ export interface ProtocolConfiguration {
   baseMinForRewards?: BigNumberish;
   baseBorrowMin?: BigNumberish;
   targetReserves?: BigNumberish;
+  maxSupportedUtilization?: BigNumberish;
   assetConfigs?: AssetConfigStruct[];
   rewardTokenAddress?: string;
 }

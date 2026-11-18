@@ -1,4 +1,4 @@
-import { AssetList, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
+import { AssetList, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { expect, exp, ethers, MAX_ASSETS, mulFactor, factorScale, makeConfigurator, ZERO_ADDRESS, SnapshotRestorer, takeSnapshot, BigNumber } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { AssetInfoStructOutput } from 'build/types/AssetList';
@@ -670,7 +670,7 @@ describe('quoteCollateral', function () {
     let snapshot: SnapshotRestorer;
 
     // Contracts
-    let comet: CometWithExtendedAssetList;
+    let comet: CometHarnessInterfaceExtendedAssetList;
     let configurator: Configurator;
     let configuratorProxy: ConfiguratorProxy;
     let proxyAdmin: CometProxyAdmin;
@@ -726,7 +726,7 @@ describe('quoteCollateral', function () {
       await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
       await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
 
-      // Culculation data
+      // Calculation data
       assetInfo = await comet.getAssetInfoByAddress(quoteCollateralToken.address);
       assetPrice = await comet.getPrice(assetInfo.priceFeed);
       basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
@@ -767,7 +767,7 @@ describe('quoteCollateral', function () {
       expect(assetInfo.liquidationFactor).to.eq(0);
     });
 
-    it('quotes with discount if liquidationFactor = 0', async () => {
+    it('quotes without discount if liquidationFactor = 0', async () => {
       quoteAmount = await comet.quoteCollateral(quoteCollateralToken.address, QUOTE_AMOUNT);
 
       // Expected quote calculation

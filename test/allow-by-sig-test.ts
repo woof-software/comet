@@ -1,5 +1,5 @@
 import { CometHarnessInterfaceExtendedAssetList, FaucetToken, SimplePriceFeed } from 'build/types';
-import { ethers, expect, exp, makeProtocol, wait, event, defaultAssets, SnapshotRestorer, takeSnapshot } from './helpers';
+import { ethers, expect, exp, makeProtocol, wait, event, defaultAssets, SnapshotRestorer, takeSnapshot, allocateAndSupply } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, Signature } from 'ethers';
 
@@ -26,6 +26,7 @@ describe('allowBySig', function () {
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let charles: SignerWithAddress;
+  let initialLender: SignerWithAddress;
 
   let snapshot: SnapshotRestorer;
   let snapshotWithoutAllow: SnapshotRestorer;
@@ -66,11 +67,11 @@ describe('allowBySig', function () {
     for (const asset in protocol.priceFeeds) {
       priceFeeds[asset] = protocol.priceFeeds[asset];
     }
-    [alice, bob, charles] = protocol.users;
+    [alice, bob, charles, initialLender] = protocol.users;
     pauseGuardian = protocol.pauseGuardian;
 
-    // Seed reserves so borrowing is possible
-    await baseToken.allocateTo(comet.address, seedAmount);
+    // Borrowing requires at least one lender, so seed the market with an initial supply
+    await allocateAndSupply(comet, baseToken, initialLender, seedAmount.toBigInt());
 
     // Alice supplies some USDC in the initial snapshot
     await baseToken.allocateTo(alice.address, supplyAmount);
@@ -325,6 +326,31 @@ describe('allowBySig', function () {
           1
         )
       ).to.be.revertedWith("custom error 'Unauthorized()'");
+
+      // Alice holds base, collateral and token approvals, so the rescinded permission is the only reason left to revert
+      const collateralAmount = exp(1, 18);
+      await collaterals.WETH.allocateTo(alice.address, 2n * collateralAmount);
+      await collaterals.WETH.connect(alice).approve(comet.address, 2n * collateralAmount);
+      await comet.connect(alice).supply(collaterals.WETH.address, collateralAmount);
+      await baseToken.allocateTo(alice.address, supplyAmount);
+      await baseToken.connect(alice).approve(comet.address, supplyAmount);
+      expect(await comet.balanceOf(alice.address)).to.be.gt(0);
+
+      await expect(
+        comet.connect(bob).supplyFrom(alice.address, bob.address, baseToken.address, supplyAmount)
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
+      await expect(
+        comet.connect(bob).supplyFrom(alice.address, bob.address, collaterals.WETH.address, collateralAmount)
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
+      await expect(
+        comet.connect(bob).transferFrom(alice.address, bob.address, 1)
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
+      await expect(
+        comet.connect(bob).transferAssetFrom(alice.address, bob.address, collaterals.WETH.address, collateralAmount)
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
+      await expect(
+        comet.connect(bob).withdrawFrom(alice.address, bob.address, collaterals.WETH.address, collateralAmount)
+      ).to.be.revertedWithCustomError(comet, 'Unauthorized');
     });
   });
 

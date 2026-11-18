@@ -8,6 +8,7 @@
     "borrowMin": "1e5",
     "storeFrontPriceFactor": 0.6,
     "targetReserves": "20000000e6",
+    "maxSupportedUtilization": "2e18",
     "rates": {
       "supplyKink": 0.9,
       "supplySlopeLow": 0.059,

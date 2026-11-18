@@ -39,6 +39,7 @@ import {
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
   MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory, CometExt, CometExt__factory,
+  CometWithExtendedAssetList as CometWithExtendedAssetListContract,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
@@ -100,6 +101,7 @@ export type ProtocolOpts = {
   baseMinForRewards?: Numeric;
   baseBorrowMin?: Numeric;
   targetReserves?: Numeric;
+  maxSupportedUtilization?: Numeric;
   baseTokenBalance?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
   assetListProxyAdmin?: string;
@@ -320,7 +322,7 @@ export const ZERO = factor(0);
 export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const DEFAULT_PRICEFEED_DECIMALS = 8;
 export const MAX_ASSETS = 24;
-export const MAX_SUPPORTED_UTILIZATION = exp(2, 18);
+export const DEFAULT_MAX_SUPPORTED_UTILIZATION = exp(2, 18);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
   const blockNumber = n == undefined ? await ethers_.provider.getBlockNumber() : n;
@@ -373,6 +375,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const baseMinForRewards = dfn(opts.baseMinForRewards, exp(1, assets[base].decimals));
   const baseBorrowMin = dfn(opts.baseBorrowMin, exp(1, assets[base].decimals));
   const targetReserves = dfn(opts.targetReserves, 0);
+  const maxSupportedUtilization = dfn(opts.maxSupportedUtilization, DEFAULT_MAX_SUPPORTED_UTILIZATION);
 
   const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
   const tokens = {};
@@ -418,6 +421,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    maxSupportedUtilization
   };
 
   // The asset list holds the immutable part of each asset config; factors and supply caps live in its storage
@@ -511,6 +515,7 @@ export async function getConfigurationForConfigurator(
   const baseMinForRewards = await cometWithExtendedAssetList.baseMinForRewards();
   const baseBorrowMin = await cometWithExtendedAssetList.baseBorrowMin();
   const targetReserves = await cometWithExtendedAssetList.targetReserves();
+  const maxSupportedUtilization = await cometWithExtendedAssetList.maxSupportedUtilization();
 
 
   const configuration = {
@@ -534,6 +539,7 @@ export async function getConfigurationForConfigurator(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    maxSupportedUtilization,
     assetList: assetList.address,
   };
   return configuration;
@@ -708,6 +714,24 @@ export async function bumpTotalsCollateral(cometWithExtendedAssetList: CometHarn
   await token.allocateTo(cometWithExtendedAssetList.address, delta);
   await wait(cometWithExtendedAssetList.setTotalsCollateral(token.address, t1));
   return t1;
+}
+
+// Raises the debt of an account without moving tokens or accruing, to reach states regular operations cannot
+export async function bumpBorrow(cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList, account: string, amount: bigint) {
+  const principal = (await cometWithExtendedAssetList.userBasic(account)).principal.toBigInt();
+  await wait(cometWithExtendedAssetList.setBasePrincipal(account, principal - amount));
+  await setTotalsBasic(cometWithExtendedAssetList, { totalBorrowBase: (await cometWithExtendedAssetList.totalsBasic()).totalBorrowBase.toBigInt() + amount });
+}
+
+export async function allocateAndSupply(
+  cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList | CometWithExtendedAssetListContract,
+  token: FaucetToken | NonStandardFaucetFeeToken,
+  user: SignerWithAddress,
+  amount: bigint
+) {
+  await wait(token.allocateTo(user.address, amount));
+  await wait(token.connect(user).approve(cometWithExtendedAssetList.address, amount));
+  await wait(cometWithExtendedAssetList.connect(user).supply(token.address, amount));
 }
 
 export async function setTotalsBasic(cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList, overrides = {}): Promise<TotalsBasicStructOutput> {

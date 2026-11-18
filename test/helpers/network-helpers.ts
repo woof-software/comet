@@ -35,22 +35,20 @@ export async function setBalance(
   if (typeof balance === 'bigint' || typeof balance === 'number') {
     balanceHex = `0x${balance.toString(16)}`;
   } else if (typeof balance === 'string') {
-    if (!balance.startsWith('0x')) {
-      balanceHex = `0x${BigInt(balance).toString(16)}`;
-    } else {
-      balanceHex = balance;
-    }
+    // decimal string, or an already hex-encoded value
+    balanceHex = balance.startsWith('0x') ? balance : `0x${BigInt(balance).toString(16)}`;
+  } else if (typeof (balance as EthersBigNumberLike).toHexString === 'function') {
+    // ethers BigNumber (e.g. ethers.utils.parseEther). String(BigNumber) is decimal, so it must not be prefixed with 0x
+    balanceHex = (balance as EthersBigNumberLike).toHexString();
+  } else if (typeof (balance as BNLike).toNumber === 'function') {
+    // BN.js-like value: toString(16) gives hex
+    balanceHex = `0x${(balance as BNLike).toString(16)}`;
   } else {
-    // This should never happen with the current type signature, but handle it gracefully
-    balanceHex = `0x${String(balance)}`;
+    throw new Error(`setBalance: unsupported balance type for ${String(balance)}`);
   }
 
-  // Normalize hex string (remove leading zeros)
-  if (balanceHex === '0x0') {
-    balanceHex = '0x0';
-  } else {
-    balanceHex = balanceHex.replace(/^0x0+/, '0x') || '0x0';
-  }
+  // Normalize: drop leading zeros, keep at least one digit (e.g. ethers' 0 is "0x00", which must become "0x0")
+  balanceHex = `0x${balanceHex.slice(2).replace(/^0+/, '') || '0'}`;
 
   await hre.network.provider.request({
     method: 'hardhat_setBalance',

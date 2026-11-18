@@ -215,16 +215,13 @@ scenario(
       { network: 'ronin' },
       { network: 'scroll' },
     ]),
-    tokenBalances: async (ctx) => (
-      {
-        $comet: {
-          $base: getConfigForScenario(ctx).liquidationBase
-        }
-      }),
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidationBase,
         $asset0: getConfigForScenario(ctx).liquidationAsset
+      },
+      charles: {
+        $base: getConfigForScenario(ctx).liquidationBase
       }
     }),
   },
@@ -327,11 +324,14 @@ for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#liquidation > skips liquidation value of asset ${i} with liquidateCF=0`,
     {
-      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && !(await isAssetDelisted(ctx, i)) && await servicePatch(ctx),
-      tokenBalances: async (ctx: CometContext) => (
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral)
+      && await servicePatch(ctx) && !(await isAssetDelisted(ctx, i)),
+      tokenBalances: {
+        albert: { $base: '== 0' },
+      },
+      cometBalances: async (ctx: CometContext) => (
         {
-          albert: { $base: '== 0' },
-          $comet: { $base: getConfigForScenario(ctx, i).withdrawBase },
+          charles: { $base: getConfigForScenario(ctx, i).withdrawBase },
         }
       ),
     },
@@ -418,10 +418,12 @@ for (let i = 0; i < MAX_ASSETS; i++) {
     `Comet#liquidation > skips absorption of asset ${i} with liquidation factor = 0`,
     {
       filter: async (ctx) => 
-        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && !(await isAssetDelisted(ctx, i)) && await servicePatch2(ctx),
-      tokenBalances: async (ctx) => ({
+        await isValidAssetIndex(ctx, i) && await isTriviallySourceable(ctx, i, getConfigForScenario(ctx, i).supplyCollateral) && await servicePatch(ctx) && !(await isAssetDelisted(ctx, i)),
+      tokenBalances: {
         albert: { $base: '== 0' },
-        $comet: {
+      },
+      cometBalances: async (ctx) => ({
+        charles: {
           $base: getConfigForScenario(ctx, i).withdrawBase
         }
       }),
@@ -542,9 +544,11 @@ scenario(
       !(await isAssetDelisted(ctx, 0)) &&
       !(await isAssetDelisted(ctx, 1)) &&
       await servicePatch2(ctx),
-    tokenBalances: async (ctx) => ({
+    tokenBalances: {
       albert: { $base: '== 0' },
-      $comet: {
+    },
+    cometBalances: async (ctx) => ({
+      charles: {
         $base: getConfigForScenario(ctx).withdrawBase
       }
     }),

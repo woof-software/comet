@@ -38,6 +38,7 @@ import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
 
 export * from './hreUtils';
 export * from './versionControl';
+export * from './userOperations';
 
 /** Convert a per-year interest factor to per-second (Comet constructor truncation). */
 export function perSecond(perYear: BigNumber): BigNumber {
@@ -519,6 +520,16 @@ export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
   } catch (error) {
     return false;
   }
+}
+
+/**
+ * @notice Whether interest takes utilization of the market above its limit: debt grows faster than supply only while
+ *         the borrow rate is above the supply rate
+ */
+export async function utilizationGrowsAboveLimit(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const maxSupportedUtilization = await comet.maxSupportedUtilization();
+  return (await comet.getBorrowRate(maxSupportedUtilization)).gt(await comet.getSupplyRate(maxSupportedUtilization));
 }
 
 /**
@@ -2117,10 +2128,10 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
   );
   const intermediate = await ethers.getContractAt('ConfiguratorIntermediate', configurator.address, admin);
 
-  await (await configuratorAdmin.upgrade(configurator.address, configuratorIntermediate.address)).wait();
-  await (await intermediate.migrateAssetConfig([comet.address])).wait();
-  await (await configuratorAdmin.upgrade(configurator.address, configuratorImplementation.address)).wait();
-  await (await configurator.setAssetListFactory(comet.address, assetListFactory.address)).wait();
+  await configuratorAdmin.upgrade(configurator.address, configuratorIntermediate.address);
+  await intermediate.migrateAssetConfig([comet.address]);
+  await configuratorAdmin.upgrade(configurator.address, configuratorImplementation.address);
+  await configurator.setAssetListFactory(comet.address, assetListFactory.address);
 
   // The list is built from the immutable part of the migrated configs, and its proxy keeps the factors and caps
   const assetListImplementation = (await dm.deploy(
@@ -2144,7 +2155,7 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
 
   // setConfiguration sets the list proxy once, for a market that has none yet
   const configuration = await configurator.getConfiguration(comet.address);
-  await (await configurator.setConfiguration(comet.address, { ...configuration, assetList: assetListProxy.address })).wait();
-  await (await configurator.setFactory(comet.address, cometFactory.address)).wait();
-  await (await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address)).wait();
+  await configurator.setConfiguration(comet.address, { ...configuration, assetList: assetListProxy.address });
+  await configurator.setFactory(comet.address, cometFactory.address);
+  await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
 }

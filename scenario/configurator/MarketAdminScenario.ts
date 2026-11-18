@@ -6,7 +6,7 @@ import { expectRevertCustom, fundAccount, matchesDeployment } from '../utils';
 import { SECONDS_PER_YEAR } from '../utils/constants';
 import { ConfiguratorOptimism, MarketAdminPermissionChecker } from '../../build/types';
 import { normalizeStructOutput } from './shared';
-import { isAssetListMigrationRequired } from '../utils/versionControl';
+import { isAssetListMigrationRequired, servicePatch2 } from '../utils/versionControl';
 
 // Scenarios for the market admin, who may call a subset of the Configurator setters without full governance.
 // The market admin permission checker lives on Optimism's Configurator only, so every scenario here runs on Optimism
@@ -441,6 +441,31 @@ scenario(
     await admin.deployAndUpgradeTo(configurator.address, comet.address);
 
     expect((await comet.baseBorrowMin()).toBigInt()).to.be.equal(newBaseBorrowMin);
+  }
+);
+
+scenario(
+  'Configurator#setMaxSupportedUtilization updates value if called by market-admin',
+  {
+    filter: async (ctx: CometContext) => matchesDeployment(ctx, [{ network: 'optimism' }]) && await servicePatch2(ctx)
+  },
+  async ({ comet, configurator, actors }, context) => {
+    const { admin } = actors;
+    await fundAccount(admin.context.world, admin);
+
+    const marketAdminSigner = await getMarketAdminSigner(context);
+    const { maxSupportedUtilization } = await configurator.getConfiguration(comet.address);
+    const newMaxSupportedUtilization = maxSupportedUtilization.add(maxSupportedUtilization.div(10));
+
+    await configurator.connect(marketAdminSigner).setMaxSupportedUtilization(comet.address, newMaxSupportedUtilization);
+
+    expect((await configurator.getConfiguration(comet.address)).maxSupportedUtilization).to.be.equal(
+      newMaxSupportedUtilization
+    );
+
+    await admin.deployAndUpgradeTo(configurator.address, comet.address);
+
+    expect(await comet.maxSupportedUtilization()).to.be.equal(newMaxSupportedUtilization);
   }
 );
 

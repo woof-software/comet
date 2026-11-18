@@ -90,6 +90,7 @@ contract OnChainLiquidatorTest is Test, AssetListDeployer {
                 baseMinForRewards: 1000000e6,
                 baseBorrowMin: 100e6,
                 targetReserves: 5000000e6,
+                maxSupportedUtilization: 2e18,
                 assetList: address(deployAssetList(assetConfigs, makeAddr("proxyAdmin"), makeAddr("configurator")))
             }
         ));

@@ -182,7 +182,8 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
             // In dollars, converted at the price the base token is configured with.
             baseBorrowMin: uint104(BASE_BORROW_MIN_USD * uint256(baseUnit) / assetSpecs[0].price),
             targetReserves: 0,
-            assetList: address(assetList)
+            assetList: address(assetList),
+            maxSupportedUtilization: 2e18
         });
     }
 

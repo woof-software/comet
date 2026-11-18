@@ -175,6 +175,7 @@ export async function deployAssetListFixture(): Promise<AssetListFixture> {
     baseMinForRewards: 10n ** 6n,
     baseBorrowMin: 10n ** 6n,
     targetReserves: 0,
+    maxSupportedUtilization: 2n * 10n ** 18n,
     assetList: assetList.address,
   };
   const cometImplementation = await deploy('CometWithExtendedAssetList', configuration);

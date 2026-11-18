@@ -194,6 +194,12 @@ contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvent
         emit SetTargetReserves(cometProxy, oldTargetReserves, newTargetReserves);
     }
 
+    function setMaxSupportedUtilization(address cometProxy, uint64 newMaxSupportedUtilization) external governorOrMarketAdmin {
+        uint64 oldMaxSupportedUtilization = configuratorParams[cometProxy].maxSupportedUtilization;
+        configuratorParams[cometProxy].maxSupportedUtilization = newMaxSupportedUtilization;
+        emit SetMaxSupportedUtilization(cometProxy, oldMaxSupportedUtilization, newMaxSupportedUtilization);
+    }
+
     /*//////////////////////////////////////////////////////////////
                          ASSET LIST MANAGEMENT
     //////////////////////////////////////////////////////////////*/

@@ -1,3 +1,4 @@
+import { ConfigurationStruct } from 'build/types/Configurator';
 import { Deployed, DeploymentManager } from '../../plugins/deployment_manager';
 import { DeploySpec, ProtocolConfiguration, wait, COMP_WHALES } from './index';
 import { getConfiguration } from './NetworkConfiguration';
@@ -115,6 +116,7 @@ export async function deployNetworkComet(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    maxSupportedUtilization,
     assetConfigs,
     rewardTokenAddress
   } = await getConfiguration(deploymentManager, configOverrides);
@@ -197,7 +199,7 @@ export async function deployNetworkComet(
     maybeForce()
   );
 
-  const configuration = {
+  const configuration: ConfigurationStruct = {
     governor,
     pauseGuardian,
     baseToken,
@@ -218,6 +220,7 @@ export async function deployNetworkComet(
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
+    maxSupportedUtilization,
     assetList: assetListProxy.address,
   };
 

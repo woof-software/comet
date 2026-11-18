@@ -24,7 +24,8 @@ import {
   SnapshotRestorer,
   takeSnapshot,
   updateAssetBorrowCollateralFactor,
-  getLiquidity
+  getLiquidity,
+  allocateAndSupply
 } from './helpers';
 
 describe('isBorrowCollateralized', function () {
@@ -32,6 +33,7 @@ describe('isBorrowCollateralized', function () {
   const ONE_HOUR = 60 * 60;
   const baseTokenDecimals = 6;
   const collateralTokenDecimals = 18;
+  const initialLenderSupply = exp(10_000, baseTokenDecimals);
   // Configurator and protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
   let configurator: Configurator;
@@ -1594,7 +1596,8 @@ describe('isBorrowCollateralized', function () {
             aliceBaseBalanceBefore = await baseToken.balanceOf(alice.address);
             basePrice = await comet.getPrice(await comet.baseTokenPriceFeed());
             baseScale = await comet.baseScale();
-            await baseToken.allocateTo(comet.address, WITHDRAW_AMOUNT); // fund comet with base token to allow withdraw
+            // Borrowing requires at least one lender, so seed the market with an initial supply
+            await allocateAndSupply(comet, baseToken, liquidityProvider, initialLenderSupply);
           });
 
           it('alice withdraws 1100 USDC and opens a borrow-backed withdrawal', async () => {
@@ -2240,7 +2243,7 @@ describe('isBorrowCollateralized', function () {
    * Flow tested:
    * The `isBorrowCollateralized` function iterates through a user's collateral assets to calculate their total liquidity.
    * When an asset's `borrowCollateralFactor` is set to 0, the contract skips that asset in the liquidity calculation
-   * (see CometWithExtendedAssetList.sol lines 402-405), effectively excluding it from contributing to the user's
+   * (see the `borrowCollateralFactor == 0` check in CometWithExtendedAssetList.isBorrowCollateralized), effectively excluding it from contributing to the user's
    * collateralization. This prevents the protocol from calling `getPrice()` on unavailable price feeds.
    *
    * Test scenarios:
@@ -2328,6 +2331,9 @@ describe('isBorrowCollateralized', function () {
       const PriceFeedWithRevertFactory = (await ethers.getContractFactory('PriceFeedWithRevert')) as PriceFeedWithRevert__factory;
       priceFeedWithRevert = await PriceFeedWithRevertFactory.deploy(100, 8);
 
+      // Borrowing requires at least one lender, so seed the market with an initial supply
+      await allocateAndSupply(comet, baseToken, liquidityProvider, initialLenderSupply);
+
       snapshot = await takeSnapshot();
 
       // Supply collateral and borrow base
@@ -2338,7 +2344,6 @@ describe('isBorrowCollateralized', function () {
       await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
       await comet.connect(alice).supply(collateralToken.address, supplyAmount);
 
-      await baseToken.allocateTo(cometProxyAddress, borrowAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // With positive borrowCF, position is collateralized
@@ -2434,7 +2439,7 @@ describe('isBorrowCollateralized', function () {
         await targetToken.connect(alice).approve(comet.address, supplyAmount);
         await comet.connect(alice).supply(targetToken.address, supplyAmount);
 
-        // Borrow the full amount the single supplied asset allows (150 USDC liquidity)
+        // Borrow an amount collateralized by the single supplied asset (200 * 0.75 = 150 USDC liquidity)
         const borrowAmount = exp(150, 6);
         await baseToken.allocateTo(comet.address, borrowAmount);
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
@@ -2460,7 +2465,9 @@ describe('isBorrowCollateralized', function () {
       /*
        * Tests three resolution paths for price-feed paralysis in isBorrowCollateralized: restoring
        * the original feed, setting borrowCF to 0, and deactivating the collateral via the pause
-       * guardian. Each path proves that the Reverted error from a broken feed can be unblocked.
+       * guardian. Each path removes the external Reverted error from the broken feed: restoring the
+       * feed or zeroing borrowCF lets isBorrowCollateralized return normally, while deactivation makes
+       * it revert with the protocol-controlled TokenIsDeactivated error instead.
        */
       describe('revert on price feed side', function () {
         let originalPriceFeed: string;
