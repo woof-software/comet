@@ -81,7 +81,7 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
     const assetListFactory = await deploymentManager.deploy(
       'assetListFactory',
       'test/assetList/AssetListFactory.sol',
-      [],
+      [configurator.address],
       true
     );
     const cometFactory = await deploymentManager.deploy(
@@ -108,7 +108,7 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
       const assetListImplementation = await deploymentManager.deploy(
         `${market.assetListAlias}:implementation`,
         'AssetList.sol',
-        [assetConfigs.map(({ asset, decimals, priceFeed }) => ({ asset, decimals, priceFeed }))],
+        [assetConfigs.map(({ asset, priceFeed }) => ({ asset, priceFeed })), configurator.address],
         true
       );
       const assetList = await deploymentManager.deploy(
@@ -121,7 +121,6 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
             assetConfigs.map(({ borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap }) => (
               { borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap }
             )),
-            configurator.address,
           ]),
         ],
         true
@@ -179,6 +178,21 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
     );
     const configuratorIntermediate = await ethers.getContractAt('ConfiguratorIntermediate', configurator.address);
     const newConfigurator = await ethers.getContractAt('Configurator', configurator.address);
+    const oldConfigurator = await ethers.getContractAt('ConfiguratorV1', configurator.address);
+
+    // The V2 Configuration is the V1 one without the asset configs, with the new extension delegate and asset list.
+    // setConfiguration is the only way to set the first asset list, so it is built from the current V1 values
+    const configurationFields = newConfigurator.interface.getFunction('setConfiguration').inputs[1].components
+      .map(({ name }) => name);
+    const configurations: Record<string, Record<string, unknown>> = {};
+    for (const { comet } of MARKETS) {
+      const configurationV1 = await oldConfigurator.getConfiguration(comet);
+      configurations[comet] = {
+        ...Object.fromEntries(configurationFields.map((field) => [field, configurationV1[field]])),
+        extensionDelegate: cometExts[comet],
+        assetList: assetLists[comet],
+      };
+    }
 
     const mainnetActions: ProposalAction[] = [
       // 1. Upgrade the Configurator to the intermediate implementation
@@ -217,23 +231,17 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
         signature: 'setAssetListFactory(address,address)',
         args: [comet, assetListFactoryAddress],
       })),
-      // 17-22. Point every Comet to its new asset list
+      // 17-22. Set the configuration of every Comet with its new asset list and CometExt
       ...MARKETS.map(({ comet }) => ({
         contract: newConfigurator,
-        signature: 'updateAssetList(address,address)',
-        args: [comet, assetLists[comet]],
+        signature: 'setConfiguration(address,(address,address,address,address,address,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint104,uint104,uint104,address))',
+        args: [comet, configurations[comet]],
       })),
       // 23-28. Set the Comet factory of every Comet
       ...MARKETS.map(({ comet }) => ({
         contract: newConfigurator,
         signature: 'setFactory(address,address)',
         args: [comet, cometFactoryAddress],
-      })),
-      // 29-34. Set the new CometExt as the extension delegate of every Comet
-      ...MARKETS.map(({ comet }) => ({
-        contract: newConfigurator,
-        signature: 'setExtensionDelegate(address,address)',
-        args: [comet, cometExts[comet]],
       })),
     ];
 
@@ -265,15 +273,13 @@ The third action upgrades the Configurator to the new implementation.
 
 The fourth action moves the Configurator to a new CometProxyAdmin, owned by the Timelock.
 
-The fifth to tenth actions move cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the new CometProxyAdmin.
+The 5th - 10th actions move cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the new CometProxyAdmin.
 
-The eleventh to sixteenth actions set the asset list factory for cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the newly deployed factory.
+The 11th - 16th actions set the asset list factory for cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the newly deployed factory.
 
-The seventeenth to twenty-second actions set the asset lists of cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the newly deployed asset lists.
+The 17th - 22nd actions set the configurations of cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 with the newly deployed asset lists and extension delegates. The other configuration values are kept as they are.
 
-The twenty-third to twenty-eighth actions set the factory for cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the newly deployed factory.
-
-The twenty-ninth to thirty-fourth actions set the extension delegate of cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the newly deployed contracts.
+The 23rd - 28th actions set the factory for cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the newly deployed factory.
 `;
     const txn = await deploymentManager.retry(async () =>
       trace(
@@ -325,6 +331,7 @@ The twenty-ninth to thirty-fourth actions set the extension delegate of cUSDCv3,
     expect(await getProxyAdmin(configurator.address)).to.equal(cometAdmin.address);
     expect(await cometAdmin.getProxyImplementation(configurator.address)).to.equal(configuratorImplementation.address);
     expect(await newConfigurator.governor()).to.equal(await oldConfigurator.governor(preMigrationBlockTag));
+    expect(await assetListFactory.configurator()).to.equal(configurator.address);
 
     for (const market of MARKETS) {
       const assetList = await ethers.getContractAt('AssetList', contracts[market.assetListAlias].address);
@@ -348,7 +355,6 @@ The twenty-ninth to thirty-fourth actions set the extension delegate of cUSDCv3,
       // The first 20 fields match between V1 and V2; only the extension delegate (field 4) changes
       expect(configuration.slice(0, 4)).to.deep.equal(configurationBefore.slice(0, 4));
       expect(configuration.slice(5, 20)).to.deep.equal(configurationBefore.slice(5, 20));
-      expect(await newConfigurator.getAssetConfigs(market.comet)).to.deep.equal(configurationBefore.assetConfigs);
 
       // No asset list redeploy needed
       expect((await newConfigurator.callStatic.deployAssetList(market.comet)).newAssetListImpl).to.equal(constants.AddressZero);
@@ -364,27 +370,36 @@ The twenty-ninth to thirty-fourth actions set the extension delegate of cUSDCv3,
       const assetConfigs = await newConfigurator.getAssetConfigs(market.comet);
       const numAssets = await assetList.numAssets();
       expect(numAssets).to.equal(assetConfigs.length);
+      expect(numAssets).to.equal(configurationBefore.assetConfigs.length);
       expect(numAssets).to.equal(await comet.numAssets());
       for (let i = 0; i < numAssets; i++) {
         const cometAssetInfo = await comet.getAssetInfo(i);
-        const assetInfo = await assetList.getAssetInfo(i);
+        const assetListInfo = await assetList.getAssetInfo(i);
 
-        expect(assetInfo.offset).to.equal(cometAssetInfo.offset);
-        expect(assetInfo.asset).to.equal(cometAssetInfo.asset);
-        expect(assetInfo.priceFeed).to.equal(cometAssetInfo.priceFeed);
-        expect(assetInfo.scale).to.equal(cometAssetInfo.scale);
-        expect(assetInfo.borrowCollateralFactor).to.equal(cometAssetInfo.borrowCollateralFactor);
-        expect(assetInfo.liquidateCollateralFactor).to.equal(cometAssetInfo.liquidateCollateralFactor);
-        expect(assetInfo.liquidationFactor).to.equal(cometAssetInfo.liquidationFactor);
-        expect(assetInfo.supplyCap.div(assetInfo.scale).mul(assetInfo.scale)).to.equal(cometAssetInfo.supplyCap);
+        // Migrated asset configs match the V1 ones; V2 has no decimals, the scale comes from the token
+        expect(assetConfigs[i].asset).to.equal(configurationBefore.assetConfigs[i].asset);
+        expect(assetConfigs[i].priceFeed).to.equal(configurationBefore.assetConfigs[i].priceFeed);
+        expect(assetConfigs[i].borrowCollateralFactor).to.equal(configurationBefore.assetConfigs[i].borrowCollateralFactor);
+        expect(assetConfigs[i].liquidateCollateralFactor).to.equal(configurationBefore.assetConfigs[i].liquidateCollateralFactor);
+        expect(assetConfigs[i].liquidationFactor).to.equal(configurationBefore.assetConfigs[i].liquidationFactor);
+        expect(assetConfigs[i].supplyCap).to.equal(configurationBefore.assetConfigs[i].supplyCap);
 
-        expect(assetInfo.asset).to.equal(assetConfigs[i].asset);
-        expect(assetInfo.priceFeed).to.equal(assetConfigs[i].priceFeed);
-        expect(assetInfo.scale).to.equal(BigNumber.from(10).pow(assetConfigs[i].decimals));
-        expect(assetInfo.borrowCollateralFactor).to.equal(assetConfigs[i].borrowCollateralFactor);
-        expect(assetInfo.liquidateCollateralFactor).to.equal(assetConfigs[i].liquidateCollateralFactor);
-        expect(assetInfo.liquidationFactor).to.equal(assetConfigs[i].liquidationFactor);
-        expect(assetInfo.supplyCap).to.equal(assetConfigs[i].supplyCap);
+        expect(assetListInfo.offset).to.equal(cometAssetInfo.offset);
+        expect(assetListInfo.asset).to.equal(cometAssetInfo.asset);
+        expect(assetListInfo.priceFeed).to.equal(cometAssetInfo.priceFeed);
+        expect(assetListInfo.scale).to.equal(cometAssetInfo.scale);
+        expect(assetListInfo.borrowCollateralFactor).to.equal(cometAssetInfo.borrowCollateralFactor);
+        expect(assetListInfo.liquidateCollateralFactor).to.equal(cometAssetInfo.liquidateCollateralFactor);
+        expect(assetListInfo.liquidationFactor).to.equal(cometAssetInfo.liquidationFactor);
+        expect(assetListInfo.supplyCap.div(assetListInfo.scale).mul(assetListInfo.scale)).to.equal(cometAssetInfo.supplyCap);
+
+        expect(assetListInfo.asset).to.equal(assetConfigs[i].asset);
+        expect(assetListInfo.priceFeed).to.equal(assetConfigs[i].priceFeed);
+        expect(assetListInfo.scale).to.equal(BigNumber.from(10).pow(configurationBefore.assetConfigs[i].decimals));
+        expect(assetListInfo.borrowCollateralFactor).to.equal(assetConfigs[i].borrowCollateralFactor);
+        expect(assetListInfo.liquidateCollateralFactor).to.equal(assetConfigs[i].liquidateCollateralFactor);
+        expect(assetListInfo.liquidationFactor).to.equal(assetConfigs[i].liquidationFactor);
+        expect(assetListInfo.supplyCap).to.equal(assetConfigs[i].supplyCap);
       }
     }
   },
