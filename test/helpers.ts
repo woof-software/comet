@@ -240,6 +240,27 @@ export async function fastForward(seconds: number, ethers_ = ethers): Promise<Bl
   return block;
 }
 
+/** True while `hardhat coverage` runs (solidity-coverage sets this flag on the HRE). */
+export function isCoverageRun(): boolean {
+  return Boolean((hre as unknown as { __SOLIDITY_COVERAGE_RUNNING?: boolean }).__SOLIDITY_COVERAGE_RUNNING);
+}
+
+/**
+ * Upper bound for a gas assertion. Exact under `yarn test`; disabled under coverage,
+ * where instrumented bytecode makes gas numbers meaningless.
+ */
+export function gasLimit(limit: number): number {
+  return isCoverageRun() ? Number.MAX_SAFE_INTEGER : limit;
+}
+
+/**
+ * Coverage runs with a base fee of 0, which zeroes anything priced by `block.basefee`
+ * (e.g. absorb's `approxSpend`). Forces a 1 wei base fee for the next block, under coverage only.
+ */
+export async function nonZeroBaseFeeUnderCoverage(): Promise<void> {
+  if (isCoverageRun()) await ethers.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x1']);
+}
+
 export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const signers = await ethers.getSigners();
 

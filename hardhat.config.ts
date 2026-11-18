@@ -93,14 +93,6 @@ export function requireEnv(varName, msg?: string): string {
   return varVal;
 }
 
-// required environment variables
-[
-  'ETHERSCAN_KEY',
-  'MAINNET_QUICKNODE_LINK',
-  'UNICHAIN_QUICKNODE_LINK',
-  'LINEA_QUICKNODE_LINK'
-].map((v) => requireEnv(v));
-
 // Networks
 interface NetworkConfig {
   network: string;
