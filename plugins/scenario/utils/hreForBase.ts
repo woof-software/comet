@@ -84,10 +84,16 @@ function getBlockRollback(base: ForkSpec) {
     return 25;
 }
 
+// Set/cleared by migrationStarted()/migrationEnded() around each migrate run; while true,
+// forkedHreForBase bypasses a blanket NETWORK_PROVIDER override per L2 fork.
 let activeMigration = false;
 
 export function migrationStarted() {
   activeMigration = true;
+}
+
+export function migrationEnded() {
+  activeMigration = false;
 }
 
 async function getBlockNumberWithRetry(provider: ethers.providers.JsonRpcProvider): Promise<number> {
