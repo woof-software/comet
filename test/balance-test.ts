@@ -41,7 +41,7 @@ describe('balance tests', function () {
         WETH: {
           decimals: 18,
           borrowCF: exp(0.8, 18),
-          liquidateCF: exp(0.95, 18),
+          liquidateCF: exp(0.94, 18),
           liquidationFactor: exp(0.95, 18),
         },
       }),
@@ -372,7 +372,7 @@ describe('balance tests', function () {
             WETH: {
               decimals: 18,
               borrowCF: exp(0.8, 18),
-              liquidateCF: exp(0.95, 18),
+              liquidateCF: exp(0.94, 18),
               liquidationFactor: exp(0.95, 18),
             },
           }),
@@ -807,7 +807,7 @@ describe('balance tests', function () {
             WETH: {
               decimals: 18,
               borrowCF: exp(0.8, 18),
-              liquidateCF: exp(0.95, 18),
+              liquidateCF: exp(0.94, 18),
               liquidationFactor: exp(0.95, 18),
             },
           }),

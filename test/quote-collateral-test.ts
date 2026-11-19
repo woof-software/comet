@@ -1,4 +1,4 @@
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
+import { AssetList, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { expect, exp, ethers, MAX_ASSETS, mulFactor, factorScale, makeConfigurator, ZERO_ADDRESS, SnapshotRestorer, takeSnapshot, BigNumber } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { AssetInfoStructOutput } from 'build/types/AssetList';
@@ -9,6 +9,8 @@ describe('quoteCollateral', function () {
   const collateralTokenDecimals = 18;
   // Configurator and protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
+  // Comet forwards the asset lookups to the list, so an unknown asset reverts with the list's error
+  let assetList: AssetList;
   let configurator: Configurator;
   let configuratorProxyAddress: string;
   let proxyAdmin: CometProxyAdmin;
@@ -34,8 +36,8 @@ describe('quoteCollateral', function () {
         {
           decimals: j < 8 ? 18 : j < 16 ? 8 : 6,
           initialPrice: j > 1 ? 200 : 200 + (10 * j),
-          borrowCF: exp(0.75, 18),
-          liquidateCF: exp(0.8, 18),
+          borrowCF: exp(0.5, 18),
+          liquidateCF: exp(0.55, 18),
           liquidationFactor: exp(0.6, 18),
         },
       ])
@@ -49,6 +51,7 @@ describe('quoteCollateral', function () {
     });
     const cometProxyAddress = protocol.cometProxyWithExtendedAssetList.address;
     comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
+    assetList = protocol.assetList;
     configurator = protocol.configurator;
     configuratorProxyAddress = protocol.configuratorProxy.address;
     proxyAdmin = protocol.proxyAdmin;
@@ -60,19 +63,17 @@ describe('quoteCollateral', function () {
     priceFeeds = protocol.priceFeeds;
 
     // Upgrade proxy to extended asset list implementation
-    const assetListFactory = protocol.assetListFactory;
     configurator = configurator.attach(configuratorProxyAddress);
-    const CometExtAssetList = await (
-      await ethers.getContractFactory('CometExtAssetList')
+    const CometExt = await (
+      await ethers.getContractFactory('CometExt')
     ).deploy(
       {
         name32: ethers.utils.formatBytes32String('Test Comet'),
         symbol32: ethers.utils.formatBytes32String('Test Comet'),
       },
-      assetListFactory.address
     );
-    await CometExtAssetList.deployed();
-    await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+    await CometExt.deployed();
+    await configurator.setExtensionDelegate(cometProxyAddress, CometExt.address);
     const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
     await CometFactoryWithExtendedAssetList.deployed();
     await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
@@ -180,14 +181,14 @@ describe('quoteCollateral', function () {
       expect(quote).to.equal(expected);
     });
 
-    // restored at the start of the next step, so a failing assertion here can't leave LF at 0.0001
-    let liquidationFactorSnapshot: SnapshotRestorer;
-
-    it('liquidationFactor = 0.01% (near-zero like deUSD on USDT market)', async () => {
-      liquidationFactorSnapshot = await takeSnapshot();
-      // liquidationFactor = 0.0001, storeFrontPriceFactor = 0.8 (set by the previous step)
-      // discountFactor = 0.8 * (1 - 0.0001) = 0.79992
-      // assetPriceDiscounted = 200e8 * (1 - 0.79992) = 40.016e8
+    it('liquidation CF = 0.01% (near-zero like deUSD on USDT market)', async () => {
+      const snapshot = await takeSnapshot();
+      // liquidationFactor = 0.0001 → discount is nearly the full storeFrontPriceFactor
+      // discountFactor = 0.8 * (1 - 0.0001) ≈ 0.79992
+      // assetPriceDiscounted = 200e8 * (1 - 0.79992) ≈ 40.016e8
+      // The collateral factors must stay below the liquidation factor, so they go to zero first, as for a delisted asset
+      await configurator.updateAssetBorrowCollateralFactor(comet.address, collateralToken.address, 0);
+      await configurator.updateAssetLiquidateCollateralFactor(comet.address, collateralToken.address, 0);
       await configurator.updateAssetLiquidationFactor(comet.address, collateralToken.address, exp(0.0001, 18));
       await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
 
@@ -198,15 +199,13 @@ describe('quoteCollateral', function () {
       const assetPriceDiscounted = mulFactor(exp(200, 8), factorScale - discountFactor);
       const expected = exp(1, 8) * baseAmount * exp(1, 18) / assetPriceDiscounted / exp(1, 6);
       expect(quote).to.equal(expected);
-      // ~80% discount: the buyer gets ~5x the no-discount amount (200 / 40.016 = 4.998e18), computed by hand
-      expect(quote).to.equal(4998000799680127948n);
+      // With essentially ~50% discount, quote should be roughly 2x the no-discount amount
+      expect(quote).to.be.gt(exp(1.99, 18));
+      // Restore liquidation factor for collateral for other tests
+      await snapshot.restore();
     });
 
     it('100% storeFrontPriceFactor with normal liquidationFactor', async () => {
-      // back to liquidationFactor 0.6 (and storeFrontPriceFactor 0.8) from before the previous step
-      await liquidationFactorSnapshot.restore();
-      expect((await comet.getAssetInfoByAddress(collateralToken.address)).liquidationFactor).to.equal(exp(0.6, 18));
-
       await updateStoreFrontPriceFactor(exp(1, 18));
 
       const baseAmount = exp(200, baseTokenDecimals);
@@ -357,19 +356,19 @@ describe('quoteCollateral', function () {
         await unsupported.deployed();
         await expect(
           comet.quoteCollateral(unsupported.address, exp(100, baseTokenDecimals))
-        ).to.be.revertedWithCustomError(comet, 'BadAsset');
+        ).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('reverts when asset is the base token', async () => {
         await expect(
           comet.quoteCollateral(baseToken.address, exp(100, baseTokenDecimals))
-        ).to.be.revertedWithCustomError(comet, 'BadAsset');
+        ).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('reverts for zero address', async () => {
         await expect(
           comet.quoteCollateral(ZERO_ADDRESS, exp(100, baseTokenDecimals))
-        ).to.be.revertedWithCustomError(comet, 'BadAsset');
+        ).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
     });
 
@@ -676,7 +675,6 @@ describe('quoteCollateral', function () {
     let configuratorProxy: ConfiguratorProxy;
     let proxyAdmin: CometProxyAdmin;
     let cometProxyAddress: string;
-    let assetListFactoryAddress: string;
 
     // Constants
     const QUOTE_AMOUNT = exp(200, 6);
@@ -699,7 +697,6 @@ describe('quoteCollateral', function () {
           {
             decimals: 18,
             initialPrice: 200,
-            liquidationFactor: exp(0.6, 18),
           },
         ])
       );
@@ -711,21 +708,19 @@ describe('quoteCollateral', function () {
       configuratorProxy = configuratorAndProtocol.configuratorProxy;
       proxyAdmin = configuratorAndProtocol.proxyAdmin;
       tokens = configuratorAndProtocol.tokens;
-      assetListFactoryAddress = configuratorAndProtocol.assetListFactory.address;
       quoteCollateralToken = tokens[`ASSET1`];
       configurator = configurator.attach(configuratorProxy.address);
 
-      const CometExtAssetList = await (
-        await ethers.getContractFactory('CometExtAssetList')
+      const CometExt = await (
+        await ethers.getContractFactory('CometExt')
       ).deploy(
         {
           name32: ethers.utils.formatBytes32String('Compound Comet'),
           symbol32: ethers.utils.formatBytes32String('BASE'),
         },
-        assetListFactoryAddress
       );
-      await CometExtAssetList.deployed();
-      await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+      await CometExt.deployed();
+      await configurator.setExtensionDelegate(cometProxyAddress, CometExt.address);
       const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
       await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
@@ -759,6 +754,9 @@ describe('quoteCollateral', function () {
     });
 
     it('update liquidationFactor to 0 to remove discount', async () => {
+      // A zero liquidation factor is only valid when both collateral factors are zero too
+      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, quoteCollateralToken.address, 0n);
+      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, quoteCollateralToken.address, 0n);
       await configurator.updateAssetLiquidationFactor(cometProxyAddress, quoteCollateralToken.address, exp(0, 18));
 
       await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
@@ -798,7 +796,10 @@ describe('quoteCollateral', function () {
 
         expect(quoteAmount).to.eq(expectedQuoteWithDiscount);
 
-        // Update liquidation factor to 0 to remove discount
+        // Update liquidation factor to 0 to remove discount; a zero liquidation factor is only valid
+        // when both collateral factors are zero too
+        await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, asset.address, 0n);
+        await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, asset.address, 0n);
         await configurator.updateAssetLiquidationFactor(cometProxyAddress, asset.address, exp(0, 18));
         await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
 

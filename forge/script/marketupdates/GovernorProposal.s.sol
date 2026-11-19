@@ -6,7 +6,7 @@ import "../../lib/forge-std/src/console.sol";
 
 import "../../../contracts/interfaces/IGovernorBravo.sol";
 import "../../../contracts/interfaces/IComp.sol";
-import "../../../contracts/CometProxyAdmin.sol";
+import "../../../contracts/marketupdates/CometProxyAdminOptimism.sol";
 
 import "./helpers/GovernanceHelper.sol";
 import "./helpers/MarketUpdateAddresses.sol";
