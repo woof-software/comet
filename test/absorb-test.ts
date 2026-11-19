@@ -1075,7 +1075,6 @@ describe('absorb', function () {
     });
 
     describe('absorb with 24 collaterals', function () {
-      const MAX_ASSETS = 24;
       const BASE_TOKEN_LEND_AMOUNT: bigint = exp(250, baseTokenDecimals);
       const SUPPLY_COLLATERAL_AMOUNT: bigint = exp(1, 18);
       const BORROW_AMOUNT: bigint = exp(190, baseTokenDecimals);
