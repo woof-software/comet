@@ -2279,6 +2279,7 @@ describe('isBorrowCollateralized', function () {
 
     // Users
     let alice: SignerWithAddress;
+    let governor: SignerWithAddress;
     let pauseGuardian: SignerWithAddress;
 
     // Values
@@ -2308,6 +2309,7 @@ describe('isBorrowCollateralized', function () {
       baseToken = protocol.tokens[baseSymbol];
       collateralToken = protocol.tokens['ASSET0'];
       alice = protocol.users[0];
+      governor = protocol.governor;
       pauseGuardian = protocol.pauseGuardian;
 
       // Upgrade proxy to extended asset list implementation to support many assets
@@ -2356,7 +2358,7 @@ describe('isBorrowCollateralized', function () {
     });
 
     it('borrowCF can be updated to 0', async () => {
-      await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n);
+      await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n, governor);
     });
 
     it('borrowCF becomes 0 after upgrade', async () => {
@@ -2397,7 +2399,6 @@ describe('isBorrowCollateralized', function () {
       // Total liquidity: 5 * 150 = 750 USDC. Borrow 400 to stay well collateralized initially.
       // After zeroing 3 assets, only 2 contribute (300 total) < 400 borrowed, so undercollateralized.
       const borrowAmount = exp(400, 6);
-      await baseToken.allocateTo(comet.address, borrowAmount);
       await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
       // Verify collateralized initially
@@ -2406,7 +2407,7 @@ describe('isBorrowCollateralized', function () {
       // Zero borrowCF for three assets: ASSET1, ASSET3, ASSET4
       const zeroBcfSymbols = ['ASSET1', 'ASSET3', 'ASSET4'];
       for (const sym of zeroBcfSymbols) {
-        await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, tokens[sym].address, 0n);
+        await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, tokens[sym].address, 0n, governor);
       }
 
       // Verify borrowCF=0 excludes those assets from liquidity
@@ -2441,14 +2442,13 @@ describe('isBorrowCollateralized', function () {
 
         // Borrow an amount collateralized by the single supplied asset (200 * 0.75 = 150 USDC liquidity)
         const borrowAmount = exp(150, 6);
-        await baseToken.allocateTo(comet.address, borrowAmount);
         await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
         // Initially collateralized with single asset active
         expect(await comet.isBorrowCollateralized(alice.address)).to.be.true;
 
-        // Zero borrowCF for target asset (last one)
-        await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, targetToken.address, 0n);
+        // Zero borrowCF for the target asset (the only supplied asset)
+        await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, targetToken.address, 0n, governor);
 
         // Verify target asset liquidity is zero
         const liq = await getLiquidity(comet, targetToken, supplyAmount);
@@ -2482,7 +2482,6 @@ describe('isBorrowCollateralized', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           // Capture the current (normal) price feed for the collateral token
@@ -2536,7 +2535,6 @@ describe('isBorrowCollateralized', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
         });
 
@@ -2558,7 +2556,7 @@ describe('isBorrowCollateralized', function () {
         });
 
         it('governance sets borrowCollateralFactor to 0 for the affected asset', async () => {
-          await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n);
+          await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n, governor);
         });
 
         it('borrowCollateralFactor is 0 after upgrade', async () => {
@@ -2588,7 +2586,6 @@ describe('isBorrowCollateralized', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           collateralAssetIndex = (await comet.getAssetInfoByAddress(collateralToken.address)).offset;
@@ -2643,7 +2640,6 @@ describe('isBorrowCollateralized', function () {
           await collateralToken.allocateTo(alice.address, supplyAmount);
           await collateralToken.connect(alice).approve(cometProxyAddress, supplyAmount);
           await comet.connect(alice).supply(collateralToken.address, supplyAmount);
-          await baseToken.allocateTo(cometProxyAddress, borrowAmount);
           await comet.connect(alice).withdraw(baseToken.address, borrowAmount);
 
           collateralAssetIndex = (await comet.getAssetInfoByAddress(collateralToken.address)).offset;
@@ -2664,7 +2660,7 @@ describe('isBorrowCollateralized', function () {
         });
 
         it('governance sets borrowCollateralFactor to 0 for the affected asset', async () => {
-          await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n);
+          await updateAssetBorrowCollateralFactor(configurator, proxyAdmin, cometProxyAddress, collateralToken.address, 0n, governor);
         });
 
         it('borrowCollateralFactor is 0 after upgrade', async () => {

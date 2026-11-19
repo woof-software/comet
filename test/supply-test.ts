@@ -1,4 +1,4 @@
-import { ethers, expect, exp, makeProtocol, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS, setTotalsBasic, presentValueSupply } from './helpers';
+import { ethers, expect, exp, makeProtocol, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS, setTotalsBasic, presentValueSupply, portfolio, wait, event, fastForward } from './helpers';
 import { AssetList, EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
@@ -585,6 +585,205 @@ describe('supply', function () {
         /// There is a high chance to have around 1 wei difference in the displayed market supply (totalSupply())
         /// and the sum of all balances from all users
         expect(await comet.totalSupply()).to.be.approximately(totalPresentSupply, 1);
+      });
+    });
+
+    /**
+     * getSupplyRate cut-off (CometWithExtendedAssetList.sol:328-330): at 0 utilization with a non-zero base rate,
+     * the supply rate is 0 once lenders' value reaches the comet's base balance.
+     * Only behaviour that holds with and without a fix for the inflow bypass is asserted here: the exact amount of
+     * the overshoot on the crossing accrual (F-3) and the bypass by a base inflow are covered by
+     * test/poc-supply-cutoff-bypass-test.ts.
+     */
+    describe('supply rate cut-off at zero utilization', function () {
+      const CUTOFF_RESERVES: bigint = exp(1_000, baseTokenDecimals); // 1,000 USDC
+      const LENDER_SUPPLY: bigint = exp(1e6, baseTokenDecimals); // 1,000,000 USDC earns 10,000 USDC a year at 1%
+      const DAY = 24 * 60 * 60;
+      let cutoffComet: CometHarnessInterfaceExtendedAssetList;
+      let cutoffBase: FaucetToken | NonStandardFaucetFeeToken;
+      let lender: SignerWithAddress;
+
+      async function lendersValueAndBalance(): Promise<[BigNumber, BigNumber]> {
+        return [await cutoffComet.totalSupply(), await cutoffBase.balanceOf(cutoffComet.address)];
+      }
+
+      before(async function () {
+        const protocol = await makeProtocol({ base: 'USDC', supplyInterestRateBase: SUPPLY_BASE_RATE, baseTokenBalance: CUTOFF_RESERVES });
+        cutoffComet = protocol.cometWithExtendedAssetList;
+        cutoffBase = protocol.tokens[protocol.base];
+        [lender] = protocol.users;
+
+        await cutoffBase.allocateTo(lender.address, LENDER_SUPPLY);
+        await cutoffBase.connect(lender).approve(cutoffComet.address, LENDER_SUPPLY);
+        await cutoffComet.connect(lender).supply(cutoffBase.address, LENDER_SUPPLY);
+      });
+
+      it("below the balance: no borrows, lenders' value < balance, supply rate = base rate", async () => {
+        const [lendersValue, balance] = await lendersValueAndBalance();
+
+        expect(await cutoffComet.getUtilization()).to.equal(0);
+        expect(lendersValue).to.be.lessThan(balance);
+        expect(await cutoffComet.getSupplyRate(0)).to.equal(await cutoffComet.supplyPerSecondInterestRateBase());
+      });
+
+      it('below the balance: the index grows at the base rate (10 days)', async () => {
+        const { baseSupplyIndex: indexBefore, lastAccrualTime } = await cutoffComet.totalsBasic();
+        const rate = await cutoffComet.getSupplyRate(0);
+
+        await ethers.provider.send('evm_increaseTime', [10 * DAY]);
+        const accrueTx = await cutoffComet.accrueAccount(lender.address);
+        const now = (await ethers.provider.getBlock((await accrueTx.wait()).blockNumber)).timestamp;
+
+        const index = (await cutoffComet.totalsBasic()).baseSupplyIndex;
+        expect(index).to.be.greaterThan(indexBefore);
+        expect(index).to.equal(indexBefore.add(indexBefore.mul(rate).mul(now - lastAccrualTime).div(exp(1, 18))));
+
+        // ~274 USDC of the 1,000 USDC reserves paid to the lender so far
+        const [lendersValue, balance] = await lendersValueAndBalance();
+        expect(lendersValue).to.be.lessThan(balance);
+      });
+
+      it("crossing: once lenders' value reaches the balance, the supply rate is 0", async () => {
+        // 40 more days: 10,000 USDC a year pays out the 1,000 USDC reserves after ~36.5 days in total
+        await ethers.provider.send('evm_increaseTime', [40 * DAY]);
+        await cutoffComet.accrueAccount(lender.address);
+
+        const [lendersValue, balance] = await lendersValueAndBalance();
+        expect(lendersValue).to.be.greaterThanOrEqual(balance);
+        expect(await cutoffComet.getSupplyRate(0)).to.equal(0);
+      });
+
+      it('cut off: with no inflow, the index and the lender balance stay frozen (30 days)', async () => {
+        const indexBefore = (await cutoffComet.totalsBasic()).baseSupplyIndex;
+        const lenderBalanceBefore = await cutoffComet.balanceOf(lender.address);
+
+        await ethers.provider.send('evm_increaseTime', [30 * DAY]);
+        await ethers.provider.send('evm_mine', []);
+        // the view already shows no virtual interest
+        expect(await cutoffComet.balanceOf(lender.address)).to.equal(lenderBalanceBefore);
+
+        await cutoffComet.accrueAccount(lender.address);
+        expect((await cutoffComet.totalsBasic()).baseSupplyIndex).to.equal(indexBefore);
+        expect(await cutoffComet.balanceOf(lender.address)).to.equal(lenderBalanceBefore);
+        expect(await cutoffComet.getSupplyRate(0)).to.equal(0);
+      });
+
+      it('cut off: the cut-off applies only at 0 utilization', async () => {
+        // lenders' value >= balance still, but any utilization > 0 skips the cut-off branch
+        const utilization = exp(0.1, 18); // 10%, below the supply kink
+        const expected = (await cutoffComet.supplyPerSecondInterestRateBase()).add(
+          (await cutoffComet.supplyPerSecondInterestRateSlopeLow()).mul(utilization).div(exp(1, 18))
+        );
+        expect(await cutoffComet.getSupplyRate(utilization)).to.be.greaterThan(0);
+        expect(await cutoffComet.getSupplyRate(utilization)).to.equal(expected);
+      });
+    });
+
+    // Restores the supply-max tests removed in the refactor (C2-C4), as flows on cometWithExtendedAssetList.
+    describe('supply max base (repay borrow)', function () {
+      let maxProtocol: Awaited<ReturnType<typeof makeProtocol>>;
+      let maxComet: CometHarnessInterfaceExtendedAssetList;
+      let usdc: FaucetToken | NonStandardFaucetFeeToken;
+      let maxCollateral: FaucetToken | NonStandardFaucetFeeToken;
+      let borrower: SignerWithAddress;
+      let payer: SignerWithAddress;
+      let maxFixture: SnapshotRestorer;
+      const PAYER_FUNDS: bigint = exp(100, baseTokenDecimals);
+
+      const holdings = (account: string) => portfolio(maxProtocol, account);
+      async function overrideTotals(overrides: object) {
+        await wait(maxComet.setTotalsBasic(Object.assign({}, await maxComet.totalsBasic(), overrides)));
+      }
+
+      before(async function () {
+        maxProtocol = await makeProtocol({ base: 'USDC' });
+        maxComet = maxProtocol.cometWithExtendedAssetList;
+        usdc = maxProtocol.tokens['USDC'];
+        maxCollateral = maxProtocol.tokens['COMP'];
+        [borrower, payer] = maxProtocol.users;
+
+        await usdc.allocateTo(payer.address, PAYER_FUNDS);
+        await usdc.connect(payer).approve(maxComet.address, PAYER_FUNDS);
+
+        maxFixture = await takeSnapshot();
+      });
+
+      describe('MaxUint repays the borrower\'s full accrued debt', function () {
+        const BORROW_PRINCIPAL = 50e6;
+        let totalsBefore: Awaited<ReturnType<CometHarnessInterfaceExtendedAssetList['totalsBasic']>>;
+        let borrowerBefore: Awaited<ReturnType<typeof portfolio>>;
+        let accruedDebt: bigint;
+        let supplyTx: Awaited<ReturnType<typeof wait>>;
+
+        before(async function () {
+          await maxFixture.restore();
+          await overrideTotals({ totalSupplyBase: 100e6, totalBorrowBase: BORROW_PRINCIPAL });
+          await maxComet.setBasePrincipal(borrower.address, -BORROW_PRINCIPAL);
+
+          await fastForward(86400);
+          await ethers.provider.send('evm_mine', []);
+
+          totalsBefore = await maxComet.totalsBasic();
+          borrowerBefore = await holdings(borrower.address);
+          accruedDebt = (await maxComet.callStatic.borrowBalanceOf(borrower.address)).toBigInt();
+          supplyTx = await wait(maxComet.connect(payer).supplyTo(borrower.address, usdc.address, ethers.constants.MaxUint256));
+        });
+
+        it('debt accrued interest over the day', async () => {
+          expect(accruedDebt).to.be.greaterThan(BigInt(BORROW_PRINCIPAL));
+          expect(borrowerBefore.internal.USDC).to.equal(-accruedDebt);
+        });
+
+        it('emits only the pull Transfer and Supply, for the accrued debt (no mint)', async () => {
+          expect(supplyTx.receipt['events'].length).to.equal(2);
+          expect(event(supplyTx, 0)).to.deep.equal({ Transfer: { from: payer.address, to: maxComet.address, amount: accruedDebt } });
+          expect(event(supplyTx, 1)).to.deep.equal({ Supply: { from: payer.address, dst: borrower.address, amount: accruedDebt } });
+        });
+
+        it('the borrower is left with no debt and no supply', async () => {
+          expect((await holdings(borrower.address)).internal).to.deep.equal({ USDC: 0n, COMP: 0n, WETH: 0n, WBTC: 0n });
+        });
+
+        it('the payer paid exactly the accrued debt', async () => {
+          expect((await holdings(payer.address)).external.USDC).to.equal(PAYER_FUNDS - accruedDebt);
+        });
+
+        it('total borrow is cleared, total supply is unchanged', async () => {
+          const totalsAfter = await maxComet.totalsBasic();
+          expect(totalsAfter.totalSupplyBase).to.equal(totalsBefore.totalSupplyBase);
+          expect(totalsAfter.totalBorrowBase).to.equal(0);
+        });
+      });
+
+      describe('repaying exactly the borrow', function () {
+        const DEBT = 100e6;
+        let supplyTx: Awaited<ReturnType<typeof wait>>;
+
+        before(async function () {
+          await maxFixture.restore();
+          await maxComet.setBasePrincipal(borrower.address, -DEBT);
+          await overrideTotals({ totalBorrowBase: DEBT });
+          supplyTx = await wait(maxComet.connect(payer).supplyTo(borrower.address, usdc.address, DEBT));
+        });
+
+        it('emits no mint Transfer (only the pull Transfer and Supply)', async () => {
+          expect(supplyTx.receipt['events'].length).to.equal(2);
+          expect(event(supplyTx, 0)).to.deep.equal({ Transfer: { from: payer.address, to: maxComet.address, amount: BigInt(DEBT) } });
+          expect(event(supplyTx, 1)).to.deep.equal({ Supply: { from: payer.address, dst: borrower.address, amount: BigInt(DEBT) } });
+        });
+      });
+
+      describe('MaxUint for a collateral asset', function () {
+        before(async function () {
+          await maxFixture.restore();
+          await maxCollateral.allocateTo(payer.address, 100e6);
+          await maxCollateral.connect(payer).approve(maxComet.address, 100e6);
+        });
+
+        it('reverts with InvalidUInt128 (the safe128 cast)', async () => {
+          await expect(maxComet.connect(payer).supplyTo(borrower.address, maxCollateral.address, ethers.constants.MaxUint256))
+            .to.be.revertedWithCustomError(maxComet, 'InvalidUInt128');
+        });
       });
     });
 

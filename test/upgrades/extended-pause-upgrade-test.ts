@@ -38,7 +38,8 @@ describe('extended pause upgrade test', function () {
   let originalImpl: string;
   let newImpl: string;
 
-  // Extension delegate storage snapshot
+  // Extension delegate immutables and constants snapshot
+  let maxAssetsBefore: number;
   let nameBefore: string;
   let symbolBefore: string;
   let baseAccrualScaleBefore: BigNumber;
@@ -189,7 +190,8 @@ describe('extended pause upgrade test', function () {
 
     cometExt = await ethers.getContractAt('CometExt', COMET_ADDRESS) as CometExt;
 
-    // Extension delegate storage snapshot
+    // Extension delegate immutables and constants snapshot
+    maxAssetsBefore = await comet.maxAssets();
     nameBefore = await cometExt.name();
     symbolBefore = await cometExt.symbol();
     baseAccrualScaleBefore = await cometExt.baseAccrualScale();
@@ -236,7 +238,8 @@ describe('extended pause upgrade test', function () {
     expect(await proxyAdmin.getProxyImplementation(COMET_ADDRESS)).to.equal(newImpl);
   });
 
-  it('should save comet extension storage safely after upgrade', async function () {
+  it('should keep comet extension immutables and constants after upgrade', async function () {
+    expect(await comet.maxAssets()).to.equal(maxAssetsBefore);
     // version is a constant of the extension, so it comes from the new implementation
     expect(await cometExt.version()).to.equal(await newCometExt.version());
     expect(await cometExt.name()).to.equal(nameBefore);

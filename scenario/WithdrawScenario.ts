@@ -1324,8 +1324,9 @@ scenario(
  * of collateral (e.g., during absorption when trying to getPrice() for a delisted asset).
  *
  * @dev The solution was to set the asset's borrowCollateralFactor to 0 for delisted collateral. For isBorrowCollateralized,
- * when borrowCollateralFactor = 0, the contract skips that asset in the liquidity calculation (see CometWithExtendedAssetList.sol
- * lines 402-405), effectively excluding it from contributing to the user's collateralization. This prevents the protocol
+ * when borrowCollateralFactor = 0, the contract skips that asset in the liquidity calculation (see the
+ * borrowCollateralFactor == 0 check in CometWithExtendedAssetList.isBorrowCollateralized), effectively excluding it from
+ * contributing to the user's collateralization. This prevents the protocol
  * from calling getPrice() on unavailable price feeds.
  *
  * @dev This scenario tests isBorrowCollateralized behavior in two phases:
@@ -1423,6 +1424,7 @@ scenario(
     // The pause check does not depend on the amount, so 1 wei of every collateral is enough
     const withdrawCollateral = 1n;
 
+    let checkedAssets = 0;
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
       if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context, offset).withdrawCollateral))) continue;
@@ -1457,7 +1459,9 @@ scenario(
       const albertBalanceAfter = await comet.collateralBalanceOf(albert.address, collateralAsset.address);
       // Assert balance after withdraw
       expect(albertBalanceAfter).to.equal(albertBalanceBefore.toBigInt() - withdrawCollateral);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1476,9 +1480,10 @@ scenario(
     // The pause check does not depend on the amount, so 1 wei of every collateral is enough
     const withdrawCollateral = 1n;
 
+    let checkedAssets = 0;
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
-      if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context).withdrawCollateral))) continue;
+      if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context, offset).withdrawCollateral))) continue;
       if (await isAssetDelisted(context, offset)) continue;
 
       const { asset } = await comet.getAssetInfo(offset);
@@ -1528,7 +1533,9 @@ scenario(
 
       expect(albertTokenBalanceBefore).to.equal(albertTokenBalanceAfter);
       expect(bettyTokenBalanceAfter).to.equal(bettyTokenBalanceBefore + withdrawCollateral);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1548,9 +1555,10 @@ scenario(
     // The pause check does not depend on the amount, so 1 wei of every collateral is enough
     const withdrawCollateral = 1n;
 
+    let checkedAssets = 0;
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
-      if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context).withdrawCollateral))) continue;
+      if (!(await isTriviallySourceable(context, offset, getConfigForScenario(context, offset).withdrawCollateral))) continue;
       if (await isAssetDelisted(context, offset)) continue;
 
       const { asset } = await comet.getAssetInfo(offset);
@@ -1600,7 +1608,9 @@ scenario(
 
       expect(albertTokenBalanceBefore).to.equal(albertTokenBalanceAfter);
       expect(bettyTokenBalanceAfter).to.equal(bettyTokenBalanceBefore + withdrawCollateral);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1619,7 +1629,7 @@ scenario('Comet#withdraw > reverts on unregistered asset', {}, async ({ comet, a
 
   await expect(
     comet.connect(albert.signer).withdraw(unregisteredAsset.address, collateralAmount)
-  ).to.be.revertedWithPanic(0x11); // everted with panic code 0x11 - arithmetic operation underflowed
+  ).to.be.revertedWithPanic(0x11); // reverted with panic code 0x11 - arithmetic operation underflowed
 });
 
 scenario('Comet#withdrawTo > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
@@ -1637,7 +1647,7 @@ scenario('Comet#withdrawTo > reverts on unregistered asset', {}, async ({ comet,
 
   await expect(
     comet.connect(albert.signer).withdrawTo(betty.address, unregisteredAsset.address, collateralAmount)
-  ).to.be.revertedWithPanic(0x11); // everted with panic code 0x11 - arithmetic operation underflowed
+  ).to.be.revertedWithPanic(0x11); // reverted with panic code 0x11 - arithmetic operation underflowed
 });
 
 scenario('Comet#withdrawFrom > reverts on unregistered asset', {}, async ({ comet, actors }, context) => {
@@ -1659,7 +1669,7 @@ scenario('Comet#withdrawFrom > reverts on unregistered asset', {}, async ({ come
 
   await expect(
     comet.connect(betty.signer).withdrawFrom(albert.address, betty.address, unregisteredAsset.address, collateralAmount)
-  ).to.be.revertedWithPanic(0x11); // everted with panic code 0x11 - arithmetic operation underflowed
+  ).to.be.revertedWithPanic(0x11); // reverted with panic code 0x11 - arithmetic operation underflowed
 });
 
 scenario(
@@ -1675,6 +1685,7 @@ scenario(
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
 
+    let checkedAssets = 0;
     for (let offset = 0; offset < MAX_ASSETS; offset++) {
       if (!(await isValidAssetIndex(context, offset))) continue;
 
@@ -1704,7 +1715,9 @@ scenario(
       );
       // should change token balance of user
       expect(await collateralAsset.balanceOf(albert.address)).to.equal(userAssetBalanceBefore + amountToWithdraw);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 

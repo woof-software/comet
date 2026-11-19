@@ -728,12 +728,20 @@ describe('withdraw', function () {
         expect(totalCollateralSupplyBefore.sub(totalCollateralSupplyAfter)).to.equal(COLLATERAL_SUPPLY_AMOUNT);
       });
 
-      it('assetsIn is cleared when collateral balance goes to zero', async () => {
+      it('gas used is within limit', async () => {
+        // ~102.5k on the service patch (was < 87k before it): withdrawCollateral now accrues the account
+        // (accrueAccountInternal) and checks the collateral withdraw pause flags
+        const receipt = await withdrawTx.wait();
+        expect(Number(receipt.gasUsed)).to.be.lessThan(105000);
+      });
+
+      it("bob's assetsIn bit is cleared when his collateral balance goes to zero", async () => {
+        // bob (src) held the collateral; alice only received the tokens in her wallet (withdrawTo)
         const collateralIndex = (await comet.getAssetInfoByAddress(collateral.address)).offset;
-        const userData = await comet.userBasic(alice.address);
         const offset = 1 << collateralIndex;
 
-        expect(userData.assetsIn & offset).to.equal(0);
+        expect((await comet.userBasic(bob.address)).assetsIn & offset).to.equal(0);
+        expect((await comet.userBasic(alice.address)).assetsIn).to.equal(0);
       });
 
       it('alice principal is not changed after collateral withdrawal', async () => {

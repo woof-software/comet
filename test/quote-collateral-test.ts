@@ -1,4 +1,4 @@
-import { AssetList, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
+import { AssetList, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { expect, exp, ethers, MAX_ASSETS, mulFactor, factorScale, makeConfigurator, ZERO_ADDRESS, SnapshotRestorer, takeSnapshot, BigNumber } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { AssetInfoStructOutput } from 'build/types/AssetList';
@@ -670,7 +670,7 @@ describe('quoteCollateral', function () {
     let snapshot: SnapshotRestorer;
 
     // Contracts
-    let comet: CometHarnessInterfaceExtendedAssetList;
+    let comet: CometWithExtendedAssetList;
     let configurator: Configurator;
     let configuratorProxy: ConfiguratorProxy;
     let proxyAdmin: CometProxyAdmin;

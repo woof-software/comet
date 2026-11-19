@@ -823,7 +823,7 @@ scenario(
   'Comet#supplyFrom > reverts if operator not given permission',
   {
     tokenBalances: {
-      albert: { $asset0: 100 } // in units of asset, not wei
+      albert: { $base: 100 } // in units of asset, not wei
     }
   },
   async ({ comet, actors }, context) => {
@@ -1345,6 +1345,7 @@ scenario(
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
 
+    let checkedAssets = 0;
     for (let i = 0; i < MAX_ASSETS; i++) {
       if (!(await isValidAssetIndex(context, i))) continue;
       if (getConfigForScenario(context, i).supplyCollateral === 0) continue;
@@ -1376,7 +1377,9 @@ scenario(
       await albert.safeSupplyAsset({asset: collateralAsset.address, amount: amountToSupply});
 
       expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(amountToSupply);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1393,6 +1396,7 @@ scenario(
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
 
+    let checkedAssets = 0;
     for (let i = 0; i < MAX_ASSETS; i++) {
       if (!await isValidAssetIndex(context, i)) continue;
       if (getConfigForScenario(context, i).supplyCollateral === 0) continue;
@@ -1424,7 +1428,9 @@ scenario(
       await albert.safeSupplyAssetTo({dst: betty.address, asset: collateralAsset.address, amount: amountToSupply});
 
       expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(amountToSupply);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1441,6 +1447,7 @@ scenario(
     // Fund pause guardian account for gas fees
     await fundAccount(world, pauseGuardian);
 
+    let checkedAssets = 0;
     for (let i = 0; i < MAX_ASSETS; i++) {
       if (!await isValidAssetIndex(context, i)) continue;
       if (getConfigForScenario(context, i).supplyCollateral === 0) continue;
@@ -1474,7 +1481,9 @@ scenario(
       await betty.safeSupplyAssetFrom({src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: amountToSupply});
 
       expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(amountToSupply);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1495,6 +1504,7 @@ scenario(
     await fundAccount(world, admin);
     await fundAccount(world, pauseGuardian);
 
+    let checkedAssets = 0;
     for (let i = 0; i < MAX_ASSETS; i++) {
       if (!await isValidAssetIndex(context, i)) continue;
       if (getConfigForScenario(context, i).supplyCollateral === 0) continue;
@@ -1529,7 +1539,9 @@ scenario(
       await albert.safeSupplyAsset({asset: collateralAsset.address, amount: supplyAmount});
 
       expect(await comet.collateralBalanceOf(albert.address, collateralAsset.address)).to.be.equal(supplyAmount);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1547,6 +1559,7 @@ scenario(
     await fundAccount(world, admin);
     await fundAccount(world, pauseGuardian);
 
+    let checkedAssets = 0;
     for (let i = 0; i < MAX_ASSETS; i++) {
       if (!await isValidAssetIndex(context, i)) continue;
       if (getConfigForScenario(context, i).supplyCollateral === 0) continue;
@@ -1581,7 +1594,9 @@ scenario(
       await albert.safeSupplyAssetTo({dst: betty.address, asset: collateralAsset.address, amount: supplyAmount});
 
       expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(supplyAmount);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1602,6 +1617,7 @@ scenario(
     // Allow betty to act on behalf of albert
     await albert.allow(betty, true);
 
+    let checkedAssets = 0;
     for (let i = 0; i < MAX_ASSETS; i++) {
       if (!await isValidAssetIndex(context, i)) continue;
       if (getConfigForScenario(context, i).supplyCollateral === 0) continue;
@@ -1636,7 +1652,9 @@ scenario(
       await betty.safeSupplyAssetFrom({src: albert.address, dst: betty.address, asset: collateralAsset.address, amount: supplyAmount});
 
       expect(await comet.collateralBalanceOf(betty.address, collateralAsset.address)).to.be.equal(supplyAmount);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 

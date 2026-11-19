@@ -1310,7 +1310,7 @@ describe('absorb', function () {
       });
       // Note: Always interact with the proxy address, we'll upgrade implementation later
       cometProxyAddress = configuratorAndProtocol.cometProxyWithExtendedAssetList.address;
-      comet = configuratorAndProtocol.cometWithExtendedAssetList.attach(cometProxyAddress);
+      comet = configuratorAndProtocol.cometWithExtendedAssetList.attach(cometProxyAddress) as CometWithExtendedAssetList;
       configurator = configuratorAndProtocol.configurator;
       configuratorProxy = configuratorAndProtocol.configuratorProxy;
       proxyAdmin = configuratorAndProtocol.proxyAdmin;
@@ -1383,7 +1383,7 @@ describe('absorb', function () {
       );
       // Create protocol with configurator so we can update liquidationFactor later
       const configuratorAndProtocol24Assets = await makeConfigurator({ assets: { USDC: { decimals: 6, initialPrice: 1 }, ...collaterals }});
-      comet24Assets = configuratorAndProtocol24Assets.cometWithExtendedAssetList.attach(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address);
+      comet24Assets = configuratorAndProtocol24Assets.cometWithExtendedAssetList.attach(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address) as CometWithExtendedAssetList;
       underwater24Assets = configuratorAndProtocol24Assets.users[0];
       absorber24Assets = configuratorAndProtocol24Assets.users[1];
       tokens24Assets = configuratorAndProtocol24Assets.tokens;
@@ -2027,7 +2027,6 @@ describe('absorb', function () {
           await comet24Assets.connect(underwater24Assets).supply(targetToken.address, supplyAmount);
 
           const borrowAmount = exp(150, 6);
-          await baseToken24Assets.allocateTo(comet24Assets.address, borrowAmount);
           await comet24Assets.connect(underwater24Assets).withdraw(baseToken24Assets.address, borrowAmount);
 
           // Drop price of token to make liquidatable
@@ -2104,7 +2103,6 @@ describe('absorb', function () {
         }
   
         const borrowAmount = exp(500, 6);
-        await baseToken24Assets.allocateTo(comet24Assets.address, borrowAmount);
         await comet24Assets.connect(underwater24Assets).withdraw(baseToken24Assets.address, borrowAmount);
   
         // Drop price of all tokens to make liquidatable

@@ -326,7 +326,7 @@ scenario(
 // One scenario per collateral slot; each runs only when that slot holds a usable collateral on the current market
 for (let offset = 0; offset < MAX_ASSETS; offset++) {
   scenario(
-    `Comet#transfer > partial withdraw / borrow base to partial repay / supply, collateral asset ${offset}`,
+    `Comet#transfer > full withdraw / borrow base to full repay / supply, collateral asset ${offset}`,
     {
       filter: async (ctx: CometContext) => (await getUsableCollateralIndices(ctx)).includes(offset)
     },
@@ -1557,6 +1557,7 @@ scenario(
     // Allow betty to act on behalf of albert
     await albert.allow(betty, true);
 
+    let checkedAssets = 0;
     for (let i = 0; i < MAX_ASSETS; i++) {
       if (!await isValidAssetIndex(context, i)) continue;
       if (getConfigForScenario(context, i).transferCollateral === 0) continue;
@@ -1608,7 +1609,9 @@ scenario(
       // Assert balances after transfer
       expect(albertBalanceAfter).to.be.equal(albertBalanceBefore.toBigInt() - transferAmount);
       expect(charlesBalanceAfter).to.be.equal(charlesBalanceBefore.toBigInt() + transferAmount);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
@@ -1622,10 +1625,11 @@ scenario(
   async ({ comet, actors }, context, world) => {
     const { admin, albert, betty, pauseGuardian } = actors;
 
-    // Fund pause guardian account for gas fees
+    // Fund admin and pause guardian accounts for gas fees
     await fundAccount(world, admin);
     await fundAccount(world, pauseGuardian);
 
+    let checkedAssets = 0;
     for (let i = 0; i < MAX_ASSETS; i++) {
       if (!await isValidAssetIndex(context, i)) continue;
       if (getConfigForScenario(context, i).transferCollateral === 0) continue;
@@ -1673,7 +1677,9 @@ scenario(
       // Assert balances after transfer
       expect(albertBalanceAfter).to.be.equal(albertBalanceBefore.toBigInt() - transferAmount);
       expect(bettyBalanceAfter).to.be.equal(bettyBalanceBefore.toBigInt() + transferAmount);
+      checkedAssets++;
     }
+    expect(checkedAssets, 'no collateral asset qualified, so nothing was checked').to.be.greaterThan(0);
   }
 );
 
