@@ -200,6 +200,7 @@ describe('accrue', function () {
     let totalsBefore: TotalsBasicStructOutput;
     let totalSupplyBaseAfterSupply: BigNumber;
     let userBasicBefore: UserBasic;
+    let lastAccrualTimeBeforeAccrue: number;
 
     before(async function () {
       totalsBefore = await comet.totalsBasic();
@@ -259,6 +260,7 @@ describe('accrue', function () {
       await ethers.provider.send('evm_increaseTime', [oneMonth]);
       await ethers.provider.send('evm_mine', []);
       userBasicBefore = await comet.userBasic(alice.address);
+      lastAccrualTimeBeforeAccrue = (await comet.totalsBasic()).lastAccrualTime;
 
       await comet.accrueAccount(alice.address);
     });
@@ -271,7 +273,9 @@ describe('accrue', function () {
 
     it('tracking supply index should accrue with utilization = 0', async function () {
       const totalsAfter = await comet.totalsBasic();
-      expect(totalsAfter.trackingSupplyIndex).to.equal(BigNumber.from(0).add(BigNumber.from(config.baseTrackingSupplySpeed).mul(oneMonth + 1).mul(baseTokenScale).div(totalsAfter.totalSupplyBase)));
+      // Measured, not oneMonth + 1: under coverage the accrue block can land a second later
+      const timeElapsed = totalsAfter.lastAccrualTime - lastAccrualTimeBeforeAccrue;
+      expect(totalsAfter.trackingSupplyIndex).to.equal(BigNumber.from(0).add(BigNumber.from(config.baseTrackingSupplySpeed).mul(timeElapsed).mul(baseTokenScale).div(totalsAfter.totalSupplyBase)));
     });
 
     it('total supply base should not change after accrue', async function () {
@@ -298,7 +302,8 @@ describe('accrue', function () {
     it('user tracking index should accrue after supply interest', async function () {
       const userBasicAfter = await comet.userBasic(alice.address);
       const totalsAfter = await comet.totalsBasic();
-      const expectedTrackingIndex = userBasicBefore.baseTrackingIndex.add(BigNumber.from(config.baseTrackingSupplySpeed).mul(oneMonth + 1).mul(baseTokenScale).div(totalsAfter.totalSupplyBase));
+      const timeElapsed = totalsAfter.lastAccrualTime - lastAccrualTimeBeforeAccrue;
+      const expectedTrackingIndex = userBasicBefore.baseTrackingIndex.add(BigNumber.from(config.baseTrackingSupplySpeed).mul(timeElapsed).mul(baseTokenScale).div(totalsAfter.totalSupplyBase));
       expect(userBasicAfter.baseTrackingIndex).to.be.closeTo(expectedTrackingIndex, 1);
     });
 
@@ -395,7 +400,8 @@ describe('accrue', function () {
     it('user tracking index should accrue after borrow interest', async function () {
       const userBasicAfter = await comet.userBasic(bob.address);
       const totalsAfter = await comet.totalsBasic();
-      const expectedBorrowTrackingIndex = userBasicBefore.baseTrackingIndex.add(BigNumber.from(config.baseTrackingBorrowSpeed).mul(oneMonth + 1).mul(baseTokenScale).div(totalsAfter.totalBorrowBase));
+      const timeElapsed = totalsAfter.lastAccrualTime - totalsBefore.lastAccrualTime;
+      const expectedBorrowTrackingIndex = userBasicBefore.baseTrackingIndex.add(BigNumber.from(config.baseTrackingBorrowSpeed).mul(timeElapsed).mul(baseTokenScale).div(totalsAfter.totalBorrowBase));
       expect(userBasicAfter.baseTrackingIndex).to.be.closeTo(expectedBorrowTrackingIndex, 1);
     });
 

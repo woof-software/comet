@@ -1,4 +1,4 @@
-import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS, UserCollateral } from './helpers';
+import { ethers, expect, exp, makeProtocol, defaultAssets, ReentryAttack, fastForward, baseBalanceOf, takeSnapshot, SnapshotRestorer, MAX_ASSETS, UserCollateral, gasLimit } from './helpers';
 import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList, SimplePriceFeed } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
@@ -228,7 +228,7 @@ describe('withdraw', function () {
 
       it('gas used is within limit', async () => {
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(106000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(gasLimit(106000));
       });
     });
 
@@ -390,7 +390,7 @@ describe('withdraw', function () {
 
       it('gas used is within limit', async () => {
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(121000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(gasLimit(121000));
       });
     });
 
@@ -736,7 +736,7 @@ describe('withdraw', function () {
         // ~102.5k on the service patch (was < 87k before it): withdrawCollateral now accrues the account
         // (accrueAccountInternal) and checks the collateral withdraw pause flags
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(105000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(gasLimit(105000));
       });
 
       it("bob's assetsIn bit is cleared when his collateral balance goes to zero", async () => {

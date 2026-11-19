@@ -19,6 +19,7 @@ forge/out
 .env
 coverage/
 coverage.json
+.coverage-capo-abi/
 typechain/
 
 test-results.json
@@ -31,6 +32,5 @@ scenario-results.json
 deployments/localhost/dai/roots.json
 forge/Makefile
 .envrc
-.env.forge-temp
 
 broadcast/

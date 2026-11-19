@@ -56,9 +56,8 @@ RONIN_QUICKNODE_LINK
 UNICHAIN_QUICKNODE_LINK
 ```
 
-Of these, only `ETHERSCAN_KEY`, `MAINNET_QUICKNODE_LINK`, `UNICHAIN_QUICKNODE_LINK` and
-`LINEA_QUICKNODE_LINK` are checked at startup; the rest fail later, when a task actually
-reaches the chain that needs them.
+None of these are checked at startup: compiling and running unit tests need no env at all.
+A missing value only fails when a task actually reaches the chain that needs it.
 
 Optional env variables:
 
@@ -184,7 +183,7 @@ Runs all tests in the `test` directory.
 
 Runs all tests while also evaluating code coverage.
 
-`yarn test:coverage`
+`yarn cover`
 
 The coverage report will be saved in the `coverage` directory.
 

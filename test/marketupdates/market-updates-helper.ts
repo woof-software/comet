@@ -4,7 +4,7 @@ import {
   MarketUpdateProposer__factory, MarketAdminPermissionChecker__factory,
 } from './../../build/types';
 import hre from 'hardhat';
-import { ethers, expect } from './../helpers';
+import { ethers, expect, isCoverageRun } from './../helpers';
 
 export async function makeMarketAdmin() {
   const {
@@ -140,7 +140,8 @@ export async function createRandomWallet() {
 
   await gov.sendTransaction({
     to: random.address,
-    value: ethers.utils.parseEther('100.0'), // Sending 1 Ether to cover gas fees
+    // coverage sends txs with a huge gas limit, so the upfront cost there is ~1650 ETH
+    value: ethers.utils.parseEther(isCoverageRun() ? '10000.0' : '100.0'),
   });
   return random.connect(gov.provider);
 }
