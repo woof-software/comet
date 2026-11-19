@@ -354,10 +354,14 @@ async function getActors(context: CometContext): Promise<{ [name: string]: Comet
     adminSigner = await world.impersonateAddress(adminAddress);
     // Fund the impersonated governor for gas (single setBalance RPC, no block mined),
     // so scenarios don't need to zero the base fee on every admin tx.
-    // only if admin already does not have sufficient balance
-    const currentBalance = await world.deploymentManager.hre.ethers.provider.getBalance(adminAddress);
-    if (currentBalance.lt(10n ** 18n)) {
-      await setEtherBalance(world.deploymentManager, adminAddress, 10n ** 18n);
+    // only if admin already does not have sufficient balance; sized to the fork's fee level,
+    // since 1 native unit can't cover a Comet redeploy on high-gwei chains (e.g. Polygon)
+    const provider = world.deploymentManager.hre.ethers.provider;
+    const { maxFeePerGas, gasPrice } = await provider.getFeeData();
+    const minBalance = max(10n ** 18n, (maxFeePerGas ?? gasPrice).mul(20_000_000).toBigInt());
+    const currentBalance = await provider.getBalance(adminAddress);
+    if (currentBalance.lt(minBalance)) {
+      await setEtherBalance(world.deploymentManager, adminAddress, minBalance);
     }
   }
   const pauseGuardianSigner = useLocalPauseGuardianSigner ? localPauseGuardianSigner : await world.impersonateAddress(pauseGuardianAddress);

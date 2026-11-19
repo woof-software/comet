@@ -1,5 +1,5 @@
 import { DeploymentManager } from '../../plugins/deployment_manager';
-import relayPolygonMessage from './relayPolygonMessage';
+import relayPolygonMessage, { simulateL2ToL1TokenBridging as simulatePolygonL2ToL1TokenBridging } from './relayPolygonMessage';
 import { relayArbitrumMessage, relayArbitrumCCTPMint, simulateL2ToL1TokenBridging } from './relayArbitrumMessage';
 import relayBaseMessage,{ simulateL2ToL1TokenBridging as simulateBaseL2ToL1TokenBridging} from './relayBaseMessage';
 import relayLineaMessage from './relayLineaMessage';
@@ -87,13 +87,23 @@ export default async function relayMessage(
         tenderlyLogs
       );
       return proposal;
-    case 'polygon':
-      return await relayPolygonMessage(
+    case 'polygon': {
+      const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
+      proposal = await relayPolygonMessage(
         governanceDeploymentManager,
         bridgeDeploymentManager,
         startingBlockNumber,
         tenderlyLogs
       );
+      await simulatePolygonL2ToL1TokenBridging(
+        governanceDeploymentManager,
+        bridgeDeploymentManager,
+        l2StartingBlockNumber,
+        tenderlyLogs,
+        proposal?.map(p => p.id)
+      );
+      return proposal;
+    }
     case 'arbitrum': {
       const l2StartingBlockNumber = Math.max(0, await bridgeDeploymentManager.hre.ethers.provider.getBlockNumber() - L2_BLOCK_BUFFER);
       proposal = await relayArbitrumMessage(
