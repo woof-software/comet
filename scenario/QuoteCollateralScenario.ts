@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { CometContext, scenario } from './context/CometContext';
-import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, usesAssetList, supportsExtendedPause } from './utils';
+import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, fundAccount, servicePatch2 } from './utils';
 
 /**
  * @title Quote Collateral Scenario
@@ -19,16 +19,13 @@ import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, usesAssetList, supports
  * 2. Delisted asset: Sets liquidationFactor to 0 and verifies that quoteCollateral quotes at market price
  *    without discount, handling the transition correctly
  *
- * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
- * the extended asset list feature (CometExtAssetList), as the quoteCollateral behavior with liquidationFactor = 0
- * is specific to that implementation. The test filters deployments using the usesAssetList() utility function
- * to ensure compatibility, and excludes assets that are already delisted.
+ * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and excludes assets that are already delisted.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
     `Comet#quoteCollateral > quotes with discount for asset ${i}`,
     {
-      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && await usesAssetList(ctx) && !(await isAssetDelisted(ctx, i)) && await supportsExtendedPause(ctx)
+      filter: async (ctx: CometContext) => await isValidAssetIndex(ctx, i) && !(await isAssetDelisted(ctx, i)) && await servicePatch2(ctx)
     },
     async ({ comet, configurator, proxyAdmin, actors }, context) => {
       const { admin } = actors;
@@ -54,11 +51,12 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       const assetPriceDiscounted = assetPrice * (factorScale - discountFactor) / factorScale;
       const expectedQuoteWithDiscount = (basePrice * QUOTE_AMOUNT * assetScale) / assetPriceDiscounted / baseScale;
       expect(quoteAmount).to.equal(expectedQuoteWithDiscount);
-      
-      await context.setNextBaseFeeToZero();
-      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n, { gasPrice: 0 });
-      await context.setNextBaseFeeToZero();
-      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address, { gasPrice: 0 });
+
+      await fundAccount(context.world, admin);
+      await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, asset, 0n);
+      await configurator.connect(admin.signer).updateAssetLiquidateCollateralFactor(comet.address, asset, 0n);
+      await configurator.connect(admin.signer).updateAssetLiquidationFactor(comet.address, asset, 0n);
+      await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
 
       assetInfo = await comet.getAssetInfoByAddress(asset);
       expect(assetInfo.liquidationFactor).to.equal(0);

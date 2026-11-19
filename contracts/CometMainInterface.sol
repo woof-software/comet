@@ -2,13 +2,15 @@
 pragma solidity 0.8.15;
 
 import "./CometCore.sol";
+import { IAssetListStructs } from "./interfaces/assetList/IAssetListStructs.sol";
 
 /**
  * @title Compound's Comet Main Interface (without Ext)
  * @notice An efficient monolithic money market protocol
  * @author Compound
  */
-abstract contract CometMainInterface is CometCore {
+/// @dev `AssetInfo` is declared in IAssetListStructs, so Comet and the asset list share one type
+abstract contract CometMainInterface is CometCore, IAssetListStructs {
     error Absurd();
     error AlreadyInitialized();
     error BadAsset();
@@ -34,6 +36,9 @@ abstract contract CometMainInterface is CometCore {
     error TransferInFailed();
     error TransferOutFailed();
     error Unauthorized();
+
+    /// @dev Reverts if asset list proxy address is zero
+    error ZeroAssetList();
 
     /// @dev Error emitted when the utilization exceeds the supported utilization
     error ExceedsSupportedUtilization();
@@ -184,6 +189,7 @@ abstract contract CometMainInterface is CometCore {
     function targetReserves() virtual external view returns (uint);
 
     function numAssets() virtual external view returns (uint8);
+    function maxAssets() virtual external view returns (uint8);
     function decimals() virtual external view returns (uint8);
 
     function initializeStorage() virtual external;

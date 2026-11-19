@@ -46,7 +46,7 @@ describe('buyCollateral', function () {
         initialPrice: 1,
         liquidationFactor: exp(0.8, 18),
         borrowCF: exp(0.75, 18),
-        liquidateCF: exp(0.85, 18),
+        liquidateCF: exp(0.78, 18),
         supplyCap: exp(10000, 18),
       };
     }
@@ -690,6 +690,7 @@ describe('buyCollateral', function () {
               initial: 1e7,
               decimals: 18,
               initialPrice: 1,
+              liquidateCF: exp(0.78, 18),
               liquidationFactor: exp(0.8, 18),
               supplyCap: exp(10000, 18),
             },
@@ -772,6 +773,7 @@ describe('buyCollateral', function () {
               initial: 1e7,
               decimals: 18,
               initialPrice: 1,
+              liquidateCF: exp(0.78, 18),
               liquidationFactor: exp(0.8, 18),
               supplyCap: exp(10000, 18),
               factory: (await ethers.getContractFactory('NonStandardFaucetFeeToken')) as NonStandardFaucetFeeToken__factory,
@@ -1488,7 +1490,8 @@ describe('buyCollateral', function () {
         assets: {
           USDC: { decimals: 6 },
           WETH: { decimals: 18, initialPrice: 3000, borrowCF: exp(0.8, 18), liquidateCF: exp(0.85, 18), liquidationFactor: exp(1, 18) },
-          WBTC: { decimals: 8, initialPrice: 41000, borrowCF: exp(0.7, 18), liquidateCF: exp(0.75, 18), liquidationFactor: 0n },
+          // LF = 0 marks a non-liquidatable asset, which the factor validation only accepts with both collateral factors at 0
+          WBTC: { decimals: 8, initialPrice: 41000, borrowCF: 0n, liquidateCF: 0n, liquidationFactor: 0n },
           COMP: { decimals: 18, initialPrice: 175, borrowCF: exp(0.6, 18), liquidateCF: exp(0.7, 18), liquidationFactor: exp(0.8, 18) },
         },
       });
