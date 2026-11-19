@@ -245,7 +245,7 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
       })),
     ];
 
-    const description = `# Prepare Mainnet Comets for the service patch V2
+    const description = `# Prepare Mainnet Comets for the Service Patch V2
 
 ## Proposal summary
 
@@ -261,7 +261,14 @@ The asset configs of every market are copied as they are. This proposal upgrades
 
 This proposal takes the governance steps recommended and necessary to update Compound III markets. Simulations have confirmed the market's readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario).
 
-Further detailed information can be found on the corresponding [proposal pull request](<>) and [forum discussion](<>).
+Further detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/37) and [forum discussion](<>).
+
+### Audit
+
+The Service Patch V2 update has been audited by Certora and full reports can be found here:
+
+- [Certora Comet Service Patch V2 Audit](<>)
+
 
 ## Proposal Actions
 
