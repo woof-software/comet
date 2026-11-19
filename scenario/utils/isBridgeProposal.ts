@@ -17,6 +17,7 @@ const CCTP_DOMAIN_TO_NETWORK: Record<number, string> = {
 
 const ROOT_TO_NETWORK: Record<string, string> = {
   fxRoot: 'polygon',
+  RootChainManager: 'polygon',
   arbitrumInbox: 'arbitrum',
   arbitrumL1GatewayRouter: 'arbitrum',
   baseL1CrossDomainMessenger: 'base',
@@ -63,7 +64,7 @@ function parseCCTPNetworks(openProposal: OpenProposal, cctpAddress: string): str
   return networks;
 }
 
-export async function getProposalBridgeNetworks(
+export async function getProposalUnderlyingNetworks(
   governanceDeploymentManager: DeploymentManager,
   openProposal: OpenProposal
 ): Promise<string[]> {
@@ -94,11 +95,15 @@ export async function isBridgeProposal(
   bridgeDeploymentManager: DeploymentManager,
   openProposal: OpenProposal
 ) {
-  const bridgeNetworks = await getProposalBridgeNetworks(governanceDeploymentManager, openProposal);
-  const otherBridgeNetworks = bridgeNetworks.filter(n => n !== bridgeDeploymentManager.network);
-  const bridgeManagers = [bridgeDeploymentManager];
+  const underlyingNetworks = await getProposalUnderlyingNetworks(governanceDeploymentManager, openProposal);
+  const otherUnderlyingNetworks = underlyingNetworks.filter(n => n !== bridgeDeploymentManager.network);
 
-  for(const bridgeNetwork of otherBridgeNetworks) {
+  // Skip the relay attempt entirely when the proposal doesn't target this network.
+  const bridgeManagers = underlyingNetworks.includes(bridgeDeploymentManager.network)
+    ? [bridgeDeploymentManager]
+    : [];
+
+  for(const bridgeNetwork of otherUnderlyingNetworks) {
     if (bridgeNetwork === governanceDeploymentManager.network) {
       bridgeManagers.push(governanceDeploymentManager);
       continue;
