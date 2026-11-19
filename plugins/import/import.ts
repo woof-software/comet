@@ -239,8 +239,10 @@ export async function loadBlockscoutContract(network: string, address: string) {
 
   let contractCreationCode = await getContractCreationCodeFromBlockscout(networkName, address);
 
-  if (constructorArgs?.length > 0 && contractCreationCode?.endsWith(constructorArgs)) {
-    contractCreationCode = contractCreationCode.slice(0, -constructorArgs.length);
+  // Blockscout returns constructor args 0x-prefixed, creation code without the prefix
+  const rawConstructorArgs = constructorArgs?.replace(/^0x/, '').toLowerCase();
+  if (rawConstructorArgs?.length > 0 && contractCreationCode?.toLowerCase().endsWith(rawConstructorArgs)) {
+    contractCreationCode = contractCreationCode.slice(0, -rawConstructorArgs.length);
   }
 
   const encodedABI = JSON.stringify(abi);

@@ -17,7 +17,7 @@ contract MarketUpdatePolygonDeploymentTest is Test, MarketUpdateDeploymentBaseTe
     MarketUpdateContractsDeployer.DeployedContracts deployedContracts;
 
     function setUp() public {
-        vm.createSelectFork("polygon");
+        createSelectForkBehindHead("polygon", 64);
         deployedContracts = createMarketUpdateDeploymentForL2(vm, ChainAddresses.Chain.POLYGON);
     }
 
