@@ -9,3 +9,4 @@ export * from './tenderlyVnet';
 export * from './governance';
 export * from './bridgeProposal';
 export * from './constraints';
+export * from './scenarioHelper';

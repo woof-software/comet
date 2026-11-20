@@ -16,7 +16,8 @@ import {
   supportsExtendedPause,
   deployUnsupportedAsset,
   getUsableCollateralIndices,
-  getMinimumBorrowAmounts
+  getMinimumBorrowAmounts,
+  exp
 } from './utils';
 import { matchesDeployment } from './utils';
 import { ethers } from 'hardhat';

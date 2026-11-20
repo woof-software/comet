@@ -33,6 +33,15 @@ export async function isValidAssetIndex(
   return true;
 }
 
+export async function isAssetDelisted(
+  ctx: CometContext,
+  assetNum: number
+): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const assetInfo = await comet.getAssetInfo(assetNum);
+  return assetInfo.borrowCollateralFactor.toBigInt() === 0n;
+}
+
 export async function isTriviallySourceable(
   ctx: CometContext,
   assetNum: number,
@@ -137,4 +146,135 @@ export async function fetchLogs(
   } else {
     return contract.queryFilter(filter, fromBlock, toBlock);
   }
+}
+
+/// Finds the index of the first collateral asset that can back a borrow in the bulker scenarios.
+/// The wrapped native token is skipped, since it is supplied and withdrawn through the native token actions,
+/// and so are delisted assets, which have a zero borrow collateral factor. Returns -1 if there is none.
+export async function getBulkerCollateralIndex(ctx: CometContext): Promise<number> {
+  const bulker = await ctx.getBulker();
+  if (bulker == null) return -1;
+
+  const comet = await ctx.getComet();
+  const wrappedNativeToken = (await bulker.wrappedNativeToken()).toLowerCase();
+  const numAssets = await comet.numAssets();
+  for (let i = 0; i < numAssets; i++) {
+    const { asset } = await comet.getAssetInfo(i);
+    if (asset.toLowerCase() === wrappedNativeToken) continue;
+    if (await isAssetDelisted(ctx, i)) continue;
+    return i;
+  }
+  return -1;
+}
+
+export async function supportUtilizationLimit(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    const iface = new ethers.utils.Interface([
+      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
+    ]);
+    const functionSelector = iface.getSighash('MAX_SUPPORTED_UTILIZATION');
+    
+    // Try to call the function using a low-level static call
+    // If the function doesn't exist, this will revert
+    const result = await ethers.provider.call({
+      to: comet.address,
+      data: functionSelector
+    });
+    
+    // If the call succeeds (doesn't revert), the function exists
+    // Decode the result to verify it's a valid bool response
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    // A missing function makes the call return '0x' (handled above); a provider that throws on the revert instead
+    // reports CALL_EXCEPTION. Anything else (RPC down, rate limit, getComet failing) must fail the run, not skip it.
+    if (e?.code === 'CALL_EXCEPTION') return false;
+    throw e;
+  }
+}
+
+/**
+ * @notice Checks if the market is fresh (no supplies and no borrows)
+ * @dev A fresh market has totalSupplyBase == 0 and totalBorrowBase == 0
+ *      This is used to filter scenarios that should only run on new/empty markets
+ */
+export async function isFreshMarket(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const totals = await comet.totalsBasic();
+    return totals.totalSupplyBase.isZero() && totals.totalBorrowBase.isZero();
+  } catch (error) {
+    return false;
+  }
+}
+
+export async function usesAssetList(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  return await comet.maxAssets() === MAX_ASSETS;
+}
+
+/**
+ * Check if Comet supports extended pause functionality
+ * @param ctx The Comet context
+ * @returns true if Comet supports extended pause functions, false otherwise
+ */
+export async function supportsExtendedPause(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+    
+    // Get the function selector for isLendersWithdrawPaused()
+    // This function only exists in CometWithExtendedAssetList
+    const iface = new ethers.utils.Interface([
+      'function isLendersWithdrawPaused() external view returns (bool)'
+    ]);
+    const functionSelector = iface.getSighash('isLendersWithdrawPaused');
+    
+    // Try to call the function using a low-level static call
+    // If the function doesn't exist, this will revert
+    const result = await ethers.provider.call({
+      to: comet.address,
+      data: functionSelector
+    });
+    
+    // If the call succeeds (doesn't revert), the function exists
+    // Decode the result to verify it's a valid bool response
+    if (result && result !== '0x') {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    // A missing function makes the call return '0x' (handled above); a provider that throws on the revert instead
+    // reports CALL_EXCEPTION. Anything else (RPC down, rate limit, getComet failing) must fail the run, not skip it.
+    if (e?.code === 'CALL_EXCEPTION') return false;
+    throw e;
+  }
+}
+
+// returns indices of collaterals that have a supply cap and all collateral factors above zero.
+// pass `amount` to get only the first N of them, omit it to get all.
+export async function getUsableCollateralIndices(ctx: CometContext, amount?: number): Promise<number[]> {
+  const comet = await ctx.getComet();
+  const numAssets = await comet.numAssets();
+  const indices: number[] = [];
+
+  for (let i = 0; i < numAssets; i++) {
+    if (amount !== undefined && indices.length >= amount) break;
+
+    const info = await comet.getAssetInfo(i);
+
+    // We skip assets with a supply cap of 0
+    if (info.supplyCap.isZero()) continue;
+
+    // We skip assets with a borrow collateral factor, liquidate collateral factor, or liquidation factor of 0
+    if (info.borrowCollateralFactor.isZero() || info.liquidateCollateralFactor.isZero() || info.liquidationFactor.isZero()) continue;
+    
+    indices.push(i);
+  }
+  return indices;
 }

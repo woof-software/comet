@@ -2,7 +2,7 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { BigNumber, ethers } from 'ethers';
 import { CometContext, scenario } from './context/CometContext';
-import { expectRevertCustom, setEtherBalance, supportsMarketAdminPermissionChecker, exp, fundAccount } from './utils';
+import { expectRevertCustom, supportsMarketAdminPermissionChecker, exp, fundAccount } from './utils';
 import { SECONDS_PER_YEAR } from './utils/constants';
 import { MarketAdminPermissionChecker } from '../build/types';
 
