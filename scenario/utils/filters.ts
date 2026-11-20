@@ -137,9 +137,10 @@ export async function getBulkerCollateralIndex(ctx: CometContext): Promise<numbe
   const wrappedNativeToken = (await bulker.wrappedNativeToken()).toLowerCase();
   const numAssets = await comet.numAssets();
   for (let i = 0; i < numAssets; i++) {
-    const { asset } = await comet.getAssetInfo(i);
+    const { asset, borrowCollateralFactor } = await comet.getAssetInfo(i);
     if (asset.toLowerCase() === wrappedNativeToken) continue;
-    if (await isAssetDelisted(ctx, i)) continue;
+    // Delisted, same test as isAssetDelisted; checked here so the asset info is read only once
+    if (borrowCollateralFactor.isZero()) continue;
     return i;
   }
   return -1;

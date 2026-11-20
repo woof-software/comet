@@ -25,7 +25,7 @@ export function getExpectedBaseBalance(
 }
 
 export function getInterest(balance: bigint, rate: bigint, seconds: bigint) {
-  return (balance * rate * seconds) / 10n ** 18n;
+  return (balance * rate * seconds) / FACTOR_SCALE;
 }
 
 /**
@@ -99,7 +99,7 @@ async function getCollateralLiquidationValue(
   const { asset, priceFeed, scale, liquidateCollateralFactor } = await comet.getAssetInfo(assetIndex);
 
   const balance = await comet.collateralBalanceOf(account, asset);
-  if (balance.isZero()) return 0n; // No value if the account holds no of this asset
+  if (balance.isZero()) return 0n; // No value if the account holds none of this asset
 
   const collateralPrice = await comet.getPrice(priceFeed);
   const collateralValue = balance.mul(collateralPrice).div(scale);

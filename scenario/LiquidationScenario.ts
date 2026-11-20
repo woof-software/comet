@@ -23,7 +23,7 @@ scenario(
     const baseToken = await comet.baseToken();
     const baseScale = await comet.baseScale();
 
-    const timeBeforeLiquidation = await secondsUntilLiquidatable(comet, albert, 6000n * 6000n); // 1 hour past when position is underwater
+    const timeBeforeLiquidation = await secondsUntilLiquidatable(comet, albert, 6000n * 6000n); // 36,000,000 seconds (about 417 days) past when position is underwater
 
     while(!(await comet.isLiquidatable(albert.address))) {
       await comet.accrueAccount(albert.address);
@@ -157,7 +157,7 @@ scenario(
     const { albert, betty } = actors;
 
     
-    const timeBeforeLiquidation = await secondsUntilLiquidatable(comet, albert, 6000n * 6000n); // 1 hour past when position is underwater
+    const timeBeforeLiquidation = await secondsUntilLiquidatable(comet, albert, 6000n * 6000n); // 36,000,000 seconds (about 417 days) past when position is underwater
 
     while(!(await comet.isLiquidatable(albert.address))) {
       await comet.accrueAccount(albert.address);
@@ -450,7 +450,7 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       await albert.withdrawAsset({ asset: baseToken, amount: targetBorrowBaseWei });
 
       // Ensure account is liquidatable by waiting for time to pass and accruing interest
-      const timeBeforeLiquidation = await secondsUntilLiquidatable(comet, albert, 6000n * 6000n); // 1 hour past when position is underwater
+      const timeBeforeLiquidation = await secondsUntilLiquidatable(comet, albert, 6000n * 6000n); // 36,000,000 seconds (about 417 days) past when position is underwater
 
       while(!(await comet.isLiquidatable(albert.address))) {
         await comet.accrueAccount(albert.address);
@@ -596,7 +596,7 @@ scenario(
     expect(await comet.isLiquidatable(albert.address)).to.be.false;
 
     // ── Step 3: Wait until the position becomes liquidatable via interest accrual ──
-    const timeBeforeLiquidation = await secondsUntilLiquidatable(comet, albert, 6000n * 6000n); // ~1 hour past underwater
+    const timeBeforeLiquidation = await secondsUntilLiquidatable(comet, albert, 6000n * 6000n); // 36,000,000 seconds (about 417 days) past when position is underwater
 
     while (!(await comet.isLiquidatable(albert.address))) {
       await comet.accrueAccount(albert.address);
