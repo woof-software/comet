@@ -1,6 +1,5 @@
 import { Constraint } from '../../plugins/scenario';
 import { CometContext } from '../context/CometContext';
-import { optionalNumber } from '../utils';
 import { defactor, factor, factorScale } from '../../test/helpers';
 import { expect } from 'chai';
 import { Requirements } from './Requirements';
@@ -23,16 +22,6 @@ import { Requirements } from './Requirements';
  * Note: if utilization is passed as 0, this will target either borrows=0 or supply=0
  **/
 
-interface UtilizationConfig {
-  utilization?: number;
-}
-
-function getUtilizationConfig(requirements: object): UtilizationConfig {
-  return {
-    utilization: optionalNumber(requirements, 'utilization'),
-  };
-}
-
 /*
 some math notes:
 
@@ -50,7 +39,7 @@ else
 */
 export class UtilizationConstraint<T extends CometContext, R extends Requirements> implements Constraint<T, R> {
   async solve(requirements: R, _context: T) {
-    let { utilization } = getUtilizationConfig(requirements);
+    const { utilization } = requirements;
 
     if (utilization === undefined) {
       return null;
@@ -148,7 +137,7 @@ export class UtilizationConstraint<T extends CometContext, R extends Requirement
   }
 
   async check(requirements: R, context: T) {
-    let { utilization } = getUtilizationConfig(requirements);
+    const { utilization } = requirements;
 
     if (utilization) {
       let comet = await context.getComet();

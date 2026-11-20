@@ -2,6 +2,7 @@ import { HardhatRuntimeEnvironment } from 'hardhat/types';
 import { BigNumber, Contract, Event, EventFilter } from 'ethers';
 import { erc20 } from './ERC20';
 import { DeploymentManager } from '../../deployment_manager/DeploymentManager';
+import { setNextBaseFeeToZero } from '../../../scenario/utils/hreUtils';
 
 const getMaxEntry = (args: [string, BigNumber][]) =>
   args.reduce(([a1, m], [a2, e]) => (m.gte(e) == true ? [a1, m] : [a2, e]));
@@ -83,7 +84,7 @@ async function removeTokens(
   let tokenContract = new ethers.Contract(asset, erc20, signer);
   let currentBalance = await tokenContract.balanceOf(address);
   if (currentBalance.lt(amount)) throw 'Error: Insufficient address balance';
-  await dm.hre.network.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x0']);
+  await setNextBaseFeeToZero(dm);
   await tokenContract.transfer('0x0000000000000000000000000000000000000001', amount, { gasPrice: 0 });
   await dm.hre.network.provider.request({
     method: 'hardhat_stopImpersonatingAccount',
@@ -152,7 +153,7 @@ async function addTokens(
     });
     let impersonatedSigner = await dm.getSigner(holder);
     let impersonatedProviderTokenContract = tokenContract.connect(impersonatedSigner);
-    await dm.hre.network.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x0']);
+    await setNextBaseFeeToZero(dm);
     await impersonatedProviderTokenContract.transfer(address, amount, { gasPrice: 0 });
     await dm.hre.network.provider.request({
       method: 'hardhat_stopImpersonatingAccount',

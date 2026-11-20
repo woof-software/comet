@@ -296,7 +296,7 @@ Callers of spider across the repo:
 | `DeploymentManager.contracts()` | Crawls implicitly if nothing is loaded. |
 | `plugins/scenario/Runner.ts` | Crawls the auxiliary (governance) deployment. |
 | `scenario/context/CometContext.upgrade()` | Re-crawls after deploying a new Comet. |
-| `scenario/utils/index.ts` | Crawls the Tenderly virtual-testnet deployments. |
+| `scenario/utils/migrationSimulation.ts` | `tenderlyVnetExecute` crawls the Tenderly virtual-testnet deployments. |
 | ~14 `*_configurate_and_ens.ts` migrations | Re-crawl after reward config is set, to pick up the L2 COMP. |
 | `scripts/` | Liquidation bot, `vote-queue-execute`, fork seeding, multistream cache warming. |
 | `.github/workflows/run-scenarios.yaml` | Crawls mainnet (always) and, under multistream, every selected base. |

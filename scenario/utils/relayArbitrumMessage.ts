@@ -1,11 +1,10 @@
 import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
+import { impersonateAddress, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { utils, BigNumber, Contract, constants } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { OpenBridgedProposal } from '../context/Gov';
-import { isTenderlyLog } from './index';
+import { isTenderlyLog } from './tenderlyVnet';
 
 export async function relayArbitrumMessage(
   governanceDeploymentManager: DeploymentManager,
