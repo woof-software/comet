@@ -2,6 +2,7 @@ import { Deployed, DeploymentManager } from '../../plugins/deployment_manager';
 import { DeploySpec, ProtocolConfiguration, wait, COMP_WHALES } from './index';
 import { getConfiguration } from './NetworkConfiguration';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { ADDRESSES } from '../addresses';
 
 export function sameAddress(a: string, b: string) {
   return BigInt(a) === BigInt(b);
@@ -16,19 +17,14 @@ export async function cloneGov(
 ): Promise<Deployed> {
   const trace = deploymentManager.tracer();
   const admin = adminSigner ?? await deploymentManager.getSigner();
-  const clone = {
-    comp: '0xc00e94cb662c3520282e6f5717214004a7f26888',
-    governorBravoImpl: '0xef3b6e9e13706a8f01fe98fdcf66335dc5cfdeed',
-    governorBravo: '0xc0da02939e1441f497fd74f78ce7decb17b66529',
-  };
 
   const fauceteer = await deploymentManager.deploy('fauceteer', 'test/Fauceteer.sol', []);
   const timelock = await deploymentManager.deploy('timelock', 'test/SimpleTimelock.sol', [admin.address]);
 
   const COMP = await deploymentManager.deploy('COMP', 'test/Comp.sol', [admin.address]);
 
-  const governorImpl = await deploymentManager.clone('governor:implementation', clone.governorBravoImpl, [], 'mainnet', true);
-  const governorProxy = await deploymentManager.clone('governor', clone.governorBravo, [
+  const governorImpl = await deploymentManager.clone('governor:implementation', ADDRESSES.mainnet.GOVERNOR_BRAVO_IMPL, [], 'mainnet', true);
+  const governorProxy = await deploymentManager.clone('governor', ADDRESSES.mainnet.GOVERNOR_BRAVO, [
     timelock.address,
     COMP.address,
     admin.address,
