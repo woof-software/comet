@@ -8,9 +8,6 @@ type DeploymentCriterion = {
   deployment?: string;
 };
 
-// Selector of the Configurator getter that only market-admin-aware Configurators have
-const MARKET_ADMIN_PERMISSION_CHECKER_SELECTOR = utils.id('marketAdminPermissionChecker()').slice(0, 10);
-
 export async function isValidAssetIndex(
   ctx: CometContext,
   assetNum: number
@@ -111,25 +108,6 @@ export function isBridgedDeployment(ctx: CometContext): boolean {
   return ctx.world.auxiliaryDeploymentManager !== undefined;
 }
 
-/**
- * Checks whether the Configurator has the marketAdminPermissionChecker() getter (market-admin flow).
- * Probed with a raw call, so an older Configurator returns false instead of reverting.
- * @param ctx Scenario context of the market being checked
- * @returns true if the Configurator has the getter, false otherwise or if the call fails
- */
-export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
-  try {
-    const configurator = await ctx.getConfigurator();
-    const result = await configurator.provider.call({
-      to: configurator.address,
-      data: MARKET_ADMIN_PERMISSION_CHECKER_SELECTOR,
-    });
-    return result !== '0x';
-  } catch {
-    return false;
-  }
-}
-
 export async function fetchLogs(
   contract: Contract,
   filter: EventFilter,
@@ -167,37 +145,6 @@ export async function getBulkerCollateralIndex(ctx: CometContext): Promise<numbe
   return -1;
 }
 
-export async function supportUtilizationLimit(ctx: CometContext): Promise<boolean> {
-  try {
-    const comet = await ctx.getComet();
-    const ethers = ctx.world.deploymentManager.hre.ethers;
-    
-    const iface = new ethers.utils.Interface([
-      'function MAX_SUPPORTED_UTILIZATION() external view returns (uint)',
-    ]);
-    const functionSelector = iface.getSighash('MAX_SUPPORTED_UTILIZATION');
-    
-    // Try to call the function using a low-level static call
-    // If the function doesn't exist, this will revert
-    const result = await ethers.provider.call({
-      to: comet.address,
-      data: functionSelector
-    });
-    
-    // If the call succeeds (doesn't revert), the function exists
-    // Decode the result to verify it's a valid bool response
-    if (result && result !== '0x') {
-      return true;
-    }
-    return false;
-  } catch (e) {
-    // A missing function makes the call return '0x' (handled above); a provider that throws on the revert instead
-    // reports CALL_EXCEPTION. Anything else (RPC down, rate limit, getComet failing) must fail the run, not skip it.
-    if (e?.code === 'CALL_EXCEPTION') return false;
-    throw e;
-  }
-}
-
 /**
  * @notice Checks if the market is fresh (no supplies and no borrows)
  * @dev A fresh market has totalSupplyBase == 0 and totalBorrowBase == 0
@@ -218,43 +165,7 @@ export async function usesAssetList(ctx: CometContext): Promise<boolean> {
   return await comet.maxAssets() === MAX_ASSETS;
 }
 
-/**
- * Check if Comet supports extended pause functionality
- * @param ctx The Comet context
- * @returns true if Comet supports extended pause functions, false otherwise
- */
-export async function supportsExtendedPause(ctx: CometContext): Promise<boolean> {
-  try {
-    const comet = await ctx.getComet();
-    const ethers = ctx.world.deploymentManager.hre.ethers;
-    
-    // Get the function selector for isLendersWithdrawPaused()
-    // This function only exists in CometWithExtendedAssetList
-    const iface = new ethers.utils.Interface([
-      'function isLendersWithdrawPaused() external view returns (bool)'
-    ]);
-    const functionSelector = iface.getSighash('isLendersWithdrawPaused');
-    
-    // Try to call the function using a low-level static call
-    // If the function doesn't exist, this will revert
-    const result = await ethers.provider.call({
-      to: comet.address,
-      data: functionSelector
-    });
-    
-    // If the call succeeds (doesn't revert), the function exists
-    // Decode the result to verify it's a valid bool response
-    if (result && result !== '0x') {
-      return true;
-    }
-    return false;
-  } catch (e) {
-    // A missing function makes the call return '0x' (handled above); a provider that throws on the revert instead
-    // reports CALL_EXCEPTION. Anything else (RPC down, rate limit, getComet failing) must fail the run, not skip it.
-    if (e?.code === 'CALL_EXCEPTION') return false;
-    throw e;
-  }
-}
+
 
 // returns indices of collaterals that have a supply cap and all collateral factors above zero.
 // pass `amount` to get only the first N of them, omit it to get all.
@@ -277,4 +188,53 @@ export async function getUsableCollateralIndices(ctx: CometContext, amount?: num
     indices.push(i);
   }
   return indices;
+}
+
+/**
+ * Checks whether the Configurator has the marketAdminPermissionChecker() getter (market-admin flow).
+ * An older Configurator without it returns false instead of reverting.
+ * @param ctx Scenario context of the market being checked
+ * @returns true if the Configurator has the getter, false if it does not
+ * @throws If the call fails for any other reason, such as the RPC being down
+ */
+export async function supportsMarketAdminPermissionChecker(ctx: CometContext): Promise<boolean> {
+  return hasFunction(await ctx.getConfigurator(), 'marketAdminPermissionChecker()');
+}
+
+/**
+ * Checks whether Comet enforces a utilization cap, i.e. has the MAX_SUPPORTED_UTILIZATION() getter.
+ * @param ctx Scenario context of the market being checked
+ * @returns true if Comet has the getter, false if it does not
+ * @throws If the call fails for any other reason, such as the RPC being down
+ */
+export async function supportUtilizationLimit(ctx: CometContext): Promise<boolean> {
+  return hasFunction(await ctx.getComet(), 'MAX_SUPPORTED_UTILIZATION()');
+}
+
+/**
+ * Checks whether Comet supports the extended pause flags, i.e. has the isLendersWithdrawPaused() getter
+ * (only CometWithExtendedAssetList has it).
+ * @param ctx Scenario context of the market being checked
+ * @returns true if Comet has the getter, false if it does not
+ * @throws If the call fails for any other reason, such as the RPC being down
+ */
+export async function supportsExtendedPause(ctx: CometContext): Promise<boolean> {
+  return hasFunction(await ctx.getComet(), 'isLendersWithdrawPaused()');
+}
+
+// Tells whether the code deployed at `contract` has the no-argument function `signature`, by calling it with
+// only its selector. A missing function makes the call return empty data, or makes the provider throw
+// CALL_EXCEPTION; both mean "not supported". Any other error (RPC down, rate limit) is rethrown, so a broken
+// connection fails the run instead of quietly filtering scenarios out as unsupported.
+async function hasFunction(contract: Contract, signature: string): Promise<boolean> {
+  try {
+    const result = await contract.provider.call({
+      to: contract.address,
+      data: utils.id(signature).slice(0, 10),
+    });
+    return result !== '0x';
+  } catch (e) {
+    if (e?.code === 'CALL_EXCEPTION') return false;
+    throw e;
+  }
 }

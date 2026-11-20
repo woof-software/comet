@@ -2,7 +2,6 @@ import { BigNumber } from 'ethers';
 import { CometInterface } from '../../build/types';
 import CometActor from '../context/CometActor';
 import { FACTOR_SCALE, SECONDS_PER_YEAR } from './constants';
-import { CometContext } from 'scenario/context/CometContext';
 
 export { exp } from '../../test/helpers';
 
@@ -36,6 +35,7 @@ export function getInterest(balance: bigint, rate: bigint, seconds: bigint) {
  * @param actor Borrower to check
  * @param fudgeFactor Extra seconds added to the result, to land safely past the threshold
  * @returns Seconds until liquidatable, or 0 if the borrower is already underwater
+ * @throws If the borrower has no debt, or is not underwater while the borrow rate is zero
  */
 export async function secondsUntilLiquidatable(
   comet: CometInterface,
@@ -57,6 +57,11 @@ export async function secondsUntilLiquidatable(
 
   const buffer = await getLiquidationBuffer(comet, actor.address, baseValue);
   if (buffer < 0n) return 0;
+
+  // Not underwater yet, and with no interest accruing the debt never grows, so it never gets there
+  if (borrowRate.isZero()) {
+    throw new Error(`Borrow rate is zero, so ${actor.address} never becomes liquidatable`);
+  }
 
   // Each second the debt grows by its value times the per-second borrow rate; divide the buffer by that
   return Number((buffer * FACTOR_SCALE) / (-baseValue * borrowRate.toBigInt()) + fudgeFactor);
@@ -99,40 +104,6 @@ async function getCollateralLiquidationValue(
   const collateralPrice = await comet.getPrice(priceFeed);
   const collateralValue = balance.mul(collateralPrice).div(scale);
   return collateralValue.mul(liquidateCollateralFactor).div(FACTOR_SCALE).toBigInt();
-}
-
-// returns asset of collateral, supply amount, and borrow amount
-// borrow amount is 1.5 times the market's minimum borrow, or $100 of base when that minimum is worth less than $10.
-export async function getMinimumBorrowAmounts(context: CometContext, collateralIndex: number) {
-  const comet = await context.getComet();
-  const baseScale = (await comet.baseScale()).toBigInt();
-  const basePrice = (await comet.getPrice(await comet.baseTokenPriceFeed())).toBigInt();
-  const priceScale = (await comet.priceScale()).toBigInt();
-  const factorScale = (await comet.factorScale()).toBigInt();
-
-  // baseBorrowMin is an amount of the base token, not USD. Some markets set it to almost nothing (1 wei of USDC),
-  // which makes a meaningless borrow, so below $10 borrow $100 worth of base instead.
-  const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-  const baseBorrowMinUsd = (baseBorrowMin * basePrice) / baseScale;
-  const borrowAmount = baseBorrowMinUsd < 10n * priceScale
-    ? (100n * priceScale * baseScale) / basePrice
-    : (baseBorrowMin * 3n) / 2n;
-
-  const {
-    asset: collateralAddress,
-    priceFeed: collateralPriceFeed,
-    scale: collateralScaleBN,
-    borrowCollateralFactor
-  } = await comet.getAssetInfo(collateralIndex);
-  const collateralAsset = context.getAssetByAddress(collateralAddress);
-  const collateralScale = collateralScaleBN.toBigInt();
-  const collateralPrice = (await comet.getPrice(collateralPriceFeed)).toBigInt();
-
-  let supplyAmount = (borrowAmount * basePrice * collateralScale) / (baseScale * collateralPrice);
-  supplyAmount = (supplyAmount * factorScale) / borrowCollateralFactor.toBigInt();
-  supplyAmount = (supplyAmount * 11n) / 10n;
-
-  return { collateralAsset, supplyAmount, borrowAmount };
 }
 
 // A supplier's balance at a given supply index, computed from their stored principal.

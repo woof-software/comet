@@ -4,7 +4,7 @@ import { utils, BigNumber, Contract, constants } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { OpenBridgedProposal } from '../context/Gov';
-import { isTenderlyLog } from './index';
+import { isTenderlyLog } from './tenderlyVnet';
 
 export async function relayArbitrumMessage(
   governanceDeploymentManager: DeploymentManager,

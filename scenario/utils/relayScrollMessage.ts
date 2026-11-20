@@ -1,9 +1,9 @@
 import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
+import { applyL1ToL2Alias, impersonateAddress, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { BigNumber, ethers } from 'ethers';
-import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import { isTenderlyLog } from './tenderlyVnet';
 
 /*
 The Scroll relayer applies an offset to the message sender.

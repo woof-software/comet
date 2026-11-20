@@ -1,9 +1,9 @@
 import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
+import { applyL1ToL2Alias, impersonateAddress, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { BigNumber, ethers, utils, Contract } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
-import { applyL1ToL2Alias, isTenderlyLog } from './index';
+import { isTenderlyLog } from './tenderlyVnet';
 
 export default async function relayOptimismMessage(
   governanceDeploymentManager: DeploymentManager,

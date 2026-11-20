@@ -3,7 +3,7 @@ import { impersonateAddress, setNextBaseFeeToZero, setNextBlockTimestamp } from 
 import { constants, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
-import { isTenderlyLog } from './index';
+import { isTenderlyLog } from './tenderlyVnet';
 
 const LINEA_SETTER_ROLE_ACCOUNT = '0x2b0F9C76970975aec03784EFd763623757EF7652';
 
