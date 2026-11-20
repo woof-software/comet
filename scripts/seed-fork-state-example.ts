@@ -1,7 +1,7 @@
 import hre from 'hardhat';
 import { DeploymentManager } from '../plugins/deployment_manager/DeploymentManager';
 import { exp } from '../test/helpers';
-import { impersonateAddress } from '../plugins/scenario/utils';
+import { impersonateAddress } from '../scenario/utils/hreUtils';
 import { setNextBaseFeeToZero } from '../scenario/utils/hreUtils';
 import { getConfigurationStruct } from '../src/deploy';
 import { requireEnv } from '../hardhat.config';

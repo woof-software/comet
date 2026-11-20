@@ -1,7 +1,6 @@
 import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
 import { executeBridgedProposal } from './bridgeProposal';
-import { setNextBaseFeeToZero } from './hreUtils';
+import { impersonateAddress, setNextBaseFeeToZero } from './hreUtils';
 import { Contract, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';

@@ -1,3 +1,4 @@
+import { FaucetToken } from 'build/types';
 import { CometContext } from '../context/CometContext';
 
 const defaultConfig = {
@@ -363,4 +364,15 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
 export function getBulkerCollateralAmount(ctx: CometContext, index: number) {
   const config = getConfigForScenario(ctx, index);
   return index === 1 ? config.bulkerAsset1 : config.bulkerAsset;
+}
+
+/**
+ * @notice Deploys an ERC20 token that is not listed in the market, for scenarios that expect Comet to reject it
+ */
+export async function deployUnsupportedAsset(ctx: CometContext): Promise<FaucetToken> {
+  return await ctx.world.deploymentManager.deploy(
+    'unsupportedAsset',
+    'test/FaucetToken.sol',
+    [0, 'Unsupported Asset', 18, 'UNSUPPORTED']
+  ) as FaucetToken;
 }

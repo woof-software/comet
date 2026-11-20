@@ -16,10 +16,10 @@ import {
   supportsExtendedPause,
   deployUnsupportedAsset,
   getUsableCollateralIndices,
-  getMinimumBorrowAmounts
+  getMinimumBorrowAmounts,
+  exp
 } from './utils';
 import { matchesDeployment } from './utils';
-import { exp } from '../test/helpers';
 import { ethers } from 'hardhat';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';

@@ -55,13 +55,14 @@ Three questions are worth separating:
 
 | File | Role |
 | --- | --- |
-| [`scenario/utils/index.ts`](../../scenario/utils/index.ts) | The bulk of it: `fastGovernanceExecute`, `voteForOpenProposal`, `executeOpenProposal`, `executeOpenProposalAndRelay`, `fastL2GovernanceExecute`, `createCrossChainProposal`, `tenderlyExecute`, `tenderlyVnetExecute`, `simulateBundle`, `forceProposalVotesSucceeded`. |
+| [`scenario/utils/governance.ts`](../../scenario/utils/governance.ts) | Proposal lifecycle on a fork: `fastGovernanceExecute`, `voteForOpenProposal`, `executeOpenProposal`, `executeOpenProposalAndRelay`, `createCrossChainProposal`, `fastL2GovernanceExecute`. |
+| [`scenario/utils/migrationSimulation.ts`](../../scenario/utils/migrationSimulation.ts) | Tenderly modes: `tenderlyExecute`, `tenderlyVnetExecute`, `simulateBundle`, `forceProposalVotesSucceeded`, `shareSimulation`. |
 | [`scenario/constraints/ProposalConstraint.ts`](../../scenario/constraints/ProposalConstraint.ts) | Finds and executes open proposals before scenarios run. |
 | [`scenario/constraints/MigrationConstraint.ts`](../../scenario/constraints/MigrationConstraint.ts) | Prepares and enacts staged migrations, recording the proposal each one creates. |
 | [`scenario/utils/bridgeProposal.ts`](../../scenario/utils/bridgeProposal.ts) | Open **bridged** proposals: discovery and execution on L2. |
 | [`scenario/utils/relayMessage.ts`](../../scenario/utils/relayMessage.ts) | Dispatches a relay to the right chain implementation. |
 | [`scenario/utils/tenderlyVnet.ts`](../../scenario/utils/tenderlyVnet.ts) | Creates or reuses a Virtual TestNet. |
-| [`scenario/utils/hreUtils.ts`](../../scenario/utils/hreUtils.ts) | `setNextBaseFeeToZero`, `setNextBlockTimestamp`, `mineBlocks`, `setEtherBalance`. |
+| [`scenario/utils/hreUtils.ts`](../../scenario/utils/hreUtils.ts) | `impersonateAddress`, `setNextBaseFeeToZero`, `setNextBlockTimestamp`, `mineBlocks`, `setEtherBalance`, `applyL1ToL2Alias`. |
 | [`scenario/context/Gov.ts`](../../scenario/context/Gov.ts) | `ProposalState`, `BridgedProposalState`, `OpenProposal` types. |
 | [`src/deploy/index.ts`](../../src/deploy/index.ts) | `COMP_WHALES`, proposal building, `stashProposal` → `cache/currentProposal.json`. |
 | [`tasks/deployment_manager/task.ts`](../../tasks/deployment_manager/task.ts) | `--simulate`, `--impersonate`, `--tenderly`, `--tenderly-vnet`. |
@@ -83,7 +84,7 @@ Rule of thumb: the fork fast path while iterating, scenarios before opening the 
 
 ## 4. Step 2 - Get a proposer
 
-Proposing requires COMP above the governor's threshold. Three ways this is satisfied:
+Proposing requires COMP above the governor's threshold. Two ways this is satisfied:
 
 ```bash
 # 1. CLI: impersonate any address (simulation only - the task rejects it without --simulate)
@@ -95,12 +96,9 @@ yarn hardhat migrate --network mainnet --deployment usdc --simulate --enact \
 // 2. Scenarios: the first COMP whale, funded with 1 ETH, unshifted to be the default signer
 const proposer = await impersonateAddress(govDm, (await ctx.getCompWhales())[0], exp(1, 18));
 govDm._signers.unshift(proposer);
-
-// 3. Several proposals in one run: a fresh whale per call, tracked per network/deployment
-const signer = await getSignerForProposal(dm, govDm);
 ```
 
-`getSignerForProposal` hands out the default signer first, then successive `COMP_WHALES[network]` entries, impersonating and funding each - so two proposals in one simulation do not collide on one proposer.
+`impersonateAddress` adds the given ETH to the account's current balance with `hardhat_setBalance`, so funding does not need a transaction from another signer.
 
 ---
 
@@ -244,14 +242,13 @@ Required environment: `TENDERLY_USERNAME` and `TENDERLY_ACCESS_KEY` for both Ten
 | Function | What it does |
 | --- | --- |
 | `fastGovernanceExecute(dm, proposer, targets, values, signatures, calldatas)` | Propose, vote and execute in one call on a fork. |
-| `fastL2GovernanceExecute(govDm, bridgeDm, proposer, …)` | The same, then relays the resulting messages to the L2. |
+| `fastL2GovernanceExecute(govDm, bridgeDm, proposer, …)` *(internal)* | The same, then relays the resulting messages to the L2. Called by `createCrossChainProposal`. |
 | `createCrossChainProposal(ctx, l2ProposalData, bridgeReceiver)` | Wraps L2 calldata into an L1 proposal addressed at the chain's bridge, and runs it. |
 | `voteForOpenProposal(dm, proposal)` | Mines to the voting window and casts whale votes. |
 | `executeOpenProposal(dm, proposal)` | Mines past the deadline, queues, jumps past `eta`, executes with a gas limit. |
 | `executeOpenProposalAndRelay(govDm, bridgeDm, proposal)` | `executeOpenProposal`, then derives and relays to every L2 the proposal touched. |
 | `getOpenProposals(dm, governor)` | Open proposals from recent `ProposalCreated` logs. |
 | `getOpenBridgedProposals(dm)` / `executeBridgedProposal(dm, proposal)` | The same for proposals queued on an L2 bridge receiver. |
-| `getSignerForProposal(dm, govDm)` | A distinct funded proposer per proposal within one run. |
 | `tenderlyExecute(govDm, marketDm, governor, timelock)` | Stateless `simulate-bundle` run with state patches and shareable links. |
 | `tenderlyVnetExecute(govDm, marketDm, governor, timelock)` | Virtual TestNet run: real transactions, forced vote tally, per-L2 testnets. |
 | `simulateBundle(dm, simulations, blockNumber)` *(internal)* | Posts simulations one at a time, chaining `state_diff` forward. |
@@ -266,4 +263,4 @@ Required environment: `TENDERLY_USERNAME` and `TENDERLY_ACCESS_KEY` for both Ten
 - [Deployment Manager](deployment-manager.md) - migrations, the `migrate` task and its flags.
 - [`MIGRATIONS.md`](../../MIGRATIONS.md) - the migration workflow end to end.
 - [`SCENARIO.md`](../../SCENARIO.md) - running the scenario suite.
-- The code: [`scenario/utils/index.ts`](../../scenario/utils/index.ts), [`scenario/constraints/ProposalConstraint.ts`](../../scenario/constraints/ProposalConstraint.ts).
+- The code: [`scenario/utils/governance.ts`](../../scenario/utils/governance.ts), [`scenario/utils/migrationSimulation.ts`](../../scenario/utils/migrationSimulation.ts), [`scenario/constraints/ProposalConstraint.ts`](../../scenario/constraints/ProposalConstraint.ts).
