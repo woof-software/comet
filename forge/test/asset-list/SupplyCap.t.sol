@@ -3,8 +3,9 @@ pragma solidity ^0.8.15;
 
 import { AssetList } from "@comet-contracts/AssetList.sol";
 import { CometConfiguration } from "@comet-contracts/CometConfiguration.sol";
-import { CometCore } from "@comet-contracts/CometCore.sol";
-import { CometMainInterface } from "@comet-contracts/CometMainInterface.sol";
+import { IAssetListStructs } from "@comet-contracts/interfaces/assetList/IAssetListStructs.sol";
+import { IERC20NonStandard } from "@comet-contracts/interfaces/IERC20NonStandard.sol";
+import { IAssetListErrors } from "@comet-contracts/interfaces/assetList/IAssetListErrors.sol";
 
 import { ProtocolFixture } from "../helpers/ProtocolFixture.sol";
 
@@ -68,12 +69,12 @@ contract SupplyCapTest is ProtocolFixture {
         AssetList assetList = deployAssetList(assetConfigs, address(proxyAdmin), address(configuratorProxy));
 
         for (uint8 i; i < assetConfigs.length; ++i) {
-            CometCore.AssetInfo memory assetInfo = assetList.getAssetInfo(i);
+            IAssetListStructs.AssetInfo memory assetInfo = assetList.getAssetInfo(i);
 
             assertEq(assetInfo.offset, i, "offset");
             assertEq(assetInfo.asset, assetConfigs[i].asset, "asset");
             assertEq(assetInfo.priceFeed, assetConfigs[i].priceFeed, "price feed");
-            assertEq(assetInfo.scale, 10 ** assetConfigs[i].decimals, "scale");
+            assertEq(assetInfo.scale, 10 ** IERC20NonStandard(assetConfigs[i].asset).decimals(), "scale");
             assertEq(assetInfo.borrowCollateralFactor, assetConfigs[i].borrowCollateralFactor, "borrow collateral factor");
             assertEq(assetInfo.liquidateCollateralFactor, assetConfigs[i].liquidateCollateralFactor, "liquidate collateral factor");
             assertEq(assetInfo.liquidationFactor, assetConfigs[i].liquidationFactor, "liquidation factor");
@@ -120,12 +121,12 @@ contract SupplyCapTest is ProtocolFixture {
         assertEq(assetList.numAssets(), assetCount, "asset count");
 
         for (uint8 i; i < assetCount; ++i) {
-            CometCore.AssetInfo memory assetInfo = assetList.getAssetInfo(i);
+            IAssetListStructs.AssetInfo memory assetInfo = assetList.getAssetInfo(i);
             assertEq(assetInfo.offset, i, "offset");
             assertEq(assetInfo.supplyCap, supplyCap, "supply cap does not read back as configured");
         }
 
-        vm.expectRevert(CometMainInterface.BadAsset.selector);
+        vm.expectRevert(IAssetListErrors.AssetIndexOutOfRange.selector);
         assetList.getAssetInfo(badIndex);
     }
 
@@ -163,7 +164,7 @@ contract SupplyCapTest is ProtocolFixture {
         AssetList assetList = deployAssetList(assetConfigs, address(proxyAdmin), address(configuratorProxy));
 
         for (uint8 i; i < assetConfigs.length; ++i) {
-            CometCore.AssetInfo memory assetInfo = assetList.getAssetInfo(i);
+            IAssetListStructs.AssetInfo memory assetInfo = assetList.getAssetInfo(i);
             assertEq(assetInfo.supplyCap, supplyCaps[i], "supply cap does not read back as configured");
         }
     }

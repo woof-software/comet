@@ -71,3 +71,33 @@ export async function isAssetListMigrationRequired(ctx: CometContext): Promise<b
     return true;
   }
 }
+
+/**
+ * Filter for scenarios that cover the Configurator migration
+ * @param ctx The Comet context
+ * @returns true if the Configurator already keeps the market on the asset list: it has an asset list factory for the
+ *  market. The V1 Configurator has no such getter and reverts. The Comet itself may not be upgraded yet
+ */
+export async function isConfiguratorMigrated(ctx: CometContext): Promise<boolean> {
+  try {
+    const comet = await ctx.getComet();
+    const configurator = await ctx.getConfigurator();
+    const ethers = ctx.world.deploymentManager.hre.ethers;
+
+    const iface = new ethers.utils.Interface([
+      'function cometAssetListFactories(address) external view returns (address)',
+    ]);
+
+    const [assetListFactory] = iface.decodeFunctionResult(
+      'cometAssetListFactories',
+      await ethers.provider.call({
+        to: configurator.address,
+        data: iface.encodeFunctionData('cometAssetListFactories', [comet.address]),
+      })
+    );
+
+    return assetListFactory !== ethers.constants.AddressZero;
+  } catch (e) {
+    return false;
+  }
+}

@@ -288,7 +288,6 @@ describe('MarketUpdateDeployment', function() {
       await configuratorNew.attach(configuratorProxyContract.address).connect(governorTimelockSigner).addAsset(cometBehindProxy.address, {
         asset: assetInfo.asset,
         priceFeed: assetInfo.priceFeed,
-        decimals: assetInfo.scale.toString().length - 1,
         borrowCollateralFactor: assetInfo.borrowCollateralFactor,
         liquidateCollateralFactor: assetInfo.liquidateCollateralFactor,
         liquidationFactor: assetInfo.liquidationFactor,

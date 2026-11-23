@@ -5,8 +5,8 @@ import "@comet-contracts/bridges/arbitrum/ArbitrumBridgeReceiver.sol";
 import "@comet-contracts/marketupdates/MarketAdminPermissionChecker.sol";
 import "@comet-contracts/CometWithExtendedAssetList.sol";
 import "@comet-contracts/AssetList.sol";
-import "@comet-contracts/AssetListFactory.sol";
-import "@comet-contracts/CometFactoryWithExtendedAssetList.sol";
+import "@comet-contracts/test/assetList/AssetListFactory.sol";
+import "@comet-contracts/test/CometFactoryWithExtendedAssetList.sol";
 import "@comet-contracts/migration/ConfiguratorIntermediateOptimism.sol";
 import "../script/marketupdates/helpers/GovernanceHelper.sol";
 import "../script/marketupdates/helpers/MarketUpdateAddresses.sol";
@@ -146,18 +146,23 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         vm.prank(proxyAdminOwner);
         proxyAdmin.upgrade(TransparentUpgradeableProxy(payable(configuratorProxy)), deployedContracts.newConfiguratorImplementation);
 
-        address assetListFactory = address(new AssetListFactory());
+        address assetListFactory = address(new AssetListFactory(address(configurator)));
         address cometFactory = address(new CometFactoryWithExtendedAssetList());
 
         vm.startPrank(governor);
         configurator.setAssetListFactory(cometProxy, assetListFactory);
-        (, address assetListImpl) = configurator.deployAssetList(cometProxy);
+        // The market has no list yet and deployAssetList only redeploys an existing one, so the first implementation
+        // comes straight from the factory
+        address assetListImpl = AssetListFactory(assetListFactory).createAssetList(configurator.getImmutableAssetConfig(cometProxy));
         address assetList = address(new TransparentUpgradeableProxy(
             assetListImpl,
             address(proxyAdmin),
-            abi.encodeCall(AssetList.initialize, (configurator.getStorageAssetConfig(cometProxy), configuratorProxy))
+            abi.encodeCall(AssetList.initialize, (configurator.getStorageAssetConfig(cometProxy)))
         ));
-        configurator.updateAssetList(cometProxy, assetList);
+        // setConfiguration sets the list proxy once, for a market that has none yet
+        ConfiguratorOptimism.Configuration memory configuration = configurator.getConfiguration(cometProxy);
+        configuration.assetList = assetList;
+        configurator.setConfiguration(cometProxy, configuration);
         configurator.setFactory(cometProxy, cometFactory);
         vm.stopPrank();
     }

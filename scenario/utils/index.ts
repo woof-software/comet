@@ -35,6 +35,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 export { MAX_ASSETS, UINT256_MAX, SECONDS_PER_YEAR } from './constants';
 import { MAX_ASSETS, SECONDS_PER_YEAR } from './constants';
+import { isConfiguratorMigrated } from './versionControl';
 
 export * from './hreUtils';
 export * from './versionControl';
@@ -500,11 +501,6 @@ export async function isRewardSupported(ctx: CometContext): Promise<boolean> {
   if (totalSupply.toBigInt() < exp(1, 18)) return false;
 
   return true;
-}
-
-export async function usesAssetList(ctx: CometContext): Promise<boolean> {
-  const comet = await ctx.getComet();
-  return await comet.maxAssets() === MAX_ASSETS;
 }
 
 export function isBridgedDeployment(ctx: CometContext): boolean {
@@ -1530,6 +1526,7 @@ export async function executeOpenProposal(
 
     const tx = await governor.execute(id, { gasPrice: 0, gasLimit: 120000000 });
     const receipt = await tx.wait();
+    console.log(`GAS_MEASURE proposal ${id} gasUsed ${receipt.gasUsed.toString()}`);
 
     if (receipt.gasUsed.toNumber() >= 16_777_215) {
       throw new Error('Execution may have failed due to hitting gas limit');
@@ -2056,6 +2053,30 @@ export async function supportsExtendedPause(ctx: CometContext): Promise<boolean>
   }
 }
 
+/**
+ * Check if Comet rejects zero-amount supply, transfer and withdraw with ZeroAmount
+ * @param ctx The Comet context
+ * @returns true if a zero base withdraw from an empty account reverts with ZeroAmount, false otherwise
+ */
+export async function rejectsZeroAmounts(ctx: CometContext): Promise<boolean> {
+  const comet = await ctx.getComet();
+  const ethers = ctx.world.deploymentManager.hre.ethers;
+
+  // Local ABI, so the custom error is decoded even if the deployment's ABI predates it
+  const cometWithZeroAmount = new ethers.Contract(
+    comet.address,
+    ['function withdraw(address asset, uint amount)', 'error ZeroAmount()'],
+    ethers.provider
+  );
+
+  try {
+    await cometWithZeroAmount.callStatic.withdraw(await comet.baseToken(), 0, { from: ethers.Wallet.createRandom().address });
+    return false;
+  } catch (e) {
+    return e.errorName === 'ZeroAmount';
+  }
+}
+
 // returns indices of collaterals that have a supply cap and all collateral factors above zero.
 // pass `amount` to get only the first N of them, omit it to get all.
 export async function getUsableCollateralIndices(ctx: CometContext, amount?: number): Promise<number[]> {
@@ -2118,13 +2139,19 @@ export async function getMinimumBorrowAmounts(context: CometContext, collateralI
 // directly by the governor instead of through proposals: the Configurator is upgraded through the intermediate
 // version that migrates the asset configs, an asset list factory and an asset list are deployed, and the Comet is
 // rebuilt on the list. The new contracts are deployed under the aliases deployComet reads, so that a following
-// deployComet finds them and does not roll the Configurator back to the old implementation
+// deployComet finds them and does not roll the Configurator back to the old implementation.
+// A market whose Configurator is already migrated, but whose Comet is not upgraded yet, is only rebuilt on its list
 export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAddress) {
   const dm = ctx.world.deploymentManager;
   const ethers = dm.hre.ethers;
   const comet = await ctx.getComet();
   const configurator = (await ethers.getContractAt('Configurator', (await ctx.getConfigurator()).address, admin)) as Configurator;
   const proxyAdmin = (await ethers.getContractAt('CometProxyAdmin', (await ctx.getCometAdmin()).address, admin)) as CometProxyAdmin;
+
+  if (await isConfiguratorMigrated(ctx)) {
+    await (await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address)).wait();
+    return;
+  }
 
   // A Configurator that stores the market admin permission checker has its own storage layout, so its own versions
   const withMarketAdmin = await supportsMarketAdminPermissionChecker(ctx);
@@ -2140,7 +2167,7 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
     [],
     true
   );
-  const assetListFactory = await dm.deploy('assetListFactory', 'test/assetList/AssetListFactory.sol', [], true);
+  const assetListFactory = await dm.deploy('assetListFactory', 'test/assetList/AssetListFactory.sol', [configurator.address], true);
   const cometFactory = await dm.deploy('cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], true);
 
   // The Configurator proxy is upgraded by its own admin, read from the EIP-1967 admin slot
@@ -2159,7 +2186,7 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
   const assetListImplementation = (await dm.deploy(
     'assetList:implementation',
     'AssetList.sol',
-    [await configurator.getImmutableAssetConfig(comet.address)],
+    [await configurator.getImmutableAssetConfig(comet.address), configurator.address],
     true
   )) as AssetList;
   const assetListProxy = await dm.deploy(
@@ -2170,13 +2197,14 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
       proxyAdmin.address,
       assetListImplementation.interface.encodeFunctionData('initialize', [
         await configurator.getStorageAssetConfig(comet.address),
-        configurator.address,
       ]),
     ],
     true
   );
 
-  await (await configurator.updateAssetList(comet.address, assetListProxy.address)).wait();
+  // setConfiguration sets the list proxy once, for a market that has none yet
+  const configuration = await configurator.getConfiguration(comet.address);
+  await (await configurator.setConfiguration(comet.address, { ...configuration, assetList: assetListProxy.address })).wait();
   await (await configurator.setFactory(comet.address, cometFactory.address)).wait();
   await (await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address)).wait();
 }

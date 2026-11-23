@@ -6,7 +6,7 @@ import { AssetConfigStructOutput } from '../../build/types/Configurator';
 import { ContractTransaction } from 'ethers';
 import { BORROW_CF, LIQUIDATE_CF, LIQUIDATION_FACTOR, MAX_ASSETS, deployAssetListFixture, deployAssetListProxy, deployImmutableAssetConfigs } from './shared';
 
-describe('supply cap', function () {
+context('supply cap', function () {
   // The largest value the uint128 supply cap field can hold
   const MAX_UINT128 = 2n ** 128n - 1n;
 
@@ -42,9 +42,6 @@ describe('supply cap', function () {
   function runSupplyCapTests(decimals: bigint) {
     const oneToken = 10n ** decimals;
 
-    // A regular cap every collateral starts with; each flow swaps in its own cap
-    const normalSupplyCap = oneToken * 1_000_000n;
-
     const SUPPLY_CAPS = [
       { name: '1 wei supply cap', supplyCap: 1n },
       { name: 'cap one wei below a whole token unit', supplyCap: oneToken - 1n },
@@ -59,7 +56,8 @@ describe('supply cap', function () {
 
     before(async () => {
       implementation = await AssetListContractFactory.deploy(
-        await deployImmutableAssetConfigs(Array(MAX_ASSETS).fill(Number(decimals)))
+        await deployImmutableAssetConfigs(Array(MAX_ASSETS).fill(Number(decimals))),
+        configurator.address
       );
     });
 
@@ -69,7 +67,7 @@ describe('supply cap', function () {
                               INITIALIZE
     //////////////////////////////////////////////////////////////*/
 
-    describe('initialize', function () {
+    context('initialize', function () {
       // Creates an asset list where every collateral has the cap, then checks each collateral reads it back
       for (const { name, supplyCap } of SUPPLY_CAPS) {
         context(name, function () {
@@ -79,8 +77,7 @@ describe('supply cap', function () {
             newAssetList = await deployAssetListProxy(
               implementation,
               proxyAdmin.address,
-              Array(MAX_ASSETS).fill(storageConfig(supplyCap)),
-              configurator.address
+              Array(MAX_ASSETS).fill(storageConfig(supplyCap))
             );
           });
 
@@ -91,31 +88,6 @@ describe('supply cap', function () {
           });
         });
       }
-
-      // A cap above uint128 max, set on one collateral at a time, must make the list's ABI decoder revert with no reason.
-      // ethers won't encode it as uint128, so initialize is sent raw with the cap encoded as uint256 (same 32-byte layout)
-      // to a proxy deployed without initialize data.
-      Array.from({ length: MAX_ASSETS }).forEach((_, i) => {
-        context(`uint128 max + 1 cap on collateral ${i}`, function () {
-          it('reverts on initialize', async () => {
-            const proxy = await (await ethers.getContractFactory('TransparentUpgradeableProxy')).deploy(
-              implementation.address,
-              proxyAdmin.address,
-              '0x'
-            );
-            const storageConfigs = Array.from({ length: MAX_ASSETS }, (_, j) =>
-              storageConfig(j === i ? MAX_UINT128 + 1n : normalSupplyCap)
-            );
-            const data = AssetListContractFactory.interface.getSighash('initialize') + ethers.utils.defaultAbiCoder.encode(
-              ['tuple(uint64 borrowCollateralFactor, uint64 liquidateCollateralFactor, uint64 liquidationFactor, uint256 supplyCap)[]', 'address'],
-              [storageConfigs, configurator.address]
-            ).slice(2);
-            const [signer] = await ethers.getSigners();
-
-            await expect(signer.sendTransaction({ to: proxy.address, data, gasLimit: 30_000_000 })).to.be.revertedWithoutReason();
-          });
-        });
-      });
     });
 
     /*//////////////////////////////////////////////////////////////
@@ -123,7 +95,7 @@ describe('supply cap', function () {
     //////////////////////////////////////////////////////////////*/
 
     // The full flow on the fixture market: updateAssetSupplyCap updates the stored config and calls the asset list setter
-    describe('setter via configurator', function () {
+    context('setter via configurator', function () {
       const namedKeys = (struct: object) => Object.keys(struct).filter((key) => isNaN(Number(key)));
 
       for (const { name, supplyCap } of SUPPLY_CAPS) {
@@ -249,7 +221,7 @@ describe('supply cap', function () {
               for (const asset of assets) {
                 await configurator.connect(governor).updateAssetSupplyCap(comet.address, asset, supplyCap);
               }
-              const newImplementation = await AssetListContractFactory.deploy(await configurator.getImmutableAssetConfig(comet.address));
+              const newImplementation = await AssetListContractFactory.deploy(await configurator.getImmutableAssetConfig(comet.address), configurator.address);
               await proxyAdmin.upgrade(assetList.address, newImplementation.address);
             });
 

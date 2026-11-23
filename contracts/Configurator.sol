@@ -47,10 +47,13 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
 
     /**
      * @notice Sets the entire Configuration for a Comet proxy
-     * @dev Note: All params can later be updated by the governor except for `baseToken` and `trackingIndexScale`
+     * @dev Note: All params can later be updated by the governor except for `baseToken` and `trackingIndexScale`.
+     *      It sets the asset list proxy only once: once a market has one, this reverts, and the list is changed
+     *      through the asset config setters and the next deploy
      **/
     function setConfiguration(address cometProxy, Configuration calldata newConfiguration) external onlyGovernor {
         Configuration memory oldConfiguration = configuratorParams[cometProxy];
+        if (oldConfiguration.assetList != address(0)) revert ConfigurationAlreadyExists();
         if (oldConfiguration.baseToken != address(0) &&
             (oldConfiguration.baseToken != newConfiguration.baseToken ||
              oldConfiguration.trackingIndexScale != newConfiguration.trackingIndexScale))
@@ -194,49 +197,26 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      */
     function deployAssetList(address cometProxy) external returns (address assetListProxy, address newAssetListImpl) {
         assetListProxy = configuratorParams[cometProxy].assetList;
+        
+        // Only an existing list is redeployed here: the first list is deployed outside and set by setConfiguration
+        if (assetListProxy == address(0)) revert AssetListNotSet();
         IAssetListStructs.ImmutableAssetConfig[] memory immutableConfigs = getImmutableAssetConfig(cometProxy);
 
-        // 1. New list, configs unchanged: hash matches, return zero address
-        // 2. New list, configs changed: hash differs, deploy
-        // 3. Old list without configHash: nothing to compare, deploy
-        // 4. No list yet (zero address): nothing to compare, deploy
-        if (ConfigHash.compareConfigHashes(assetListProxy, abi.encode(immutableConfigs))) return (assetListProxy, address(0));
+        // The list proxy is set, so there is always a hash to compare with:
+        // 1. Configs unchanged: hash matches, return zero address
+        // 2. Configs changed: hash differs, deploy
+        if (ConfigHash.areHashesEqual(assetListProxy, abi.encode(immutableConfigs))) return (assetListProxy, address(0));
 
         address assetListFactory = cometAssetListFactories[cometProxy];
-        if (assetListFactory == address(0)) revert InvalidAddress();
+        if (assetListFactory == address(0)) revert AssetListFactoryNotSet();
         newAssetListImpl = IAssetListFactory(assetListFactory).createAssetList(immutableConfigs);
+        
         emit AssetListDeployed(cometProxy, assetListProxy, newAssetListImpl);
-    }
-
-    /**
-     * @notice Points the Comet proxy's configuration to an already deployed asset list
-     * @dev Deploys nothing; the next Comet deploy uses this asset list
-     * @param cometProxy The Comet proxy whose configuration to update
-     * @param newAssetList The asset list to use
-     */
-    function updateAssetList(address cometProxy, address newAssetList) external onlyGovernor {
-        if (newAssetList == address(0)) revert InvalidAddress();
-
-        emit UpdateAssetList(cometProxy, configuratorParams[cometProxy].assetList, newAssetList);
-        configuratorParams[cometProxy].assetList = newAssetList;
     }
 
     /*//////////////////////////////////////////////////////////////
                         ASSETS CONFIGS MANAGEMENT
     //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @notice Replaces the config of one asset of a Comet proxy, found by its address
-     * @dev The immutable part takes effect on the asset list only after deployAssetList and the asset list proxy upgrade
-     * @param cometProxy The Comet proxy whose asset config to update
-     * @param newAssetConfig The new config of the asset
-     */
-    function updateAsset(address cometProxy, AssetConfig calldata newAssetConfig) external onlyGovernor {
-        uint256 assetIndex = getAssetIndex(cometProxy, newAssetConfig.asset);
-        AssetConfig memory oldAssetConfig = assetConfigs[cometProxy][assetIndex];
-        assetConfigs[cometProxy][assetIndex] = newAssetConfig;
-        emit UpdateAsset(cometProxy, oldAssetConfig, newAssetConfig);
-    }
 
     /**
      * @notice Adds a new asset config at the end of the asset configs of a Comet proxy
@@ -254,19 +234,6 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
 
         cometAssetConfigs.push(assetConfig);
         emit AddAsset(cometProxy, assetConfig);
-    }
-
-    /**
-     * @notice Adds an asset to the asset list of a Comet proxy, or updates it if already there, with the factors and
-     *         supply cap of its stored config
-     * @param cometProxy The Comet proxy whose asset list to add the asset to
-     * @param asset The asset to add or update
-     */
-    function setAssetConfigToAssetList(address cometProxy, address asset) external onlyGovernor {
-        address assetList = configuratorParams[cometProxy].assetList;
-        AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
-        IAssetList(assetList).setAssetConfig(asset, _storagePart(assetConfig));
-        emit SetAssetConfigToAssetList(cometProxy, assetList, asset);
     }
 
     /**
@@ -292,9 +259,9 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param newBorrowCF The new borrow collateral factor
      */
     function updateAssetBorrowCollateralFactor(address cometProxy, address asset, uint64 newBorrowCF) external onlyGovernor {
-        AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
-        uint64 oldBorrowCF = assetConfig.borrowCollateralFactor;
-        assetConfig.borrowCollateralFactor = newBorrowCF;
+        uint256 assetIndex = getAssetIndex(cometProxy, asset);
+        uint64 oldBorrowCF = assetConfigs[cometProxy][assetIndex].borrowCollateralFactor;
+        assetConfigs[cometProxy][assetIndex].borrowCollateralFactor = newBorrowCF;
         emit UpdateAssetBorrowCollateralFactor(cometProxy, asset, oldBorrowCF, newBorrowCF);
         IAssetList(configuratorParams[cometProxy].assetList).setBorrowCollateralFactor(asset, newBorrowCF);
     }
@@ -306,9 +273,9 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param newLiquidateCF The new liquidate collateral factor
      */
     function updateAssetLiquidateCollateralFactor(address cometProxy, address asset, uint64 newLiquidateCF) external onlyGovernor {
-        AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
-        uint64 oldLiquidateCF = assetConfig.liquidateCollateralFactor;
-        assetConfig.liquidateCollateralFactor = newLiquidateCF;
+        uint256 assetIndex = getAssetIndex(cometProxy, asset);
+        uint64 oldLiquidateCF = assetConfigs[cometProxy][assetIndex].liquidateCollateralFactor;
+        assetConfigs[cometProxy][assetIndex].liquidateCollateralFactor = newLiquidateCF;
         emit UpdateAssetLiquidateCollateralFactor(cometProxy, asset, oldLiquidateCF, newLiquidateCF);
         IAssetList(configuratorParams[cometProxy].assetList).setLiquidateCollateralFactor(asset, newLiquidateCF);
     }
@@ -320,9 +287,9 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param newLiquidationFactor The new liquidation factor
      */
     function updateAssetLiquidationFactor(address cometProxy, address asset, uint64 newLiquidationFactor) external onlyGovernor {
-        AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
-        uint64 oldLiquidationFactor = assetConfig.liquidationFactor;
-        assetConfig.liquidationFactor = newLiquidationFactor;
+        uint256 assetIndex = getAssetIndex(cometProxy, asset);
+        uint64 oldLiquidationFactor = assetConfigs[cometProxy][assetIndex].liquidationFactor;
+        assetConfigs[cometProxy][assetIndex].liquidationFactor = newLiquidationFactor;
         emit UpdateAssetLiquidationFactor(cometProxy, asset, oldLiquidationFactor, newLiquidationFactor);
         IAssetList(configuratorParams[cometProxy].assetList).setLiquidationFactor(asset, newLiquidationFactor);
     }
@@ -334,9 +301,9 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param newSupplyCap The new supply cap
      */
     function updateAssetSupplyCap(address cometProxy, address asset, uint128 newSupplyCap) external onlyGovernor {
-        AssetConfig storage assetConfig = assetConfigs[cometProxy][getAssetIndex(cometProxy, asset)];
-        uint128 oldSupplyCap = assetConfig.supplyCap;
-        assetConfig.supplyCap = newSupplyCap;
+        uint256 assetIndex = getAssetIndex(cometProxy, asset);
+        uint128 oldSupplyCap = assetConfigs[cometProxy][assetIndex].supplyCap;
+        assetConfigs[cometProxy][assetIndex].supplyCap = newSupplyCap;
         emit UpdateAssetSupplyCap(cometProxy, asset, oldSupplyCap, newSupplyCap);
         IAssetList(configuratorParams[cometProxy].assetList).setSupplyCap(asset, newSupplyCap);
     }
@@ -358,7 +325,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
     /**
      * @notice Returns the immutable part of every asset config of a Comet proxy, as the asset list is built from it
      * @param cometProxy The Comet proxy whose asset configs to return
-     * @return immutableConfigs The asset, decimals and price feed of each asset, in asset list order
+     * @return immutableConfigs The asset and price feed of each asset, in asset list order
      */
     function getImmutableAssetConfig(address cometProxy) public view returns (IAssetListStructs.ImmutableAssetConfig[] memory immutableConfigs) {
         AssetConfig[] storage cometAssetConfigs = assetConfigs[cometProxy];
@@ -368,7 +335,6 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
             AssetConfig storage assetConfig = cometAssetConfigs[i];
             immutableConfigs[i] = IAssetListStructs.ImmutableAssetConfig({
                 asset: assetConfig.asset,
-                decimals: assetConfig.decimals,
                 priceFeed: assetConfig.priceFeed
             });
         }
@@ -384,7 +350,13 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         uint256 numAssets = cometAssetConfigs.length;
         storageConfigs = new IAssetListStructs.StorageAssetConfig[](numAssets);
         for (uint256 i; i < numAssets; ++i) {
-            storageConfigs[i] = _storagePart(cometAssetConfigs[i]);
+            AssetConfig storage assetConfig = cometAssetConfigs[i];
+            storageConfigs[i] = IAssetListStructs.StorageAssetConfig({
+                borrowCollateralFactor: assetConfig.borrowCollateralFactor,
+                liquidateCollateralFactor: assetConfig.liquidateCollateralFactor,
+                liquidationFactor: assetConfig.liquidationFactor,
+                supplyCap: assetConfig.supplyCap
+            });
         }
     }
 
@@ -425,20 +397,8 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @notice Transfers the governor rights to a new address
      */
     function transferGovernor(address newGovernor) external onlyGovernor {
-        if (newGovernor == address(0)) revert InvalidAddress();
-        
         address oldGovernor = governor;
         governor = newGovernor;
         emit GovernorTransferred(oldGovernor, newGovernor);
-    }
-
-    /// @dev The storage part of an asset config: the factors and supply cap the asset list keeps in storage
-    function _storagePart(AssetConfig storage assetConfig) private view returns (IAssetListStructs.StorageAssetConfig memory) {
-        return IAssetListStructs.StorageAssetConfig({
-            borrowCollateralFactor: assetConfig.borrowCollateralFactor,
-            liquidateCollateralFactor: assetConfig.liquidateCollateralFactor,
-            liquidationFactor: assetConfig.liquidationFactor,
-            supplyCap: assetConfig.supplyCap
-        });
     }
 }

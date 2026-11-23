@@ -19,10 +19,7 @@ import { MAX_ASSETS, isAssetDelisted, isValidAssetIndex, fundAccount, servicePat
  * 2. Delisted asset: Sets liquidationFactor to 0 and verifies that quoteCollateral quotes at market price
  *    without discount, handling the transition correctly
  *
- * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and only on Comet deployments that use
- * the extended asset list feature (CometExt), as the quoteCollateral behavior with liquidationFactor = 0
- * is specific to that implementation. The test filters deployments using the usesAssetList() utility function
- * to ensure compatibility, and excludes assets that are already delisted.
+ * @dev The scenario runs for all valid assets (up to MAX_ASSETS) and excludes assets that are already delisted.
  */
 for (let i = 0; i < MAX_ASSETS; i++) {
   scenario(
