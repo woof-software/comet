@@ -200,7 +200,7 @@ contract AssetListTypeHashMock is IAssetList, IConfigHash, Initializable {
             _setAssetConfig(asset, storageConfigs[i]);
             // getAssetInfoByAddress finds an asset by its position in the registered assets, so that position must be
             // its index in the immutables
-            if (_registeredPosition(asset) != i + 1) revert AssetIndexMismatch();
+            if (_registeredPosition(asset) != i + 1) revert AssetIndexMismatch(i);
         }
     }
 

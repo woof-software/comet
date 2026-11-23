@@ -216,30 +216,6 @@ contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvent
         cometAssetListFactories[cometProxy] = newAssetListFactory;
     }
 
-    /**
-     * @notice Deploys a new AssetList implementation with the immutable asset configs of a Comet proxy
-     * @dev Reverts if the Comet proxy has no asset list proxy yet
-     * @param cometProxy The Comet proxy whose asset configs to use
-     * @return assetListProxy The asset list proxy of the Comet proxy
-     * @return newAssetListImpl The new AssetList implementation, or the zero address if the immutable configs are unchanged
-     */
-    function deployAssetList(address cometProxy) external returns (address assetListProxy, address newAssetListImpl) {
-        assetListProxy = configuratorParams[cometProxy].assetList;
-        // Only an existing list is redeployed here: the first list is deployed outside and set by setConfiguration
-        if (assetListProxy == address(0)) revert AssetListNotSet();
-        IAssetListStructs.ImmutableAssetConfig[] memory immutableConfigs = getImmutableAssetConfig(cometProxy);
-
-        // The list proxy is set, so there is always a hash to compare with:
-        // 1. Configs unchanged: hash matches, return zero address
-        // 2. Configs changed: hash differs, deploy
-        if (ConfigHash.areHashesEqual(assetListProxy, abi.encode(immutableConfigs))) return (assetListProxy, address(0));
-
-        address assetListFactory = cometAssetListFactories[cometProxy];
-        if (assetListFactory == address(0)) revert AssetListFactoryNotSet();
-        newAssetListImpl = IAssetListFactory(assetListFactory).createAssetList(immutableConfigs);
-        emit AssetListDeployed(cometProxy, assetListProxy, newAssetListImpl);
-    }
-
     /*//////////////////////////////////////////////////////////////
                         ASSETS CONFIGS MANAGEMENT
     //////////////////////////////////////////////////////////////*/
@@ -417,6 +393,30 @@ contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvent
         address newComet = ICometFactory(factory[cometProxy]).clone(configuratorParams[cometProxy]);
         emit CometDeployed(cometProxy, newComet);
         return newComet;
+    }
+
+    /**
+     * @notice Deploys a new AssetList implementation with the immutable asset configs of a Comet proxy
+     * @dev Reverts if the Comet proxy has no asset list proxy yet
+     * @param cometProxy The Comet proxy whose asset configs to use
+     * @return assetListProxy The asset list proxy of the Comet proxy
+     * @return newAssetListImpl The new AssetList implementation, or the zero address if the immutable configs are unchanged
+     */
+    function deployAssetList(address cometProxy) external returns (address assetListProxy, address newAssetListImpl) {
+        assetListProxy = configuratorParams[cometProxy].assetList;
+        // Only an existing list is redeployed here: the first list is deployed outside and set by setConfiguration
+        if (assetListProxy == address(0)) revert AssetListNotSet();
+        IAssetListStructs.ImmutableAssetConfig[] memory immutableConfigs = getImmutableAssetConfig(cometProxy);
+
+        // The list proxy is set, so there is always a hash to compare with:
+        // 1. Configs unchanged: hash matches, return zero address
+        // 2. Configs changed: hash differs, deploy
+        if (ConfigHash.areHashesEqual(assetListProxy, abi.encode(immutableConfigs))) return (assetListProxy, address(0));
+
+        address assetListFactory = cometAssetListFactories[cometProxy];
+        if (assetListFactory == address(0)) revert AssetListFactoryNotSet();
+        newAssetListImpl = IAssetListFactory(assetListFactory).createAssetList(immutableConfigs);
+        emit AssetListDeployed(cometProxy, assetListProxy, newAssetListImpl);
     }
 
     /**

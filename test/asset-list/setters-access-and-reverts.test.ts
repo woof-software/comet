@@ -145,7 +145,7 @@ describe('asset list setters: access and reverts', function () {
       before(async () => (snapshot = await takeSnapshot()));
       after(async () => await snapshot.restore());
 
-      it('the upgrade reverts with AssetIndexMismatch', async () => {
+      it('the upgrade reverts with AssetIndexMismatch at index 0', async () => {
         const swappedConfigs = [configs[1], configs[0], ...configs.slice(2)];
         const swappedStorageConfigs = [storageConfigs[1], storageConfigs[0], ...storageConfigs.slice(2)];
         const swappedImplementation = await assetListFactory.callStatic.createAssetList(swappedConfigs);
@@ -155,7 +155,9 @@ describe('asset list setters: access and reverts', function () {
           assetList.address,
           swappedImplementation,
           assetList.interface.encodeFunctionData('setAssetConfigs', [swappedStorageConfigs])
-        )).to.be.revertedWithCustomError(assetList, 'AssetIndexMismatch');
+        )).to.be.revertedWithCustomError(assetList, 'AssetIndexMismatch')
+          // configs[1] now sits at index 0 but was registered second, so the check fails on the first asset
+          .withArgs(0);
       });
     });
 

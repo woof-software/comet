@@ -22,7 +22,8 @@ interface IAssetListErrors {
     error AssetNotFound();
 
     /// @dev The asset's position in the registered assets differs from its index in the immutables
-    error AssetIndexMismatch();
+    /// @param index The index in the immutables of the asset whose registered position does not match
+    error AssetIndexMismatch(uint8 index);
 
     /// @dev The asset or its price feed is the zero address
     error ZeroAddress();
