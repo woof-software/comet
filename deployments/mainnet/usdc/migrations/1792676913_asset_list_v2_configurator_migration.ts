@@ -2,11 +2,18 @@ import { expect } from 'chai';
 import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
 import { migration } from '../../../../plugins/deployment_manager/Migration';
 import { proposal, ProposalAction } from '../../../../src/deploy';
-import { AssetConfigStruct } from '../../../../build/types/Configurator';
+import { getSignerForProposal } from '../../../../scenario/utils';
 import { BigNumber, constants, Contract, utils } from 'ethers';
 
 // EIP-1967 admin slot
 const ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
+
+// Deployed on Mainnet ahead of the proposal
+const CONFIGURATOR_INTERMEDIATE = '0x7b95C9c686c498C9DFCe88beCe21DAEF3522A90B';
+const CONFIGURATOR_IMPLEMENTATION = '0x46034B2D6DA09f45ff3d438b988d8637D8Db43B5';
+const ASSET_LIST_FACTORY = '0xF887A6067481146E415a383D5aAa87dBFcFdF32f';
+const COMET_FACTORY = '0x01B7e8ebf1E7a3e8E7cBc717cdb097DcA8D1028c';
+const COMET_PROXY_ADMIN = '0xd4741C7a94aE8E5D3D26DAc7f6D32Cb33557e1a4';
 
 // The USDC market lives in this deployment, so it keeps the default aliases
 const MARKETS = [
@@ -14,27 +21,35 @@ const MARKETS = [
     comet: '0xc3d688B66703497DAA19211EEdff47f25384cdc3',
     name: 'Compound USDC',
     symbol: 'cUSDCv3',
+    assetList: '0x9F53fBc6282be1e5fA2fE2e9016f537EDBe9f403',
+    cometExt: '0x954A0B49E4fe408aa216e9Dd8cFb97175A1fAD5C',
     assetListAlias: 'assetList',
     cometExtAlias: 'comet:implementation:implementation',
-  },
-  {
-    comet: '0x5D409e56D886231aDAf00c8775665AD0f9897b56',
-    name: 'Compound USDS',
-    symbol: 'cUSDSv3',
-    assetListAlias: 'usdsAssetList',
-    cometExtAlias: 'usdsCometExt',
   },
   {
     comet: '0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840',
     name: 'Compound USDT',
     symbol: 'cUSDTv3',
+    assetList: '0x64F20a9544992e29b61385b4E9B836dAd2C43c72',
+    cometExt: '0x7A7Ff8bf6b8456dbba240aAA27B9ddB389076E2F',
     assetListAlias: 'usdtAssetList',
     cometExtAlias: 'usdtCometExt',
+  },
+  {
+    comet: '0x5D409e56D886231aDAf00c8775665AD0f9897b56',
+    name: 'Compound USDS',
+    symbol: 'cUSDSv3',
+    assetList: '0x50A09C4c35a9E7497755EE900dCB0e9587b3a44f',
+    cometExt: '0x06eeAf7b459971e8548324798FF909AE26Ac041a',
+    assetListAlias: 'usdsAssetList',
+    cometExtAlias: 'usdsCometExt',
   },
   {
     comet: '0xe85Dc543813B8c2CFEaAc371517b925a166a9293',
     name: 'Compound WBTC',
     symbol: 'cWBTCv3',
+    assetList: '0xC6d2B14232d2453DcC0200092131bBC1Ffe38e68',
+    cometExt: '0xE31F20F48b4E0CABC6811E26e110e71192D18eBC',
     assetListAlias: 'wbtcAssetList',
     cometExtAlias: 'wbtcCometExt',
   },
@@ -42,6 +57,8 @@ const MARKETS = [
     comet: '0xA17581A9E3356d9A858b789D68B4d866e593aE94',
     name: 'Compound WETH',
     symbol: 'cWETHv3',
+    assetList: '0x644bfFBF154f86Cb50035531d2AEDE8b0E69d260',
+    cometExt: '0xdb850632343A23098E6FA92364EEdd14479f9C1f',
     assetListAlias: 'wethAssetList',
     cometExtAlias: 'wethCometExt',
   },
@@ -49,6 +66,8 @@ const MARKETS = [
     comet: '0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3',
     name: 'Compound wstETH',
     symbol: 'cWstETHv3',
+    assetList: '0x0f396D0373806f989D6E66fCD1b1daB0274846D5',
+    cometExt: '0xbC1bA6307dbbb19937F728b154f69eD909bE8e06',
     assetListAlias: 'wstethAssetList',
     cometExtAlias: 'wstethCometExt',
   },
@@ -56,107 +75,56 @@ const MARKETS = [
 
 export default migration('1792676913_asset_list_v2_configurator_migration', {
   async prepare(deploymentManager: DeploymentManager) {
-    const {
-      configurator,
-      timelock
-    } = await deploymentManager.getContracts();
+    const ethers = deploymentManager.hre.ethers;
+    const { configurator } = await deploymentManager.getContracts();
 
-    // Forced, so aliases always point to fresh contracts
+    // Contracts are already deployed, so they are only registered under their aliases
+    const register = async (alias: string, artifact: string, address: string) => {
+      const contract = await ethers.getContractAt(artifact, address);
+      await deploymentManager.putAlias(alias, contract);
+      return contract;
+    };
 
     // Configurator
-    const configuratorIntermediate = await deploymentManager.deploy(
-      'configuratorIntermediate',
-      'migration/ConfiguratorIntermediate.sol',
-      [],
-      true
-    );
-    const configuratorImplementation = await deploymentManager.deploy(
-      'configurator:implementation',
-      'Configurator.sol',
-      [],
-      true
-    );
+    await register('configuratorIntermediate', 'ConfiguratorIntermediate', CONFIGURATOR_INTERMEDIATE);
+    await register('configurator:implementation', 'Configurator', CONFIGURATOR_IMPLEMENTATION);
 
     // Factories
-    const assetListFactory = await deploymentManager.deploy(
-      'assetListFactory',
-      'test/assetList/AssetListFactory.sol',
-      [configurator.address],
-      true
-    );
-    const cometFactory = await deploymentManager.deploy(
-      'cometFactory',
-      'test/CometFactoryWithExtendedAssetList.sol',
-      [],
-      true
-    );
+    await register('assetListFactory', 'AssetListFactory', ASSET_LIST_FACTORY);
+    await register('cometFactory', 'CometFactoryWithExtendedAssetList', COMET_FACTORY);
 
     // New CometProxyAdmin, owned by the Timelock
-    const cometAdmin = await deploymentManager.deploy(
-      'cometAdmin',
-      'CometProxyAdmin.sol',
-      [timelock.address],
-      true
-    );
+    await register('cometAdmin', 'CometProxyAdmin', COMET_PROXY_ADMIN);
 
-    // Asset lists are built from the current configs: immutable part in the implementation, storage part in initialize
+    // Asset lists and CometExts
     const assetLists: Record<string, string> = {};
     const cometExts: Record<string, string> = {};
     for (const market of MARKETS) {
-      const assetConfigs: AssetConfigStruct[] = (await configurator.getConfiguration(market.comet)).assetConfigs;
+      await register(market.assetListAlias, 'AssetList', market.assetList);
+      await register(market.cometExtAlias, 'CometExt', market.cometExt);
 
-      const assetListImplementation = await deploymentManager.deploy(
-        `${market.assetListAlias}:implementation`,
-        'AssetList.sol',
-        [assetConfigs.map(({ asset, priceFeed }) => ({ asset, priceFeed })), configurator.address],
-        true
-      );
-      const assetList = await deploymentManager.deploy(
-        market.assetListAlias,
-        'vendor/proxy/transparent/TransparentUpgradeableProxy.sol',
-        [
-          assetListImplementation.address,
-          cometAdmin.address,
-          assetListImplementation.interface.encodeFunctionData('initialize', [
-            assetConfigs.map(({ borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap }) => (
-              { borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap }
-            )),
-          ]),
-        ],
-        true
-      );
-      const cometExt = await deploymentManager.deploy(
-        market.cometExtAlias,
-        'CometExt.sol',
-        [{
-          name32: utils.formatBytes32String(market.name),
-          symbol32: utils.formatBytes32String(market.symbol),
-        }],
-        true
-      );
-
-      assetLists[market.comet] = assetList.address;
-      cometExts[market.comet] = cometExt.address;
+      assetLists[market.comet] = market.assetList;
+      cometExts[market.comet] = market.cometExt;
     }
 
     // Switch the alias to the new Configurator ABI for enact, verify and scenarios
     await deploymentManager.putAlias(
       'configurator',
-      await deploymentManager.hre.ethers.getContractAt('Configurator', configurator.address)
+      await ethers.getContractAt('Configurator', configurator.address)
     );
 
     return {
-      configuratorIntermediate: configuratorIntermediate.address,
-      configuratorImplementation: configuratorImplementation.address,
-      assetListFactory: assetListFactory.address,
-      cometFactory: cometFactory.address,
-      cometAdmin: cometAdmin.address,
+      configuratorIntermediate: CONFIGURATOR_INTERMEDIATE,
+      configuratorImplementation: CONFIGURATOR_IMPLEMENTATION,
+      assetListFactory: ASSET_LIST_FACTORY,
+      cometFactory: COMET_FACTORY,
+      cometAdmin: COMET_PROXY_ADMIN,
       assetLists,
       cometExts,
     };
   },
 
-  async enact(deploymentManager: DeploymentManager, _,
+  async enact(deploymentManager: DeploymentManager, govDeploymentManager: DeploymentManager,
     {
       configuratorIntermediate: configuratorIntermediateAddress,
       configuratorImplementation: configuratorImplementationAddress,
@@ -170,12 +138,15 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
     const trace = deploymentManager.tracer();
     const ethers = deploymentManager.hre.ethers;
     const { governor, configurator } = await deploymentManager.getContracts();
+    // Registers the proposer, so the follow-up proposal gets another signer in simulations
+    const signer = await getSignerForProposal(deploymentManager, govDeploymentManager);
 
     // The cometAdmin alias already points to the new admin, so the current one is read from the proxy
     const oldCometAdmin = await ethers.getContractAt(
       'CometProxyAdmin',
       utils.getAddress(utils.hexDataSlice(await ethers.provider.getStorageAt(configurator.address, ADMIN_SLOT), 12))
     );
+
     const configuratorIntermediate = await ethers.getContractAt('ConfiguratorIntermediate', configurator.address);
     const newConfigurator = await ethers.getContractAt('Configurator', configurator.address);
     const oldConfigurator = await ethers.getContractAt('ConfiguratorV1', configurator.address);
@@ -290,7 +261,7 @@ The 23rd - 28th actions set the factory for cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, 
 `;
     const txn = await deploymentManager.retry(async () =>
       trace(
-        await governor.propose(...(await proposal(mainnetActions, description)))
+        await governor.connect(signer).propose(...(await proposal(mainnetActions, description)))
       ), 0, 600_000
     );
 
