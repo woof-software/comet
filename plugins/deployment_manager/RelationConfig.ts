@@ -1,7 +1,7 @@
 import { Contract, utils } from 'ethers';
 import { DeploymentManagerConfig } from './type-extensions';
 import { Address, Alias } from './Types';
-import { ADDRESSES } from '../../src/addresses';
+import { ADDRESSES, sameAddress } from '../../src/addresses';
 
 export type Ctx = { [aliasTemplate: string]: Contract[] };
 
@@ -88,11 +88,9 @@ async function readKey(contract: Contract, fnName: string): Promise<any> {
   } catch (e) {
     // Handle contracts that fail in Hardhat fork but work on real network
     // This is a workaround for proxy contracts with incompatible bytecode
-    const address = contract.address.toLowerCase();
-    
     if (e.code === 'CALL_EXCEPTION' && fnName === 'symbol') {
       // invalid opcode when calling symbol()
-      if (address === ADDRESSES.arbitrum.assets.TETH) {
+      if (sameAddress(contract.address, ADDRESSES.arbitrum.assets.TETH)) {
         return 'tETH';
       }
     }

@@ -3,7 +3,7 @@ import { BigNumber, Contract, Event, EventFilter } from 'ethers';
 import { erc20 } from './ERC20';
 import { DeploymentManager } from '../../deployment_manager/DeploymentManager';
 import { setNextBaseFeeToZero } from '../../../scenario/utils/hreUtils';
-import { ADDRESSES } from '../../../src/addresses';
+import { ADDRESSES, sameAddress } from '../../../src/addresses';
 
 const getMaxEntry = (args: [string, BigNumber][]) =>
   args.reduce(([a1, m], [a2, e]) => (m.gte(e) == true ? [a1, m] : [a2, e]));
@@ -104,7 +104,7 @@ async function addTokens(
   MAX_SEARCH_BLOCKS = 40000,
   BLOCK_SPAN = 2048
 ) {
-  if (asset.toLowerCase() === ADDRESSES.mainnet.assets.USDC.toLowerCase()) {
+  if (sameAddress(asset, ADDRESSES.mainnet.assets.USDC)) {
     BLOCK_SPAN = 128;
   }
 
@@ -117,7 +117,7 @@ async function addTokens(
   let tokenContract = new ethers.Contract(asset, erc20, ethers.provider);
   let filter = tokenContract.filters.Transfer();
   const mintableByBridge: readonly string[] = ADDRESSES[dm.network]?.BRIDGE_MINTABLE_TOKENS ?? [];
-  if (mintableByBridge.map(addr => addr.toLowerCase()).includes(asset.toLowerCase())) {
+  if (mintableByBridge.some(addr => sameAddress(addr, asset))) {
     await dm.hre.network.provider.request({
       method: 'hardhat_impersonateAccount',
       params: [ADDRESSES.unichain.L2_STANDARD_BRIDGE],

@@ -8,14 +8,14 @@ import {
   MainnetBulker
 } from '../build/types';
 import { expectApproximately, isBulkerSupported, matchesDeployment, exp } from './utils';
-import { ADDRESSES } from '../src/addresses';
+import { ADDRESSES, sameAddress } from '../src/addresses';
 
 async function getWstETHIndex(context: any): Promise<number> {
   const comet = await context.getComet();
   const totalAssets = await comet.numAssets();
   for (let i = 0; i < totalAssets; i++) {
     const asset = await comet.getAssetInfo(i);
-    if (asset.asset.toLowerCase() === ADDRESSES.mainnet.assets.WSTETH.toLowerCase()) {
+    if (sameAddress(asset.asset, ADDRESSES.mainnet.assets.WSTETH)) {
       return i;
     }
   }

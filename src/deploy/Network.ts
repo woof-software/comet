@@ -2,11 +2,10 @@ import { Deployed, DeploymentManager } from '../../plugins/deployment_manager';
 import { DeploySpec, ProtocolConfiguration, wait, COMP_WHALES } from './index';
 import { getConfiguration } from './NetworkConfiguration';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { ADDRESSES } from '../addresses';
+import { ADDRESSES, sameAddress } from '../addresses';
 
-export function sameAddress(a: string, b: string) {
-  return BigInt(a) === BigInt(b);
-}
+// Defined in src/addresses.ts; re-exported here so existing imports from src/deploy keep working
+export { sameAddress };
 
 // XXX make sure we are deploying clone contracts from the cache
 //  to preserve local development speed and without network

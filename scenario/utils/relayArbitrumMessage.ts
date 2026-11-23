@@ -5,7 +5,7 @@ import { Log } from '@ethersproject/abstract-provider';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog } from './tenderlyVnet';
-import { ADDRESSES } from '../../src/addresses';
+import { ADDRESSES, sameAddress } from '../../src/addresses';
 
 export async function relayArbitrumMessage(
   governanceDeploymentManager: DeploymentManager,
@@ -155,7 +155,7 @@ export async function relayArbitrumMessage(
         _data
       );
       // if token is mainnet ETH -> than source arbitrum weth
-      if(token == ADDRESSES.mainnet.assets.WETH){
+      if (sameAddress(token, ADDRESSES.mainnet.assets.WETH)) {
         if(tenderlyLogs) {
           const callData = bridgeReceiver.interface.encodeFunctionData(
             'sourceTokens',
@@ -316,7 +316,7 @@ export async function simulateL2ToL1TokenBridging(
         console.log(`Simulating L2→L1 token bridging: ${amount.toString()} of ${l1Token} to ${to}`);
 
         const gatewayAddress = await (async () => {
-          if(targets[i].toLowerCase() === ADDRESSES.arbitrum.GATEWAY_ROUTER.toLowerCase()) { // Arbitrum WETH gateway
+          if (sameAddress(targets[i], ADDRESSES.arbitrum.GATEWAY_ROUTER)) { // Arbitrum WETH gateway
             const router = new Contract(
               ADDRESSES.arbitrum.GATEWAY_ROUTER,
               ['function l1TokenToGateway(address l1Token) view returns (address)'],
@@ -376,7 +376,7 @@ export async function simulateL2ToL1TokenBridging(
         console.log(`Relaying message to L1 gateway at ${l1GatewayAddress} with data: ${data}`);
         const bridgeTx = await arbitrumBridge.connect(outboxSigner).executeCall(
           l1Gateway.address,
-          l1Token.toLowerCase() === ADDRESSES.mainnet.assets.WETH.toLowerCase() ? amount : 0,
+          sameAddress(l1Token, ADDRESSES.mainnet.assets.WETH) ? amount : 0,
           data,
         );
         await (bridgeTx).wait();
