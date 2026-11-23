@@ -158,6 +158,30 @@ describe('withdraw', function () {
         await comet.connect(pauseGuardian).pauseLendersWithdraw(false);
         await snapshot.restore();
       });
+
+      it('reverts on zero amount', async () => {
+        await expect(
+          comet.connect(alice).withdraw(baseToken.address, 0)
+        ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount withdrawn to another account', async () => {
+        await expect(
+          comet.connect(alice).withdrawTo(bob.address, baseToken.address, 0)
+        ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount withdrawn from an account', async () => {
+        await expect(
+          comet.connect(alice).withdrawFrom(alice.address, bob.address, baseToken.address, 0)
+        ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on max amount without balance', async () => {
+        await expect(
+          comet.connect(alice).withdraw(baseToken.address, ethers.constants.MaxUint256)
+        ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
     });
 
     describe('withdraw base: happy path', function () {
@@ -353,8 +377,9 @@ describe('withdraw', function () {
       const BOB_COLLATERAL_AMOUNT = exp(1, 18);
       const BOB_BORROW_AMOUNT = exp(100, 6);
 
-      let withdrawTx: ContractTransaction;
       let aliceBalanceBefore: bigint;
+      let bobPrincipalBefore: bigint;
+      let cometBalanceBefore: bigint;
 
       before(async () => {
         await baseSnapshot.restore();
@@ -368,30 +393,25 @@ describe('withdraw', function () {
         await comet.connect(bob).withdraw(baseToken.address, BOB_BORROW_AMOUNT);
 
         aliceBalanceBefore = (await baseToken.balanceOf(alice.address)).toBigInt();
-
-        withdrawTx = await comet.connect(bob).withdrawTo(alice.address, baseToken.address, ethers.constants.MaxUint256);
+        bobPrincipalBefore = (await comet.userBasic(bob.address)).principal.toBigInt();
+        cometBalanceBefore = (await baseToken.balanceOf(comet.address)).toBigInt();
       });
 
-      it('emits Transfer event with 0 amount (no tokens transferred)', async () => {
-        await expect(withdrawTx)
-          .to.emit(baseToken, 'Transfer')
-          .withArgs(comet.address, alice.address, 0);
-      });
-
-      it('emits Withdraw event with 0 amount', async () => {
-        await expect(withdrawTx)
-          .to.emit(comet, 'Withdraw')
-          .withArgs(bob.address, alice.address, 0);
+      it('reverts with ZeroAmount (max resolves to 0 for a borrower)', async () => {
+        await expect(comet.connect(bob).withdrawTo(alice.address, baseToken.address, ethers.constants.MaxUint256))
+          .to.be.revertedWithCustomError(comet, 'ZeroAmount');
       });
 
       it('alice balance unchanged', async () => {
         expect(await baseToken.balanceOf(alice.address)).to.equal(aliceBalanceBefore);
       });
 
-      it('gas used is within limit', async () => {
-        // Asset info is read through the asset list proxy, which costs more than reading the list directly
-        const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(130000);
+      it('bob principal unchanged', async () => {
+        expect((await comet.userBasic(bob.address)).principal).to.equal(bobPrincipalBefore);
+      });
+
+      it('comet base token balance unchanged', async () => {
+        expect(await baseToken.balanceOf(comet.address)).to.equal(cometBalanceBefore);
       });
     });
 
@@ -437,18 +457,15 @@ describe('withdraw', function () {
       describe('withdraw 0 with collateral only position', function () {
         const COLLATERAL_AMOUNT = exp(1, 18);
 
-        it('withdraws 0 base with only collateral position (no base supplied)', async () => {
+        it('reverts withdrawing 0 base with only collateral position (no base supplied)', async () => {
           await baseSnapshot.restore();
           
           await collaterals['WETH'].allocateTo(alice.address, COLLATERAL_AMOUNT);
           await collaterals['WETH'].connect(alice).approve(comet.address, COLLATERAL_AMOUNT);
           await comet.connect(alice).supply(collaterals['WETH'].address, COLLATERAL_AMOUNT);
 
-          const tx = await comet.connect(alice).withdraw(baseToken.address, 0);
-
-          await expect(tx)
-            .to.emit(baseToken, 'Transfer')
-            .withArgs(comet.address, alice.address, 0);
+          await expect(comet.connect(alice).withdraw(baseToken.address, 0))
+            .to.be.revertedWithCustomError(comet, 'ZeroAmount');
         });
       });
     });
@@ -512,6 +529,24 @@ describe('withdraw', function () {
         await expect(
           comet.connect(alice).withdraw(collaterals['WETH'].address, ALICE_COLLATERAL_AMOUNT)
         ).to.be.revertedWithCustomError(comet, 'NotCollateralized');
+      });
+
+      it('reverts on zero amount', async () => {
+        await expect(
+          comet.connect(alice).withdraw(collaterals['WETH'].address, 0)
+        ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount withdrawn to another account', async () => {
+        await expect(
+          comet.connect(alice).withdrawTo(bob.address, collaterals['WETH'].address, 0)
+        ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount withdrawn from an account', async () => {
+        await expect(
+          comet.connect(alice).withdrawFrom(alice.address, bob.address, collaterals['WETH'].address, 0)
+        ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
       });
 
       describe('oracle reverts (with borrow position)', function () {
@@ -632,7 +667,7 @@ describe('withdraw', function () {
 
       it('withdraw collateral does not revert', async () => {
         withdrawTx = await comet.connect(bob).withdrawTo(alice.address, collateral.address, COLLATERAL_SUPPLY_AMOUNT);
-        expect(withdrawTx).to.not.be.reverted;
+        await expect(withdrawTx).to.not.be.reverted;
       });
 
       it('emits Transfer event (ERC20)', async () => {
@@ -962,7 +997,7 @@ describe('withdraw', function () {
       const SUPPLY_AMOUNT = exp(100, 6);
       const WITHDRAW_AMOUNT = exp(25, 6);
 
-      it('withdraws 0 collateral successfully', async () => {
+      it('reverts withdrawing 0 collateral', async () => {
         await baseSnapshot.restore();
 
         await collaterals['COMP'].allocateTo(alice.address, COLLATERAL_AMOUNT);
@@ -970,11 +1005,9 @@ describe('withdraw', function () {
         await comet.connect(alice).supply(collaterals['COMP'].address, COLLATERAL_AMOUNT);
 
         const balanceBefore = (await comet.userCollateral(alice.address, collaterals['COMP'].address)).balance;
-        const tx = await comet.connect(alice).withdraw(collaterals['COMP'].address, 0);
 
-        await expect(tx)
-          .to.emit(comet, 'WithdrawCollateral')
-          .withArgs(alice.address, alice.address, collaterals['COMP'].address, 0);
+        await expect(comet.connect(alice).withdraw(collaterals['COMP'].address, 0))
+          .to.be.revertedWithCustomError(comet, 'ZeroAmount');
 
         expect((await comet.userCollateral(alice.address, collaterals['COMP'].address)).balance).to.equal(balanceBefore);
       });
@@ -1570,7 +1603,7 @@ describe('withdraw', function () {
         const bobBalanceBefore = await feeBaseToken.balanceOf(bob.address);
 
         const withdrawTx = await feeComet.connect(bob).withdraw(feeBaseToken.address, bobPrincipal);
-        expect(withdrawTx).to.not.be.reverted;
+        await expect(withdrawTx).to.not.be.reverted;
 
         const fee = BigNumber.from(bobPrincipal).mul(NUMERATOR).div(DENOMINATOR);
         const expectedReceived = BigNumber.from(bobPrincipal).sub(fee);
@@ -1583,7 +1616,7 @@ describe('withdraw', function () {
         const aliceBalanceBefore = await feeCollateral.balanceOf(alice.address);
 
         const withdrawTx = await feeComet.connect(alice).withdraw(feeCollateral.address, aliceCollateral);
-        expect(withdrawTx).to.not.be.reverted;
+        await expect(withdrawTx).to.not.be.reverted;
 
         const fee = BigNumber.from(aliceCollateral).mul(NUMERATOR).div(DENOMINATOR);
         const expectedReceived = BigNumber.from(aliceCollateral).sub(fee);
@@ -1678,7 +1711,7 @@ describe('withdraw', function () {
         for (const asset of Object.values(tokensWith24Collaterals)) {
           const balanceBefore = await asset.balanceOf(dave.address);
           const withdrawToTx = await cometWith24Collaterals.connect(alice).withdrawTo(dave.address, asset.address, SUPPLY_COLLATERAL_AMOUNT);
-          expect(withdrawToTx).to.not.be.reverted;
+          await expect(withdrawToTx).to.not.be.reverted;
           expect(await asset.balanceOf(dave.address)).to.equal(balanceBefore.add(SUPPLY_COLLATERAL_AMOUNT));
           withdrawTxs.push(withdrawToTx);
         }
@@ -1727,7 +1760,7 @@ describe('withdraw', function () {
         for (const asset of Object.values(tokensWith24Collaterals)) {
           const balanceBefore = await asset.balanceOf(alice.address);
           const withdrawFromTx = await cometWith24Collaterals.connect(dave).withdrawFrom(alice.address, alice.address, asset.address, SUPPLY_COLLATERAL_AMOUNT);
-          expect(withdrawFromTx).to.not.be.reverted;
+          await expect(withdrawFromTx).to.not.be.reverted;
           expect(await asset.balanceOf(alice.address)).to.equal(balanceBefore.add(SUPPLY_COLLATERAL_AMOUNT));
           withdrawTxs.push(withdrawFromTx);
         }

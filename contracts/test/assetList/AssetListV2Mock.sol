@@ -8,7 +8,7 @@ import { IAssetListStructs } from "../../interfaces/assetList/IAssetListStructs.
  * @dev AssetList with the same storage and TYPEHASH, plus version(), so a proxy upgraded to it shows the new code
  */
 contract AssetListV2Mock is AssetList {
-    constructor(ImmutableAssetConfig[] memory assetConfigs) AssetList(assetConfigs) {}
+    constructor(ImmutableAssetConfig[] memory assetConfigs, address configurator) AssetList(assetConfigs, configurator) {}
 
     function version() external pure returns (uint256) {
         return 2;
@@ -16,7 +16,13 @@ contract AssetListV2Mock is AssetList {
 }
 
 contract AssetListFactoryV2Mock {
+    address public immutable configurator;
+
+    constructor(address configurator_) {
+        configurator = configurator_;
+    }
+
     function createAssetList(IAssetListStructs.ImmutableAssetConfig[] memory assetConfigs) external returns (address) {
-        return address(new AssetListV2Mock(assetConfigs));
+        return address(new AssetListV2Mock(assetConfigs, configurator));
     }
 }

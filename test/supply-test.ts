@@ -1,5 +1,5 @@
-import { ethers, expect, exp, makeProtocol, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS } from './helpers';
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList, CometExt } from '../build/types';
+import { ethers, expect, exp, makeProtocol, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS, setTotalsBasic } from './helpers';
+import { AssetList, EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList, CometExt } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { TotalsCollateralStruct } from 'build/types/CometHarnessInterfaceExtendedAssetList';
@@ -10,6 +10,8 @@ describe('supply', function () {
   const baseTokenDecimals = 6;
   // Contracts
   let comet: CometHarnessInterfaceExtendedAssetList;
+  // Comet forwards the asset lookups to the list, so an unknown asset reverts with the list's error
+  let assetList: AssetList;
   let baseToken: FaucetToken | NonStandardFaucetFeeToken;
   // Tokens
   let collaterals: {
@@ -47,6 +49,7 @@ describe('supply', function () {
     const protocol = await makeProtocol({base: 'USDC'});
 
     comet = protocol.cometWithExtendedAssetList;
+    assetList = protocol.assetList;
     baseToken = protocol.tokens[protocol.base];
     collaterals = Object.fromEntries(
       Object.entries(protocol.tokens).filter(([_symbol, token]) => token.address !== baseToken.address)
@@ -160,7 +163,72 @@ describe('supply', function () {
         await unsupportedToken.allocateTo(alice.address, exp(1, 18));
 
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
-        await expect(comet.connect(alice).supply(unsupportedToken.address, 1)).to.be.revertedWithCustomError(comet, 'BadAsset');
+        await expect(comet.connect(alice).supply(unsupportedToken.address, 1)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
+      });
+
+      it('reverts on zero amount', async () => {
+        await expect(comet.connect(alice).supply(baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied to another account', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied from an account', async () => {
+        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on max amount when there is no debt to repay', async () => {
+        await baseToken.connect(alice).approve(comet.address, ethers.constants.MaxUint256);
+        await expect(comet.connect(alice).supply(baseToken.address, ethers.constants.MaxUint256)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+        await baseToken.connect(alice).approve(comet.address, 0);
+      });
+
+      it('reverts on max amount supplied to an account with no debt', async () => {
+        await baseToken.connect(alice).approve(comet.address, ethers.constants.MaxUint256);
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, ethers.constants.MaxUint256)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+        await baseToken.connect(alice).approve(comet.address, 0);
+      });
+    });
+
+    describe('supply base asset: minimal amount to a supplier with a non-exact principal conversion', function () {
+      const BASE_SUPPLY_INDEX = 1_000_000_123_456_789n;
+      const BOB_SUPPLY_AMOUNT = 99_999n;
+
+      let restorer: SnapshotRestorer;
+      let bobPrincipalBefore: bigint;
+      let baseSupplyIndex: bigint;
+
+      before(async () => {
+        restorer = await takeSnapshot();
+
+        await setTotalsBasic(comet, { baseSupplyIndex: BASE_SUPPLY_INDEX });
+        await baseToken.connect(bob).approve(comet.address, BOB_SUPPLY_AMOUNT);
+        await comet.connect(bob).supply(baseToken.address, BOB_SUPPLY_AMOUNT);
+
+        bobPrincipalBefore = (await comet.userBasic(bob.address)).principal.toBigInt();
+        baseSupplyIndex = (await comet.totalsBasic()).baseSupplyIndex.toBigInt();
+        await baseToken.connect(alice).approve(comet.address, 1);
+      });
+
+      after(async () => {
+        await restorer.restore();
+      });
+
+      it('sanity: principal to balance conversion is not exact', async () => {
+        expect(bobPrincipalBefore * baseSupplyIndex % exp(1, 15)).to.not.equal(0n);
+      });
+
+      it('reverts on zero amount supplied to the supplier', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('supplying 1 wei to the supplier succeeds', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, baseToken.address, 1)).to.not.be.reverted;
+      });
+
+      it('supplier principal does not decrease', async () => {
+        expect((await comet.userBasic(bob.address)).principal).to.be.gte(bobPrincipalBefore);
       });
     });
 
@@ -281,7 +349,7 @@ describe('supply', function () {
         const snapshot: SnapshotRestorer = await takeSnapshot();
 
         await baseToken.connect(alice).approve(comet.address, SUPPLIED_AMOUNT_ALICE);
-        expect(await comet.connect(alice).supply(baseToken.address, SUPPLIED_AMOUNT_ALICE))
+        await expect(await comet.connect(alice).supply(baseToken.address, SUPPLIED_AMOUNT_ALICE))
           .emit(comet, 'Supply')
           .withArgs(alice.address, alice.address, SUPPLIED_AMOUNT_ALICE);
 
@@ -294,7 +362,7 @@ describe('supply', function () {
         const lastUpdated = (await comet.totalsBasic()).lastAccrualTime;
 
         await baseToken.connect(alice).approve(comet.address, SUPPLIED_AMOUNT_ALICE);
-        expect(await comet.connect(alice).supply(baseToken.address, SUPPLIED_AMOUNT_ALICE))
+        await expect(await comet.connect(alice).supply(baseToken.address, SUPPLIED_AMOUNT_ALICE))
           .emit(comet, 'Transfer')
           .withArgs(
             ethers.constants.AddressZero,
@@ -395,7 +463,7 @@ describe('supply', function () {
         const snapshot: SnapshotRestorer = await takeSnapshot();
 
         await baseToken.connect(bob).approve(comet.address, SUPPLIED_AMOUNT_BOB);
-        expect(await comet.connect(bob).supply(baseToken.address, SUPPLIED_AMOUNT_BOB))
+        await expect(await comet.connect(bob).supply(baseToken.address, SUPPLIED_AMOUNT_BOB))
           .emit(comet, 'Supply')
           .withArgs(bob.address, bob.address, SUPPLIED_AMOUNT_BOB);
 
@@ -408,7 +476,7 @@ describe('supply', function () {
         const lastUpdated = (await comet.totalsBasic()).lastAccrualTime;
 
         await baseToken.connect(bob).approve(comet.address, SUPPLIED_AMOUNT_BOB);
-        expect(await comet.connect(bob).supply(baseToken.address, SUPPLIED_AMOUNT_BOB))
+        await expect(await comet.connect(bob).supply(baseToken.address, SUPPLIED_AMOUNT_BOB))
           .emit(comet, 'Transfer')
           .withArgs(
             ethers.constants.AddressZero,
@@ -589,11 +657,11 @@ describe('supply', function () {
       it('partial repay succeeds', async () => {
         await baseToken.connect(dave).approve(comet.address, PARTIAL_REPAY_AMOUNT);
         repayTx = await comet.connect(dave).supply(baseToken.address, PARTIAL_REPAY_AMOUNT);
-        expect(repayTx).to.not.be.reverted;
+        await expect(repayTx).to.not.be.reverted;
       });
 
       it('emits Supply event when repaying', async () => {
-        expect(repayTx).to.emit(comet, 'Supply').withArgs(dave.address, dave.address, PARTIAL_REPAY_AMOUNT);
+        await expect(repayTx).to.emit(comet, 'Supply').withArgs(dave.address, dave.address, PARTIAL_REPAY_AMOUNT);
       });
 
       it('does NOT emit Transfer event (no mint) when only repaying debt', async () => {
@@ -747,13 +815,13 @@ describe('supply', function () {
       it('over-repay succeeds', async () => {
         await baseToken.connect(dave).approve(comet.address, OVER_REPAY_AMOUNT);
         overRepayTx = await comet.connect(dave).supply(baseToken.address, OVER_REPAY_AMOUNT);
-        expect(overRepayTx).to.not.be.reverted;
+        await expect(overRepayTx).to.not.be.reverted;
       });
 
       it('emits both Supply and Transfer (mint) events when over-repaying', async () => {
-        expect(overRepayTx)
+        await expect(overRepayTx)
           .to.emit(comet, 'Supply').withArgs(dave.address, dave.address, OVER_REPAY_AMOUNT)
-          .to.not.emit(comet, 'Transfer');
+          .to.emit(comet, 'Transfer');
       });
 
       it('dave principal is now positive (became supplier)', async () => {
@@ -1001,6 +1069,18 @@ describe('supply', function () {
           'SupplyCapExceeded'
         );
         await collateral.connect(alice).approve(comet.address, 0);
+      });
+
+      it('reverts on zero amount', async () => {
+        await expect(comet.connect(alice).supply(collateral.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied to another account', async () => {
+        await expect(comet.connect(alice).supplyTo(bob.address, collateral.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('reverts on zero amount supplied from an account', async () => {
+        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, collateral.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
       });
     });
 
@@ -1496,7 +1576,7 @@ describe('supply', function () {
       it('reverts for asset other than base of collateral', async () => {
         await unsupportedToken.allocateTo(alice.address, exp(1, 18));
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
-        await expect(comet.connect(alice).supplyTo(bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(comet, 'BadAsset');
+        await expect(comet.connect(alice).supplyTo(bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('reverts when protocol paused', async () => {
@@ -1624,10 +1704,7 @@ describe('supply', function () {
       it('reverts for asset other than base of collateral', async () => {
         await unsupportedToken.allocateTo(alice.address, exp(1, 18));
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
-        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(
-          comet,
-          'BadAsset'
-        );
+        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('reverts when protocol paused', async () => {
@@ -1784,7 +1861,7 @@ describe('supply', function () {
           await asset.allocateTo(alice.address, SUPPLY_COLLATERAL_AMOUNT);
           await asset.connect(alice).approve(cometWith24Collaterals.address, SUPPLY_COLLATERAL_AMOUNT);
           const supplyTx = await cometWith24Collaterals.connect(alice).supply(asset.address, SUPPLY_COLLATERAL_AMOUNT);
-          expect(supplyTx).to.not.be.reverted;
+          await expect(supplyTx).to.not.be.reverted;
           supplyTxs.push(supplyTx);
         }
       });
@@ -1835,7 +1912,7 @@ describe('supply', function () {
           await asset.allocateTo(alice.address, SUPPLY_COLLATERAL_AMOUNT);
           await asset.connect(alice).approve(cometWith24Collaterals.address, SUPPLY_COLLATERAL_AMOUNT);
           const supplyToTx = await cometWith24Collaterals.connect(alice).supplyTo(dave.address, asset.address, SUPPLY_COLLATERAL_AMOUNT);
-          expect(supplyToTx).to.not.be.reverted;
+          await expect(supplyToTx).to.not.be.reverted;
           supplyTxs.push(supplyToTx);
         }
       });
@@ -1887,7 +1964,7 @@ describe('supply', function () {
           await asset.allocateTo(alice.address, SUPPLY_COLLATERAL_AMOUNT);
           await asset.connect(alice).approve(cometWith24Collaterals.address, SUPPLY_COLLATERAL_AMOUNT);
           const supplyFromTx = await cometWith24Collaterals.connect(dave).supplyFrom(alice.address, alice.address, asset.address, SUPPLY_COLLATERAL_AMOUNT);
-          expect(supplyFromTx).to.not.be.reverted;
+          await expect(supplyFromTx).to.not.be.reverted;
           supplyTxs.push(supplyFromTx);
         }
       });
@@ -2025,7 +2102,7 @@ describe('supply', function () {
 
         await feeBaseToken.connect(alice).approve(feeComet.address, amountDeposited);
         baseTokenFeeTx = await feeComet.connect(alice).supply(feeBaseToken.address, amountDeposited);
-        expect(baseTokenFeeTx).to.not.be.reverted;
+        await expect(baseTokenFeeTx).to.not.be.reverted;
 
         const feeBalanceAfter = await feeBaseToken.balanceOf(feeBaseToken.address);
         const userBalanceAfter = await feeBaseToken.balanceOf(alice.address);
@@ -2046,7 +2123,7 @@ describe('supply', function () {
         const amountWithoutFee = amountDeposited.sub(fee);
 
         // event should contain amount without fee - the actual received on the contract
-        expect(baseTokenFeeTx).to.emit(feeComet, 'Supply').withArgs(alice.address, alice.address, amountWithoutFee.toBigInt());
+        await expect(baseTokenFeeTx).to.emit(feeComet, 'Supply').withArgs(alice.address, alice.address, amountWithoutFee.toBigInt());
       });
 
       it('can supply collateral token - fee-on-transfer token', async () => {
@@ -2063,7 +2140,7 @@ describe('supply', function () {
 
         await feeCollateral.connect(alice).approve(feeComet.address, amountDeposited);
         collateralFeeTx = await feeComet.connect(alice).supply(feeCollateral.address, amountDeposited);
-        expect(collateralFeeTx).to.not.be.reverted;
+        await expect(collateralFeeTx).to.not.be.reverted;
 
         const feeBalanceAfter = await feeCollateral.balanceOf(feeCollateral.address);
         const userBalanceAfter = await feeCollateral.balanceOf(alice.address);
@@ -2084,7 +2161,7 @@ describe('supply', function () {
         const amountWithoutFee = amountDeposited.sub(fee);
 
         // event should contain amount without fee - the actual received on the contract
-        expect(collateralFeeTx).to.emit(feeComet, 'SupplyCollateral').withArgs(alice.address, alice.address, feeCollateral.address, amountWithoutFee.toBigInt());
+        await expect(collateralFeeTx).to.emit(feeComet, 'SupplyCollateral').withArgs(alice.address, alice.address, feeCollateral.address, amountWithoutFee.toBigInt());
       });
     });
   });
@@ -2210,11 +2287,11 @@ describe('supply', function () {
     });
 
     it('emits CollateralAssetSupplyPauseAction event with true argument', async function () {
-      expect(deactivateCollateralTx).to.emit(comet, 'CollateralAssetSupplyPauseAction').withArgs(deactivatedCollateralIndex, true);
+      await expect(deactivateCollateralTx).to.emit(comet, 'CollateralAssetSupplyPauseAction').withArgs(deactivatedCollateralIndex, true);
     });
 
     it('emits CollateralDeactivated event', async function () {
-      expect(deactivateCollateralTx).to.emit(comet, 'CollateralDeactivated').withArgs(deactivatedCollateralIndex);
+      await expect(deactivateCollateralTx).to.emit(comet, 'CollateralDeactivated').withArgs(deactivatedCollateralIndex);
     });
 
     it('sets collateral as deactivated in comet', async function () {
@@ -2237,11 +2314,11 @@ describe('supply', function () {
     });
 
     it('emits CollateralAssetSupplyPauseAction event with false argument', async function () {
-      expect(activateCollateralTx).to.emit(comet, 'CollateralAssetSupplyPauseAction').withArgs(deactivatedCollateralIndex, false);
+      await expect(activateCollateralTx).to.emit(comet, 'CollateralAssetSupplyPauseAction').withArgs(deactivatedCollateralIndex, false);
     });
 
     it('emits CollateralActivated event', async function () {
-      expect(activateCollateralTx).to.emit(comet, 'CollateralActivated').withArgs(deactivatedCollateralIndex);
+      await expect(activateCollateralTx).to.emit(comet, 'CollateralActivated').withArgs(deactivatedCollateralIndex);
     });
 
     it('sets collateral as activated in comet', async function () {

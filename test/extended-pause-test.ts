@@ -93,7 +93,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits LendersWithdrawPauseAction event when pausing by governor', async function () {
-          expect(pauseLendersWithdrawTx)
+          await expect(pauseLendersWithdrawTx)
             .to.emit(cometExt, 'LendersWithdrawPauseAction')
             .withArgs(true);
         });
@@ -121,7 +121,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits LendersWithdrawPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseLendersWithdrawTx)
+          await expect(pauseLendersWithdrawTx)
             .to.emit(cometExt, 'LendersWithdrawPauseAction')
             .withArgs(true);
         });
@@ -179,7 +179,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits BorrowersWithdrawPauseAction event when pausing by governor', async function () {
-          expect(pauseBorrowersWithdrawTx)
+          await expect(pauseBorrowersWithdrawTx)
             .to.emit(cometExt, 'BorrowersWithdrawPauseAction')
             .withArgs(true);
         });
@@ -206,7 +206,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits BorrowersWithdrawPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseBorrowersWithdrawTx)
+          await expect(pauseBorrowersWithdrawTx)
             .to.emit(cometExt, 'BorrowersWithdrawPauseAction')
             .withArgs(true);
         });
@@ -264,7 +264,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralWithdrawPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralWithdrawTx)
+          await expect(pauseCollateralWithdrawTx)
             .to.emit(cometExt, 'CollateralWithdrawPauseAction')
             .withArgs(true);
         });
@@ -293,7 +293,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralWithdrawPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralWithdrawTx)
+          await expect(pauseCollateralWithdrawTx)
             .to.emit(cometExt, 'CollateralWithdrawPauseAction')
             .withArgs(true);
         });
@@ -351,7 +351,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetWithdrawPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralAssetWithdrawTx)
+          await expect(pauseCollateralAssetWithdrawTx)
             .to.emit(cometExt, 'CollateralAssetWithdrawPauseAction')
             .withArgs(assetIndex, true);
         });
@@ -384,7 +384,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetWithdrawPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralAssetWithdrawTx)
+          await expect(pauseCollateralAssetWithdrawTx)
             .to.emit(cometExt, 'CollateralAssetWithdrawPauseAction')
             .withArgs(assetIndex, true);
         });
@@ -497,9 +497,9 @@ describe('extended pause functionality', function () {
           await expect(pauseCollateralSupplyTx).to.not.be.reverted;
         });
 
-        it('emits LendersSupplyPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralSupplyTx)
-            .to.emit(cometExt, 'LendersSupplyPauseAction')
+        it('emits CollateralSupplyPauseAction event when pausing by governor', async function () {
+          await expect(pauseCollateralSupplyTx)
+            .to.emit(cometExt, 'CollateralSupplyPauseAction')
             .withArgs(true);
         });
 
@@ -524,9 +524,9 @@ describe('extended pause functionality', function () {
           await expect(pauseCollateralSupplyTx).to.not.be.reverted;
         });
 
-        it('emits LendersSupplyPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralSupplyTx)
-            .to.emit(cometExt, 'LendersSupplyPauseAction')
+        it('emits CollateralSupplyPauseAction event when pausing by pause guardian', async function () {
+          await expect(pauseCollateralSupplyTx)
+            .to.emit(cometExt, 'CollateralSupplyPauseAction')
             .withArgs(true);
         });
 
@@ -582,9 +582,9 @@ describe('extended pause functionality', function () {
           await expect(pauseBaseSupplyTx).to.not.be.reverted;
         });
 
-        it('emits BorrowersSupplyPauseAction event when pausing by governor', async function () {
-          expect(pauseBaseSupplyTx)
-            .to.emit(cometExt, 'BorrowersSupplyPauseAction')
+        it('emits BaseSupplyPauseAction event when pausing by governor', async function () {
+          await expect(pauseBaseSupplyTx)
+            .to.emit(cometExt, 'BaseSupplyPauseAction')
             .withArgs(true);
         });
 
@@ -609,9 +609,9 @@ describe('extended pause functionality', function () {
           await expect(pauseBaseSupplyTx).to.not.be.reverted;
         });
 
-        it('emits BorrowersSupplyPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseBaseSupplyTx)
-            .to.emit(cometExt, 'BorrowersSupplyPauseAction')
+        it('emits BaseSupplyPauseAction event when pausing by pause guardian', async function () {
+          await expect(pauseBaseSupplyTx)
+            .to.emit(cometExt, 'BaseSupplyPauseAction')
             .withArgs(true);
         });
 
@@ -666,7 +666,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetSupplyPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralAssetSupplyTx)
+          await expect(pauseCollateralAssetSupplyTx)
             .to.emit(cometExt, 'CollateralAssetSupplyPauseAction')
             .withArgs(assetIndex, true);
         });
@@ -699,7 +699,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetSupplyPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralAssetSupplyTx)
+          await expect(pauseCollateralAssetSupplyTx)
             .to.emit(cometExt, 'CollateralAssetSupplyPauseAction')
             .withArgs(assetIndex, true);
         });
@@ -825,7 +825,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits LendersTransferPauseAction event when pausing by governor', async function () {
-          expect(pauseLendersTransferTx)
+          await expect(pauseLendersTransferTx)
             .to.emit(cometExt, 'LendersTransferPauseAction')
             .withArgs(true);
         });
@@ -852,7 +852,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits LendersTransferPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseLendersTransferTx)
+          await expect(pauseLendersTransferTx)
             .to.emit(cometExt, 'LendersTransferPauseAction')
             .withArgs(true);
         });
@@ -910,7 +910,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits BorrowersTransferPauseAction event when pausing by governor', async function () {
-          expect(pauseBorrowersTransferTx)
+          await expect(pauseBorrowersTransferTx)
             .to.emit(cometExt, 'BorrowersTransferPauseAction')
             .withArgs(true);
         });
@@ -937,7 +937,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits BorrowersTransferPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseBorrowersTransferTx)
+          await expect(pauseBorrowersTransferTx)
             .to.emit(cometExt, 'BorrowersTransferPauseAction')
             .withArgs(true);
         });
@@ -995,7 +995,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralTransferPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralTransferTx)
+          await expect(pauseCollateralTransferTx)
             .to.emit(cometExt, 'CollateralTransferPauseAction')
             .withArgs(true);
         });
@@ -1024,7 +1024,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralTransferPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralTransferTx)
+          await expect(pauseCollateralTransferTx)
             .to.emit(cometExt, 'CollateralTransferPauseAction')
             .withArgs(true);
         });
@@ -1082,7 +1082,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetTransferPauseAction event when pausing by governor', async function () {
-          expect(pauseCollateralAssetTransferTx)
+          await expect(pauseCollateralAssetTransferTx)
             .to.emit(cometExt, 'CollateralAssetTransferPauseAction')
             .withArgs(assetIndex, true);
         });
@@ -1115,7 +1115,7 @@ describe('extended pause functionality', function () {
         });
 
         it('emits CollateralAssetTransferPauseAction event when pausing by pause guardian', async function () {
-          expect(pauseCollateralAssetTransferTx)
+          await expect(pauseCollateralAssetTransferTx)
             .to.emit(cometExt, 'CollateralAssetTransferPauseAction')
             .withArgs(assetIndex, true);
         });

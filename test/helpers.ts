@@ -389,9 +389,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
 
   const unsupportedToken = await FaucetFactory.deploy(1e6, 'Unsupported Token', 6, 'USUP');
 
-  const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
-  const assetListFactory = await AssetListFactory.deploy();
-  await assetListFactory.deployed();  
 
   let extensionDelegateAssetList = opts.extensionDelegateAssetList;
   if (extensionDelegateAssetList === undefined) {
@@ -430,8 +427,12 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     decimals: dfn(assets[symbol].decimals, 18),
     priceFeed: priceFeeds[symbol].address,
   }));
+  const assetListConfigurator = dfn(opts.assetListConfigurator, governor.address);
+  const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
+  const assetListFactory = await AssetListFactory.deploy(assetListConfigurator);
+  await assetListFactory.deployed();
   const assetListImplementation = await assetListFactory.callStatic.createAssetList(assetImmutableConfigs);
-  await wait(assetListFactory.createAssetList(assetImmutableConfigs));
+  await assetListFactory.createAssetList(assetImmutableConfigs);
   const AssetListContractFactory = (await ethers.getContractFactory('AssetList')) as AssetList__factory;
   const AssetListProxyFactory = (await ethers.getContractFactory('TransparentUpgradeableProxy')) as TransparentUpgradeableProxy__factory;
   const assetListProxy = await AssetListProxyFactory.deploy(
@@ -444,7 +445,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
         liquidationFactor: dfn(assets[symbol].liquidationFactor, exp(0.9, 18)),
         supplyCap: dfn(assets[symbol].supplyCap, exp(150000, dfn(assets[symbol].decimals, 18))),
       })),
-      dfn(opts.assetListConfigurator, governor.address),
     ]),
   );
   await assetListProxy.deployed();
@@ -618,7 +618,6 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     await configuratorAsProxy.connect(governor).addAsset(cometProxyWithExtendedAssetList.address, {
       asset: assetInfo.asset,
       priceFeed: assetInfo.priceFeed,
-      decimals: dfn(assets[collateralSymbols[i]].decimals, 18),
       borrowCollateralFactor: assetInfo.borrowCollateralFactor,
       liquidateCollateralFactor: assetInfo.liquidateCollateralFactor,
       liquidationFactor: assetInfo.liquidationFactor,

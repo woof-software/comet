@@ -1,18 +1,58 @@
 import { expect } from 'chai';
 import { DeploymentManager } from '../../../../plugins/deployment_manager/DeploymentManager';
 import { migration } from '../../../../plugins/deployment_manager/Migration';
-import { proposal } from '../../../../src/deploy';
+import { proposal, ProposalAction } from '../../../../src/deploy';
 import { AssetConfigStruct } from '../../../../build/types/Configurator';
 import { BigNumber, constants, Contract, utils } from 'ethers';
 
-const USDC_COMET = '0xc3d688B66703497DAA19211EEdff47f25384cdc3';
-const USDS_COMET = '0x5D409e56D886231aDAf00c8775665AD0f9897b56';
-const USDT_COMET = '0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840';
-const WBTC_COMET = '0xe85Dc543813B8c2CFEaAc371517b925a166a9293';
-const WETH_COMET = '0xA17581A9E3356d9A858b789D68B4d866e593aE94';
-const WSTETH_COMET = '0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3';
 // EIP-1967 admin slot
 const ADMIN_SLOT = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
+
+// The USDC market lives in this deployment, so it keeps the default aliases
+const MARKETS = [
+  {
+    comet: '0xc3d688B66703497DAA19211EEdff47f25384cdc3',
+    name: 'Compound USDC',
+    symbol: 'cUSDCv3',
+    assetListAlias: 'assetList',
+    cometExtAlias: 'comet:implementation:implementation',
+  },
+  {
+    comet: '0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840',
+    name: 'Compound USDT',
+    symbol: 'cUSDTv3',
+    assetListAlias: 'usdtAssetList',
+    cometExtAlias: 'usdtCometExt',
+  },
+  {
+    comet: '0x5D409e56D886231aDAf00c8775665AD0f9897b56',
+    name: 'Compound USDS',
+    symbol: 'cUSDSv3',
+    assetListAlias: 'usdsAssetList',
+    cometExtAlias: 'usdsCometExt',
+  },
+  {
+    comet: '0xe85Dc543813B8c2CFEaAc371517b925a166a9293',
+    name: 'Compound WBTC',
+    symbol: 'cWBTCv3',
+    assetListAlias: 'wbtcAssetList',
+    cometExtAlias: 'wbtcCometExt',
+  },
+  {
+    comet: '0xA17581A9E3356d9A858b789D68B4d866e593aE94',
+    name: 'Compound WETH',
+    symbol: 'cWETHv3',
+    assetListAlias: 'wethAssetList',
+    cometExtAlias: 'wethCometExt',
+  },
+  {
+    comet: '0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3',
+    name: 'Compound wstETH',
+    symbol: 'cWstETHv3',
+    assetListAlias: 'wstethAssetList',
+    cometExtAlias: 'wstethCometExt',
+  },
+];
 
 export default migration('1792676913_asset_list_v2_configurator_migration', {
   async prepare(deploymentManager: DeploymentManager) {
@@ -41,7 +81,7 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
     const assetListFactory = await deploymentManager.deploy(
       'assetListFactory',
       'test/assetList/AssetListFactory.sol',
-      [],
+      [configurator.address],
       true
     );
     const cometFactory = await deploymentManager.deploy(
@@ -60,72 +100,44 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
     );
 
     // Asset lists are built from the current configs: immutable part in the implementation, storage part in initialize
-    const usdcAssetConfigs: AssetConfigStruct[] = (await configurator.getConfiguration(USDC_COMET)).assetConfigs;
-    const usdtAssetConfigs: AssetConfigStruct[] = (await configurator.getConfiguration(USDT_COMET)).assetConfigs;
+    const assetLists: Record<string, string> = {};
+    const cometExts: Record<string, string> = {};
+    for (const market of MARKETS) {
+      const assetConfigs: AssetConfigStruct[] = (await configurator.getConfiguration(market.comet)).assetConfigs;
 
-    // USDC
-    const usdcAssetListImplementation = await deploymentManager.deploy(
-      'assetList:implementation',
-      'AssetList.sol',
-      [usdcAssetConfigs.map(({ asset, decimals, priceFeed }) => ({ asset, decimals, priceFeed }))],
-      true
-    );
-    const usdcAssetList = await deploymentManager.deploy(
-      'assetList',
-      'vendor/proxy/transparent/TransparentUpgradeableProxy.sol',
-      [
-        usdcAssetListImplementation.address,
-        cometAdmin.address,
-        usdcAssetListImplementation.interface.encodeFunctionData('initialize', [
-          usdcAssetConfigs.map(({ borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap }) => (
-            { borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap }
-          )),
-          configurator.address,
-        ]),
-      ],
-      true
-    );
-    const usdcCometExt = await deploymentManager.deploy(
-      'comet:implementation:implementation',
-      'CometExt.sol',
-      [{
-        name32: utils.formatBytes32String('Compound USDC'),
-        symbol32: utils.formatBytes32String('cUSDCv3'),
-      }],
-      true
-    );
+      const assetListImplementation = await deploymentManager.deploy(
+        `${market.assetListAlias}:implementation`,
+        'AssetList.sol',
+        [assetConfigs.map(({ asset, priceFeed }) => ({ asset, priceFeed })), configurator.address],
+        true
+      );
+      const assetList = await deploymentManager.deploy(
+        market.assetListAlias,
+        'vendor/proxy/transparent/TransparentUpgradeableProxy.sol',
+        [
+          assetListImplementation.address,
+          cometAdmin.address,
+          assetListImplementation.interface.encodeFunctionData('initialize', [
+            assetConfigs.map(({ borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap }) => (
+              { borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap }
+            )),
+          ]),
+        ],
+        true
+      );
+      const cometExt = await deploymentManager.deploy(
+        market.cometExtAlias,
+        'CometExt.sol',
+        [{
+          name32: utils.formatBytes32String(market.name),
+          symbol32: utils.formatBytes32String(market.symbol),
+        }],
+        true
+      );
 
-    // USDT
-    const usdtAssetListImplementation = await deploymentManager.deploy(
-      'usdtAssetList:implementation',
-      'AssetList.sol',
-      [usdtAssetConfigs.map(({ asset, decimals, priceFeed }) => ({ asset, decimals, priceFeed }))],
-      true
-    );
-    const usdtAssetList = await deploymentManager.deploy(
-      'usdtAssetList',
-      'vendor/proxy/transparent/TransparentUpgradeableProxy.sol',
-      [
-        usdtAssetListImplementation.address,
-        cometAdmin.address,
-        usdtAssetListImplementation.interface.encodeFunctionData('initialize', [
-          usdtAssetConfigs.map(({ borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap }) => (
-            { borrowCollateralFactor, liquidateCollateralFactor, liquidationFactor, supplyCap }
-          )),
-          configurator.address,
-        ]),
-      ],
-      true
-    );
-    const usdtCometExt = await deploymentManager.deploy(
-      'usdtCometExt',
-      'CometExt.sol',
-      [{
-        name32: utils.formatBytes32String('Compound USDT'),
-        symbol32: utils.formatBytes32String('cUSDTv3'),
-      }],
-      true
-    );
+      assetLists[market.comet] = assetList.address;
+      cometExts[market.comet] = cometExt.address;
+    }
 
     // Switch the alias to the new Configurator ABI for enact, verify and scenarios
     await deploymentManager.putAlias(
@@ -139,10 +151,8 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
       assetListFactory: assetListFactory.address,
       cometFactory: cometFactory.address,
       cometAdmin: cometAdmin.address,
-      usdcAssetList: usdcAssetList.address,
-      usdtAssetList: usdtAssetList.address,
-      usdcCometExt: usdcCometExt.address,
-      usdtCometExt: usdtCometExt.address,
+      assetLists,
+      cometExts,
     };
   },
 
@@ -153,10 +163,8 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
       assetListFactory: assetListFactoryAddress,
       cometFactory: cometFactoryAddress,
       cometAdmin: cometAdminAddress,
-      usdcAssetList,
-      usdtAssetList,
-      usdcCometExt,
-      usdtCometExt,
+      assetLists,
+      cometExts,
     }
   ) {
     const trace = deploymentManager.tracer();
@@ -169,10 +177,26 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
       utils.getAddress(utils.hexDataSlice(await ethers.provider.getStorageAt(configurator.address, ADMIN_SLOT), 12))
     );
     const newCometAdmin = await ethers.getContractAt('CometProxyAdmin', cometAdminAddress);
+
     const configuratorIntermediate = await ethers.getContractAt('ConfiguratorIntermediate', configurator.address);
     const newConfigurator = await ethers.getContractAt('Configurator', configurator.address);
+    const oldConfigurator = await ethers.getContractAt('ConfiguratorV1', configurator.address);
 
-    const mainnetActions = [
+    // The V2 Configuration is the V1 one without the asset configs, with the new extension delegate and asset list.
+    // setConfiguration is the only way to set the first asset list, so it is built from the current V1 values
+    const configurationFields = newConfigurator.interface.getFunction('setConfiguration').inputs[1].components
+      .map(({ name }) => name);
+    const configurations: Record<string, Record<string, unknown>> = {};
+    for (const { comet } of MARKETS) {
+      const configurationV1 = await oldConfigurator.getConfiguration(comet);
+      configurations[comet] = {
+        ...Object.fromEntries(configurationFields.map((field) => [field, configurationV1[field]])),
+        extensionDelegate: cometExts[comet],
+        assetList: assetLists[comet],
+      };
+    }
+
+    const mainnetActions: ProposalAction[] = [
       // 1. Upgrade the Configurator to the intermediate implementation
       {
         contract: oldCometAdmin,
@@ -183,7 +207,7 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
       {
         contract: configuratorIntermediate,
         signature: 'migrateAssetConfig(address[])',
-        args: [[USDC_COMET, USDS_COMET, USDT_COMET, WBTC_COMET, WETH_COMET, WSTETH_COMET]],
+        args: [MARKETS.map(({ comet }) => comet)],
       },
       // 3. Upgrade the Configurator to the new implementation
       {
@@ -197,85 +221,48 @@ export default migration('1792676913_asset_list_v2_configurator_migration', {
         signature: 'changeProxyAdmin(address,address)',
         args: [configurator.address, cometAdminAddress],
       },
-      // 5. Move the USDC Comet to the new CometProxyAdmin
-      {
+      // 5-10. Move every Comet to the new CometProxyAdmin
+      ...MARKETS.map(({ comet }) => ({
         contract: oldCometAdmin,
         signature: 'changeProxyAdmin(address,address)',
-        args: [USDC_COMET, cometAdminAddress],
-      },
-      // 6. Move the USDT Comet to the new CometProxyAdmin
-      {
-        contract: oldCometAdmin,
-        signature: 'changeProxyAdmin(address,address)',
-        args: [USDT_COMET, cometAdminAddress],
-      },
-      // 7. Set the asset list factory for the USDC Comet
-      {
+        args: [comet, cometAdminAddress],
+      })),
+      // 11-16. Set the asset list factory of every Comet
+      ...MARKETS.map(({ comet }) => ({
         contract: newConfigurator,
         signature: 'setAssetListFactory(address,address)',
-        args: [USDC_COMET, assetListFactoryAddress],
-      },
-      // 8. Point the USDC Comet to its new asset list
-      {
+        args: [comet, assetListFactoryAddress],
+      })),
+      // 17-22. Set the configuration of every Comet with its new asset list and CometExt
+      ...MARKETS.map(({ comet }) => ({
         contract: newConfigurator,
-        signature: 'updateAssetList(address,address)',
-        args: [USDC_COMET, usdcAssetList],
-      },
-      // 9. Set the Comet factory for the USDC Comet
-      {
-        contract: newConfigurator,
-        signature: 'setFactory(address,address)',
-        args: [USDC_COMET, cometFactoryAddress],
-      },
-      // 10. Set the new CometExt as the extension delegate of the USDC Comet
-      {
-        contract: newConfigurator,
-        signature: 'setExtensionDelegate(address,address)',
-        args: [USDC_COMET, usdcCometExt],
-      },
-      // 11. Set the asset list factory for the USDT Comet
-      {
-        contract: newConfigurator,
-        signature: 'setAssetListFactory(address,address)',
-        args: [USDT_COMET, assetListFactoryAddress],
-      },
-      // 12. Point the USDT Comet to its new asset list
-      {
-        contract: newConfigurator,
-        signature: 'updateAssetList(address,address)',
-        args: [USDT_COMET, usdtAssetList],
-      },
-      // 13. Set the Comet factory for the USDT Comet
-      {
+        signature: 'setConfiguration(address,(address,address,address,address,address,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint64,uint104,uint104,uint104,address))',
+        args: [comet, configurations[comet]],
+      })),
+      // 23-28. Set the Comet factory of every Comet
+      ...MARKETS.map(({ comet }) => ({
         contract: newConfigurator,
         signature: 'setFactory(address,address)',
-        args: [USDT_COMET, cometFactoryAddress],
-      },
-      // 14. Set the new CometExt as the extension delegate of the USDT Comet
-      {
-        contract: newConfigurator,
-        signature: 'setExtensionDelegate(address,address)',
-        args: [USDT_COMET, usdtCometExt],
-      },
-      // 15. Deploy and upgrade the USDC Comet to a new version
+        args: [comet, cometFactoryAddress],
+      })),
+      // 29-30. Apply changes to Mainnet USDC and USDT comets
       {
         contract: newCometAdmin,
         signature: 'deployAndUpgradeTo(address,address)',
-        args: [configurator.address, USDC_COMET],
+        args: [configurator.address, MARKETS[0].comet],
       },
-      // 16. Deploy and upgrade the USDT Comet to a new version
       {
         contract: newCometAdmin,
         signature: 'deployAndUpgradeTo(address,address)',
-        args: [configurator.address, USDT_COMET],
+        args: [configurator.address, MARKETS[1].comet],
       },
     ];
 
-    const description = `# Update Mainnet USDC and USDT Comets to the service patch V2
+    const description = `# Prepare Mainnet Comets for the Service Patch V2
 
 ## Proposal summary
 
-WOOF! proposes upgrading the Mainnet cUSDCv3 and cUSDTv3 markets to the service patch V2, which moves them to a new, upgradeable asset list, together with the Mainnet Configurator they share.
+WOOF! proposes preparing all Mainnet Compound III markets (cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3) for the service patch V2, which moves them to a new, upgradeable asset list, together with the Mainnet Configurator they share.
 
 The new Configurator keeps the asset configs of each market apart from the rest of its configuration. With the upgradeable asset list:
 
@@ -283,45 +270,36 @@ The new Configurator keeps the asset configs of each market apart from the rest 
 - The asset list code can be upgraded on its own, without upgrading Comet.
 - Collateral factors and supply caps are kept with their exact values. The old asset list kept collateral factors with 4 decimals and supply caps in whole tokens.
 
-The asset configs of cUSDCv3 and cUSDTv3 are copied as they are. The asset configs of the other markets that share this Configurator (cUSDSv3, cWBTCv3, cWETHv3 and cwstETHv3) are moved to the new storage as well, so the Configurator keeps managing them. These markets keep running on their current Comet and asset list until a follow-up proposal updates them to the service patch V2.
+The asset configs of every market are copied as they are. This proposal upgrades the Configurator, moves the Configurator and all Comets to a new CometProxyAdmin, and sets the new asset list, factories and extension delegate for each market. The markets keep running on their current Comet implementation until a follow-up proposal deploys and upgrades them.
 
 This proposal takes the governance steps recommended and necessary to update Compound III markets. Simulations have confirmed the market's readiness, as much as possible, using the [Comet scenario suite](https://github.com/compound-finance/comet/tree/main/scenario).
 
-Further detailed information can be found on the corresponding [proposal pull request](<>) and [forum discussion](<>).
+Further detailed information can be found on the corresponding [proposal pull request](https://github.com/Compound-Foundation/comet/pull/37) and [forum discussion](<>).
+
+### Audit
+
+The Service Patch V2 update has been audited by Certora and full reports can be found here:
+
+- [Certora Comet Service Patch V2 Audit](<>)
+
 
 ## Proposal Actions
 
 The first action upgrades the Configurator to an intermediate implementation.
 
-The second action moves the asset configs of cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cwstETHv3 to the new storage of the Configurator.
+The second action moves the asset configs of cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the new storage of the Configurator.
 
 The third action upgrades the Configurator to the new implementation.
 
 The fourth action moves the Configurator to a new CometProxyAdmin, owned by the Timelock.
 
-The fifth action moves cUSDCv3 to the new CometProxyAdmin.
+The 5th - 10th actions move cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the new CometProxyAdmin.
 
-The sixth action moves cUSDTv3 to the new CometProxyAdmin.
+The 11th - 16th actions set the asset list factory for cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the newly deployed factory.
 
-The seventh action sets the asset list factory for cUSDCv3 to the newly deployed factory.
+The 17th - 22nd actions set the configurations of cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 with the newly deployed asset lists and extension delegates. The other configuration values are kept as they are.
 
-The eighth action sets the asset list of cUSDCv3 to the newly deployed asset list.
-
-The ninth action sets the factory for cUSDCv3 to the newly deployed factory.
-
-The tenth action sets the extension delegate of cUSDCv3 to the newly deployed contract.
-
-The eleventh action sets the asset list factory for cUSDTv3 to the newly deployed factory.
-
-The twelfth action sets the asset list of cUSDTv3 to the newly deployed asset list.
-
-The thirteenth action sets the factory for cUSDTv3 to the newly deployed factory.
-
-The fourteenth action sets the extension delegate of cUSDTv3 to the newly deployed contract.
-
-The fifteenth action deploys and upgrades cUSDCv3 to a new version.
-
-The sixteenth action deploys and upgrades cUSDTv3 to a new version.
+The 23rd - 28th actions set the factory for cUSDCv3, cUSDSv3, cUSDTv3, cWBTCv3, cWETHv3 and cWstETHv3 to the newly deployed factory.
 `;
     const txn = await deploymentManager.retry(async () =>
       trace(
@@ -342,6 +320,7 @@ The sixteenth action deploys and upgrades cUSDTv3 to a new version.
 
   async verify(deploymentManager: DeploymentManager, _, preMigrationBlockNumber: number): Promise<void> {
     const ethers = deploymentManager.hre.ethers;
+    const contracts = await deploymentManager.getContracts();
     const {
       configurator,
       timelock,
@@ -349,22 +328,13 @@ The sixteenth action deploys and upgrades cUSDTv3 to a new version.
       'configurator:implementation': configuratorImplementation,
       assetListFactory,
       cometFactory,
-      assetList: usdcAssetList,
-      usdtAssetList,
-      'comet:implementation:implementation': usdcCometExt,
-      usdtCometExt,
-    } = await deploymentManager.getContracts();
+    } = contracts;
     const signer = await deploymentManager.getSigner();
     const preMigrationBlockTag = { blockTag: preMigrationBlockNumber };
 
-    const newCometAbi = [
-      'function assetList() external view returns (address)',
-      'function extensionDelegate() external view returns (address)',
+    const cometExtAbi = [
       'function name() external view returns (string)',
       'function symbol() external view returns (string)',
-    ];
-    const assetListAbi = [
-      'function configurator() external view returns (address)',
     ];
 
     async function getProxyAdmin(proxy: string, blockNumber?: number): Promise<string> {
@@ -375,103 +345,81 @@ The sixteenth action deploys and upgrades cUSDTv3 to a new version.
     // Pre-migration state is read with the V1 ABI
     const oldConfigurator = await ethers.getContractAt('ConfiguratorV1', configurator.address);
     const newConfigurator = await ethers.getContractAt('Configurator', configurator.address);
-    const oldCometAdminAddress = await getProxyAdmin(configurator.address, preMigrationBlockNumber);
 
     // Configurator
     expect(await cometAdmin.owner()).to.equal(timelock.address);
     expect(await getProxyAdmin(configurator.address)).to.equal(cometAdmin.address);
     expect(await cometAdmin.getProxyImplementation(configurator.address)).to.equal(configuratorImplementation.address);
     expect(await newConfigurator.governor()).to.equal(await oldConfigurator.governor(preMigrationBlockTag));
+    expect(await assetListFactory.configurator()).to.equal(configurator.address);
 
-    // USDC
-    expect(await getProxyAdmin(USDC_COMET)).to.equal(cometAdmin.address);
-    expect(await getProxyAdmin(usdcAssetList.address)).to.equal(cometAdmin.address);
-    expect(await newConfigurator.factory(USDC_COMET)).to.equal(cometFactory.address);
-    expect(await newConfigurator.cometAssetListFactories(USDC_COMET)).to.equal(assetListFactory.address);
-    expect((await newConfigurator.getConfiguration(USDC_COMET)).assetList).to.equal(usdcAssetList.address);
-    expect((await newConfigurator.getConfiguration(USDC_COMET)).extensionDelegate).to.equal(usdcCometExt.address);
+    for (const market of MARKETS) {
+      const assetList = await ethers.getContractAt('AssetList', contracts[market.assetListAlias].address);
+      const cometExt = new Contract(contracts[market.cometExtAlias].address, cometExtAbi, signer);
+      // Not upgraded yet, so the Comet still runs its current implementation
+      const comet = await ethers.getContractAt('CometInterface', market.comet);
 
-    const newCometUsdc = new Contract(USDC_COMET, newCometAbi, signer);
+      // Proxy admins
+      expect(await getProxyAdmin(market.comet)).to.equal(cometAdmin.address);
+      expect(await getProxyAdmin(assetList.address)).to.equal(cometAdmin.address);
 
-    expect(await newCometUsdc.assetList()).to.equal(usdcAssetList.address);
-    expect(await newCometUsdc.extensionDelegate()).to.equal(usdcCometExt.address);
-    expect(await newCometUsdc.name()).to.equal('Compound USDC');
-    expect(await newCometUsdc.symbol()).to.equal('cUSDCv3');
-    expect(await new Contract(usdcAssetList.address, assetListAbi, signer).configurator()).to.equal(configurator.address);
+      // Configurator state
+      const configurationBefore = await oldConfigurator.getConfiguration(market.comet, preMigrationBlockTag);
+      const configuration = await newConfigurator.getConfiguration(market.comet);
 
-    // USDT
-    expect(await getProxyAdmin(USDT_COMET)).to.equal(cometAdmin.address);
-    expect(await getProxyAdmin(usdtAssetList.address)).to.equal(cometAdmin.address);
-    expect(await newConfigurator.factory(USDT_COMET)).to.equal(cometFactory.address);
-    expect(await newConfigurator.cometAssetListFactories(USDT_COMET)).to.equal(assetListFactory.address);
-    expect((await newConfigurator.getConfiguration(USDT_COMET)).assetList).to.equal(usdtAssetList.address);
-    expect((await newConfigurator.getConfiguration(USDT_COMET)).extensionDelegate).to.equal(usdtCometExt.address);
+      expect(await newConfigurator.factory(market.comet)).to.equal(cometFactory.address);
+      expect(await newConfigurator.cometAssetListFactories(market.comet)).to.equal(assetListFactory.address);
+      expect(configuration.assetList).to.equal(assetList.address);
+      expect(configuration.extensionDelegate).to.equal(cometExt.address);
 
-    const newCometUsdt = new Contract(USDT_COMET, newCometAbi, signer);
-
-    expect(await newCometUsdt.assetList()).to.equal(usdtAssetList.address);
-    expect(await newCometUsdt.extensionDelegate()).to.equal(usdtCometExt.address);
-    expect(await newCometUsdt.name()).to.equal('Compound USDT');
-    expect(await newCometUsdt.symbol()).to.equal('cUSDTv3');
-    expect(await new Contract(usdtAssetList.address, assetListAbi, signer).configurator()).to.equal(configurator.address);
-
-    // Markets that remain on the old asset list
-    expect((await newConfigurator.getConfiguration(USDS_COMET)).assetList).to.equal(constants.AddressZero);
-    expect((await newConfigurator.getConfiguration(WBTC_COMET)).assetList).to.equal(constants.AddressZero);
-    expect((await newConfigurator.getConfiguration(WETH_COMET)).assetList).to.equal(constants.AddressZero);
-    expect((await newConfigurator.getConfiguration(WSTETH_COMET)).assetList).to.equal(constants.AddressZero);
-
-    expect(await getProxyAdmin(USDS_COMET)).to.equal(oldCometAdminAddress);
-    expect(await getProxyAdmin(WBTC_COMET)).to.equal(oldCometAdminAddress);
-    expect(await getProxyAdmin(WETH_COMET)).to.equal(oldCometAdminAddress);
-    expect(await getProxyAdmin(WSTETH_COMET)).to.equal(oldCometAdminAddress);
-
-    // Configuration is unchanged. The first 20 fields match between V1 and V2; the extension delegate (field 4)
-    // changes only for USDC and USDT
-    for (const cometProxy of [USDC_COMET, USDS_COMET, USDT_COMET, WBTC_COMET, WETH_COMET, WSTETH_COMET]) {
-      const configurationBefore = await oldConfigurator.getConfiguration(cometProxy, preMigrationBlockTag);
-      const configuration = await newConfigurator.getConfiguration(cometProxy);
-
+      // The first 20 fields match between V1 and V2; only the extension delegate (field 4) changes
       expect(configuration.slice(0, 4)).to.deep.equal(configurationBefore.slice(0, 4));
       expect(configuration.slice(5, 20)).to.deep.equal(configurationBefore.slice(5, 20));
-      if (cometProxy !== USDC_COMET && cometProxy !== USDT_COMET) {
-        expect(configuration.extensionDelegate).to.equal(configurationBefore.extensionDelegate);
-      }
-
-      expect(await newConfigurator.getAssetConfigs(cometProxy)).to.deep.equal(configurationBefore.assetConfigs);
-    }
-
-    for (const cometProxy of [USDC_COMET, USDT_COMET]) {
-      const newComet = await ethers.getContractAt('CometWithExtendedAssetList', cometProxy);
 
       // No asset list redeploy needed
-      expect((await newConfigurator.callStatic.deployAssetList(cometProxy)).newAssetListImpl).to.equal(constants.AddressZero);
+      expect((await newConfigurator.callStatic.deployAssetList(market.comet)).newAssetListImpl).to.equal(constants.AddressZero);
 
-      // Assets match the pre-migration state and the Configurator. The old list rounded supply caps to whole tokens
-      const assetConfigs = await newConfigurator.getAssetConfigs(cometProxy);
-      const numAssets = await newComet.numAssets();
+      // CometExt
+      expect(await cometExt.name()).to.equal(market.name);
+      expect(await cometExt.symbol()).to.equal(market.symbol);
+      expect(await cometExt.name()).to.equal(await comet.name());
+      expect(await cometExt.symbol()).to.equal(await comet.symbol());
+
+      // Asset list matches the current Comet and the Configurator. The old list rounded supply caps to whole tokens
+      expect(await assetList.configurator()).to.equal(configurator.address);
+      const assetConfigs = await newConfigurator.getAssetConfigs(market.comet);
+      const numAssets = await assetList.numAssets();
       expect(numAssets).to.equal(assetConfigs.length);
-      expect(numAssets).to.equal(await newComet.numAssets(preMigrationBlockTag));
+      expect(numAssets).to.equal(configurationBefore.assetConfigs.length);
+      expect(numAssets).to.equal(await comet.numAssets());
       for (let i = 0; i < numAssets; i++) {
-        const assetInfoBefore = await newComet.getAssetInfo(i, preMigrationBlockTag);
-        const assetInfo = await newComet.getAssetInfo(i);
+        const cometAssetInfo = await comet.getAssetInfo(i);
+        const assetListInfo = await assetList.getAssetInfo(i);
 
-        expect(assetInfo.offset).to.equal(assetInfoBefore.offset);
-        expect(assetInfo.asset).to.equal(assetInfoBefore.asset);
-        expect(assetInfo.priceFeed).to.equal(assetInfoBefore.priceFeed);
-        expect(assetInfo.scale).to.equal(assetInfoBefore.scale);
-        expect(assetInfo.borrowCollateralFactor).to.equal(assetInfoBefore.borrowCollateralFactor);
-        expect(assetInfo.liquidateCollateralFactor).to.equal(assetInfoBefore.liquidateCollateralFactor);
-        expect(assetInfo.liquidationFactor).to.equal(assetInfoBefore.liquidationFactor);
-        expect(assetInfo.supplyCap.div(assetInfo.scale).mul(assetInfo.scale)).to.equal(assetInfoBefore.supplyCap);
+        // Migrated asset configs match the V1 ones; V2 has no decimals, the scale comes from the token
+        expect(assetConfigs[i].asset).to.equal(configurationBefore.assetConfigs[i].asset);
+        expect(assetConfigs[i].priceFeed).to.equal(configurationBefore.assetConfigs[i].priceFeed);
+        expect(assetConfigs[i].borrowCollateralFactor).to.equal(configurationBefore.assetConfigs[i].borrowCollateralFactor);
+        expect(assetConfigs[i].liquidateCollateralFactor).to.equal(configurationBefore.assetConfigs[i].liquidateCollateralFactor);
+        expect(assetConfigs[i].liquidationFactor).to.equal(configurationBefore.assetConfigs[i].liquidationFactor);
+        expect(assetConfigs[i].supplyCap).to.equal(configurationBefore.assetConfigs[i].supplyCap);
 
-        expect(assetInfo.asset).to.equal(assetConfigs[i].asset);
-        expect(assetInfo.priceFeed).to.equal(assetConfigs[i].priceFeed);
-        expect(assetInfo.scale).to.equal(BigNumber.from(10).pow(assetConfigs[i].decimals));
-        expect(assetInfo.borrowCollateralFactor).to.equal(assetConfigs[i].borrowCollateralFactor);
-        expect(assetInfo.liquidateCollateralFactor).to.equal(assetConfigs[i].liquidateCollateralFactor);
-        expect(assetInfo.liquidationFactor).to.equal(assetConfigs[i].liquidationFactor);
-        expect(assetInfo.supplyCap).to.equal(assetConfigs[i].supplyCap);
+        expect(assetListInfo.offset).to.equal(cometAssetInfo.offset);
+        expect(assetListInfo.asset).to.equal(cometAssetInfo.asset);
+        expect(assetListInfo.priceFeed).to.equal(cometAssetInfo.priceFeed);
+        expect(assetListInfo.scale).to.equal(cometAssetInfo.scale);
+        expect(assetListInfo.borrowCollateralFactor).to.equal(cometAssetInfo.borrowCollateralFactor);
+        expect(assetListInfo.liquidateCollateralFactor).to.equal(cometAssetInfo.liquidateCollateralFactor);
+        expect(assetListInfo.liquidationFactor).to.equal(cometAssetInfo.liquidationFactor);
+        expect(assetListInfo.supplyCap.div(assetListInfo.scale).mul(assetListInfo.scale)).to.equal(cometAssetInfo.supplyCap);
+
+        expect(assetListInfo.asset).to.equal(assetConfigs[i].asset);
+        expect(assetListInfo.priceFeed).to.equal(assetConfigs[i].priceFeed);
+        expect(assetListInfo.scale).to.equal(BigNumber.from(10).pow(configurationBefore.assetConfigs[i].decimals));
+        expect(assetListInfo.borrowCollateralFactor).to.equal(assetConfigs[i].borrowCollateralFactor);
+        expect(assetListInfo.liquidateCollateralFactor).to.equal(assetConfigs[i].liquidateCollateralFactor);
+        expect(assetListInfo.liquidationFactor).to.equal(assetConfigs[i].liquidationFactor);
+        expect(assetListInfo.supplyCap).to.equal(assetConfigs[i].supplyCap);
       }
     }
   },

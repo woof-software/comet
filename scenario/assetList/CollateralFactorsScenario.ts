@@ -257,7 +257,8 @@ scenario(
   }
 );
 
-// The configurator is set in the storage of the proxy by initialize, so the implementation has none of its own
+// The implementation holds the same configurator as an immutable, so the call passes the access check, but the
+// asset configs live in the proxy's storage and the implementation's own storage is empty, so the asset is unknown
 scenario(
   'AssetList#collateralFactorSetters > revert when the configurator calls the implementation instead of the proxy',
   {
@@ -271,10 +272,10 @@ scenario(
     await fundAccount(context.world, configuratorSigner);
 
     await expect(implementation.connect(configuratorSigner).setBorrowCollateralFactor(asset, borrowCollateralFactor))
-      .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
+      .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     await expect(implementation.connect(configuratorSigner).setLiquidateCollateralFactor(asset, liquidateCollateralFactor))
-      .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
+      .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     await expect(implementation.connect(configuratorSigner).setLiquidationFactor(asset, liquidationFactor))
-      .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
+      .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
   }
 );

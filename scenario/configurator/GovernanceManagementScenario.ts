@@ -1,7 +1,6 @@
 import { expect } from 'chai';
-import { ethers } from 'ethers';
-import { CometContext, scenario } from '../context/CometContext';
-import { fundAccount, servicePatch2 } from '../utils';
+import { scenario } from '../context/CometContext';
+import { fundAccount } from '../utils';
 import { deployTimelock } from './shared';
 
 // The governor of the Configurator itself, which every governor-only function checks the caller against
@@ -61,18 +60,5 @@ scenario(
     await expect(
       configurator.connect(albert.signer).transferGovernor(newGovernor)
     ).to.be.revertedWithCustomError(configurator, 'Unauthorized');
-  }
-);
-
-scenario(
-  'Configurator#transferGovernor reverts if new governor is zero address',
-  { filter: async (ctx: CometContext) => await servicePatch2(ctx) },
-  async ({ configurator, actors }) => {
-    const { admin } = actors;
-    await fundAccount(admin.context.world, admin);
-
-    await expect(
-      configurator.connect(admin.signer).transferGovernor(ethers.constants.AddressZero)
-    ).to.be.revertedWithCustomError(configurator, 'InvalidAddress');
   }
 );

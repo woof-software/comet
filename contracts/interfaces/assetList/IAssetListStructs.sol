@@ -1,22 +1,18 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.15;
 
-import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-
 /**
  * @title Compound's Asset List Structs
- * @author Woof
- * @custom:security-contact dmitriy@woof.software
+ * @author Compound
  */
 interface IAssetListStructs {
     /**
      * @notice The part of an asset config that never changes for a deployed asset list
      * @dev Passed to the asset list constructor and kept in immutables, so reading it costs no storage access.
-     *      Changing any of these values means deploying a new asset list
+     *      Changing any of these values means deploying a new asset list. The asset decimals are read from the token
      */
     struct ImmutableAssetConfig {
         address asset;                      // slot 0
-        uint8 decimals;
         address priceFeed;                  // slot 1
     }
 
@@ -45,15 +41,5 @@ interface IAssetListStructs {
         uint64 liquidateCollateralFactor;
         uint64 liquidationFactor;
         uint128 supplyCap;                  // slot 3
-    }
-
-    /**
-     * @notice Storage of the asset list's mutable configs
-     * @dev The set lets the setters reject an unlisted asset with one lookup, without scanning the immutables.
-     *      Configs are keyed by asset address, so they stay attached to the right asset whatever its index
-     */
-    struct AssetConfigStorage {
-        EnumerableSet.AddressSet assets;    // slots 0-1
-        mapping(address => StorageAssetConfig) configs; // slot 2
     }
 }
