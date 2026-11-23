@@ -34,7 +34,8 @@ scenario(
       await world.increaseTime(timeBeforeLiquidation);
     }
 
-    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).liquidationBase) / 100n * baseScale.toBigInt() }); // force accrue
+    // Scaled before dividing, so small liquidationBase values (e.g. 20 WBTC) do not round down to zero
+    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context).liquidationBase) * baseScale.toBigInt() / 100n }); // force accrue
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
   }
@@ -160,7 +161,7 @@ scenario(
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidationBase,
-        $asset0: getConfigForScenario(ctx).liquidationAsset
+        [`$asset${getConfigForScenario(ctx).borrowCollateralIndex}`]: getConfigForScenario(ctx).liquidationAsset
       },
       betty: { $base: getConfigForScenario(ctx).liquidationBase }
     }),
@@ -224,7 +225,7 @@ scenario(
     cometBalances: async (ctx) => ({
       albert: {
         $base: -getConfigForScenario(ctx).liquidationBase,
-        $asset0: getConfigForScenario(ctx).liquidationAsset
+        [`$asset${getConfigForScenario(ctx).borrowCollateralIndex}`]: getConfigForScenario(ctx).liquidationAsset
       }
     }),
   },
@@ -482,7 +483,8 @@ for (let i = 0; i < MAX_ASSETS; i++) {
       }
 
       // Force accrue to ensure state is up to date
-      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, i).withdrawBase) / 100n * baseScale });
+      // Scaled before dividing, so small withdrawBase values (e.g. 25 WBTC) do not round down to zero
+      await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, i).withdrawBase) * baseScale / 100n });
 
       // Verify account is liquidatable
       expect(await comet.isLiquidatable(albert.address)).to.be.true;
@@ -623,7 +625,7 @@ scenario(
     }
 
     // Force accrue to ensure state is up to date
-    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, 1).withdrawBase) / 100n * baseScale });
+    await betty.withdrawAsset({ asset: baseToken, amount: BigInt(getConfigForScenario(context, 1).withdrawBase) * baseScale / 100n });
 
     expect(await comet.isLiquidatable(albert.address)).to.be.true;
 

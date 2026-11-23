@@ -155,14 +155,14 @@ scenario(
     filter: async (ctx) => await isRewardSupported(ctx),
     tokenBalances: async (ctx) => (
       {
-        albert: { $asset0: ` == ${getConfigForScenario(ctx).rewardsAsset}` }, // in units of asset, not wei
+        albert: { [`$asset${getConfigForScenario(ctx).borrowCollateralIndex}`]: ` == ${getConfigForScenario(ctx).rewardsAsset}` }, // in units of asset, not wei
         $comet: { $base: ` >= ${getConfigForScenario(ctx).rewardsBase} ` }
       }
     )
   },
   async ({ comet, rewards, actors }, context, world) => {
     const { albert } = actors;
-    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(0);
+    const { asset: collateralAssetAddress, scale: scaleBN } = await comet.getAssetInfo(getConfigForScenario(context).borrowCollateralIndex);
     const collateralAsset = context.getAssetByAddress(collateralAssetAddress);
     const scale = scaleBN.toBigInt();
     const toSupply = BigInt(getConfigForScenario(context).rewardsAsset) * scale;

@@ -55,7 +55,9 @@ async function snapshotMarket(context: CometContext, { comet, actors }: CometPro
 async function firstListedAssetIndex({ comet }: CometProperties): Promise<number> {
   const numAssets = await comet.numAssets();
   for (let i = 0; i < numAssets; i++) {
-    if ((await comet.getAssetInfo(i)).borrowCollateralFactor.gt(0)) return i;
+    // Assets with a supply cap of 0 cannot be supplied (e.g. ezETH on Mainnet wstETH), so they are skipped too
+    const { borrowCollateralFactor, supplyCap } = await comet.getAssetInfo(i);
+    if (borrowCollateralFactor.gt(0) && supplyCap.gt(0)) return i;
   }
   throw new Error('The market has no listed asset');
 }

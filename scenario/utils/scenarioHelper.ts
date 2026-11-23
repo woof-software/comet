@@ -33,6 +33,12 @@ const defaultConfig = {
   supplyCollateral: 100,
   supplyBase: 1000,
   reservesBase: 5000,
+  // Minimum borrow in collateral scenarios, in units of the market's price feeds (USD for most markets):
+  // below minBorrowValueThreshold of baseBorrowMin, minBorrowValue worth of base is borrowed instead
+  minBorrowValueThreshold: 10,
+  minBorrowValue: 100,
+  // Collateral that base borrows are made against when a scenario does not pick one itself
+  borrowCollateralIndex: 0,
 };
 
 export function getConfigForScenario(ctx: CometContext, i?: number) {
@@ -42,11 +48,11 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     config.bulkerAsset = 200;
     config.bulkerAsset1 = 200;
     config.bulkerComet = 50;
-    config.bulkerBorrowBase = 25;
+    config.bulkerBorrowBase = 5;
     config.withdrawBase = 25;
     config.withdrawAsset = 200;
-    config.bulkerBorrowAsset = 50;
-    config.liquidationBase = 1000;
+    config.bulkerBorrowAsset = 1;
+    config.liquidationBase = 20;
     config.liquidationBase1 = 500;
     config.liquidationAsset = 100;
     config.rewardsAsset = 100;
@@ -55,14 +61,21 @@ export function getConfigForScenario(ctx: CometContext, i?: number) {
     config.transferAsset = 500;
     config.transferAsset1 = 500;
     config.interestSeconds = 70;
+    // Prices are in BTC, so the USD fallback would borrow 100 WBTC and exceed the supported utilization
+    config.minBorrowValueThreshold = 0;
   }
 
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'wsteth') {
-    config.liquidationBase = 10000;
+    config.liquidationBase = 100;
     config.liquidationBase1 = 1000;
     config.liquidationAsset = 100;
     config.liquidationDenominator = 84;
     config.interestSeconds = 70;
+    // The market holds ~160 wstETH, so larger borrows exceed the supported utilization
+    config.withdrawBase = 100;
+    config.rewardsBase = 100;
+    // rsETH (asset 0) has a borrow collateral factor and supply cap of 0, so borrows are made against WETH
+    config.borrowCollateralIndex = 5;
   }
 
   if (ctx.world.base.network === 'mainnet' && ctx.world.base.deployment === 'weth') {

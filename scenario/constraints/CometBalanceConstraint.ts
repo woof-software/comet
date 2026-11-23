@@ -6,11 +6,14 @@ import { Requirements } from './Requirements';
 import { baseBalanceOf, exp, factorScale } from '../../test/helpers';
 import { ComparativeAmount, ComparisonOp, getAssetFromName, parseAmount, getExpectedBaseBalance, getToTransferAmount } from '../utils';
 import { BigNumber } from 'ethers';
+import { getConfigForScenario } from '../utils/scenarioHelper';
 
 async function borrowBase(borrowActor: CometActor, toBorrowBase: bigint, context: CometContext) {
   const comet = await context.getComet();
   // XXX only use collaterals that are not specified in the requirement or have `gte`
-  const { asset: collateralAsset, borrowCollateralFactor, priceFeed, scale } = await comet.getAssetInfo(0);
+  const { asset: collateralAsset, borrowCollateralFactor, priceFeed, scale } = await comet.getAssetInfo(
+    getConfigForScenario(context).borrowCollateralIndex
+  );
 
   const collateralToken = context.getAssetByAddress(collateralAsset);
   const baseTokenAddress = await comet.baseToken();

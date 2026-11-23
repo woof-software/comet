@@ -547,7 +547,7 @@ scenario(
     cometBalances: async (ctx) =>  (
       {
         albert: {
-          $asset0: ` == ${getConfigForScenario(ctx).liquidationAsset}`,
+          [`$asset${getConfigForScenario(ctx).borrowCollateralIndex}`]: ` == ${getConfigForScenario(ctx).liquidationAsset}`,
         },
         betty: { $base: getConfigForScenario(ctx).liquidationBase1 },
       }
@@ -582,12 +582,13 @@ scenario(
     ) as OnChainLiquidator;
 
     const baseToken = await comet.baseToken();
-    const { asset: collateralAssetAddress, scale } = await comet.getAssetInfo(0);
+    const collateralIndex = getConfigForScenario(_context).borrowCollateralIndex;
+    const { asset: collateralAssetAddress, scale } = await comet.getAssetInfo(collateralIndex);
 
     const initialRecipientBalance = await betty.getErc20Balance(baseToken);
     const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
 
-    const borrowCapacity = await borrowCapacityForAsset(comet, albert, 0);
+    const borrowCapacity = await borrowCapacityForAsset(comet, albert, collateralIndex);
     const borrowAmount = (borrowCapacity.mul(getConfigForScenario(_context).liquidationDenominator)).div(100n);
 
     await albert.withdrawAsset({
@@ -662,7 +663,7 @@ scenario(
     cometBalances: async (ctx) => (
       {
         albert: {
-          $asset0: ` == ${getConfigForScenario(ctx).liquidationAsset}}`,
+          [`$asset${getConfigForScenario(ctx).borrowCollateralIndex}`]: ` == ${getConfigForScenario(ctx).liquidationAsset}`,
         },
         betty: { $base: getConfigForScenario(ctx).liquidationBase1 },
       }
@@ -697,12 +698,13 @@ scenario(
     ) as OnChainLiquidator;
 
     const baseToken = await comet.baseToken();
-    const { asset: collateralAssetAddress } = await comet.getAssetInfo(0);
+    const collateralIndex = getConfigForScenario(_context).borrowCollateralIndex;
+    const { asset: collateralAssetAddress } = await comet.getAssetInfo(collateralIndex);
 
     const initialRecipientBalance = await betty.getErc20Balance(baseToken);
     const [initialNumAbsorbs, initialNumAbsorbed] = await comet.liquidatorPoints(betty.address);
 
-    const borrowCapacity = await borrowCapacityForAsset(comet, albert, 0);
+    const borrowCapacity = await borrowCapacityForAsset(comet, albert, collateralIndex);
     const borrowAmount = (borrowCapacity.mul(getConfigForScenario(_context).liquidationDenominator)).div(100n);
 
     await albert.withdrawAsset({

@@ -14,6 +14,7 @@ import {
 import { execSync } from 'child_process';
 import { existsSync, unlinkSync } from 'fs';
 import { CometContext } from '../context/CometContext';
+import { getConfigForScenario } from './scenarioHelper';
 import CometAsset from '../context/CometAsset';
 import { exp } from '../../test/helpers';
 import { DeploymentManager } from '../../plugins/deployment_manager';
@@ -2110,11 +2111,12 @@ export async function getMinimumBorrowAmounts(context: CometContext, collateralI
   const factorScale = (await comet.factorScale()).toBigInt();
 
   // baseBorrowMin is an amount of the base token, not USD. Some markets set it to almost nothing (1 wei of USDC),
-  // which makes a meaningless borrow, so below $10 borrow $100 worth of base instead.
+  // which makes a meaningless borrow, so below the threshold (USD on most markets) borrow a fixed value of base instead.
+  const { minBorrowValueThreshold, minBorrowValue } = getConfigForScenario(context, collateralIndex);
   const baseBorrowMin = (await comet.baseBorrowMin()).toBigInt();
-  const baseBorrowMinUsd = (baseBorrowMin * basePrice) / baseScale;
-  const borrowAmount = baseBorrowMinUsd < 10n * priceScale
-    ? (100n * priceScale * baseScale) / basePrice
+  const baseBorrowMinValue = (baseBorrowMin * basePrice) / baseScale;
+  const borrowAmount = baseBorrowMinValue < BigInt(minBorrowValueThreshold) * priceScale
+    ? (BigInt(minBorrowValue) * priceScale * baseScale) / basePrice
     : (baseBorrowMin * 3n) / 2n;
 
   const {
