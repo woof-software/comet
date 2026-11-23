@@ -7,7 +7,6 @@ import {
   isValidAssetIndex,
   MAX_ASSETS,
   fundAccount,
-  usesAssetList,
   isAssetDelisted,
   supportsExtendedPause,
   getExpectedBaseBalance,
@@ -16,7 +15,9 @@ import {
   getUsableCollateralIndices,
   getMinimumBorrowAmounts,
   deployUnsupportedAsset,
-  servicePatch
+  servicePatch,
+  rejectsZeroAmounts,
+  UINT256_MAX
 } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
 import { log } from 'console';
@@ -28,6 +29,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
     {
       filter: async (ctx: CometContext) =>
         (await isValidAssetIndex(ctx, offset)) &&
+        getConfigForScenario(ctx, offset).transferCollateral > 0 &&
         (await isTriviallySourceable(ctx, offset, getConfigForScenario(ctx, offset).transferCollateral)),
       cometBalances: (ctx: CometContext) => ({
         albert: { [`$asset${offset}`]: getConfigForScenario(ctx, offset).transferCollateral }
@@ -62,6 +64,7 @@ for (let offset = 0; offset < MAX_ASSETS; offset++) {
     {
       filter: async (ctx: CometContext) =>
         (await isValidAssetIndex(ctx, offset)) &&
+        getConfigForScenario(ctx, offset).transferCollateral > 0 &&
         (await isTriviallySourceable(ctx, offset, getConfigForScenario(ctx, offset).transferCollateral)),
       cometBalances: (ctx: CometContext) => ({
         albert: { [`$asset${offset}`]: getConfigForScenario(ctx, offset).transferCollateral }
@@ -824,7 +827,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferCollateral) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       await servicePatch(ctx);
     },
@@ -859,7 +861,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferCollateral) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       await servicePatch(ctx);
     },
@@ -899,7 +900,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferBase) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       await servicePatch(ctx);
     },
@@ -934,7 +934,6 @@ scenario(
       return (
         (await isValidAssetIndex(ctx, 0)) &&
         (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferBase)) &&
-        (await usesAssetList(ctx)) &&
         !(await isAssetDelisted(ctx, 0)) &&
         (await supportsExtendedPause(ctx))
       );
@@ -973,7 +972,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferBase) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       await servicePatch(ctx);
     },
@@ -1010,7 +1008,6 @@ scenario(
       return (
         (await isValidAssetIndex(ctx, 0)) &&
         (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferBase)) &&
-        (await usesAssetList(ctx)) &&
         !(await isAssetDelisted(ctx, 0)) &&
         (await supportsExtendedPause(ctx))
       );
@@ -1054,7 +1051,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferBase) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       await servicePatch(ctx);
     },
@@ -1084,7 +1080,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferBase) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       await servicePatch(ctx);
     },
@@ -1117,7 +1112,6 @@ scenario(
       return (
         (await isValidAssetIndex(ctx, 0)) &&
         (await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferBase)) &&
-        (await usesAssetList(ctx)) &&
         !(await isAssetDelisted(ctx, 0)) &&
         (await supportsExtendedPause(ctx))
       );
@@ -1152,7 +1146,6 @@ scenario(
     filter: async (ctx: CometContext) => {
       return await isValidAssetIndex(ctx, 0) &&
       await isTriviallySourceable(ctx, 0, getConfigForScenario(ctx).transferCollateral) &&
-      await usesAssetList(ctx) &&
       !(await isAssetDelisted(ctx, 0)) &&
       await servicePatch(ctx);
     },
@@ -1192,7 +1185,7 @@ scenario(
   'Comet#transferAssetFrom > reverts when specific collateral asset is paused',
   {
     filter: async (ctx: CometContext) => {
-      return await usesAssetList(ctx) && await servicePatch(ctx);
+      return await servicePatch(ctx);
     },
     cometBalances: (ctx: CometContext) => ({
       albert: {
@@ -1233,7 +1226,7 @@ scenario(
   'Comet#transferAsset > reverts when collateral asset transfer is paused and allows to transfer when unpaused',
   {
     filter: async (ctx: CometContext) => {
-      return (await usesAssetList(ctx)) && (await supportsExtendedPause(ctx));
+      return (await supportsExtendedPause(ctx));
     }
   },
   async ({ comet, actors }, context, world) => {
@@ -1299,7 +1292,7 @@ scenario(
   'Comet#transferAssetFrom > reverts when collateral asset transfer is paused and allows to transfer when unpaused',
   {
     filter: async (ctx: CometContext) => {
-      return await usesAssetList(ctx) && await servicePatch(ctx);
+      return await servicePatch(ctx);
     },
   },
   async ({ comet, actors }, context, world) => {
@@ -1418,7 +1411,7 @@ scenario(
   'Comet#transferFrom > reverts when collateral asset is deactivated and allows to transfer when activated',
   {
     filter: async (ctx: CometContext) => {
-      return await usesAssetList(ctx) && await servicePatch(ctx);
+      return await servicePatch(ctx);
     },
   },
   async ({ comet, actors }, context, world) => {
@@ -1433,6 +1426,7 @@ scenario(
 
     for (let i = 0; i < MAX_ASSETS; i++) {
       if (!await isValidAssetIndex(context, i)) continue;
+      if (getConfigForScenario(context, i).transferCollateral === 0) continue;
       if (!await isTriviallySourceable(context, i, getConfigForScenario(context, i).transferCollateral)) continue;
       if (await isAssetDelisted(context, i)) continue;
 
@@ -1489,7 +1483,7 @@ scenario(
   'Comet#transfer > reverts when collateral asset is deactivated and allows to transfer when activated',
   {
     filter: async (ctx: CometContext) => {
-      return await usesAssetList(ctx) && await servicePatch(ctx);
+      return await servicePatch(ctx);
     },
   },
   async ({ comet, actors }, context, world) => {
@@ -1501,6 +1495,7 @@ scenario(
 
     for (let i = 0; i < MAX_ASSETS; i++) {
       if (!await isValidAssetIndex(context, i)) continue;
+      if (getConfigForScenario(context, i).transferCollateral === 0) continue;
       if (!await isTriviallySourceable(context, i, getConfigForScenario(context, i).transferCollateral)) continue;
       if (await isAssetDelisted(context, i)) continue;
 
@@ -1546,5 +1541,64 @@ scenario(
       expect(albertBalanceAfter).to.be.equal(albertBalanceBefore.toBigInt() - transferAmount);
       expect(bettyBalanceAfter).to.be.equal(bettyBalanceBefore.toBigInt() + transferAmount);
     }
+  }
+);
+
+scenario(
+  'Comet#transfer > reverts on zero amount',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert, betty } = actors;
+
+    await expect(
+      comet.connect(albert.signer).transfer(betty.address, 0)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+  }
+);
+
+scenario(
+  'Comet#transferFrom > reverts on zero amount',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert, betty } = actors;
+
+    await expect(
+      comet.connect(albert.signer).transferFrom(albert.address, betty.address, 0)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+  }
+);
+
+scenario(
+  'Comet#transfer > reverts on max amount without balance',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert, betty } = actors;
+
+    expect(await comet.balanceOf(albert.address)).to.equal(0n);
+
+    await expect(
+      comet.connect(albert.signer).transfer(betty.address, UINT256_MAX)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+  }
+);
+
+scenario(
+  'Comet#transferAsset > reverts on zero collateral amount',
+  {
+    filter: async (ctx: CometContext) => await rejectsZeroAmounts(ctx),
+  },
+  async ({ comet, actors }) => {
+    const { albert, betty } = actors;
+    const { asset } = await comet.getAssetInfo(0);
+
+    await expect(
+      comet.connect(albert.signer).transferAsset(betty.address, asset, 0)
+    ).to.be.revertedWithCustomError(comet, 'ZeroAmount');
   }
 );

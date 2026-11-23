@@ -11,11 +11,12 @@ import { CometConfigurationIntermediate } from "contracts/migration/CometConfigu
 import { Configurator } from "contracts/Configurator.sol";
 import { ConfiguratorOptimism } from "contracts/marketupdates/ConfiguratorOptimism.sol";
 import { AssetList } from "contracts/AssetList.sol";
-import { AssetListFactory } from "contracts/AssetListFactory.sol";
-import { CometFactoryWithExtendedAssetList } from "contracts/CometFactoryWithExtendedAssetList.sol";
+import { AssetListFactory } from "contracts/test/assetList/AssetListFactory.sol";
+import { CometFactoryWithExtendedAssetList } from "contracts/test/CometFactoryWithExtendedAssetList.sol";
 import { CometWithExtendedAssetList } from "contracts/CometWithExtendedAssetList.sol";
 import { IAssetList } from "contracts/interfaces/assetList/IAssetList.sol";
 import { IAssetListStructs } from "contracts/interfaces/assetList/IAssetListStructs.sol";
+import { IERC20NonStandard } from "contracts/interfaces/IERC20NonStandard.sol";
 import { ConfiguratorMigrationForkBase } from "./ConfiguratorMigrationForkBase.sol";
 import { console2 } from "forge-std/console2.sol";
 
@@ -92,7 +93,7 @@ contract ForkConfiguratorMigrationTest is ConfiguratorMigrationForkBase {
 
         // Give every market its asset list and a new Comet built on it.
         // A market with factors the asset list rejects can't get one, so it is skipped from here on
-        AssetListFactory assetListFactory = new AssetListFactory();
+        AssetListFactory assetListFactory = new AssetListFactory(address(configurator()));
         CometFactoryWithExtendedAssetList cometFactory = new CometFactoryWithExtendedAssetList();
         for (uint256 i; i < cometList.length; ++i) {
             if (isInvalidComet(cometList[i])) continue;
@@ -192,7 +193,8 @@ contract ForkConfiguratorMigrationTest is ConfiguratorMigrationForkBase {
         for (uint256 i; i < actual.length; ++i) {
             assertEq(actual[i].asset, expected[i].asset);
             assertEq(actual[i].priceFeed, expected[i].priceFeed);
-            assertEq(actual[i].decimals, expected[i].decimals);
+            // Decimals are dropped by the migration, as the asset list reads them from the token, so the V1 value must be the token's
+            assertEq(IERC20NonStandard(actual[i].asset).decimals(), expected[i].decimals);
             assertEq(actual[i].borrowCollateralFactor, expected[i].borrowCollateralFactor);
             assertEq(actual[i].liquidateCollateralFactor, expected[i].liquidateCollateralFactor);
             assertEq(actual[i].liquidationFactor, expected[i].liquidationFactor);
@@ -208,18 +210,20 @@ contract ForkConfiguratorMigrationTest is ConfiguratorMigrationForkBase {
         vm.startPrank(governor);
         configurator().setAssetListFactory(comet, address(assetListFactory));
 
-        // The market has no list yet, so there is no proxy and a new implementation is deployed
-        (address assetListProxy, address assetListImpl) = configurator().deployAssetList(comet);
-        assertEq(assetListProxy, address(0));
-        assertTrue(assetListImpl != address(0));
+        // The market has no list yet and deployAssetList only redeploys an existing one, so the first implementation
+        // comes straight from the factory, built from the migrated immutable configs
+        address assetListImpl = assetListFactory.createAssetList(configurator().getImmutableAssetConfig(comet));
 
         // The list proxy is owned by the Comet's proxy admin, so later deploys can upgrade it
         address assetList = address(new TransparentUpgradeableProxy(
             assetListImpl,
             address(cometAdmin),
-            abi.encodeCall(AssetList.initialize, (configurator().getStorageAssetConfig(comet), proxy))
+            abi.encodeCall(AssetList.initialize, (configurator().getStorageAssetConfig(comet)))
         ));
-        configurator().updateAssetList(comet, assetList);
+        // setConfiguration sets the list proxy once, for a market that has none yet
+        Configurator.Configuration memory configuration = configurator().getConfiguration(comet);
+        configuration.assetList = assetList;
+        configurator().setConfiguration(comet, configuration);
         configurator().setFactory(comet, address(cometFactory));
         vm.stopPrank();
 

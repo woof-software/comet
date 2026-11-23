@@ -177,6 +177,22 @@ describe('transfer', function () {
         // Unpause borrowers transfer
         await comet.connect(pauseGuardian).pauseBorrowersTransfer(false);
       });
+
+      it('zero amount', async () => {
+        await expect(comet.connect(alice).transfer(bob.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('zero amount from an account without balance to a supplier', async () => {
+        await expect(comet.connect(bob).transfer(alice.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('zero amount via transferAsset', async () => {
+        await expect(comet.connect(alice).transferAsset(bob.address, baseToken.address, 0)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
+
+      it('max amount from an account without balance', async () => {
+        await expect(comet.connect(bob).transfer(alice.address, ethers.constants.MaxUint256)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+      });
     });
 
     describe('happy path (without interest)', function () {
@@ -679,7 +695,7 @@ describe('transfer', function () {
       });
 
       it('unsupported asset & amount = 0', async () => {
-        await expect(comet.connect(alice).transferAsset(bob.address, unsupportedToken.address, 0n)).to.be.revertedWithCustomError(comet, 'BadAsset');
+        await expect(comet.connect(alice).transferAsset(bob.address, unsupportedToken.address, 0n)).to.be.revertedWithCustomError(comet, 'ZeroAmount');
       });
 
       it('amount > balance', async () => {
@@ -1334,6 +1350,31 @@ describe('transfer', function () {
   
           await expect(comet.connect(operator).transferFrom(holder.address,receiver.address, amountToTransfer)).to.be.revertedWithCustomError(comet, 'NotCollateralized');
         });
+
+        it('zero amount', async () => {
+          await expect(comet.connect(operator).transferFrom(
+            holder.address,
+            receiver.address,
+            0
+          )).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+        });
+
+        it('zero amount from an account without balance to a supplier', async () => {
+          await expect(comet.connect(receiver).transferFrom(
+            receiver.address,
+            holder.address,
+            0
+          )).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+        });
+
+        it('zero amount via transferAssetFrom', async () => {
+          await expect(comet.connect(operator).transferAssetFrom(
+            holder.address,
+            receiver.address,
+            baseToken.address,
+            0
+          )).to.be.revertedWithCustomError(comet, 'ZeroAmount');
+        });
       });
 
       describe('happy cases', function () {
@@ -1479,7 +1520,7 @@ describe('transfer', function () {
             receiver.address,
             unsupportedToken.address,
             0n
-          )).to.be.revertedWithCustomError(comet, 'BadAsset');
+          )).to.be.revertedWithCustomError(comet, 'ZeroAmount');
         });
 
         it('unsupported asset & amount > 0', async () => {

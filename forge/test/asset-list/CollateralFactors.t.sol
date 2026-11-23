@@ -3,7 +3,7 @@ pragma solidity ^0.8.15;
 
 import { AssetList } from "@comet-contracts/AssetList.sol";
 import { CometConfiguration } from "@comet-contracts/CometConfiguration.sol";
-import { CometCore } from "@comet-contracts/CometCore.sol";
+import { IAssetListStructs } from "@comet-contracts/interfaces/assetList/IAssetListStructs.sol";
 
 import { ProtocolFixture } from "../helpers/ProtocolFixture.sol";
 
@@ -44,7 +44,7 @@ contract CollateralFactorsTest is ProtocolFixture {
         AssetList assetList = _deployWithFactors(collateralBCF, collateralLCF, MAX_COLLATERAL_FACTOR);
 
         for (uint8 i; i < collaterals.length; ++i) {
-            CometCore.AssetInfo memory assetInfo = assetList.getAssetInfo(i);
+            IAssetListStructs.AssetInfo memory assetInfo = assetList.getAssetInfo(i);
             assertLt(assetInfo.borrowCollateralFactor, assetInfo.liquidateCollateralFactor, "stored borrow factor is not below the liquidate factor");
         }
     }
@@ -60,7 +60,7 @@ contract CollateralFactorsTest is ProtocolFixture {
         AssetList assetList = _deployWithFactors(0, collateralLCF, collateralLF);
 
         for (uint8 i; i < collaterals.length; ++i) {
-            CometCore.AssetInfo memory assetInfo = assetList.getAssetInfo(i);
+            IAssetListStructs.AssetInfo memory assetInfo = assetList.getAssetInfo(i);
             assertLt(assetInfo.liquidateCollateralFactor, assetInfo.liquidationFactor, "stored liquidate factor is not below the liquidation factor");
         }
     }

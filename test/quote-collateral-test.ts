@@ -1,4 +1,4 @@
-import { CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
+import { AssetList, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { expect, exp, ethers, MAX_ASSETS, mulFactor, factorScale, makeConfigurator, ZERO_ADDRESS, SnapshotRestorer, takeSnapshot, BigNumber } from './helpers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { AssetInfoStructOutput } from 'build/types/AssetList';
@@ -9,6 +9,8 @@ describe('quoteCollateral', function () {
   const collateralTokenDecimals = 18;
   // Configurator and protocol
   let comet: CometHarnessInterfaceExtendedAssetList;
+  // Comet forwards the asset lookups to the list, so an unknown asset reverts with the list's error
+  let assetList: AssetList;
   let configurator: Configurator;
   let configuratorProxyAddress: string;
   let proxyAdmin: CometProxyAdmin;
@@ -49,6 +51,7 @@ describe('quoteCollateral', function () {
     });
     const cometProxyAddress = protocol.cometProxyWithExtendedAssetList.address;
     comet = protocol.cometWithExtendedAssetList.attach(cometProxyAddress);
+    assetList = protocol.assetList;
     configurator = protocol.configurator;
     configuratorProxyAddress = protocol.configuratorProxy.address;
     proxyAdmin = protocol.proxyAdmin;
@@ -353,19 +356,19 @@ describe('quoteCollateral', function () {
         await unsupported.deployed();
         await expect(
           comet.quoteCollateral(unsupported.address, exp(100, baseTokenDecimals))
-        ).to.be.revertedWithCustomError(comet, 'BadAsset');
+        ).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('reverts when asset is the base token', async () => {
         await expect(
           comet.quoteCollateral(baseToken.address, exp(100, baseTokenDecimals))
-        ).to.be.revertedWithCustomError(comet, 'BadAsset');
+        ).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('reverts for zero address', async () => {
         await expect(
           comet.quoteCollateral(ZERO_ADDRESS, exp(100, baseTokenDecimals))
-        ).to.be.revertedWithCustomError(comet, 'BadAsset');
+        ).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
     });
 
