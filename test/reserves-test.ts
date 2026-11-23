@@ -435,9 +435,11 @@ describe('reserves', function () {
         await comet.connect(dave).withdraw(baseToken.address, maxBorrow);
 
         // At the max borrow the debt equals collateral value times the borrow collateral factor.
-        // Liquidation starts once collateral value times the liquidate collateral factor falls below the debt,
-        // so scaling the price by borrowCF / liquidateCF (rounded down) is the smallest drop that makes it liquidatable.
-        const droppedPrice = wethPrice.mul(wethInfo.borrowCollateralFactor).div(wethInfo.liquidateCollateralFactor);
+        // Liquidation starts once collateral value times the liquidate collateral factor falls below the debt.
+        // The liquidation factor must be above the liquidate collateral factor, so the price is dropped further, by
+        // borrowCF / liquidationFactor (rounded down, minus 1): then even the seized collateral times the liquidation
+        // factor does not cover the debt, absorb leaves the borrower no credit, and the whole debt is paid by reserves.
+        const droppedPrice = wethPrice.mul(wethInfo.borrowCollateralFactor).div(wethInfo.liquidationFactor).sub(1);
         await priceFeeds.WETH.setPrice(droppedPrice);
 
         await comet.accrueAccount(dave.address);
@@ -464,11 +466,11 @@ describe('reserves', function () {
         expect(liquidatedAmount).to.be.gt(borrowedAmount);
 
         // reserves = balance + total borrow - total supply: absorb leaves the balance as it is, removes the debt
-        // from total borrow and adds the borrower's leftover credit (collateral value * LF - debt) to total supply.
-        // basePaidOut is the new balance minus the old one, so it already is the debt plus that credit
+        // from total borrow and adds the borrower's leftover credit (collateral value * LF - debt) to total supply
+        const daveSupplyAfter = await comet.balanceOf(dave.address);
         const reservesAfter = await comet.getReserves();
         expect(reservesAfter).to.be.lt(reservesBefore);
-        expect(reservesBefore.sub(reservesAfter)).to.be.closeTo(liquidatedAmount, oneSecondOfInterest);
+        expect(reservesBefore.sub(reservesAfter)).to.be.closeTo(liquidatedAmount.add(daveSupplyAfter), oneSecondOfInterest);
       });
 
       it('total borrow should decrease after liquidation', async function () {
@@ -477,11 +479,9 @@ describe('reserves', function () {
         expect(totalBorrowAfter).to.be.equal(0);
       });
 
-      it('total supply should grow only by the collateral value left to the borrower', async function () {
-        // The liquidation factor is above the liquidate collateral factor, so the seized collateral is worth
-        // more than the debt and the rest is credited to the borrower as supply
+      it('total supply should not change after liquidation', async function () {
         const { totalSupplyBase: totalSupplyAfter } = await comet.totalsBasic();
-        expect(totalSupplyAfter.sub(totalSupplyBefore)).to.be.equal((await comet.userBasic(dave.address)).principal);
+        expect(totalSupplyAfter).to.be.equal(totalSupplyBefore);
       });
 
       let newReserves: BigNumber;

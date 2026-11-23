@@ -1923,9 +1923,8 @@ describe('interest calculation', function () {
       });
 
       it('bob borrow of base asset at max will revert due to the utilization spike', async () => {
-        // Borrow the most the 10k$ of collateral allows, so only the utilization limit can reject it
-        const { borrowCollateralFactor } = await testComet.getAssetInfoByAddress(collateral.address);
-        const amount = BigNumber.from(exp(10000, baseDecimals)).mul(borrowCollateralFactor).div(exp(1, 18));
+        // default collateral factor is set as 75%
+        const amount = BigNumber.from(exp(7500, baseDecimals));
 
         await expect(
           testComet.connect(bob).withdraw(baseToken.address, amount)
