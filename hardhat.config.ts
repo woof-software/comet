@@ -507,11 +507,6 @@ const config: HardhatUserConfig = {
         deployment: 'wbtc'
       },
       {
-        name: 'mainnet-institutional_usdc',
-        network: 'mainnet',
-        deployment: 'institutional_usdc'
-      },
-      {
         name: 'development',
         network: 'hardhat',
         deployment: 'dai'

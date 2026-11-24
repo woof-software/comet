@@ -69,6 +69,9 @@ describe('extended pause upgrade test', function () {
   let snapshot: SnapshotRestorer;
 
   before(async function () {
+    // Needs a mainnet RPC to fork; CI unit tests run without one, so skip the whole suite there
+    if (!process.env.MAINNET_QUICKNODE_LINK) this.skip();
+
     // Setup mainnet fork
     await setupFork(FORK_BLOCK_NUMBER);
 
