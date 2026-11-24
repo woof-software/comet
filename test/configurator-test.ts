@@ -173,6 +173,59 @@ describe('configurator', function () {
     });
   });
 
+  describe('asset list factory setter', function() {
+    let setAssetListFactoryTx: ContractTransaction;
+    let newAssetListFactory: string;
+    let oldAssetListFactory: string;
+    before(async () => {
+      // Deploy new AssetListFactory, answering to the same Configurator
+      const AssetListFactory = await ethers.getContractFactory('AssetListFactory');
+      const assetListFactory = await AssetListFactory.deploy(configuratorProxy.address);
+      await assetListFactory.deployed();
+      newAssetListFactory = assetListFactory.address;
+    });
+
+    describe('revert cases', function() {
+      it('reverts by non-governor', async () => {
+        expect(alice.address).to.not.equal(governor.address);
+        await expect(configuratorProxy.connect(alice).setAssetListFactory(cometProxy.address, newAssetListFactory))
+          .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+      });
+
+      it('reverts if new asset list factory is zero address', async () => {
+        await expect(configuratorProxy.connect(governor).setAssetListFactory(cometProxy.address, ZERO_ADDRESS))
+          .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
+      });
+
+      it('reverts if comet proxy is zero address', async () => {
+        await expect(configuratorProxy.connect(governor).setAssetListFactory(ZERO_ADDRESS, newAssetListFactory))
+          .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
+      });
+    });
+
+    describe('happy path', function() {
+      it('sanity check: current asset list factory != new asset list factory', async () => {
+        oldAssetListFactory = await configuratorProxy.cometAssetListFactories(cometProxy.address);
+        expect(oldAssetListFactory).to.not.equal(ZERO_ADDRESS);
+        expect(oldAssetListFactory).to.be.not.equal(newAssetListFactory);
+      });
+
+      it('sets asset list factory is successful', async () => {
+        setAssetListFactoryTx = await configuratorProxy.connect(governor).setAssetListFactory(cometProxy.address, newAssetListFactory);
+        await expect(setAssetListFactoryTx).to.not.be.reverted;
+      });
+
+      it('setting new asset list factory emits SetAssetListFactory event', async () => {
+        await expect(setAssetListFactoryTx).to.emit(configuratorProxy, 'SetAssetListFactory')
+          .withArgs(cometProxy.address, oldAssetListFactory, newAssetListFactory);
+      });
+
+      it('new asset list factory is set and stored in the configurator', async () => {
+        expect(await configuratorProxy.cometAssetListFactories(cometProxy.address)).to.be.equal(newAssetListFactory);
+      });
+    });
+  });
+
   describe('configuration setting', function() {
     let oldConfiguration: ConfigurationStruct;
     let newConfiguration: ConfigurationStruct;
@@ -189,37 +242,28 @@ describe('configurator', function () {
         await expect(configuratorProxy.connect(alice).setConfiguration(cometProxy.address, newConfiguration)).to.be.revertedWithCustomError(configurator, 'Unauthorized');
       });
 
-      it('reverts if trackingIndexScale values is changed', async () => {
-        newConfiguration = { ...newConfiguration, trackingIndexScale: BigNumber.from(oldConfiguration.trackingIndexScale).add(1) };
-
-        await expect(configuratorProxy.connect(governor).setConfiguration(cometProxy.address, newConfiguration)).to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
-
-        newConfiguration = { ...newConfiguration, trackingIndexScale: oldConfiguration.trackingIndexScale };
-      });
-
-      it('reverts if base token is changed', async () => {
-        newConfiguration = { ...newConfiguration, baseToken: alice.address };
-
-        await expect(configuratorProxy.connect(governor).setConfiguration(cometProxy.address, newConfiguration)).to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
-      });
-
-      it('reverts if base token is set to zero address', async () => {
-        newConfiguration = { ...newConfiguration, baseToken: ZERO_ADDRESS };
-
-        await expect(configuratorProxy.connect(governor).setConfiguration(cometProxy.address, newConfiguration)).to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
-
-        newConfiguration = { ...newConfiguration, baseToken: oldConfiguration.baseToken };
-      });
-
-      it('reverts if the market already has an asset list, even with the same configuration', async () => {
+      it('reverts if the market is already configured, even with the same configuration', async () => {
         expect(oldConfiguration.assetList).to.not.equal(ZERO_ADDRESS);
 
         await expect(configuratorProxy.connect(governor).setConfiguration(cometProxy.address, oldConfiguration))
           .to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
       });
+
+      it('reverts if the market is already configured, with another asset list', async () => {
+        await expect(configuratorProxy.connect(governor).setConfiguration(cometProxy.address, { ...oldConfiguration, assetList: alice.address }))
+          .to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
+      });
+
+      it('reverts if a new market is configured without an asset list', async () => {
+        const newMarket = (await ethers.getSigners())[9].address;
+        expect((await configuratorProxy.getConfiguration(newMarket)).assetList).to.equal(ZERO_ADDRESS);
+
+        await expect(configuratorProxy.connect(governor).setConfiguration(newMarket, { ...oldConfiguration, assetList: ZERO_ADDRESS }))
+          .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
+      });
     });
 
-    // The fixture market already has an asset list, so setConfiguration can only configure a new market
+    // The configuration is set once per market, so the happy path configures a new market
     describe('happy path (new market)', function() {
       let newMarket: string;
       let emptyConfiguration: ConfigurationStruct;
@@ -227,13 +271,18 @@ describe('configurator', function () {
       before(async () => {
         newMarket = (await ethers.getSigners())[8].address;
         emptyConfiguration = await configuratorProxy.getConfiguration(newMarket);
-        // Make new configuration different from old configuration
+        // Make new configuration different from old configuration; the asset list is the one set up with the fixture market
         newConfiguration = {
           ...newConfiguration,
           baseBorrowMin: BigNumber.from(newConfiguration.baseBorrowMin).add(1),
           pauseGuardian: alice.address,
           targetReserves: BigNumber.from(newConfiguration.targetReserves).add(1),
         };
+      });
+
+      it('sanity check: the new market has no configuration yet', async () => {
+        expect(emptyConfiguration.baseToken).to.equal(ZERO_ADDRESS);
+        expect(emptyConfiguration.assetList).to.equal(ZERO_ADDRESS);
       });
 
       it('sets configuration is successful', async () => {
@@ -263,27 +312,27 @@ describe('configurator', function () {
 
       it('new configuration is updated in the configurator in storage', async () => {
         const updatedConfiguration = await configuratorProxy.getConfiguration(newMarket);
-        
+
         expect(updatedConfiguration.baseBorrowMin).to.be.equal(newConfiguration.baseBorrowMin);
         expect(updatedConfiguration.pauseGuardian).to.be.equal(newConfiguration.pauseGuardian);
         expect(updatedConfiguration.targetReserves).to.be.equal(newConfiguration.targetReserves);
         expect(updatedConfiguration.assetList).to.be.equal(newConfiguration.assetList);
       });
 
-      it('the same call again reverts, as the asset list is set only once', async () => {
+      it('the same call again reverts, as the configuration is set only once', async () => {
         await expect(configuratorProxy.connect(governor).setConfiguration(newMarket, newConfiguration))
           .to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
       });
     });
 
     describe('edge cases', function() {
-      it('a market without an asset list can be configured again', async () => {
-        const marketWithoutList = (await ethers.getSigners())[9].address;
-        const configurationWithoutList = { ...oldConfiguration, assetList: ZERO_ADDRESS };
-        await configuratorProxy.connect(governor).setConfiguration(marketWithoutList, configurationWithoutList);
-        await configuratorProxy.connect(governor).setConfiguration(marketWithoutList, configurationWithoutList);
+      it('a configured market is still updated through the field setters', async () => {
+        const newMarket = (await ethers.getSigners())[8].address;
+        const newBaseBorrowMin = BigNumber.from(newConfiguration.baseBorrowMin).add(1);
 
-        expect((await configuratorProxy.getConfiguration(marketWithoutList)).assetList).to.equal(ZERO_ADDRESS);
+        await configuratorProxy.connect(governor).setBaseBorrowMin(newMarket, newBaseBorrowMin);
+
+        expect((await configuratorProxy.getConfiguration(newMarket)).baseBorrowMin).to.be.equal(newBaseBorrowMin);
       });
     });
   });
@@ -296,6 +345,7 @@ describe('configurator', function () {
 
     describe('new implementation deployment', function() {
       before(async () => {
+        // The configuration is set only once, so the pause guardian is changed through its setter
         await configuratorProxy.connect(governor).setPauseGuardian(cometProxy.address, alice.address);
       });
 
@@ -343,7 +393,7 @@ describe('configurator', function () {
       let deployTx: ContractTransaction;
 
       before(async () => {
-        // Change the pause guardian back
+        // Change configuration back (pauseguardian to pauseGuardian)
         await configuratorProxy.connect(governor).setPauseGuardian(cometProxy.address, pauseGuardian.address);
       });
 
@@ -377,6 +427,177 @@ describe('configurator', function () {
 
         // Reverts with "Error: Transaction reverted without a reason string"
         await expect(configuratorProxy.deploy(randomAddr)).to.be.reverted;
+      });
+    });
+  });
+
+  describe('asset list deployment', function() {
+    let snapshot: SnapshotRestorer;
+    let fixtureConfiguration: ConfigurationStruct;
+    before(async () => {
+      snapshot = await takeSnapshot();
+      fixtureConfiguration = await configuratorProxy.getConfiguration(cometProxy.address);
+    });
+    after(async () => await snapshot.restore());
+
+    describe('revert cases', function() {
+      it('reverts if asset list proxy is zero address', async () => {
+        const marketWithoutConfiguration = (await ethers.getSigners())[11].address;
+        expect((await configuratorProxy.getConfiguration(marketWithoutConfiguration)).assetList).to.equal(ZERO_ADDRESS);
+
+        await expect(configuratorProxy.deployAssetList(marketWithoutConfiguration))
+          .to.be.revertedWithCustomError(configurator, 'AssetListNotSet');
+      });
+
+      it('reverts if asset list proxy does not support config hash', async () => {
+        // An address with no code stands for a list that can't tell its config hash
+        const market = (await ethers.getSigners())[12].address;
+        const randomAssetList = ethers.Wallet.createRandom().address;
+        await configuratorProxy.connect(governor).setConfiguration(market, { ...fixtureConfiguration, assetList: randomAssetList });
+
+        // The call to an address without code reverts with empty revert data
+        await expect(configuratorProxy.deployAssetList(market)).to.be.revertedWithoutReason();
+      });
+
+      it('reverts if asset list factory is not set (zero address)', async () => {
+        // The market has the fixture's list but no asset configs, so the hashes differ and a new list must be deployed
+        const market = (await ethers.getSigners())[13].address;
+        await configuratorProxy.connect(governor).setConfiguration(market, fixtureConfiguration);
+        expect(await configuratorProxy.cometAssetListFactories(market)).to.equal(ZERO_ADDRESS);
+
+        await expect(configuratorProxy.deployAssetList(market))
+          .to.be.revertedWithCustomError(configurator, 'AssetListFactoryNotSet');
+      });
+
+      it('reverts if asset list factory does not support createAssetList', async () => {
+        // The proxy admin is a contract without createAssetList
+        const market = (await ethers.getSigners())[14].address;
+        await configuratorProxy.connect(governor).setConfiguration(market, fixtureConfiguration);
+        await configuratorProxy.connect(governor).setAssetListFactory(market, cometProxyAdmin.address);
+
+        // The proxy admin has no createAssetList and no fallback, so the call reverts with empty revert data
+        await expect(configuratorProxy.deployAssetList(market)).to.be.revertedWithoutReason();
+      });
+    });
+
+    // The fixture market's asset list was built from its current immutable asset configs
+    describe('happy path (immutable configs not changed)', function() {
+      let assetListProxy: string;
+      let assetListImplementationBefore: string;
+      let returnedAssetListProxy: string;
+      let returnedAssetListImpl: string;
+      let deployAssetListTx: ContractTransaction;
+
+      before(async () => {
+        assetListProxy = fixtureConfiguration.assetList;
+        assetListImplementationBefore = await cometProxyAdmin.getProxyImplementation(assetListProxy);
+      });
+
+      it('sanity check: asset list config hash matches the immutable asset configs', async () => {
+        const assetList = await ethers.getContractAt('AssetList', assetListProxy);
+        const immutableConfigs = await configuratorProxy.getImmutableAssetConfig(cometProxy.address);
+        const encodedImmutableConfigs = ethers.utils.defaultAbiCoder.encode(['tuple(address asset, address priceFeed)[]'], [immutableConfigs]);
+
+        expect(await assetList.configHash()).to.be.equal(
+          ethers.utils.keccak256(ethers.utils.hexConcat([await assetList.TYPEHASH(), encodedImmutableConfigs]))
+        );
+      });
+
+      it('static call of deploy asset list is successful', async () => {
+        [returnedAssetListProxy, returnedAssetListImpl] = await configuratorProxy.connect(alice).callStatic.deployAssetList(cometProxy.address);
+      });
+
+      it('returns the asset list proxy of the comet', async () => {
+        expect(returnedAssetListProxy).to.be.equal(assetListProxy);
+      });
+
+      it('returns zero address for the implementation', async () => {
+        expect(returnedAssetListImpl).to.be.equal(ZERO_ADDRESS);
+      });
+
+      it('anyone can call deploy asset list', async () => {
+        expect(alice.address).to.not.equal(governor.address);
+
+        deployAssetListTx = await configuratorProxy.connect(alice).deployAssetList(cometProxy.address);
+        await expect(deployAssetListTx).to.not.be.reverted;
+      });
+
+      it('does not emit AssetListDeployed event', async () => {
+        await expect(deployAssetListTx).to.not.emit(configuratorProxy, 'AssetListDeployed');
+      });
+
+      it('does not upgrade the asset list proxy', async () => {
+        expect(await cometProxyAdmin.getProxyImplementation(assetListProxy)).to.be.equal(assetListImplementationBefore);
+      });
+
+      it('asset list proxy of the comet stays the same in the configurator', async () => {
+        expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetList).to.be.equal(assetListProxy);
+      });
+    });
+
+    describe('happy path (immutable configs changed)', function() {
+      let assetListProxy: string;
+      let assetListImplementationBefore: string;
+      let expectedAssetListProxy: string;
+      let expectedNewAssetListImpl: string;
+      let deployAssetListTx: ContractTransaction;
+
+      before(async () => {
+        assetListProxy = fixtureConfiguration.assetList;
+        assetListImplementationBefore = await cometProxyAdmin.getProxyImplementation(assetListProxy);
+
+        // A new price feed changes the immutable asset configs, so the list must be redeployed
+        const PriceFeedFactory = await ethers.getContractFactory('SimplePriceFeed') as SimplePriceFeed__factory;
+        const newPriceFeed = await PriceFeedFactory.deploy(exp(1, 8), 8);
+        await newPriceFeed.deployed();
+        const [firstAssetConfig] = await configuratorProxy.getAssetConfigs(cometProxy.address);
+        await configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, firstAssetConfig.asset, newPriceFeed.address);
+      });
+
+      it('sanity check: immutable asset configs differ from the deployed asset list', async () => {
+        const assetList = await ethers.getContractAt('AssetList', assetListProxy);
+        const [firstAssetConfig] = await configuratorProxy.getAssetConfigs(cometProxy.address);
+        expect((await assetList.getAssetInfo(0)).priceFeed).to.not.equal(firstAssetConfig.priceFeed);
+      });
+
+      it('static call of deploy asset list is successful', async () => {
+        [expectedAssetListProxy, expectedNewAssetListImpl] = await configuratorProxy.connect(alice).callStatic.deployAssetList(cometProxy.address);
+      });
+
+      it('returns the asset list proxy of the comet', async () => {
+        expect(expectedAssetListProxy).to.be.equal(assetListProxy);
+      });
+
+      it('returns the new implementation address', async () => {
+        expect(expectedNewAssetListImpl).to.not.equal(ZERO_ADDRESS);
+      });
+
+      it('anyone can deploy asset list', async () => {
+        expect(alice.address).to.not.equal(governor.address);
+
+        deployAssetListTx = await configuratorProxy.connect(alice).deployAssetList(cometProxy.address);
+        await expect(deployAssetListTx).to.not.be.reverted;
+      });
+
+      it('deploying asset list emits AssetListDeployed event', async () => {
+        await expect(deployAssetListTx).to.emit(configuratorProxy, 'AssetListDeployed')
+          .withArgs(cometProxy.address, assetListProxy, expectedNewAssetListImpl);
+      });
+
+      it('new implementation is built from the current immutable asset configs', async () => {
+        const newAssetListImpl = await ethers.getContractAt('AssetList', expectedNewAssetListImpl);
+        const [firstAssetConfig] = await configuratorProxy.getAssetConfigs(cometProxy.address);
+
+        expect(await ethers.provider.getCode(expectedNewAssetListImpl)).to.not.equal('0x');
+        expect((await newAssetListImpl.getAssetInfo(0)).priceFeed).to.be.equal(firstAssetConfig.priceFeed);
+      });
+
+      it('does not upgrade the asset list proxy, only deploys the implementation', async () => {
+        expect(await cometProxyAdmin.getProxyImplementation(assetListProxy)).to.be.equal(assetListImplementationBefore);
+      });
+
+      it('asset list proxy of the comet stays the same in the configurator', async () => {
+        expect((await configuratorProxy.getConfiguration(cometProxy.address)).assetList).to.be.equal(assetListProxy);
       });
     });
   });
@@ -1472,9 +1693,10 @@ describe('configurator', function () {
       let firstAsset: { asset: string, priceFeed: string };
 
       before(async () => {
+        const assetConfigs = await configuratorProxy.getAssetConfigs(cometProxy.address);
         firstAsset = {
-          asset: (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].asset,
-          priceFeed: (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].priceFeed,
+          asset: assetConfigs[0].asset,
+          priceFeed: assetConfigs[0].priceFeed,
         };
       });
 
@@ -1774,6 +1996,15 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).addAsset(cometProxy.address, newAssetConfig))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+
+          it('reverts if asset already exists', async () => {
+            // Take the last stored asset config and add it again, unchanged
+            const assetConfigs = await configuratorProxy.getAssetConfigs(cometProxy.address);
+            const lastAssetConfig = assetConfigs[assetConfigs.length - 1];
+
+            await expect(configuratorProxy.connect(governor).addAsset(cometProxy.address, lastAssetConfig))
+              .to.be.revertedWithCustomError(configurator, 'AssetAlreadyExists');
           });
         });
 

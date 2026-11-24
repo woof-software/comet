@@ -12,6 +12,9 @@ interface IConfiguratorErrors {
     /// @dev The Comet proxy has no asset list proxy yet; the first one is set by setConfiguration
     error AssetListNotSet();
 
+    /// @dev The Comet proxy already has an asset list proxy, so setConfiguration, which sets it, can't be called again
+    error ConfigurationAlreadyExists();
+
     /// @dev The Comet proxy has no asset list factory, so a new asset list can't be deployed; it is set by setAssetListFactory
     error AssetListFactoryNotSet();
 
@@ -20,9 +23,6 @@ interface IConfiguratorErrors {
 
     /// @dev The asset is not in the asset configs of the Comet proxy
     error AssetDoesNotExist();
-
-    /// @dev The Comet proxy already has an asset list, or a configuration with a different base token or tracking index scale
-    error ConfigurationAlreadyExists();
 
     /// @dev The address is the zero address
     error InvalidAddress();

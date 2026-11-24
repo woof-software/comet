@@ -47,17 +47,15 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
 
     /**
      * @notice Sets the entire Configuration for a Comet proxy
-     * @dev Note: All params can later be updated by the governor except for `baseToken` and `trackingIndexScale`.
-     *      It sets the asset list proxy only once: once a market has one, this reverts, and the list is changed
-     *      through the asset config setters and the next deploy
+     * @dev Note: Called once per market, and the market must be given its asset list proxy (not the zero address).
+     *      After that every param is updated through its own setter, except `baseToken`, `trackingIndexScale`
+     *      and `assetList`, which never change; the list itself is changed through the asset config setters and the next deploy
      **/
     function setConfiguration(address cometProxy, Configuration calldata newConfiguration) external onlyGovernor {
         Configuration memory oldConfiguration = configuratorParams[cometProxy];
+        // The configuration is set once, together with the market's asset list
         if (oldConfiguration.assetList != address(0)) revert ConfigurationAlreadyExists();
-        if (oldConfiguration.baseToken != address(0) &&
-            (oldConfiguration.baseToken != newConfiguration.baseToken ||
-             oldConfiguration.trackingIndexScale != newConfiguration.trackingIndexScale))
-            revert ConfigurationAlreadyExists();
+        if (newConfiguration.assetList == address(0)) revert InvalidAddress();
 
         configuratorParams[cometProxy] = newConfiguration;
         emit SetConfiguration(cometProxy, oldConfiguration, newConfiguration);
@@ -189,7 +187,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @param newAssetListFactory The asset list factory to use
      */
     function setAssetListFactory(address cometProxy, address newAssetListFactory) external onlyGovernor {
-        if (newAssetListFactory == address(0)) revert InvalidAddress();
+        if (cometProxy == address(0) || newAssetListFactory == address(0)) revert InvalidAddress();
 
         emit SetAssetListFactory(cometProxy, cometAssetListFactories[cometProxy], newAssetListFactory);
         cometAssetListFactories[cometProxy] = newAssetListFactory;
