@@ -1,10 +1,10 @@
 import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
+import { impersonateAddress, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { BigNumber, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
-import { isTenderlyLog, updateCCIPStats } from './index';
+import { isTenderlyLog } from './tenderlyVnet';
+import { updateCCIPStats } from './ccip';
 
 const roninChainSelector = '6916147374840168594';
 const mainnetChainSelector = '5009297550715157269';

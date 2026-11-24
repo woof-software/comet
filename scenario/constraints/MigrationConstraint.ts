@@ -1,10 +1,19 @@
 import { StaticConstraint, Solution, World, debug } from '../../plugins/scenario';
 import { CometContext, MigrationData } from '../context/CometContext';
 import { Migration, loadMigrations, Actions } from '../../plugins/deployment_manager/Migration';
-import { modifiedPaths } from '../utils';
 import { DeploymentManager } from '../../plugins/deployment_manager';
-import { impersonateAddress } from '../../plugins/scenario/utils';
-import { exp } from '../../test/helpers';
+import { impersonateAddress, exp } from '../utils';
+import { execSync } from 'child_process';
+import { existsSync } from 'fs';
+
+/**
+ * Lists files changed on this branch since it split from `against` (origin/main by default)
+ * that match `pattern` and still exist, so deleted files are skipped.
+ */
+async function modifiedPaths(pattern: RegExp, against = 'origin/main'): Promise<string[]> {
+  const diff = execSync(`git diff --name-only $(git merge-base ${against} HEAD)`).toString();
+  return diff.split('\n').filter(path => pattern.test(path) && existsSync(path));
+}
 
 async function getMigrations<T>(world: World): Promise<Migration<T>[]> {
   // TODO: make this configurable from cli params/env var?
