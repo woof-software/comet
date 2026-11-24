@@ -5,6 +5,7 @@ import { Contract, ethers } from 'ethers';
 import { Log } from '@ethersproject/abstract-provider';
 import { OpenBridgedProposal } from '../context/Gov';
 import { isTenderlyLog } from './tenderlyVnet';
+import { ADDRESSES } from '../../src/addresses';
 
 type BridgeERC20Data = {
   syncData: string;
@@ -41,11 +42,7 @@ export default async function relayPolygonMessage(
   startingBlockNumber: number,
   tenderlyLogs?: any[]
 ) {
-  const POLYGON_RECEIVER_ADDRESSS = '0x0000000000000000000000000000000000001001';
-  const childChainManagerProxyAddress =
-    bridgeDeploymentManager.network === 'polygon'
-      ? '0xA6FA4fB5f76172d178d61B04b0ecd319C5d1C0aa'
-      : '0xb5505a6d998549090530911180f38aC5130101c6';
+  const childChainManagerProxyAddress = ADDRESSES.polygon.CHILD_CHAIN_MANAGER;
 
   const stateSender = await governanceDeploymentManager.getContractOrThrow('stateSender');
   const bridgeReceiver = await bridgeDeploymentManager.getContractOrThrow('bridgeReceiver');
@@ -113,7 +110,7 @@ export default async function relayPolygonMessage(
       );
       const polygonReceiverSigner = await impersonateAddress(
         bridgeDeploymentManager,
-        POLYGON_RECEIVER_ADDRESSS
+        ADDRESSES.polygon.STATE_RECEIVER
       );
       await setNextBaseFeeToZero(bridgeDeploymentManager);
 
@@ -141,7 +138,7 @@ export default async function relayPolygonMessage(
       // Cross-chain message passing
       const polygonReceiverSigner = await impersonateAddress(
         bridgeDeploymentManager,
-        POLYGON_RECEIVER_ADDRESSS
+        ADDRESSES.polygon.STATE_RECEIVER
       );
 
       await setNextBaseFeeToZero(bridgeDeploymentManager);
