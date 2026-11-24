@@ -24,6 +24,7 @@ import mainnetUsdtRelationConfigMap from './deployments/mainnet/usdt/relations';
 import mainnetWstETHRelationConfigMap from './deployments/mainnet/wsteth/relations';
 import mainnetUsdsRelationConfigMap from './deployments/mainnet/usds/relations';
 import mainnetWbtcRelationConfigMap from './deployments/mainnet/wbtc/relations';
+import mainnetInstitutionalUsdcRelationConfigMap from './deployments/mainnet/institutional_usdc/relations';
 import polygonRelationConfigMap from './deployments/polygon/usdc/relations';
 import polygonUsdtRelationConfigMap from './deployments/polygon/usdt/relations';
 import arbitrumBridgedUsdcRelationConfigMap from './deployments/arbitrum/usdc.e/relations';
@@ -93,14 +94,6 @@ export function requireEnv(varName, msg?: string): string {
   }
   return varVal;
 }
-
-// required environment variables
-[
-  'ETHERSCAN_KEY',
-  'MAINNET_QUICKNODE_LINK',
-  'UNICHAIN_QUICKNODE_LINK',
-  'LINEA_QUICKNODE_LINK'
-].map((v) => requireEnv(v));
 
 // Networks
 interface NetworkConfig {
@@ -435,6 +428,7 @@ const config: HardhatUserConfig = {
         wsteth: mainnetWstETHRelationConfigMap,
         usds: mainnetUsdsRelationConfigMap,
         wbtc: mainnetWbtcRelationConfigMap,
+        institutional_usdc: mainnetInstitutionalUsdcRelationConfigMap,
       },
       polygon: {
         usdc: polygonRelationConfigMap,

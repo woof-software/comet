@@ -1912,8 +1912,10 @@ describe('interest calculation', function () {
       });
 
       it('accrue market right after the expected time elapsed', async () => {
-        await ethers.provider.send('evm_increaseTime', [expectedTimeElapsed.toNumber()]);
-        await ethers.provider.send('evm_mine', []);
+        // Pin the accrue block's timestamp: with evm_increaseTime, wall-clock drift during a long
+        // suite run adds extra seconds of interest and pushes the overshoot past the tolerances below
+        const { lastAccrualTime } = await testComet.totalsBasic();
+        await ethers.provider.send('evm_setNextBlockTimestamp', [lastAccrualTime + expectedTimeElapsed.toNumber()]);
 
         await testComet.accrueAccount(ethers.constants.AddressZero);
       });

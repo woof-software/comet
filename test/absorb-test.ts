@@ -1,4 +1,4 @@
-import { expect, exp, makeProtocol, mulPrice, mulFactor, divPrice, presentValue, principalValue, ZERO_ADDRESS, presentValueSupply, ethers, SnapshotRestorer, makeConfigurator, MAX_ASSETS, takeSnapshot } from './helpers';
+import { expect, exp, makeProtocol, mulPrice, mulFactor, divPrice, presentValue, principalValue, ZERO_ADDRESS, presentValueSupply, ethers, SnapshotRestorer, makeConfigurator, MAX_ASSETS, takeSnapshot, nonZeroBaseFeeUnderCoverage } from './helpers';
 import { CometExtAssetList, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
@@ -766,6 +766,7 @@ describe('absorb', function () {
     });
 
     it('absor is successful for the first user', async () => {
+      await nonZeroBaseFeeUnderCoverage();
       await expect(comet.connect(absorber).absorb(absorber.address, [testUser1.address])).to.not.be.reverted;
     });
 
@@ -786,6 +787,7 @@ describe('absorb', function () {
     });
 
     it('second absorb is successful for the second user', async () => {
+      await nonZeroBaseFeeUnderCoverage();
       await expect(comet.connect(absorber).absorb(absorber.address, [testUser2.address])).to.not.be.reverted;
     });
 
