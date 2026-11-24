@@ -303,7 +303,7 @@ scenario(
   }
 );
 
-// setConfiguration sets the list proxy only once, so governance cannot move a live market to another list proxy:
+// setConfiguration configures a market only once, so governance cannot move a live market to another list proxy:
 // the list is changed only by upgrading the proxy the market already has
 scenario(
   'AssetList governance > a Comet cannot be pointed at a different asset-list proxy',
