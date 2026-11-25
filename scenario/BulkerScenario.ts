@@ -5,7 +5,7 @@ import { expectBase, isRewardSupported, isBulkerSupported, getBulkerCollateralIn
 import { exp } from '../test/helpers';
 import { getBulkerCollateralAmount, getConfigForScenario } from './utils/scenarioHelper';
 
-async function hasNativeAsCollateral(ctx: CometContext): Promise<boolean> {
+async function getNativeCollateralIndex(ctx: CometContext): Promise<number> {
   const comet = await ctx.getComet();
   const bulker = await ctx.getBulker();
   const wrappedNativeToken = await bulker.wrappedNativeToken();
@@ -13,9 +13,14 @@ async function hasNativeAsCollateral(ctx: CometContext): Promise<boolean> {
   for (let i = 0; i < numAssets; i++) {
     const { asset } = await comet.getAssetInfo(i);
     if (asset.toLowerCase() === wrappedNativeToken.toLowerCase()) {
-      return true;
+      return i;
     }
   }
+  return -1;
+}
+
+async function hasNativeAsCollateral(ctx: CometContext): Promise<boolean> {
+  return (await getNativeCollateralIndex(ctx)) !== -1;
 }
 
 async function hasNativeAsBase(ctx: CometContext): Promise<boolean> {
@@ -30,11 +35,15 @@ type CollateralAmount = (ctx: CometContext, index: number) => number;
 // The WETH base market supplies a smaller amount of collateral
 const getBulkerWethCollateralAmount: CollateralAmount = (ctx, index) => getConfigForScenario(ctx, index).bulkerAsset2;
 
-// Supply cap room needed for the collateral asset the scenario supplies (see getBulkerCollateralIndex)
+// Supply cap room for the collateral asset (see getBulkerCollateralIndex), plus 1 token of room
+// for the wrapped native token when it's collateral, since every scenario supplies 0.01 native
 async function getCollateralSupplyCaps(ctx: CometContext, getAmount: CollateralAmount = getBulkerCollateralAmount) {
   const index = await getBulkerCollateralIndex(ctx);
   if (index === -1) return {};
-  return { [`$asset${index}`]: getAmount(ctx, index) };
+  const caps = { [`$asset${index}`]: getAmount(ctx, index) };
+  const nativeIndex = await getNativeCollateralIndex(ctx);
+  if (nativeIndex !== -1) caps[`$asset${nativeIndex}`] = 1;
+  return caps;
 }
 
 // Tokens Albert needs to hold, on top of `base`, to supply the collateral asset the scenario uses
