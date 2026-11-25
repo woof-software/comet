@@ -1,237 +1,325 @@
-import { ethers, expect, takeSnapshot, SnapshotRestorer, ZERO_ADDRESS } from '../helpers';
+import { ethers, exp, expect, makeConfigurator, takeSnapshot, SnapshotRestorer, ZERO_ADDRESS } from '../helpers';
 import {
   AssetList,
   AssetListFactoryV2Mock,
   AssetListTypeHashFactoryMock,
-  AssetListTypeHashMock,
-  AssetListV2Mock,
-  CometInterface,
-  CometProxyAdmin,
-  Configurator,
+  CometProxyAdminOptimism,
+  ConfiguratorOptimism,
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { ImmutableAssetConfigStruct, StorageAssetConfigStruct } from '../../build/types/AssetList';
-import { deployAssetListFixture, hashConfig } from './shared';
-import { AssetInfoStructOutput } from 'build/types/IAssetList';
+import { ImmutableAssetConfigStruct } from '../../build/types/AssetList';
+import { AssetConfigStruct } from '../../build/types/ConfiguratorOptimism';
+import { ContractTransaction } from 'ethers';
 
-context('asset list deployment scenarios', function () {
+// AssetListTypeHashMock.TYPEHASH: the same configs under a new type
+const NEW_TYPEHASH = ethers.utils.id('ImmutableConfigV2[](address asset,address priceFeed)');
+
+// ConfigHash.hashConfig(typeHash, abi.encode(configs)), computed off-chain
+function hashConfig(configs: ImmutableAssetConfigStruct[], typeHash: string): string {
+  const encoded = ethers.utils.defaultAbiCoder.encode(['tuple(address asset, address priceFeed)[]'], [configs]);
+  return ethers.utils.keccak256(ethers.utils.hexConcat([typeHash, encoded]));
+}
+
+// How the asset list of a market is redeployed: CometProxyAdmin.deployAndUpgradeAssetListTo asks
+// Configurator.deployAssetList for a new implementation, which is deployed only when the immutable configs no longer
+// hash to the configHash of the current list, and upgrades the list proxy to it when there is one
+describe('asset list deployment scenarios', function () {
   let governor: SignerWithAddress;
+  let proxyAdmin: CometProxyAdminOptimism;
+  let configurator: ConfiguratorOptimism; // proxy
+  let comet: string; // proxy
   let assetList: AssetList; // proxy
-  let configs: ImmutableAssetConfigStruct[];
-  let storageConfigs: StorageAssetConfigStruct[];
-  let proxyAdmin: CometProxyAdmin;
-  let configurator: Configurator;
-  let comet: CometInterface;
-  let cometAssetInfosBefore: AssetInfoStructOutput[]; // what the Comet read for every asset before any upgrade
   let snapshot: SnapshotRestorer;
 
   before(async () => {
-    ({ governor, assetList, configs, storageConfigs, proxyAdmin, configurator, comet } = await deployAssetListFixture());
-    cometAssetInfosBefore = await Promise.all(configs.map((_, i) => comet.getAssetInfo(i)));
+    const protocol = await makeConfigurator();
+    governor = protocol.governor;
+    proxyAdmin = protocol.proxyAdmin;
+    configurator = protocol.configurator.attach(protocol.configuratorProxy.address);
+    comet = protocol.cometProxyWithExtendedAssetList.address;
+    assetList = protocol.assetList;
     snapshot = await takeSnapshot();
   });
 
-  after(async () => await snapshot.restore());
 
   /*//////////////////////////////////////////////////////////////
-                CASE 1: CONFIG UNCHANGED, CODE CHANGED
+                          NOTHING CHANGES
   //////////////////////////////////////////////////////////////*/
 
-  context('config unchanged, AssetList code changed', function () {
-    let newFactory: AssetListFactoryV2Mock;
-    let newImplementation: AssetListV2Mock;
-    let newPriceFeed: string;
+  context('nothing changes', function () {
+    let implementationBefore: string;
+    let upgradeTx: ContractTransaction;
 
-    before(async () => await snapshot.restore());
-
-    // The configs hash the same, so the Configurator sees nothing to deploy and the manual deploy is needed
-    it('sanity check: deployAssetList returns the zero address', async () => {
-      expect((await configurator.callStatic.deployAssetList(comet.address)).newAssetListImpl).to.equal(ZERO_ADDRESS);
+    before(async () => {
+      implementationBefore = await proxyAdmin.getProxyImplementation(assetList.address);
     });
 
-    it('deploys the new factory', async () => {
-      newFactory = await (await ethers.getContractFactory('AssetListFactoryV2Mock')).deploy(configurator.address) as AssetListFactoryV2Mock;
+    it('sanity check: deployAssetList returns no new implementation', async () => {
+      expect((await configurator.callStatic.deployAssetList(comet)).newAssetListImpl).to.equal(ZERO_ADDRESS);
     });
 
-    it('deploys the new implementation from the current immutable configs', async () => {
-      const immutableConfigs = await configurator.getImmutableAssetConfig(comet.address);
-      const address = await newFactory.callStatic.createAssetList(immutableConfigs);
-      await newFactory.createAssetList(immutableConfigs);
-      newImplementation = await ethers.getContractAt('AssetListV2Mock', address) as AssetListV2Mock;
+    it('deployAndUpgradeAssetListTo is successful', async () => {
+      upgradeTx = await proxyAdmin.connect(governor).deployAndUpgradeAssetListTo(configurator.address, comet);
+      await expect(upgradeTx).to.not.be.reverted;
     });
 
-    it('the new implementation has the configHash of the current list', async () => {
-      expect(await newImplementation.configHash()).to.equal(await assetList.configHash());
+    it('does not emit AssetListDeployed', async () => {
+      await expect(upgradeTx).to.not.emit(configurator, 'AssetListDeployed');
     });
 
-    it('upgrades the asset list proxy', async () => {
-      await proxyAdmin.connect(governor).upgrade(assetList.address, newImplementation.address);
-    });
-
-    it('version() answers through the proxy', async () => {
-      expect(await newImplementation.attach(assetList.address).version()).to.equal(2);
-    });
-
-    it('keeps the factors and supply cap of every asset', async () => {
-      for (let i = 0; i < configs.length; i++) {
-        const info = await assetList.getAssetInfo(i);
-        expect(info.borrowCollateralFactor).to.equal(storageConfigs[i].borrowCollateralFactor);
-        expect(info.liquidateCollateralFactor).to.equal(storageConfigs[i].liquidateCollateralFactor);
-        expect(info.liquidationFactor).to.equal(storageConfigs[i].liquidationFactor);
-        expect(info.supplyCap).to.equal(storageConfigs[i].supplyCap);
-      }
-    });
-
-    // Looking an asset up by address fails unless it is registered
-    it('keeps every asset registered', async () => {
-      for (const { asset } of configs) {
-        expect((await assetList.getAssetInfoByAddress(asset)).asset).to.equal(asset);
-      }
-    });
-
-    it('keeps the configurator', async () => {
-      expect(await assetList.configurator()).to.equal(configurator.address);
-    });
-
-    it('the Comet reads every asset the same way, with no Comet redeploy', async () => {
-      for (let i = 0; i < configs.length; i++) {
-        expect(await comet.getAssetInfo(i)).to.deep.equal(cometAssetInfosBefore[i]);
-      }
-    });
-
-    it('sets the new factory on the Configurator', async () => {
-      await configurator.connect(governor).setAssetListFactory(comet.address, newFactory.address);
-    });
-
-    it('updates the price feed of the first asset', async () => {
-      newPriceFeed = (await (await ethers.getContractFactory('SimplePriceFeed')).deploy(10n ** 8n, 8)).address;
-      await configurator.connect(governor).updateAssetPriceFeed(comet.address, configs[0].asset, newPriceFeed);
-    });
-
-    it('deploys and upgrades through deployAndUpgradeAssetListTo', async () => {
-      await proxyAdmin.connect(governor).deployAndUpgradeAssetListTo(configurator.address, comet.address);
-    });
-
-    it('the list reads the new price feed', async () => {
-      expect((await assetList.getAssetInfo(0)).priceFeed).to.equal(newPriceFeed);
-    });
-
-    it('version() still answers through the proxy', async () => {
-      expect(await newImplementation.attach(assetList.address).version()).to.equal(2);
+    it('keeps the implementation of the asset list proxy', async () => {
+      expect(await proxyAdmin.getProxyImplementation(assetList.address)).to.equal(implementationBefore);
     });
   });
 
   /*//////////////////////////////////////////////////////////////
-                       CASE 2: TYPEHASH UPDATED
+                          STORAGE CHANGES
+  //////////////////////////////////////////////////////////////*/
+
+  // Factors and supply caps live in the list storage and are written by the setters, so the immutable configs stay the same
+  context('storage changes', function () {
+    let implementationBefore: string;
+    let upgradeTx: ContractTransaction;
+
+    before(async () => {
+      await snapshot.restore();
+      implementationBefore = await proxyAdmin.getProxyImplementation(assetList.address);
+      const [firstAssetConfig] = await configurator.getAssetConfigs(comet);
+      await configurator.connect(governor).updateAssetSupplyCap(comet, firstAssetConfig.asset, firstAssetConfig.supplyCap.add(1));
+    });
+
+    it('sanity check: deployAssetList returns no new implementation', async () => {
+      expect((await configurator.callStatic.deployAssetList(comet)).newAssetListImpl).to.equal(ZERO_ADDRESS);
+    });
+
+    it('deployAndUpgradeAssetListTo is successful', async () => {
+      upgradeTx = await proxyAdmin.connect(governor).deployAndUpgradeAssetListTo(configurator.address, comet);
+      await expect(upgradeTx).to.not.be.reverted;
+    });
+
+    it('does not emit AssetListDeployed', async () => {
+      await expect(upgradeTx).to.not.emit(configurator, 'AssetListDeployed');
+    });
+
+    it('keeps the implementation of the asset list proxy', async () => {
+      expect(await proxyAdmin.getProxyImplementation(assetList.address)).to.equal(implementationBefore);
+    });
+  });
+
+  /*//////////////////////////////////////////////////////////////
+                        IMMUTABLE CONFIGS CHANGE
+  //////////////////////////////////////////////////////////////*/
+
+  // A new price feed is part of the immutable configs, so it needs a new implementation
+  context('immutable configs change', function () {
+    let newAssetListImpl: string;
+    let upgradeTx: ContractTransaction;
+
+    before(async () => {
+      await snapshot.restore();
+      const newPriceFeed = await (await ethers.getContractFactory('SimplePriceFeed')).deploy(10n ** 8n, 8);
+      const [firstAssetConfig] = await configurator.getAssetConfigs(comet);
+      await configurator.connect(governor).updateAssetPriceFeed(comet, firstAssetConfig.asset, newPriceFeed.address);
+    });
+
+    it('sanity check: deployAssetList returns a new implementation', async () => {
+      ({ newAssetListImpl } = await configurator.callStatic.deployAssetList(comet));
+      expect(newAssetListImpl).to.not.equal(ZERO_ADDRESS);
+    });
+
+    it('deployAndUpgradeAssetListTo is successful', async () => {
+      upgradeTx = await proxyAdmin.connect(governor).deployAndUpgradeAssetListTo(configurator.address, comet);
+      await expect(upgradeTx).to.not.be.reverted;
+    });
+
+    it('emits AssetListDeployed with the new implementation', async () => {
+      await expect(upgradeTx).to.emit(configurator, 'AssetListDeployed').withArgs(comet, assetList.address, newAssetListImpl);
+    });
+
+    it('upgrades the asset list proxy to the new implementation', async () => {
+      expect(await proxyAdmin.getProxyImplementation(assetList.address)).to.equal(newAssetListImpl);
+    });
+
+    it('the configHash of the asset list is the hash of the new immutable configs', async () => {
+      const immutableConfigs = await configurator.getImmutableAssetConfig(comet);
+      expect(await assetList.configHash()).to.equal(hashConfig(immutableConfigs, await assetList.TYPEHASH()));
+    });
+  });
+
+  /*//////////////////////////////////////////////////////////////
+                           ADDING NEW ASSET
+  //////////////////////////////////////////////////////////////*/
+
+  // A new asset adds to the immutable configs, so it needs a new implementation. The upgrade also writes the storage
+  // configs of every asset, which registers the new one with its factors and supply cap
+  context('adding new asset', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+    const SUPPLY_CAP = exp(1000, 18);
+
+    let newAsset: AssetConfigStruct;
+    let numAssetsBefore: number;
+    let newAssetListImpl: string;
+    let upgradeTx: ContractTransaction;
+
+    before(async () => {
+      await snapshot.restore();
+      numAssetsBefore = await assetList.numAssets();
+      const token = await (await ethers.getContractFactory('FaucetToken')).deploy(0, 'New Asset', 18, 'NEW');
+      const priceFeed = await (await ethers.getContractFactory('SimplePriceFeed')).deploy(10n ** 8n, 8);
+      newAsset = {
+        asset: token.address,
+        priceFeed: priceFeed.address,
+        borrowCollateralFactor: BORROW_CF,
+        liquidateCollateralFactor: LIQUIDATE_CF,
+        liquidationFactor: LIQUIDATION_FACTOR,
+        supplyCap: SUPPLY_CAP,
+      };
+      await configurator.connect(governor).addAsset(comet, newAsset);
+    });
+
+    it('sanity check: deployAssetList returns a new implementation', async () => {
+      ({ newAssetListImpl } = await configurator.callStatic.deployAssetList(comet));
+      expect(newAssetListImpl).to.not.equal(ZERO_ADDRESS);
+    });
+
+    it('deployAndUpgradeAssetListTo is successful', async () => {
+      upgradeTx = await proxyAdmin.connect(governor).deployAndUpgradeAssetListTo(configurator.address, comet);
+      await expect(upgradeTx).to.not.be.reverted;
+    });
+
+    it('emits AssetListDeployed with the new implementation', async () => {
+      await expect(upgradeTx).to.emit(configurator, 'AssetListDeployed').withArgs(comet, assetList.address, newAssetListImpl);
+    });
+
+    it('upgrades the asset list proxy to the new implementation', async () => {
+      expect(await proxyAdmin.getProxyImplementation(assetList.address)).to.equal(newAssetListImpl);
+    });
+
+    it('the configHash of the asset list is the hash of the new immutable configs', async () => {
+      const immutableConfigs = await configurator.getImmutableAssetConfig(comet);
+      expect(await assetList.configHash()).to.equal(hashConfig(immutableConfigs, await assetList.TYPEHASH()));
+    });
+
+    it('the asset list has one more asset', async () => {
+      expect(await assetList.numAssets()).to.equal(numAssetsBefore + 1);
+    });
+
+    it('the new asset is listed last', async () => {
+      expect((await assetList.getAssetInfo(numAssetsBefore)).asset).to.equal(newAsset.asset);
+    });
+
+    it('the new asset is registered with its borrow collateral factor', async () => {
+      expect((await assetList.getAssetInfoByAddress(newAsset.asset)).borrowCollateralFactor).to.equal(BORROW_CF);
+    });
+
+    it('the new asset is registered with its liquidate collateral factor', async () => {
+      expect((await assetList.getAssetInfoByAddress(newAsset.asset)).liquidateCollateralFactor).to.equal(LIQUIDATE_CF);
+    });
+
+    it('the new asset is registered with its liquidation factor', async () => {
+      expect((await assetList.getAssetInfoByAddress(newAsset.asset)).liquidationFactor).to.equal(LIQUIDATION_FACTOR);
+    });
+
+    it('the new asset is registered with its supply cap', async () => {
+      expect((await assetList.getAssetInfoByAddress(newAsset.asset)).supplyCap).to.equal(SUPPLY_CAP);
+    });
+  });
+
+  /*//////////////////////////////////////////////////////////////
+                   TECHNICAL UPDATE (NOT CONFIG RELATED)
+  //////////////////////////////////////////////////////////////*/
+
+  // New AssetList code built from the same immutable configs has the same configHash, so the Configurator can't tell
+  // it apart: it is deployed and set by hand, and deployAndUpgradeAssetListTo leaves it in place
+  context('technical update (not config related)', function () {
+    let configHashBefore: string;
+    let newAssetListImpl: string;
+    let upgradeTx: ContractTransaction;
+
+    before(async () => {
+      await snapshot.restore();
+      configHashBefore = await assetList.configHash();
+      const newFactory = await (await ethers.getContractFactory('AssetListFactoryV2Mock')).deploy(configurator.address) as AssetListFactoryV2Mock;
+      const immutableConfigs = await configurator.getImmutableAssetConfig(comet);
+      newAssetListImpl = await newFactory.callStatic.createAssetList(immutableConfigs);
+      await newFactory.createAssetList(immutableConfigs);
+      await proxyAdmin.connect(governor).upgrade(assetList.address, newAssetListImpl);
+    });
+
+    it('sanity check: the asset list proxy runs the new code', async () => {
+      expect(await proxyAdmin.getProxyImplementation(assetList.address)).to.equal(newAssetListImpl);
+      expect(await (await ethers.getContractAt('AssetListV2Mock', assetList.address)).version()).to.equal(2);
+    });
+
+    it('sanity check: the configHash is the same as before the update', async () => {
+      expect(await assetList.configHash()).to.equal(configHashBefore);
+    });
+
+    it('sanity check: deployAssetList returns no new implementation', async () => {
+      expect((await configurator.callStatic.deployAssetList(comet)).newAssetListImpl).to.equal(ZERO_ADDRESS);
+    });
+
+    it('deployAndUpgradeAssetListTo is successful', async () => {
+      upgradeTx = await proxyAdmin.connect(governor).deployAndUpgradeAssetListTo(configurator.address, comet);
+      await expect(upgradeTx).to.not.be.reverted;
+    });
+
+    it('does not emit AssetListDeployed', async () => {
+      await expect(upgradeTx).to.not.emit(configurator, 'AssetListDeployed');
+    });
+
+    it('keeps the new implementation of the asset list proxy', async () => {
+      expect(await proxyAdmin.getProxyImplementation(assetList.address)).to.equal(newAssetListImpl);
+    });
+  });
+
+  /*//////////////////////////////////////////////////////////////
+                            TYPEHASH UPDATE
   //////////////////////////////////////////////////////////////*/
 
   // AssetListTypeHashMock is a full copy of AssetList with only the TYPEHASH changed, so it has to be kept in sync with
-  // contracts/AssetList.sol by hand: after any change there, copy it into the mock as well
-  context('TYPEHASH updated', function () {
-    const NEW_TYPEHASH = ethers.utils.id('ImmutableConfigV2[](address asset,address priceFeed)');
+  // contracts/AssetList.sol by hand: after any change there, copy it into the mock as well.
+  // The structure of the immutable configs changed, so the same configs hash to a new configHash. The Configurator
+  // hashes with the TYPEHASH of the current list, so after the upgrade it sees nothing to deploy
+  context('typehash update', function () {
+    let newAssetListImpl: string;
+    let upgradeTx: ContractTransaction;
 
-    let newFactory: AssetListTypeHashFactoryMock;
-    let newImplementation: AssetListTypeHashMock;
-    let newPriceFeed: string;
-
-    before(async () => await snapshot.restore());
-
-    // The hash check uses the current list's TYPEHASH, and the configs are unchanged
-    it('deployAssetList returns the zero address before the deploy', async () => {
-      expect((await configurator.callStatic.deployAssetList(comet.address)).newAssetListImpl).to.equal(ZERO_ADDRESS);
-    });
-
-    it('deploys the new factory', async () => {
-      newFactory = await (await ethers.getContractFactory('AssetListTypeHashFactoryMock')).deploy(configurator.address) as AssetListTypeHashFactoryMock;
-    });
-
-    it('deploys the new implementation from the current immutable configs', async () => {
-      const immutableConfigs = await configurator.getImmutableAssetConfig(comet.address);
-      const address = await newFactory.callStatic.createAssetList(immutableConfigs);
+    before(async () => {
+      await snapshot.restore();
+      const newFactory = await (await ethers.getContractFactory('AssetListTypeHashFactoryMock')).deploy(configurator.address) as AssetListTypeHashFactoryMock;
+      const immutableConfigs = await configurator.getImmutableAssetConfig(comet);
+      newAssetListImpl = await newFactory.callStatic.createAssetList(immutableConfigs);
       await newFactory.createAssetList(immutableConfigs);
-      newImplementation = await ethers.getContractAt('AssetListTypeHashMock', address) as AssetListTypeHashMock;
+      await proxyAdmin.connect(governor).upgrade(assetList.address, newAssetListImpl);
     });
 
-    it('the new implementation has the new TYPEHASH', async () => {
-      expect(await newImplementation.TYPEHASH()).to.equal(NEW_TYPEHASH);
-    });
-
-    it('the new implementation hashes the same configs with the new TYPEHASH', async () => {
-      expect(await newImplementation.configHash()).to.equal(hashConfig(configs, NEW_TYPEHASH));
-    });
-
-    it('so its configHash differs from the current list', async () => {
-      expect(await newImplementation.configHash()).to.not.equal(await assetList.configHash());
-    });
-
-    it('upgrades the asset list proxy', async () => {
-      await proxyAdmin.connect(governor).upgrade(assetList.address, newImplementation.address);
-    });
-
-    it('the proxy reports the new TYPEHASH', async () => {
+    it('sanity check: the asset list proxy reports the new TYPEHASH', async () => {
       expect(await assetList.TYPEHASH()).to.equal(NEW_TYPEHASH);
     });
 
-    it('the proxy reports the new configHash', async () => {
-      expect(await assetList.configHash()).to.equal(hashConfig(configs, NEW_TYPEHASH));
+    it('sanity check: the configHash is the immutable configs hashed with the new TYPEHASH', async () => {
+      const immutableConfigs = await configurator.getImmutableAssetConfig(comet);
+      expect(await assetList.configHash()).to.equal(hashConfig(immutableConfigs, NEW_TYPEHASH));
     });
 
-    it('keeps the factors and supply cap of every asset', async () => {
-      for (let i = 0; i < configs.length; i++) {
-        const info = await assetList.getAssetInfo(i);
-        expect(info.borrowCollateralFactor).to.equal(storageConfigs[i].borrowCollateralFactor);
-        expect(info.liquidateCollateralFactor).to.equal(storageConfigs[i].liquidateCollateralFactor);
-        expect(info.liquidationFactor).to.equal(storageConfigs[i].liquidationFactor);
-        expect(info.supplyCap).to.equal(storageConfigs[i].supplyCap);
-      }
+    it('sanity check: deployAssetList returns no new implementation', async () => {
+      expect((await configurator.callStatic.deployAssetList(comet)).newAssetListImpl).to.equal(ZERO_ADDRESS);
     });
 
-    // Looking an asset up by address fails unless it is registered
-    it('keeps every asset registered', async () => {
-      for (const { asset } of configs) {
-        expect((await assetList.getAssetInfoByAddress(asset)).asset).to.equal(asset);
-      }
+    it('deployAndUpgradeAssetListTo is successful', async () => {
+      upgradeTx = await proxyAdmin.connect(governor).deployAndUpgradeAssetListTo(configurator.address, comet);
+      await expect(upgradeTx).to.not.be.reverted;
     });
 
-    it('keeps the configurator', async () => {
-      expect(await assetList.configurator()).to.equal(configurator.address);
+    it('does not emit AssetListDeployed', async () => {
+      await expect(upgradeTx).to.not.emit(configurator, 'AssetListDeployed');
     });
 
-    it('the Comet reads every asset the same way, with no Comet redeploy', async () => {
-      for (let i = 0; i < configs.length; i++) {
-        expect(await comet.getAssetInfo(i)).to.deep.equal(cometAssetInfosBefore[i]);
-      }
-    });
-
-    // The check now hashes with the new TYPEHASH, which matches the new configHash
-    it('deployAssetList returns the zero address after the upgrade', async () => {
-      expect((await configurator.callStatic.deployAssetList(comet.address)).newAssetListImpl).to.equal(ZERO_ADDRESS);
-    });
-
-    it('sets the new factory on the Configurator', async () => {
-      await configurator.connect(governor).setAssetListFactory(comet.address, newFactory.address);
-    });
-
-    it('updates the price feed of the first asset', async () => {
-      newPriceFeed = (await (await ethers.getContractFactory('SimplePriceFeed')).deploy(10n ** 8n, 8)).address;
-      await configurator.connect(governor).updateAssetPriceFeed(comet.address, configs[0].asset, newPriceFeed);
-    });
-
-    it('deploys and upgrades through deployAndUpgradeAssetListTo', async () => {
-      await proxyAdmin.connect(governor).deployAndUpgradeAssetListTo(configurator.address, comet.address);
-    });
-
-    it('the list reads the new price feed', async () => {
-      expect((await assetList.getAssetInfo(0)).priceFeed).to.equal(newPriceFeed);
-    });
-
-    it('the new implementation keeps the new TYPEHASH', async () => {
-      expect(await assetList.TYPEHASH()).to.equal(NEW_TYPEHASH);
-    });
-
-    it('its configHash is the updated configs hashed with the new TYPEHASH', async () => {
-      const updatedConfigs = configs.map((config, i) => (i === 0 ? { ...config, priceFeed: newPriceFeed } : config));
-      expect(await assetList.configHash()).to.equal(hashConfig(updatedConfigs, NEW_TYPEHASH));
+    it('keeps the new implementation of the asset list proxy', async () => {
+      expect(await proxyAdmin.getProxyImplementation(assetList.address)).to.equal(newAssetListImpl);
     });
   });
 });

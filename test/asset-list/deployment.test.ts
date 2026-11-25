@@ -1,43 +1,63 @@
-import { ethers, expect } from '../helpers';
-import { AssetList, AssetList__factory, CometProxyAdmin, Configurator } from '../../build/types';
-import { AssetInfoStructOutput, ImmutableAssetConfigStruct, StorageAssetConfigStruct } from '../../build/types/AssetList';
-import {
-  ASSET_DECIMALS,
-  MAX_ASSETS,
-  MAX_ASSET_DECIMALS,
-  deployAssetListFixture,
-  deployAssetListProxy,
-  deployImmutableAssetConfig,
-  deployImmutableAssetConfigs,
-  hashConfig,
-} from './shared';
+import { MAX_ASSETS, MAX_UINT128, SignerWithAddress, ZERO_ADDRESS, ethers, exp, expect, factorScale, prepareAssets } from '../helpers';
+import { AssetList, AssetList__factory, TransparentUpgradeableProxy__factory } from '../../build/types';
+import { ImmutableAssetConfigStruct, StorageAssetConfigStruct } from '../../build/types/AssetList';
 
-// The AssetList constructor takes the immutable part of the asset configs (asset, price feed), checks it
-// and packs each asset into its own pair of immutables. It also fixes the number of assets and the hash of the
-// configs. Factors and supply caps are not part of it: they are set later, when a proxy is initialized.
+/*//////////////////////////////////////////////////////////////
+                          SHARED CONSTANTS
+//////////////////////////////////////////////////////////////*/
+
+const MAX_ASSET_DECIMALS = 19;
+const TYPEHASH = ethers.utils.id('ImmutableConfig[](address asset,address priceFeed)');
+const DIFFERENT_DECIMALS_COLLATERALS: { symbol: string, decimals: number }[] = [
+  { symbol: 'WETH', decimals: 18 },
+  { symbol: 'WBTC', decimals: 8 },
+  { symbol: 'USDT', decimals: 6 },
+  { symbol: 'NODEC', decimals: 0 },
+  { symbol: 'MAXDEC', decimals: MAX_ASSET_DECIMALS },
+];
+
+// The market's collateral assets, in the order they are listed, one per slot up to MAX_ASSETS
+const COLLATERALS: { symbol: string, decimals: number }[] = [
+  ...DIFFERENT_DECIMALS_COLLATERALS, // 1 - 5
+  // The rest fill every slot left, 6 - 24
+  ...Array.from({ length: MAX_ASSETS - DIFFERENT_DECIMALS_COLLATERALS.length }, (_, j) => ({
+    symbol: `ASSET${j + DIFFERENT_DECIMALS_COLLATERALS.length}`,
+    decimals: 18,
+  })),
+];
+
+// The market: USDC as the base asset, then the collaterals
+const ASSETS = {
+  USDC: { decimals: 6, initialPrice: 1 },
+  ...Object.fromEntries(COLLATERALS.map(({ symbol, decimals }) => [symbol, { decimals }])),
+};
+
 describe('asset list deployment: constructor', function () {
-  const ZERO = ethers.constants.AddressZero;
-
   let AssetListContractFactory: AssetList__factory;
   let assetList: AssetList; // the implementation, not initialized
-  let configs: ImmutableAssetConfigStruct[];
-  let configurator: Configurator;
+  let immutableConfigs: ImmutableAssetConfigStruct[];
+  let configurator: SignerWithAddress; // only its address matters here
 
   before(async () => {
-    ({ AssetListContractFactory, assetListImplementation: assetList, configs, configurator } = await deployAssetListFixture());
+    [configurator] = await ethers.getSigners();
+    ({ immutableConfigs } = await prepareAssets({ base: 'USDC', assets: ASSETS }));
+    AssetListContractFactory = (await ethers.getContractFactory('AssetList')) as AssetList__factory;
   });
 
   context('happy path', function () {
     it('deploys with the list of immutable configs', async () => {
-      expect((await assetList.deployTransaction.wait()).status).to.equal(1);
+      assetList = await AssetListContractFactory.deploy(immutableConfigs, configurator.address);
+      await expect(assetList.deployTransaction).to.not.be.reverted;
     });
 
-    it('sets numAssets to the number of configs', async () => {
-      expect(await assetList.numAssets()).to.equal(configs.length);
+    it(`sets numAssets to the number of configs, ${MAX_ASSETS}: every slot is used`, async () => {
+      expect(await assetList.numAssets()).to.equal(MAX_ASSETS);
     });
 
     it('sets configHash to the hash of the immutable configs', async () => {
-      expect(await assetList.configHash()).to.equal(hashConfig(configs));
+      // ConfigHash.hashConfig(TYPEHASH, abi.encode(immutableConfigs)), computed off-chain
+      const encodedConfigs = ethers.utils.defaultAbiCoder.encode(['tuple(address asset, address priceFeed)[]'], [immutableConfigs]);
+      expect(await assetList.configHash()).to.equal(ethers.utils.keccak256(ethers.utils.hexConcat([TYPEHASH, encodedConfigs])));
     });
 
     it('sets the configurator', async () => {
@@ -48,33 +68,54 @@ describe('asset list deployment: constructor', function () {
       await expect(assetList.initialize([])).to.be.revertedWith('Initializable: contract is already initialized');
     });
 
-    // Both ends of the allowed decimals are among the fixture assets
-    const notes = { 0: ', the smallest', [MAX_ASSET_DECIMALS]: ', the largest whose scale fits in uint64' };
+    it('every asset is stored at its index', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).asset).to.equal(immutableConfigs[i].asset);
+      }
+    });
 
-    ASSET_DECIMALS.forEach((decimals, i) => {
-      context(`asset #${i} (${decimals} decimals${notes[decimals] ?? ''})`, function () {
-        let assetInfo: AssetInfoStructOutput;
+    it('every asset has its price feed', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).priceFeed).to.equal(immutableConfigs[i].priceFeed);
+      }
+    });
 
-        before(async () => {
-          assetInfo = await assetList.getAssetInfo(i);
-        });
+    it('every asset has its index as the offset', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).offset).to.equal(i);
+      }
+    });
 
-        it('stores the asset', async () => {
-          expect(assetInfo.asset).to.equal(configs[i].asset);
-        });
+    it('every asset has a scale of 10 to the power of its decimals', async () => {
+      for (const [i, { decimals }] of COLLATERALS.entries()) {
+        expect((await assetList.getAssetInfo(i)).scale).to.equal(10n ** BigInt(decimals));
+      }
+    });
 
-        it('stores the price feed', async () => {
-          expect(assetInfo.priceFeed).to.equal(configs[i].priceFeed);
-        });
+    // Factors and supply caps live in storage, which only initialize fills, so the implementation has none
 
-        it(`has offset ${i}`, async () => {
-          expect(assetInfo.offset).to.equal(i);
-        });
+    it('every asset has no borrow collateral factor yet', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).borrowCollateralFactor).to.equal(0);
+      }
+    });
 
-        it(`has scale 10 ** ${decimals}`, async () => {
-          expect(assetInfo.scale).to.equal(10n ** BigInt(decimals));
-        });
-      });
+    it('every asset has no liquidate collateral factor yet', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidateCollateralFactor).to.equal(0);
+      }
+    });
+
+    it('every asset has no liquidation factor yet', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidationFactor).to.equal(0);
+      }
+    });
+
+    it('every asset has no supply cap yet', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(0);
+      }
     });
   });
 
@@ -82,56 +123,24 @@ describe('asset list deployment: constructor', function () {
     let reorderedConfigs: ImmutableAssetConfigStruct[];
     let reorderedAssetList: AssetList;
 
-    before(async () => {
-      reorderedConfigs = [...configs].reverse();
+    before(() => {
+      reorderedConfigs = [...immutableConfigs].reverse();
+    });
+
+    it('deploys with the reordered configs', async () => {
       reorderedAssetList = await AssetListContractFactory.deploy(reorderedConfigs, configurator.address);
-      await reorderedAssetList.deployed();
+      await expect(reorderedAssetList.deployTransaction).to.not.be.reverted;
     });
 
     it('sets configHash to the hash of the reordered configs', async () => {
-      expect(await reorderedAssetList.configHash()).to.equal(hashConfig(reorderedConfigs));
+      // ConfigHash.hashConfig(TYPEHASH, abi.encode(reorderedConfigs)), computed off-chain
+      const encodedConfigs = ethers.utils.defaultAbiCoder.encode(['tuple(address asset, address priceFeed)[]'], [reorderedConfigs]);
+      expect(await reorderedAssetList.configHash()).to.equal(ethers.utils.keccak256(ethers.utils.hexConcat([TYPEHASH, encodedConfigs])));
     });
 
     it('gives a different configHash than the original order', async () => {
       expect(await reorderedAssetList.configHash()).to.not.equal(await assetList.configHash());
     });
-  });
-
-  context(`happy path (${MAX_ASSETS} assets, all slots)`, function () {
-    let fullConfigs: ImmutableAssetConfigStruct[];
-    let fullAssetList: AssetList;
-    let assetInfos: AssetInfoStructOutput[];
-
-    before(async () => {
-      fullConfigs = await deployImmutableAssetConfigs(Array(MAX_ASSETS).fill(18));
-      fullAssetList = await AssetListContractFactory.deploy(fullConfigs, configurator.address);
-      await fullAssetList.deployed();
-
-      assetInfos = [];
-      for (let i = 0; i < MAX_ASSETS; i++) assetInfos.push(await fullAssetList.getAssetInfo(i));
-    });
-
-    it(`sets numAssets to ${MAX_ASSETS}`, async () => {
-      expect(await fullAssetList.numAssets()).to.equal(MAX_ASSETS);
-    });
-
-    for (let i = 0; i < MAX_ASSETS; i++) {
-      it(`slot #${i} holds its asset`, async () => {
-        expect(assetInfos[i].asset).to.equal(fullConfigs[i].asset);
-      });
-
-      it(`slot #${i} holds its price feed`, async () => {
-        expect(assetInfos[i].priceFeed).to.equal(fullConfigs[i].priceFeed);
-      });
-
-      it(`slot #${i} has offset ${i}`, async () => {
-        expect(assetInfos[i].offset).to.equal(i);
-      });
-
-      it(`slot #${i} has scale 10 ** 18`, async () => {
-        expect(assetInfos[i].scale).to.equal(10n ** 18n);
-      });
-    }
   });
 
   context('revert when', function () {
@@ -140,153 +149,761 @@ describe('asset list deployment: constructor', function () {
     });
 
     it(`there are more than ${MAX_ASSETS} configs`, async () => {
-      await expect(AssetListContractFactory.deploy(Array(MAX_ASSETS + 1).fill(configs[0]), configurator.address))
+      await expect(AssetListContractFactory.deploy(Array(MAX_ASSETS + 1).fill(immutableConfigs[0]), configurator.address))
         .to.be.revertedWithCustomError(assetList, 'TooManyAssets');
     });
 
     it('a price feed does not have 8 decimals', async () => {
-      const badPriceFeedConfig = await deployImmutableAssetConfig(18, 18);
-      await expect(AssetListContractFactory.deploy([configs[0], badPriceFeedConfig], configurator.address))
+      const { immutableConfigs: [badPriceFeedConfig] } = await prepareAssets({
+        base: 'USDC',
+        assets: { USDC: ASSETS.USDC, BADFEED: { priceFeedDecimals: 18 } },
+      });
+      await expect(AssetListContractFactory.deploy([immutableConfigs[0], badPriceFeedConfig], configurator.address))
         .to.be.revertedWithCustomError(assetList, 'PriceFeedDecimalsNotMatched');
     });
 
     it(`an asset has more than ${MAX_ASSET_DECIMALS} decimals`, async () => {
-      const tooManyDecimalsConfig = await deployImmutableAssetConfig(MAX_ASSET_DECIMALS + 1);
-      await expect(AssetListContractFactory.deploy([configs[0], tooManyDecimalsConfig], configurator.address))
+      const { immutableConfigs: [tooManyDecimalsConfig] } = await prepareAssets({
+        base: 'USDC',
+        assets: { USDC: ASSETS.USDC, TOOMANYDEC: { decimals: MAX_ASSET_DECIMALS + 1 } },
+      });
+      await expect(AssetListContractFactory.deploy([immutableConfigs[0], tooManyDecimalsConfig], configurator.address))
         .to.be.revertedWithCustomError(assetList, 'MaxAssetDecimalsExceeds');
     });
 
     it('an asset inside the list is the zero address', async () => {
-      await expect(AssetListContractFactory.deploy([configs[0], { ...configs[1], asset: ZERO }, configs[2]], configurator.address))
+      await expect(AssetListContractFactory.deploy([immutableConfigs[0], { ...immutableConfigs[1], asset: ZERO_ADDRESS }, immutableConfigs[2]], configurator.address))
         .to.be.revertedWithCustomError(assetList, 'ZeroAddress');
     });
 
     it('the configurator is the zero address', async () => {
-      await expect(AssetListContractFactory.deploy(configs, ZERO))
+      await expect(AssetListContractFactory.deploy(immutableConfigs, ZERO_ADDRESS))
         .to.be.revertedWithCustomError(assetList, 'ZeroConfigurator');
     });
 
     it('a price feed inside the list is the zero address', async () => {
-      await expect(AssetListContractFactory.deploy([configs[0], { ...configs[1], priceFeed: ZERO }, configs[2]], configurator.address))
+      await expect(AssetListContractFactory.deploy([immutableConfigs[0], { ...immutableConfigs[1], priceFeed: ZERO_ADDRESS }, immutableConfigs[2]], configurator.address))
         .to.be.revertedWithCustomError(assetList, 'ZeroAddress');
     });
   });
 });
 
-// AssetList.initialize stores the factors and the supply cap of every asset the implementation was built from.
-// The configurator is already fixed by the implementation's constructor. It runs once, through the constructor
-// data of the proxy; the implementation itself stays uninitialized.
 describe('asset list deployment: initialize', function () {
-  const MAX_COLLATERAL_FACTOR = 10n ** 18n;
-
   let AssetListContractFactory: AssetList__factory;
+  let ProxyContractFactory: TransparentUpgradeableProxy__factory;
   let assetListImplementation: AssetList;
-  let assetList: AssetList;
-  let configs: ImmutableAssetConfigStruct[];
-  let storageConfigs: StorageAssetConfigStruct[];
-  let proxyAdmin: CometProxyAdmin;
-  let configurator: Configurator;
+  let immutableConfigs: ImmutableAssetConfigStruct[];
+  // The valid factors and supply cap prepareAssets gives every asset; a revert case breaks one asset at a time
+  let defaultStorageConfigs: StorageAssetConfigStruct[];
+  // The same for a smaller market with only the collaterals of different decimals, and the implementation built from it
+  let differentDecimalsStorageConfigs: StorageAssetConfigStruct[];
+  let differentDecimalsImplementation: AssetList;
+  // Only their addresses matter here
+  let configurator: SignerWithAddress;
+  let proxyAdmin: SignerWithAddress;
 
-  // Initializes a new proxy of the fixture implementation with one asset's factors replaced.
-  const initializeWithFactors = (factors: Partial<StorageAssetConfigStruct>) =>
-    deployAssetListProxy(
-      assetListImplementation,
-      proxyAdmin.address,
-      storageConfigs.map((config, i) => (i == storageConfigs.length - 1 ? { ...config, ...factors } : config))
-    );
+  const SUPPLY_CAP = exp(1000, 18);
 
   before(async () => {
-    ({
-      AssetListContractFactory,
-      assetListImplementation,
-      assetList,
-      configs,
-      storageConfigs,
-      proxyAdmin,
-      configurator,
-    } = await deployAssetListFixture());
+    [configurator, proxyAdmin] = await ethers.getSigners();
+    ({ immutableConfigs, storageConfigs: defaultStorageConfigs } = await prepareAssets({ base: 'USDC', assets: ASSETS }));
+    AssetListContractFactory = (await ethers.getContractFactory('AssetList')) as AssetList__factory;
+    ProxyContractFactory = (await ethers.getContractFactory('TransparentUpgradeableProxy')) as TransparentUpgradeableProxy__factory;
+    assetListImplementation = await AssetListContractFactory.deploy(immutableConfigs, configurator.address);
+
+    const differentDecimalsAssets = await prepareAssets({
+      base: 'USDC',
+      assets: {
+        USDC: ASSETS.USDC,
+        ...Object.fromEntries(DIFFERENT_DECIMALS_COLLATERALS.map(({ symbol, decimals }) => [symbol, { decimals }])),
+      },
+    });
+    differentDecimalsStorageConfigs = differentDecimalsAssets.storageConfigs;
+    differentDecimalsImplementation = await AssetListContractFactory.deploy(differentDecimalsAssets.immutableConfigs, configurator.address);
   });
 
-  context('happy path (through the proxy constructor data)', function () {
-    it('the proxy sees the configurator of the implementation', async () => {
-      expect(await assetList.configurator()).to.equal(configurator.address);
+  /*//////////////////////////////////////////////////////////////
+                          COLLATERAL FACTORS
+  //////////////////////////////////////////////////////////////*/
+
+  context('can be initialized with BCF > 0, LCF > BCF and LF > LCF', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+
+    let assetList: AssetList;
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      storageConfigs = COLLATERALS.map(() => ({
+        borrowCollateralFactor: BORROW_CF,
+        liquidateCollateralFactor: LIQUIDATE_CF,
+        liquidationFactor: LIQUIDATION_FACTOR,
+        supplyCap: SUPPLY_CAP,
+      }));
     });
 
-    it('the implementation holds the same configurator, as an immutable', async () => {
-      expect(await assetListImplementation.configurator()).to.equal(configurator.address);
+    it('deploys the asset list proxy, initialized with the factors and supply cap of every asset', async () => {
+      const proxy = await ProxyContractFactory.deploy(
+        assetListImplementation.address,
+        proxyAdmin.address,
+        assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      );
+      await expect(proxy.deployTransaction).to.not.be.reverted;
+      assetList = assetListImplementation.attach(proxy.address);
     });
 
-    it('stores no asset config in the implementation', async () => {
-      await expect(assetListImplementation.getAssetInfoByAddress(configs[0].asset))
-        .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
+    it('every asset has the borrow collateral factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).borrowCollateralFactor).to.equal(BORROW_CF);
+      }
     });
 
-    ASSET_DECIMALS.forEach((decimals, i) => {
-      context(`asset #${i} (${decimals} decimals)`, function () {
-        let assetInfo: AssetInfoStructOutput;
+    it('every asset has the liquidate collateral factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidateCollateralFactor).to.equal(LIQUIDATE_CF);
+      }
+    });
 
-        before(async () => {
-          assetInfo = await assetList.getAssetInfo(i);
-        });
+    it('every asset has the liquidation factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidationFactor).to.equal(LIQUIDATION_FACTOR);
+      }
+    });
 
-        it('stores the borrow collateral factor', async () => {
-          expect(assetInfo.borrowCollateralFactor).to.equal(storageConfigs[i].borrowCollateralFactor);
-        });
-
-        it('stores the liquidate collateral factor', async () => {
-          expect(assetInfo.liquidateCollateralFactor).to.equal(storageConfigs[i].liquidateCollateralFactor);
-        });
-
-        it('stores the liquidation factor', async () => {
-          expect(assetInfo.liquidationFactor).to.equal(storageConfigs[i].liquidationFactor);
-        });
-
-        it('stores the supply cap', async () => {
-          expect(assetInfo.supplyCap).to.equal(storageConfigs[i].supplyCap);
-        });
-
-        it('returns the same asset info by address', async () => {
-          expect(await assetList.getAssetInfoByAddress(configs[i].asset)).to.deep.equal(assetInfo);
-        });
-      });
+    it('every asset has the supply cap', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(SUPPLY_CAP);
+      }
     });
   });
 
-  context('happy path (liquidation factor at the maximum)', function () {
-    it('stores the liquidation factor', async () => {
-      const maxFactorAssetList = await initializeWithFactors({ liquidationFactor: MAX_COLLATERAL_FACTOR });
-      expect((await maxFactorAssetList.getAssetInfo(storageConfigs.length - 1)).liquidationFactor)
-        .to.equal(MAX_COLLATERAL_FACTOR);
+  context('can be initialized with BCF = 0, LCF > 0 and LF > LCF', function () {
+    const BORROW_CF = 0n;
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+
+    let assetList: AssetList;
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      storageConfigs = COLLATERALS.map(() => ({
+        borrowCollateralFactor: BORROW_CF,
+        liquidateCollateralFactor: LIQUIDATE_CF,
+        liquidationFactor: LIQUIDATION_FACTOR,
+        supplyCap: SUPPLY_CAP,
+      }));
+    });
+
+    it('deploys the asset list proxy, initialized with the factors and supply cap of every asset', async () => {
+      const proxy = await ProxyContractFactory.deploy(
+        assetListImplementation.address,
+        proxyAdmin.address,
+        assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      );
+      await expect(proxy.deployTransaction).to.not.be.reverted;
+      assetList = assetListImplementation.attach(proxy.address);
+    });
+
+    it('every asset has the borrow collateral factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).borrowCollateralFactor).to.equal(BORROW_CF);
+      }
+    });
+
+    it('every asset has the liquidate collateral factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidateCollateralFactor).to.equal(LIQUIDATE_CF);
+      }
+    });
+
+    it('every asset has the liquidation factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidationFactor).to.equal(LIQUIDATION_FACTOR);
+      }
+    });
+
+    it('every asset has the supply cap', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(SUPPLY_CAP);
+      }
     });
   });
 
-  context('revert when', function () {
-    it('there are fewer storage configs than assets', async () => {
-      await expect(
-        deployAssetListProxy(assetListImplementation, proxyAdmin.address, storageConfigs.slice(1))
-      ).to.be.revertedWithCustomError(assetList, 'StorageConfigsLengthMismatch');
+  context('can be initialized with BCF = 0, LCF = 0 and LF > 0', function () {
+    const BORROW_CF = 0n;
+    const LIQUIDATE_CF = 0n;
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+
+    let assetList: AssetList;
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      storageConfigs = COLLATERALS.map(() => ({
+        borrowCollateralFactor: BORROW_CF,
+        liquidateCollateralFactor: LIQUIDATE_CF,
+        liquidationFactor: LIQUIDATION_FACTOR,
+        supplyCap: SUPPLY_CAP,
+      }));
     });
 
-    it('there are more storage configs than assets', async () => {
-      await expect(
-        deployAssetListProxy(
-          assetListImplementation,
+    it('deploys the asset list proxy, initialized with the factors and supply cap of every asset', async () => {
+      const proxy = await ProxyContractFactory.deploy(
+        assetListImplementation.address,
+        proxyAdmin.address,
+        assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      );
+      await expect(proxy.deployTransaction).to.not.be.reverted;
+      assetList = assetListImplementation.attach(proxy.address);
+    });
+
+    it('every asset has the borrow collateral factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).borrowCollateralFactor).to.equal(BORROW_CF);
+      }
+    });
+
+    it('every asset has the liquidate collateral factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidateCollateralFactor).to.equal(LIQUIDATE_CF);
+      }
+    });
+
+    it('every asset has the liquidation factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidationFactor).to.equal(LIQUIDATION_FACTOR);
+      }
+    });
+
+    it('every asset has the supply cap', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(SUPPLY_CAP);
+      }
+    });
+  });
+
+  context('can be initialized with BCF = 0, LCF = 0 and LF = 0', function () {
+    const BORROW_CF = 0n;
+    const LIQUIDATE_CF = 0n;
+    const LIQUIDATION_FACTOR = 0n;
+
+    let assetList: AssetList;
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      storageConfigs = COLLATERALS.map(() => ({
+        borrowCollateralFactor: BORROW_CF,
+        liquidateCollateralFactor: LIQUIDATE_CF,
+        liquidationFactor: LIQUIDATION_FACTOR,
+        supplyCap: SUPPLY_CAP,
+      }));
+    });
+
+    it('deploys the asset list proxy, initialized with the factors and supply cap of every asset', async () => {
+      const proxy = await ProxyContractFactory.deploy(
+        assetListImplementation.address,
+        proxyAdmin.address,
+        assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      );
+      await expect(proxy.deployTransaction).to.not.be.reverted;
+      assetList = assetListImplementation.attach(proxy.address);
+    });
+
+    it('every asset has the borrow collateral factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).borrowCollateralFactor).to.equal(BORROW_CF);
+      }
+    });
+
+    it('every asset has the liquidate collateral factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidateCollateralFactor).to.equal(LIQUIDATE_CF);
+      }
+    });
+
+    it('every asset has the liquidation factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidationFactor).to.equal(LIQUIDATION_FACTOR);
+      }
+    });
+
+    it('every asset has the supply cap', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(SUPPLY_CAP);
+      }
+    });
+  });
+
+  context('can be initialized with LF at the maximum, 1e18', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = factorScale;
+
+    let assetList: AssetList;
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      storageConfigs = COLLATERALS.map(() => ({
+        borrowCollateralFactor: BORROW_CF,
+        liquidateCollateralFactor: LIQUIDATE_CF,
+        liquidationFactor: LIQUIDATION_FACTOR,
+        supplyCap: SUPPLY_CAP,
+      }));
+    });
+
+    it('deploys the asset list proxy, initialized with the factors and supply cap of every asset', async () => {
+      const proxy = await ProxyContractFactory.deploy(
+        assetListImplementation.address,
+        proxyAdmin.address,
+        assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      );
+      await expect(proxy.deployTransaction).to.not.be.reverted;
+      assetList = assetListImplementation.attach(proxy.address);
+    });
+
+    it('every asset has the borrow collateral factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).borrowCollateralFactor).to.equal(BORROW_CF);
+      }
+    });
+
+    it('every asset has the liquidate collateral factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidateCollateralFactor).to.equal(LIQUIDATE_CF);
+      }
+    });
+
+    it('every asset has the liquidation factor', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).liquidationFactor).to.equal(LIQUIDATION_FACTOR);
+      }
+    });
+
+    it('every asset has the supply cap', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(SUPPLY_CAP);
+      }
+    });
+  });
+
+  context('revert when BCF equals LCF and both are non-zero', function () {
+    const BORROW_CF = exp(0.8, 18);
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+
+    it('reverts with BorrowCFTooLarge for every asset', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        // Only asset i gets the factors, every other asset keeps its valid ones
+        const storageConfigs = defaultStorageConfigs.map((config, j) => (j === i ? {
+          ...config,
+          borrowCollateralFactor: BORROW_CF,
+          liquidateCollateralFactor: LIQUIDATE_CF,
+          liquidationFactor: LIQUIDATION_FACTOR,
+        } : config));
+
+        await expect(ProxyContractFactory.deploy(
+          assetListImplementation.address,
           proxyAdmin.address,
-          [...storageConfigs, storageConfigs[0]]
-        )
-      ).to.be.revertedWithCustomError(assetList, 'StorageConfigsLengthMismatch');
+          assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+        )).to.be.revertedWithCustomError(assetListImplementation, 'BorrowCFTooLarge');
+      }
+    });
+  });
+
+  context('revert when BCF exceeds LCF', function () {
+    const BORROW_CF = exp(0.8, 18) + 1n;
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+
+    it('reverts with BorrowCFTooLarge for every asset', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        // Only asset i gets the factors, every other asset keeps its valid ones
+        const storageConfigs = defaultStorageConfigs.map((config, j) => (j === i ? {
+          ...config,
+          borrowCollateralFactor: BORROW_CF,
+          liquidateCollateralFactor: LIQUIDATE_CF,
+          liquidationFactor: LIQUIDATION_FACTOR,
+        } : config));
+
+        await expect(ProxyContractFactory.deploy(
+          assetListImplementation.address,
+          proxyAdmin.address,
+          assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+        )).to.be.revertedWithCustomError(assetListImplementation, 'BorrowCFTooLarge');
+      }
+    });
+  });
+
+  context('revert when BCF is non-zero and LCF is zero', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = 0n;
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+
+    it('reverts with BorrowCFTooLarge for every asset', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        // Only asset i gets the factors, every other asset keeps its valid ones
+        const storageConfigs = defaultStorageConfigs.map((config, j) => (j === i ? {
+          ...config,
+          borrowCollateralFactor: BORROW_CF,
+          liquidateCollateralFactor: LIQUIDATE_CF,
+          liquidationFactor: LIQUIDATION_FACTOR,
+        } : config));
+
+        await expect(ProxyContractFactory.deploy(
+          assetListImplementation.address,
+          proxyAdmin.address,
+          assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+        )).to.be.revertedWithCustomError(assetListImplementation, 'BorrowCFTooLarge');
+      }
+    });
+  });
+
+  context('revert when LCF equals LF and both are non-zero', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = exp(0.9, 18);
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+
+    it('reverts with LiquidateCFTooLarge for every asset', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        // Only asset i gets the factors, every other asset keeps its valid ones
+        const storageConfigs = defaultStorageConfigs.map((config, j) => (j === i ? {
+          ...config,
+          borrowCollateralFactor: BORROW_CF,
+          liquidateCollateralFactor: LIQUIDATE_CF,
+          liquidationFactor: LIQUIDATION_FACTOR,
+        } : config));
+
+        await expect(ProxyContractFactory.deploy(
+          assetListImplementation.address,
+          proxyAdmin.address,
+          assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+        )).to.be.revertedWithCustomError(assetListImplementation, 'LiquidateCFTooLarge');
+      }
+    });
+  });
+
+  context('revert when LCF exceeds LF', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = exp(0.9, 18) + 1n;
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+
+    it('reverts with LiquidateCFTooLarge for every asset', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        // Only asset i gets the factors, every other asset keeps its valid ones
+        const storageConfigs = defaultStorageConfigs.map((config, j) => (j === i ? {
+          ...config,
+          borrowCollateralFactor: BORROW_CF,
+          liquidateCollateralFactor: LIQUIDATE_CF,
+          liquidationFactor: LIQUIDATION_FACTOR,
+        } : config));
+
+        await expect(ProxyContractFactory.deploy(
+          assetListImplementation.address,
+          proxyAdmin.address,
+          assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+        )).to.be.revertedWithCustomError(assetListImplementation, 'LiquidateCFTooLarge');
+      }
+    });
+  });
+
+  context('revert when LCF is non-zero and LF is zero', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = 0n;
+
+    it('reverts with LiquidateCFTooLarge for every asset', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        // Only asset i gets the factors, every other asset keeps its valid ones
+        const storageConfigs = defaultStorageConfigs.map((config, j) => (j === i ? {
+          ...config,
+          borrowCollateralFactor: BORROW_CF,
+          liquidateCollateralFactor: LIQUIDATE_CF,
+          liquidationFactor: LIQUIDATION_FACTOR,
+        } : config));
+
+        await expect(ProxyContractFactory.deploy(
+          assetListImplementation.address,
+          proxyAdmin.address,
+          assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+        )).to.be.revertedWithCustomError(assetListImplementation, 'LiquidateCFTooLarge');
+      }
+    });
+  });
+
+  context('revert when LF exceeds the maximum, 1e18', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = factorScale + 1n;
+
+    it('reverts with LiqPenaltyTooHigh for every asset', async () => {
+      for (let i = 0; i < COLLATERALS.length; i++) {
+        // Only asset i gets the factors, every other asset keeps its valid ones
+        const storageConfigs = defaultStorageConfigs.map((config, j) => (j === i ? {
+          ...config,
+          borrowCollateralFactor: BORROW_CF,
+          liquidateCollateralFactor: LIQUIDATE_CF,
+          liquidationFactor: LIQUIDATION_FACTOR,
+        } : config));
+
+        await expect(ProxyContractFactory.deploy(
+          assetListImplementation.address,
+          proxyAdmin.address,
+          assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+        )).to.be.revertedWithCustomError(assetListImplementation, 'LiqPenaltyTooHigh');
+      }
+    });
+  });
+
+  /*//////////////////////////////////////////////////////////////
+                            SUPPLY CAPS
+  //////////////////////////////////////////////////////////////*/
+
+  context('can be initialized with a 1 wei supply cap', function () {
+    let assetList: AssetList;
+    let supplyCaps: bigint[];
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      // Every collateral gets the cap in its own token units
+      supplyCaps = DIFFERENT_DECIMALS_COLLATERALS.map(() => 1n);
+      storageConfigs = differentDecimalsStorageConfigs.map((config, i) => ({ ...config, supplyCap: supplyCaps[i] }));
     });
 
-    it('the same asset is listed twice', async () => {
-      // The constructor does not check for duplicates, so they surface when the assets are registered
-      const duplicatesImplementation = await AssetListContractFactory.deploy([configs[0], configs[0]], configurator.address);
-      await expect(
-        deployAssetListProxy(
-          duplicatesImplementation,
-          proxyAdmin.address,
-          [storageConfigs[0], storageConfigs[0]]
-        )
-      ).to.be.revertedWithCustomError(assetList, 'AssetAlreadyAdded');
+    it('deploys the asset list proxy, initialized with the supply caps', async () => {
+      const proxy = await ProxyContractFactory.deploy(
+        differentDecimalsImplementation.address,
+        proxyAdmin.address,
+        differentDecimalsImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      );
+      await expect(proxy.deployTransaction).to.not.be.reverted;
+      assetList = differentDecimalsImplementation.attach(proxy.address);
+    });
+
+    it('every collateral with different decimals has its supply cap', async () => {
+      for (let i = 0; i < supplyCaps.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(supplyCaps[i]);
+      }
+    });
+  });
+
+  context('can be initialized with a supply cap one wei below a whole token', function () {
+    let assetList: AssetList;
+    let supplyCaps: bigint[];
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      // Every collateral gets the cap in its own token units
+      supplyCaps = DIFFERENT_DECIMALS_COLLATERALS.map(({ decimals }) => 10n ** BigInt(decimals) - 1n);
+      storageConfigs = differentDecimalsStorageConfigs.map((config, i) => ({ ...config, supplyCap: supplyCaps[i] }));
+    });
+
+    it('deploys the asset list proxy, initialized with the supply caps', async () => {
+      const proxy = await ProxyContractFactory.deploy(
+        differentDecimalsImplementation.address,
+        proxyAdmin.address,
+        differentDecimalsImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      );
+      await expect(proxy.deployTransaction).to.not.be.reverted;
+      assetList = differentDecimalsImplementation.attach(proxy.address);
+    });
+
+    it('every collateral with different decimals has its supply cap', async () => {
+      for (let i = 0; i < supplyCaps.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(supplyCaps[i]);
+      }
+    });
+  });
+
+  context('can be initialized with a supply cap of 0.5 token', function () {
+    let assetList: AssetList;
+    let supplyCaps: bigint[];
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      // Every collateral gets the cap in its own token units
+      supplyCaps = DIFFERENT_DECIMALS_COLLATERALS.map(({ decimals }) => 10n ** BigInt(decimals) / 2n);
+      storageConfigs = differentDecimalsStorageConfigs.map((config, i) => ({ ...config, supplyCap: supplyCaps[i] }));
+    });
+
+    it('deploys the asset list proxy, initialized with the supply caps', async () => {
+      const proxy = await ProxyContractFactory.deploy(
+        differentDecimalsImplementation.address,
+        proxyAdmin.address,
+        differentDecimalsImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      );
+      await expect(proxy.deployTransaction).to.not.be.reverted;
+      assetList = differentDecimalsImplementation.attach(proxy.address);
+    });
+
+    it('every collateral with different decimals has its supply cap', async () => {
+      for (let i = 0; i < supplyCaps.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(supplyCaps[i]);
+      }
+    });
+  });
+
+  context('can be initialized with a supply cap of 10.5 tokens', function () {
+    let assetList: AssetList;
+    let supplyCaps: bigint[];
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      // Every collateral gets the cap in its own token units
+      supplyCaps = DIFFERENT_DECIMALS_COLLATERALS.map(({ decimals }) => 10n ** BigInt(decimals) * 21n / 2n);
+      storageConfigs = differentDecimalsStorageConfigs.map((config, i) => ({ ...config, supplyCap: supplyCaps[i] }));
+    });
+
+    it('deploys the asset list proxy, initialized with the supply caps', async () => {
+      const proxy = await ProxyContractFactory.deploy(
+        differentDecimalsImplementation.address,
+        proxyAdmin.address,
+        differentDecimalsImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      );
+      await expect(proxy.deployTransaction).to.not.be.reverted;
+      assetList = differentDecimalsImplementation.attach(proxy.address);
+    });
+
+    it('every collateral with different decimals has its supply cap', async () => {
+      for (let i = 0; i < supplyCaps.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(supplyCaps[i]);
+      }
+    });
+  });
+
+  context('can be initialized with the max uint128 supply cap', function () {
+    let assetList: AssetList;
+    let supplyCaps: bigint[];
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      // Every collateral gets the cap in its own token units
+      supplyCaps = DIFFERENT_DECIMALS_COLLATERALS.map(() => MAX_UINT128);
+      storageConfigs = differentDecimalsStorageConfigs.map((config, i) => ({ ...config, supplyCap: supplyCaps[i] }));
+    });
+
+    it('deploys the asset list proxy, initialized with the supply caps', async () => {
+      const proxy = await ProxyContractFactory.deploy(
+        differentDecimalsImplementation.address,
+        proxyAdmin.address,
+        differentDecimalsImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      );
+      await expect(proxy.deployTransaction).to.not.be.reverted;
+      assetList = differentDecimalsImplementation.attach(proxy.address);
+    });
+
+    it('every collateral with different decimals has its supply cap', async () => {
+      for (let i = 0; i < supplyCaps.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(supplyCaps[i]);
+      }
+    });
+  });
+
+  context('can be initialized with a zero supply cap', function () {
+    let assetList: AssetList;
+    let supplyCaps: bigint[];
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      // Every collateral gets the cap in its own token units
+      supplyCaps = DIFFERENT_DECIMALS_COLLATERALS.map(() => 0n);
+      storageConfigs = differentDecimalsStorageConfigs.map((config, i) => ({ ...config, supplyCap: supplyCaps[i] }));
+    });
+
+    it('deploys the asset list proxy, initialized with the supply caps', async () => {
+      const proxy = await ProxyContractFactory.deploy(
+        differentDecimalsImplementation.address,
+        proxyAdmin.address,
+        differentDecimalsImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      );
+      await expect(proxy.deployTransaction).to.not.be.reverted;
+      assetList = differentDecimalsImplementation.attach(proxy.address);
+    });
+
+    it('every collateral with different decimals has its supply cap', async () => {
+      for (let i = 0; i < supplyCaps.length; i++) {
+        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(supplyCaps[i]);
+      }
+    });
+  });
+
+  /*//////////////////////////////////////////////////////////////
+                          GENERAL REVERT CASES
+  //////////////////////////////////////////////////////////////*/
+
+  context('revert when there are fewer storage configs than assets', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      storageConfigs = COLLATERALS.slice(1).map(() => ({
+        borrowCollateralFactor: BORROW_CF,
+        liquidateCollateralFactor: LIQUIDATE_CF,
+        liquidationFactor: LIQUIDATION_FACTOR,
+        supplyCap: SUPPLY_CAP,
+      }));
+    });
+
+    it('reverts with StorageConfigsLengthMismatch', async () => {
+      await expect(ProxyContractFactory.deploy(
+        assetListImplementation.address,
+        proxyAdmin.address,
+        assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      )).to.be.revertedWithCustomError(assetListImplementation, 'StorageConfigsLengthMismatch');
+    });
+  });
+
+  context('revert when there are more storage configs than assets', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      storageConfigs = [...COLLATERALS, COLLATERALS[0]].map(() => ({
+        borrowCollateralFactor: BORROW_CF,
+        liquidateCollateralFactor: LIQUIDATE_CF,
+        liquidationFactor: LIQUIDATION_FACTOR,
+        supplyCap: SUPPLY_CAP,
+      }));
+    });
+
+    it('reverts with StorageConfigsLengthMismatch', async () => {
+      await expect(ProxyContractFactory.deploy(
+        assetListImplementation.address,
+        proxyAdmin.address,
+        assetListImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      )).to.be.revertedWithCustomError(assetListImplementation, 'StorageConfigsLengthMismatch');
+    });
+  });
+
+  // The constructor does not check for duplicates, so they surface when initialize registers the assets
+  context('revert when the same asset is listed twice', function () {
+    const BORROW_CF = exp(0.75, 18);
+    const LIQUIDATE_CF = exp(0.8, 18);
+    const LIQUIDATION_FACTOR = exp(0.9, 18);
+
+    let storageConfigs: StorageAssetConfigStruct[];
+
+    before(() => {
+      storageConfigs = [0, 1].map(() => ({
+        borrowCollateralFactor: BORROW_CF,
+        liquidateCollateralFactor: LIQUIDATE_CF,
+        liquidationFactor: LIQUIDATION_FACTOR,
+        supplyCap: SUPPLY_CAP,
+      }));
+    });
+
+    it('reverts with AssetAlreadyAdded', async () => {
+      const duplicatesImplementation = await AssetListContractFactory.deploy([immutableConfigs[0], immutableConfigs[0]], configurator.address);
+      await expect(ProxyContractFactory.deploy(
+        duplicatesImplementation.address,
+        proxyAdmin.address,
+        duplicatesImplementation.interface.encodeFunctionData('initialize', [storageConfigs])
+      )).to.be.revertedWithCustomError(assetListImplementation, 'AssetAlreadyAdded');
     });
   });
 });

@@ -44,6 +44,8 @@ import {
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarnessExtendedAssetList';
+import { ImmutableAssetConfigStruct, StorageAssetConfigStruct } from '../build/types/AssetList';
+import { AssetConfigStruct } from '../build/types/Configurator';
 
 // Snapshot
 import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
@@ -126,6 +128,27 @@ export type Protocol = {
   priceFeeds: {
     [symbol: string]: SimplePriceFeed;
   };
+};
+
+export type AssetsOpts = Pick<ProtocolOpts, 'assets' | 'base'>;
+
+export type PreparedAssets = {
+  assets: NonNullable<ProtocolOpts['assets']>;
+  base: string;
+  tokens: {
+    [symbol: string]: FaucetToken | NonStandardFaucetFeeToken;
+  };
+  priceFeeds: {
+    [symbol: string]: SimplePriceFeed;
+  };
+  // The collateral assets, in the order they are listed; every config list below follows it
+  collateralSymbols: string[];
+  // The part of each collateral config the asset list keeps in its immutables
+  immutableConfigs: ImmutableAssetConfigStruct[];
+  // The part of each collateral config the asset list keeps in its storage
+  storageConfigs: StorageAssetConfigStruct[];
+  // The full collateral configs, as the Configurator stores them
+  assetConfigs: AssetConfigStruct[];
 };
 
 export type ConfiguratorAndProtocol = {
@@ -322,6 +345,8 @@ export const ZERO = factor(0);
 export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const DEFAULT_PRICEFEED_DECIMALS = 8;
 export const MAX_ASSETS = 24;
+// The largest value a uint128 field, like a supply cap, can hold
+export const MAX_UINT128 = 2n ** 128n - 1n;
 export const DEFAULT_MAX_SUPPORTED_UTILIZATION = exp(2, 18);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
@@ -339,11 +364,17 @@ export async function fastForward(seconds: number, ethers_ = ethers): Promise<Bl
 // implementation, so this must not be an address that reads or configures the asset list
 const DEFAULT_ASSET_LIST_PROXY_ADMIN = '0x00000000000000000000000000000000000A11CE';
 
-export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
-  const signers = await ethers.getSigners();
-
+/**
+ * Deploys the tokens and price feeds of a market (the base asset and the collaterals) and builds every config of the
+ * collaterals at once: the immutable part the asset list is built from, the storage part it is initialized with, and
+ * the full configs the Configurator stores. makeProtocol and makeConfigurator use it, and so can a test that needs
+ * only the assets.
+ */
+export async function prepareAssets(opts: AssetsOpts = {}): Promise<PreparedAssets> {
   const assets = opts.assets || defaultAssets();
-  let priceFeeds = {};
+  const base = opts.base || 'USDC';
+
+  const priceFeeds = {};
   const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
   for (const asset in assets) {
     const initialPrice = exp(assets[asset].initialPrice || 1, 8);
@@ -353,12 +384,44 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     priceFeeds[asset] = priceFeed;
   }
 
+  const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
+  const tokens = {};
+  for (const symbol in assets) {
+    const config = assets[symbol];
+    const decimals = dfn(config.decimals, 18);
+    const initial = config.initial || 1e6;
+    const name = config.name || symbol;
+    const factory = config.factory || FaucetFactory;
+    const token = tokens[symbol] = await factory.deploy(initial, name, decimals, symbol);
+    await token.deployed();
+  }
+
+  const collateralSymbols = Object.keys(assets).filter(symbol => symbol != base);
+  const immutableConfigs = collateralSymbols.map(symbol => ({
+    asset: tokens[symbol].address,
+    priceFeed: priceFeeds[symbol].address,
+  }));
+  const storageConfigs = collateralSymbols.map(symbol => ({
+    borrowCollateralFactor: dfn(assets[symbol].borrowCF, exp(0.75, 18)),
+    liquidateCollateralFactor: dfn(assets[symbol].liquidateCF, exp(0.8, 18)),
+    liquidationFactor: dfn(assets[symbol].liquidationFactor, exp(0.9, 18)),
+    supplyCap: dfn(assets[symbol].supplyCap, exp(150000, dfn(assets[symbol].decimals, 18))),
+  }));
+  const assetConfigs = immutableConfigs.map((immutableConfig, i) => ({ ...immutableConfig, ...storageConfigs[i] }));
+
+  return { assets, base, tokens, priceFeeds, collateralSymbols, immutableConfigs, storageConfigs, assetConfigs };
+}
+
+export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
+  const signers = await ethers.getSigners();
+
+  const { assets, base, tokens, priceFeeds, immutableConfigs, storageConfigs } = await prepareAssets(opts);
+
   const name32 = ethers.utils.formatBytes32String(opts.name || 'Compound Comet');
   const symbol32 = ethers.utils.formatBytes32String(opts.symbol || '📈BASE');
   const governor = opts.governor || signers[0];
   const pauseGuardian = opts.pauseGuardian || signers[1];
   const users = signers.slice(2); // guaranteed to not be governor or pause guardian
-  const base = opts.base || 'USDC';
   const reward = opts.reward || 'COMP';
   const supplyKink = dfn(opts.supplyKink, exp(0.8, 18));
   const supplyPerYearInterestRateBase = dfn(opts.supplyInterestRateBase, exp(0.0, 18));
@@ -378,18 +441,6 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const maxSupportedUtilization = dfn(opts.maxSupportedUtilization, DEFAULT_MAX_SUPPORTED_UTILIZATION);
 
   const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
-  const tokens = {};
-  for (const symbol in assets) {
-    const config = assets[symbol];
-    const decimals = config.decimals || 18;
-    const initial = config.initial || 1e6;
-    const name = config.name || symbol;
-    const factory = config.factory || FaucetFactory;
-    let token;
-    token = tokens[symbol] = await factory.deploy(initial, name, decimals, symbol);
-    await token.deployed();
-  }
-
   const unsupportedToken = await FaucetFactory.deploy(1e6, 'Unsupported Token', 6, 'USUP');
 
 
@@ -425,31 +476,18 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   };
 
   // The asset list holds the immutable part of each asset config; factors and supply caps live in its storage
-  const collateralSymbols = Object.keys(assets).filter(symbol => symbol != base);
-  const assetImmutableConfigs = collateralSymbols.map(symbol => ({
-    asset: tokens[symbol].address,
-    decimals: dfn(assets[symbol].decimals, 18),
-    priceFeed: priceFeeds[symbol].address,
-  }));
   const assetListConfigurator = dfn(opts.assetListConfigurator, governor.address);
   const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
   const assetListFactory = await AssetListFactory.deploy(assetListConfigurator);
   await assetListFactory.deployed();
-  const assetListImplementation = await assetListFactory.callStatic.createAssetList(assetImmutableConfigs);
-  await assetListFactory.createAssetList(assetImmutableConfigs);
+  const assetListImplementation = await assetListFactory.callStatic.createAssetList(immutableConfigs);
+  await assetListFactory.createAssetList(immutableConfigs);
   const AssetListContractFactory = (await ethers.getContractFactory('AssetList')) as AssetList__factory;
   const AssetListProxyFactory = (await ethers.getContractFactory('TransparentUpgradeableProxy')) as TransparentUpgradeableProxy__factory;
   const assetListProxy = await AssetListProxyFactory.deploy(
     assetListImplementation,
     dfn(opts.assetListProxyAdmin, DEFAULT_ASSET_LIST_PROXY_ADMIN),
-    AssetListContractFactory.interface.encodeFunctionData('initialize', [
-      collateralSymbols.map(symbol => ({
-        borrowCollateralFactor: dfn(assets[symbol].borrowCF, exp(0.75, 18)),
-        liquidateCollateralFactor: dfn(assets[symbol].liquidateCF, exp(0.8, 18)),
-        liquidationFactor: dfn(assets[symbol].liquidationFactor, exp(0.9, 18)),
-        supplyCap: dfn(assets[symbol].supplyCap, exp(150000, dfn(assets[symbol].decimals, 18))),
-      })),
-    ]),
+    AssetListContractFactory.interface.encodeFunctionData('initialize', [storageConfigs]),
   );
   await assetListProxy.deployed();
   const assetList = AssetListContractFactory.attach(assetListProxy.address);
