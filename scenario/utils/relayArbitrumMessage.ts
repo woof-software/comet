@@ -261,7 +261,7 @@ export async function simulateL2ToL1TokenBridging(
   bridgeDeploymentManager: DeploymentManager,
   l2StartingBlockNumber?: number,
   tenderlyLogs?: any[],
-  proposalId?: BigNumber
+  proposalIds?: BigNumber[]
 ) {
   if(tenderlyLogs) {
     return;
@@ -295,7 +295,7 @@ export async function simulateL2ToL1TokenBridging(
     const decodedEvent = bridgeReceiver.interface.parseLog(event);
     const { id, targets, signatures, calldatas } = decodedEvent.args;
 
-    if (proposalId && id.toString() !== proposalId.toString()) {
+    if (proposalIds && !proposalIds.some((p) => p.toString() === id.toString())) {
       continue;
     }
 
