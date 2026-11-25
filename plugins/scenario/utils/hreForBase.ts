@@ -213,6 +213,8 @@ function translateVnetRpcCall(
       return null;
     case 'hardhat_setBalance':
       return { method: 'tenderly_setBalance', params: [[params[0]], params[1]] };
+    case 'hardhat_setStorageAt':
+      return { method: 'tenderly_setStorageAt', params };
     case 'hardhat_mine':
       return { method: 'evm_increaseBlocks', params: [params[0]] };
     default:
