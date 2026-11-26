@@ -6,6 +6,8 @@ yarn-error.log
 .vscode
 
 # Build files
+/metadata.json
+/SPEC.pdf
 artifacts/
 build/
 cache/

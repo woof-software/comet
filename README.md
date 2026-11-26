@@ -23,6 +23,7 @@ Further reading:
 - [MIGRATIONS.md](./MIGRATIONS.md) - writing, running and simulating migrations
 - [docs/contract-import.md](./docs/contract-import.md) - how contract ABIs and bytecode are fetched from block explorers
 - [docs/contracts-archive.md](./docs/contracts-archive.md) - the persisted contract build-file archive
+- [SPEC.md](./SPEC.md) - the protocol specification. To generate `SPEC.pdf`, install Pandoc and a LaTeX PDF engine (`pdflatex`), then run `node scripts/build-spec.js` from the repository root.
 
 ## Env variables
 
