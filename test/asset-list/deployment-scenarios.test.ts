@@ -223,6 +223,46 @@ describe('asset list deployment scenarios', function () {
       });
     });
 
+    // addAsset doesn't check the factors, the asset list does when the upgrade writes them, so the whole upgrade reverts.
+    // One invalid setting is enough here: LCF below BCF
+    context(`revert when adding new asset with invalid settings (${admin})`, function () {
+      const BORROW_CF = exp(0.8, 18);
+      const LIQUIDATE_CF = exp(0.75, 18);
+      const LIQUIDATION_FACTOR = exp(0.9, 18);
+      const SUPPLY_CAP = exp(1000, 18);
+
+      let newAsset: AssetConfigStruct;
+
+      before(async () => {
+        await snapshot.restore();
+        const token = await (await ethers.getContractFactory('FaucetToken')).deploy(0, 'New Asset', 18, 'NEW');
+        const priceFeed = await (await ethers.getContractFactory('SimplePriceFeed')).deploy(10n ** 8n, 8);
+        newAsset = {
+          asset: token.address,
+          priceFeed: priceFeed.address,
+          borrowCollateralFactor: BORROW_CF,
+          liquidateCollateralFactor: LIQUIDATE_CF,
+          liquidationFactor: LIQUIDATION_FACTOR,
+          supplyCap: SUPPLY_CAP,
+        };
+        await configurator.connect(governor).addAsset(comet, newAsset);
+      });
+
+      it('sanity check: the configurator has the new asset', async () => {
+        const assetConfigs = await configurator.getAssetConfigs(comet);
+        expect(assetConfigs[assetConfigs.length - 1].asset).to.equal(newAsset.asset);
+      });
+
+      it('sanity check: deployAssetList returns a new implementation', async () => {
+        expect((await configurator.callStatic.deployAssetList(comet)).newAssetListImpl).to.not.equal(ZERO_ADDRESS);
+      });
+
+      it('deployAndUpgradeAssetListTo reverts with BorrowCFTooLarge', async () => {
+        await expect(proxyAdmin.connect(adminSigner()).deployAndUpgradeAssetListTo(configurator.address, comet))
+          .to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
+      });
+    });
+
     // New AssetList code built from the same immutable configs has the same configHash, so the Configurator can't tell
     // it apart: it is deployed and set by hand, and deployAndUpgradeAssetListTo leaves it in place
     context(`technical update (not config related) (${admin})`, function () {

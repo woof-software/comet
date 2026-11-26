@@ -232,7 +232,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
     }
 
     /**
-     * @notice Sets the borrow collateral factor of an asset, both in its stored config and on the Comet proxy's asset list
+     * @notice Sets the borrow collateral factor of an asset, in its stored config and, if the list already holds the asset, on the Comet proxy's asset list
      * @param cometProxy The Comet proxy whose asset config to update
      * @param asset The asset whose borrow collateral factor to set
      * @param newBorrowCF The new borrow collateral factor
@@ -242,11 +242,16 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         uint64 oldBorrowCF = assetConfigs[cometProxy][assetIndex].borrowCollateralFactor;
         assetConfigs[cometProxy][assetIndex].borrowCollateralFactor = newBorrowCF;
         emit UpdateAssetBorrowCollateralFactor(cometProxy, asset, oldBorrowCF, newBorrowCF);
-        IAssetList(configuratorParams[cometProxy].assetList).setBorrowCollateralFactor(asset, newBorrowCF);
+        
+        // If asset added by addAsset, but not yet added to the list, set the value on the list with the next list upgrade
+        address assetList = configuratorParams[cometProxy].assetList;
+        if (assetList != address(0) && assetIndex < IAssetList(assetList).numAssets()) {
+            IAssetList(assetList).setBorrowCollateralFactor(asset, newBorrowCF);
+        }
     }
 
     /**
-     * @notice Sets the liquidate collateral factor of an asset, both in its stored config and on the Comet proxy's asset list
+     * @notice Sets the liquidate collateral factor of an asset, in its stored config and, if the list already holds the asset, on the Comet proxy's asset list
      * @param cometProxy The Comet proxy whose asset config to update
      * @param asset The asset whose liquidate collateral factor to set
      * @param newLiquidateCF The new liquidate collateral factor
@@ -256,11 +261,16 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         uint64 oldLiquidateCF = assetConfigs[cometProxy][assetIndex].liquidateCollateralFactor;
         assetConfigs[cometProxy][assetIndex].liquidateCollateralFactor = newLiquidateCF;
         emit UpdateAssetLiquidateCollateralFactor(cometProxy, asset, oldLiquidateCF, newLiquidateCF);
-        IAssetList(configuratorParams[cometProxy].assetList).setLiquidateCollateralFactor(asset, newLiquidateCF);
+        
+        // If asset added by addAsset, but not yet added to the list, set the value on the list with the next list upgrade
+        address assetList = configuratorParams[cometProxy].assetList;
+        if (assetList != address(0) && assetIndex < IAssetList(assetList).numAssets()) {
+            IAssetList(assetList).setLiquidateCollateralFactor(asset, newLiquidateCF);
+        }
     }
 
     /**
-     * @notice Sets the liquidation factor of an asset, both in its stored config and on the Comet proxy's asset list
+     * @notice Sets the liquidation factor of an asset, in its stored config and, if the list already holds the asset, on the Comet proxy's asset list
      * @param cometProxy The Comet proxy whose asset config to update
      * @param asset The asset whose liquidation factor to set
      * @param newLiquidationFactor The new liquidation factor
@@ -270,11 +280,16 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         uint64 oldLiquidationFactor = assetConfigs[cometProxy][assetIndex].liquidationFactor;
         assetConfigs[cometProxy][assetIndex].liquidationFactor = newLiquidationFactor;
         emit UpdateAssetLiquidationFactor(cometProxy, asset, oldLiquidationFactor, newLiquidationFactor);
-        IAssetList(configuratorParams[cometProxy].assetList).setLiquidationFactor(asset, newLiquidationFactor);
+        
+        // If asset added by addAsset, but not yet added to the list, set the value on the list with the next list upgrade
+        address assetList = configuratorParams[cometProxy].assetList;
+        if (assetList != address(0) && assetIndex < IAssetList(assetList).numAssets()) {
+            IAssetList(assetList).setLiquidationFactor(asset, newLiquidationFactor);
+        }
     }
 
     /**
-     * @notice Sets the supply cap of an asset, both in its stored config and on the Comet proxy's asset list
+     * @notice Sets the supply cap of an asset, in its stored config and, if the list already holds the asset, on the Comet proxy's asset list
      * @param cometProxy The Comet proxy whose asset config to update
      * @param asset The asset whose supply cap to set
      * @param newSupplyCap The new supply cap
@@ -284,7 +299,12 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         uint128 oldSupplyCap = assetConfigs[cometProxy][assetIndex].supplyCap;
         assetConfigs[cometProxy][assetIndex].supplyCap = newSupplyCap;
         emit UpdateAssetSupplyCap(cometProxy, asset, oldSupplyCap, newSupplyCap);
-        IAssetList(configuratorParams[cometProxy].assetList).setSupplyCap(asset, newSupplyCap);
+        
+        // If asset added by addAsset, but not yet added to the list, set the value on the list with the next list upgrade
+        address assetList = configuratorParams[cometProxy].assetList;
+        if (assetList != address(0) && assetIndex < IAssetList(assetList).numAssets()) {
+            IAssetList(assetList).setSupplyCap(asset, newSupplyCap);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////

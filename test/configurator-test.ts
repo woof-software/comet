@@ -1,5 +1,6 @@
 import { DEFAULT_MAX_SUPPORTED_UTILIZATION, ethers, exp, expect, makeConfigurator, SnapshotRestorer, takeSnapshot, ZERO_ADDRESS } from './helpers';
 import {
+  AssetList,
   CometExt,
   CometExt__factory,
   CometFactoryWithExtendedAssetList,
@@ -14,7 +15,7 @@ import {
   SimplePriceFeed__factory,
   TransparentUpgradeableProxy
 } from '../build/types';
-import { ConfigurationStruct, ConfiguratorOptimism as Configurator } from '../build/types/ConfiguratorOptimism';
+import { AssetConfigStruct, ConfigurationStruct, ConfiguratorOptimism as Configurator } from '../build/types/ConfiguratorOptimism';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 
@@ -1721,6 +1722,12 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, firstAsset.asset, ZERO_ADDRESS))
               .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
           });
+
+          // An address the market has no asset config for, such as a user's
+          it('reverts if the asset does not exist', async () => {
+            await expect(configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, alice.address, newPriceFeed.address))
+              .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+          });
         });
 
         describe('happy path', function() {
@@ -1765,6 +1772,12 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(alice).updateAssetBorrowCollateralFactor(cometProxy.address, firstAsset.asset, NEW_BORROW_CF))
               .to.be.reverted;
           });
+
+          // An address the market has no asset config for, such as a user's
+          it('reverts if the asset does not exist', async () => {
+            await expect(configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor(cometProxy.address, alice.address, NEW_BORROW_CF))
+              .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+          });
         });
 
         describe('edge cases', function() {
@@ -1808,6 +1821,58 @@ describe('configurator', function () {
             expect(assetInfo.borrowCollateralFactor).to.be.equal(NEW_BORROW_CF);
           });
         });
+
+        // addAsset only stores the config in the Configurator, the asset reaches the asset list with the next list
+        // upgrade. Until then the Configurator updates only its own stored config and doesn't call the list
+        describe('happy path (asset added but not in the asset list yet)', function() {
+          let newAsset: AssetConfigStruct;
+          let newAssetIndex: number;
+          let assetList: AssetList;
+          let setTx: ContractTransaction;
+          let snapshot: SnapshotRestorer;
+
+          before(async () => {
+            snapshot = await takeSnapshot();
+            const token = await (await ethers.getContractFactory('FaucetToken')).deploy(0, 'New Asset', 18, 'NEW');
+            const priceFeed = await (await ethers.getContractFactory('SimplePriceFeed')).deploy(exp(1, 8), 8);
+            newAsset = {
+              asset: token.address,
+              priceFeed: priceFeed.address,
+              borrowCollateralFactor: exp(0.75, 18),
+              liquidateCollateralFactor: exp(0.8, 18),
+              liquidationFactor: exp(0.9, 18),
+              supplyCap: exp(1000, 18),
+            };
+            await configuratorProxy.connect(governor).addAsset(cometProxy.address, newAsset);
+            newAssetIndex = (await configuratorProxy.getAssetConfigs(cometProxy.address)).length - 1;
+            assetList = (await ethers.getContractAt('AssetList', (await configuratorProxy.getConfiguration(cometProxy.address)).assetList)) as AssetList;
+          });
+
+          after(() => snapshot.restore());
+
+          it('sanity check: the asset list does not have the asset', async () => {
+            await expect(assetList.getAssetInfoByAddress(newAsset.asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
+          });
+
+          it('updates asset borrow collateral factor successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor(cometProxy.address, newAsset.asset, NEW_BORROW_CF);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits UpdateAssetBorrowCollateralFactor event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'UpdateAssetBorrowCollateralFactor')
+              .withArgs(cometProxy.address, newAsset.asset, newAsset.borrowCollateralFactor, NEW_BORROW_CF);
+          });
+
+          it('new borrowCollateralFactor is stored in configuration', async () => {
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[newAssetIndex].borrowCollateralFactor).to.be.equal(NEW_BORROW_CF);
+          });
+
+          it('the asset list still does not have the asset', async () => {
+            await expect(assetList.getAssetInfoByAddress(newAsset.asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
+          });
+        });
       });
 
       describe('updateAssetLiquidateCollateralFactor', function() {
@@ -1819,6 +1884,12 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).updateAssetLiquidateCollateralFactor(cometProxy.address, firstAsset.asset, NEW_LIQUIDATE_CF))
               .to.be.reverted;
+          });
+
+          // An address the market has no asset config for, such as a user's
+          it('reverts if the asset does not exist', async () => {
+            await expect(configuratorProxy.connect(governor).updateAssetLiquidateCollateralFactor(cometProxy.address, alice.address, NEW_LIQUIDATE_CF))
+              .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
           });
         });
 
@@ -1864,6 +1935,58 @@ describe('configurator', function () {
             expect(assetInfo.liquidateCollateralFactor).to.be.equal(NEW_LIQUIDATE_CF);
           });
         });
+
+        // addAsset only stores the config in the Configurator, the asset reaches the asset list with the next list
+        // upgrade. Until then the Configurator updates only its own stored config and doesn't call the list
+        describe('happy path (asset added but not in the asset list yet)', function() {
+          let newAsset: AssetConfigStruct;
+          let newAssetIndex: number;
+          let assetList: AssetList;
+          let setTx: ContractTransaction;
+          let snapshot: SnapshotRestorer;
+
+          before(async () => {
+            snapshot = await takeSnapshot();
+            const token = await (await ethers.getContractFactory('FaucetToken')).deploy(0, 'New Asset', 18, 'NEW');
+            const priceFeed = await (await ethers.getContractFactory('SimplePriceFeed')).deploy(exp(1, 8), 8);
+            newAsset = {
+              asset: token.address,
+              priceFeed: priceFeed.address,
+              borrowCollateralFactor: exp(0.75, 18),
+              liquidateCollateralFactor: exp(0.8, 18),
+              liquidationFactor: exp(0.9, 18),
+              supplyCap: exp(1000, 18),
+            };
+            await configuratorProxy.connect(governor).addAsset(cometProxy.address, newAsset);
+            newAssetIndex = (await configuratorProxy.getAssetConfigs(cometProxy.address)).length - 1;
+            assetList = (await ethers.getContractAt('AssetList', (await configuratorProxy.getConfiguration(cometProxy.address)).assetList)) as AssetList;
+          });
+
+          after(() => snapshot.restore());
+
+          it('sanity check: the asset list does not have the asset', async () => {
+            await expect(assetList.getAssetInfoByAddress(newAsset.asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
+          });
+
+          it('updates asset liquidate collateral factor successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).updateAssetLiquidateCollateralFactor(cometProxy.address, newAsset.asset, NEW_LIQUIDATE_CF);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits UpdateAssetLiquidateCollateralFactor event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'UpdateAssetLiquidateCollateralFactor')
+              .withArgs(cometProxy.address, newAsset.asset, newAsset.liquidateCollateralFactor, NEW_LIQUIDATE_CF);
+          });
+
+          it('new liquidateCollateralFactor is stored in configuration', async () => {
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[newAssetIndex].liquidateCollateralFactor).to.be.equal(NEW_LIQUIDATE_CF);
+          });
+
+          it('the asset list still does not have the asset', async () => {
+            await expect(assetList.getAssetInfoByAddress(newAsset.asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
+          });
+        });
       });
 
       describe('updateAssetLiquidationFactor', function() {
@@ -1875,6 +1998,12 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).updateAssetLiquidationFactor(cometProxy.address, firstAsset.asset, NEW_LIQUIDATION_FACTOR))
               .to.be.reverted;
+          });
+
+          // An address the market has no asset config for, such as a user's
+          it('reverts if the asset does not exist', async () => {
+            await expect(configuratorProxy.connect(governor).updateAssetLiquidationFactor(cometProxy.address, alice.address, NEW_LIQUIDATION_FACTOR))
+              .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
           });
         });
 
@@ -1919,6 +2048,58 @@ describe('configurator', function () {
             expect(assetInfo.liquidationFactor).to.be.equal(NEW_LIQUIDATION_FACTOR);
           });
         });
+
+        // addAsset only stores the config in the Configurator, the asset reaches the asset list with the next list
+        // upgrade. Until then the Configurator updates only its own stored config and doesn't call the list
+        describe('happy path (asset added but not in the asset list yet)', function() {
+          let newAsset: AssetConfigStruct;
+          let newAssetIndex: number;
+          let assetList: AssetList;
+          let setTx: ContractTransaction;
+          let snapshot: SnapshotRestorer;
+
+          before(async () => {
+            snapshot = await takeSnapshot();
+            const token = await (await ethers.getContractFactory('FaucetToken')).deploy(0, 'New Asset', 18, 'NEW');
+            const priceFeed = await (await ethers.getContractFactory('SimplePriceFeed')).deploy(exp(1, 8), 8);
+            newAsset = {
+              asset: token.address,
+              priceFeed: priceFeed.address,
+              borrowCollateralFactor: exp(0.75, 18),
+              liquidateCollateralFactor: exp(0.8, 18),
+              liquidationFactor: exp(0.9, 18),
+              supplyCap: exp(1000, 18),
+            };
+            await configuratorProxy.connect(governor).addAsset(cometProxy.address, newAsset);
+            newAssetIndex = (await configuratorProxy.getAssetConfigs(cometProxy.address)).length - 1;
+            assetList = (await ethers.getContractAt('AssetList', (await configuratorProxy.getConfiguration(cometProxy.address)).assetList)) as AssetList;
+          });
+
+          after(() => snapshot.restore());
+
+          it('sanity check: the asset list does not have the asset', async () => {
+            await expect(assetList.getAssetInfoByAddress(newAsset.asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
+          });
+
+          it('updates asset liquidation factor successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).updateAssetLiquidationFactor(cometProxy.address, newAsset.asset, NEW_LIQUIDATION_FACTOR);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits UpdateAssetLiquidationFactor event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'UpdateAssetLiquidationFactor')
+              .withArgs(cometProxy.address, newAsset.asset, newAsset.liquidationFactor, NEW_LIQUIDATION_FACTOR);
+          });
+
+          it('new liquidationFactor is stored in configuration', async () => {
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[newAssetIndex].liquidationFactor).to.be.equal(NEW_LIQUIDATION_FACTOR);
+          });
+
+          it('the asset list still does not have the asset', async () => {
+            await expect(assetList.getAssetInfoByAddress(newAsset.asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
+          });
+        });
       });
 
       describe('updateAssetSupplyCap', function() {
@@ -1930,6 +2111,12 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).updateAssetSupplyCap(cometProxy.address, firstAsset.asset, NEW_SUPPLY_CAP))
               .to.be.reverted;
+          });
+
+          // An address the market has no asset config for, such as a user's
+          it('reverts if the asset does not exist', async () => {
+            await expect(configuratorProxy.connect(governor).updateAssetSupplyCap(cometProxy.address, alice.address, NEW_SUPPLY_CAP))
+              .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
           });
         });
 
@@ -1968,6 +2155,58 @@ describe('configurator', function () {
           it('supplyCap is updated in comet', async () => {
             const assetInfo = await comet.getAssetInfoByAddress(firstAsset.asset);
             expect(assetInfo.supplyCap).to.be.equal(NEW_SUPPLY_CAP);
+          });
+        });
+
+        // addAsset only stores the config in the Configurator, the asset reaches the asset list with the next list
+        // upgrade. Until then the Configurator updates only its own stored config and doesn't call the list
+        describe('happy path (asset added but not in the asset list yet)', function() {
+          let newAsset: AssetConfigStruct;
+          let newAssetIndex: number;
+          let assetList: AssetList;
+          let setTx: ContractTransaction;
+          let snapshot: SnapshotRestorer;
+
+          before(async () => {
+            snapshot = await takeSnapshot();
+            const token = await (await ethers.getContractFactory('FaucetToken')).deploy(0, 'New Asset', 18, 'NEW');
+            const priceFeed = await (await ethers.getContractFactory('SimplePriceFeed')).deploy(exp(1, 8), 8);
+            newAsset = {
+              asset: token.address,
+              priceFeed: priceFeed.address,
+              borrowCollateralFactor: exp(0.75, 18),
+              liquidateCollateralFactor: exp(0.8, 18),
+              liquidationFactor: exp(0.9, 18),
+              supplyCap: exp(1000, 18),
+            };
+            await configuratorProxy.connect(governor).addAsset(cometProxy.address, newAsset);
+            newAssetIndex = (await configuratorProxy.getAssetConfigs(cometProxy.address)).length - 1;
+            assetList = (await ethers.getContractAt('AssetList', (await configuratorProxy.getConfiguration(cometProxy.address)).assetList)) as AssetList;
+          });
+
+          after(() => snapshot.restore());
+
+          it('sanity check: the asset list does not have the asset', async () => {
+            await expect(assetList.getAssetInfoByAddress(newAsset.asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
+          });
+
+          it('updates asset supply cap successfully', async () => {
+            setTx = await configuratorProxy.connect(governor).updateAssetSupplyCap(cometProxy.address, newAsset.asset, NEW_SUPPLY_CAP);
+            await expect(setTx).to.not.be.reverted;
+          });
+
+          it('emits UpdateAssetSupplyCap event', async () => {
+            await expect(setTx)
+              .to.emit(configuratorProxy, 'UpdateAssetSupplyCap')
+              .withArgs(cometProxy.address, newAsset.asset, newAsset.supplyCap, NEW_SUPPLY_CAP);
+          });
+
+          it('new supplyCap is stored in configuration', async () => {
+            expect((await configuratorProxy.getAssetConfigs(cometProxy.address))[newAssetIndex].supplyCap).to.be.equal(NEW_SUPPLY_CAP);
+          });
+
+          it('the asset list still does not have the asset', async () => {
+            await expect(assetList.getAssetInfoByAddress(newAsset.asset)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
           });
         });
       });
@@ -2060,35 +2299,6 @@ describe('configurator', function () {
 
         it('reverts with AssetDoesNotExist for random address', async () => {
           await expect(configuratorProxy.getAssetIndex(cometProxy.address, alice.address))
-            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
-        });
-      });
-
-      describe('asset setter reverts on non-existent asset', function() {
-        const NON_EXISTENT_ASSET = '0x0000000000000000000000000000000000000001';
-
-        it('updateAssetPriceFeed reverts with AssetDoesNotExist', async () => {
-          await expect(configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, NON_EXISTENT_ASSET, alice.address))
-            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
-        });
-
-        it('updateAssetBorrowCollateralFactor reverts with AssetDoesNotExist', async () => {
-          await expect(configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor(cometProxy.address, NON_EXISTENT_ASSET, exp(0.5, 18)))
-            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
-        });
-
-        it('updateAssetLiquidateCollateralFactor reverts with AssetDoesNotExist', async () => {
-          await expect(configuratorProxy.connect(governor).updateAssetLiquidateCollateralFactor(cometProxy.address, NON_EXISTENT_ASSET, exp(0.5, 18)))
-            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
-        });
-
-        it('updateAssetLiquidationFactor reverts with AssetDoesNotExist', async () => {
-          await expect(configuratorProxy.connect(governor).updateAssetLiquidationFactor(cometProxy.address, NON_EXISTENT_ASSET, exp(0.5, 18)))
-            .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
-        });
-
-        it('updateAssetSupplyCap reverts with AssetDoesNotExist', async () => {
-          await expect(configuratorProxy.connect(governor).updateAssetSupplyCap(cometProxy.address, NON_EXISTENT_ASSET, exp(100, 18)))
             .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
         });
       });

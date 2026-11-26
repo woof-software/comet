@@ -1,4 +1,4 @@
-import { MAX_ASSETS, MAX_UINT128, SignerWithAddress, ethers, exp, expect, factorScale, makeConfigurator, takeSnapshot, SnapshotRestorer } from '../helpers';
+import { MAX_ASSETS, MAX_UINT128, SignerWithAddress, ethers, exp, expect, factorScale, impersonateAccount, makeConfigurator, setBalance, takeSnapshot, SnapshotRestorer } from '../helpers';
 import { AssetList, AssetList__factory, CometProxyAdminOptimism, ConfiguratorOptimism } from '../../build/types';
 import { AssetConfigStruct, StorageAssetConfigStructOutput } from '../../build/types/ConfiguratorOptimism';
 import { AssetInfoStructOutput } from '../../build/types/AssetList';
@@ -554,11 +554,14 @@ describe('asset list setters', function () {
                               EDGE CASES
   //////////////////////////////////////////////////////////////*/
 
-  // addAsset only stores the config in the Configurator; the asset reaches the list with the next list upgrade
+  // addAsset only stores the config in the Configurator; the asset reaches the list with the next list upgrade. The
+  // Configurator skips the list for such an asset, so the list's own check is reached by calling it as the Configurator
   context('revert when the asset is added to the configurator but the asset list is not upgraded yet', function () {
     let newAsset: AssetConfigStruct;
+    let configuratorSigner: SignerWithAddress;
 
     before(async () => {
+      await snapshot.restore();
       const token = await (await ethers.getContractFactory('FaucetToken')).deploy(0, 'New Asset', 18, 'NEW');
       const priceFeed = await (await ethers.getContractFactory('SimplePriceFeed')).deploy(10n ** 8n, 8);
       newAsset = {
@@ -570,6 +573,10 @@ describe('asset list setters', function () {
         supplyCap: exp(1000, 18),
       };
       await configurator.connect(governor).addAsset(comet, newAsset);
+
+      await impersonateAccount(configurator.address);
+      await setBalance(configurator.address, exp(1, 18));
+      configuratorSigner = await ethers.getSigner(configurator.address);
     });
 
     it('sanity check: the asset list does not have the asset', async () => {
@@ -577,23 +584,23 @@ describe('asset list setters', function () {
         .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     });
 
-    it('updateAssetBorrowCollateralFactor reverts with AssetNotFound of the asset list', async () => {
-      await expect(configurator.connect(governor).updateAssetBorrowCollateralFactor(comet, newAsset.asset, newAsset.borrowCollateralFactor))
+    it('setBorrowCollateralFactor reverts with AssetNotFound', async () => {
+      await expect(assetList.connect(configuratorSigner).setBorrowCollateralFactor(newAsset.asset, newAsset.borrowCollateralFactor))
         .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     });
 
-    it('updateAssetLiquidateCollateralFactor reverts with AssetNotFound of the asset list', async () => {
-      await expect(configurator.connect(governor).updateAssetLiquidateCollateralFactor(comet, newAsset.asset, newAsset.liquidateCollateralFactor))
+    it('setLiquidateCollateralFactor reverts with AssetNotFound', async () => {
+      await expect(assetList.connect(configuratorSigner).setLiquidateCollateralFactor(newAsset.asset, newAsset.liquidateCollateralFactor))
         .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     });
 
-    it('updateAssetLiquidationFactor reverts with AssetNotFound of the asset list', async () => {
-      await expect(configurator.connect(governor).updateAssetLiquidationFactor(comet, newAsset.asset, newAsset.liquidationFactor))
+    it('setLiquidationFactor reverts with AssetNotFound', async () => {
+      await expect(assetList.connect(configuratorSigner).setLiquidationFactor(newAsset.asset, newAsset.liquidationFactor))
         .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     });
 
-    it('updateAssetSupplyCap reverts with AssetNotFound of the asset list', async () => {
-      await expect(configurator.connect(governor).updateAssetSupplyCap(comet, newAsset.asset, newAsset.supplyCap))
+    it('setSupplyCap reverts with AssetNotFound', async () => {
+      await expect(assetList.connect(configuratorSigner).setSupplyCap(newAsset.asset, newAsset.supplyCap))
         .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     });
   });
