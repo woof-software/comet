@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import { CometContext, scenario } from '../context/CometContext';
 import { AssetList } from '../../build/types';
 import { fundAccount, getUsableCollateralIndices, servicePatch2 } from '../utils';
-import { hashConfig } from '../../test/asset-list/shared';
+import { hashConfig } from '../../test/helpers';
 import { deployPriceFeed } from './shared';
 
 // The asset list functions of the Configurator: which factory builds the asset list of a Comet, building a new
@@ -111,7 +111,7 @@ scenario(
     ) as AssetList;
     const immutableConfigs = await configurator.getImmutableAssetConfig(comet.address);
     expect(await newImplementation.numAssets()).to.equal(immutableConfigs.length);
-    expect(await newImplementation.configHash()).to.equal(hashConfig(immutableConfigs));
+    expect(await newImplementation.configHash()).to.equal(hashConfig(immutableConfigs, await newImplementation.TYPEHASH()));
     expect((await newImplementation.getAssetInfo(assetIndex)).priceFeed).to.equal(newPriceFeed);
   }
 );

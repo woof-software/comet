@@ -8,8 +8,7 @@ import CometActor from '../context/CometActor';
 import { AssetList, CometWithExtendedAssetList, FaucetToken } from '../../build/types';
 import { AssetInfoStructOutput } from '../../build/types/CometInterface';
 import { calldata } from '../../src/deploy';
-import { exp } from '../../test/helpers';
-import { hashConfig } from '../../test/asset-list/shared';
+import { exp, hashConfig } from '../../test/helpers';
 import { deployMockERC20, deployPriceFeed } from '../configurator/shared';
 import { supplyBaseFromLender } from '../utils/userOperations';
 
@@ -544,7 +543,7 @@ scenario(
     // The new implementation has one more asset, the new one in its last slot, and a configHash matching the configs
     expect(await newImplementation.numAssets()).to.equal(numAssets + 1);
     expect((await newImplementation.getAssetInfo(numAssets)).asset).to.equal(asset);
-    expect(await newImplementation.configHash()).to.equal(hashConfig(await configurator.getImmutableAssetConfig(comet.address)));
+    expect(await newImplementation.configHash()).to.equal(hashConfig(await configurator.getImmutableAssetConfig(comet.address), await newImplementation.TYPEHASH()));
 
     // The factors and caps of the existing assets are still in the list storage
     expect(await allAssetsInfo()).to.deep.equal(allAssetsInfoBeforeUpgrade);
@@ -817,7 +816,8 @@ scenario(
 );
 
 // addAsset does not check the factors: the list rejects a bad config only at the upgrade, and the upgrade reverts as a
-// whole. In one proposal the addAsset reverts with it; done apart, the bad config stays stored and cannot be fixed
+// whole. In one proposal the addAsset reverts with it; done apart, the bad config stays stored until a factor setter
+// fixes it, and the next upgrade goes through
 scenario(
   'AssetList governance > a new asset with bad factors makes the upgrade revert',
   {
@@ -852,11 +852,13 @@ scenario(
     expect(after.numAssets).to.equal(before.numAssets);
     expect(after.assetInfos).to.deep.equal(before.assetInfos);
 
-    // The bad config stays stored, and the factor setters cannot fix it: they write to the list, which does not hold
-    // the asset yet. So the asset must be added in the same proposal as the upgrade
+    // The bad config stays stored. The list does not hold the asset yet, so the factor setter updates only the
+    // Configurator's config, and with the fixed factors the next upgrade lists the asset
     expect((await configurator.getAssetConfigs(comet.address))[before.numAssets].asset).to.equal(badAssetConfig.asset);
-    await expect(
-      configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, badAssetConfig.asset, 0)
-    ).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
+    await configurator.connect(admin.signer).updateAssetBorrowCollateralFactor(comet.address, badAssetConfig.asset, 0);
+    expect((await configurator.getAssetConfigs(comet.address))[before.numAssets].borrowCollateralFactor).to.equal(0);
+
+    await proxyAdmin.connect(admin.signer).deployAndUpgradeTo(configurator.address, comet.address);
+    expect((await assetList.getAssetInfoByAddress(badAssetConfig.asset)).borrowCollateralFactor).to.equal(0);
   }
 );
