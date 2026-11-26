@@ -85,7 +85,7 @@ contract CometProxyAdminOptimism is ProxyAdmin {
         (address assetListProxy, address newAssetListImpl) = configuratorProxy.deployAssetList(address(cometProxy));
         
         if (newAssetListImpl != address(0)) {
-            upgradeAndCall(
+            _upgradeAndCall(
                 TransparentUpgradeableProxy(payable(assetListProxy)),
                 newAssetListImpl,
                 abi.encodeCall(IAssetList.setAssetConfigs, (configuratorProxy.getStorageAssetConfig(address(cometProxy))))
