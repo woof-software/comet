@@ -2120,6 +2120,17 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
     [],
     true
   );
+  // The live extension predates the extended pause functions and the new version, so the rebuilt Comet gets a new one,
+  // under the alias deployComet reads, with the market's own name and symbol
+  const cometExt = await dm.deploy(
+    'comet:implementation:implementation',
+    'CometExt.sol',
+    [{
+      name32: ethers.utils.formatBytes32String(await comet.name()),
+      symbol32: ethers.utils.formatBytes32String(await comet.symbol()),
+    }],
+    true
+  );
   const assetListFactory = await dm.deploy('assetListFactory', 'test/assetList/AssetListFactory.sol', [configurator.address], true);
   const cometFactory = await dm.deploy('cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], true);
 
@@ -2155,9 +2166,15 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
     true
   );
 
-  // setConfiguration sets the list proxy once, for a market that has none yet
+  // setConfiguration sets the list proxy once, for a market that has none yet. The V1 Configuration has no
+  // maxSupportedUtilization, so it reads as zero after the migration, and a zero cap makes the Comet reject any borrow
   const configuration = await configurator.getConfiguration(comet.address);
-  await configurator.setConfiguration(comet.address, { ...configuration, assetList: assetListProxy.address });
+  await configurator.setConfiguration(comet.address, {
+    ...configuration,
+    assetList: assetListProxy.address,
+    extensionDelegate: cometExt.address,
+    maxSupportedUtilization: configuration.maxSupportedUtilization.isZero() ? exp(2, 18) : configuration.maxSupportedUtilization,
+  });
   await configurator.setFactory(comet.address, cometFactory.address);
   await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
 }
