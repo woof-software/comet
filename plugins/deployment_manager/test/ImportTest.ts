@@ -82,8 +82,8 @@ export function mockImportSuccess(address: string) {
   const contractCreationCode =
     fiatTokenBuildFile.contracts['contracts/FiatTokenProxy.sol:FiatTokenProxy'].bin;
 
-  // The RPC strategy (scrapeContractCreationCodeFromBlockscoutRPC) is expected to fail
-  // in tests (no mocked RPC host), falling back to this txlist-based strategy.
+  // The v2 strategy (pullContractCreationCodeFromBlockscoutV2) is expected to fail
+  // in tests (no mocked v2 endpoint), falling back to this txlist-based strategy.
   nock('https://eth.blockscout.com')
     .get('/api')
     .query((query) => {
@@ -101,6 +101,19 @@ export function mockImportSuccess(address: string) {
 }
 
 describe('Import', () => {
+  // BLOCKSCOUT_KEY from .env would route imports to api.blockscout.com instead of the mocked host
+  const blockscoutKey = process.env.BLOCKSCOUT_KEY;
+
+  before(() => {
+    delete process.env.BLOCKSCOUT_KEY;
+  });
+
+  after(() => {
+    if (blockscoutKey !== undefined) {
+      process.env.BLOCKSCOUT_KEY = blockscoutKey;
+    }
+  });
+
   beforeEach(async () => {
     nock.disableNetConnect();
   });
