@@ -4,10 +4,10 @@ pragma solidity 0.8.15;
 import { Test } from "forge-std/Test.sol";
 
 /**
- * @dev The live Configurator and Comet proxies of every chain the fork migration test runs on, taken from the
+ * @dev The live Configurator and Comet proxies of every chain the fork tests run on, taken from the
  *      roots.json files in deployments/. Mainnet's institutional_usdc market is left out, it has its own Configurator
  */
-contract ConfiguratorMigrationForkBase is Test {
+contract ForkBase is Test {
     uint256 internal constant MAINNET = 1;
     uint256 internal constant OPTIMISM = 10;
     uint256 internal constant BASE = 8453;
