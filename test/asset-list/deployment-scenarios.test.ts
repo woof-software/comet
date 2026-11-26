@@ -1,4 +1,4 @@
-import { ethers, exp, expect, makeConfigurator, takeSnapshot, SnapshotRestorer, ZERO_ADDRESS } from '../helpers';
+import { ethers, exp, expect, hashConfig, makeConfigurator, takeSnapshot, SnapshotRestorer, ZERO_ADDRESS } from '../helpers';
 import {
   AssetList,
   AssetListFactoryV2Mock,
@@ -8,23 +8,16 @@ import {
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { makeMarketAdmin } from '../marketupdates/market-updates-helper';
-import { ImmutableAssetConfigStruct } from '../../build/types/AssetList';
 import { AssetConfigStruct } from '../../build/types/ConfiguratorOptimism';
 import { ContractTransaction } from 'ethers';
-
-// AssetListTypeHashMock.TYPEHASH: the same configs under a new type
-const NEW_TYPEHASH = ethers.utils.id('ImmutableConfigV2[](address asset,address priceFeed)');
-
-// ConfigHash.hashConfig(typeHash, abi.encode(configs)), computed off-chain
-function hashConfig(configs: ImmutableAssetConfigStruct[], typeHash: string): string {
-  const encoded = ethers.utils.defaultAbiCoder.encode(['tuple(address asset, address priceFeed)[]'], [configs]);
-  return ethers.utils.keccak256(ethers.utils.hexConcat([typeHash, encoded]));
-}
 
 // How the asset list of a market is redeployed: CometProxyAdmin.deployAndUpgradeAssetListTo asks
 // Configurator.deployAssetList for a new implementation, which is deployed only when the immutable configs no longer
 // hash to the configHash of the current list, and upgrades the list proxy to it when there is one
 describe('asset list deployment scenarios', function () {
+  // AssetListTypeHashMock.TYPEHASH: the same configs under a new type
+  const NEW_TYPEHASH = ethers.utils.id('ImmutableConfigV2[](address asset,address priceFeed)');
+
   let governor: SignerWithAddress;
   let marketAdmin: SignerWithAddress;
   let proxyAdmin: CometProxyAdminOptimism;

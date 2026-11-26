@@ -347,6 +347,12 @@ export const DEFAULT_PRICEFEED_DECIMALS = 8;
 export const MAX_ASSETS = 24;
 // The largest value a uint128 field, like a supply cap, can hold
 export const MAX_UINT128 = 2n ** 128n - 1n;
+
+// ConfigHash.hashConfig(typeHash, abi.encode(configs)), computed off-chain: the configHash of an asset list
+export function hashConfig(configs: ImmutableAssetConfigStruct[], typeHash: string): string {
+  const encoded = ethers.utils.defaultAbiCoder.encode(['tuple(address asset, address priceFeed)[]'], [configs]);
+  return ethers.utils.keccak256(ethers.utils.hexConcat([typeHash, encoded]));
+}
 export const DEFAULT_MAX_SUPPORTED_UTILIZATION = exp(2, 18);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
