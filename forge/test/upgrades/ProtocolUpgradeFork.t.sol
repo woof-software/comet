@@ -47,6 +47,9 @@ contract ProtocolUpgradeForkTest is ForkBase {
     /// @dev The max utilization every migrated market is given. V1 had no such field, so it reads as zero after the
     ///      migration, and a zero cap makes the Comet reject any borrow
     uint64 internal constant MAX_SUPPORTED_UTILIZATION = 2e18;
+    /// @dev The target health factor every migrated market is given. V1 had no such field, so it reads as zero after
+    ///      the migration, and a zero target makes the Comet constructor revert with BadHealthFactor
+    uint64 internal constant TARGET_HEALTH_FACTOR = 1.05e18;
 
     function test_protocolUpgrade() public {
         runProtocolUpgrade("mainnet");
@@ -168,6 +171,7 @@ contract ProtocolUpgradeForkTest is ForkBase {
             configurator.setConfiguration(comet, configuration);
             configurator.setFactory(comet, address(cometFactory));
             configurator.setMaxSupportedUtilization(comet, MAX_SUPPORTED_UTILIZATION);
+            configurator.setTargetHealthFactor(comet, TARGET_HEALTH_FACTOR);
             vm.stopPrank();
 
             // A Comet built on that list, through the market's proxy admin

@@ -49,10 +49,13 @@ import { AssetConfigStruct } from '../build/types/Configurator';
 
 // Snapshot
 import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
+import { TARGET_HEALTH_FACTOR } from './helpers/liquidation';
 
 // Math helpers
 export * from './helpers/math';
 export * from './helpers/network-helpers';
+export * from './helpers/liquidation';
+export { default24Assets } from './helpers/default-assets';
 
 export { Comet, ethers, expect, hre, takeSnapshot, SnapshotRestorer, SignerWithAddress, BigNumber };
 
@@ -104,7 +107,9 @@ export type ProtocolOpts = {
   baseBorrowMin?: Numeric;
   targetReserves?: Numeric;
   maxSupportedUtilization?: Numeric;
+  targetHealthFactor?: Numeric;
   baseTokenBalance?: Numeric;
+  skipInitStorage?: boolean;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
   assetListProxyAdmin?: string;
   assetListConfigurator?: string;
@@ -220,16 +225,16 @@ export function truncateDecimals(factor: bigint | BigNumber, decimals = 4) {
   return (toBigInt(factor) / descaleFactor) * descaleFactor;
 }
 
-export function mulPrice(n: bigint, price: bigint | BigNumber, fromScale: bigint | BigNumber): bigint {
-  return (n * toBigInt(price)) / toBigInt(fromScale);
+export function mulPrice(n: bigint | BigNumber, price: bigint | BigNumber, fromScale: bigint | BigNumber): bigint {
+  return (toBigInt(n) * toBigInt(price)) / toBigInt(fromScale);
 }
 
 export function mulFactor(n: bigint | BigNumber, factor: bigint | BigNumber):bigint {
   return toBigInt(n) * toBigInt(factor) / factorScale;
 }
 
-export function divPrice(n: bigint, price: bigint | BigNumber, toScale: bigint | BigNumber): bigint {
-  return (n * toBigInt(toScale)) / toBigInt(price);
+export function divPrice(n: bigint | BigNumber, price: bigint | BigNumber, toScale: bigint | BigNumber): bigint {
+  return (toBigInt(n) * toBigInt(toScale)) / toBigInt(price);
 }
 
 const BASE_INDEX_SCALE = 10n ** 15n;
@@ -445,6 +450,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const baseBorrowMin = dfn(opts.baseBorrowMin, exp(1, assets[base].decimals));
   const targetReserves = dfn(opts.targetReserves, 0);
   const maxSupportedUtilization = dfn(opts.maxSupportedUtilization, DEFAULT_MAX_SUPPORTED_UTILIZATION);
+  const targetHealthFactor = dfn(opts.targetHealthFactor, TARGET_HEALTH_FACTOR);
 
   const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
   const unsupportedToken = await FaucetFactory.deploy(1e6, 'Unsupported Token', 6, 'USUP');
@@ -478,7 +484,8 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
-    maxSupportedUtilization
+    maxSupportedUtilization,
+    targetHealthFactor
   };
 
   // The asset list holds the immutable part of each asset config; factors and supply caps live in its storage
@@ -504,7 +511,7 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   await cometWithExtendedAssetList.deployed();
 
   if (opts.start) await ethers.provider.send('evm_setNextBlockTimestamp', [opts.start]);
-  await cometWithExtendedAssetList.initializeStorage();
+  if (!opts.skipInitStorage) await cometWithExtendedAssetList.initializeStorage();
 
   const baseTokenBalance = opts.baseTokenBalance;
   if (baseTokenBalance) {
@@ -560,6 +567,7 @@ export async function getConfigurationForConfigurator(
   const baseBorrowMin = await cometWithExtendedAssetList.baseBorrowMin();
   const targetReserves = await cometWithExtendedAssetList.targetReserves();
   const maxSupportedUtilization = await cometWithExtendedAssetList.maxSupportedUtilization();
+  const targetHealthFactor = await cometWithExtendedAssetList.targetHealthFactor();
 
 
   const configuration = {
@@ -584,6 +592,7 @@ export async function getConfigurationForConfigurator(
     baseBorrowMin,
     targetReserves,
     maxSupportedUtilization,
+    targetHealthFactor,
     assetList: assetList.address,
   };
   return configuration;
@@ -713,6 +722,81 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     unsupportedToken,
     priceFeeds,
   };
+}
+
+export type CollateralState = {
+  tokenBalanceBefore: BigNumber;
+  totalsCollateralBefore: BigNumber;
+  collateralReservesBefore: BigNumber;
+  seizeAmount: bigint;
+  seizedValue: bigint;
+};
+
+export async function makeCollateralStates(
+  comet: CometMainInterface,
+  tokens: { [symbol: string]: FaucetToken | NonStandardFaucetFeeToken },
+  keys: string[]
+): Promise<Record<string, CollateralState>> {
+  const col: Record<string, CollateralState> = {};
+  for (const key of keys) {
+    const asset = tokens[key] as FaucetToken;
+    col[key] = {
+      tokenBalanceBefore: await asset.balanceOf(comet.address),
+      totalsCollateralBefore: (await comet.totalsCollateral(asset.address)).totalSupplyAsset,
+      collateralReservesBefore: await comet.getCollateralReserves(asset.address),
+      seizeAmount: 0n,
+      seizedValue: 0n,
+    };
+  }
+  return col;
+}
+
+export async function seedMarketActivity(
+  comet: CometHarnessInterfaceExtendedAssetList,
+  tokens: { [symbol: string]: FaucetToken | NonStandardFaucetFeeToken },
+  priceFeeds: { [symbol: string]: SimplePriceFeed },
+  lenderUser: SignerWithAddress,
+  borrowerUser: SignerWithAddress,
+  baseToken: FaucetToken,
+  initialBaseFunding: bigint,
+): Promise<void> {
+  const collateralConfigs = [
+    { key: 'COMP', amount: exp(1.5, 18) }, // ~$150
+    { key: 'WETH', amount: exp(0.075, 18) }, // ~$150
+    { key: 'USDT', amount: exp(150, 6) }, // ~$150
+  ];
+
+  // Seed the market with other users so balances are non-empty, simulating a live
+  // market where reserves, supplies and borrows are already non-zero before the test acts.
+  // The lender supplies the first 3 collaterals (~$150 each) and base liquidity.
+  for (const config of collateralConfigs) {
+    await tokens[config.key].allocateTo(lenderUser.address, config.amount);
+    await tokens[config.key].connect(lenderUser).approve(comet.address, config.amount);
+    await comet.connect(lenderUser).supply(tokens[config.key].address, config.amount);
+  }
+
+  // Seed base liquidity
+  const baseTokenAmount = exp(2000, 6); // ~$2000
+  await baseToken.allocateTo(lenderUser.address, baseTokenAmount);
+  await baseToken.connect(lenderUser).approve(comet.address, baseTokenAmount);
+  await comet.connect(lenderUser).supply(baseToken.address, baseTokenAmount);
+
+  // seed reserves
+  await baseToken.allocateTo(comet.address, initialBaseFunding);
+
+  // The borrower supplies every collateral (~$100 each) and opens a ~$300 borrow.
+  // amount = targetValue * scale / price (targetValue and price both in 1e8 units).
+  const borrowerCollateralValue = exp(100, 8); // $100 in 1e8 price units
+  const borrowAmount = exp(300, 6); // ~$300
+  for (const symbol in tokens) {
+    const { scale } = await comet.getAssetInfoByAddress(tokens[symbol].address);
+    const price = (await priceFeeds[symbol].latestRoundData())[1].toBigInt();
+    const amount = borrowerCollateralValue * scale.toBigInt() / price;
+    await tokens[symbol].allocateTo(borrowerUser.address, amount);
+    await tokens[symbol].connect(borrowerUser).approve(comet.address, amount);
+    await comet.connect(borrowerUser).supply(tokens[symbol].address, amount);
+  }
+  await comet.connect(borrowerUser).withdraw(baseToken.address, borrowAmount); // ~$300
 }
 
 export async function makeRewards(opts: RewardsOpts = {}): Promise<Rewards> {

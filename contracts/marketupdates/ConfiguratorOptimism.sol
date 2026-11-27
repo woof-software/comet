@@ -198,6 +198,12 @@ contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvent
         emit SetMaxSupportedUtilization(cometProxy, oldMaxSupportedUtilization, newMaxSupportedUtilization);
     }
 
+    function setTargetHealthFactor(address cometProxy, uint64 newTargetHealthFactor) external governorOrMarketAdmin {
+        uint64 oldTargetHealthFactor = configuratorParams[cometProxy].targetHealthFactor;
+        configuratorParams[cometProxy].targetHealthFactor = newTargetHealthFactor;
+        emit SetTargetHealthFactor(cometProxy, oldTargetHealthFactor, newTargetHealthFactor);
+    }
+
     /*//////////////////////////////////////////////////////////////
                          ASSET LIST MANAGEMENT
     //////////////////////////////////////////////////////////////*/

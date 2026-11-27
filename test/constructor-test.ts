@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_SUPPORTED_UTILIZATION, ethers, exp, expect, makeProtocol } from './helpers';
+import { DEFAULT_MAX_SUPPORTED_UTILIZATION, ethers, exp, expect, makeProtocol, ONE, TARGET_HEALTH_FACTOR } from './helpers';
 import {
   AssetList__factory,
   AssetListFactory__factory,
@@ -14,6 +14,20 @@ describe('constructor', function () {
       baseBorrowMin: exp(100, 6)
     });
     expect(await comet.baseBorrowMin()).to.eq(exp(100, 6));
+  });
+
+  it('sets the targetHealthFactor', async function () {
+    const { cometWithExtendedAssetList: comet } = await makeProtocol({ targetHealthFactor: exp(1.2, 18) });
+    expect(await comet.targetHealthFactor()).to.eq(exp(1.2, 18));
+  });
+
+  it('allows a targetHealthFactor equal to the minimum', async function () {
+    const { cometWithExtendedAssetList: comet } = await makeProtocol({ targetHealthFactor: ONE });
+    expect(await comet.targetHealthFactor()).to.eq(ONE);
+  });
+
+  it('reverts if the targetHealthFactor is below the minimum', async function () {
+    await expect(makeProtocol({ targetHealthFactor: ONE - 1n })).to.be.revertedWith("custom error 'BadHealthFactor()'");
   });
 
   it('verifies asset scales', async function () {
@@ -125,6 +139,7 @@ describe('constructor', function () {
       baseBorrowMin: exp(1, 6),
       targetReserves: 0,
       maxSupportedUtilization: DEFAULT_MAX_SUPPORTED_UTILIZATION,
+      targetHealthFactor: TARGET_HEALTH_FACTOR,
       assetList: ethers.constants.AddressZero,
     })).to.be.revertedWithCustomError(CometFactory, 'ZeroAssetList');
   });

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 
-import { HardhatUserConfig, subtask, task } from 'hardhat/config';
+import { HardhatUserConfig, extendProvider, subtask, task } from 'hardhat/config';
+import { wrapProviderWithBlockDelta } from './test/helpers/block-clock';
 import '@compound-finance/hardhat-import';
 import '@nomiclabs/hardhat-etherscan';
 import '@nomiclabs/hardhat-ethers';
@@ -15,6 +16,16 @@ import { TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS } from 'hardhat/builtin-tasks/ta
 import './tasks/deployment_manager/task.ts';
 import './tasks/spider/task.ts';
 import './tasks/scenario/task.ts';
+import './tasks/test-coverage/task.ts';
+
+/**
+ * Deterministic block clock (opt-in, per test).
+ *
+ * Installed unconditionally because `extendProvider` only runs at config load, but INERT by default: every
+ * request passes straight through, so the default behaviour is stock Hardhat. A test enables it for its own
+ * scope via `enableBlockDelta(n)` / `disableBlockDelta()` (or `useBlockDelta(n)`) from test/helpers/block-clock.
+ */
+extendProvider(async (provider, _config, network) => wrapProviderWithBlockDelta(provider, network));
 
 // Relation Config
 import relationConfigMap from './deployments/relations';
@@ -648,7 +659,7 @@ const config: HardhatUserConfig = {
         network: 'ronin',
         deployment: 'wron',
         auxiliaryBase: 'mainnet'
-      },
+      }
     ],
   },
 

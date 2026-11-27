@@ -26,6 +26,7 @@ interface IConfiguratorEvents {
     event SetBaseBorrowMin(address indexed cometProxy, uint104 oldBaseBorrowMin, uint104 newBaseBorrowMin);
     event SetTargetReserves(address indexed cometProxy, uint104 oldTargetReserves, uint104 newTargetReserves);
     event SetMaxSupportedUtilization(address indexed cometProxy, uint64 oldMaxSupportedUtilization, uint64 newMaxSupportedUtilization);
+    event SetTargetHealthFactor(address indexed cometProxy, uint64 oldHealthFactor, uint64 newHealthFactor);
 
     /*//////////////////////////////////////////////////////////////
                           INTEREST RATE MODEL

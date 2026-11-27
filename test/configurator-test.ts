@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_SUPPORTED_UTILIZATION, ethers, exp, expect, makeConfigurator, SnapshotRestorer, takeSnapshot, ZERO_ADDRESS } from './helpers';
+import { DEFAULT_MAX_SUPPORTED_UTILIZATION, ethers, event, exp, expect, makeConfigurator, SnapshotRestorer, takeSnapshot, wait, ZERO_ADDRESS } from './helpers';
 import {
   AssetList,
   CometExt,
@@ -1687,6 +1687,57 @@ describe('configurator', function () {
         it('maxSupportedUtilization is updated in comet', async () => {
           expect(await comet.maxSupportedUtilization()).to.equal(NEW_MAX_SUPPORTED_UTILIZATION);
         });
+      });
+    });
+
+    describe('setTargetHealthFactor', function() {
+      it('sets targetHealthFactor and deploys Comet with new configuration', async () => {
+        const { configurator, configuratorProxy, proxyAdmin, cometWithExtendedAssetList: comet, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+
+        const cometAsProxy = comet.attach(cometProxy.address);
+        const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+        expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).targetHealthFactor).to.be.equal(await comet.targetHealthFactor());
+
+        const oldHealthFactor = (await comet.targetHealthFactor()).toBigInt();
+        const newHealthFactor = exp(1.2, 18);
+        const txn = await wait(configuratorAsProxy.setTargetHealthFactor(cometProxy.address, newHealthFactor));
+        await wait(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address));
+
+        expect(event(txn, 0)).to.be.deep.equal({
+          SetTargetHealthFactor: {
+            cometProxy: cometProxy.address,
+            oldHealthFactor,
+            newHealthFactor,
+          }
+        });
+        expect(oldHealthFactor).to.be.not.equal(newHealthFactor);
+        expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).targetHealthFactor).to.be.equal(newHealthFactor);
+        expect(await cometAsProxy.targetHealthFactor()).to.be.equal(newHealthFactor);
+      });
+
+      it('keeps targetHealthFactor and targetReserves apart in their shared storage slot', async () => {
+        const targetReserves = exp(1000, 6);
+        const { configurator, configuratorProxy, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator({ targetReserves });
+        const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+        const before = await configuratorAsProxy.getConfiguration(cometProxy.address);
+
+        await wait(configuratorAsProxy.setTargetHealthFactor(cometProxy.address, exp(1.2, 18)));
+        const afterHealthFactor = await configuratorAsProxy.getConfiguration(cometProxy.address);
+        expect(afterHealthFactor.targetReserves).to.be.equal(targetReserves);
+        expect(afterHealthFactor.maxSupportedUtilization).to.be.equal(before.maxSupportedUtilization);
+        expect(afterHealthFactor.assetList).to.be.equal(before.assetList);
+
+        await wait(configuratorAsProxy.setTargetReserves(cometProxy.address, exp(2000, 6)));
+        expect((await configuratorAsProxy.getConfiguration(cometProxy.address)).targetHealthFactor).to.be.equal(exp(1.2, 18));
+      });
+
+      it('reverts deploying Comet when targetHealthFactor is below the minimum', async () => {
+        const { configurator, configuratorProxy, proxyAdmin, cometProxyWithExtendedAssetList: cometProxy } = await makeConfigurator();
+        const configuratorAsProxy = configurator.attach(configuratorProxy.address);
+
+        await wait(configuratorAsProxy.setTargetHealthFactor(cometProxy.address, 0));
+
+        await expect(proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxy.address)).to.be.revertedWith("custom error 'BadHealthFactor()'");
       });
     });
 

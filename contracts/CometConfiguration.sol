@@ -34,6 +34,7 @@ contract CometConfiguration {
         uint104 baseBorrowMin;
         uint104 targetReserves;
         uint64 maxSupportedUtilization;
+        uint64 targetHealthFactor;
         address assetList;
     }
 

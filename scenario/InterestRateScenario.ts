@@ -14,7 +14,7 @@ import {
   servicePatch
 } from './utils';
 import { getConfigForScenario } from './utils/scenarioHelper';
-import { setNextBlockTimestamp } from './utils/hreUtils';
+import { fundAccount, setNextBlockTimestamp } from './utils/hreUtils';
 
 function calculateInterestRateSupply(
   utilization: BigNumber,
@@ -615,7 +615,7 @@ scenario(
     },
   },
   async ({ comet, actors }, context: CometContext, world) => {
-    const { albert, betty, charles } = actors;
+    const { albert, betty, charles, pauseGuardian } = actors;
     const baseToken = context.getAssetByAddress(await comet.baseToken());
     const [collateralIndex] = await getUsableCollateralIndices(context);
 
@@ -676,10 +676,12 @@ scenario(
     // sanity check: betty holds the whole debt of the market
     expect(totalsBeforeAbsorb.totalBorrowBase).to.equal(-bettyPrincipalBefore);
 
+    await fundAccount(world, pauseGuardian);
+    // Full liquidation mode: absorb closes the whole debt, which leaves total borrow at 0 as the checks below expect
+    await comet.connect(pauseGuardian.signer).pausePartialLiquidation(true);
     await comet.connect(charles.signer).absorb(charles.address, [betty.address]);
 
-    // The absorb takes the whole debt off the market, and the value of the collateral above the debt becomes the
-    // supply of betty
+    // The absorb takes the whole debt off the market; the collateral above the debt stays with betty as collateral
     const totalsAfterAbsorb = await comet.totalsBasic();
     const bettyPrincipalAfter = (await comet.userBasic(betty.address)).principal.toBigInt();
     expect(await comet.borrowBalanceOf(betty.address)).to.equal(0n);

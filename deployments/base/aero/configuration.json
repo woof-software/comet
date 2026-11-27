@@ -8,6 +8,7 @@
   "storeFrontPriceFactor": 0.6,
   "targetReserves": "50000000e18",
   "maxSupportedUtilization": "2e18",
+  "targetHealthFactor": 1.05,
   "rates": {
     "supplyKink": 0.85,
     "supplySlopeLow": 0.08,

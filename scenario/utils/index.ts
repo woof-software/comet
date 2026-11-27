@@ -2167,13 +2167,15 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
   );
 
   // setConfiguration sets the list proxy once, for a market that has none yet. The V1 Configuration has no
-  // maxSupportedUtilization, so it reads as zero after the migration, and a zero cap makes the Comet reject any borrow
+  // maxSupportedUtilization or targetHealthFactor, so both read as zero after the migration: a zero cap makes the Comet
+  // reject any borrow, and a zero target makes its constructor revert with BadHealthFactor
   const configuration = await configurator.getConfiguration(comet.address);
   await configurator.setConfiguration(comet.address, {
     ...configuration,
     assetList: assetListProxy.address,
     extensionDelegate: cometExt.address,
     maxSupportedUtilization: configuration.maxSupportedUtilization.isZero() ? exp(2, 18) : configuration.maxSupportedUtilization,
+    targetHealthFactor: configuration.targetHealthFactor.isZero() ? exp(1.05, 18) : configuration.targetHealthFactor,
   });
   await configurator.setFactory(comet.address, cometFactory.address);
   await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);

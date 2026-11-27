@@ -18,6 +18,10 @@ import "forge-std/Test.sol";
 
 abstract contract MarketUpdateDeploymentBaseTest is Test {
 
+    /// @dev The target health factor every moved market is given. The live Configuration has no such field, so it
+    ///      reads as zero, and a zero target makes the Comet constructor revert with BadHealthFactor
+    uint64 internal constant TARGET_HEALTH_FACTOR = 1.05e18;
+
     IGovernorBravo public governorBravo = IGovernorBravo(MarketUpdateAddresses.GOVERNOR_BRAVO_PROXY_ADDRESS);
 
     // Forks a few blocks behind the latest one, which can still be reorged away or be missing on
@@ -164,6 +168,7 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         configuration.assetList = assetList;
         configurator.setConfiguration(cometProxy, configuration);
         configurator.setFactory(cometProxy, cometFactory);
+        configurator.setTargetHealthFactor(cometProxy, TARGET_HEALTH_FACTOR);
         vm.stopPrank();
     }
 

@@ -39,11 +39,6 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
     uint256 internal constant BASE_BORROW_MIN_USD = 350;
     uint256 internal constant BASE_BORROW_MIN = BASE_BORROW_MIN_USD * 1e6;
 
-    // dex settings
-    uint16 internal constant INCENTIVE_BPS = 500;
-    uint16 internal constant DEX_SLIPPAGE_BPS = 500;
-    address internal constant DEX_ROUTER = 0x111111125421cA6dc452d289314280a0f8842A65;
-
     /*//////////////////////////////////////////////////////////////
                                  ACTORS
     //////////////////////////////////////////////////////////////*/
@@ -52,10 +47,6 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
     /// Governor of Comet, the Configurator and the ProxyAdmin.
     address internal timelock = makeAddr("timelock");
     address internal pauseGuardian = makeAddr("pauseGuardian");
-    /// Liquidation module roles. Kept apart from the DAO, which already holds the pauser role.
-    address internal multisig = makeAddr("multisig");
-    address internal executor = makeAddr("executor");
-    address internal pauser = makeAddr("pauser");
     // Users
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
@@ -89,8 +80,6 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
     /// Collateral in market order: `collaterals[i]` is the asset at Comet asset index `i`.
     FaucetToken[] internal collaterals;
     SimplePriceFeed[] internal collateralPriceFeeds;
-    /// Set to the WETH mock, which the DEX adapter treats as native ETH.
-    address internal weth;
 
     /**
      * @notice Deploys the whole market. Call this from `setUp()`.
@@ -123,8 +112,6 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
                 collaterals.push(token);
                 collateralPriceFeeds.push(priceFeed);
             }
-
-            if (keccak256(bytes(spec.symbol)) == keccak256("WETH")) weth = address(token);
         }
     }
 
@@ -183,16 +170,9 @@ abstract contract ProtocolFixture is Test, AssetListDeployer {
             baseBorrowMin: uint104(BASE_BORROW_MIN_USD * uint256(baseUnit) / assetSpecs[0].price),
             targetReserves: 0,
             assetList: address(assetList),
-            maxSupportedUtilization: 2e18
+            maxSupportedUtilization: 2e18,
+            targetHealthFactor: uint64(TARGET_HF)
         });
-    }
-
-    /// The market's collateral in asset-table order, which is the list the DEX adapter routes over.
-    function collateralAddresses() internal view returns (address[] memory addresses) {
-        addresses = new address[](collaterals.length);
-        for (uint256 i; i < collaterals.length; ++i) {
-            addresses[i] = address(collaterals[i]);
-        }
     }
 
     function deployMarketContracts() internal {

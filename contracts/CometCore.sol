@@ -39,6 +39,8 @@ abstract contract CometCore is CometConfiguration, CometStorage, CometMath {
     uint24 internal constant PAUSE_COLLATERALS_TRANSFER_OFFSET = 6;
     /// @dev Offset of pause collateral withdraw
     uint24 internal constant PAUSE_COLLATERALS_WITHDRAW_OFFSET = 7;
+    /// @dev Offset of pause partial liquidation
+    uint24 internal constant PAUSE_PARTIAL_LIQUIDATION_OFFSET = 8;
 
     /// @dev The decimals required for a price feed
     uint8 internal constant PRICE_FEED_DECIMALS = 8;

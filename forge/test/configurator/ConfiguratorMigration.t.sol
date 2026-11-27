@@ -50,6 +50,9 @@ contract ConfiguratorMigrationTest is Test {
     uint256 internal constant V1_ASSET_CONFIG_SLOTS = 3;
     /// @dev Assets per market, the most an asset list can hold
     uint256 internal constant NUM_ASSETS = 24;
+    /// @dev The target health factor every migrated market is given. V1 had no such field, so it reads as zero after
+    ///      the migration, and a zero target makes the Comet constructor revert with BadHealthFactor
+    uint64 internal constant TARGET_HEALTH_FACTOR = 1.05e18;
 
     function test_configuratorMigration() public {
         baseToken = new FaucetToken(0, "Base", 6, "BASE");
@@ -245,6 +248,7 @@ contract ConfiguratorMigrationTest is Test {
         configuration.assetList = assetList;
         configurator().setConfiguration(comet, configuration);
         configurator().setFactory(comet, address(cometFactory));
+        configurator().setTargetHealthFactor(comet, TARGET_HEALTH_FACTOR);
         vm.stopPrank();
 
         proxyAdmin.deployAndUpgradeTo(Deployable(address(proxy)), TransparentUpgradeableProxy(payable(comet)));

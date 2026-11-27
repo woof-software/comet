@@ -76,6 +76,7 @@ async function deployComet(context: CometContext): Promise<string> {
     baseBorrowMin: exp(1, 5), // 100000n
     targetReserves: exp(2, 13), //20000000000000n
     maxSupportedUtilization: exp(2, 18), // 200% utilization, the same default the unit tests use
+    targetHealthFactor: exp(1.05, 18),
     assetList: await deployAssetList(context),
   };
 

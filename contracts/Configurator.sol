@@ -177,6 +177,12 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
         emit SetMaxSupportedUtilization(cometProxy, oldMaxSupportedUtilization, newMaxSupportedUtilization);
     }
 
+    function setTargetHealthFactor(address cometProxy, uint64 newTargetHealthFactor) external onlyGovernor {
+        uint64 oldTargetHealthFactor = configuratorParams[cometProxy].targetHealthFactor;
+        configuratorParams[cometProxy].targetHealthFactor = newTargetHealthFactor;
+        emit SetTargetHealthFactor(cometProxy, oldTargetHealthFactor, newTargetHealthFactor);
+    }
+
     /*//////////////////////////////////////////////////////////////
                          ASSET LIST MANAGEMENT
     //////////////////////////////////////////////////////////////*/
@@ -386,7 +392,7 @@ contract Configurator is ConfiguratorStorage, IConfiguratorEvents, IConfigurator
      * @notice Deploy a new Comet implementation using the factory and Configuration for that Comet proxy
      * @dev Note: Callable by anyone
      */
-    function deploy(address cometProxy) external returns (address) {
+    function deploy(address cometProxy) external virtual returns (address) {
         address newComet = ICometFactory(factory[cometProxy]).clone(configuratorParams[cometProxy]);
         emit CometDeployed(cometProxy, newComet);
         return newComet;

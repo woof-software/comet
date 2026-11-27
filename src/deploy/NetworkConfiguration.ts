@@ -93,6 +93,7 @@ export interface NetworkConfiguration {
   storeFrontPriceFactor: number;
   targetReserves: ScientificNotation;
   maxSupportedUtilization: ScientificNotation;
+  targetHealthFactor: number;
   rates: NetworkRateConfiguration;
   tracking: NetworkTrackingConfiguration;
   assets: { [name: string]: NetworkAssetConfiguration };
@@ -159,6 +160,7 @@ function getOverridesOrConfig(
     storeFrontPriceFactor: _ => percentage(config.storeFrontPriceFactor),
     targetReserves: _ => stringToBigInt(config.targetReserves),
     maxSupportedUtilization: _ => stringToBigInt(config.maxSupportedUtilization),
+    targetHealthFactor: _ => percentage(config.targetHealthFactor, false),
     ...interestRateInfoMapping(config.rates),
     ...trackingInfoMapping(config.tracking),
     assetConfigs: _ => getAssetConfigs(config.assets, contracts),

@@ -25,6 +25,7 @@ abstract contract CometHarnessInterfaceExtendedAssetList is CometInterface {
     function isCollateralAssetTransferPaused(uint24 assetIndex) virtual external view returns (bool);
     function isCollateralTransferPaused() virtual external view returns (bool);
     function isCollateralWithdrawPaused() virtual external view returns (bool);
+    function isPartialLiquidationPaused() virtual external view returns (bool);
     function isCollateralDeactivated(uint24 assetIndex) virtual external view returns (bool);
     function getBorrowLimit(address account) virtual external view returns (int);
 }

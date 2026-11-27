@@ -1,5 +1,5 @@
 import hre, { ethers } from 'hardhat';
-import { DEFAULT_MAX_SUPPORTED_UTILIZATION, exp, setTotalsBasic } from '../helpers';
+import { DEFAULT_MAX_SUPPORTED_UTILIZATION, exp, setTotalsBasic, TARGET_HEALTH_FACTOR } from '../helpers';
 import { HttpNetworkConfig } from 'hardhat/types/config';
 import {
   CometExt__factory,
@@ -76,6 +76,7 @@ export async function makeProtocol() {
     baseBorrowMin: exp(1, 6),
     targetReserves: exp(5_000_000, 6),
     maxSupportedUtilization: DEFAULT_MAX_SUPPORTED_UTILIZATION,
+    targetHealthFactor: TARGET_HEALTH_FACTOR,
     assetList: '0x0000000000000000000000000000000000000000',
   };
 

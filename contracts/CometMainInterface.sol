@@ -16,6 +16,7 @@ abstract contract CometMainInterface is CometCore, IAssetListStructs {
     error BadAsset();
     error BadDecimals();
     error BadDiscount();
+    error BadHealthFactor();
     error BadMinimum();
     error BadPrice();
     error BorrowTooSmall();
@@ -187,6 +188,8 @@ abstract contract CometMainInterface is CometCore, IAssetListStructs {
     function baseBorrowMin() virtual external view returns (uint);
     /// @dev uint104
     function targetReserves() virtual external view returns (uint);
+    /// @dev uint64
+    function targetHealthFactor() virtual external view returns (uint);
 
     function numAssets() virtual external view returns (uint8);
     function maxAssets() virtual external view returns (uint8);

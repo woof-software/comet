@@ -384,6 +384,17 @@ contract CometExt is CometExtInterface {
     /**
      * @inheritdoc CometExtInterface
      */
+    function pausePartialLiquidation(bool paused) override external onlyGovernorOrPauseGuardian {
+        if (currentPauseOffsetStatus(PAUSE_PARTIAL_LIQUIDATION_OFFSET) == paused) revert OffsetStatusAlreadySet(PAUSE_PARTIAL_LIQUIDATION_OFFSET, paused);
+
+        setPauseFlag(PAUSE_PARTIAL_LIQUIDATION_OFFSET, paused);
+
+        emit PartialLiquidationPauseAction(paused);
+    }
+
+    /**
+     * @inheritdoc CometExtInterface
+     */
     function deactivateCollateral(uint24 assetIndex) override external isValidAssetIndex(assetIndex) {
         if (msg.sender != CometMainInterface(address(this)).pauseGuardian()) revert OnlyPauseGuardian();
         if (isCollateralDeactivated(assetIndex)) revert CollateralIsDeactivated(assetIndex);
