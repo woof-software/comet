@@ -1,5 +1,5 @@
-import { ethers, event, expect, exp, makeProtocol, portfolio, wait, fastForward, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS, presentValueSupply, setTotalsBasic } from './helpers';
-import { EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList } from '../build/types';
+import { ethers, expect, exp, makeProtocol, ReentryAttack, defaultAssets, ZERO_ADDRESS, takeSnapshot, SnapshotRestorer, UserCollateral, MAX_ASSETS, setTotalsBasic, presentValueSupply, portfolio, wait, event, fastForward } from './helpers';
+import { AssetList, EvilToken, EvilToken__factory, NonStandardFaucetFeeToken__factory, NonStandardFaucetFeeToken, FaucetToken, CometHarnessInterfaceExtendedAssetList } from '../build/types';
 import { BigNumber, ContractTransaction } from 'ethers';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { TotalsCollateralStruct } from 'build/types/CometHarnessInterfaceExtendedAssetList';
@@ -10,6 +10,8 @@ describe('supply', function () {
   const baseTokenDecimals = 6;
   // Contracts
   let comet: CometHarnessInterfaceExtendedAssetList;
+  // Comet forwards the asset lookups to the list, so an unknown asset reverts with the list's error
+  let assetList: AssetList;
   let baseToken: FaucetToken | NonStandardFaucetFeeToken;
   // Tokens
   let collaterals: {
@@ -55,6 +57,7 @@ describe('supply', function () {
     const protocol = await makeProtocol({ base: 'USDC', supplyInterestRateBase: SUPPLY_BASE_RATE, baseTokenBalance: SEED_RESERVES });
 
     comet = protocol.cometWithExtendedAssetList;
+    assetList = protocol.assetList;
     baseToken = protocol.tokens[protocol.base];
     collaterals = Object.fromEntries(
       Object.entries(protocol.tokens).filter(([_symbol, token]) => token.address !== baseToken.address)
@@ -175,7 +178,7 @@ describe('supply', function () {
         await unsupportedToken.allocateTo(alice.address, exp(1, 18));
 
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
-        await expect(comet.connect(alice).supply(unsupportedToken.address, 1)).to.be.revertedWithCustomError(comet, 'BadAsset');
+        await expect(comet.connect(alice).supply(unsupportedToken.address, 1)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('reverts on zero amount', async () => {
@@ -1654,8 +1657,9 @@ describe('supply', function () {
     // now grow, and alice's baseTrackingAccrued accrues via borrow tracking (not supply tracking).
     describe('supply collateral: accrual with active borrow (non-zero utilization)', function () {
       const SKIP_TIME = 3600; // 1 hour
-      // 400 USDC borrow — alice's collateral (1 COMP + 0.1 WETH) supports up to ~$475 of borrows
-      const ALICE_BORROW_AMOUNT: bigint = exp(400, 6);
+      // 300 USDC borrow — alice's collateral (1 COMP + 0.1 WETH ≈ $475) supports up to ~$356 of borrows
+      // at the default 0.75 borrow collateral factor
+      const ALICE_BORROW_AMOUNT: bigint = exp(300, 6);
       const ALICE_COLLATERAL_SUPPLY: bigint = exp(1, 18); // 1 COMP
 
       let baseSupplyIndexBefore: BigNumber;
@@ -1685,7 +1689,8 @@ describe('supply', function () {
         // Alice withdraws her entire base supply balance plus ALICE_BORROW_AMOUNT in a single call.
         // This transitions alice from a net supplier to a net borrower (negative principal),
         // which makes totalBorrowBase > 0 and creates non-zero utilization and rates.
-        // Her existing collateral (1 COMP + 0.1 WETH ≈ $475) covers the $400 USDC net borrow.
+        // Her existing collateral (1 COMP + 0.1 WETH ≈ $475, ~$356 at the 0.75 borrow collateral factor)
+        // covers the $300 USDC net borrow.
         const aliceDisplayBalance = await comet.balanceOf(alice.address);
         await comet.connect(alice).withdraw(baseToken.address, aliceDisplayBalance.add(ALICE_BORROW_AMOUNT));
 
@@ -1743,7 +1748,7 @@ describe('supply', function () {
       it('baseSupplyIndex grows when supply rate is non-zero', async () => {
         // baseSupplyIndex += mulFactor(baseSupplyIndex, supplyRate * timeElapsed)
         //                  = baseSupplyIndex + baseSupplyIndex * supplyRate * timeElapsed / 1e18
-        // supplyRate > 0 because utilization > 0 (alice's 400 USDC borrow)
+        // supplyRate > 0 because utilization > 0 (alice's 300 USDC borrow)
         // Unlike the zero-borrow case above, this index now actually grows
         const timeElapsed = BigNumber.from(supplyTimestamp - lastAccrualTimeBefore);
         const expectedIndex = baseSupplyIndexBefore.add(
@@ -1807,7 +1812,7 @@ describe('supply', function () {
       });
 
       it('utilization is greater than zero after collateral supply accrual', async () => {
-        // Active borrow (alice's 400 USDC net position) keeps utilization above zero.
+        // Active borrow (alice's 300 USDC net position) keeps utilization above zero.
         // Supplying collateral does not change totalSupplyBase or totalBorrowBase principals.
         expect(await comet.getUtilization()).to.be.greaterThan(0);
       });
@@ -1895,7 +1900,7 @@ describe('supply', function () {
       it('reverts for asset other than base or collateral', async () => {
         await unsupportedToken.allocateTo(alice.address, exp(1, 18));
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
-        await expect(comet.connect(alice).supplyTo(bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(comet, 'BadAsset');
+        await expect(comet.connect(alice).supplyTo(bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('reverts when protocol paused', async () => {
@@ -2026,10 +2031,7 @@ describe('supply', function () {
       it('reverts for asset other than base or collateral', async () => {
         await unsupportedToken.allocateTo(alice.address, exp(1, 18));
         await unsupportedToken.connect(alice).approve(comet.address, exp(1, 18));
-        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(
-          comet,
-          'BadAsset'
-        );
+        await expect(comet.connect(alice).supplyFrom(alice.address, bob.address, unsupportedToken.address, 1)).to.be.revertedWithCustomError(assetList, 'AssetNotFound');
       });
 
       it('reverts with Unauthorized when the sender has no permission from `from` (base asset)', async () => {

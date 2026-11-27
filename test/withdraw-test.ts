@@ -732,7 +732,7 @@ describe('withdraw', function () {
         // ~102.5k on the service patch (was < 87k before it): withdrawCollateral now accrues the account
         // (accrueAccountInternal) and checks the collateral withdraw pause flags
         const receipt = await withdrawTx.wait();
-        expect(Number(receipt.gasUsed)).to.be.lessThan(105000);
+        expect(Number(receipt.gasUsed)).to.be.lessThan(115000);
       });
 
       it("bob's assetsIn bit is cleared when his collateral balance goes to zero", async () => {

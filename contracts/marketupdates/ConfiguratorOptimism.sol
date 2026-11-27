@@ -1,0 +1,453 @@
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity 0.8.15;
+
+import { ConfiguratorStorageOptimism, CometConfiguration, MarketAdminPermissionCheckerInterface } from "./ConfiguratorStorageOptimism.sol";
+import { IAssetListFactory } from "../interfaces/IAssetListFactory.sol";
+import { IAssetList, IAssetListStructs } from "../interfaces/assetList/IAssetList.sol";
+import { ICometFactory } from "../interfaces/ICometFactory.sol";
+import { IConfiguratorEvents } from "../interfaces/configurator/IConfiguratorEvents.sol";
+import { IConfiguratorErrors } from "../interfaces/configurator/IConfiguratorErrors.sol";
+import { ConfigHash } from "../libraries/ConfigHash.sol";
+
+contract ConfiguratorOptimism is ConfiguratorStorageOptimism, IConfiguratorEvents, IConfiguratorErrors {
+    event SetMarketAdminPermissionChecker(address indexed oldMarketAdminPermissionChecker, address indexed newMarketAdminPermissionChecker);
+
+    modifier onlyGovernor {
+        if (msg.sender != governor) revert Unauthorized();
+        _;
+    }
+
+    modifier nonZeroCometProxy(address cometProxy) {
+        if (cometProxy == address(0)) revert ZeroCometProxyAddress();
+        _;
+    }
+
+    /**
+     * @dev Ensures that the caller is either the governor or the market admin.
+     * This delegates the permission check logic to the MarketAdminPermissionChecker contract.
+     */
+    modifier governorOrMarketAdmin {
+        if(msg.sender != governor) marketAdminPermissionChecker.checkUpdatePermission(msg.sender);
+        _;
+    }
+
+    /**
+     * @notice Constructs a new Configurator instance
+     **/
+    constructor() {
+        // Set a high version to prevent the implementation contract from being initialized
+        version = type(uint256).max;
+    }
+
+    /**
+     * @notice Initializes the storage for Configurator
+     * @param governor_ The address of the governor
+     **/
+    function initialize(address governor_) public {
+        if (version != 0) revert AlreadyInitialized();
+        if (governor_ == address(0)) revert InvalidAddress();
+
+        governor = governor_;
+        version = 1;
+    }
+
+    /**
+     * @notice Sets the factory for a Comet proxy
+     * @dev Note: Only callable by governor
+     **/
+    function setFactory(address cometProxy, address newFactory) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        address oldFactory = factory[cometProxy];
+        factory[cometProxy] = newFactory;
+        emit SetFactory(cometProxy, oldFactory, newFactory);
+    }
+
+    /**
+     * @notice Sets the entire Configuration for a Comet proxy
+     * @dev Note: Called once per market, and the market must be given its asset list proxy (not the zero address).
+     *      After that every param is updated through its own setter, except `baseToken`, `trackingIndexScale`
+     *      and `assetList`, which never change; the list itself is changed through the asset config setters and the next deploy
+     **/
+    function setConfiguration(address cometProxy, Configuration calldata newConfiguration) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        Configuration memory oldConfiguration = configuratorParams[cometProxy];
+        // The configuration is set once, together with the market's asset list
+        if (oldConfiguration.assetList != address(0)) revert ConfigurationAlreadyExists();
+        if (newConfiguration.assetList == address(0)) revert InvalidAddress();
+
+        configuratorParams[cometProxy] = newConfiguration;
+        emit SetConfiguration(cometProxy, oldConfiguration, newConfiguration);
+    }
+
+    /** Governance setters for Comet-related configuration **/
+
+    function setGovernor(address cometProxy, address newGovernor) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        address oldGovernor = configuratorParams[cometProxy].governor;
+        configuratorParams[cometProxy].governor = newGovernor;
+        emit SetGovernor(cometProxy, oldGovernor, newGovernor);
+    }
+
+    function setPauseGuardian(address cometProxy, address newPauseGuardian) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        address oldPauseGuardian = configuratorParams[cometProxy].pauseGuardian;
+        configuratorParams[cometProxy].pauseGuardian = newPauseGuardian;
+        emit SetPauseGuardian(cometProxy, oldPauseGuardian, newPauseGuardian);
+    }
+
+    /**
+    * @notice Sets the MarketAdminPermissionChecker contract
+    * @dev Note: Only callable by governor
+    **/
+    function setMarketAdminPermissionChecker(MarketAdminPermissionCheckerInterface newMarketAdminPermissionChecker) external onlyGovernor {
+        address oldMarketAdminPermissionChecker = address(marketAdminPermissionChecker);
+        marketAdminPermissionChecker = newMarketAdminPermissionChecker;
+        emit SetMarketAdminPermissionChecker(oldMarketAdminPermissionChecker, address(newMarketAdminPermissionChecker));
+    }
+
+    function setBaseTokenPriceFeed(address cometProxy, address newBaseTokenPriceFeed) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        address oldBaseTokenPriceFeed = configuratorParams[cometProxy].baseTokenPriceFeed;
+        configuratorParams[cometProxy].baseTokenPriceFeed = newBaseTokenPriceFeed;
+        emit SetBaseTokenPriceFeed(cometProxy, oldBaseTokenPriceFeed, newBaseTokenPriceFeed);
+    }
+
+    function setExtensionDelegate(address cometProxy, address newExtensionDelegate) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        address oldExtensionDelegate = configuratorParams[cometProxy].extensionDelegate;
+        configuratorParams[cometProxy].extensionDelegate = newExtensionDelegate;
+        emit SetExtensionDelegate(cometProxy, oldExtensionDelegate, newExtensionDelegate);
+    }
+
+    function setSupplyKink(address cometProxy, uint64 newSupplyKink) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint64 oldSupplyKink = configuratorParams[cometProxy].supplyKink;
+        configuratorParams[cometProxy].supplyKink = newSupplyKink;
+        emit SetSupplyKink(cometProxy, oldSupplyKink, newSupplyKink);
+    }
+
+    function setSupplyPerYearInterestRateSlopeLow(address cometProxy, uint64 newSlope) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint64 oldSlope = configuratorParams[cometProxy].supplyPerYearInterestRateSlopeLow;
+        configuratorParams[cometProxy].supplyPerYearInterestRateSlopeLow = newSlope;
+        emit SetSupplyPerYearInterestRateSlopeLow(cometProxy, oldSlope, newSlope);
+    }
+
+    function setSupplyPerYearInterestRateSlopeHigh(address cometProxy, uint64 newSlope) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint64 oldSlope = configuratorParams[cometProxy].supplyPerYearInterestRateSlopeHigh;
+        configuratorParams[cometProxy].supplyPerYearInterestRateSlopeHigh = newSlope;
+        emit SetSupplyPerYearInterestRateSlopeHigh(cometProxy, oldSlope, newSlope);
+    }
+
+    function setSupplyPerYearInterestRateBase(address cometProxy, uint64 newBase) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint64 oldBase = configuratorParams[cometProxy].supplyPerYearInterestRateBase;
+        configuratorParams[cometProxy].supplyPerYearInterestRateBase = newBase;
+        emit SetSupplyPerYearInterestRateBase(cometProxy, oldBase, newBase);
+    }
+
+    function setBorrowKink(address cometProxy, uint64 newBorrowKink) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint64 oldBorrowKink = configuratorParams[cometProxy].borrowKink;
+        configuratorParams[cometProxy].borrowKink = newBorrowKink;
+        emit SetBorrowKink(cometProxy, oldBorrowKink, newBorrowKink);
+    }
+
+    function setBorrowPerYearInterestRateSlopeLow(address cometProxy, uint64 newSlope) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint64 oldSlope = configuratorParams[cometProxy].borrowPerYearInterestRateSlopeLow;
+        configuratorParams[cometProxy].borrowPerYearInterestRateSlopeLow = newSlope;
+        emit SetBorrowPerYearInterestRateSlopeLow(cometProxy, oldSlope, newSlope);
+    }
+
+    function setBorrowPerYearInterestRateSlopeHigh(address cometProxy, uint64 newSlope) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint64 oldSlope = configuratorParams[cometProxy].borrowPerYearInterestRateSlopeHigh;
+        configuratorParams[cometProxy].borrowPerYearInterestRateSlopeHigh = newSlope;
+        emit SetBorrowPerYearInterestRateSlopeHigh(cometProxy, oldSlope, newSlope);
+    }
+
+    function setBorrowPerYearInterestRateBase(address cometProxy, uint64 newBase) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint64 oldBase = configuratorParams[cometProxy].borrowPerYearInterestRateBase;
+        configuratorParams[cometProxy].borrowPerYearInterestRateBase = newBase;
+        emit SetBorrowPerYearInterestRateBase(cometProxy, oldBase, newBase);
+    }
+
+    function setStoreFrontPriceFactor(address cometProxy, uint64 newStoreFrontPriceFactor) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        uint64 oldStoreFrontPriceFactor = configuratorParams[cometProxy].storeFrontPriceFactor;
+        configuratorParams[cometProxy].storeFrontPriceFactor = newStoreFrontPriceFactor;
+        emit SetStoreFrontPriceFactor(cometProxy, oldStoreFrontPriceFactor, newStoreFrontPriceFactor);
+    }
+
+    function setBaseTrackingSupplySpeed(address cometProxy, uint64 newBaseTrackingSupplySpeed) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint64 oldBaseTrackingSupplySpeed = configuratorParams[cometProxy].baseTrackingSupplySpeed;
+        configuratorParams[cometProxy].baseTrackingSupplySpeed = newBaseTrackingSupplySpeed;
+        emit SetBaseTrackingSupplySpeed(cometProxy, oldBaseTrackingSupplySpeed, newBaseTrackingSupplySpeed);
+    }
+
+    function setBaseTrackingBorrowSpeed(address cometProxy, uint64 newBaseTrackingBorrowSpeed) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint64 oldBaseTrackingBorrowSpeed = configuratorParams[cometProxy].baseTrackingBorrowSpeed;
+        configuratorParams[cometProxy].baseTrackingBorrowSpeed = newBaseTrackingBorrowSpeed;
+        emit SetBaseTrackingBorrowSpeed(cometProxy, oldBaseTrackingBorrowSpeed, newBaseTrackingBorrowSpeed);
+    }
+
+    function setBaseMinForRewards(address cometProxy, uint104 newBaseMinForRewards) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        uint104 oldBaseMinForRewards = configuratorParams[cometProxy].baseMinForRewards;
+        configuratorParams[cometProxy].baseMinForRewards = newBaseMinForRewards;
+        emit SetBaseMinForRewards(cometProxy, oldBaseMinForRewards, newBaseMinForRewards);
+    }
+
+    function setBaseBorrowMin(address cometProxy, uint104 newBaseBorrowMin) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint104 oldBaseBorrowMin = configuratorParams[cometProxy].baseBorrowMin;
+        configuratorParams[cometProxy].baseBorrowMin = newBaseBorrowMin;
+        emit SetBaseBorrowMin(cometProxy, oldBaseBorrowMin, newBaseBorrowMin);
+    }
+
+    function setTargetReserves(address cometProxy, uint104 newTargetReserves) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        uint104 oldTargetReserves = configuratorParams[cometProxy].targetReserves;
+        configuratorParams[cometProxy].targetReserves = newTargetReserves;
+        emit SetTargetReserves(cometProxy, oldTargetReserves, newTargetReserves);
+    }
+
+    function setMaxSupportedUtilization(address cometProxy, uint64 newMaxSupportedUtilization) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint64 oldMaxSupportedUtilization = configuratorParams[cometProxy].maxSupportedUtilization;
+        configuratorParams[cometProxy].maxSupportedUtilization = newMaxSupportedUtilization;
+        emit SetMaxSupportedUtilization(cometProxy, oldMaxSupportedUtilization, newMaxSupportedUtilization);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         ASSET LIST MANAGEMENT
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Sets the asset list factory for a Comet proxy, used by deployAssetList
+     * @param cometProxy The Comet proxy whose asset list factory to set
+     * @param newAssetListFactory The asset list factory to use
+     */
+    function setAssetListFactory(address cometProxy, address newAssetListFactory) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        if (newAssetListFactory == address(0)) revert InvalidAddress();
+
+        emit SetAssetListFactory(cometProxy, cometAssetListFactories[cometProxy], newAssetListFactory);
+        cometAssetListFactories[cometProxy] = newAssetListFactory;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        ASSETS CONFIGS MANAGEMENT
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Adds a new asset config at the end of the asset configs of a Comet proxy
+     * @param cometProxy The Comet proxy to add the asset config to
+     * @param assetConfig The config of the new asset
+     */
+    function addAsset(address cometProxy, AssetConfig calldata assetConfig) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        if (assetConfig.asset == address(0)) revert InvalidAddress();
+
+        AssetConfig[] storage cometAssetConfigs = assetConfigs[cometProxy];
+        uint256 numAssets = cometAssetConfigs.length;
+        for (uint256 i; i < numAssets; ++i) {
+            if (cometAssetConfigs[i].asset == assetConfig.asset) revert AssetAlreadyExists();
+        }
+
+        cometAssetConfigs.push(assetConfig);
+        emit AddAsset(cometProxy, assetConfig);
+    }
+
+    /**
+     * @notice Sets the price feed of one asset of a Comet proxy
+     * @dev Takes effect on the asset list only after deployAssetList and the asset list proxy upgrade
+     * @param cometProxy The Comet proxy whose asset config to update
+     * @param asset The asset whose price feed to set
+     * @param newPriceFeed The new price feed
+     */
+    function updateAssetPriceFeed(address cometProxy, address asset, address newPriceFeed) external onlyGovernor nonZeroCometProxy(cometProxy) {
+        if (newPriceFeed == address(0)) revert InvalidAddress();
+
+        uint256 assetIndex = getAssetIndex(cometProxy, asset);
+        address oldPriceFeed = assetConfigs[cometProxy][assetIndex].priceFeed;
+        assetConfigs[cometProxy][assetIndex].priceFeed = newPriceFeed;
+        emit UpdateAssetPriceFeed(cometProxy, asset, oldPriceFeed, newPriceFeed);
+    }
+
+    /**
+     * @notice Sets the borrow collateral factor of an asset, in its stored config and, if the list already holds the asset, on the Comet proxy's asset list
+     * @param cometProxy The Comet proxy whose asset config to update
+     * @param asset The asset whose borrow collateral factor to set
+     * @param newBorrowCF The new borrow collateral factor
+     */
+    function updateAssetBorrowCollateralFactor(address cometProxy, address asset, uint64 newBorrowCF) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint256 assetIndex = getAssetIndex(cometProxy, asset);
+        uint64 oldBorrowCF = assetConfigs[cometProxy][assetIndex].borrowCollateralFactor;
+        assetConfigs[cometProxy][assetIndex].borrowCollateralFactor = newBorrowCF;
+        emit UpdateAssetBorrowCollateralFactor(cometProxy, asset, oldBorrowCF, newBorrowCF);
+        
+        // If asset added by addAsset, but not yet added to the list, set the value on the list with the next list upgrade
+        address assetList = configuratorParams[cometProxy].assetList;
+        if (assetList != address(0) && assetIndex < IAssetList(assetList).numAssets()) {
+            IAssetList(assetList).setBorrowCollateralFactor(asset, newBorrowCF);
+        }
+    }
+
+    /**
+     * @notice Sets the liquidate collateral factor of an asset, in its stored config and, if the list already holds the asset, on the Comet proxy's asset list
+     * @param cometProxy The Comet proxy whose asset config to update
+     * @param asset The asset whose liquidate collateral factor to set
+     * @param newLiquidateCF The new liquidate collateral factor
+     */
+    function updateAssetLiquidateCollateralFactor(address cometProxy, address asset, uint64 newLiquidateCF) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint256 assetIndex = getAssetIndex(cometProxy, asset);
+        uint64 oldLiquidateCF = assetConfigs[cometProxy][assetIndex].liquidateCollateralFactor;
+        assetConfigs[cometProxy][assetIndex].liquidateCollateralFactor = newLiquidateCF;
+        emit UpdateAssetLiquidateCollateralFactor(cometProxy, asset, oldLiquidateCF, newLiquidateCF);
+        
+        // If asset added by addAsset, but not yet added to the list, set the value on the list with the next list upgrade
+        address assetList = configuratorParams[cometProxy].assetList;
+        if (assetList != address(0) && assetIndex < IAssetList(assetList).numAssets()) {
+            IAssetList(assetList).setLiquidateCollateralFactor(asset, newLiquidateCF);
+        }
+    }
+
+    /**
+     * @notice Sets the liquidation factor of an asset, in its stored config and, if the list already holds the asset, on the Comet proxy's asset list
+     * @param cometProxy The Comet proxy whose asset config to update
+     * @param asset The asset whose liquidation factor to set
+     * @param newLiquidationFactor The new liquidation factor
+     */
+    function updateAssetLiquidationFactor(address cometProxy, address asset, uint64 newLiquidationFactor) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint256 assetIndex = getAssetIndex(cometProxy, asset);
+        uint64 oldLiquidationFactor = assetConfigs[cometProxy][assetIndex].liquidationFactor;
+        assetConfigs[cometProxy][assetIndex].liquidationFactor = newLiquidationFactor;
+        emit UpdateAssetLiquidationFactor(cometProxy, asset, oldLiquidationFactor, newLiquidationFactor);
+        
+        // If asset added by addAsset, but not yet added to the list, set the value on the list with the next list upgrade
+        address assetList = configuratorParams[cometProxy].assetList;
+        if (assetList != address(0) && assetIndex < IAssetList(assetList).numAssets()) {
+            IAssetList(assetList).setLiquidationFactor(asset, newLiquidationFactor);
+        }
+    }
+
+    /**
+     * @notice Sets the supply cap of an asset, in its stored config and, if the list already holds the asset, on the Comet proxy's asset list
+     * @param cometProxy The Comet proxy whose asset config to update
+     * @param asset The asset whose supply cap to set
+     * @param newSupplyCap The new supply cap
+     */
+    function updateAssetSupplyCap(address cometProxy, address asset, uint128 newSupplyCap) external governorOrMarketAdmin nonZeroCometProxy(cometProxy) {
+        uint256 assetIndex = getAssetIndex(cometProxy, asset);
+        uint128 oldSupplyCap = assetConfigs[cometProxy][assetIndex].supplyCap;
+        assetConfigs[cometProxy][assetIndex].supplyCap = newSupplyCap;
+        emit UpdateAssetSupplyCap(cometProxy, asset, oldSupplyCap, newSupplyCap);
+        
+        // If asset added by addAsset, but not yet added to the list, set the value on the list with the next list upgrade
+        address assetList = configuratorParams[cometProxy].assetList;
+        if (assetList != address(0) && assetIndex < IAssetList(assetList).numAssets()) {
+            IAssetList(assetList).setSupplyCap(asset, newSupplyCap);
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             OTHER HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Returns all asset configs of a Comet proxy
+     * @dev The public assetConfigs getter returns one config by index; this returns the whole list
+     * @param cometProxy The Comet proxy whose asset configs to return
+     * @return The asset configs, in asset list order
+     */
+    function getAssetConfigs(address cometProxy) external view nonZeroCometProxy(cometProxy) returns (AssetConfig[] memory) {
+        return assetConfigs[cometProxy];
+    }
+
+    /**
+     * @notice Returns the immutable part of every asset config of a Comet proxy, as the asset list is built from it
+     * @param cometProxy The Comet proxy whose asset configs to return
+     * @return immutableConfigs The asset and price feed of each asset, in asset list order
+     */
+    function getImmutableAssetConfig(address cometProxy) public view nonZeroCometProxy(cometProxy) returns (IAssetListStructs.ImmutableAssetConfig[] memory immutableConfigs) {
+        AssetConfig[] storage cometAssetConfigs = assetConfigs[cometProxy];
+        uint256 numAssets = cometAssetConfigs.length;
+        immutableConfigs = new IAssetListStructs.ImmutableAssetConfig[](numAssets);
+        for (uint256 i; i < numAssets; ++i) {
+            AssetConfig storage assetConfig = cometAssetConfigs[i];
+            immutableConfigs[i] = IAssetListStructs.ImmutableAssetConfig({
+                asset: assetConfig.asset,
+                priceFeed: assetConfig.priceFeed
+            });
+        }
+    }
+
+    /**
+     * @notice Returns the storage part of every asset config of a Comet proxy, as the asset list keeps it in storage
+     * @param cometProxy The Comet proxy whose asset configs to return
+     * @return storageConfigs The factors and supply cap of each asset, in asset list order
+     */
+    function getStorageAssetConfig(address cometProxy) public view nonZeroCometProxy(cometProxy) returns (IAssetListStructs.StorageAssetConfig[] memory storageConfigs) {
+        AssetConfig[] storage cometAssetConfigs = assetConfigs[cometProxy];
+        uint256 numAssets = cometAssetConfigs.length;
+        storageConfigs = new IAssetListStructs.StorageAssetConfig[](numAssets);
+        for (uint256 i; i < numAssets; ++i) {
+            AssetConfig storage assetConfig = cometAssetConfigs[i];
+            storageConfigs[i] = IAssetListStructs.StorageAssetConfig({
+                borrowCollateralFactor: assetConfig.borrowCollateralFactor,
+                liquidateCollateralFactor: assetConfig.liquidateCollateralFactor,
+                liquidationFactor: assetConfig.liquidationFactor,
+                supplyCap: assetConfig.supplyCap
+            });
+        }
+    }
+
+    /**
+     * @notice Returns the index of an asset in the asset configs of a Comet proxy
+     * @dev Reverts with AssetDoesNotExist if the asset is not in the configs
+     * @param cometProxy The Comet proxy whose asset configs to search
+     * @param asset The asset to find
+     * @return The index of the asset, which is also its index in the asset list
+     */
+    function getAssetIndex(address cometProxy, address asset) public view nonZeroCometProxy(cometProxy) returns (uint256) {
+        AssetConfig[] storage cometAssetConfigs = assetConfigs[cometProxy];
+        uint256 numAssets = cometAssetConfigs.length;
+        for (uint256 i; i < numAssets; ++i) {
+            if (cometAssetConfigs[i].asset == asset) return i;
+        }
+        revert AssetDoesNotExist();
+    }
+
+    /**
+     * @return The currently configured params for a Comet proxy
+     **/
+    function getConfiguration(address cometProxy) external view nonZeroCometProxy(cometProxy) returns (Configuration memory) {
+        return configuratorParams[cometProxy];
+    }
+
+    /**
+     * @notice Deploy a new Comet implementation using the factory and Configuration for that Comet proxy
+     * @dev Note: Callable by anyone
+     */
+    function deploy(address cometProxy) external nonZeroCometProxy(cometProxy) returns (address) {
+        address newComet = ICometFactory(factory[cometProxy]).clone(configuratorParams[cometProxy]);
+        emit CometDeployed(cometProxy, newComet);
+        return newComet;
+    }
+
+    /**
+     * @notice Deploys a new AssetList implementation with the immutable asset configs of a Comet proxy
+     * @dev Reverts if the Comet proxy has no asset list proxy yet
+     * @param cometProxy The Comet proxy whose asset configs to use
+     * @return assetListProxy The asset list proxy of the Comet proxy
+     * @return newAssetListImpl The new AssetList implementation, or the zero address if the immutable configs are unchanged
+     */
+    function deployAssetList(address cometProxy) external nonZeroCometProxy(cometProxy) returns (address assetListProxy, address newAssetListImpl) {
+        assetListProxy = configuratorParams[cometProxy].assetList;
+        // Only an existing list is redeployed here: the first list is deployed outside and set by setConfiguration
+        if (assetListProxy == address(0)) revert AssetListNotSet();
+        IAssetListStructs.ImmutableAssetConfig[] memory immutableConfigs = getImmutableAssetConfig(cometProxy);
+
+        // The list proxy is set, so there is always a hash to compare with:
+        // 1. Configs unchanged: hash matches, return zero address
+        // 2. Configs changed: hash differs, deploy
+        if (ConfigHash.areHashesEqual(assetListProxy, abi.encode(immutableConfigs))) return (assetListProxy, address(0));
+
+        address assetListFactory = cometAssetListFactories[cometProxy];
+        if (assetListFactory == address(0)) revert AssetListFactoryNotSet();
+        newAssetListImpl = IAssetListFactory(assetListFactory).createAssetList(immutableConfigs);
+        emit AssetListDeployed(cometProxy, assetListProxy, newAssetListImpl);
+    }
+
+    /**
+     * @notice Transfers the governor rights to a new address
+     */
+    function transferGovernor(address newGovernor) external onlyGovernor {
+        address oldGovernor = governor;
+        governor = newGovernor;
+        emit GovernorTransferred(oldGovernor, newGovernor);
+    }
+}

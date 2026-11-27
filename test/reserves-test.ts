@@ -36,7 +36,7 @@ describe('reserves', function () {
             decimals: 18,
             borrowCF: exp(0.8, 18),
             liquidateCF: exp(0.95, 18),
-            liquidationFactor: exp(0.95, 18),
+            liquidationFactor: exp(0.96, 18),
           },
         }),
       }
@@ -47,19 +47,17 @@ describe('reserves', function () {
     proxyAdmin = protocol.proxyAdmin;
 
     // Upgrade proxy to extended asset list implementation
-    const assetListFactory = protocol.assetListFactory;
     configurator = protocol.configurator.attach(configuratorProxyAddress);
-    const CometExtAssetList = await (
-      await ethers.getContractFactory('CometExtAssetList')
+    const CometExt = await (
+      await ethers.getContractFactory('CometExt')
     ).deploy(
       {
         name32: ethers.utils.formatBytes32String('Test Comet'),
         symbol32: ethers.utils.formatBytes32String('Test Comet'),
       },
-      assetListFactory.address
     );
-    await CometExtAssetList.deployed();
-    await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+    await CometExt.deployed();
+    await configurator.setExtensionDelegate(cometProxyAddress, CometExt.address);
     const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
     await CometFactoryWithExtendedAssetList.deployed();
     await configurator.setFactory(cometProxyAddress, CometFactoryWithExtendedAssetList.address);
@@ -437,9 +435,11 @@ describe('reserves', function () {
         await comet.connect(dave).withdraw(baseToken.address, maxBorrow);
 
         // At the max borrow the debt equals collateral value times the borrow collateral factor.
-        // Liquidation starts once collateral value times the liquidate collateral factor falls below the debt,
-        // so scaling the price by borrowCF / liquidateCF (rounded down) is the smallest drop that makes it liquidatable.
-        const droppedPrice = wethPrice.mul(wethInfo.borrowCollateralFactor).div(wethInfo.liquidateCollateralFactor);
+        // Liquidation starts once collateral value times the liquidate collateral factor falls below the debt.
+        // The liquidation factor must be above the liquidate collateral factor, so the price is dropped further, by
+        // borrowCF / liquidationFactor (rounded down, minus 1): then even the seized collateral times the liquidation
+        // factor does not cover the debt, absorb leaves the borrower no credit, and the whole debt is paid by reserves.
+        const droppedPrice = wethPrice.mul(wethInfo.borrowCollateralFactor).div(wethInfo.liquidationFactor).sub(1);
         await priceFeeds.WETH.setPrice(droppedPrice);
 
         await comet.accrueAccount(dave.address);
@@ -1358,42 +1358,19 @@ describe('reserves', function () {
       await snapshotAfterSetup.restore();
       await configurator.setBaseTrackingBorrowSpeed(comet.address, 0);
       await configurator.setBaseTrackingSupplySpeed(comet.address, 0);
-      await configurator.updateAsset(
-        comet.address,
-        {
-          asset: collaterals.WETH.address,
-          decimals: 18,
-          priceFeed: priceFeeds.WETH.address,
-          borrowCollateralFactor: exp(0.8, 18),
-          liquidateCollateralFactor: exp(0.95, 18),
-          liquidationFactor: exp(0.95, 18),
-          supplyCap: exp(100, 18),
-        }
-      );
-      await configurator.updateAsset(
-        comet.address,
-        {
-          asset: collaterals.WBTC.address,
-          decimals: 8,
-          priceFeed: priceFeeds.WBTC.address,
-          borrowCollateralFactor: exp(0.7, 18),
-          liquidateCollateralFactor: exp(0.9, 18),
-          liquidationFactor: exp(0.9, 18),
-          supplyCap: exp(100, 8),
-        }
-      );
-      await configurator.updateAsset(
-        comet.address,
-        {
-          asset: collaterals.COMP.address,
-          decimals: 18,
-          priceFeed: priceFeeds.COMP.address,
-          borrowCollateralFactor: exp(0.6, 18),
-          liquidateCollateralFactor: exp(0.85, 18),
-          liquidationFactor: exp(0.85, 18),
-          supplyCap: exp(100, 18),
-        }
-      );
+      // One setter per field. Each new factor is checked against the current other two, so raising them goes
+      // liquidation, liquidate, borrow. WETH already has the factors it needs from the setup
+      await configurator.updateAssetSupplyCap(comet.address, collaterals.WETH.address, exp(100, 18));
+
+      await configurator.updateAssetLiquidationFactor(comet.address, collaterals.WBTC.address, exp(0.95, 18));
+      await configurator.updateAssetLiquidateCollateralFactor(comet.address, collaterals.WBTC.address, exp(0.9, 18));
+      await configurator.updateAssetBorrowCollateralFactor(comet.address, collaterals.WBTC.address, exp(0.7, 18));
+      await configurator.updateAssetSupplyCap(comet.address, collaterals.WBTC.address, exp(100, 8));
+
+      await configurator.updateAssetLiquidationFactor(comet.address, collaterals.COMP.address, exp(0.9, 18));
+      await configurator.updateAssetLiquidateCollateralFactor(comet.address, collaterals.COMP.address, exp(0.85, 18));
+      await configurator.updateAssetBorrowCollateralFactor(comet.address, collaterals.COMP.address, exp(0.6, 18));
+      await configurator.updateAssetSupplyCap(comet.address, collaterals.COMP.address, exp(100, 18));
       await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
 
       // Seed + supply
@@ -1494,15 +1471,7 @@ describe('reserves', function () {
         const token = collaterals[key];
         const feed = priceFeeds[key];
         const decimals = await token.decimals();
-        await configurator.updateAsset(comet.address, {
-          asset: token.address,
-          priceFeed: feed.address,
-          decimals: decimals,
-          borrowCollateralFactor: exp(0.8, 18),
-          liquidateCollateralFactor: exp(0.95, 18),
-          liquidationFactor: exp(0.95, 18),
-          supplyCap: exp(10000, decimals),
-        });
+        await configurator.updateAssetSupplyCap(comet.address, token.address, exp(10000, decimals));
         collateralTokens.push(token);
         collateralFeeds.push(feed);
       }
@@ -1523,16 +1492,16 @@ describe('reserves', function () {
         await configurator.addAsset(comet.address, {
           asset: token.address,
           priceFeed: feed.address,
-          decimals: 18,
           borrowCollateralFactor: exp(0.8, 18),
           liquidateCollateralFactor: exp(0.95, 18),
-          liquidationFactor: exp(0.95, 18),
+          liquidationFactor: exp(0.96, 18),
           supplyCap: exp(10000, 18),
         });
         collateralTokens.push(token);
         collateralFeeds.push(feed);
       }
 
+      // The upgrade also registers the new assets in the asset list, with the factors and caps of their stored configs
       await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
 
       // Seed + supply base

@@ -898,7 +898,7 @@ describe('interest calculation', function () {
       let timeElapsed: number;
 
       describe('through transfer operation', function () {
-        const COLLATERAL_AMOUNT_TRANSFER = exp(50, 18);
+        const COLLATERAL_AMOUNT_TRANSFER = exp(60, 18);
         const BORROW_AMOUNT_TRANSFER = exp(7000, 6);
 
         let snapshot: SnapshotRestorer;
@@ -1923,8 +1923,8 @@ describe('interest calculation', function () {
       });
 
       it('bob borrow of base asset at max will revert due to the utilization spike', async () => {
-        // default collateral factor is set as 80%
-        const amount = BigNumber.from(exp(8000, baseDecimals));
+        // default collateral factor is set as 75%
+        const amount = BigNumber.from(exp(7500, baseDecimals));
 
         await expect(
           testComet.connect(bob).withdraw(baseToken.address, amount)

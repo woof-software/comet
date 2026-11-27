@@ -6,8 +6,6 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import {
   BaseBulker,
   BaseBulker__factory,
-  CometExtAssetList,
-  CometExtAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as Comet,
   CometRewards,
   CometRewards__factory,
@@ -22,26 +20,32 @@ import {
   ConfiguratorProxy,
   ConfiguratorProxy__factory,
   CometProxyAdmin,
-  CometProxyAdmin__factory,
+  CometProxyAdminOptimism,
+  CometProxyAdminOptimism__factory,
   CometFactoryWithExtendedAssetList,
   CometFactoryWithExtendedAssetList__factory,
   Configurator,
-  Configurator__factory,
+  ConfiguratorOptimism,
+  ConfiguratorOptimism__factory,
   CometHarnessInterfaceExtendedAssetList,
   CometInterface,
   CometMainInterface,
   NonStandardFaucetFeeToken,
   NonStandardFaucetFeeToken__factory,
+  AssetList,
+  AssetList__factory,
   AssetListFactory,
   AssetListFactory__factory,
   CometHarnessExtendedAssetList__factory,
   CometHarnessInterfaceExtendedAssetList as CometWithExtendedAssetList,
+  MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory, CometExt, CometExt__factory,
   CometWithExtendedAssetList as CometWithExtendedAssetListContract,
-  MarketAdminPermissionChecker, MarketAdminPermissionChecker__factory,
 } from '../build/types';
 import { BigNumber } from 'ethers';
 import { TransactionReceipt, TransactionResponse } from '@ethersproject/abstract-provider';
 import { TotalsBasicStructOutput, TotalsCollateralStructOutput } from '../build/types/CometHarnessExtendedAssetList';
+import { ImmutableAssetConfigStruct, StorageAssetConfigStruct } from '../build/types/AssetList';
+import { AssetConfigStruct } from '../build/types/Configurator';
 
 // Snapshot
 import { takeSnapshot, SnapshotRestorer } from './helpers/snapshot';
@@ -81,7 +85,7 @@ export type ProtocolOpts = {
   symbol?: string;
   governor?: SignerWithAddress;
   pauseGuardian?: SignerWithAddress;
-  extensionDelegateAssetList?: CometExtAssetList;
+  extensionDelegateAssetList?: CometExt;
   base?: string;
   reward?: string;
   supplyKink?: Numeric;
@@ -102,17 +106,20 @@ export type ProtocolOpts = {
   maxSupportedUtilization?: Numeric;
   baseTokenBalance?: Numeric;
   marketAdminPermissionCheckerContract?: MarketAdminPermissionChecker;
+  assetListProxyAdmin?: string;
+  assetListConfigurator?: string;
 };
 
 export type Protocol = {
   opts: ProtocolOpts;
   governor: SignerWithAddress;
   pauseGuardian: SignerWithAddress;
-  extensionDelegateAssetList: CometExtAssetList;
+  extensionDelegateAssetList: CometExt;
   users: SignerWithAddress[];
   base: string;
   reward: string;
   cometWithExtendedAssetList: CometWithExtendedAssetList;
+  assetList: AssetList;
   assetListFactory: AssetListFactory;
   tokens: {
     [symbol: string]: FaucetToken | NonStandardFaucetFeeToken;
@@ -123,10 +130,31 @@ export type Protocol = {
   };
 };
 
+export type AssetsOpts = Pick<ProtocolOpts, 'assets' | 'base'>;
+
+export type PreparedAssets = {
+  assets: NonNullable<ProtocolOpts['assets']>;
+  base: string;
+  tokens: {
+    [symbol: string]: FaucetToken | NonStandardFaucetFeeToken;
+  };
+  priceFeeds: {
+    [symbol: string]: SimplePriceFeed;
+  };
+  // The collateral assets, in the order they are listed; every config list below follows it
+  collateralSymbols: string[];
+  // The part of each collateral config the asset list keeps in its immutables
+  immutableConfigs: ImmutableAssetConfigStruct[];
+  // The part of each collateral config the asset list keeps in its storage
+  storageConfigs: StorageAssetConfigStruct[];
+  // The full collateral configs, as the Configurator stores them
+  assetConfigs: AssetConfigStruct[];
+};
+
 export type ConfiguratorAndProtocol = {
-  configurator: Configurator;
+  configurator: ConfiguratorOptimism;
   configuratorProxy: ConfiguratorProxy;
-  proxyAdmin: CometProxyAdmin;
+  proxyAdmin: CometProxyAdminOptimism;
   cometFactoryWithExtendedAssetList: CometFactoryWithExtendedAssetList;
   cometProxyWithExtendedAssetList: TransparentUpgradeableProxy;
 } & Protocol;
@@ -317,6 +345,14 @@ export const ZERO = factor(0);
 export const ZERO_ADDRESS = ethers.constants.AddressZero;
 export const DEFAULT_PRICEFEED_DECIMALS = 8;
 export const MAX_ASSETS = 24;
+// The largest value a uint128 field, like a supply cap, can hold
+export const MAX_UINT128 = 2n ** 128n - 1n;
+
+// ConfigHash.hashConfig(typeHash, abi.encode(configs)), computed off-chain: the configHash of an asset list
+export function hashConfig(configs: ImmutableAssetConfigStruct[], typeHash: string): string {
+  const encoded = ethers.utils.defaultAbiCoder.encode(['tuple(address asset, address priceFeed)[]'], [configs]);
+  return ethers.utils.keccak256(ethers.utils.hexConcat([typeHash, encoded]));
+}
 export const DEFAULT_MAX_SUPPORTED_UTILIZATION = exp(2, 18);
 
 export async function getBlock(n?: number, ethers_ = ethers): Promise<Block> {
@@ -330,11 +366,21 @@ export async function fastForward(seconds: number, ethers_ = ethers): Promise<Bl
   return block;
 }
 
-export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
-  const signers = await ethers.getSigners();
+// Admin of the asset list proxy when a test names none. A transparent proxy never lets its admin reach the
+// implementation, so this must not be an address that reads or configures the asset list
+const DEFAULT_ASSET_LIST_PROXY_ADMIN = '0x00000000000000000000000000000000000A11CE';
 
+/**
+ * Deploys the tokens and price feeds of a market (the base asset and the collaterals) and builds every config of the
+ * collaterals at once: the immutable part the asset list is built from, the storage part it is initialized with, and
+ * the full configs the Configurator stores. makeProtocol and makeConfigurator use it, and so can a test that needs
+ * only the assets.
+ */
+export async function prepareAssets(opts: AssetsOpts = {}): Promise<PreparedAssets> {
   const assets = opts.assets || defaultAssets();
-  let priceFeeds = {};
+  const base = opts.base || 'USDC';
+
+  const priceFeeds = {};
   const PriceFeedFactory = (await ethers.getContractFactory('SimplePriceFeed')) as SimplePriceFeed__factory;
   for (const asset in assets) {
     const initialPrice = exp(assets[asset].initialPrice || 1, 8);
@@ -344,12 +390,44 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     priceFeeds[asset] = priceFeed;
   }
 
+  const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
+  const tokens = {};
+  for (const symbol in assets) {
+    const config = assets[symbol];
+    const decimals = dfn(config.decimals, 18);
+    const initial = config.initial || 1e6;
+    const name = config.name || symbol;
+    const factory = config.factory || FaucetFactory;
+    const token = tokens[symbol] = await factory.deploy(initial, name, decimals, symbol);
+    await token.deployed();
+  }
+
+  const collateralSymbols = Object.keys(assets).filter(symbol => symbol != base);
+  const immutableConfigs = collateralSymbols.map(symbol => ({
+    asset: tokens[symbol].address,
+    priceFeed: priceFeeds[symbol].address,
+  }));
+  const storageConfigs = collateralSymbols.map(symbol => ({
+    borrowCollateralFactor: dfn(assets[symbol].borrowCF, exp(0.75, 18)),
+    liquidateCollateralFactor: dfn(assets[symbol].liquidateCF, exp(0.8, 18)),
+    liquidationFactor: dfn(assets[symbol].liquidationFactor, exp(0.9, 18)),
+    supplyCap: dfn(assets[symbol].supplyCap, exp(150000, dfn(assets[symbol].decimals, 18))),
+  }));
+  const assetConfigs = immutableConfigs.map((immutableConfig, i) => ({ ...immutableConfig, ...storageConfigs[i] }));
+
+  return { assets, base, tokens, priceFeeds, collateralSymbols, immutableConfigs, storageConfigs, assetConfigs };
+}
+
+export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
+  const signers = await ethers.getSigners();
+
+  const { assets, base, tokens, priceFeeds, immutableConfigs, storageConfigs } = await prepareAssets(opts);
+
   const name32 = ethers.utils.formatBytes32String(opts.name || 'Compound Comet');
   const symbol32 = ethers.utils.formatBytes32String(opts.symbol || '📈BASE');
   const governor = opts.governor || signers[0];
   const pauseGuardian = opts.pauseGuardian || signers[1];
   const users = signers.slice(2); // guaranteed to not be governor or pause guardian
-  const base = opts.base || 'USDC';
   const reward = opts.reward || 'COMP';
   const supplyKink = dfn(opts.supplyKink, exp(0.8, 18));
   const supplyPerYearInterestRateBase = dfn(opts.supplyInterestRateBase, exp(0.0, 18));
@@ -366,30 +444,16 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
   const baseMinForRewards = dfn(opts.baseMinForRewards, exp(1, assets[base].decimals));
   const baseBorrowMin = dfn(opts.baseBorrowMin, exp(1, assets[base].decimals));
   const targetReserves = dfn(opts.targetReserves, 0);
+  const maxSupportedUtilization = dfn(opts.maxSupportedUtilization, DEFAULT_MAX_SUPPORTED_UTILIZATION);
 
   const FaucetFactory = (await ethers.getContractFactory('FaucetToken')) as FaucetToken__factory;
-  const tokens = {};
-  for (const symbol in assets) {
-    const config = assets[symbol];
-    const decimals = config.decimals || 18;
-    const initial = config.initial || 1e6;
-    const name = config.name || symbol;
-    const factory = config.factory || FaucetFactory;
-    let token;
-    token = tokens[symbol] = await factory.deploy(initial, name, decimals, symbol);
-    await token.deployed();
-  }
-
   const unsupportedToken = await FaucetFactory.deploy(1e6, 'Unsupported Token', 6, 'USUP');
 
-  const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
-  const assetListFactory = await AssetListFactory.deploy();
-  await assetListFactory.deployed();  
 
   let extensionDelegateAssetList = opts.extensionDelegateAssetList;
   if (extensionDelegateAssetList === undefined) {
-    const CometExtFactory = (await ethers.getContractFactory('CometExtAssetList')) as CometExtAssetList__factory;
-    extensionDelegateAssetList = await CometExtFactory.deploy({ name32, symbol32 }, assetListFactory.address);
+    const CometExtFactory = (await ethers.getContractFactory('CometExt')) as CometExt__factory;
+    extensionDelegateAssetList = await CometExtFactory.deploy({ name32, symbol32 });
     await extensionDelegateAssetList.deployed();
   }
 
@@ -414,39 +478,29 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     baseMinForRewards,
     baseBorrowMin,
     targetReserves,
-    maxSupportedUtilization: dfn(opts.maxSupportedUtilization, DEFAULT_MAX_SUPPORTED_UTILIZATION),
-    assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
-      if (symbol != base && _i <= 12) {
-        acc.push({
-          asset: tokens[symbol].address,
-          priceFeed: priceFeeds[symbol].address,
-          decimals: dfn(assets[symbol].decimals, 18),
-          borrowCollateralFactor: dfn(config.borrowCF, ONE - 1n),
-          liquidateCollateralFactor: dfn(config.liquidateCF, ONE),
-          liquidationFactor: dfn(config.liquidationFactor, ONE),
-          supplyCap: dfn(config.supplyCap, exp(150000, dfn(config.decimals, 18))),
-        });
-      }
-      return acc;
-    }, []),
+    maxSupportedUtilization
   };
-  config.assetConfigs = Object.entries(assets).reduce((acc, [symbol, config], _i) => {
-    if (symbol != base) {
-      acc.push({
-        asset: tokens[symbol].address,
-        priceFeed: priceFeeds[symbol].address,
-        decimals: dfn(assets[symbol].decimals, 18),
-        borrowCollateralFactor: dfn(config.borrowCF, ONE - 1n),
-        liquidateCollateralFactor: dfn(config.liquidateCF, ONE),
-        liquidationFactor: dfn(config.liquidationFactor, ONE),
-        supplyCap: dfn(config.supplyCap, exp(150000, dfn(config.decimals, 18))),
-      });
-    }
-    return acc;
-  }, []);
+
+  // The asset list holds the immutable part of each asset config; factors and supply caps live in its storage
+  const assetListConfigurator = dfn(opts.assetListConfigurator, governor.address);
+  const AssetListFactory = (await ethers.getContractFactory('AssetListFactory')) as AssetListFactory__factory;
+  const assetListFactory = await AssetListFactory.deploy(assetListConfigurator);
+  await assetListFactory.deployed();
+  const assetListImplementation = await assetListFactory.callStatic.createAssetList(immutableConfigs);
+  await assetListFactory.createAssetList(immutableConfigs);
+  const AssetListContractFactory = (await ethers.getContractFactory('AssetList')) as AssetList__factory;
+  const AssetListProxyFactory = (await ethers.getContractFactory('TransparentUpgradeableProxy')) as TransparentUpgradeableProxy__factory;
+  const assetListProxy = await AssetListProxyFactory.deploy(
+    assetListImplementation,
+    dfn(opts.assetListProxyAdmin, DEFAULT_ASSET_LIST_PROXY_ADMIN),
+    AssetListContractFactory.interface.encodeFunctionData('initialize', [storageConfigs]),
+  );
+  await assetListProxy.deployed();
+  const assetList = AssetListContractFactory.attach(assetListProxy.address);
+
   const CometFactoryWithExtendedAssetList = (await ethers.getContractFactory('CometHarnessExtendedAssetList')) as CometHarnessExtendedAssetList__factory;
 
-  const cometWithExtendedAssetList = await CometFactoryWithExtendedAssetList.deploy(config);
+  const cometWithExtendedAssetList = await CometFactoryWithExtendedAssetList.deploy({ ...config, assetList: assetList.address });
   await cometWithExtendedAssetList.deployed();
 
   if (opts.start) await ethers.provider.send('evm_setNextBlockTimestamp', [opts.start]);
@@ -462,11 +516,12 @@ export async function makeProtocol(opts: ProtocolOpts = {}): Promise<Protocol> {
     opts,
     governor,
     pauseGuardian,
-    extensionDelegateAssetList: extensionDelegateAssetList as CometExtAssetList,
+    extensionDelegateAssetList: extensionDelegateAssetList as CometExt,
     users,
     base,
     reward,
     cometWithExtendedAssetList: await ethers.getContractAt('CometHarnessInterfaceExtendedAssetList', cometWithExtendedAssetList.address) as CometWithExtendedAssetList,
+    assetList,
     assetListFactory: assetListFactory,
     tokens,
     unsupportedToken,
@@ -479,14 +534,14 @@ export async function getConfigurationForConfigurator(
   cometWithExtendedAssetList: CometHarnessInterfaceExtendedAssetList,
   governor: SignerWithAddress,
   pauseGuardian: SignerWithAddress,
-  extensionDelegateAssetList: CometExtAssetList,
+  extensionDelegateAssetList: CometExt,
+  assetList: AssetList,
   tokens: {
     [p: string]: FaucetToken | NonStandardFaucetFeeToken;
   },
   base: string,
   priceFeeds: { [p: string]: SimplePriceFeed }) {
 
-  const assets = opts.assets || defaultAssets();
 
   // Derive the rest of the Configurator configuration values
   const supplyKink = dfn(opts.supplyKink, exp(0.8, 18));
@@ -506,15 +561,7 @@ export async function getConfigurationForConfigurator(
   const targetReserves = await cometWithExtendedAssetList.targetReserves();
   const maxSupportedUtilization = await cometWithExtendedAssetList.maxSupportedUtilization();
 
-  // Deploy CometFactory
-  const CometFactoryWithExtendedAssetListFactory = (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')) as CometFactoryWithExtendedAssetList__factory;
-  const cometFactoryWithExtendedAssetList = await CometFactoryWithExtendedAssetListFactory.deploy();
-  await cometFactoryWithExtendedAssetList.deployed();
 
-  // Deploy Configurator
-  const ConfiguratorFactory = (await ethers.getContractFactory('Configurator')) as Configurator__factory;
-  const configurator = await ConfiguratorFactory.deploy();
-  await configurator.deployed();
   const configuration = {
     governor: governor.address,
     pauseGuardian: pauseGuardian.address,
@@ -537,64 +584,53 @@ export async function getConfigurationForConfigurator(
     baseBorrowMin,
     targetReserves,
     maxSupportedUtilization,
-    assetConfigs: Object.entries(assets).reduce((acc, [symbol, config], _i) => {
-      if (symbol != base) {
-        acc.push({
-          asset: tokens[symbol].address,
-          priceFeed: priceFeeds[symbol].address,
-          decimals: dfn(assets[symbol].decimals, 18),
-          borrowCollateralFactor: dfn(config.borrowCF, ONE - 1n),
-          liquidateCollateralFactor: dfn(config.liquidateCF, ONE),
-          liquidationFactor: dfn(config.liquidationFactor, ONE),
-          supplyCap: dfn(config.supplyCap, exp(150000, dfn(config.decimals, 18))),
-        });
-      }
-      return acc;
-    }, []),
+    assetList: assetList.address,
   };
   return configuration;
 }
 
 // Only for testing configurator. Non-configurator tests need to deploy the CometHarness instead.
 export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<ConfiguratorAndProtocol> {
+  const signers = await ethers.getSigners();
+  const governor = opts.governor || signers[0];
+
+  // Deploy ProxyAdmin
+  const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdminOptimism')) as CometProxyAdminOptimism__factory;
+  const proxyAdmin = await ProxyAdmin.connect(governor).deploy(governor.address);
+  await proxyAdmin.deployed();
+
+  // Deploy Configurator
+  const ConfiguratorFactory = (await ethers.getContractFactory('ConfiguratorOptimism')) as ConfiguratorOptimism__factory;
+  const configurator = await ConfiguratorFactory.deploy();
+  await configurator.deployed();
+
+  // Deploy Configurator proxy
+  const initializeCalldata = (await configurator.populateTransaction.initialize(governor.address)).data;
+  const ConfiguratorProxy = (await ethers.getContractFactory('ConfiguratorProxy')) as ConfiguratorProxy__factory;
+  const configuratorProxy = await ConfiguratorProxy.deploy(configurator.address, proxyAdmin.address, initializeCalldata);
+  await configuratorProxy.deployed();
+
+  // The asset list is upgraded by the proxy admin and configured by the Configurator, so both exist before the protocol
   const {
-    governor,
     pauseGuardian,
     extensionDelegateAssetList,
     users,
     base,
     reward,
     cometWithExtendedAssetList,
+    assetList,
     assetListFactory,
     tokens,
     unsupportedToken,
     priceFeeds,
-  } = await makeProtocol(opts);
-
-  // Deploy ProxyAdmin
-  const ProxyAdmin = (await ethers.getContractFactory('CometProxyAdmin')) as CometProxyAdmin__factory;
-  const proxyAdmin = await ProxyAdmin.connect(governor).deploy(governor.address);
-  await proxyAdmin.deployed();
+  } = await makeProtocol({
+    ...opts,
+    assetListProxyAdmin: dfn(opts.assetListProxyAdmin, proxyAdmin.address),
+    assetListConfigurator: dfn(opts.assetListConfigurator, configuratorProxy.address),
+  });
 
   // Deploy Comet proxy
   const CometProxy = (await ethers.getContractFactory('TransparentUpgradeableProxy')) as TransparentUpgradeableProxy__factory;
-  const cometProxy = await CometProxy.deploy(
-    cometWithExtendedAssetList.address,
-    proxyAdmin.address,
-    (await cometWithExtendedAssetList.populateTransaction.initializeStorage()).data,
-  );
-  await cometProxy.deployed();
-  const configuration = await getConfigurationForConfigurator(
-    opts,
-    cometWithExtendedAssetList,
-    governor,
-    pauseGuardian,
-    extensionDelegateAssetList,
-    tokens,
-    base,
-    priceFeeds,
-  );
-
   const cometProxyWithExtendedAssetList = await CometProxy.deploy(
     cometWithExtendedAssetList.address,
     proxyAdmin.address,
@@ -607,22 +643,37 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
   const cometFactoryWithExtendedAssetList = await CometFactoryWithExtendedAssetListFactory.deploy();
   await cometFactoryWithExtendedAssetList.deployed();
 
-  // Deploy Configurator
-  const ConfiguratorFactory = (await ethers.getContractFactory('Configurator')) as Configurator__factory;
-  const configurator = await ConfiguratorFactory.deploy();
-  await configurator.deployed();
-
-  // Deploy Configurator proxy
-  const initializeCalldata = (await configurator.populateTransaction.initialize(governor.address)).data;
-  const ConfiguratorProxy = (await ethers.getContractFactory('ConfiguratorProxy')) as ConfiguratorProxy__factory;
-  const configuratorProxy = await ConfiguratorProxy.deploy(configurator.address, proxyAdmin.address, initializeCalldata);
-  await configuratorProxy.deployed();
-
-  // Set the initial factory and configuration for Comet in Configurator
+  // Set the initial factories and configuration for Comet in Configurator
   const configuratorAsProxy = configurator.attach(configuratorProxy.address);
-  configuration.extensionDelegate = extensionDelegateAssetList.address;
+  const configuration = await getConfigurationForConfigurator(
+    opts,
+    cometWithExtendedAssetList,
+    governor,
+    pauseGuardian,
+    extensionDelegateAssetList,
+    assetList,
+    tokens,
+    base,
+    priceFeeds,
+  );
   await configuratorAsProxy.connect(governor).setConfiguration(cometProxyWithExtendedAssetList.address, configuration);
   await configuratorAsProxy.connect(governor).setFactory(cometProxyWithExtendedAssetList.address, cometFactoryWithExtendedAssetList.address);
+  await configuratorAsProxy.connect(governor).setAssetListFactory(cometProxyWithExtendedAssetList.address, assetListFactory.address);
+
+  // The Configurator keeps the full asset configs, in the order the asset list was built with, so their hashes match
+  const assets = opts.assets || defaultAssets();
+  const collateralSymbols = Object.keys(assets).filter(symbol => symbol != base);
+  for (let i = 0; i < collateralSymbols.length; i++) {
+    const assetInfo = await assetList.getAssetInfo(i);
+    await configuratorAsProxy.connect(governor).addAsset(cometProxyWithExtendedAssetList.address, {
+      asset: assetInfo.asset,
+      priceFeed: assetInfo.priceFeed,
+      borrowCollateralFactor: assetInfo.borrowCollateralFactor,
+      liquidateCollateralFactor: assetInfo.liquidateCollateralFactor,
+      liquidationFactor: assetInfo.liquidationFactor,
+      supplyCap: assetInfo.supplyCap,
+    });
+  }
 
   if(opts.marketAdminPermissionCheckerContract) {
     await configuratorAsProxy.connect(governor).setMarketAdminPermissionChecker(opts.marketAdminPermissionCheckerContract.address);
@@ -652,6 +703,7 @@ export async function makeConfigurator(opts: ProtocolOpts = {}): Promise<Configu
     reward,
     proxyAdmin,
     cometWithExtendedAssetList,
+    assetList,
     assetListFactory,
     cometProxyWithExtendedAssetList,
     configurator,

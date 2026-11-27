@@ -1,5 +1,5 @@
 import { expect, exp, makeProtocol, mulPrice, mulFactor, divPrice, presentValue, principalValue, ZERO_ADDRESS, presentValueSupply, ethers, SnapshotRestorer, makeConfigurator, MAX_ASSETS, takeSnapshot, allocateAndSupply } from './helpers';
-import { CometExtAssetList, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
+import { CometExt, CometHarnessInterfaceExtendedAssetList, CometProxyAdmin, CometWithExtendedAssetList, Configurator, ConfiguratorProxy, FaucetToken, NonStandardFaucetFeeToken, PriceFeedWithRevert, PriceFeedWithRevert__factory, SimplePriceFeed } from 'build/types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { BigNumber, ContractTransaction } from 'ethers';
 
@@ -51,9 +51,9 @@ describe('absorb', function () {
         base: 'USDC',
         assets: {
           USDC: { decimals: baseTokenDecimals, initialPrice: 1 },
-          COMP: { decimals: 18, initialPrice: compPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF },
-          WETH: { decimals: 18, initialPrice: wethPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF },
-          WBTC: { decimals: 8, initialPrice: wbtcPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF },
+          COMP: { decimals: 18, initialPrice: compPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF, liquidationFactor: LIQUIDATION_FACTOR },
+          WETH: { decimals: 18, initialPrice: wethPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF, liquidationFactor: LIQUIDATION_FACTOR },
+          WBTC: { decimals: 8, initialPrice: wbtcPrice, borrowCF: exp(0.8, 18), liquidateCF: LIQUIDATION_CF, liquidationFactor: LIQUIDATION_FACTOR },
         }
       }
     );
@@ -1098,6 +1098,8 @@ describe('absorb', function () {
             decimals: 18,
             initialPrice: collateralPrice,
             borrowCF: exp(0.8, 18),
+            liquidateCF: LIQUIDATION_CF,
+            liquidationFactor: LIQUIDATION_FACTOR,
           }])
         );
         const protocol = await makeProtocol({
@@ -1225,14 +1227,15 @@ describe('absorb', function () {
    * Written after the USDM incident, where a removed Chainlink price feed caused absorb to revert
    * while calculating the USD value of seized collateral, freezing liquidations.
    *
-   * This suite covers four (LCF, LF) combinations and how each affects absorption:
-   *   1. LCF > 0, LF > 0  - active collateral: price fetched, collateral seized and credited at value × LF.
-   *   2. LCF > 0, LF = 0  - soft de-list: price still fetched (isLiquidatable counts it), but
-   *                          absorbInternal skips seizure; full debt absorbed by reserves.
-   *   3. LCF = 0, LF > 0  - worthless seizure: price fetch skipped (assetPrices[i] = 0), collateral
-   *                          still seized and moved to reserves but with usdValue = 0.
-   *   4. LCF = 0, LF = 0  - full de-list: both price fetch and seizure skipped; asset completely
-   *                          ignored during absorption, collateral left stranded in user's account.
+   * This suite covers the four factor combinations the ordering rules allow and how each affects absorption.
+   * A zero liquidation factor is only valid when both collateral factors are zero too.
+   *   1. BCF, LCF, LF > 0      - active collateral: price fetched, collateral seized at full USD value.
+   *   2. BCF = 0, LCF, LF > 0  - soft de-list: no new borrows, but absorb works exactly as for
+   *                              active collateral.
+   *   3. BCF, LCF = 0, LF > 0  - worthless seizure: price fetch skipped (assetPrices[i] = 0), collateral
+   *                              still seized and moved to reserves but with usdValue = 0.
+   *   4. BCF, LCF, LF = 0      - full de-list: both price fetch and seizure skipped; asset completely
+   *                              ignored during absorption, collateral left stranded in user's account.
    *
    * Also covers edge cases:
    *   - mixed liquidation factors across multiple assets: only assets with LF > 0 are seized.
@@ -1249,12 +1252,11 @@ describe('absorb', function () {
     let configuratorProxy: ConfiguratorProxy;
     let proxyAdmin: CometProxyAdmin;
     let cometProxyAddress: string;
-    let assetListFactoryAddress: string;
     let comet: CometWithExtendedAssetList;
     let comet24Assets: CometWithExtendedAssetList;
     let configuratorProxy24Assets: Configurator;
     let proxyAdmin24Assets: CometProxyAdmin;
-    let cometExt: CometExtAssetList;
+    let cometExt: CometExt;
 
     // Tokens
     let baseToken: FaucetToken | NonStandardFaucetFeeToken;
@@ -1288,10 +1290,8 @@ describe('absorb', function () {
     let expectedUsdValue: bigint;
     let oldBalance: bigint;
     let oldPrincipal: bigint;
-    let newPrincipal: bigint;
     let basePrice: BigNumber;
     let baseScale: BigNumber;
-    let newBalance: bigint;
 
     before(async () => {
       const configuratorAndProtocol = await makeConfigurator({
@@ -1303,7 +1303,6 @@ describe('absorb', function () {
             initial: 1e7,
             decimals: 18,
             initialPrice: 200,
-            liquidationFactor: exp(0.6, 18),
           },
         },
       });
@@ -1313,7 +1312,6 @@ describe('absorb', function () {
       configurator = configuratorAndProtocol.configurator;
       configuratorProxy = configuratorAndProtocol.configuratorProxy;
       proxyAdmin = configuratorAndProtocol.proxyAdmin;
-      assetListFactoryAddress = configuratorAndProtocol.assetListFactory.address;
       comet = comet.attach(cometProxyAddress);
 
       // Tokens
@@ -1354,17 +1352,16 @@ describe('absorb', function () {
       totalsSupplyAssetBeforeAbsorption = (await comet.totalsCollateral(compToken.address)).totalSupplyAsset;
 
       configurator = configurator.attach(configuratorProxy.address);
-      const CometExtAssetList = await (
-        await ethers.getContractFactory('CometExtAssetList')
+      const CometExt = await (
+        await ethers.getContractFactory('CometExt')
       ).deploy(
         {
           name32: ethers.utils.formatBytes32String('Compound Comet'),
           symbol32: ethers.utils.formatBytes32String('BASE'),
-        },
-        assetListFactoryAddress
+        }
       );
-      await CometExtAssetList.deployed();
-      await configurator.setExtensionDelegate(cometProxyAddress, CometExtAssetList.address);
+      await CometExt.deployed();
+      await configurator.setExtensionDelegate(cometProxyAddress, CometExt.address);
       // 2) switch factory to CometFactoryWithExtendedAssetList
       const CometFactoryWithExtendedAssetList = await (await ethers.getContractFactory('CometFactoryWithExtendedAssetList')).deploy();
       await CometFactoryWithExtendedAssetList.deployed();
@@ -1392,26 +1389,25 @@ describe('absorb', function () {
       configuratorProxy24Assets = configuratorAndProtocol24Assets.configurator.attach(configuratorAndProtocol24Assets.configuratorProxy.address);
       proxyAdmin24Assets = configuratorAndProtocol24Assets.proxyAdmin;
 
-      const CometExtAssetList24Assets = await (
-        await ethers.getContractFactory('CometExtAssetList')
+      const CometExt24Assets = await (
+        await ethers.getContractFactory('CometExt')
       ).deploy(
         {
           name32: ethers.utils.formatBytes32String('Compound Comet'),
           symbol32: ethers.utils.formatBytes32String('BASE'),
-        },
-        configuratorAndProtocol24Assets.assetListFactory.address
+        }
       );
-      await CometExtAssetList24Assets.deployed();
-      await configuratorProxy24Assets.setExtensionDelegate(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address, CometExtAssetList24Assets.address);
+      await CometExt24Assets.deployed();
+      await configuratorProxy24Assets.setExtensionDelegate(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address, CometExt24Assets.address);
       await configuratorProxy24Assets.setFactory(configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address, CometFactoryWithExtendedAssetList.address);
       await configuratorAndProtocol24Assets.proxyAdmin.deployAndUpgradeTo(configuratorAndProtocol24Assets.configuratorProxy.address, configuratorAndProtocol24Assets.cometProxyWithExtendedAssetList.address);
 
       baseToken24Assets = configuratorAndProtocol24Assets.tokens['USDC'];
 
+      cometExt = (await ethers.getContractAt('CometExt', comet.address)) as CometExt;
       // Borrowing requires at least one lender, so seed the market with an initial supply
       await allocateAndSupply(comet24Assets, baseToken24Assets, initialLender, initialLenderSupply);
 
-      cometExt = (await ethers.getContractAt('CometExtAssetList', comet.address)) as CometExtAssetList;
       const totalBasics = await cometExt.totalsBasic();
       oldPrincipal = (await comet.userBasic(alice.address)).principal.toBigInt();
       totalSupplyBase = totalBasics.totalSupplyBase;
@@ -1423,42 +1419,74 @@ describe('absorb', function () {
       snapshot = await takeSnapshot();
     });
 
-    describe('absorbs with positive LCF and LF: credit below the debt is clamped to 0', function () {
+    describe('BCF = 0, LCF > 0, LF > 0 - soft de-list, collateral seized at full value', function () {
       /*
-       * normal "active collateral" state, with the credit below the debt.
+       * "soft de-list" state: the asset backs no new borrows but is still liquidated as usual.
        *
        * Key factor roles in absorption:
-       *   - LCF > 0: the asset counts toward the account's liquidation threshold in isLiquidatable;
+       *   - borrowCF = 0: the asset no longer backs new borrows; this only gates isBorrowCollateralized
+       *                   and has no effect on isLiquidatable or absorb.
+       *   - LCF > 0: the asset still counts toward the account's liquidation threshold in isLiquidatable;
        *              its price is fetched and stored in assetPrices[i].
        *   - LF  > 0: absorbInternal seizes the collateral, reads assetPrices[i], and credits
        *              value × LF against the absorbed debt.
-       *   - borrowCF: governs only isBorrowCollateralized (new-borrow gate); irrelevant to
-       *               isLiquidatable and absorb.
        *
-       * Setup: 1 COMP at $100, LF 0.6, debt ~$150 → credit $60 < debt, so the new balance
-       * (−150 + 60) is clamped to 0 and the remaining ~$90 is bad debt absorbed by reserves.
-       * The case where the credit exceeds the debt is the next flow.
+       * The factor validation keeps BCF < LCF < LF, and a 0 borrowCF is always allowed, so only borrowCF
+       * is lowered here; LCF and LF keep their defaults of 0.8 and 0.9.
+       *
+       * Setup: 1 COMP at $100, debt ~$150.
+       *   value × LCF 0.8 = $80 < debt → liquidatable
+       *   value × LF  0.9 = $90 < debt → the new balance (−150 + 90) is clamped to 0 and the remaining ~$60
+       *                                   is bad debt absorbed by reserves.
        *
        * Flow:
-       *    With LCF > 0 and LF > 0:
+       *    With borrowCF = 0, LCF > 0 and LF > 0:
        *    - Collateral is seized: Alice's COMP stays in Comet and becomes collateral reserves
        *    - AbsorbCollateral event is emitted with the seized amount and its full USD value (before LF)
        *    - User collateral balance is set to 0
        *    - totalsCollateral.totalSupplyAsset is reduced to 0
        *    - User's assetsIn is reset to 0
        *    - User principal becomes 0: old balance + value × LF is still negative and is clamped
+       *    - Total supply base is unchanged; total borrow base is reduced by the whole borrow principal
        *    - AbsorbDebt event is emitted with basePaidOut = newBalance − oldBalance (the whole debt
        *      covered by the protocol: collateral credit plus reserves)
-       *    - Total borrow base is reduced by the repay amount (the whole borrow principal)
        *    - Transfer event is NOT emitted (new principal clamps to 0, no supply side created)
+       *    - Comet ERC20 base and collateral balances are unchanged (absorb only moves accounting)
+       *    - Collateral reserves increase by the seized amount
        */
+      let cometBaseTokenBalanceBefore: BigNumber;
+      let cometCompBalanceBefore: BigNumber;
+      let cometCompReservesBefore: BigNumber;
+
+      before(async () => {
+        cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
+        cometCompBalanceBefore = await compToken.balanceOf(comet.address);
+        cometCompReservesBefore = await comet.getCollateralReserves(compToken.address);
+
+        await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, compToken.address, 0n);
+        await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
+      });
+
+      after(async () => await snapshot.restore());
+
+      it('sanity check: alice is still liquidatable', async () => {
+        expect(await comet.isLiquidatable(alice.address)).to.be.true;
+      });
+
+      it('sanity check: not a "bad debt"', async () => {
+        const assetInfo = await comet.getAssetInfoByAddress(compToken.address);
+        const [, price] = await compPriceFeed.latestRoundData();
+        const pricedCredit = divPrice(mulFactor(mulPrice(aliceCompSupply, price, assetInfo.scale), assetInfo.liquidationFactor), basePrice, baseScale);
+        expect(pricedCredit < -oldBalance).to.be.true;
+      });
+
       it('absorbs undercollateralized account', async () => {
         liquidationTx = await comet.connect(bob).absorb(bob.address, [alice.address]);
 
         await expect(liquidationTx).to.not.be.reverted;
       });
 
-      it('emits AbsorbCollateral event', async () => {
+      it('emits AbsorbCollateral event with the full collateral value', async () => {
         const assetInfo = await comet.getAssetInfoByAddress(compToken.address);
         const [_, price] = await compPriceFeed.latestRoundData();
         expectedUsdValue = mulPrice(aliceCompSupply, price, assetInfo.scale);
@@ -1466,13 +1494,12 @@ describe('absorb', function () {
         await expect(liquidationTx).to.emit(comet, 'AbsorbCollateral').withArgs(bob.address, alice.address, compToken.address, aliceCompSupply, expectedUsdValue);
       });
 
-      it('reduces totals supply of the asset for seized asset', async () => {
-        const totals = await comet.totalsCollateral(compToken.address);
-        expect(totals.totalSupplyAsset).to.equal(0);
-      });
-
       it('sets user collateral balance to 0', async () => {
         expect((await comet.userCollateral(alice.address, compToken.address)).balance).to.equal(0);
+      });
+
+      it('reduces totals supply of the asset to 0', async () => {
+        expect((await comet.totalsCollateral(compToken.address)).totalSupplyAsset).to.equal(0);
       });
 
       it('resets user assetsIn to 0', async () => {
@@ -1480,246 +1507,56 @@ describe('absorb', function () {
         expect((await comet.userBasic(alice.address))._reserved).to.equal(0);
       });
 
-      it('updates totals correctly after absorption', async () => {
-        // absorb credits the collateral value × liquidationFactor, valued at the indices it accrued to
-        const { liquidationFactor } = await comet.getAssetInfoByAddress(compToken.address);
-        const deltaBalance = divPrice(mulFactor(expectedUsdValue, liquidationFactor), basePrice, baseScale);
-        const totalsBasic = await cometExt.totalsBasic();
-        const oldBalanceAtAbsorb = presentValue(oldPrincipal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
-
-        newBalance = oldBalanceAtAbsorb + deltaBalance;
-        if (newBalance < 0) newBalance = 0n;
-        newPrincipal = principalValue(newBalance, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
-
-        // Check that user principal is updated correctly
-        expect((await comet.userBasic(alice.address)).principal).to.equal(newPrincipal);
-        // Calculate repay and supply amounts
-        // We expect that new principal is greater than old principal
-        expect(newPrincipal > oldPrincipal).to.be.true;
-        // New principal becomes zero as we check before, thus we go strongly in case `newPrincipal <= 0`
-        expect(newPrincipal <= 0).to.be.true;
-        const repayAmount = newPrincipal - oldPrincipal;
-        const supplyAmount = 0n;
-
-        const newTotalsBasic = await cometExt.totalsBasic();
-        expect(newTotalsBasic.totalSupplyBase).to.equal(totalSupplyBase.toBigInt() + supplyAmount);
-        expect(newTotalsBasic.totalBorrowBase).to.equal(totalBorrowBase.toBigInt() - repayAmount);
+      it('alice principal is 0 after absorption', async () => {
+        // value × LF ($90) is below the debt (~$150), so the balance is clamped to 0 and reserves cover the rest
+        expect((await comet.userBasic(alice.address)).principal).to.equal(0);
       });
 
-      it('updates user principal correctly after absorption', async () => {
-        expect((await comet.userBasic(alice.address)).principal).to.equal(newPrincipal);
+      it('totalSupplyBase is unchanged after absorption', async () => {
+        const current = await cometExt.totalsBasic();
+        expect(current.totalSupplyBase).to.equal(totalSupplyBase);
+      });
+
+      it('totalBorrowBase is reduced by repay amount after absorption', async () => {
+        const current = await cometExt.totalsBasic();
+        // the whole borrow principal is repaid (oldPrincipal is negative)
+        expect(current.totalBorrowBase).to.equal(totalBorrowBase.toBigInt() + oldPrincipal);
       });
 
       it('emits AbsorbDebt event', async () => {
+        // the new balance is clamped to 0, so basePaidOut = 0 - oldBalance (collateral credit plus reserves)
         // absorb accrues before reading the debt, so value oldPrincipal at the post-absorb indices
         const totalsAtAbsorb = await cometExt.totalsBasic();
         const oldBalanceAtAbsorb = presentValue(oldPrincipal, totalsAtAbsorb.baseSupplyIndex, totalsAtAbsorb.baseBorrowIndex);
-        const basePaidOut = newBalance - oldBalanceAtAbsorb;
+        const basePaidOut = -oldBalanceAtAbsorb;
         const valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, baseScale);
         await expect(liquidationTx).to.emit(comet, 'AbsorbDebt').withArgs(bob.address, alice.address, basePaidOut, valueOfBasePaidOut);
       });
 
       it('Transfer event is not emitted', async () => {
-        // Transfer event emits only when new principal is greater than 0
-        expect(newPrincipal).to.equal(0);
         await expect(liquidationTx).to.not.emit(comet, 'Transfer');
       });
-    });
 
-    describe('credits collateral value × liquidationFactor when the credit exceeds the debt', function () {
-      /*
-       * LF > LCF: the account is liquidatable (value × LCF < debt) while its credit covers the
-       * debt (value × LF > debt), so the new balance is positive and is not clamped to 0.
-       *   1 COMP at $200: value × LCF 0.5 = $100 < ~$150 debt → liquidatable
-       *                   value × LF  0.9 = $180 > ~$150 debt → ~$30 left as supply
-       *
-       * Flow:
-       *    - AbsorbCollateral is emitted with the full collateral value (before the liquidation factor)
-       *    - User principal becomes the positive balance: old balance + value × LF
-       *    - The whole borrow principal is repaid and the excess is added to total supply
-       *    - AbsorbDebt is emitted with basePaidOut = credit (newBalance - oldBalance)
-       *    - Transfer (mint) is emitted for the excess
-       */
-      const LIQUIDATION_FACTOR = exp(0.9, 18);
-      let collateralValue: bigint;
-      let credit: bigint;
-      let expectedNewPrincipal: bigint;
-      let baseSupplyIndexAtAbsorb: bigint;
-      let oldBalanceAtAbsorb: bigint;
-
-      before(async () => {
-        await snapshot.restore();
-        await compPriceFeed.setRoundData(0, exp(200, 8), 0, 0, 0);
+      it('comet base token ERC20 balance is unchanged after absorption', async () => {
+        // absorb does not transfer base tokens; debt absorption is an accounting change only
+        expect(await baseToken.balanceOf(comet.address)).to.equal(cometBaseTokenBalanceBefore);
       });
 
-      it('borrowCF, liquidateCF and liquidationFactor updated to 0.4, 0.5 and 0.9', async () => {
-        await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, compToken.address, exp(0.4, 18));
-        await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, compToken.address, exp(0.5, 18));
-        await configurator.updateAssetLiquidationFactor(cometProxyAddress, compToken.address, LIQUIDATION_FACTOR);
-        await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
+      it('comet collateral token ERC20 balance is unchanged after absorption', async () => {
+        // seized tokens remain locked in the comet contract; they are reclassified to reserves, not transferred out
+        expect(await compToken.balanceOf(comet.address)).to.equal(cometCompBalanceBefore);
       });
 
-      it('liquidationFactor is 0.9 after upgrade', async () => {
-        expect((await comet.getAssetInfoByAddress(compToken.address)).liquidationFactor).to.equal(LIQUIDATION_FACTOR);
-      });
-
-      it('alice is liquidatable', async () => {
-        expect(await comet.isLiquidatable(alice.address)).to.be.true;
-      });
-
-      it('collateral value at the liquidation factor exceeds the debt', async () => {
-        const assetInfo = await comet.getAssetInfoByAddress(compToken.address);
-        const [, price] = await compPriceFeed.latestRoundData();
-        collateralValue = mulPrice(aliceCompSupply, price, assetInfo.scale);
-        credit = divPrice(mulFactor(collateralValue, LIQUIDATION_FACTOR), basePrice, baseScale);
-        expect(credit > -oldBalance).to.be.true;
-      });
-
-      it('absorbs undercollateralized account', async () => {
-        liquidationTx = await comet.connect(bob).absorb(bob.address, [alice.address]);
-        await expect(liquidationTx).to.not.be.reverted;
-      });
-
-      it('emits AbsorbCollateral event with the full collateral value', async () => {
-        await expect(liquidationTx).to.emit(comet, 'AbsorbCollateral').withArgs(bob.address, alice.address, compToken.address, aliceCompSupply, collateralValue);
-      });
-
-      it('alice principal equals the old balance plus value × liquidationFactor', async () => {
-        // absorb accrues before reading the debt, so value oldPrincipal at the post-absorb indices
-        const totalsBasic = await cometExt.totalsBasic();
-        baseSupplyIndexAtAbsorb = totalsBasic.baseSupplyIndex.toBigInt();
-        oldBalanceAtAbsorb = presentValue(oldPrincipal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
-        const balanceAfter = oldBalanceAtAbsorb + credit;
-        expect(balanceAfter > 0n).to.be.true;
-        expectedNewPrincipal = principalValue(balanceAfter, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
-        expect((await comet.userBasic(alice.address)).principal).to.equal(expectedNewPrincipal);
-      });
-
-      it('totalBorrowBase is reduced by the whole borrow principal', async () => {
-        // oldPrincipal is negative: repayAmount = -oldPrincipal
-        expect((await cometExt.totalsBasic()).totalBorrowBase).to.equal(totalBorrowBase.toBigInt() + oldPrincipal);
-      });
-
-      it('totalSupplyBase is increased by the new principal', async () => {
-        expect((await cometExt.totalsBasic()).totalSupplyBase).to.equal(totalSupplyBase.toBigInt() + expectedNewPrincipal);
-      });
-
-      it('emits AbsorbDebt event with the credit as basePaidOut', async () => {
-        // basePaidOut = newBalance - oldBalance = value × LF in base
-        await expect(liquidationTx).to.emit(comet, 'AbsorbDebt').withArgs(bob.address, alice.address, credit, mulPrice(credit, basePrice, baseScale));
-      });
-
-      it('emits Transfer (mint) event for the excess', async () => {
-        await expect(liquidationTx).to.emit(comet, 'Transfer').withArgs(ZERO_ADDRESS, alice.address, presentValueSupply(baseSupplyIndexAtAbsorb, expectedNewPrincipal));
+      it('comet collateral reserves increase by the seized amount', async () => {
+        // getCollateralReserves = balanceOf(comet) - totalsCollateral.totalSupplyAsset
+        // after seizure: totalSupplyAsset = 0, balanceOf unchanged → reserves grow by aliceCompSupply
+        expect(await comet.getCollateralReserves(compToken.address)).to.equal(cometCompReservesBefore.add(aliceCompSupply));
       });
     });
 
-    describe('skips liquidation for asset with liquidationF = 0 and liquidateCF > 0', function () {
-      before(async () => {
-        await snapshot.restore();
-      });
-
+    describe('BCF = 0, LCF = 0, LF > 0 - collateral seized, but worth 0', function () {
       /*
-       * "soft de-list" state.
-       *
-       * Key factor roles in absorption:
-       *   - LCF > 0: the asset still counts toward the account's liquidation threshold;
-       *              its price is fetched and stored in assetPrices[i].
-       *   - LF  = 0: absorbInternal skips seizure for this asset entirely — no collateral
-       *              transfer, assetPrices[i] is not used to offset debt.
-       *   - borrowCF: governs only isBorrowCollateralized (new-borrow gate); irrelevant to
-       *               isLiquidatable and absorb.
-       *
-       * Flow:
-       *    When LF = 0 and LCF still > 0:
-       *    - Collateral is NOT seized: Alice's COMP collateral remains untouched
-       *    - AbsorbCollateral event is NOT emitted (asset is skipped during absorption)
-       *    - User collateral balance remains unchanged (same as before absorption)
-       *    - totalsCollateral.totalSupplyAsset remains unchanged
-       *    - User principal is still updated (debt is absorbed, but no collateral value is applied)
-       *    - AbsorbDebt event is still emitted (basePaidOut is the full debt, covered by reserves)
-       *    - Total borrow base is still reduced (debt is repaid)
-       *    - Transfer event is NOT emitted (since new principal becomes 0)
-       */
-      it('liquidation factor can be updated to 0', async () => {
-        await configurator.updateAssetLiquidationFactor(cometProxyAddress, compToken.address, exp(0, 18));
-        await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
-      });
-
-      it('liquidation factor becomes 0 after upgrade', async () => {
-        expect((await comet.getAssetInfoByAddress(compToken.address)).liquidationFactor).to.equal(0);
-      });
-
-      it('absorbs undercollateralized account with 0 liquidation factor on asset', async () => {
-        liquidationTx = await comet.connect(bob).absorb(bob.address, [alice.address]);
-
-        await expect(liquidationTx).to.not.be.reverted;
-      });
-
-      it('does not emit AbsorbCollateral event', async () => {
-        await expect(liquidationTx).to.not.emit(comet, 'AbsorbCollateral');
-      });
-
-      it('does not affect user collateral balance', async () => {
-        expect((await comet.userCollateral(alice.address, compToken.address)).balance).to.equal(userCollateralBeforeAbsorption);
-      });
-
-      it('does not affect totals supply of the asset', async () => {
-        expect((await comet.totalsCollateral(compToken.address)).totalSupplyAsset).to.equal(totalsSupplyAssetBeforeAbsorption);
-      });
-
-      it('updates totals correctly after absorption', async () => {
-        // Expected USD value is 0 because of skipping absorption of the asset
-        expectedUsdValue = 0n;
-
-        // absorb credits the collateral value × liquidationFactor, valued at the indices it accrued to
-        const { liquidationFactor } = await comet.getAssetInfoByAddress(compToken.address);
-        const deltaBalance = divPrice(mulFactor(expectedUsdValue, liquidationFactor), basePrice, baseScale);
-        const totalsBasic = await cometExt.totalsBasic();
-        const oldBalanceAtAbsorb = presentValue(oldPrincipal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
-
-        newBalance = oldBalanceAtAbsorb + deltaBalance;
-        if (newBalance < 0) newBalance = 0n;
-        newPrincipal = principalValue(newBalance, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
-
-        // Check that user principal is updated correctly
-        expect((await comet.userBasic(alice.address)).principal).to.equal(newPrincipal);
-        // Calculate repay and supply amounts
-        // We expect that new principal is greater than old principal
-        expect(newPrincipal > oldPrincipal).to.be.true;
-        // New principal becomes zero as we check before, thus we go strongly in case `newPrincipal <= 0`
-        expect(newPrincipal <= 0).to.be.true;
-        const repayAmount = newPrincipal - oldPrincipal;
-        const supplyAmount = 0n;
-
-        const newTotalsBasic = await cometExt.totalsBasic();
-        expect(newTotalsBasic.totalSupplyBase).to.equal(totalSupplyBase.toBigInt() + supplyAmount);
-        expect(newTotalsBasic.totalBorrowBase).to.equal(totalBorrowBase.toBigInt() - repayAmount);
-      });
-
-      it('updates user principal correctly after absorption', async () => {
-        expect((await comet.userBasic(alice.address)).principal).to.equal(newPrincipal);
-      });
-
-      it('emits AbsorbDebt event', async () => {
-        // absorb accrues before reading the debt, so value oldPrincipal at the post-absorb indices
-        const totalsAtAbsorb = await cometExt.totalsBasic();
-        const oldBalanceAtAbsorb = presentValue(oldPrincipal, totalsAtAbsorb.baseSupplyIndex, totalsAtAbsorb.baseBorrowIndex);
-        const basePaidOut = newBalance - oldBalanceAtAbsorb;
-        const valueOfBasePaidOut = mulPrice(basePaidOut, basePrice, baseScale);
-        await expect(liquidationTx).to.emit(comet, 'AbsorbDebt').withArgs(bob.address, alice.address, basePaidOut, valueOfBasePaidOut);
-      });
-
-      it('Transfer event is not emitted', async () => {
-        // Transfer event emits only when new principal is greater than 0
-        expect(newPrincipal).to.equal(0);
-        await expect(liquidationTx).to.not.emit(comet, 'Transfer');
-      });
-    });
-
-    describe('asset absorbs with zero value when liquidateCF = 0 and liquidationF is positive', function () {
-      /*
-       * the collateral is still seizable but treated as worthless.
+       * The collateral is still seizable but treated as worthless.
        *
        * Key factor roles in absorption:
        *   - LCF = 0: isLiquidatableInternal skips price fetching for this asset,
@@ -1727,60 +1564,51 @@ describe('absorb', function () {
        *   - LF  > 0: absorbInternal seizes the collateral but uses assetPrices[i] = 0 —
        *              the collateral moves to reserves with zero USD value offset.
        *   - borrowCF: governs only isBorrowCollateralized (new-borrow gate); irrelevant to
-       *               isLiquidatable and absorb.
+       *               isLiquidatable and absorb. It goes to 0 first, as LCF can't go to or below a non-zero borrowCF.
+       *
+       * Setup: 1 COMP repriced to $1,000, LF 0.9, debt ~$150. A priced credit (value × LF = $900) would cover
+       * the debt and leave Alice ~$750 of supply, so the clamped principal and the missing Transfer prove
+       * the credit really is 0, not only the AbsorbCollateral usdValue.
        *
        * Flow:
-       *    When LCF = 0 and LF > 0:
-       *    - Collateral IS seized: Alice's COMP collateral is transferred to protocol reserves
+       *    With borrowCF = 0, LCF = 0 and LF > 0:
+       *    - Collateral IS seized: Alice's COMP stays in Comet and becomes collateral reserves
        *    - AbsorbCollateral event IS emitted but with usdValue = 0 (assetPrices[i] = 0 since
        *      isLiquidatableInternal skipped price fetching for this LCF = 0 asset)
        *    - User collateral balance is set to 0
        *    - totalsCollateral.totalSupplyAsset is reduced to 0
        *    - User's assetsIn is reset to 0
-       *    - User principal is not offset by collateral value — deltaBalance = 0, full debt remains
-       *    - New balance is clamped to 0; debt is fully absorbed by protocol reserves
-       *    - AbsorbDebt event is emitted (full debt absorbed by reserves)
-       *    - Total borrow base is reduced by the repay amount
+       *    - User principal is not offset by collateral value — deltaBalance = 0, full debt remains;
+       *      the new balance is clamped to 0 and the debt is fully absorbed by reserves
+       *    - Total supply base is unchanged; total borrow base is reduced by the whole borrow principal
+       *    - AbsorbDebt event is emitted with the whole debt as basePaidOut
        *    - Transfer event is NOT emitted (new principal clamps to 0, no supply side created)
-       *    - Comet ERC20 collateral balance is unchanged (tokens stay locked in comet)
+       *    - Comet ERC20 base and collateral balances are unchanged (tokens stay locked in Comet)
        *    - Collateral reserves increase by the seized amount
-       *
-       *    COMP is repriced so that LF × collateral value exceeds the debt. Priced credit would then
-       *    leave Alice with a positive balance (supply + Transfer), so the principal and Transfer
-       *    checks prove the $0 credit on their own, not only the AbsorbCollateral usdValue.
        */
       let cometBaseTokenBalanceBefore: BigNumber;
       let cometCompBalanceBefore: BigNumber;
       let cometCompReservesBefore: BigNumber;
 
       before(async () => {
-        await snapshot.restore();
-        // 1 COMP at $1,000 with LF 0.6 → $600 of priced credit against ~$150 of debt
+        // 1 COMP at $1,000 with LF 0.9 → $900 of priced credit against ~$150 of debt
         await compPriceFeed.setRoundData(0, exp(1000, 8), 0, 0, 0);
         cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
         cometCompBalanceBefore = await compToken.balanceOf(comet.address);
         cometCompReservesBefore = await comet.getCollateralReserves(compToken.address);
-      });
 
-      it('borrowCollateralFactor and liquidateCollateralFactor updated to 0', async () => {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, compToken.address, 0n);
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, compToken.address, 0n);
         await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
       });
 
-      it('liquidateCollateralFactor is 0 after upgrade', async () => {
-        expect((await comet.getAssetInfoByAddress(compToken.address)).liquidateCollateralFactor).to.equal(0);
-      });
+      after(async () => await snapshot.restore());
 
-      it('liquidationFactor remains non-zero after upgrade', async () => {
-        expect((await comet.getAssetInfoByAddress(compToken.address)).liquidationFactor).to.be.gt(0);
-      });
-
-      it('alice is liquidatable with zero liquidateCollateralFactor', async () => {
+      it('sanity check: alice is liquidatable with zero liquidateCollateralFactor', async () => {
         expect(await comet.isLiquidatable(alice.address)).to.be.true;
       });
 
-      it('collateral value at the liquidation factor exceeds the debt', async () => {
+      it('sanity check: not a "bad debt"', async () => {
         const assetInfo = await comet.getAssetInfoByAddress(compToken.address);
         const [, price] = await compPriceFeed.latestRoundData();
         const pricedCredit = divPrice(mulFactor(mulPrice(aliceCompSupply, price, assetInfo.scale), assetInfo.liquidationFactor), basePrice, baseScale);
@@ -1843,7 +1671,7 @@ describe('absorb', function () {
       });
 
       it('alice has no base balance after absorption', async () => {
-        // priced credit would have left her with ~$450 of supply
+        // priced credit would have left her with ~$750 of supply
         expect(await comet.balanceOf(alice.address)).to.equal(0);
       });
 
@@ -1864,11 +1692,11 @@ describe('absorb', function () {
       });
     });
 
-    describe('asset ignored during absorption when liquidateCF = 0 and liquidationF = 0', function () {
+    describe('BCF = 0, LCF = 0, LF = 0 - full de-list, collateral skipped', function () {
       /*
-       * Full de-listing: both liquidateCF and liquidationFactor are zero.
+       * Full de-listing: all three factors are zero.
        *
-       * Key factor roles in absorption (borrowCollateralFactor plays no role here):
+       * Key factor roles in absorption:
        *   - LCF = 0: the asset contributes no coverage; isLiquidatableInternal skips price
        *              fetching, so assetPrices[i] stays 0.
        *   - LF  = 0: absorbInternal skips seizure entirely — no price lookup, no collateral
@@ -1876,48 +1704,44 @@ describe('absorb', function () {
        *   - borrowCF: governs only isBorrowCollateralized (new-borrow gate); irrelevant to
        *               isLiquidatable and absorb.
        *
+       * The factor validation accepts LF = 0 only when both collateral factors are 0, so the factors go to 0
+       * in order: borrowCF, then LCF, then LF.
+       *
+       * Setup: 1 COMP at $100, debt ~$150. The collateral is skipped, so its price plays no role.
+       *
        * Flow:
-       *    When LCF = 0 and LF = 0:
-       *    - Collateral is NOT seized: Alice's COMP collateral remains in the user's protocol account
+       *    With borrowCF = 0, LCF = 0 and LF = 0:
+       *    - Collateral is NOT seized: Alice's COMP remains in her protocol account
        *    - AbsorbCollateral event is NOT emitted (asset is skipped entirely during absorption)
-       *    - User collateral balance remains unchanged (same as before absorption)
+       *    - User collateral balance remains unchanged
        *    - totalsCollateral.totalSupplyAsset remains unchanged
        *    - User's assetsIn is reset to 0 even though collateral was not seized
-       *    - User principal is not offset by collateral value — deltaBalance = 0, full debt remains
-       *    - New balance is clamped to 0; debt is fully absorbed by protocol reserves
-       *    - AbsorbDebt event is emitted (full debt absorbed by reserves)
-       *    - Total borrow base is reduced by the repay amount
+       *    - User principal is not offset by collateral value — deltaBalance = 0, full debt remains;
+       *      the new balance is clamped to 0 and the debt is fully absorbed by reserves
+       *    - Total supply base is unchanged; total borrow base is reduced by the whole borrow principal
+       *    - AbsorbDebt event is emitted with the whole debt as basePaidOut
        *    - Transfer event is NOT emitted (new principal clamps to 0, no supply side created)
-       *    - Comet ERC20 collateral balance is unchanged (tokens stay locked in comet)
-       *    - Collateral reserves unchanged (no seizure occurred)
+       *    - Comet ERC20 base and collateral balances are unchanged (tokens stay locked in Comet)
+       *    - Collateral reserves are unchanged (no seizure occurred)
        */
       let cometBaseTokenBalanceBefore: BigNumber;
       let cometCompBalanceBefore: BigNumber;
       let cometCompReservesBefore: BigNumber;
 
       before(async () => {
-        await snapshot.restore();
         cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
         cometCompBalanceBefore = await compToken.balanceOf(comet.address);
         cometCompReservesBefore = await comet.getCollateralReserves(compToken.address);
-      });
 
-      it('borrowCollateralFactor, liquidateCollateralFactor and liquidationFactor can be updated to 0', async () => {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, compToken.address, 0n);
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, compToken.address, 0n);
         await configurator.updateAssetLiquidationFactor(cometProxyAddress, compToken.address, 0n);
         await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
       });
 
-      it('liquidateCollateralFactor is 0 after upgrade', async () => {
-        expect((await comet.getAssetInfoByAddress(compToken.address)).liquidateCollateralFactor).to.equal(0);
-      });
+      after(async () => await snapshot.restore());
 
-      it('liquidationFactor is 0 after upgrade', async () => {
-        expect((await comet.getAssetInfoByAddress(compToken.address)).liquidationFactor).to.equal(0);
-      });
-
-      it('alice is liquidatable with zero liquidateCollateralFactor and zero liquidationFactor', async () => {
+      it('sanity check: alice is liquidatable with zero liquidateCollateralFactor and zero liquidationFactor', async () => {
         expect(await comet.isLiquidatable(alice.address)).to.be.true;
       });
 
@@ -1990,6 +1814,93 @@ describe('absorb', function () {
       });
     });
 
+    describe('credits collateral value * LF when the credit exceeds the debt', function () {
+      /*
+       * LF > LCF: the account is liquidatable (value × LCF < debt) while its credit covers the
+       * debt (value × LF > debt), so the new balance is positive and is not clamped to 0.
+       *   1 COMP at $200: value × LCF 0.5 = $100 < ~$150 debt → liquidatable
+       *                   value × LF  0.9 = $180 > ~$150 debt → ~$30 left as supply
+       *
+       * Flow:
+       *    - AbsorbCollateral is emitted with the full collateral value (before the liquidation factor)
+       *    - User principal becomes the positive balance: old balance + value × LF
+       *    - The whole borrow principal is repaid and the excess is added to total supply
+       *    - AbsorbDebt is emitted with basePaidOut = credit (newBalance - oldBalance)
+       *    - Transfer (mint) is emitted for the excess
+       */
+      const LIQUIDATION_FACTOR = exp(0.9, 18);
+      let collateralValue: bigint;
+      let credit: bigint;
+      let debt: bigint;
+      let expectedNewPrincipal: bigint;
+
+      before(async () => {
+        await compPriceFeed.setRoundData(0, exp(200, 8), 0, 0, 0);
+
+        await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, compToken.address, exp(0.4, 18));
+        await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, compToken.address, exp(0.5, 18));
+        await configurator.updateAssetLiquidationFactor(cometProxyAddress, compToken.address, LIQUIDATION_FACTOR);
+        await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
+
+        debt = (await comet.borrowBalanceOf(alice.address)).toBigInt();
+        const assetInfo = await comet.getAssetInfoByAddress(compToken.address);
+        const [, price] = await compPriceFeed.latestRoundData();
+        collateralValue = mulPrice(aliceCompSupply, price, assetInfo.scale);
+        credit = divPrice(mulFactor(collateralValue, LIQUIDATION_FACTOR), basePrice, baseScale);
+      });
+
+      after(async () => await snapshot.restore());
+
+      it('alice is liquidatable', async () => {
+        expect(await comet.isLiquidatable(alice.address)).to.be.true;
+      });
+
+      it('collateral value at the liquidation factor exceeds the debt', async () => {
+        expect(credit > -oldBalance).to.be.true;
+      });
+
+      it('absorbs undercollateralized account', async () => {
+        liquidationTx = await comet.connect(bob).absorb(bob.address, [alice.address]);
+        await expect(liquidationTx).to.not.be.reverted;
+      });
+
+      it('emits AbsorbCollateral event with the full collateral value', async () => {
+        await expect(liquidationTx).to.emit(comet, 'AbsorbCollateral').withArgs(bob.address, alice.address, compToken.address, aliceCompSupply, collateralValue);
+      });
+
+      it('alice balance equals collateral value × liquidationFactor - debt', async () => {
+        // 1 wei of rounding: the balance is stored as a principal rounded down
+        expect(await comet.balanceOf(alice.address)).to.be.closeTo(credit - debt, 1);
+      });
+
+      it('alice principal equals the new balance at the supply index', async () => {
+        // principal = balance × baseIndexScale / baseSupplyIndex
+        const { baseSupplyIndex } = await cometExt.totalsBasic();
+        const baseIndexScale = await cometExt.baseIndexScale();
+        expectedNewPrincipal = (credit - debt) * baseIndexScale.toBigInt() / baseSupplyIndex.toBigInt();
+        expect((await comet.userBasic(alice.address)).principal).to.equal(expectedNewPrincipal);
+      });
+
+      it('totalBorrowBase is reduced by the whole borrow principal', async () => {
+        // oldPrincipal is negative: repayAmount = -oldPrincipal
+        expect((await cometExt.totalsBasic()).totalBorrowBase).to.equal(totalBorrowBase.toBigInt() + oldPrincipal);
+      });
+
+      it('totalSupplyBase is increased by the new principal', async () => {
+        expect((await cometExt.totalsBasic()).totalSupplyBase).to.equal(totalSupplyBase.toBigInt() + expectedNewPrincipal);
+      });
+
+      it('emits AbsorbDebt event with the credit as basePaidOut', async () => {
+        // basePaidOut = newBalance - oldBalance = value × LF in base
+        await expect(liquidationTx).to.emit(comet, 'AbsorbDebt').withArgs(bob.address, alice.address, credit, mulPrice(credit, basePrice, baseScale));
+      });
+
+      it('emits Transfer (mint) event for the excess', async () => {
+        const { baseSupplyIndex } = await cometExt.totalsBasic();
+        await expect(liquidationTx).to.emit(comet, 'Transfer').withArgs(ZERO_ADDRESS, alice.address, presentValueSupply(baseSupplyIndex, expectedNewPrincipal));
+      });
+    });
+
     describe('24 collateral assets', function () {
       for (let i = 1; i <= MAX_ASSETS; i++) {
         it(`skips absorption of asset ${i - 1} with liquidation factor = 0 with collaterals ${i}`, async () => {
@@ -2017,7 +1928,10 @@ describe('absorb', function () {
 
           expect(await comet24Assets.isLiquidatable(underwater24Assets.address)).to.be.true;
 
-          // Step 3: Update liquidationFactor to 0 for target asset
+          // Step 3: Update liquidationFactor to 0 for target asset.
+          // A zero liquidation factor is only valid when both collateral factors are zero too.
+          await configuratorProxy24Assets.updateAssetBorrowCollateralFactor(comet24Assets.address, targetToken.address, 0n);
+          await configuratorProxy24Assets.updateAssetLiquidateCollateralFactor(comet24Assets.address, targetToken.address, 0n);
           await configuratorProxy24Assets.updateAssetLiquidationFactor(comet24Assets.address, targetToken.address, exp(0, 18));
 
           // Upgrade proxy again after updating liquidationFactor
@@ -2050,7 +1964,7 @@ describe('absorb', function () {
           expect((await comet24Assets.userBasic(underwater24Assets.address)).principal).to.equal(0);
 
           // basePaidOut = 0 - oldBalance; absorb accrues before reading the debt, so value the principal at the post-absorb indices
-          const cometExt24Assets = (await ethers.getContractAt('CometExtAssetList', comet24Assets.address)) as CometExtAssetList;
+          const cometExt24Assets = (await ethers.getContractAt('CometExt', comet24Assets.address)) as CometExt;
           const totalsAtAbsorb = await cometExt24Assets.totalsBasic();
           const basePaidOut = -presentValue(principalBefore, totalsAtAbsorb.baseSupplyIndex, totalsAtAbsorb.baseBorrowIndex);
           const basePrice24Assets = await comet24Assets.getPrice(await comet24Assets.baseTokenPriceFeed());
@@ -2092,9 +2006,12 @@ describe('absorb', function () {
   
         expect(await comet24Assets.isLiquidatable(underwater24Assets.address)).to.be.true;
   
-        // Update liquidationFactor to 0 for three assets (ASSET1, ASSET3, ASSET4)
+        // Update liquidationFactor to 0 for three assets (ASSET1, ASSET3, ASSET4).
+        // A zero liquidation factor is only valid when both collateral factors are zero too.
         const zeroLfSymbols = ['ASSET1', 'ASSET3', 'ASSET4'];
         for (const sym of zeroLfSymbols) {
+          await configuratorProxy24Assets.updateAssetBorrowCollateralFactor(comet24Assets.address, tokens24Assets[sym].address, 0n);
+          await configuratorProxy24Assets.updateAssetLiquidateCollateralFactor(comet24Assets.address, tokens24Assets[sym].address, 0n);
           await configuratorProxy24Assets.updateAssetLiquidationFactor(comet24Assets.address, tokens24Assets[sym].address, exp(0, 18));
         }
   
@@ -2226,34 +2143,48 @@ describe('absorb', function () {
    *  Setup: alice lends 10,000 USDC; WETH $3,000 with LF = 0 (BCF 0.8, LCF 0.85),
    *  WBTC $41,000 with LF 0.9 (BCF 0.7, LCF 0.75). bob borrows 2,000 against 1 WETH and 0.01 WBTC.
    */
+  // The factor validation keeps BCF < LCF < LF and accepts LF = 0 only with both collateral factors at 0, so an asset can't
+  // be listed with LF = 0 and still back a borrow. Bob borrows against WETH while it is listed, governance then de-lists it
+  // (BCF, then LCF, then LF to 0, the only order the validation accepts), and the absorb leaves the WETH on his account
   describe('absorb: LF = 0 collateral after the absorb', function () {
     const USDC_SCALE = exp(1, 6);
+    // Asset configs of the market; WETH's factors are also what governance lists it again with
+    const WETH_CONFIG = { decimals: 18, initialPrice: 3000, borrowCF: exp(0.8, 18), liquidateCF: exp(0.85, 18), liquidationFactor: exp(0.9, 18) };
+    const WBTC_CONFIG = { decimals: 8, initialPrice: 41000, borrowCF: exp(0.7, 18), liquidateCF: exp(0.75, 18), liquidationFactor: exp(0.9, 18) };
 
     let comet: CometHarnessInterfaceExtendedAssetList;
+    let configurator: Configurator;
+    let configuratorProxy: ConfiguratorProxy;
+    let proxyAdmin: CometProxyAdmin;
     let usdc: FaucetToken;
     let weth: FaucetToken;
     let wbtc: FaucetToken;
-    let wethPriceFeed: SimplePriceFeed;
     let wethIndex: number;
     let alice: SignerWithAddress;
     let bob: SignerWithAddress;
     let charles: SignerWithAddress;
     let fixture: SnapshotRestorer;
+    let walletBefore: bigint;
 
     before(async function () {
-      const protocol = await makeProtocol({
+      const protocol = await makeConfigurator({
         base: 'USDC',
         assets: {
           USDC: { decimals: 6 },
-          WETH: { decimals: 18, initialPrice: 3000, borrowCF: exp(0.8, 18), liquidateCF: exp(0.85, 18), liquidationFactor: 0n },
-          WBTC: { decimals: 8, initialPrice: 41000, borrowCF: exp(0.7, 18), liquidateCF: exp(0.75, 18), liquidationFactor: exp(0.9, 18) },
+          WETH: WETH_CONFIG,
+          WBTC: WBTC_CONFIG,
         },
       });
-      comet = protocol.cometWithExtendedAssetList;
+      comet = (await ethers.getContractAt(
+        'CometHarnessInterfaceExtendedAssetList',
+        protocol.cometProxyWithExtendedAssetList.address
+      )) as CometHarnessInterfaceExtendedAssetList;
+      configuratorProxy = protocol.configuratorProxy;
+      configurator = protocol.configurator.attach(configuratorProxy.address);
+      proxyAdmin = protocol.proxyAdmin;
       usdc = protocol.tokens.USDC as FaucetToken;
       weth = protocol.tokens.WETH as FaucetToken;
       wbtc = protocol.tokens.WBTC as FaucetToken;
-      wethPriceFeed = protocol.priceFeeds.WETH;
       wethIndex = (await comet.getAssetInfoByAddress(weth.address)).offset;
       [alice, bob, charles] = protocol.users;
 
@@ -2267,7 +2198,14 @@ describe('absorb', function () {
       await wbtc.connect(bob).approve(comet.address, ethers.constants.MaxUint256);
       await comet.connect(bob).supply(weth.address, exp(1, 18));
       await comet.connect(bob).supply(wbtc.address, exp(0.01, 8));
+      // Borrowing power 1 × 3,000 × 0.8 + 0.01 × 41,000 × 0.7 = 2,687 covers the 2,000 borrow
       await comet.connect(bob).withdraw(usdc.address, 2_000n * USDC_SCALE);
+
+      // Governance de-lists WETH: borrowCF, then liquidateCF, then liquidationFactor go to 0
+      await configurator.updateAssetBorrowCollateralFactor(comet.address, weth.address, 0n);
+      await configurator.updateAssetLiquidateCollateralFactor(comet.address, weth.address, 0n);
+      await configurator.updateAssetLiquidationFactor(comet.address, weth.address, 0n);
+      await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, comet.address);
 
       fixture = await takeSnapshot();
     });
@@ -2276,54 +2214,89 @@ describe('absorb', function () {
       await fixture.restore();
     });
 
-    describe('orphaned collateral lifecycle', function () {
-      before(async function () {
-        await fixture.restore();
-        // WETH to $1,500: liquidation value 1 × 1,500 × 0.85 + 0.01 × 41,000 × 0.75 = 1,582.5 < 2,000
-        await wethPriceFeed.setRoundData(0, exp(1500, 8), 0, 0, 0);
-      });
+    it('bob is liquidatable (sanity check)', async function () {
+      // The de-listed WETH counts for nothing, so only 0.01 × 41,000 × 0.75 = 307.5 is left against the 2,000 debt
+      expect(await comet.isLiquidatable(bob.address)).to.be.true;
+    });
 
-      it('bob is liquidatable', async function () {
-        expect(await comet.isLiquidatable(bob.address)).to.be.true;
-      });
+    it('charles absorbs bob', async function () {
+      await expect(comet.connect(charles).absorb(charles.address, [bob.address])).to.not.be.reverted;
+    });
 
-      it('absorb seizes the WBTC, leaves the LF = 0 WETH on bob\'s account and resets assetsIn', async function () {
-        await comet.connect(charles).absorb(charles.address, [bob.address]);
-        expect(await comet.collateralBalanceOf(bob.address, wbtc.address)).to.equal(0);
-        expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(exp(1, 18));
-        // WBTC is worth 410 × 0.9 = 369 < the 2,000 debt, so nothing is credited back
-        expect((await comet.userBasic(bob.address)).principal).to.equal(0);
-        expect((await comet.userBasic(bob.address)).assetsIn).to.equal(0);
-      });
+    it('the WBTC is seized', async function () {
+      expect(await comet.collateralBalanceOf(bob.address, wbtc.address)).to.equal(0);
+    });
 
-      it('even after the WETH price recovers, the leftover WETH does not back a borrow', async function () {
-        await wethPriceFeed.setRoundData(0, exp(3000, 8), 0, 0, 0);
-        await expect(comet.connect(bob).withdraw(usdc.address, 100n * USDC_SCALE))
-          .to.be.revertedWithCustomError(comet, 'NotCollateralized');
-      });
+    it('the LF = 0 WETH stays on bob\'s account', async function () {
+      expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(exp(1, 18));
+    });
 
-      it('topping up the WETH does not put it back into assetsIn', async function () {
-        await comet.connect(bob).supply(weth.address, exp(1, 18));
-        expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(exp(2, 18));
-        expect((await comet.userBasic(bob.address)).assetsIn).to.equal(0);
-        // 2 WETH = $4,800 of borrowing power on paper, but none of it counts
-        await expect(comet.connect(bob).withdraw(usdc.address, 100n * USDC_SCALE))
-          .to.be.revertedWithCustomError(comet, 'NotCollateralized');
-      });
+    it('bob\'s principal is 0', async function () {
+      // WBTC is worth 410 × 0.9 = 369 < the 2,000 debt, so nothing is credited back
+      expect((await comet.userBasic(bob.address)).principal).to.equal(0);
+    });
 
-      it('the orphaned WETH can still be withdrawn in full', async function () {
-        const walletBefore = (await weth.balanceOf(bob.address)).toBigInt();
-        await comet.connect(bob).withdraw(weth.address, exp(2, 18));
-        expect(await weth.balanceOf(bob.address)).to.equal(walletBefore + exp(2, 18));
-        expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(0);
-      });
+    it('bob\'s assetsIn is reset to 0, the WETH bit included', async function () {
+      expect((await comet.userBasic(bob.address)).assetsIn).to.equal(0);
+    });
 
-      it('supplying it again from 0 sets the assetsIn bit, and it backs a borrow again', async function () {
-        await comet.connect(bob).supply(weth.address, exp(1, 18));
-        expect((await comet.userBasic(bob.address)).assetsIn).to.equal(1 << wethIndex);
-        await comet.connect(bob).withdraw(usdc.address, 100n * USDC_SCALE);
-        expect(await comet.borrowBalanceOf(bob.address)).to.equal(100n * USDC_SCALE);
-      });
+    it('governance lists WETH again: liquidationFactor, then liquidateCF, then borrowCF go back up', async function () {
+      await configurator.updateAssetLiquidationFactor(comet.address, weth.address, WETH_CONFIG.liquidationFactor);
+      await configurator.updateAssetLiquidateCollateralFactor(comet.address, weth.address, WETH_CONFIG.liquidateCF);
+      await configurator.updateAssetBorrowCollateralFactor(comet.address, weth.address, WETH_CONFIG.borrowCF);
+      await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, comet.address);
+    });
+
+    it('the leftover WETH does not back a borrow, even with WETH listed again', async function () {
+      await expect(comet.connect(bob).withdraw(usdc.address, 100n * USDC_SCALE))
+        .to.be.revertedWithCustomError(comet, 'NotCollateralized');
+    });
+
+    it('bob tops up the WETH', async function () {
+      await comet.connect(bob).supply(weth.address, exp(1, 18));
+    });
+
+    it('bob\'s WETH balance is 2', async function () {
+      expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(exp(2, 18));
+    });
+
+    it('the top-up does not put the WETH back into assetsIn', async function () {
+      expect((await comet.userBasic(bob.address)).assetsIn).to.equal(0);
+    });
+
+    it('the topped-up WETH still does not back a borrow', async function () {
+      // 2 WETH = $4,800 of borrowing power on paper, but none of it counts
+      await expect(comet.connect(bob).withdraw(usdc.address, 100n * USDC_SCALE))
+        .to.be.revertedWithCustomError(comet, 'NotCollateralized');
+    });
+
+    it('bob withdraws the orphaned WETH in full', async function () {
+      walletBefore = (await weth.balanceOf(bob.address)).toBigInt();
+      await comet.connect(bob).withdraw(weth.address, exp(2, 18));
+    });
+
+    it('bob\'s wallet receives the 2 WETH', async function () {
+      expect(await weth.balanceOf(bob.address)).to.equal(walletBefore + exp(2, 18));
+    });
+
+    it('bob\'s WETH collateral balance is 0', async function () {
+      expect(await comet.collateralBalanceOf(bob.address, weth.address)).to.equal(0);
+    });
+
+    it('bob supplies WETH again from 0', async function () {
+      await comet.connect(bob).supply(weth.address, exp(1, 18));
+    });
+
+    it('supplying from 0 sets the WETH assetsIn bit', async function () {
+      expect((await comet.userBasic(bob.address)).assetsIn).to.equal(1 << wethIndex);
+    });
+
+    it('bob borrows against the WETH again', async function () {
+      await comet.connect(bob).withdraw(usdc.address, 100n * USDC_SCALE);
+    });
+
+    it('bob\'s borrow balance is the new borrow', async function () {
+      expect(await comet.borrowBalanceOf(bob.address)).to.equal(100n * USDC_SCALE);
     });
   });
 
