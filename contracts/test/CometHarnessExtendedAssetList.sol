@@ -59,8 +59,9 @@ contract CometHarnessExtendedAssetList is CometWithExtendedAssetList {
         uint16 assetsIn = userBasic[account].assetsIn;
         uint8 _reserved = userBasic[account]._reserved;
 
+        uint8 numAssets_ = numAssets();
         uint8 count = 0;
-        for (uint8 i = 0; i < numAssets; i++) {
+        for (uint8 i = 0; i < numAssets_; i++) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 count++;
             }
@@ -69,7 +70,7 @@ contract CometHarnessExtendedAssetList is CometWithExtendedAssetList {
         result = new address[](count);
 
         uint j = 0;
-        for (uint8 i = 0; i < numAssets; i++) {
+        for (uint8 i = 0; i < numAssets_; i++) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 result[j] = getAssetInfo(i).asset;
                 j++;
@@ -92,7 +93,7 @@ contract CometHarnessExtendedAssetList is CometWithExtendedAssetList {
             getPrice(baseTokenPriceFeed),
             uint64(baseScale)
         );
-        for (uint8 i = 0; i < numAssets; ) {
+        for (uint8 i = 0; i < numAssets(); ) {
             if (isInAsset(assetsIn, i, _reserved)) {
                 AssetInfo memory asset = getAssetInfo(i);
                 uint newAmount = mulPrice(

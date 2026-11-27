@@ -6,8 +6,9 @@ import "../../contracts/CometWithExtendedAssetList.sol";
 import "../../contracts/CometConfiguration.sol";
 import "../../contracts/liquidator/OnChainLiquidator.sol";
 import "../../contracts/test/SimplePriceFeed.sol";
+import { AssetListDeployer } from "./helpers/AssetListDeployer.sol";
 
-contract PolygonLiquidatorTest is Test {
+contract PolygonLiquidatorTest is Test, AssetListDeployer {
     CometWithExtendedAssetList public comet;
     OnChainLiquidator public liquidator;
 
@@ -57,7 +58,6 @@ contract PolygonLiquidatorTest is Test {
         assetConfigs[0] = CometConfiguration.AssetConfig({
             asset: WETH9,
             priceFeed: WETH9_PRICE_FEED,
-            decimals: 18,
             borrowCollateralFactor: 9e17,
             liquidateCollateralFactor: 93e16,
             liquidationFactor: 95e16,
@@ -67,9 +67,8 @@ contract PolygonLiquidatorTest is Test {
         assetConfigs[1] = CometConfiguration.AssetConfig({
             asset: WBTC,
             priceFeed: WBTC_PRICE_FEED,
-            decimals: 8,
             borrowCollateralFactor: 7e17,
-            liquidateCollateralFactor: 95e16,
+            liquidateCollateralFactor: 9e17,
             liquidationFactor: 95e16,
             supplyCap: 0
         });
@@ -77,7 +76,6 @@ contract PolygonLiquidatorTest is Test {
         assetConfigs[2] = CometConfiguration.AssetConfig({
             asset: WMATIC,
             priceFeed: WMATIC_PRICE_FEED,
-            decimals: 18,
             borrowCollateralFactor: 8e17,
             liquidateCollateralFactor: 895e15,
             liquidationFactor: 95e16,
@@ -106,8 +104,9 @@ contract PolygonLiquidatorTest is Test {
                 baseMinForRewards: 1000000e6,
                 baseBorrowMin: 100e6,
                 targetReserves: 5000000e6,
-                assetConfigs: assetConfigs,
-                maxSupportedUtilization: 2e18
+                maxSupportedUtilization: 2e18,
+                targetHealthFactor: 1.05e18,
+                assetList: address(deployAssetList(assetConfigs, makeAddr("proxyAdmin"), makeAddr("configurator")))
             }
         ));
 

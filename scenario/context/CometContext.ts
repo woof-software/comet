@@ -11,6 +11,7 @@ import {
   CometBalanceConstraint,
   MigrationConstraint,
   ProposalConstraint,
+  AssetListMigrationConstraint,
   FilterConstraint,
   PriceConstraint,
   ReservesConstraint
@@ -29,13 +30,24 @@ import {
   BaseBulker,
   BaseBridgeReceiver,
   ERC20,
-  CometExtAssetList,
+  CometExt,
+  AssetList,
+  CometWithExtendedAssetList,
 } from '../../build/types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { sourceTokens } from '../../plugins/scenario/utils/TokenSourcer';
 import { ProtocolConfiguration, deployComet, COMP_WHALES, WHALES } from '../../src/deploy';
 import { AddressLike, getAddressFromNumber, resolveAddress } from './Address';
-import { fastGovernanceExecute, max, mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from '../utils';
+import {
+  fastGovernanceExecute,
+  isAssetListMigrationRequired,
+  max,
+  migrateToAssetList,
+  mineBlocks,
+  setEtherBalance,
+  setNextBaseFeeToZero,
+  setNextBlockTimestamp,
+} from '../utils';
 import { DynamicConstraint, StaticConstraint } from '../../plugins/scenario/Scenario';
 import { Requirements } from '../constraints/Requirements';
 
@@ -60,7 +72,8 @@ export interface CometProperties {
   rewards: CometRewards;
   bulker: BaseBulker;
   bridgeReceiver: BaseBridgeReceiver;
-  cometExt?: CometExtAssetList;
+  cometExt?: CometExt;
+  assetList?: AssetList;
 }
 
 export class CometContext {
@@ -106,6 +119,18 @@ export class CometContext {
 
   async getConfigurator(): Promise<Configurator> {
     return this.world.deploymentManager.contract('configurator');
+  }
+
+  // The asset list the Comet reads its collateral from, or undefined for a Comet that has no asset list
+  async getAssetList(): Promise<AssetList | undefined> {
+    const ethers = this.world.deploymentManager.hre.ethers;
+    const comet = await this.getComet();
+    try {
+      const extendedComet = await ethers.getContractAt('CometWithExtendedAssetList', comet.address) as CometWithExtendedAssetList;
+      return await ethers.getContractAt('AssetList', await extendedComet.assetList()) as AssetList;
+    } catch {
+      return undefined;
+    }
   }
 
   async getTimelock(): Promise<SimpleTimelock> {
@@ -155,6 +180,13 @@ export class CometContext {
 
     const currentComet = await this.getComet();
     const admin = await world.impersonateAddress(await currentComet.governor(), { value: 20n ** 18n });
+
+    // TEMP SOLUTION: remove as soon as the real asset list migration is prepared or executed on chain.
+    // deployComet expects a market already on the asset list Configurator, so a market that still runs the V1
+    // Configurator is migrated first
+    if (await isAssetListMigrationRequired(this)) {
+      await migrateToAssetList(this, admin);
+    }
 
     const deploySpec = { cometMain: true, cometExt: true };
     const deployed = await deployComet(this.world.deploymentManager, deploySpec, configOverrides, admin);
@@ -405,6 +437,7 @@ async function getContextProperties(context: CometContext): Promise<CometPropert
     comet,
     configurator: await context.getConfigurator(),
     proxyAdmin: await context.getCometAdmin(),
+    assetList: await context.getAssetList(),
     timelock: await context.getTimelock(),
     governor: await context.getGovernor(),
     rewards: await context.getRewards(),
@@ -417,6 +450,9 @@ export const staticConstraints: StaticConstraint<CometContext>[] = [
   new NativeTokenConstraint(),
   new MigrationConstraint(),
   new ProposalConstraint(),
+  // TEMP SOLUTION: remove once the real asset list migration is prepared or executed on chain. Runs after the
+  // migrations and open proposals, so every scenario starts on the new Configurator and asset list
+  new AssetListMigrationConstraint(),
 ];
 
 export const dynamicConstraints: DynamicConstraint<CometContext, Requirements>[] = [

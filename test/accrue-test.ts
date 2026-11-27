@@ -31,6 +31,7 @@ describe('accrue', function () {
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let dave: SignerWithAddress;
+  let pauseGuardian: SignerWithAddress;
 
   before(async () => {
     const protocol = await makeProtocol(
@@ -45,7 +46,7 @@ describe('accrue', function () {
             decimals: 18,
             borrowCF: exp(0.8, 18),
             liquidateCF: exp(0.95, 18),
-            liquidationFactor: exp(0.95, 18),
+            liquidationFactor: exp(0.96, 18),
           },
         }),
       }
@@ -60,6 +61,7 @@ describe('accrue', function () {
       priceFeeds[asset] = protocol.priceFeeds[asset];
     }
     [alice, bob, dave] = protocol.users;
+    pauseGuardian = protocol.pauseGuardian;
   });
 
   describe('empty position', function () {
@@ -497,6 +499,9 @@ describe('accrue', function () {
     let liquidatedAmount: BigNumber;
 
     before(async function () {
+      // Full liquidation mode: absorb closes the whole debt, which leaves total borrow at 0 as the checks below expect
+      await comet.connect(pauseGuardian).pausePartialLiquidation(true);
+
       // Prepare position for liquidation
       await collaterals.WETH.connect(dave).allocateTo(dave.address, suppliedCollateral);
       await collaterals.WETH.connect(dave).approve(comet.address, suppliedCollateral);
@@ -759,7 +764,7 @@ describe('accrue', function () {
               decimals: 18,
               borrowCF: exp(0.8, 18),
               liquidateCF: exp(0.95, 18),
-              liquidationFactor: exp(0.95, 18),
+              liquidationFactor: exp(0.96, 18),
             },
           }),
         },
@@ -825,7 +830,7 @@ describe('accrue', function () {
               decimals: 18,
               borrowCF: exp(0.8, 18),
               liquidateCF: exp(0.95, 18),
-              liquidationFactor: exp(0.95, 18),
+              liquidationFactor: exp(0.96, 18),
             },
           }),
         },

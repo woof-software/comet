@@ -27,6 +27,7 @@ describe('balance tests', function () {
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let dave: SignerWithAddress;
+  let pauseGuardian: SignerWithAddress;
 
   let snapshot: SnapshotRestorer;
 
@@ -41,7 +42,7 @@ describe('balance tests', function () {
         WETH: {
           decimals: 18,
           borrowCF: exp(0.8, 18),
-          liquidateCF: exp(0.95, 18),
+          liquidateCF: exp(0.94, 18),
           liquidationFactor: exp(0.95, 18),
         },
       }),
@@ -56,6 +57,7 @@ describe('balance tests', function () {
       priceFeeds[asset] = protocol.priceFeeds[asset];
     }
     [alice, bob, dave] = protocol.users;
+    pauseGuardian = protocol.pauseGuardian;
 
     // Seed reserves so borrowing is possible
     await baseToken.allocateTo(comet.address, seedAmount);
@@ -372,7 +374,7 @@ describe('balance tests', function () {
             WETH: {
               decimals: 18,
               borrowCF: exp(0.8, 18),
-              liquidateCF: exp(0.95, 18),
+              liquidateCF: exp(0.94, 18),
               liquidationFactor: exp(0.95, 18),
             },
           }),
@@ -784,6 +786,8 @@ describe('balance tests', function () {
 
         expect(await comet.isLiquidatable(dave.address)).to.equal(true);
 
+        // Full liquidation mode: absorb closes the whole debt
+        await comet.connect(pauseGuardian).pausePartialLiquidation(true);
         await comet.connect(alice).absorb(alice.address, [dave.address]);
 
         expect(await comet.borrowBalanceOf(dave.address)).to.equal(0);
@@ -807,7 +811,7 @@ describe('balance tests', function () {
             WETH: {
               decimals: 18,
               borrowCF: exp(0.8, 18),
-              liquidateCF: exp(0.95, 18),
+              liquidateCF: exp(0.94, 18),
               liquidationFactor: exp(0.95, 18),
             },
           }),

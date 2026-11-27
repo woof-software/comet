@@ -10,6 +10,7 @@
   "storeFrontPriceFactor": 0.7,
   "targetReserves": "250e8",
   "maxSupportedUtilization": "2e18",
+  "targetHealthFactor": 1.05,
   "rates": {
     "borrowBase": 0.01,
     "borrowSlopeLow": 0.014,

@@ -184,7 +184,7 @@ async function asyncCallWithTimeout(asyncPromise: Promise<any>, timeLimit: numbe
   });
 }
 
-export async function runScenarios(bases: ForkSpec[], glob: string = 'scenario/**.ts', output?: string) {
+export async function runScenarios(bases: ForkSpec[], glob: string = 'scenario/**/*.ts', output?: string) {
   const loader = await Loader.load(glob);
   const [runningScenarios, skippedScenarios] = loader.splitScenarios();
 

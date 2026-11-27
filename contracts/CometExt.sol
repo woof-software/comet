@@ -66,7 +66,6 @@ contract CometExt is CometExtInterface {
     function baseIndexScale() override external pure returns (uint64) { return BASE_INDEX_SCALE; }
     function factorScale() override external pure returns (uint64) { return FACTOR_SCALE; }
     function priceScale() override external pure returns (uint64) { return PRICE_SCALE; }
-    function maxAssets() override virtual external pure returns (uint8) { return MAX_ASSETS; }
 
     /**
      * @notice Aggregate variables tracked for the entire market
@@ -380,6 +379,17 @@ contract CometExt is CometExtInterface {
         paused ? collateralsTransferPauseFlags |= (uint24(1) << assetIndex) : collateralsTransferPauseFlags &= ~(uint24(1) << assetIndex);
 
         emit CollateralAssetTransferPauseAction(assetIndex, paused);
+    }
+
+    /**
+     * @inheritdoc CometExtInterface
+     */
+    function pausePartialLiquidation(bool paused) override external onlyGovernorOrPauseGuardian {
+        if (currentPauseOffsetStatus(PAUSE_PARTIAL_LIQUIDATION_OFFSET) == paused) revert OffsetStatusAlreadySet(PAUSE_PARTIAL_LIQUIDATION_OFFSET, paused);
+
+        setPauseFlag(PAUSE_PARTIAL_LIQUIDATION_OFFSET, paused);
+
+        emit PartialLiquidationPauseAction(paused);
     }
 
     /**

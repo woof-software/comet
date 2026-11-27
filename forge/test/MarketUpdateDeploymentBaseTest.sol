@@ -3,7 +3,11 @@ pragma solidity ^0.8.15;
 import "@forge-std/src/Vm.sol";
 import "@comet-contracts/bridges/arbitrum/ArbitrumBridgeReceiver.sol";
 import "@comet-contracts/marketupdates/MarketAdminPermissionChecker.sol";
-import "@comet-contracts/CometFactoryWithExtendedAssetList.sol";
+import "@comet-contracts/CometWithExtendedAssetList.sol";
+import "@comet-contracts/AssetList.sol";
+import "@comet-contracts/test/assetList/AssetListFactory.sol";
+import "@comet-contracts/test/CometFactoryWithExtendedAssetList.sol";
+import "@comet-contracts/migration/ConfiguratorIntermediateOptimism.sol";
 import "../script/marketupdates/helpers/GovernanceHelper.sol";
 import "../script/marketupdates/helpers/MarketUpdateAddresses.sol";
 import "../script/marketupdates/helpers/ChainAddresses.sol";
@@ -13,6 +17,10 @@ import "@forge-std/src/console.sol";
 import "forge-std/Test.sol";
 
 abstract contract MarketUpdateDeploymentBaseTest is Test {
+
+    /// @dev The target health factor every moved market is given. The live Configuration has no such field, so it
+    ///      reads as zero, and a zero target makes the Comet constructor revert with BadHealthFactor
+    uint64 internal constant TARGET_HEALTH_FACTOR = 1.05e18;
 
     IGovernorBravo public governorBravo = IGovernorBravo(MarketUpdateAddresses.GOVERNOR_BRAVO_PROXY_ADDRESS);
 
@@ -119,12 +127,49 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         return deployedContracts;
     }
 
-    // The factory already deployed on chain expects the old Configuration struct, so the new
-    // Configurator cannot deploy through it. Point the market at a factory built from the current code.
-    function setNewFactory(Vm vm, address configuratorProxy, address cometProxy) internal {
-        address newFactory = address(new CometFactoryWithExtendedAssetList());
-        vm.prank(Configurator(configuratorProxy).governor());
-        Configurator(configuratorProxy).setFactory(cometProxy, newFactory);
+    // The live Configurator and Comets predate the asset list, so a market is moved onto it before it is redeployed:
+    // its asset configs are migrated out of the Configuration, then it gets an asset list proxy owned by the new
+    // proxy admin and a factory that builds Comets on that list
+    function moveMarketToAssetList(
+        address configuratorProxy,
+        address cometProxy,
+        MarketUpdateContractsDeployer.DeployedContracts memory deployedContracts
+    ) internal {
+        CometProxyAdminOptimism proxyAdmin = CometProxyAdminOptimism(deployedContracts.newCometProxyAdmin);
+        ConfiguratorOptimism configurator = ConfiguratorOptimism(configuratorProxy);
+        address proxyAdminOwner = proxyAdmin.owner();
+        address governor = configurator.governor();
+        address[] memory comets = new address[](1);
+        comets[0] = cometProxy;
+
+        address intermediate = address(new ConfiguratorIntermediateOptimism());
+        vm.prank(proxyAdminOwner);
+        proxyAdmin.upgrade(TransparentUpgradeableProxy(payable(configuratorProxy)), intermediate);
+        vm.prank(governor);
+        ConfiguratorIntermediateOptimism(configuratorProxy).migrateAssetConfig(comets);
+        vm.prank(proxyAdminOwner);
+        proxyAdmin.upgrade(TransparentUpgradeableProxy(payable(configuratorProxy)), deployedContracts.newConfiguratorImplementation);
+
+        address assetListFactory = address(new AssetListFactory(address(configurator)));
+        address cometFactory = address(new CometFactoryWithExtendedAssetList());
+
+        vm.startPrank(governor);
+        configurator.setAssetListFactory(cometProxy, assetListFactory);
+        // The market has no list yet and deployAssetList only redeploys an existing one, so the first implementation
+        // comes straight from the factory
+        address assetListImpl = AssetListFactory(assetListFactory).createAssetList(configurator.getImmutableAssetConfig(cometProxy));
+        address assetList = address(new TransparentUpgradeableProxy(
+            assetListImpl,
+            address(proxyAdmin),
+            abi.encodeCall(AssetList.initialize, (configurator.getStorageAssetConfig(cometProxy)))
+        ));
+        // setConfiguration sets the list proxy once, for a market that has none yet
+        ConfiguratorOptimism.Configuration memory configuration = configurator.getConfiguration(cometProxy);
+        configuration.assetList = assetList;
+        configurator.setConfiguration(cometProxy, configuration);
+        configurator.setFactory(cometProxy, cometFactory);
+        configurator.setTargetHealthFactor(cometProxy, TARGET_HEALTH_FACTOR);
+        vm.stopPrank();
     }
 
     function updateAndVerifySupplyKink(
@@ -140,9 +185,9 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
         uint256 oldSupplyKinkBeforeGovernorUpdate = CometWithExtendedAssetList(payable(cometProxy)).supplyKink();
         uint256 newSupplyKinkByGovernorTimelock = 300000000000000000;
 
-        assertEq(MarketAdminPermissionChecker(deployedContracts.marketAdminPermissionChecker).marketAdmin(), deployedContracts.marketUpdateTimelock);
+        moveMarketToAssetList(configuratorProxy, cometProxy, deployedContracts);
 
-        setNewFactory(vm, configuratorProxy, cometProxy);
+        assertEq(MarketAdminPermissionChecker(deployedContracts.marketAdminPermissionChecker).marketAdmin(), deployedContracts.marketUpdateTimelock);
 
         address[] memory targets = new address[](2);
         uint256[] memory values = new uint256[](2);
@@ -205,10 +250,8 @@ abstract contract MarketUpdateDeploymentBaseTest is Test {
 
         assert(oldSupplyKinkBeforeGovernorUpdate != newSupplyKinkByGovernorTimelock);
 
-        // Optimism keeps the Configurator already deployed on chain, which still works with the old factory
-        if (chain != ChainAddresses.Chain.OPTIMISM) {
-            setNewFactory(vm, configuratorProxy, cometProxy);
-        }
+        // Optimism runs on the contracts already deployed there, which predate the asset list
+        if (chain != ChainAddresses.Chain.OPTIMISM) moveMarketToAssetList(configuratorProxy, cometProxy, deployedContracts);
 
         address[] memory targets = new address[](2);
         uint256[] memory values = new uint256[](2);

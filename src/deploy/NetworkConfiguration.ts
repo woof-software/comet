@@ -1,4 +1,4 @@
-import { AssetConfigStruct } from '../../build/types/CometWithExtendedAssetList';
+import { AssetConfigStruct } from '../../build/types/Configurator';
 import { ConfigurationStruct } from '../../build/types/Configurator';
 import { ProtocolConfiguration } from './index';
 import { ContractMap } from '../../plugins/deployment_manager/ContractMap';
@@ -75,7 +75,6 @@ interface NetworkTrackingConfiguration {
 interface NetworkAssetConfiguration {
   address?: string;
   priceFeed: string;
-  decimals: number;
   borrowCF: number;
   liquidateCF: number;
   liquidationFactor: number;
@@ -94,6 +93,7 @@ export interface NetworkConfiguration {
   storeFrontPriceFactor: number;
   targetReserves: ScientificNotation;
   maxSupportedUtilization: ScientificNotation;
+  targetHealthFactor: number;
   rates: NetworkRateConfiguration;
   tracking: NetworkTrackingConfiguration;
   assets: { [name: string]: NetworkAssetConfiguration };
@@ -121,7 +121,6 @@ function getAssetConfigs(
   return Object.entries(assets).map(([assetName, assetConfig]) => ({
     asset: getContractAddress(assetName, contracts, assetConfig.address),
     priceFeed: getContractAddress(`${assetName}:priceFeed`, contracts, assetConfig.priceFeed),
-    decimals: number(assetConfig.decimals),
     borrowCollateralFactor: percentage(assetConfig.borrowCF),
     liquidateCollateralFactor: percentage(assetConfig.liquidateCF),
     liquidationFactor: percentage(assetConfig.liquidationFactor),
@@ -161,6 +160,7 @@ function getOverridesOrConfig(
     storeFrontPriceFactor: _ => percentage(config.storeFrontPriceFactor),
     targetReserves: _ => stringToBigInt(config.targetReserves),
     maxSupportedUtilization: _ => stringToBigInt(config.maxSupportedUtilization),
+    targetHealthFactor: _ => percentage(config.targetHealthFactor, false),
     ...interestRateInfoMapping(config.rates),
     ...trackingInfoMapping(config.tracking),
     assetConfigs: _ => getAssetConfigs(config.assets, contracts),
