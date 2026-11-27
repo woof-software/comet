@@ -29,4 +29,6 @@ interface IConfiguratorErrors {
 
     /// @dev The caller is not allowed to call this function
     error Unauthorized();
+
+    error ZeroCometProxyAddress();
 }

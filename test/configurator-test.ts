@@ -126,6 +126,11 @@ describe('configurator', function () {
         expect(alice.address).to.not.equal(governor.address);
         await expect(configuratorProxy.connect(alice).setFactory(cometProxy.address, ethers.constants.AddressZero)).to.be.revertedWithCustomError(configurator, 'Unauthorized');
       });
+
+      it('reverts if comet proxy is zero address', async () => {
+        await expect(configuratorProxy.connect(governor).setFactory(ZERO_ADDRESS, newFactory.address))
+          .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+      });
     });
 
     describe('happy path', function() {
@@ -200,7 +205,7 @@ describe('configurator', function () {
 
       it('reverts if comet proxy is zero address', async () => {
         await expect(configuratorProxy.connect(governor).setAssetListFactory(ZERO_ADDRESS, newAssetListFactory))
-          .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
+          .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
       });
     });
 
@@ -261,6 +266,11 @@ describe('configurator', function () {
 
         await expect(configuratorProxy.connect(governor).setConfiguration(newMarket, { ...oldConfiguration, assetList: ZERO_ADDRESS }))
           .to.be.revertedWithCustomError(configurator, 'InvalidAddress');
+      });
+
+      it('reverts if comet proxy is zero address', async () => {
+        await expect(configuratorProxy.connect(governor).setConfiguration(ZERO_ADDRESS, newConfiguration))
+          .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
       });
     });
 
@@ -429,6 +439,11 @@ describe('configurator', function () {
         // Reverts with "Error: Transaction reverted without a reason string"
         await expect(configuratorProxy.deploy(randomAddr)).to.be.reverted;
       });
+
+      it('reverts if comet proxy is zero address', async () => {
+        await expect(configuratorProxy.deploy(ZERO_ADDRESS))
+          .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+      });
     });
   });
 
@@ -478,6 +493,11 @@ describe('configurator', function () {
 
         // The proxy admin has no createAssetList and no fallback, so the call reverts with empty revert data
         await expect(configuratorProxy.deployAssetList(market)).to.be.revertedWithoutReason();
+      });
+
+      it('reverts if comet proxy is zero address', async () => {
+        await expect(configuratorProxy.deployAssetList(ZERO_ADDRESS))
+          .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
       });
     });
 
@@ -616,6 +636,11 @@ describe('configurator', function () {
           await expect(configuratorProxy.connect(alice).setGovernor(cometProxy.address, newCometGovernor.address))
             .to.be.revertedWithCustomError(configurator, 'Unauthorized');
         });
+
+        it('reverts if comet proxy is zero address', async () => {
+          await expect(configuratorProxy.connect(governor).setGovernor(ZERO_ADDRESS, newCometGovernor.address))
+            .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+        });
       });
 
       describe('happy path', function() {
@@ -699,6 +724,11 @@ describe('configurator', function () {
           newPauseGuardian = (await ethers.getSigners())[6];
           await expect(configuratorProxy.connect(alice).setPauseGuardian(cometProxy.address, newPauseGuardian.address))
             .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+
+        it('reverts if comet proxy is zero address', async () => {
+          await expect(configuratorProxy.connect(governor).setPauseGuardian(ZERO_ADDRESS, newPauseGuardian.address))
+            .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
         });
       });
 
@@ -807,6 +837,11 @@ describe('configurator', function () {
           await expect(configuratorProxy.connect(alice).setBaseTokenPriceFeed(cometProxy.address, newPriceFeed.address))
             .to.be.revertedWithCustomError(configurator, 'Unauthorized');
         });
+
+        it('reverts if comet proxy is zero address', async () => {
+          await expect(configuratorProxy.connect(governor).setBaseTokenPriceFeed(ZERO_ADDRESS, newPriceFeed.address))
+            .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+        });
       });
 
       describe('edge cases', function() {
@@ -866,6 +901,11 @@ describe('configurator', function () {
           await expect(configuratorProxy.connect(alice).setExtensionDelegate(cometProxy.address, newExtensionDelegate.address))
             .to.be.revertedWithCustomError(configurator, 'Unauthorized');
         });
+
+        it('reverts if comet proxy is zero address', async () => {
+          await expect(configuratorProxy.connect(governor).setExtensionDelegate(ZERO_ADDRESS, newExtensionDelegate.address))
+            .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+        });
       });
 
       describe('edge cases', function() {
@@ -919,6 +959,11 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(alice).setSupplyKink(cometProxy.address, exp(0.7, 18)))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
           });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setSupplyKink(ZERO_ADDRESS, exp(0.7, 18)))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+          });
         });
 
         describe('edge cases', function() {
@@ -969,6 +1014,11 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).setSupplyPerYearInterestRateSlopeLow(cometProxy.address, NEW_SLOPE_LOW))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setSupplyPerYearInterestRateSlopeLow(ZERO_ADDRESS, NEW_SLOPE_LOW))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
           });
         });
 
@@ -1022,6 +1072,11 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(alice).setSupplyPerYearInterestRateSlopeHigh(cometProxy.address, NEW_SLOPE_HIGH))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
           });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setSupplyPerYearInterestRateSlopeHigh(ZERO_ADDRESS, NEW_SLOPE_HIGH))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+          });
         });
 
         describe('edge cases', function() {
@@ -1073,6 +1128,11 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).setSupplyPerYearInterestRateBase(cometProxy.address, NEW_BASE))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setSupplyPerYearInterestRateBase(ZERO_ADDRESS, NEW_BASE))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
           });
         });
 
@@ -1126,6 +1186,11 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(alice).setBorrowKink(cometProxy.address, NEW_BORROW_KINK))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
           });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setBorrowKink(ZERO_ADDRESS, NEW_BORROW_KINK))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+          });
         });
 
         describe('edge cases', function() {
@@ -1176,6 +1241,11 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).setBorrowPerYearInterestRateSlopeLow(cometProxy.address, NEW_SLOPE_LOW))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setBorrowPerYearInterestRateSlopeLow(ZERO_ADDRESS, NEW_SLOPE_LOW))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
           });
         });
 
@@ -1229,6 +1299,11 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(alice).setBorrowPerYearInterestRateSlopeHigh(cometProxy.address, NEW_SLOPE_HIGH))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
           });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setBorrowPerYearInterestRateSlopeHigh(ZERO_ADDRESS, NEW_SLOPE_HIGH))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+          });
         });
 
         describe('edge cases', function() {
@@ -1280,6 +1355,11 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).setBorrowPerYearInterestRateBase(cometProxy.address, NEW_BASE))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setBorrowPerYearInterestRateBase(ZERO_ADDRESS, NEW_BASE))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
           });
         });
 
@@ -1334,6 +1414,11 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).setStoreFrontPriceFactor(cometProxy.address, NEW_STORE_FRONT_PRICE_FACTOR))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setStoreFrontPriceFactor(ZERO_ADDRESS, NEW_STORE_FRONT_PRICE_FACTOR))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
           });
         });
 
@@ -1390,6 +1475,11 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(alice).setBaseTrackingSupplySpeed(cometProxy.address, NEW_BASE_TRACKING_SUPPLY_SPEED))
               .to.be.reverted;
           });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setBaseTrackingSupplySpeed(ZERO_ADDRESS, NEW_BASE_TRACKING_SUPPLY_SPEED))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+          });
         });
 
         describe('edge cases', function() {
@@ -1442,6 +1532,11 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).setBaseTrackingBorrowSpeed(cometProxy.address, NEW_BASE_TRACKING_BORROW_SPEED))
               .to.be.reverted;
+          });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setBaseTrackingBorrowSpeed(ZERO_ADDRESS, NEW_BASE_TRACKING_BORROW_SPEED))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
           });
         });
 
@@ -1496,6 +1591,11 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(alice).setBaseMinForRewards(cometProxy.address, NEW_BASE_MIN_FOR_REWARDS))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
           });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setBaseMinForRewards(ZERO_ADDRESS, NEW_BASE_MIN_FOR_REWARDS))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+          });
         });
 
         describe('edge cases', function() {
@@ -1547,6 +1647,11 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).setBaseBorrowMin(cometProxy.address, NEW_BASE_BORROW_MIN))
               .to.be.reverted;
+          });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setBaseBorrowMin(ZERO_ADDRESS, NEW_BASE_BORROW_MIN))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
           });
         });
 
@@ -1600,6 +1705,11 @@ describe('configurator', function () {
           it('reverts by non-governor', async () => {
             await expect(configuratorProxy.connect(alice).setTargetReserves(cometProxy.address, NEW_TARGET_RESERVES))
               .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+          });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).setTargetReserves(ZERO_ADDRESS, NEW_TARGET_RESERVES))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
           });
         });
 
@@ -1660,6 +1770,11 @@ describe('configurator', function () {
         it('reverts by non-governor and non-market admin', async () => {
           await expect(configuratorProxy.connect(alice).setMaxSupportedUtilization(cometProxy.address, NEW_MAX_SUPPORTED_UTILIZATION))
             .to.be.revertedWithCustomError(configurator, 'Unauthorized');
+        });
+
+        it('reverts if comet proxy is zero address', async () => {
+          await expect(configuratorProxy.connect(governor).setMaxSupportedUtilization(ZERO_ADDRESS, NEW_MAX_SUPPORTED_UTILIZATION))
+            .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
         });
       });
 
@@ -1728,6 +1843,11 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(governor).updateAssetPriceFeed(cometProxy.address, alice.address, newPriceFeed.address))
               .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
           });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).updateAssetPriceFeed(ZERO_ADDRESS, firstAsset.asset, newPriceFeed.address))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+          });
         });
 
         describe('happy path', function() {
@@ -1777,6 +1897,11 @@ describe('configurator', function () {
           it('reverts if the asset does not exist', async () => {
             await expect(configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor(cometProxy.address, alice.address, NEW_BORROW_CF))
               .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+          });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).updateAssetBorrowCollateralFactor(ZERO_ADDRESS, firstAsset.asset, NEW_BORROW_CF))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
           });
         });
 
@@ -1890,6 +2015,11 @@ describe('configurator', function () {
           it('reverts if the asset does not exist', async () => {
             await expect(configuratorProxy.connect(governor).updateAssetLiquidateCollateralFactor(cometProxy.address, alice.address, NEW_LIQUIDATE_CF))
               .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+          });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).updateAssetLiquidateCollateralFactor(ZERO_ADDRESS, firstAsset.asset, NEW_LIQUIDATE_CF))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
           });
         });
 
@@ -2005,6 +2135,11 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(governor).updateAssetLiquidationFactor(cometProxy.address, alice.address, NEW_LIQUIDATION_FACTOR))
               .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
           });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).updateAssetLiquidationFactor(ZERO_ADDRESS, firstAsset.asset, NEW_LIQUIDATION_FACTOR))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+          });
         });
 
         describe('edge cases', function() {
@@ -2117,6 +2252,11 @@ describe('configurator', function () {
           it('reverts if the asset does not exist', async () => {
             await expect(configuratorProxy.connect(governor).updateAssetSupplyCap(cometProxy.address, alice.address, NEW_SUPPLY_CAP))
               .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+          });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).updateAssetSupplyCap(ZERO_ADDRESS, firstAsset.asset, NEW_SUPPLY_CAP))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
           });
         });
 
@@ -2245,6 +2385,11 @@ describe('configurator', function () {
             await expect(configuratorProxy.connect(governor).addAsset(cometProxy.address, lastAssetConfig))
               .to.be.revertedWithCustomError(configurator, 'AssetAlreadyExists');
           });
+
+          it('reverts if comet proxy is zero address', async () => {
+            await expect(configuratorProxy.connect(governor).addAsset(ZERO_ADDRESS, newAssetConfig))
+              .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
+          });
         });
 
         describe('happy path', function() {
@@ -2300,6 +2445,12 @@ describe('configurator', function () {
         it('reverts with AssetDoesNotExist for random address', async () => {
           await expect(configuratorProxy.getAssetIndex(cometProxy.address, alice.address))
             .to.be.revertedWithCustomError(configurator, 'AssetDoesNotExist');
+        });
+
+        it('reverts if comet proxy is zero address', async () => {
+          const firstAssetAddr = (await configuratorProxy.getAssetConfigs(cometProxy.address))[0].asset;
+          await expect(configuratorProxy.getAssetIndex(ZERO_ADDRESS, firstAssetAddr))
+            .to.be.revertedWithCustomError(configurator, 'ZeroCometProxyAddress');
         });
       });
 
