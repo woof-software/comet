@@ -15,7 +15,6 @@ import {
   PriceConstraint,
   ReservesConstraint
 } from '../constraints';
-import { ForceAssetListMigrationConstraint } from '../constraints/ForceAssetListMigrationConstraint'; // TEMP SOLUTION
 import CometActor from './CometActor';
 import CometAsset from './CometAsset';
 import {
@@ -450,7 +449,6 @@ export const staticConstraints: StaticConstraint<CometContext>[] = [
   new NativeTokenConstraint(),
   new MigrationConstraint(),
   new ProposalConstraint(),
-  new ForceAssetListMigrationConstraint(), // TEMP SOLUTION
 ];
 
 export const dynamicConstraints: DynamicConstraint<CometContext, Requirements>[] = [
