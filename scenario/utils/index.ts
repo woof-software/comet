@@ -2095,19 +2095,33 @@ export async function getMinimumBorrowAmounts(context: CometContext, collateralI
 }
 
 // TEMP SOLUTION: remove as soon as the real asset list migration is prepared or executed on chain.
-// Moves a live market from the V1 Configurator to the asset list, the same steps as the migration scenario but called
-// directly by the governor instead of through proposals: the Configurator is upgraded through the intermediate
-// version that migrates the asset configs, an asset list factory and an asset list are deployed, and the Comet is
-// rebuilt on the list. The new contracts are deployed under the aliases deployComet reads, so that a following
-// deployComet finds them and does not roll the Configurator back to the old implementation
+// Moves a live market from the V1 Configurator to the asset list, the same steps as
+// forge/test/upgrades/ProtocolUpgradeFork.t.sol but called directly by the governor instead of through proposals:
+//  - the live proxy admin can't deploy or upgrade asset lists, so the Configurator and the Comet move to a new one
+//  - the Configurator is upgraded through the intermediate version that migrates the asset configs
+//  - an asset list factory and an asset list are deployed, and the Comet is rebuilt on the list
+//  - the live extension predates the extended pause functions, so the Comet gets a new one
+//  - V1 has no maxSupportedUtilization, which reads as zero after the migration and blocks every borrow
+// The new contracts are deployed under the aliases deployComet and the spider read, and the deployment is crawled again
+// at the end, so every contract the scenarios get (configurator, cometAdmin, comet) has the new address and ABI
 export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAddress) {
   const dm = ctx.world.deploymentManager;
   const ethers = dm.hre.ethers;
   const comet = await ctx.getComet();
-  const configurator = (await ethers.getContractAt('Configurator', (await ctx.getConfigurator()).address, admin)) as Configurator;
-  const proxyAdmin = (await ethers.getContractAt('CometProxyAdmin', (await ctx.getCometAdmin()).address, admin)) as CometProxyAdmin;
+  const configuratorAddress = (await ctx.getConfigurator()).address;
+  const configurator = (await ethers.getContractAt('Configurator', configuratorAddress, admin)) as Configurator;
 
-  // A Configurator that stores the market admin permission checker has its own storage layout, so its own versions
+  // The live proxy admins of the Comet and of the Configurator, read from their EIP-1967 admin slots
+  const adminSlot = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
+  const adminOf = async (proxy: string) => (await ethers.getContractAt(
+    'CometProxyAdmin',
+    utils.getAddress('0x' + (await ethers.provider.getStorageAt(proxy, adminSlot)).slice(26)),
+  )) as CometProxyAdmin;
+  const oldCometAdmin = await adminOf(comet.address);
+  const oldConfiguratorAdmin = await adminOf(configurator.address);
+  const proxyAdminOwner = await ctx.world.impersonateAddress(await oldCometAdmin.owner(), { value: exp(1, 18) });
+
+  // A Configurator that stores the market admin permission checker has its own storage layout and proxy admin
   const withMarketAdmin = await supportsMarketAdminPermissionChecker(ctx);
   const configuratorIntermediate = await dm.deploy(
     'test:configuratorIntermediate',
@@ -2121,22 +2135,45 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
     [],
     true
   );
+  const proxyAdmin = (await dm.deploy(
+    'cometAdmin',
+    withMarketAdmin ? 'marketupdates/CometProxyAdminOptimism.sol' : 'CometProxyAdmin.sol',
+    [proxyAdminOwner.address],
+    true
+  )).connect(proxyAdminOwner) as CometProxyAdmin;
+  const cometExt = await dm.deploy(
+    'comet:implementation:implementation',
+    'CometExt.sol',
+    [{
+      name32: utils.formatBytes32String(await comet.name()),
+      symbol32: utils.formatBytes32String(await comet.symbol()),
+    }],
+    true
+  );
   const assetListFactory = await dm.deploy('assetListFactory', 'test/assetList/AssetListFactory.sol', [configurator.address], true);
   const cometFactory = await dm.deploy('cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], true);
 
-  // The Configurator proxy is upgraded by its own admin, read from the EIP-1967 admin slot
-  const adminSlot = '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
-  const configuratorAdmin = proxyAdmin.attach(
-    utils.getAddress('0x' + (await ethers.provider.getStorageAt(configurator.address, adminSlot)).slice(26))
-  );
-  const intermediate = await ethers.getContractAt('ConfiguratorIntermediate', configurator.address, admin);
+  // The new proxy admin keeps the live market admin permission checker
+  if (withMarketAdmin) {
+    const oldAdminOptimism = await ethers.getContractAt('CometProxyAdminOptimism', oldCometAdmin.address);
+    const newAdminOptimism = await ethers.getContractAt('CometProxyAdminOptimism', proxyAdmin.address, proxyAdminOwner);
+    await newAdminOptimism.setMarketAdminPermissionChecker(await oldAdminOptimism.marketAdminPermissionChecker());
+  }
 
-  await configuratorAdmin.upgrade(configurator.address, configuratorIntermediate.address);
+  // The Configurator and the Comet move to the new proxy admin, each from its own live one
+  const configuratorAdminOwner = await ctx.world.impersonateAddress(await oldConfiguratorAdmin.owner(), { value: exp(1, 18) });
+  await oldConfiguratorAdmin.connect(configuratorAdminOwner).changeProxyAdmin(configurator.address, proxyAdmin.address);
+  await oldCometAdmin.connect(proxyAdminOwner).changeProxyAdmin(comet.address, proxyAdmin.address);
+
+  // Move the asset configs out of the Configuration into their own mapping, then switch to the final Configurator
+  const intermediate = await ethers.getContractAt('ConfiguratorIntermediate', configurator.address, admin);
+  await proxyAdmin.upgrade(configurator.address, configuratorIntermediate.address);
   await intermediate.migrateAssetConfig([comet.address]);
-  await configuratorAdmin.upgrade(configurator.address, configuratorImplementation.address);
+  await proxyAdmin.upgrade(configurator.address, configuratorImplementation.address);
   await configurator.setAssetListFactory(comet.address, assetListFactory.address);
 
-  // The list is built from the immutable part of the migrated configs, and its proxy keeps the factors and caps
+  // The list is built from the immutable part of the migrated configs, and its proxy, owned by the new proxy admin so
+  // later deploys can upgrade it, keeps the factors and caps
   const assetListImplementation = (await dm.deploy(
     'assetList:implementation',
     'AssetList.sol',
@@ -2158,9 +2195,21 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
 
   // setConfiguration sets the list proxy once, for a market that has none yet
   const configuration = await configurator.getConfiguration(comet.address);
-  await configurator.setConfiguration(comet.address, { ...configuration, assetList: assetListProxy.address });
+  await configurator.setConfiguration(comet.address, {
+    ...configuration,
+    assetList: assetListProxy.address,
+    extensionDelegate: cometExt.address,
+  });
   await configurator.setFactory(comet.address, cometFactory.address);
+  if (configuration.maxSupportedUtilization.isZero()) {
+    await configurator.setMaxSupportedUtilization(comet.address, exp(2, 18));
+  }
   await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
+
+  // The cached configurator, cometAdmin and comet still carry the V1 addresses and ABIs, crawl them again.
+  // The deploy script run at world setup left cometFactory as a spider root pointing to the live factory, so the new
+  // one replaces it there, or the crawl finds two factories
+  await dm.spider({ cometFactory });
 }
 
 // The token of a collateral, which the asset list reads the decimals from
