@@ -1,5 +1,7 @@
 import { task } from 'hardhat/config';
-import { Migration, loadMigrations } from '../../plugins/deployment_manager/Migration';
+import { resolve } from 'path';
+import { Migration, loadMigration } from '../../plugins/deployment_manager/Migration';
+import { readMigrationRegistry } from '../../plugins/deployment_manager/MigrationRegistry';
 import { writeEnacted } from '../../plugins/deployment_manager/Enacted';
 import { HardhatRuntimeEnvironment, HardhatConfig } from 'hardhat/types';
 import { DeploymentManager, VerifyArgs } from '../../plugins/deployment_manager';
@@ -21,6 +23,36 @@ function getDefaultDeployment(config: HardhatConfig, network: string): string {
     throw new Error(`No bases for ${network}`);
   }
   return base.deployment;
+}
+
+async function loadTaskMigration(network: string, deployment: string, name: string, enact: boolean) {
+  const directory = resolve(__dirname, '../../deployments', network, deployment);
+  const entry = enact ? (await readMigrationRegistry(resolve(directory, 'migrations.json'))).get(name) : undefined;
+  if (entry && entry.status !== 'pending') {
+    const message = `Migration ${name}: ${entry.status}${entry.proposalId ? ` (proposal ${entry.proposalId})` : ''}`;
+    if (['proposed', 'queued', 'pending-l2', 'executed'].includes(entry.status)) {
+      console.log(message);
+      return;
+    }
+    throw new Error(`${message}. Review the migration before enacting it again.`);
+  }
+
+  return { migration: await loadMigration(resolve(directory, 'migrations', `${name}.ts`)), entry };
+}
+
+async function checkLegacyEnacted(
+  loaded: NonNullable<Awaited<ReturnType<typeof loadTaskMigration>>>,
+  dm: DeploymentManager,
+  govDm: DeploymentManager,
+  enact: boolean,
+  simulate: boolean
+): Promise<void> {
+  const { migration, entry } = loaded;
+  // Until the registry has a writer, a real enact can set the legacy marker while the entry is still pending.
+  if (enact && (!entry || !simulate) && await migration.actions.enacted?.(dm, govDm)) {
+    const detail = entry ? ' The registry still says pending. Review the existing submission.' : '';
+    throw new Error(`Migration ${migration.name} is already marked as enacted.${detail}`);
+  }
 }
 
 async function runMigration<T>(
@@ -214,12 +246,12 @@ task('migrate', 'Runs migration')
       },
       env
     ) => {
-      const origNetwork = env.network.name;
+      const network = env.network.name;
+      const loaded = await loadTaskMigration(network, deployment, migrationName, enact);
+      if (!loaded) return;
+      const { migration } = loaded;
 
       const maybeForkEnv = simulate ? await getForkEnv(env, deployment) : env;
-
-
-      const network = origNetwork;
       const dm = new DeploymentManager(
         network,
         deployment,
@@ -269,19 +301,14 @@ task('migrate', 'Runs migration')
         governanceDm.setVerificationStrategy('lazy');
       }
 
-      const migrationPath = `${__dirname}/../../deployments/${network}/${deployment}/migrations/${migrationName}.ts`;
-      console.log(`Loading migration from ${migrationPath}`);
-      const [migration] = await loadMigrations([migrationPath]);
-      if (!migration) {
-        throw new Error(`Unknown migration for network ${network}/${deployment}: \`${migrationName}\`.`);
-      }
+      await checkLegacyEnacted(loaded, dm, governanceDm, enact, simulate);
       if (!prepare && !enact) {
         prepare = true;
       }
 
       await runMigration(dm, governanceDm, prepare, enact, migration, overwrite, tenderly, tenderlyVnet);
 
-      if (enact && !noEnacted) {
+      if (enact && !simulate && !noEnacted) {
         await writeEnacted(migration, dm, true);
       }
     }
@@ -301,8 +328,12 @@ task('deploy_and_migrate', 'Runs deploy and migration')
   .addParam('deployment', 'The deployment to deploy')
   .setAction(
     async ({ migration: migrationName, prepare, enact, noEnacted, simulate, overwrite, deployment, impersonate, noDeploy, noVerify, noVerifyImpl }, env) => {
-      const maybeForkEnv = simulate ? await getForkEnv(env, deployment) : env;
       const network = env.network.name;
+      const loaded = await loadTaskMigration(network, deployment, migrationName, enact);
+      if (!loaded) return;
+      const { migration } = loaded;
+
+      const maybeForkEnv = simulate ? await getForkEnv(env, deployment) : env;
       const tag = `${network}/${deployment}`;
       const dm = new DeploymentManager(
         network,
@@ -313,6 +344,18 @@ task('deploy_and_migrate', 'Runs deploy and migration')
           verificationStrategy: simulate? 'lazy' : 'eager',
         }
       );
+
+      const base = env.config.scenario.bases.find(b => b.network === network && b.deployment === deployment);
+      const governanceBase = base.auxiliaryBase === undefined
+        ? undefined
+        : env.config.scenario.bases.find(b => b.name === base.auxiliaryBase);
+      const governanceDm = governanceBase
+        ? new DeploymentManager(governanceBase.network, governanceBase.deployment, await hreForBase(governanceBase, simulate), {
+          writeCacheToDisk: !simulate || overwrite,
+          verificationStrategy: 'eager',
+        })
+        : dm;
+      await checkLegacyEnacted(loaded, dm, governanceDm, enact, simulate);
 
       if (noDeploy) {
         // Don't run the deploy script
@@ -363,26 +406,7 @@ task('deploy_and_migrate', 'Runs deploy and migration')
       }
       await dm.spider();
 
-      let governanceDm: DeploymentManager;
-      const base = env.config.scenario.bases.find(b => b.network === network && b.deployment === deployment);
-      const isBridgedDeployment = base.auxiliaryBase !== undefined;
-      const governanceBase = isBridgedDeployment ? env.config.scenario.bases.find(b => b.name === base.auxiliaryBase) : undefined;
-
-      if (governanceBase) {
-        const governanceEnv = await hreForBase(governanceBase, simulate);
-        governanceDm = new DeploymentManager(
-          governanceBase.network,
-          governanceBase.deployment,
-          governanceEnv,
-          {
-            writeCacheToDisk: !simulate || overwrite, // Don't write to disk when simulating, unless overwrite is set
-            verificationStrategy: 'eager', // We use eager here to verify contracts right after they are deployed
-          }
-        );
-        await governanceDm.spider();
-      } else {
-        governanceDm = dm;
-      }
+      if (governanceBase) await governanceDm.spider();
 
       migrationStarted();
       if (impersonate && !simulate) {
@@ -392,18 +416,13 @@ task('deploy_and_migrate', 'Runs deploy and migration')
         governanceDm._signers.unshift(signer);
       }
 
-      const migrationPath = `${__dirname}/../../deployments/${network}/${deployment}/migrations/${migrationName}.ts`;
-      const [migration] = await loadMigrations([migrationPath]);
-      if (!migration) {
-        throw new Error(`Unknown migration for network ${network}/${deployment}: \`${migrationName}\`.`);
-      }
       if (!prepare && !enact) {
         prepare = true;
       }
 
       await runMigration(dm, governanceDm, prepare, enact, migration, overwrite);
 
-      if (enact && !noEnacted) {
+      if (enact && !simulate && !noEnacted) {
         await writeEnacted(migration, dm, true);
       }
 

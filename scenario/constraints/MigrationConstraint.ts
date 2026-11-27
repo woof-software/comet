@@ -1,21 +1,35 @@
 import { StaticConstraint, Solution, World, debug } from '../../plugins/scenario';
+import { basename, resolve } from 'path';
 import { CometContext, MigrationData } from '../context/CometContext';
-import { Migration, loadMigrations, Actions } from '../../plugins/deployment_manager/Migration';
+import { Migration, loadMigration } from '../../plugins/deployment_manager/Migration';
+import { readMigrationRegistry } from '../../plugins/deployment_manager/MigrationRegistry';
 import { modifiedPaths } from '../utils';
-import { DeploymentManager } from '../../plugins/deployment_manager';
 import { impersonateAddress } from '../../plugins/scenario/utils';
 import { exp } from '../../test/helpers';
 
 async function getMigrations<T>(world: World): Promise<Migration<T>[]> {
   // TODO: make this configurable from cli params/env var?
-  const network = world.deploymentManager.network;
-  const deployment = world.deploymentManager.deployment;
-  const pattern = new RegExp(`deployments/${network}/${deployment}/migrations/.*.ts`);
-  return await loadMigrations((await modifiedPaths(pattern)).map(p => '../../' + p));
-}
+  const dm = world.deploymentManager;
+  const govDm = world.auxiliaryDeploymentManager || dm;
+  const pattern = new RegExp(`deployments/${dm.network}/${dm.deployment}/migrations/.*.ts`);
+  const registry = await readMigrationRegistry(dm.cache.getFilePath({ rel: 'migrations.json' }));
+  const migrations: Migration<T>[] = [];
+  for (const path of await modifiedPaths(pattern)) {
+    const name = basename(path, '.ts');
+    const entry = registry.get(name);
+    if (entry?.status === 'needs-review') {
+      throw new Error(`Migration ${name} needs review before running its scenario`);
+    }
+    if (entry && entry.status !== 'pending') {
+      debug(`[${world.base.name}] Skipping migration ${name}: ${entry.status}`);
+      continue;
+    }
 
-async function isEnacted<T>(actions: Actions<T>, dm: DeploymentManager, govDm: DeploymentManager): Promise<boolean> {
-  return actions.enacted ? await actions.enacted(dm, govDm) : false;
+    const migration = await loadMigration(resolve(path));
+    if (!entry && await migration.actions.enacted?.(dm, govDm)) continue;
+    migrations.push(migration);
+  }
+  return migrations;
 }
 
 export class MigrationConstraint<T extends CometContext> implements StaticConstraint<T> {
@@ -49,20 +63,15 @@ export class MigrationConstraint<T extends CometContext> implements StaticConstr
           const migration = migrationData.migration;
           const artifact = await migration.actions.prepare(ctx.world.deploymentManager, govDeploymentManager);
           debug(`${label} Prepared migration ${migration.name}.\n  Artifact\n-------\n\n${JSON.stringify(artifact, null, 2)}\n-------\n`);
-          if (await isEnacted(migration.actions, ctx.world.deploymentManager, govDeploymentManager)) {
-            migrationData.skipVerify = true;
-            debug(`${label} Migration ${migration.name} has already been enacted`);
-          } else {
-            migrationData.preMigrationBlockNumber = await ctx.world.deploymentManager.hre.ethers.provider.getBlockNumber();
-            const lastProposalBefore = await governor.proposalCount();
-            await migration.actions.enact(ctx.world.deploymentManager, govDeploymentManager, artifact);
-            const lastProposalAfter = await governor.proposalCount();
-            // Store the latest proposal id if one was created by this migration
-            if (lastProposalAfter > lastProposalBefore) {
-              migrationData.lastProposal = lastProposalAfter.toNumber();
-            }
-            debug(`${label} Enacted migration ${migration.name}`);
+          migrationData.preMigrationBlockNumber = await ctx.world.deploymentManager.hre.ethers.provider.getBlockNumber();
+          const lastProposalBefore = await governor.proposalCount();
+          await migration.actions.enact(ctx.world.deploymentManager, govDeploymentManager, artifact);
+          const lastProposalAfter = await governor.proposalCount();
+          // Store the latest proposal id if one was created by this migration
+          if (lastProposalAfter > lastProposalBefore) {
+            migrationData.lastProposal = lastProposalAfter.toNumber();
           }
+          debug(`${label} Enacted migration ${migration.name}`);
         }
 
         // Remove proposer from signers
