@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "migrations": {
+    "1777297641_update_supply_caps_on_mainnet": {
+      "status": "executed",
+      "governanceChainId": 1,
+      "governor": "0x309a862bbC1A00e45506cB8A802D1ff10004c8C0",
+      "proposalId": "578",
+      "proposeTx": "0xff1ff2eb5de738da33fd80dd2e6b21b92ec47ba6b397f30f53a55c44cd24bfde",
+      "executeTx": "0x54a5496444fdd9a6c7cdcbb712c4027aa77acba1b25626b2c1532e1680555c65"
+    },
+    "1778758319_update_supply_caps_on_l2": {
+      "status": "failed-on-l2",
+      "governanceChainId": 1,
+      "governor": "0x309a862bbC1A00e45506cB8A802D1ff10004c8C0",
+      "proposalId": "584",
+      "proposeTx": "0x3c22c8cb6367849775c9d19f71c750434e13e595f46fb36f09719f1268c1daf0",
+      "executeTx": "0x870306a7ecea68f409b1465fdab0b46a954eaabd86a7dcc69d9206fc06bd171a",
+      "destinationProposals": [
+        {
+          "actionIndex": 0,
+          "chainId": 42161,
+          "receiver": "0x42480C37B249e33aABaf4c22B20235656bd38068",
+          "proposalId": "67",
+          "createTx": "0xc3da34235da10a5829e25eecc376f13455e0b3e76d2ee79961c6fc9bd2443599",
+          "status": "executed",
+          "executeTx": "0x216e7cf68b52cc010455735d936eb5a89499c9f188d10fcc19fee0be82fe6b71"
+        },
+        {
+          "actionIndex": 1,
+          "chainId": 42161,
+          "receiver": "0x42480C37B249e33aABaf4c22B20235656bd38068",
+          "proposalId": "68",
+          "createTx": "0x63b8ce5847f6278c57a6173a3b4bf781d9a5fc305da442cf590c8ef75584b94f",
+          "status": "executed",
+          "executeTx": "0x9f29dfa4bf49b27bb8f5dd41d691ea204851151435badd8c2d962fa82b35f88a"
+        },
+        {
+          "actionIndex": 2,
+          "chainId": 8453,
+          "receiver": "0x18281dfC4d00905DA1aaA6731414EABa843c468A",
+          "proposalId": "64",
+          "createTx": "0x4b8998c8c54cc11733c699757d4d0e24d9c830063f48925e44da1caf0c45f030",
+          "status": "executed",
+          "executeTx": "0xf2bc8b0a95b8d7c2e9b00d45b46a2bb761fbc5e313b38d1dab21b15b5c763704"
+        },
+        {
+          "actionIndex": 3,
+          "chainId": 59144,
+          "receiver": "0x1F71901daf98d70B4BAF40DE080321e5C2676856",
+          "proposalId": "8",
+          "createTx": "0x61406813bd54fd109d56c607c0bebe9ed7f231bedb61d4465a43c694ac621d68",
+          "status": "executed",
+          "executeTx": "0xa422454c1e7a32469a5ba2a66dfa1c95fa1a52e5b4f34b9e49c065ea70d4df54"
+        },
+        {
+          "actionIndex": 4,
+          "chainId": 5000,
+          "receiver": "0xc91EcA15747E73d6dd7f616C49dAFF37b9F1B604",
+          "proposalId": "8",
+          "createTx": "0x1ba5956d827e8b5cee190dc687e7aaabd70dfacdff15df4e24a9c5b21c2a0135",
+          "status": "expired"
+        }
+      ]
+    }
+  }
+}

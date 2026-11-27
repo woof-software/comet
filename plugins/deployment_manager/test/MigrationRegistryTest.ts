@@ -55,4 +55,29 @@ describe('Migration registry', () => {
     await writeFile(file, JSON.stringify({ version: 1, migrations: { bad: { status: 'proposed' } } }));
     await assert.rejects(() => readMigrationRegistry(file), /missing proposal data for bad/);
   });
+
+  it('retains separate evidence for two actions on the same destination chain', async () => {
+    const receiver = '0x' + '1'.repeat(40);
+    const createTx = '0x' + '2'.repeat(64);
+    const executeTx = '0x' + '3'.repeat(64);
+    const proposal = { chainId: 42161, receiver, createTx, status: 'executed', executeTx };
+    const entry = {
+      status: 'pending-l2', governanceChainId: 1, governor: receiver, proposalId: '584', proposeTx: createTx,
+      destinationProposals: [
+        { ...proposal, actionIndex: 0, proposalId: '67' },
+        { ...proposal, actionIndex: 1, proposalId: '68' },
+      ],
+    };
+    const write = () => writeFile(file, JSON.stringify({ version: 1, migrations: { bridged: entry } }));
+    await write();
+    expect((await readMigrationRegistry(file)).get('bridged')).to.deep.equal(entry);
+
+    entry.destinationProposals[1].actionIndex = 0;
+    await write();
+    await assert.rejects(() => readMigrationRegistry(file), /invalid destination proposals for bridged/);
+    entry.destinationProposals[1].actionIndex = 1;
+    delete entry.destinationProposals[1].executeTx;
+    await write();
+    await assert.rejects(() => readMigrationRegistry(file), /invalid destination proposals for bridged/);
+  });
 });
