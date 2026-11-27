@@ -1,7 +1,6 @@
 import { MAX_ASSETS, MAX_UINT128, SignerWithAddress, ethers, exp, expect, factorScale, impersonateAccount, makeConfigurator, setBalance, takeSnapshot, SnapshotRestorer } from '../helpers';
 import { AssetList, AssetList__factory, CometProxyAdminOptimism, ConfiguratorOptimism } from '../../build/types';
-import { AssetConfigStruct, StorageAssetConfigStructOutput } from '../../build/types/ConfiguratorOptimism';
-import { AssetInfoStructOutput } from '../../build/types/AssetList';
+import { StorageAssetConfigStructOutput } from '../../build/types/ConfiguratorOptimism';
 
 // The storage setters of the asset list: only the Configurator may call them, for an asset the list holds.
 // The Configurator reaches them through updateAsset<Field>, which writes its own stored config first
@@ -38,6 +37,7 @@ describe('asset list setters', function () {
   };
 
   let governor: SignerWithAddress;
+  let configuratorSigner: SignerWithAddress;
   let user: SignerWithAddress; // holds no role
   let proxyAdmin: CometProxyAdminOptimism;
   let configurator: ConfiguratorOptimism; // proxy
@@ -53,6 +53,11 @@ describe('asset list setters', function () {
     configurator = protocol.configurator.attach(protocol.configuratorProxy.address);
     comet = protocol.cometProxyWithExtendedAssetList.address;
     assetList = protocol.assetList;
+
+    await impersonateAccount(configurator.address);
+    await setBalance(configurator.address, exp(1, 18));
+    configuratorSigner = await ethers.getSigner(configurator.address);
+
     snapshot = await takeSnapshot();
   });
 
@@ -62,6 +67,8 @@ describe('asset list setters', function () {
 
   context('BCF can be updated', function () {
     const NEW_BORROW_CF = exp(0.7, 18);
+
+    after(async () => await snapshot.restore());
 
     it('updateAssetBorrowCollateralFactor is successful for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
@@ -80,9 +87,7 @@ describe('asset list setters', function () {
   context('BCF can be updated to zero', function () {
     const NEW_BORROW_CF = 0n;
 
-    before(async () => {
-      await snapshot.restore();
-    });
+    after(async () => await snapshot.restore());
 
     it('updateAssetBorrowCollateralFactor is successful for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
@@ -98,37 +103,39 @@ describe('asset list setters', function () {
     });
   });
 
-  context('revert when BCF is set equal to LCF', function () {
+  context('updateAssetBorrowCollateralFactor reverts when', function () {
     const LIQUIDATE_CF = exp(0.8, 18);
-    const NEW_BORROW_CF = LIQUIDATE_CF;
 
-    before(async () => {
-      await snapshot.restore();
-    });
+    it('BCF is set equal to LCF, with BorrowCFTooLarge for every asset', async () => {
+      const NEW_BORROW_CF = LIQUIDATE_CF;
 
-    it('updateAssetBorrowCollateralFactor reverts with BorrowCFTooLarge for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await expect(configurator.connect(governor).updateAssetBorrowCollateralFactor(comet, asset, NEW_BORROW_CF))
           .to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
       }
     });
-  });
 
-  context('revert when BCF is set above LCF', function () {
-    const LIQUIDATE_CF = exp(0.8, 18);
-    const NEW_BORROW_CF = LIQUIDATE_CF + 1n;
+    it('BCF is set above LCF, with BorrowCFTooLarge for every asset', async () => {
+      const NEW_BORROW_CF = LIQUIDATE_CF + 1n;
 
-    before(async () => {
-      await snapshot.restore();
-    });
-
-    it('updateAssetBorrowCollateralFactor reverts with BorrowCFTooLarge for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await expect(configurator.connect(governor).updateAssetBorrowCollateralFactor(comet, asset, NEW_BORROW_CF))
           .to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
       }
+    });
+
+    it('the caller is not the configurator', async () => {
+      const assetInfo = await assetList.getAssetInfo(0);
+
+      await expect(assetList.connect(user).setBorrowCollateralFactor(assetInfo.asset, assetInfo.borrowCollateralFactor))
+        .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
+    });
+
+    it('the asset is not in the asset list, with AssetNotFound', async () => {
+      await expect(assetList.connect(configuratorSigner).setBorrowCollateralFactor(user.address, exp(0.75, 18)))
+        .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     });
   });
 
@@ -139,9 +146,7 @@ describe('asset list setters', function () {
   context('LCF can be updated', function () {
     const NEW_LIQUIDATE_CF = exp(0.85, 18);
 
-    before(async () => {
-      await snapshot.restore();
-    });
+    after(async () => await snapshot.restore());
 
     it('updateAssetLiquidateCollateralFactor is successful for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
@@ -162,18 +167,13 @@ describe('asset list setters', function () {
     const NEW_LIQUIDATE_CF = 0n;
 
     before(async () => {
-      await snapshot.restore();
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await configurator.connect(governor).updateAssetBorrowCollateralFactor(comet, asset, BORROW_CF);
       }
     });
 
-    it('sanity check: every asset has the borrow collateral factor of zero', async () => {
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        expect((await assetList.getAssetInfo(i)).borrowCollateralFactor).to.equal(BORROW_CF);
-      }
-    });
+    after(async () => await snapshot.restore());
 
     it('updateAssetLiquidateCollateralFactor is successful for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
@@ -189,87 +189,71 @@ describe('asset list setters', function () {
     });
   });
 
-  context('revert when LCF is set equal to BCF', function () {
-    const BORROW_CF = exp(0.75, 18);
-    const NEW_LIQUIDATE_CF = BORROW_CF;
+  context('updateAssetLiquidateCollateralFactor reverts when', function () {
+    it('LCF is set equal to BCF, with BorrowCFTooLarge for every asset', async () => {
+      const BORROW_CF = exp(0.75, 18);
+      const NEW_LIQUIDATE_CF = BORROW_CF;
 
-    before(async () => {
-      await snapshot.restore();
-    });
-
-    it('updateAssetLiquidateCollateralFactor reverts with BorrowCFTooLarge for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await expect(configurator.connect(governor).updateAssetLiquidateCollateralFactor(comet, asset, NEW_LIQUIDATE_CF))
           .to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
       }
     });
-  });
 
-  context('revert when LCF is set below BCF', function () {
-    const BORROW_CF = exp(0.75, 18);
-    const NEW_LIQUIDATE_CF = BORROW_CF - 1n;
+    it('LCF is set below BCF, with BorrowCFTooLarge for every asset', async () => {
+      const BORROW_CF = exp(0.75, 18);
+      const NEW_LIQUIDATE_CF = BORROW_CF - 1n;
 
-    before(async () => {
-      await snapshot.restore();
-    });
-
-    it('updateAssetLiquidateCollateralFactor reverts with BorrowCFTooLarge for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await expect(configurator.connect(governor).updateAssetLiquidateCollateralFactor(comet, asset, NEW_LIQUIDATE_CF))
           .to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
       }
     });
-  });
 
-  context('revert when LCF is set to zero while BCF is non-zero', function () {
-    const NEW_LIQUIDATE_CF = 0n;
+    it('LCF is set to zero while BCF is non-zero, with BorrowCFTooLarge for every asset', async () => {
+      const NEW_LIQUIDATE_CF = 0n;
 
-    before(async () => {
-      await snapshot.restore();
-    });
-
-    it('updateAssetLiquidateCollateralFactor reverts with BorrowCFTooLarge for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await expect(configurator.connect(governor).updateAssetLiquidateCollateralFactor(comet, asset, NEW_LIQUIDATE_CF))
           .to.be.revertedWithCustomError(assetList, 'BorrowCFTooLarge');
       }
     });
-  });
 
-  context('revert when LCF is set equal to LF', function () {
-    const LIQUIDATION_FACTOR = exp(0.9, 18);
-    const NEW_LIQUIDATE_CF = LIQUIDATION_FACTOR;
+    it('LCF is set equal to LF, with LiquidateCFTooLarge for every asset', async () => {
+      const LIQUIDATION_FACTOR = exp(0.9, 18);
+      const NEW_LIQUIDATE_CF = LIQUIDATION_FACTOR;
 
-    before(async () => {
-      await snapshot.restore();
-    });
-
-    it('updateAssetLiquidateCollateralFactor reverts with LiquidateCFTooLarge for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await expect(configurator.connect(governor).updateAssetLiquidateCollateralFactor(comet, asset, NEW_LIQUIDATE_CF))
           .to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
       }
     });
-  });
 
-  context('revert when LCF is set above LF', function () {
-    const LIQUIDATION_FACTOR = exp(0.9, 18);
-    const NEW_LIQUIDATE_CF = LIQUIDATION_FACTOR + 1n;
+    it('LCF is set above LF, with LiquidateCFTooLarge for every asset', async () => {
+      const LIQUIDATION_FACTOR = exp(0.9, 18);
+      const NEW_LIQUIDATE_CF = LIQUIDATION_FACTOR + 1n;
 
-    before(async () => {
-      await snapshot.restore();
-    });
-
-    it('updateAssetLiquidateCollateralFactor reverts with LiquidateCFTooLarge for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await expect(configurator.connect(governor).updateAssetLiquidateCollateralFactor(comet, asset, NEW_LIQUIDATE_CF))
           .to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
       }
+    });
+
+    it('the caller is not the configurator', async () => {
+      const assetInfo = await assetList.getAssetInfo(0);
+
+      await expect(assetList.connect(user).setLiquidateCollateralFactor(assetInfo.asset, assetInfo.liquidateCollateralFactor))
+        .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
+    });
+
+    it('the asset is not in the asset list, with AssetNotFound', async () => {
+      await expect(assetList.connect(configuratorSigner).setLiquidateCollateralFactor(user.address, exp(0.8, 18)))
+        .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     });
   });
 
@@ -280,9 +264,7 @@ describe('asset list setters', function () {
   context('LF can be updated', function () {
     const NEW_LIQUIDATION_FACTOR = exp(0.95, 18);
 
-    before(async () => {
-      await snapshot.restore();
-    });
+    after(async () => await snapshot.restore());
 
     it('updateAssetLiquidationFactor is successful for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
@@ -301,9 +283,7 @@ describe('asset list setters', function () {
   context('LF can be updated to the maximum, 1e18', function () {
     const NEW_LIQUIDATION_FACTOR = factorScale;
 
-    before(async () => {
-      await snapshot.restore();
-    });
+    after(async () => await snapshot.restore());
 
     it('updateAssetLiquidationFactor is successful for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
@@ -325,7 +305,6 @@ describe('asset list setters', function () {
     const NEW_LIQUIDATION_FACTOR = 0n;
 
     before(async () => {
-      await snapshot.restore();
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await configurator.connect(governor).updateAssetBorrowCollateralFactor(comet, asset, BORROW_CF);
@@ -333,17 +312,7 @@ describe('asset list setters', function () {
       }
     });
 
-    it('sanity check: every asset has the borrow collateral factor of zero', async () => {
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        expect((await assetList.getAssetInfo(i)).borrowCollateralFactor).to.equal(BORROW_CF);
-      }
-    });
-
-    it('sanity check: every asset has the liquidate collateral factor of zero', async () => {
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        expect((await assetList.getAssetInfo(i)).liquidateCollateralFactor).to.equal(LIQUIDATE_CF);
-      }
-    });
+    after(async () => await snapshot.restore());
 
     it('updateAssetLiquidationFactor is successful for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
@@ -359,69 +328,59 @@ describe('asset list setters', function () {
     });
   });
 
-  context('revert when LF is set equal to LCF', function () {
+  context('updateAssetLiquidationFactor reverts when', function () {
     const LIQUIDATE_CF = exp(0.8, 18);
-    const NEW_LIQUIDATION_FACTOR = LIQUIDATE_CF;
 
-    before(async () => {
-      await snapshot.restore();
-    });
+    it('LF is set equal to LCF, with LiquidateCFTooLarge for every asset', async () => {
+      const NEW_LIQUIDATION_FACTOR = LIQUIDATE_CF;
 
-    it('updateAssetLiquidationFactor reverts with LiquidateCFTooLarge for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await expect(configurator.connect(governor).updateAssetLiquidationFactor(comet, asset, NEW_LIQUIDATION_FACTOR))
           .to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
       }
     });
-  });
 
-  context('revert when LF is set below LCF', function () {
-    const LIQUIDATE_CF = exp(0.8, 18);
-    const NEW_LIQUIDATION_FACTOR = LIQUIDATE_CF - 1n;
+    it('LF is set below LCF, with LiquidateCFTooLarge for every asset', async () => {
+      const NEW_LIQUIDATION_FACTOR = LIQUIDATE_CF - 1n;
 
-    before(async () => {
-      await snapshot.restore();
-    });
-
-    it('updateAssetLiquidationFactor reverts with LiquidateCFTooLarge for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await expect(configurator.connect(governor).updateAssetLiquidationFactor(comet, asset, NEW_LIQUIDATION_FACTOR))
           .to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
       }
     });
-  });
 
-  context('revert when LF is set to zero while LCF is non-zero', function () {
-    const NEW_LIQUIDATION_FACTOR = 0n;
+    it('LF is set to zero while LCF is non-zero, with LiquidateCFTooLarge for every asset', async () => {
+      const NEW_LIQUIDATION_FACTOR = 0n;
 
-    before(async () => {
-      await snapshot.restore();
-    });
-
-    it('updateAssetLiquidationFactor reverts with LiquidateCFTooLarge for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await expect(configurator.connect(governor).updateAssetLiquidationFactor(comet, asset, NEW_LIQUIDATION_FACTOR))
           .to.be.revertedWithCustomError(assetList, 'LiquidateCFTooLarge');
       }
     });
-  });
 
-  context('revert when LF is set above the maximum, 1e18', function () {
-    const NEW_LIQUIDATION_FACTOR = factorScale + 1n;
+    it('LF is set above the maximum, 1e18, with LiqPenaltyTooHigh for every asset', async () => {
+      const NEW_LIQUIDATION_FACTOR = factorScale + 1n;
 
-    before(async () => {
-      await snapshot.restore();
-    });
-
-    it('updateAssetLiquidationFactor reverts with LiqPenaltyTooHigh for every asset', async () => {
       for (let i = 0; i < COLLATERALS.length; i++) {
         const { asset } = await assetList.getAssetInfo(i);
         await expect(configurator.connect(governor).updateAssetLiquidationFactor(comet, asset, NEW_LIQUIDATION_FACTOR))
           .to.be.revertedWithCustomError(assetList, 'LiqPenaltyTooHigh');
       }
+    });
+
+    it('the caller is not the configurator', async () => {
+      const assetInfo = await assetList.getAssetInfo(0);
+
+      await expect(assetList.connect(user).setLiquidationFactor(assetInfo.asset, assetInfo.liquidationFactor))
+        .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
+    });
+
+    it('the asset is not in the asset list, with AssetNotFound', async () => {
+      await expect(assetList.connect(configuratorSigner).setLiquidationFactor(user.address, exp(0.9, 18)))
+        .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
     });
   });
 
@@ -434,7 +393,7 @@ describe('asset list setters', function () {
     // Every collateral gets the cap in its own token units
     const NEW_SUPPLY_CAPS = DIFFERENT_DECIMALS_COLLATERALS.map(() => 1n);
 
-    before(() => snapshot.restore());
+    after(async () => await snapshot.restore());
 
     it('updateAssetSupplyCap is successful for every collateral with different decimals', async () => {
       for (let i = 0; i < DIFFERENT_DECIMALS_COLLATERALS_COUNT; i++) {
@@ -454,27 +413,7 @@ describe('asset list setters', function () {
     // Every collateral gets the cap in its own token units
     const NEW_SUPPLY_CAPS = DIFFERENT_DECIMALS_COLLATERALS.map(({ decimals }) => 10n ** BigInt(decimals) - 1n);
 
-    before(() => snapshot.restore());
-
-    it('updateAssetSupplyCap is successful for every collateral with different decimals', async () => {
-      for (let i = 0; i < DIFFERENT_DECIMALS_COLLATERALS_COUNT; i++) {
-        const { asset } = await assetList.getAssetInfo(i);
-        await expect(configurator.connect(governor).updateAssetSupplyCap(comet, asset, NEW_SUPPLY_CAPS[i])).to.not.be.reverted;
-      }
-    });
-
-    it('every collateral with different decimals has its new supply cap', async () => {
-      for (let i = 0; i < DIFFERENT_DECIMALS_COLLATERALS_COUNT; i++) {
-        expect((await assetList.getAssetInfo(i)).supplyCap).to.equal(NEW_SUPPLY_CAPS[i]);
-      }
-    });
-  });
-
-  context('supply cap can be updated to 0.5 token', function () {
-    // Every collateral gets the cap in its own token units
-    const NEW_SUPPLY_CAPS = DIFFERENT_DECIMALS_COLLATERALS.map(({ decimals }) => 10n ** BigInt(decimals) / 2n);
-
-    before(() => snapshot.restore());
+    after(async () => await snapshot.restore());
 
     it('updateAssetSupplyCap is successful for every collateral with different decimals', async () => {
       for (let i = 0; i < DIFFERENT_DECIMALS_COLLATERALS_COUNT; i++) {
@@ -494,7 +433,7 @@ describe('asset list setters', function () {
     // Every collateral gets the cap in its own token units
     const NEW_SUPPLY_CAPS = DIFFERENT_DECIMALS_COLLATERALS.map(({ decimals }) => 10n ** BigInt(decimals) * 21n / 2n);
 
-    before(() => snapshot.restore());
+    after(async () => await snapshot.restore());
 
     it('updateAssetSupplyCap is successful for every collateral with different decimals', async () => {
       for (let i = 0; i < DIFFERENT_DECIMALS_COLLATERALS_COUNT; i++) {
@@ -514,7 +453,7 @@ describe('asset list setters', function () {
     // Every collateral gets the cap in its own token units
     const NEW_SUPPLY_CAPS = DIFFERENT_DECIMALS_COLLATERALS.map(() => MAX_UINT128);
 
-    before(() => snapshot.restore());
+    after(async () => await snapshot.restore());
 
     it('updateAssetSupplyCap is successful for every collateral with different decimals', async () => {
       for (let i = 0; i < DIFFERENT_DECIMALS_COLLATERALS_COUNT; i++) {
@@ -534,7 +473,7 @@ describe('asset list setters', function () {
     // Every collateral gets the cap in its own token units
     const NEW_SUPPLY_CAPS = DIFFERENT_DECIMALS_COLLATERALS.map(() => 0n);
 
-    before(() => snapshot.restore());
+    after(async () => await snapshot.restore());
 
     it('updateAssetSupplyCap is successful for every collateral with different decimals', async () => {
       for (let i = 0; i < DIFFERENT_DECIMALS_COLLATERALS_COUNT; i++) {
@@ -550,134 +489,29 @@ describe('asset list setters', function () {
     });
   });
 
+  context('updateAssetSupplyCap reverts when', function () {
+    it('the caller is not the configurator', async () => {
+      const assetInfo = await assetList.getAssetInfo(0);
+
+      await expect(assetList.connect(user).setSupplyCap(assetInfo.asset, assetInfo.supplyCap))
+        .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
+    });
+
+    it('the asset is not in the asset list, with AssetNotFound', async () => {
+      await expect(assetList.connect(configuratorSigner).setSupplyCap(user.address, exp(1000, 18)))
+        .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
+    });
+  });
+
   /*//////////////////////////////////////////////////////////////
                               EDGE CASES
   //////////////////////////////////////////////////////////////*/
-
-  // addAsset only stores the config in the Configurator; the asset reaches the list with the next list upgrade. The
-  // Configurator skips the list for such an asset, so the list's own check is reached by calling it as the Configurator
-  context('revert when the asset is added to the configurator but the asset list is not upgraded yet', function () {
-    let newAsset: AssetConfigStruct;
-    let configuratorSigner: SignerWithAddress;
-
-    before(async () => {
-      await snapshot.restore();
-      const token = await (await ethers.getContractFactory('FaucetToken')).deploy(0, 'New Asset', 18, 'NEW');
-      const priceFeed = await (await ethers.getContractFactory('SimplePriceFeed')).deploy(10n ** 8n, 8);
-      newAsset = {
-        asset: token.address,
-        priceFeed: priceFeed.address,
-        borrowCollateralFactor: exp(0.75, 18),
-        liquidateCollateralFactor: exp(0.8, 18),
-        liquidationFactor: exp(0.9, 18),
-        supplyCap: exp(1000, 18),
-      };
-      await configurator.connect(governor).addAsset(comet, newAsset);
-
-      await impersonateAccount(configurator.address);
-      await setBalance(configurator.address, exp(1, 18));
-      configuratorSigner = await ethers.getSigner(configurator.address);
-    });
-
-    it('sanity check: the asset list does not have the asset', async () => {
-      await expect(assetList.getAssetInfoByAddress(newAsset.asset))
-        .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
-    });
-
-    it('setBorrowCollateralFactor reverts with AssetNotFound', async () => {
-      await expect(assetList.connect(configuratorSigner).setBorrowCollateralFactor(newAsset.asset, newAsset.borrowCollateralFactor))
-        .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
-    });
-
-    it('setLiquidateCollateralFactor reverts with AssetNotFound', async () => {
-      await expect(assetList.connect(configuratorSigner).setLiquidateCollateralFactor(newAsset.asset, newAsset.liquidateCollateralFactor))
-        .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
-    });
-
-    it('setLiquidationFactor reverts with AssetNotFound', async () => {
-      await expect(assetList.connect(configuratorSigner).setLiquidationFactor(newAsset.asset, newAsset.liquidationFactor))
-        .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
-    });
-
-    it('setSupplyCap reverts with AssetNotFound', async () => {
-      await expect(assetList.connect(configuratorSigner).setSupplyCap(newAsset.asset, newAsset.supplyCap))
-        .to.be.revertedWithCustomError(assetList, 'AssetNotFound');
-    });
-  });
-
-  // The upgrade registers a new asset in the same call, so there is no moment when the list has the asset in its
-  // immutables but not registered: the setters work on it right after the upgrade
-  context('factors and supply cap can be updated for an asset just added by the asset list upgrade', function () {
-    const BORROW_CF = exp(0.7, 18);
-    const LIQUIDATE_CF = exp(0.85, 18);
-    const LIQUIDATION_FACTOR = exp(0.95, 18);
-    const SUPPLY_CAP = exp(2000, 18);
-
-    let newAsset: AssetConfigStruct;
-
-    before(async () => {
-      await snapshot.restore();
-      const token = await (await ethers.getContractFactory('FaucetToken')).deploy(0, 'New Asset', 18, 'NEW');
-      const priceFeed = await (await ethers.getContractFactory('SimplePriceFeed')).deploy(10n ** 8n, 8);
-      newAsset = {
-        asset: token.address,
-        priceFeed: priceFeed.address,
-        borrowCollateralFactor: exp(0.75, 18),
-        liquidateCollateralFactor: exp(0.8, 18),
-        liquidationFactor: exp(0.9, 18),
-        supplyCap: exp(1000, 18),
-      };
-      await configurator.connect(governor).addAsset(comet, newAsset);
-      await proxyAdmin.connect(governor).deployAndUpgradeAssetListTo(configurator.address, comet);
-    });
-
-    it('sanity check: the asset list has the asset', async () => {
-      expect((await assetList.getAssetInfoByAddress(newAsset.asset)).asset).to.equal(newAsset.asset);
-    });
-
-    it('updateAssetBorrowCollateralFactor is successful', async () => {
-      await expect(configurator.connect(governor).updateAssetBorrowCollateralFactor(comet, newAsset.asset, BORROW_CF))
-        .to.not.be.reverted;
-    });
-
-    it('the asset list has the new borrow collateral factor', async () => {
-      expect((await assetList.getAssetInfoByAddress(newAsset.asset)).borrowCollateralFactor).to.equal(BORROW_CF);
-    });
-
-    it('updateAssetLiquidateCollateralFactor is successful', async () => {
-      await expect(configurator.connect(governor).updateAssetLiquidateCollateralFactor(comet, newAsset.asset, LIQUIDATE_CF))
-        .to.not.be.reverted;
-    });
-
-    it('the asset list has the new liquidate collateral factor', async () => {
-      expect((await assetList.getAssetInfoByAddress(newAsset.asset)).liquidateCollateralFactor).to.equal(LIQUIDATE_CF);
-    });
-
-    it('updateAssetLiquidationFactor is successful', async () => {
-      await expect(configurator.connect(governor).updateAssetLiquidationFactor(comet, newAsset.asset, LIQUIDATION_FACTOR))
-        .to.not.be.reverted;
-    });
-
-    it('the asset list has the new liquidation factor', async () => {
-      expect((await assetList.getAssetInfoByAddress(newAsset.asset)).liquidationFactor).to.equal(LIQUIDATION_FACTOR);
-    });
-
-    it('updateAssetSupplyCap is successful', async () => {
-      await expect(configurator.connect(governor).updateAssetSupplyCap(comet, newAsset.asset, SUPPLY_CAP))
-        .to.not.be.reverted;
-    });
-
-    it('the asset list has the new supply cap', async () => {
-      expect((await assetList.getAssetInfoByAddress(newAsset.asset)).supplyCap).to.equal(SUPPLY_CAP);
-    });
-  });
 
   context('revert when the asset list is upgraded to an implementation that swaps two registered assets', function () {
     let swappedImplementation: AssetList;
     let swappedStorageConfigs: StorageAssetConfigStructOutput[];
 
     before(async () => {
-      await snapshot.restore();
       const immutableConfigs = await configurator.getImmutableAssetConfig(comet);
       const storageConfigs = await configurator.getStorageAssetConfig(comet);
       const swappedConfigs = [immutableConfigs[1], immutableConfigs[0], ...immutableConfigs.slice(2)];
@@ -706,7 +540,6 @@ describe('asset list setters', function () {
     let fewerStorageConfigs: StorageAssetConfigStructOutput[];
 
     before(async () => {
-      await snapshot.restore();
       implementation = await proxyAdmin.getProxyImplementation(assetList.address);
       fewerStorageConfigs = (await configurator.getStorageAssetConfig(comet)).slice(0, -1);
     });
@@ -729,7 +562,6 @@ describe('asset list setters', function () {
     let moreStorageConfigs: StorageAssetConfigStructOutput[];
 
     before(async () => {
-      await snapshot.restore();
       implementation = await proxyAdmin.getProxyImplementation(assetList.address);
       const storageConfigs = await configurator.getStorageAssetConfig(comet);
       moreStorageConfigs = [...storageConfigs, storageConfigs[0]];
@@ -748,121 +580,10 @@ describe('asset list setters', function () {
     });
   });
 
-  // Factors are stored as given, with all 18 decimals, so factors one wei apart are still strictly ordered
-  context('LCF can be updated to one wei above BCF', function () {
-    const FULL_PRECISION_BORROW_CF = 123456000000000000n;
-    const NEW_LIQUIDATE_CF = FULL_PRECISION_BORROW_CF + 1n;
-
-    before(async () => {
-      await snapshot.restore();
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        const { asset } = await assetList.getAssetInfo(i);
-        await configurator.connect(governor).updateAssetBorrowCollateralFactor(comet, asset, FULL_PRECISION_BORROW_CF);
-      }
-    });
-
-    it('sanity check: every asset has the full precision borrow collateral factor', async () => {
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        expect((await assetList.getAssetInfo(i)).borrowCollateralFactor).to.equal(FULL_PRECISION_BORROW_CF);
-      }
-    });
-
-    it('updateAssetLiquidateCollateralFactor is successful for every asset', async () => {
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        const { asset } = await assetList.getAssetInfo(i);
-        await expect(configurator.connect(governor).updateAssetLiquidateCollateralFactor(comet, asset, NEW_LIQUIDATE_CF)).to.not.be.reverted;
-      }
-    });
-
-    it('every asset has the new liquidate collateral factor', async () => {
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        expect((await assetList.getAssetInfo(i)).liquidateCollateralFactor).to.equal(NEW_LIQUIDATE_CF);
-      }
-    });
-  });
-
-  // LCF can only go below the current BCF once BCF is zero
-  context('LF can be updated to one wei above LCF', function () {
-    const FULL_PRECISION_LIQUIDATE_CF = 123456000000000000n;
-    const NEW_LIQUIDATION_FACTOR = FULL_PRECISION_LIQUIDATE_CF + 1n;
-
-    before(async () => {
-      await snapshot.restore();
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        const { asset } = await assetList.getAssetInfo(i);
-        await configurator.connect(governor).updateAssetBorrowCollateralFactor(comet, asset, 0n);
-        await configurator.connect(governor).updateAssetLiquidateCollateralFactor(comet, asset, FULL_PRECISION_LIQUIDATE_CF);
-      }
-    });
-
-    it('sanity check: every asset has the borrow collateral factor of zero', async () => {
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        expect((await assetList.getAssetInfo(i)).borrowCollateralFactor).to.equal(0n);
-      }
-    });
-
-    it('sanity check: every asset has the full precision liquidate collateral factor', async () => {
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        expect((await assetList.getAssetInfo(i)).liquidateCollateralFactor).to.equal(FULL_PRECISION_LIQUIDATE_CF);
-      }
-    });
-
-    it('updateAssetLiquidationFactor is successful for every asset', async () => {
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        const { asset } = await assetList.getAssetInfo(i);
-        await expect(configurator.connect(governor).updateAssetLiquidationFactor(comet, asset, NEW_LIQUIDATION_FACTOR)).to.not.be.reverted;
-      }
-    });
-
-    it('every asset has the new liquidation factor', async () => {
-      for (let i = 0; i < COLLATERALS.length; i++) {
-        expect((await assetList.getAssetInfo(i)).liquidationFactor).to.equal(NEW_LIQUIDATION_FACTOR);
-      }
-    });
-  });
-
-  /*//////////////////////////////////////////////////////////////
-                            ACCESS CONTROL
-  //////////////////////////////////////////////////////////////*/
-
-  context('revert when the caller is not the configurator', function () {
-    let assetInfo: AssetInfoStructOutput;
-
-    before(async () => {
-      await snapshot.restore();
-      assetInfo = await assetList.getAssetInfo(0);
-    });
-
-    it('sanity check: the caller is not the configurator', async () => {
-      expect(user.address).to.not.equal(await assetList.configurator());
-    });
-
-    it('setBorrowCollateralFactor reverts with OnlyConfigurator', async () => {
-      await expect(assetList.connect(user).setBorrowCollateralFactor(assetInfo.asset, assetInfo.borrowCollateralFactor))
-        .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
-    });
-
-    it('setLiquidateCollateralFactor reverts with OnlyConfigurator', async () => {
-      await expect(assetList.connect(user).setLiquidateCollateralFactor(assetInfo.asset, assetInfo.liquidateCollateralFactor))
-        .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
-    });
-
-    it('setLiquidationFactor reverts with OnlyConfigurator', async () => {
-      await expect(assetList.connect(user).setLiquidationFactor(assetInfo.asset, assetInfo.liquidationFactor))
-        .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
-    });
-
-    it('setSupplyCap reverts with OnlyConfigurator', async () => {
-      await expect(assetList.connect(user).setSupplyCap(assetInfo.asset, assetInfo.supplyCap))
-        .to.be.revertedWithCustomError(assetList, 'OnlyConfigurator');
-    });
-  });
-
   context('revert when the caller of setAssetConfigs is not the proxy admin', function () {
     let storageConfigs: StorageAssetConfigStructOutput[];
 
     before(async () => {
-      await snapshot.restore();
       storageConfigs = await configurator.getStorageAssetConfig(comet);
     });
 
@@ -870,8 +591,13 @@ describe('asset list setters', function () {
       expect(user.address).to.not.equal(await proxyAdmin.getProxyAdmin(assetList.address));
     });
 
-    it('setAssetConfigs reverts with OnlyProxyAdmin', async () => {
+    it('setAssetConfigs reverts with OnlyProxyAdmin via user', async () => {
       await expect(assetList.connect(user).setAssetConfigs(storageConfigs))
+        .to.be.revertedWithCustomError(assetList, 'OnlyProxyAdmin');
+    });
+
+    it('setAssetConfigs reverts with OnlyProxyAdmin via configurator', async () => {
+      await expect(assetList.connect(configuratorSigner).setAssetConfigs(storageConfigs))
         .to.be.revertedWithCustomError(assetList, 'OnlyProxyAdmin');
     });
   });
