@@ -181,36 +181,7 @@ describe('quoteCollateral', function () {
       expect(quote).to.equal(expected);
     });
 
-    // restored at the start of the next step, so a failing assertion here can't leave LF at 0.0001
-    let liquidationFactorSnapshot: SnapshotRestorer;
-
-    it('liquidationFactor = 0.01% (near-zero like deUSD on USDT market)', async () => {
-      liquidationFactorSnapshot = await takeSnapshot();
-      // liquidationFactor = 0.0001, storeFrontPriceFactor = 0.8 (set by the previous step)
-      // discountFactor = 0.8 * (1 - 0.0001) = 0.79992
-      // assetPriceDiscounted = 200e8 * (1 - 0.79992) = 40.016e8
-      // The collateral factors must stay below the liquidation factor, so they go to zero first, as for a delisted asset
-      await configurator.updateAssetBorrowCollateralFactor(comet.address, collateralToken.address, 0);
-      await configurator.updateAssetLiquidateCollateralFactor(comet.address, collateralToken.address, 0);
-      await configurator.updateAssetLiquidationFactor(comet.address, collateralToken.address, exp(0.0001, 18));
-      await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
-
-      const baseAmount = exp(200, baseTokenDecimals);
-      const quote = await comet.quoteCollateral(collateralToken.address, baseAmount);
-
-      const discountFactor = mulFactor(exp(0.8, 18), factorScale - exp(0.0001, 18));
-      const assetPriceDiscounted = mulFactor(exp(200, 8), factorScale - discountFactor);
-      const expected = exp(1, 8) * baseAmount * exp(1, 18) / assetPriceDiscounted / exp(1, 6);
-      expect(quote).to.equal(expected);
-      // ~80% discount: the buyer gets ~5x the no-discount amount (200 / 40.016 = 4.998e18), computed by hand
-      expect(quote).to.equal(4998000799680127948n);
-    });
-
     it('100% storeFrontPriceFactor with normal liquidationFactor', async () => {
-      // back to liquidationFactor 0.6 (and storeFrontPriceFactor 0.8) from before the previous step
-      await liquidationFactorSnapshot.restore();
-      expect((await comet.getAssetInfoByAddress(collateralToken.address)).liquidationFactor).to.equal(exp(0.6, 18));
-
       await updateStoreFrontPriceFactor(exp(1, 18));
 
       const baseAmount = exp(200, baseTokenDecimals);
@@ -225,6 +196,37 @@ describe('quoteCollateral', function () {
       expect(quote).to.equal(expected);
       // At maximum discount the buyer gets more collateral per base
       expect(quote).to.be.gt(exp(1.66, 18));
+    });
+  });
+
+  describe('near-zero liquidationFactor', function () {
+    let snapshot: SnapshotRestorer;
+
+    before(async () => {
+      snapshot = await takeSnapshot();
+      // liquidationFactor = 0.0001, storeFrontPriceFactor = 0.8
+      // The collateral factors must stay below the liquidation factor, so they go to zero first, as for a delisted asset
+      await configurator.setStoreFrontPriceFactor(comet.address, exp(0.8, 18));
+      await configurator.updateAssetBorrowCollateralFactor(comet.address, collateralToken.address, 0);
+      await configurator.updateAssetLiquidateCollateralFactor(comet.address, collateralToken.address, 0);
+      await configurator.updateAssetLiquidationFactor(comet.address, collateralToken.address, exp(0.0001, 18));
+      await proxyAdmin.deployAndUpgradeTo(configuratorProxyAddress, comet.address);
+    });
+
+    after(async () => await snapshot.restore());
+
+    it('liquidationFactor = 0.01% (near-zero like deUSD on USDT market)', async () => {
+      // discountFactor = 0.8 * (1 - 0.0001) = 0.79992
+      // assetPriceDiscounted = 200e8 * (1 - 0.79992) = 40.016e8
+      const baseAmount = exp(200, baseTokenDecimals);
+      const quote = await comet.quoteCollateral(collateralToken.address, baseAmount);
+
+      const discountFactor = mulFactor(exp(0.8, 18), factorScale - exp(0.0001, 18));
+      const assetPriceDiscounted = mulFactor(exp(200, 8), factorScale - discountFactor);
+      const expected = exp(1, 8) * baseAmount * exp(1, 18) / assetPriceDiscounted / exp(1, 6);
+      expect(quote).to.equal(expected);
+      // ~80% discount: the buyer gets ~5x the no-discount amount (200 / 40.016 = 4.998e18), computed by hand
+      expect(quote).to.equal(4998000799680127948n);
     });
   });
 
@@ -740,59 +742,18 @@ describe('quoteCollateral', function () {
       snapshot = await takeSnapshot();
     });
 
-    it('quotes with discount if liquidationFactor > 0', async () => {
-      // Ensure liquidationFactor is not zero (discount present)
-      expect(assetInfo.liquidationFactor).to.not.eq(0);
+    describe('discount removed by setting liquidationFactor to 0', function () {
+      after(async () => await snapshot.restore());
 
-      quoteAmount = await comet.quoteCollateral(quoteCollateralToken.address, QUOTE_AMOUNT);
-    });
+      it('quotes with discount if liquidationFactor > 0', async () => {
+        // Ensure liquidationFactor is not zero (discount present)
+        expect(assetInfo.liquidationFactor).to.not.eq(0);
 
-    it('computes expected discount and matches contract value', async () => {
-      // discount = storeFrontPriceFactor * (1e18 - liquidationFactor)
-      const discountFactor = mulFactor((await comet.storeFrontPriceFactor()).toBigInt(), BigNumber.from(factorScale).sub(assetInfo.liquidationFactor).toBigInt());
-      // assetPriceDiscounted = assetPrice * (1e18 - discount)
-      const assetPriceDiscounted = mulFactor(assetPrice.toBigInt(), BigNumber.from(factorScale).sub(discountFactor).toBigInt());
-      // expected quote calculation
-      const expectedQuoteWithDiscount = basePrice.mul(QUOTE_AMOUNT).mul(assetInfo.scale).div(assetPriceDiscounted).div(baseScale);
+        quoteAmount = await comet.quoteCollateral(quoteCollateralToken.address, QUOTE_AMOUNT);
+      });
 
-      expect(quoteAmount).to.eq(expectedQuoteWithDiscount);
-    });
-
-    it('update liquidationFactor to 0 to remove discount', async () => {
-      // A zero liquidation factor is only valid when both collateral factors are zero too
-      await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, quoteCollateralToken.address, 0n);
-      await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, quoteCollateralToken.address, 0n);
-      await configurator.updateAssetLiquidationFactor(cometProxyAddress, quoteCollateralToken.address, exp(0, 18));
-
-      await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
-    });
-
-    it('liquidation factor becomes 0 after upgrade', async () => {
-      assetInfo = await comet.getAssetInfoByAddress(quoteCollateralToken.address);
-      expect(assetInfo.liquidationFactor).to.eq(0);
-    });
-
-    it('quotes without discount if liquidationFactor = 0', async () => {
-      quoteAmount = await comet.quoteCollateral(quoteCollateralToken.address, QUOTE_AMOUNT);
-
-      // Expected quote calculation
-      const expectedQuoteWithoutDiscount = basePrice.mul(QUOTE_AMOUNT).mul(assetInfo.scale).div(assetPrice).div(baseScale);
-
-      // Verify quote calculation
-      expect(quoteAmount).to.eq(expectedQuoteWithoutDiscount);
-
-      await snapshot.restore();
-    });
-
-    for (let i = 1; i <= MAX_ASSETS; i++) {
-      it(`quotes with discount for asset ${i}`, async () => {
-        const asset = tokens[`ASSET${i - 1}`];
-
-        // First quote with discount
-        quoteAmount = await comet.quoteCollateral(asset.address, QUOTE_AMOUNT);
-
+      it('computes expected discount and matches contract value', async () => {
         // discount = storeFrontPriceFactor * (1e18 - liquidationFactor)
-        assetInfo = await comet.getAssetInfoByAddress(asset.address);
         const discountFactor = mulFactor((await comet.storeFrontPriceFactor()).toBigInt(), BigNumber.from(factorScale).sub(assetInfo.liquidationFactor).toBigInt());
         // assetPriceDiscounted = assetPrice * (1e18 - discount)
         const assetPriceDiscounted = mulFactor(assetPrice.toBigInt(), BigNumber.from(factorScale).sub(discountFactor).toBigInt());
@@ -800,26 +761,71 @@ describe('quoteCollateral', function () {
         const expectedQuoteWithDiscount = basePrice.mul(QUOTE_AMOUNT).mul(assetInfo.scale).div(assetPriceDiscounted).div(baseScale);
 
         expect(quoteAmount).to.eq(expectedQuoteWithDiscount);
+      });
 
-        // Update liquidation factor to 0 to remove discount; a zero liquidation factor is only valid
-        // when both collateral factors are zero too
-        await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, asset.address, 0n);
-        await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, asset.address, 0n);
-        await configurator.updateAssetLiquidationFactor(cometProxyAddress, asset.address, exp(0, 18));
+      it('update liquidationFactor to 0 to remove discount', async () => {
+        // A zero liquidation factor is only valid when both collateral factors are zero too
+        await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, quoteCollateralToken.address, 0n);
+        await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, quoteCollateralToken.address, 0n);
+        await configurator.updateAssetLiquidationFactor(cometProxyAddress, quoteCollateralToken.address, exp(0, 18));
+
         await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
+      });
 
-        assetInfo = await comet.getAssetInfoByAddress(asset.address);
+      it('liquidation factor becomes 0 after upgrade', async () => {
+        assetInfo = await comet.getAssetInfoByAddress(quoteCollateralToken.address);
         expect(assetInfo.liquidationFactor).to.eq(0);
+      });
 
-        // Second quote without discount
-        quoteAmount = await comet.quoteCollateral(asset.address, QUOTE_AMOUNT);
+      it('quotes without discount if liquidationFactor = 0', async () => {
+        quoteAmount = await comet.quoteCollateral(quoteCollateralToken.address, QUOTE_AMOUNT);
 
+        // Expected quote calculation
         const expectedQuoteWithoutDiscount = basePrice.mul(QUOTE_AMOUNT).mul(assetInfo.scale).div(assetPrice).div(baseScale);
 
         // Verify quote calculation
         expect(quoteAmount).to.eq(expectedQuoteWithoutDiscount);
       });
-    }
+    });
+
+    describe('discount removed for every asset', function () {
+      for (let i = 1; i <= MAX_ASSETS; i++) {
+        it(`quotes with discount for asset ${i}`, async () => {
+          const asset = tokens[`ASSET${i - 1}`];
+
+          // First quote with discount
+          quoteAmount = await comet.quoteCollateral(asset.address, QUOTE_AMOUNT);
+
+          // discount = storeFrontPriceFactor * (1e18 - liquidationFactor)
+          assetInfo = await comet.getAssetInfoByAddress(asset.address);
+          const discountFactor = mulFactor((await comet.storeFrontPriceFactor()).toBigInt(), BigNumber.from(factorScale).sub(assetInfo.liquidationFactor).toBigInt());
+          // assetPriceDiscounted = assetPrice * (1e18 - discount)
+          const assetPriceDiscounted = mulFactor(assetPrice.toBigInt(), BigNumber.from(factorScale).sub(discountFactor).toBigInt());
+          // expected quote calculation
+          const expectedQuoteWithDiscount = basePrice.mul(QUOTE_AMOUNT).mul(assetInfo.scale).div(assetPriceDiscounted).div(baseScale);
+
+          expect(quoteAmount).to.eq(expectedQuoteWithDiscount);
+
+          // Update liquidation factor to 0 to remove discount; a zero liquidation factor is only valid
+          // when both collateral factors are zero too
+          await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, asset.address, 0n);
+          await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, asset.address, 0n);
+          await configurator.updateAssetLiquidationFactor(cometProxyAddress, asset.address, exp(0, 18));
+          await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
+
+          assetInfo = await comet.getAssetInfoByAddress(asset.address);
+          expect(assetInfo.liquidationFactor).to.eq(0);
+
+          // Second quote without discount
+          quoteAmount = await comet.quoteCollateral(asset.address, QUOTE_AMOUNT);
+
+          const expectedQuoteWithoutDiscount = basePrice.mul(QUOTE_AMOUNT).mul(assetInfo.scale).div(assetPrice).div(baseScale);
+
+          // Verify quote calculation
+          expect(quoteAmount).to.eq(expectedQuoteWithoutDiscount);
+        });
+      }
+    });
 
     
     describe('edge cases', function () {

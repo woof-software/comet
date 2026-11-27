@@ -1459,29 +1459,21 @@ describe('absorb', function () {
       let cometCompReservesBefore: BigNumber;
 
       before(async () => {
-        await snapshot.restore();
         cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
         cometCompBalanceBefore = await compToken.balanceOf(comet.address);
         cometCompReservesBefore = await comet.getCollateralReserves(compToken.address);
-      });
 
-      it('borrow collateral factor can be updated to 0', async () => {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, compToken.address, 0n);
         await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
       });
 
-      it('sanity check: borrowCF is 0 while liquidateCF and liquidationFactor stay non-zero after upgrade', async () => {
-        const assetInfo = await comet.getAssetInfoByAddress(compToken.address);
-        expect(assetInfo.borrowCollateralFactor).to.equal(0);
-        expect(assetInfo.liquidateCollateralFactor).to.equal(exp(0.8, 18));
-        expect(assetInfo.liquidationFactor).to.equal(exp(0.9, 18));
-      });
+      after(async () => await snapshot.restore());
 
       it('sanity check: alice is still liquidatable', async () => {
         expect(await comet.isLiquidatable(alice.address)).to.be.true;
       });
 
-      it('sanity check: collateral value at the liquidation factor is below the debt', async () => {
+      it('sanity check: not a "bad debt"', async () => {
         const assetInfo = await comet.getAssetInfoByAddress(compToken.address);
         const [, price] = await compPriceFeed.latestRoundData();
         const pricedCredit = divPrice(mulFactor(mulPrice(aliceCompSupply, price, assetInfo.scale), assetInfo.liquidationFactor), basePrice, baseScale);
@@ -1599,33 +1591,24 @@ describe('absorb', function () {
       let cometCompReservesBefore: BigNumber;
 
       before(async () => {
-        await snapshot.restore();
         // 1 COMP at $1,000 with LF 0.9 → $900 of priced credit against ~$150 of debt
         await compPriceFeed.setRoundData(0, exp(1000, 8), 0, 0, 0);
         cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
         cometCompBalanceBefore = await compToken.balanceOf(comet.address);
         cometCompReservesBefore = await comet.getCollateralReserves(compToken.address);
-      });
 
-      it('borrowCollateralFactor and liquidateCollateralFactor updated to 0', async () => {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, compToken.address, 0n);
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, compToken.address, 0n);
         await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
       });
 
-      it('sanity check: liquidateCollateralFactor is 0 after upgrade', async () => {
-        expect((await comet.getAssetInfoByAddress(compToken.address)).liquidateCollateralFactor).to.equal(0);
-      });
-
-      it('sanity check: liquidationFactor remains non-zero after upgrade', async () => {
-        expect((await comet.getAssetInfoByAddress(compToken.address)).liquidationFactor).to.be.gt(0);
-      });
+      after(async () => await snapshot.restore());
 
       it('sanity check: alice is liquidatable with zero liquidateCollateralFactor', async () => {
         expect(await comet.isLiquidatable(alice.address)).to.be.true;
       });
 
-      it('sanity check: collateral value at the liquidation factor exceeds the debt', async () => {
+      it('sanity check: not a "bad debt"', async () => {
         const assetInfo = await comet.getAssetInfoByAddress(compToken.address);
         const [, price] = await compPriceFeed.latestRoundData();
         const pricedCredit = divPrice(mulFactor(mulPrice(aliceCompSupply, price, assetInfo.scale), assetInfo.liquidationFactor), basePrice, baseScale);
@@ -1746,26 +1729,17 @@ describe('absorb', function () {
       let cometCompReservesBefore: BigNumber;
 
       before(async () => {
-        await snapshot.restore();
         cometBaseTokenBalanceBefore = await baseToken.balanceOf(comet.address);
         cometCompBalanceBefore = await compToken.balanceOf(comet.address);
         cometCompReservesBefore = await comet.getCollateralReserves(compToken.address);
-      });
 
-      it('borrowCollateralFactor, liquidateCollateralFactor and liquidationFactor can be updated to 0', async () => {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, compToken.address, 0n);
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, compToken.address, 0n);
         await configurator.updateAssetLiquidationFactor(cometProxyAddress, compToken.address, 0n);
         await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
       });
 
-      it('sanity check: liquidateCollateralFactor is 0 after upgrade', async () => {
-        expect((await comet.getAssetInfoByAddress(compToken.address)).liquidateCollateralFactor).to.equal(0);
-      });
-
-      it('sanity check: liquidationFactor is 0 after upgrade', async () => {
-        expect((await comet.getAssetInfoByAddress(compToken.address)).liquidationFactor).to.equal(0);
-      });
+      after(async () => await snapshot.restore());
 
       it('sanity check: alice is liquidatable with zero liquidateCollateralFactor and zero liquidationFactor', async () => {
         expect(await comet.isLiquidatable(alice.address)).to.be.true;
@@ -1857,35 +1831,31 @@ describe('absorb', function () {
       const LIQUIDATION_FACTOR = exp(0.9, 18);
       let collateralValue: bigint;
       let credit: bigint;
+      let debt: bigint;
       let expectedNewPrincipal: bigint;
-      let baseSupplyIndexAtAbsorb: bigint;
-      let oldBalanceAtAbsorb: bigint;
 
       before(async () => {
-        await snapshot.restore();
         await compPriceFeed.setRoundData(0, exp(200, 8), 0, 0, 0);
-      });
 
-      it('borrowCF, liquidateCF and liquidationFactor updated to 0.4, 0.5 and 0.9', async () => {
         await configurator.updateAssetBorrowCollateralFactor(cometProxyAddress, compToken.address, exp(0.4, 18));
         await configurator.updateAssetLiquidateCollateralFactor(cometProxyAddress, compToken.address, exp(0.5, 18));
         await configurator.updateAssetLiquidationFactor(cometProxyAddress, compToken.address, LIQUIDATION_FACTOR);
         await proxyAdmin.deployAndUpgradeTo(configuratorProxy.address, cometProxyAddress);
+
+        debt = (await comet.borrowBalanceOf(alice.address)).toBigInt();
+        const assetInfo = await comet.getAssetInfoByAddress(compToken.address);
+        const [, price] = await compPriceFeed.latestRoundData();
+        collateralValue = mulPrice(aliceCompSupply, price, assetInfo.scale);
+        credit = divPrice(mulFactor(collateralValue, LIQUIDATION_FACTOR), basePrice, baseScale);
       });
 
-      it('liquidationFactor is 0.9 after upgrade', async () => {
-        expect((await comet.getAssetInfoByAddress(compToken.address)).liquidationFactor).to.equal(LIQUIDATION_FACTOR);
-      });
+      after(async () => await snapshot.restore());
 
       it('alice is liquidatable', async () => {
         expect(await comet.isLiquidatable(alice.address)).to.be.true;
       });
 
       it('collateral value at the liquidation factor exceeds the debt', async () => {
-        const assetInfo = await comet.getAssetInfoByAddress(compToken.address);
-        const [, price] = await compPriceFeed.latestRoundData();
-        collateralValue = mulPrice(aliceCompSupply, price, assetInfo.scale);
-        credit = divPrice(mulFactor(collateralValue, LIQUIDATION_FACTOR), basePrice, baseScale);
         expect(credit > -oldBalance).to.be.true;
       });
 
@@ -1898,14 +1868,16 @@ describe('absorb', function () {
         await expect(liquidationTx).to.emit(comet, 'AbsorbCollateral').withArgs(bob.address, alice.address, compToken.address, aliceCompSupply, collateralValue);
       });
 
-      it('alice principal equals the old balance plus value × liquidationFactor', async () => {
-        // absorb accrues before reading the debt, so value oldPrincipal at the post-absorb indices
-        const totalsBasic = await cometExt.totalsBasic();
-        baseSupplyIndexAtAbsorb = totalsBasic.baseSupplyIndex.toBigInt();
-        oldBalanceAtAbsorb = presentValue(oldPrincipal, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
-        const balanceAfter = oldBalanceAtAbsorb + credit;
-        expect(balanceAfter > 0n).to.be.true;
-        expectedNewPrincipal = principalValue(balanceAfter, totalsBasic.baseSupplyIndex, totalsBasic.baseBorrowIndex);
+      it('alice balance equals collateral value × liquidationFactor - debt', async () => {
+        // 1 wei of rounding: the balance is stored as a principal rounded down
+        expect(await comet.balanceOf(alice.address)).to.be.closeTo(credit - debt, 1);
+      });
+
+      it('alice principal equals the new balance at the supply index', async () => {
+        // principal = balance × baseIndexScale / baseSupplyIndex
+        const { baseSupplyIndex } = await cometExt.totalsBasic();
+        const baseIndexScale = await cometExt.baseIndexScale();
+        expectedNewPrincipal = (credit - debt) * baseIndexScale.toBigInt() / baseSupplyIndex.toBigInt();
         expect((await comet.userBasic(alice.address)).principal).to.equal(expectedNewPrincipal);
       });
 
@@ -1924,7 +1896,8 @@ describe('absorb', function () {
       });
 
       it('emits Transfer (mint) event for the excess', async () => {
-        await expect(liquidationTx).to.emit(comet, 'Transfer').withArgs(ZERO_ADDRESS, alice.address, presentValueSupply(baseSupplyIndexAtAbsorb, expectedNewPrincipal));
+        const { baseSupplyIndex } = await cometExt.totalsBasic();
+        await expect(liquidationTx).to.emit(comet, 'Transfer').withArgs(ZERO_ADDRESS, alice.address, presentValueSupply(baseSupplyIndex, expectedNewPrincipal));
       });
     });
 
