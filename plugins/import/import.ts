@@ -215,18 +215,24 @@ async function tryStrategies<T>(strategies: (() => Promise<T>)[]): Promise<T> {
 }
 
 async function getContractCreationCode(network: string, address: string, family: 'blockscout' | 'etherscan') {
+  const maxKeyRotations = 12;
+
   if (family === 'blockscout') {
-    // eth_getCode returns the code already deployed at the address, which reverts when deployed again as if it were
-    // creation code, so it is only the last resort, enough for an import that needs just the ABI
-    return tryStrategies([
-      () => pullFirstTransactionForContractFromBlockscout(network, address),
-      () => scrapeContractCreationCodeFromRPC(network, address),
-    ]);
+    // When Blockscout can't give the creation tx (it rate limits often), the network's Etherscan is asked for it, rotated
+    // across every key. eth_getCode returns the code already deployed at the address, which reverts when deployed again
+    // as if it were creation code, so it is only the last resort, enough for an import that needs just the ABI
+    const strategies: (() => Promise<string>)[] = [() => pullFirstTransactionForContractFromBlockscout(network, address)];
+    if (isEtherscanConfigured(network)) {
+      for (let i = 0; i < maxKeyRotations; i++) {
+        strategies.push(() => pullFirstTransactionForContractFromEtherscan(network, address, i));
+      }
+    }
+    strategies.push(() => scrapeContractCreationCodeFromRPC(network, address));
+    return tryStrategies(strategies);
   }
 
   // Etherscan family: the creation tx first, rotated across every key, then the creation code scraped from the page.
   // The eth_getCode strategies return the deployed code, which reverts when deployed again, so they come last
-  const maxKeyRotations = 12;
   const strategies: (() => Promise<string>)[] = [];
   for (let i = 0; i < maxKeyRotations; i++) {
     strategies.push(() => pullFirstTransactionForContractFromEtherscan(network, address, i));

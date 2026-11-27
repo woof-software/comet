@@ -21,11 +21,10 @@ import {
   servicePatch,
   servicePatch2
 } from './utils';
-import { matchesDeployment } from './utils';
+import { expectUnknownAssetRevert, matchesDeployment } from './utils';
 import { exp } from '../test/helpers';
 import { ethers } from 'hardhat';
 import { getConfigForScenario } from './utils/scenarioHelper';
-import { expectUnknownAssetRevert } from './assetList/shared';
 import { log } from 'console';
 
 async function getSupplyCapExceedingAmount(ctx: CometContext, assetIndex: number): Promise<number> {

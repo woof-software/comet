@@ -1,5 +1,17 @@
 import { CometContext } from '../context/CometContext';
 
+// Compares two dotted versions part by part as numbers: < 0 if a is older, 0 if equal, > 0 if newer.
+// A missing part counts as 0, so '1.2' equals '1.2.0'. A part that is not a number gives NaN, which fails any check
+function compareVersions(a: string, b: string): number {
+  const partsA = a.split('.').map(Number);
+  const partsB = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+    const diff = (partsA[i] ?? 0) - (partsB[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
 // Service patch 2 introduces:
 //  - fractional supply caps: the asset list stores each supply cap in full, down to 1 wei,
 //    instead of rounding it down to whole tokens
@@ -12,11 +24,11 @@ export const SERVICE_PATCH_2_VERSION = '1.2.2';
 /**
  * Filter for scenarios that cover service patch 2
  * @param ctx The Comet context
- * @returns true if the market's Comet reports the service patch 2 version, false otherwise
+ * @returns true if the market's Comet reports the service patch 2 version or newer, false otherwise
  */
 export async function servicePatch2(ctx: CometContext): Promise<boolean> {
   const comet = await ctx.getComet();
-  return (await comet.version()) === SERVICE_PATCH_2_VERSION;
+  return compareVersions(await comet.version(), SERVICE_PATCH_2_VERSION) >= 0;
 }
 
 /**

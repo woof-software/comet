@@ -7,8 +7,6 @@ export { SupplyCapConstraint } from './SupplyCapConstraint';
 export { CometBalanceConstraint } from './CometBalanceConstraint';
 export { MigrationConstraint } from './MigrationConstraint';
 export { ProposalConstraint } from './ProposalConstraint';
-// TEMP SOLUTION: remove together with AssetListMigrationConstraint
-export { AssetListMigrationConstraint } from './AssetListMigrationConstraint';
 export { FilterConstraint } from './FilterConstraint';
 export { PriceConstraint } from './PriceConstraint';
 export { ReservesConstraint } from './ReservesConstraint';

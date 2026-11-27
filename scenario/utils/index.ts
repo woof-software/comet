@@ -25,7 +25,8 @@ import relayMessage from './relayMessage';
 import { mineBlocks, setEtherBalance, setNextBaseFeeToZero, setNextBlockTimestamp } from './hreUtils';
 import { vnetHreForBase } from '../../plugins/scenario/utils/hreForBase';
 import { getOrCreateVirtualTestnet } from './tenderlyVnet';
-import { AssetList, BaseBridgeReceiver, CometInterface, CometProxyAdmin, Configurator, FaucetToken } from '../../build/types';
+import { AssetList, BaseBridgeReceiver, CometInterface, CometProxyAdmin, Configurator, ERC20, FaucetToken } from '../../build/types';
+import { servicePatch2 } from './versionControl';
 import CometActor from './../context/CometActor';
 import { isBridgeProposal } from './isBridgeProposal';
 import { Interface } from 'ethers/lib/utils';
@@ -2120,17 +2121,6 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
     [],
     true
   );
-  // The live extension predates the extended pause functions and the new version, so the rebuilt Comet gets a new one,
-  // under the alias deployComet reads, with the market's own name and symbol
-  const cometExt = await dm.deploy(
-    'comet:implementation:implementation',
-    'CometExt.sol',
-    [{
-      name32: ethers.utils.formatBytes32String(await comet.name()),
-      symbol32: ethers.utils.formatBytes32String(await comet.symbol()),
-    }],
-    true
-  );
   const assetListFactory = await dm.deploy('assetListFactory', 'test/assetList/AssetListFactory.sol', [configurator.address], true);
   const cometFactory = await dm.deploy('cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], true);
 
@@ -2166,15 +2156,60 @@ export async function migrateToAssetList(ctx: CometContext, admin: SignerWithAdd
     true
   );
 
-  // setConfiguration sets the list proxy once, for a market that has none yet. The V1 Configuration has no
-  // maxSupportedUtilization, so it reads as zero after the migration, and a zero cap makes the Comet reject any borrow
+  // setConfiguration sets the list proxy once, for a market that has none yet
   const configuration = await configurator.getConfiguration(comet.address);
-  await configurator.setConfiguration(comet.address, {
-    ...configuration,
-    assetList: assetListProxy.address,
-    extensionDelegate: cometExt.address,
-    maxSupportedUtilization: configuration.maxSupportedUtilization.isZero() ? exp(2, 18) : configuration.maxSupportedUtilization,
-  });
+  await configurator.setConfiguration(comet.address, { ...configuration, assetList: assetListProxy.address });
   await configurator.setFactory(comet.address, cometFactory.address);
   await proxyAdmin.deployAndUpgradeTo(configurator.address, comet.address);
+}
+
+// The token of a collateral, which the asset list reads the decimals from
+export const getToken = async (context: CometContext, asset: string): Promise<ERC20> =>
+  await context.world.deploymentManager.hre.ethers.getContractAt('ERC20', asset) as ERC20;
+
+// Comet forwards an asset lookup to the market's asset list, so an unknown asset reverts with the list's
+// AssetNotFound. A market not yet on the new list still reverts with BadAsset.
+// The call is passed as a function and sent only after the expected error and contract are resolved, so nothing
+// is awaited while its revert is pending
+export async function expectUnknownAssetRevert(context: CometContext, call: () => Promise<unknown>) {
+  const [contract, error] = await servicePatch2(context)
+    ? [await context.getAssetList(), 'AssetNotFound']
+    : [await context.getComet(), 'BadAsset'];
+  await expect(call()).to.be.revertedWithCustomError(contract, error);
+}
+
+export async function deployMockERC20(context: CometContext, alias: string, force?: boolean): Promise<string> {
+  const dm = context.world.deploymentManager;
+
+  const mockERC20 = await dm.deploy(
+    `mockERC20:${alias}`,
+    'test/FaucetToken.sol',
+    [0, 'Mock Token', 18, 'MOCK'],
+    force
+  );
+
+  return mockERC20.address;
+}
+
+export async function deployTimelock(context: CometContext, force?: boolean): Promise<string> {
+  const dm = context.world.deploymentManager;
+  const admin = context.actors.admin;
+  const timelock = await dm.deploy('test:timelock', 'test/SimpleTimelock.sol', [admin.address], force);
+
+  return timelock.address;
+}
+
+export async function deployPriceFeed(context: CometContext, alias: string, force?: boolean): Promise<string> {
+  const dm = context.world.deploymentManager;
+  const PRICE_FEED_DECIMALS = 8;
+  const PRICE_FEED_ANSWER = 1 * 10 ** PRICE_FEED_DECIMALS;
+
+  const priceFeed = await dm.deploy(
+    `test:${alias}PriceFeed`,
+    'test/SimplePriceFeed.sol',
+    [PRICE_FEED_ANSWER, PRICE_FEED_DECIMALS],
+    force
+  );
+
+  return priceFeed.address;
 }

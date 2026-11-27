@@ -5,7 +5,6 @@ import { CometContext, scenario } from '../context/CometContext';
 import { expectRevertCustom, fundAccount, matchesDeployment } from '../utils';
 import { SECONDS_PER_YEAR } from '../utils/constants';
 import { ConfiguratorOptimism, MarketAdminPermissionChecker } from '../../build/types';
-import { normalizeStructOutput } from './shared';
 import { isAssetListMigrationRequired, servicePatch2 } from '../utils/versionControl';
 
 // Scenarios for the market admin, who may call a subset of the Configurator setters without full governance.
@@ -120,12 +119,12 @@ scenario(
     await fundAccount(admin.context.world, admin);
     const marketAdminSigner = await getMarketAdminSigner(context);
 
-    const oldSupplyKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink;
+    const oldSupplyKink = (await configurator.getConfiguration(comet.address)).supplyKink.toBigInt();
     const newSupplyKink = oldSupplyKink + 1n;
 
     await configurator.connect(marketAdminSigner).setSupplyKink(comet.address, newSupplyKink);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyKink).to.be.equal(
+    expect((await configurator.getConfiguration(comet.address)).supplyKink.toBigInt()).to.be.equal(
       newSupplyKink
     );
 
@@ -145,9 +144,7 @@ scenario(
     await fundAccount(admin.context.world, admin);
     const marketAdminSigner = await getMarketAdminSigner(context);
 
-    const oldSupplyPerYearInterestRateSlopeLow = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
-    ).supplyPerYearInterestRateSlopeLow;
+    const oldSupplyPerYearInterestRateSlopeLow = (await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeLow.toBigInt();
 
     const newSupplyPerYearInterestRateSlopeLow = oldSupplyPerYearInterestRateSlopeLow + 1n;
 
@@ -156,7 +153,7 @@ scenario(
       .setSupplyPerYearInterestRateSlopeLow(comet.address, newSupplyPerYearInterestRateSlopeLow);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeLow
+      (await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeLow.toBigInt()
     ).to.be.equal(newSupplyPerYearInterestRateSlopeLow);
 
     await admin.deployAndUpgradeTo(configurator.address, comet.address);
@@ -178,9 +175,7 @@ scenario(
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
-    const oldSupplyPerYearInterestRateSlopeHigh = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
-    ).supplyPerYearInterestRateSlopeHigh;
+    const oldSupplyPerYearInterestRateSlopeHigh = (await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeHigh.toBigInt();
 
     const newSupplyPerYearInterestRateSlopeHigh = oldSupplyPerYearInterestRateSlopeHigh + 1n;
 
@@ -189,7 +184,7 @@ scenario(
       .setSupplyPerYearInterestRateSlopeHigh(comet.address, newSupplyPerYearInterestRateSlopeHigh);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeHigh
+      (await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateSlopeHigh.toBigInt()
     ).to.be.equal(newSupplyPerYearInterestRateSlopeHigh);
 
     await admin.deployAndUpgradeTo(configurator.address, comet.address);
@@ -211,9 +206,7 @@ scenario(
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
-    const oldSupplyPerYearInterestRateBase = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
-    ).supplyPerYearInterestRateBase;
+    const oldSupplyPerYearInterestRateBase = (await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateBase.toBigInt();
 
     const newSupplyPerYearInterestRateBase = oldSupplyPerYearInterestRateBase + 1n;
 
@@ -222,7 +215,7 @@ scenario(
       .setSupplyPerYearInterestRateBase(comet.address, newSupplyPerYearInterestRateBase);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateBase
+      (await configurator.getConfiguration(comet.address)).supplyPerYearInterestRateBase.toBigInt()
     ).to.be.equal(newSupplyPerYearInterestRateBase);
 
     await admin.deployAndUpgradeTo(configurator.address, comet.address);
@@ -243,12 +236,12 @@ scenario(
     await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
-    const oldBorrowKink = normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink;
+    const oldBorrowKink = (await configurator.getConfiguration(comet.address)).borrowKink.toBigInt();
     const newBorrowKink = oldBorrowKink + 1n;
 
     await configurator.connect(marketAdminSigner).setBorrowKink(comet.address, newBorrowKink);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowKink).to.be.equal(
+    expect((await configurator.getConfiguration(comet.address)).borrowKink.toBigInt()).to.be.equal(
       newBorrowKink
     );
 
@@ -269,9 +262,7 @@ scenario(
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
-    const oldBorrowPerYearInterestRateSlopeLow = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
-    ).borrowPerYearInterestRateSlopeLow;
+    const oldBorrowPerYearInterestRateSlopeLow = (await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeLow.toBigInt();
 
     const newBorrowPerYearInterestRateSlopeLow = oldBorrowPerYearInterestRateSlopeLow + 1n;
 
@@ -280,7 +271,7 @@ scenario(
       .setBorrowPerYearInterestRateSlopeLow(comet.address, newBorrowPerYearInterestRateSlopeLow);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeLow
+      (await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeLow.toBigInt()
     ).to.be.equal(newBorrowPerYearInterestRateSlopeLow);
 
     await admin.deployAndUpgradeTo(configurator.address, comet.address);
@@ -302,9 +293,7 @@ scenario(
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
-    const oldBorrowPerYearInterestRateSlopeHigh = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
-    ).borrowPerYearInterestRateSlopeHigh;
+    const oldBorrowPerYearInterestRateSlopeHigh = (await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeHigh.toBigInt();
 
     const newBorrowPerYearInterestRateSlopeHigh = oldBorrowPerYearInterestRateSlopeHigh + 1n;
 
@@ -313,7 +302,7 @@ scenario(
       .setBorrowPerYearInterestRateSlopeHigh(comet.address, newBorrowPerYearInterestRateSlopeHigh);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeHigh
+      (await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateSlopeHigh.toBigInt()
     ).to.be.equal(newBorrowPerYearInterestRateSlopeHigh);
 
     await admin.deployAndUpgradeTo(configurator.address, comet.address);
@@ -335,9 +324,7 @@ scenario(
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
-    const oldBorrowPerYearInterestRateBase = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
-    ).borrowPerYearInterestRateBase;
+    const oldBorrowPerYearInterestRateBase = (await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateBase.toBigInt();
 
     const newBorrowPerYearInterestRateBase = oldBorrowPerYearInterestRateBase + 1n;
 
@@ -346,7 +333,7 @@ scenario(
       .setBorrowPerYearInterestRateBase(comet.address, newBorrowPerYearInterestRateBase);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateBase
+      (await configurator.getConfiguration(comet.address)).borrowPerYearInterestRateBase.toBigInt()
     ).to.be.equal(newBorrowPerYearInterestRateBase);
 
     await admin.deployAndUpgradeTo(configurator.address, comet.address);
@@ -368,9 +355,7 @@ scenario(
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
-    const oldBaseTrackingSupplySpeed = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
-    ).baseTrackingSupplySpeed;
+    const oldBaseTrackingSupplySpeed = (await configurator.getConfiguration(comet.address)).baseTrackingSupplySpeed.toBigInt();
 
     const newBaseTrackingSupplySpeed = oldBaseTrackingSupplySpeed + 1n;
 
@@ -379,7 +364,7 @@ scenario(
       .setBaseTrackingSupplySpeed(comet.address, newBaseTrackingSupplySpeed);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingSupplySpeed
+      (await configurator.getConfiguration(comet.address)).baseTrackingSupplySpeed.toBigInt()
     ).to.be.equal(newBaseTrackingSupplySpeed);
 
     await admin.deployAndUpgradeTo(configurator.address, comet.address);
@@ -399,9 +384,7 @@ scenario(
 
     const marketAdminSigner = await getMarketAdminSigner(context);
 
-    const oldBaseTrackingBorrowSpeed = normalizeStructOutput(
-      await configurator.getConfiguration(comet.address)
-    ).baseTrackingBorrowSpeed;
+    const oldBaseTrackingBorrowSpeed = (await configurator.getConfiguration(comet.address)).baseTrackingBorrowSpeed.toBigInt();
 
     const newBaseTrackingBorrowSpeed = oldBaseTrackingBorrowSpeed + 1n;
 
@@ -410,7 +393,7 @@ scenario(
       .setBaseTrackingBorrowSpeed(comet.address, newBaseTrackingBorrowSpeed);
 
     expect(
-      normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseTrackingBorrowSpeed
+      (await configurator.getConfiguration(comet.address)).baseTrackingBorrowSpeed.toBigInt()
     ).to.be.equal(newBaseTrackingBorrowSpeed);
 
     await admin.deployAndUpgradeTo(configurator.address, comet.address);
@@ -429,12 +412,12 @@ scenario(
     await fundAccount(admin.context.world, admin);
 
     const marketAdminSigner = await getMarketAdminSigner(context);
-    const oldBaseBorrowMin = normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin;
+    const oldBaseBorrowMin = (await configurator.getConfiguration(comet.address)).baseBorrowMin.toBigInt();
     const newBaseBorrowMin = oldBaseBorrowMin + 1n;
 
     await configurator.connect(marketAdminSigner).setBaseBorrowMin(comet.address, newBaseBorrowMin);
 
-    expect(normalizeStructOutput(await configurator.getConfiguration(comet.address)).baseBorrowMin).to.be.equal(
+    expect((await configurator.getConfiguration(comet.address)).baseBorrowMin.toBigInt()).to.be.equal(
       newBaseBorrowMin
     );
 

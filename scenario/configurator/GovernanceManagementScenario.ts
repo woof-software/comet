@@ -1,7 +1,6 @@
 import { expect } from 'chai';
 import { scenario } from '../context/CometContext';
-import { fundAccount } from '../utils';
-import { deployTimelock } from './shared';
+import { deployTimelock, fundAccount } from '../utils';
 
 // The governor of the Configurator itself, which every governor-only function checks the caller against
 

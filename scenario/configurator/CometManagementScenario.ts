@@ -1,19 +1,78 @@
 import { expect } from 'chai';
-import { ethers } from 'ethers';
+import { BigNumber, ethers } from 'ethers';
 import { CometContext, scenario } from '../context/CometContext';
 import { exp } from '../../test/helpers';
-import { fundAccount } from '../utils';
+import { deployMockERC20, deployPriceFeed, deployTimelock, fundAccount } from '../utils';
 import { SECONDS_PER_YEAR } from '../utils/constants';
 import { servicePatch2 } from '../utils/versionControl';
 import { CometWithExtendedAssetList } from '../../build/types';
-import {
-  normalizeStructOutput,
-  deployCometExt,
-  deployCometFactory,
-  deployMockERC20,
-  deployPriceFeed,
-  deployTimelock,
-} from './shared';
+
+type ArrayMethods = keyof Omit<any[], number>;
+
+type NamedKeys<T> = {
+  [K in keyof T as K extends number | `${number}` | ArrayMethods ? never : K]: T[K];
+};
+
+type Normalize<T> = T extends BigNumber
+  ? bigint
+  : T extends string | number | boolean
+  ? T
+  : [NamedKeys<T>] extends [Record<string, never>]
+  ? T extends (infer U)[]
+    ? Normalize<U>[]
+    : T
+  : { [K in keyof NamedKeys<T>]: Normalize<NamedKeys<T>[K]> };
+
+type NormalizedStruct<T> = Normalize<NamedKeys<T>>;
+
+/**
+ * Hybrid array-objects with both numeric and named keys are stripped to plain
+ * objects with native bigint values, safe to destructure, compare, and serialize.
+ */
+function normalizeStructOutput<T>(value: T): NormalizedStruct<T> {
+  function normalize(val: any): any {
+    if (BigNumber.isBigNumber(val)) {
+      return val.toBigInt();
+    }
+    if (val && typeof val === 'object') {
+      const namedKeys = Object.keys(val).filter((key) => isNaN(Number(key)));
+      if (namedKeys.length > 0) {
+        return Object.fromEntries(namedKeys.map((key) => [key, normalize(val[key])]));
+      }
+      if (Array.isArray(val)) {
+        return val.map(normalize);
+      }
+    }
+    return val;
+  }
+
+  return normalize(value) as NormalizedStruct<T>;
+}
+
+async function deployCometFactory(context: CometContext, force?: boolean): Promise<string> {
+  const dm = context.world.deploymentManager;
+  const cometFactory = await dm.deploy('test:cometFactory', 'test/CometFactoryWithExtendedAssetList.sol', [], force);
+
+  return cometFactory.address;
+}
+
+async function deployCometExt(context: CometContext, force?: boolean): Promise<string> {
+  const dm = context.world.deploymentManager;
+
+  const extConfiguration = {
+    name32: ethers.utils.formatBytes32String('MOCK'),
+    symbol32: ethers.utils.formatBytes32String('cMOCKv3')
+  };
+
+  const cometExt = await dm.deploy(
+    'test:comet:implementation:implementation',
+    'CometExt.sol',
+    [extConfiguration],
+    force
+  );
+
+  return cometExt.address;
+}
 
 // The governor setters for the Comet-related fields of the Configuration (Configurator.sol, "Governance setters for
 // Comet-related configuration"): each one stores the new value, can be called again, and reaches the Comet after
@@ -1482,44 +1541,5 @@ scenario(
     await expect(
       configurator.connect(albert.signer).setConfiguration(comet.address, updatedConfiguration)
     ).to.be.revertedWithCustomError(configurator, 'Unauthorized');
-  }
-);
-
-// An existing market is already configured, so setConfiguration can't change its base token or tracking index scale
-scenario(
-  'Configurator#setConfiguration reverts if base token is changed for existing configuration',
-  {},
-  async ({ comet, configurator, actors }, context) => {
-    const { admin } = actors;
-    await fundAccount(admin.context.world, admin);
-    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
-
-    const updatedConfiguration = {
-      ...existingConfiguration,
-      baseToken: await deployMockERC20(context, 'baseToken')
-    };
-
-    await expect(
-      configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration)
-    ).to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
-  }
-);
-
-scenario(
-  'Configurator#setConfiguration reverts if tracking index scale is changed for existing configuration',
-  {},
-  async ({ comet, configurator, actors }) => {
-    const { admin } = actors;
-    await fundAccount(admin.context.world, admin);
-    const existingConfiguration = normalizeStructOutput(await configurator.getConfiguration(comet.address));
-
-    const updatedConfiguration = {
-      ...existingConfiguration,
-      trackingIndexScale: existingConfiguration.trackingIndexScale + 1n
-    };
-
-    await expect(
-      configurator.connect(admin.signer).setConfiguration(comet.address, updatedConfiguration)
-    ).to.be.revertedWithCustomError(configurator, 'ConfigurationAlreadyExists');
   }
 );

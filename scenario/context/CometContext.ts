@@ -11,7 +11,6 @@ import {
   CometBalanceConstraint,
   MigrationConstraint,
   ProposalConstraint,
-  AssetListMigrationConstraint,
   FilterConstraint,
   PriceConstraint,
   ReservesConstraint
@@ -72,8 +71,8 @@ export interface CometProperties {
   rewards: CometRewards;
   bulker: BaseBulker;
   bridgeReceiver: BaseBridgeReceiver;
+  assetList: AssetList;
   cometExt?: CometExt;
-  assetList?: AssetList;
 }
 
 export class CometContext {
@@ -437,7 +436,7 @@ async function getContextProperties(context: CometContext): Promise<CometPropert
     comet,
     configurator: await context.getConfigurator(),
     proxyAdmin: await context.getCometAdmin(),
-    assetList: await context.getAssetList(),
+    assetList: await context.getAssetList() as AssetList,
     timelock: await context.getTimelock(),
     governor: await context.getGovernor(),
     rewards: await context.getRewards(),
@@ -450,9 +449,6 @@ export const staticConstraints: StaticConstraint<CometContext>[] = [
   new NativeTokenConstraint(),
   new MigrationConstraint(),
   new ProposalConstraint(),
-  // TEMP SOLUTION: remove once the real asset list migration is prepared or executed on chain. Runs after the
-  // migrations and open proposals, so every scenario starts on the new Configurator and asset list
-  new AssetListMigrationConstraint(),
 ];
 
 export const dynamicConstraints: DynamicConstraint<CometContext, Requirements>[] = [
